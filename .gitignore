@@ -1,0 +1,21 @@
+node_modules/
+dist/
+dist-binary/
+server-dist/
+*.tsbuildinfo
+
+# 机器特定配置
+config/local-sessions.local.json
+config/session-groups.json
+
+# 运行产物
+*.db
+*.db-wal
+*.db-shm
+proxy-certs/
+captured-prompts/
+captures/
+compare/
+prof/
+*.cpuprofile
+*.log

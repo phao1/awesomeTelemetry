@@ -1,0 +1,15 @@
+{
+  "prewarmRecent": 0,
+  "traeKeyPath": null,
+  "providers": {
+    "claude":     { "enabled": true,  "path": "~/.claude/projects",              "sourceKind": "jsonl",     "watchStrategy": "chokidar", "pollIntervalMs": 0,     "label": "Claude Code" },
+    "codex":      { "enabled": true,  "path": "~/.codex/sessions",               "sourceKind": "jsonl",     "watchStrategy": "chokidar", "pollIntervalMs": 0,     "label": "Codex" },
+    "opencode":   { "enabled": true,  "path": "~/.local/share/opencode",         "sourceKind": "sqlite",    "watchStrategy": "poll",     "pollIntervalMs": 30000, "label": "OpenCode" },
+    "codearts":   { "enabled": true,  "path": "~/.codeartsdoer/codearts-data",   "sourceKind": "sqlite",    "watchStrategy": "poll",     "pollIntervalMs": 30000, "label": "CodeArts" },
+    "codeagent":  { "enabled": true,  "path": "~/.cac/projects",                 "sourceKind": "jsonl",     "watchStrategy": "chokidar", "pollIntervalMs": 0,     "label": "CodeAgent 3.0" },
+    "codeagent2": { "enabled": true,  "path": "~/.local/share/codemate",         "sourceKind": "sqlite",    "watchStrategy": "poll",     "pollIntervalMs": 30000, "label": "CodeAgent 2.0" },
+    "trae":       { "enabled": true,  "path": "%APPDATA%/Trae CN/ModularData/ai-agent", "sourceKind": "sqlcipher", "watchStrategy": "poll", "pollIntervalMs": 30000, "label": "Trae CN" },
+    "qoder":      { "enabled": false, "path": "~/.qoder",                        "sourceKind": "jsonl",     "watchStrategy": "chokidar", "pollIntervalMs": 0,     "label": "Qoder" },
+    "workbuddy":  { "enabled": true,  "path": "~/.workbuddy/projects",           "sourceKind": "jsonl",     "watchStrategy": "chokidar", "pollIntervalMs": 0,     "label": "WorkBuddy" }
+  }
+}
