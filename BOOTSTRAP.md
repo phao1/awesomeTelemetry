@@ -64,7 +64,7 @@ src/core/trace-types.test.ts  ← contracts/data-model.md §11 的类型级断�
 - `TRACE_PHASES` / `TRACE_KINDS` / `PROVIDER_KEYS` 三个常量数组长度分别为 6 / 11 / 9
 - 类型断言测试全绿
 - **零运行时逻辑**——这个文件只有类型和常量
-- [ ] 删除 vitest.config.ts 的 passWithNoTests，删除后 npm run test 仍绿
+- [x] 删除 vitest.config.ts 的 passWithNoTests，删除后 npm run test 仍绿
 
 ---
 

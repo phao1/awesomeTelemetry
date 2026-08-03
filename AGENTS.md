@@ -82,7 +82,6 @@ Agent Observability：本地 Web UI，读取并分析 9 种 AI 编码助手的�
 ## 已知偏差
 
 - `@types/better-sqlite3@9.6.0` 与 runtime `better-sqlite3@12.x` 大版本错配：v12 不自带 `.d.ts`，DefinitelyTyped 最高只发布到 9.6.0（无 12.x）。M2 起 typecheck 若遇到 v12 新增 API 的类型缺口，按此条目排查。
-- `passWithNoTests: true` 仅 M0 空测试期有效，M1 交付 `trace-types.test.ts` 后必须从 `vitest.config.ts` 删除（删除时机见 BOOTSTRAP.md M1 验收）。
 
 ## 目录约定
 
