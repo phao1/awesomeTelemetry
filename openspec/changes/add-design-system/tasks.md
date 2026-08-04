@@ -14,16 +14,16 @@
 
 ## 2. 图标集（T-14，spec REQ-004）
 
-- [ ] 2.1 建 `src/components/icons/index.tsx` 与共享 `<Icon>` 壳（`size` / `className` / `label`）
-- [ ] 2.2 实现导航/视图 8 个：Sessions / Agents / Compare / Proxy / Frida / Sidebar / Panel / Command
-- [ ] 2.3 实现 phase 6 个：Understand / Plan / Implement / Debug / Verify / Report
-- [ ] 2.4 实现状态 6 个：Success / Error / Running / Pending / Cancelled / Warning
-- [ ] 2.5 实现事件类型 6 个：Message / Tool / File / Terminal / Thought / System
-- [ ] 2.6 实现指标 4 个：Speed / Accuracy / Stability / Cost
-- [ ] 2.7 实现操作 12 个：Search / Filter / Refresh / Copy / Download / ExternalLink / Trash / Close / ChevronRight / ChevronDown / Kebab / Plus
-- [ ] 2.8 实现其它 5 个：Gear / Globe / Sun / Moon / DeviceDesktop（三个主题图标各自独立，不复用路径）
-- [ ] 2.9 写断言 **T6**（导出名集合与清单严格相等，无多无少 = 47）与 **T7**（含 `viewBox="0 0 16 16"`、无 `fill="#"`/`stroke="#"`）
-- [ ] 2.10 验收：全套未压缩 < 12KB
+- [x] 2.1 建 `src/components/icons/index.tsx` 与共享 `<Icon>` 壳（`size` / `className` / `label`）
+- [x] 2.2 实现导航/视图 8 个：Sessions / Agents / Compare / Proxy / Frida / Sidebar / Panel / Command
+- [x] 2.3 实现 phase 6 个：Understand / Plan / Implement / Debug / Verify / Report
+- [x] 2.4 实现状态 6 个：Success / Error / Running / Pending / Cancelled / Warning
+- [x] 2.5 实现事件类型 6 个：Message / Tool / File / Terminal / Thought / System
+- [x] 2.6 实现指标 4 个：Speed / Accuracy / Stability / Cost
+- [x] 2.7 实现操作 12 个：Search / Filter / Refresh / Copy / Download / ExternalLink / Trash / Close / ChevronRight / ChevronDown / Kebab / Plus
+- [x] 2.8 实现其它 5 个：Gear / Globe / Sun / Moon / DeviceDesktop（三个主题图标各自独立，不复用路径）
+- [x] 2.9 写断言 **T6**（导出名集合与清单严格相等，无多无少 = 47）与 **T7**（含 `viewBox="0 0 16 16"`、无 `fill="#"`/`stroke="#"`）
+- [x] 2.10 验收：全套未压缩 < 12KB
 
 ## 3. 基础组件库（spec REQ-005）
 
