@@ -4,6 +4,7 @@ import type {
   CaptureMethod,
   DataSource,
   EventMode,
+  ProxyRequest,
   ProviderKey,
   ProxyRequestListItem,
   SessionDetailResponse,
@@ -68,6 +69,16 @@ function eventsSql(full: boolean): string {
 
 const EVENT_FULL_BY_ID_SQL =
   `SELECT ${EVENT_FULL_COLS} FROM events WHERE session_id = ? AND id = ?`;
+
+const PROXY_FULL_COLS = [
+  'id', 'request_id', 'method', 'url', 'hostname', 'request_headers', 'request_body',
+  'response_status', 'response_body', 'content_type', 'is_streaming', 'started_at',
+  'completed_at', 'duration_ms', 'capture_method', 'ttnet_encrypted', 'system_prompt',
+  'system_prompt_len', 'model', 'input_tokens', 'output_tokens', 'parsed_session_id',
+  'parser_route', 'raw_request_body', 'raw_response_body',
+].join(', ');
+
+const PROXY_BY_ID_SQL = `SELECT ${PROXY_FULL_COLS} FROM proxy_requests WHERE id = ?`;
 
 function proxyWhere(hostname: boolean, captureMethod: boolean, cursor: boolean): string {
   const parts: string[] = [];
@@ -195,6 +206,39 @@ function mapProxyListItem(row: Record<string, unknown>): ProxyRequestListItem {
     parserRoute: row.parser_route as string | null,
     systemPromptLen: row.system_prompt_len as number,
     hasSystemPrompt: Boolean(row.has_system_prompt),
+  };
+}
+
+function mapProxyRequest(row: Record<string, unknown>): ProxyRequest {
+  return {
+    id: row.id as number,
+    requestId: row.request_id as string,
+    method: row.method as string,
+    url: row.url as string,
+    hostname: row.hostname as string,
+    requestHeaders:
+      typeof row.request_headers === 'string' && row.request_headers !== ''
+        ? (JSON.parse(row.request_headers) as Record<string, string>)
+        : {},
+    requestBody: row.request_body as string | null,
+    responseStatus: row.response_status as number | null,
+    responseBody: row.response_body as string | null,
+    contentType: row.content_type as string | null,
+    isStreaming: Boolean(row.is_streaming),
+    startedAt: row.started_at as string,
+    completedAt: row.completed_at as string | null,
+    durationMs: row.duration_ms as number | null,
+    captureMethod: row.capture_method as CaptureMethod,
+    ttnetEncrypted: Boolean(row.ttnet_encrypted),
+    systemPrompt: row.system_prompt as string | null,
+    systemPromptLen: row.system_prompt_len as number,
+    model: row.model as string | null,
+    inputTokens: row.input_tokens as number | null,
+    outputTokens: row.output_tokens as number | null,
+    parsedSessionId: row.parsed_session_id as string | null,
+    parserRoute: row.parser_route as string | null,
+    rawRequestBody: row.raw_request_body as string | null,
+    rawResponseBody: row.raw_response_body as string | null,
   };
 }
 
@@ -399,4 +443,10 @@ export function listProxyRequests(
     nextCursor: hasMore && last !== undefined ? last.startedAt : null,
     hasMore,
   };
+}
+
+/** api.md §4：完整 proxy 请求（含 body），供 /api/proxy/requests/:id。 */
+export function getProxyRequestById(db: Database, id: number): ProxyRequest | null {
+  const row = cachedStmt(db, PROXY_BY_ID_SQL).get(id) as Record<string, unknown> | undefined;
+  return row === undefined ? null : mapProxyRequest(row);
 }

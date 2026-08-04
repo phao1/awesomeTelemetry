@@ -14,7 +14,8 @@
 | M5 | adapters ×9 | ✅ 完成 | 9a2824f |
 | M6 | scanners ×9 | ✅ 完成 | 6428fc1 |
 | M7 | realtime | ✅ 完成 | （待提交） |
-| M8 | HTTP server | ⬜ 未开始 | — |
+| M7 | realtime | ✅ 完成 | 29ae86d |
+| M8 | HTTP server | ✅ 完成 | （待提交） |
 | M9 | core 分析 | ⬜ 未开始 | — |
 | M10 | 前端（a–d） | ⬜ 未开始 | — |
 | M11 | proxy/frida/trae（按 P-3 裁剪） | ⬜ 未开始 | — |
@@ -75,6 +76,16 @@
   + 4 个测试文件
 - 验收：524 次 queueSessionChange → 1 条 sessions_changed（≤10）；定时器 unref 进程正常退出；
   断开后订阅全部解除
+
+### M8 · HTTP server（已完成）
+
+- 产出：router.ts（:param 匹配）、send-json.ts（gzip 判定 + content-length）、
+  error-envelope.ts（ApiError + 错误码全集）、server.ts 全量路由（sessions/详情/下钻/删除/
+  overview/providers-status/proxy/frida-status/config/scan/SSE）、server.test.ts
+  （contracts/api.md §8 六个契约测试 + gzip/信封/前台标记/SSE 接线）
+- 验收：六个契约测试全绿；≥1KB + gzip 带 content-encoding/vary；非 2xx 统一信封；
+  每个请求调 markForegroundRequest；cli.ts 已接 db/config/initialScanAndStore
+- 注意：server.test.ts 需要真实 HTTP 监听 127.0.0.1，沙箱内需提升权限运行
 
 ## 待决清单索引
 

@@ -1,8 +1,13 @@
 import { exec } from 'node:child_process';
 import type { Server } from 'node:http';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { createAgentObservabilityServer } from './server.js';
+import { openWritable } from './storage/db.js';
+import { loadLocalSessionConfig } from '../local-sessions/config.js';
+import { initialScanAndStore } from './watch/scan-scheduler.js';
 
 const DEFAULT_HOST = '127.0.0.1'; // G3.1：默认 host 必须用 127.0.0.1，不能用 localhost
 const DEFAULT_PORT = 4173;
@@ -44,7 +49,11 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
 
 export async function runCli(argv: readonly string[]): Promise<void> {
   const options = parseCliArgs(argv);
-  const server: Server = createAgentObservabilityServer({});
+  const dbPath = join(homedir(), '.agent-observe', 'data', 'observe.sqlite');
+  const db = openWritable(dbPath);
+  const config = loadLocalSessionConfig();
+  initialScanAndStore({ db, config });
+  const server: Server = createAgentObservabilityServer({ db, config, dbPath });
   await listen(server, options.port, options.host);
 
   const url = `http://${options.host}:${options.port}/`;
