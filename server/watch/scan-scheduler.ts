@@ -122,6 +122,19 @@ export async function scanLocalSessions(
 const SELECT_SESSION_SOURCE_SQL =
   'SELECT provider, source_path FROM sessions WHERE id = ?';
 
+/**
+ * T-11（REQ-022 / design D3）：详情解析失败的类型化错误。
+ * HTTP 层将其映射为 500 + `SESSION_PARSE_FAILED`，MUST NOT 返回 200 + 空数组（G5.6）。
+ */
+export class SessionParseError extends Error {
+  readonly code = 'SESSION_PARSE_FAILED' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionParseError';
+  }
+}
+
 /** REQ-015：惰性详情加载。sessions.detail_loaded = 0 时由 HTTP 层调用。 */
 export async function scanAndStoreDetail(
   db: Database,
@@ -142,9 +155,24 @@ export async function scanAndStoreDetail(
     notify: opts.notify,
     traeKeyPath: opts.config.traeKeyPath,
   };
-  // 门禁在最外层：跳过时零 IO 零 SQL 写入（F1.4）
-  const result = await scanner.scanFile(config, row.source_path, ctx);
-  return { key, eventCount: result.eventCount, skipped: result.skipped };
+  try {
+    // T-11：SQLite 多会话 provider 按「db 路径 + 行内 session id」定位单个会话；
+    // JSONL 类（单文件一会话）走原 scanFile。解析失败统一抛 SessionParseError。
+    const result =
+      scanner.scanSessionDetail !== undefined
+        ? await scanner.scanSessionDetail(config, row.source_path, key, ctx)
+        : await scanner.scanFile(config, row.source_path, ctx);
+    return { key, eventCount: result.eventCount, skipped: result.skipped };
+  } catch (err) {
+    if (err instanceof SessionParseError) {
+      throw err;
+    }
+    throw new SessionParseError(
+      `会话 ${key} 详情解析失败（${row.provider} @ ${row.source_path}）: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
 }
 
 /**

@@ -58,6 +58,7 @@ interface ApiError {
 | `PROXY_REQUEST_NOT_FOUND` | 404 | proxy 请求 id 不存在 |
 | `ROUTE_NOT_FOUND` | 404 | 路径未注册 |
 | `PROVIDER_DISABLED` | 409 | provider 在配置中被禁用 |
+| `SESSION_PARSE_FAILED` | 500 | 会话源数据解析失败（损坏/非本 provider 格式，G5.6） |
 | `PROXY_ALREADY_RUNNING` | 409 | 代理已在运行 |
 | `PROXY_NOT_RUNNING` | 409 | 代理未运行 |
 | `FRIDA_TARGET_NOT_FOUND` | 409 | 未发现 Trae 进程或 ai_agent.dll 未加载 |

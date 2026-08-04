@@ -1,7 +1,7 @@
 import { gunzipSync } from 'node:zlib';
 import http, { type IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -248,6 +248,25 @@ describe('API 契约（contracts/api.md §8）', () => {
     expect(r.status).toBe(404);
     const body = JSON.parse(r.text) as { error: { code: string; message: string } };
     expect(body.error.code).toBe('SESSION_NOT_FOUND');
+    expect(typeof body.error.message).toBe('string');
+  });
+
+  it('T-11：损坏的 SQLite 库详情返回非 2xx + SESSION_PARSE_FAILED，不是 200 + 空', async () => {
+    const userDir = mkdtempSync(join(tmpdir(), 'server-corrupt-'));
+    staticDirs.push(userDir);
+    const corruptDb = join(userDir, 'corrupt.db');
+    writeFileSync(corruptDb, 'definitely not a sqlite file, corrupt header bytes');
+    const { port } = await boot((db) => {
+      seedSession(db, 'opencode-corrupt000001', 'opencode');
+      db.prepare('UPDATE sessions SET detail_loaded = 0, source_path = ? WHERE id = ?').run(
+        corruptDb,
+        'opencode-corrupt000001',
+      );
+    });
+    const r = await request(port, 'GET', '/api/sessions/opencode-corrupt000001');
+    expect(r.status).toBe(500);
+    const body = JSON.parse(r.text) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('SESSION_PARSE_FAILED');
     expect(typeof body.error.message).toBe('string');
   });
 

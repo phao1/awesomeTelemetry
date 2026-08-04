@@ -35,7 +35,7 @@ import { addSseClient } from './realtime/sse.js';
 import { queueSessionChange } from './realtime/coalescer.js';
 import { eventBus } from './realtime/event-bus.js';
 import { markForegroundRequest } from './realtime/frontline.js';
-import { scanAndStoreDetail, scanLocalSessions } from './watch/scan-scheduler.js';
+import { scanAndStoreDetail, scanLocalSessions, SessionParseError } from './watch/scan-scheduler.js';
 import { Router } from './http/router.js';
 import { sendJson } from './http/send-json.js';
 import { sendApiError, type ErrorCode } from './http/error-envelope.js';
@@ -531,6 +531,11 @@ export function createAgentObservabilityServer(
       } catch (err) {
         if (err instanceof HttpError) {
           sendApiError(res, err.status, err.code, err.message, err.details, req);
+          return;
+        }
+        // T-11（REQ-022）：详情解析失败用专属错误码，MUST NOT 返回 200 + 空（G5.6）
+        if (err instanceof SessionParseError) {
+          sendApiError(res, 500, 'SESSION_PARSE_FAILED', err.message, undefined, req);
           return;
         }
         const message = err instanceof Error ? err.message : String(err);

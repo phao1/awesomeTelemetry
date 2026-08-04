@@ -13,13 +13,13 @@
 
 ## 2. SQLite 类 provider 详情解析（T-11，spec REQ-022）
 
-- [ ] 2.1 写测试：构造含 3 个会话的临时 SQLite（真实 DDL，**不 mock** better-sqlite3），逐个断言 `events.length > 0`
-- [ ] 2.2 写测试：损坏的库返回非 2xx + `SESSION_PARSE_FAILED`
-- [ ] 2.3 实现：按「db 路径 + 行内 session id」定位会话并解析事件
-- [ ] 2.4 复用 opencode adapter 的 dialect 参数覆盖 codearts / codeagent2（`project.md` §7）
-- [ ] 2.5 核对 G4.4：`cache.read` 累积值用 max、reasoning 用 sum
-- [ ] 2.6 实现错误码路径（D3），登记进 `contracts/api.md` §0.4 错误码全集
-- [ ] 2.7 验收：`GET /api/sessions/opencode-<真实key>` 与 `codearts-<真实key>` 均 `events.length > 0` 且 title 非空
+- [x] 2.1 写测试：构造含 3 个会话的临时 SQLite（真实 DDL，**不 mock** better-sqlite3），逐个断言 `events.length > 0`
+- [x] 2.2 写测试：损坏的库返回非 2xx + `SESSION_PARSE_FAILED`
+- [x] 2.3 实现：按「db 路径 + 行内 session id」定位会话并解析事件
+- [x] 2.4 复用 opencode adapter 的 dialect 参数覆盖 codearts / codeagent2（`project.md` §7）
+- [x] 2.5 核对 G4.4：`cache.read` 累积值用 max、reasoning 用 sum
+- [x] 2.6 实现错误码路径（D3），登记进 `contracts/api.md` §0.4 错误码全集
+- [x] 2.7 验收：`GET /api/sessions/opencode-<真实key>` 与 `codearts-<真实key>` 均 `events.length > 0` 且 title 非空
 
 ## 3. Proxy / Frida 控制路由（T-12，contracts/api.md §4 §5）
 
