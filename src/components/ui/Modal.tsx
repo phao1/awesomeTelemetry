@@ -1,7 +1,8 @@
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 import { IconClose } from '../icons/index.js';
 import { useFocusTrap } from './focus-trap.js';
+import { pushOverlay } from '../../keyboard.js';
 
 export interface ModalProps {
   title: string;
@@ -21,6 +22,7 @@ export function Modal({
 }: ModalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(containerRef, true, onClose);
+  useEffect(() => pushOverlay(onClose), [onClose]);
 
   return (
     <div
@@ -75,6 +77,7 @@ export interface DrawerProps {
 export function Drawer({ title, onClose, children, open, footer }: DrawerProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(containerRef, open, onClose);
+  useEffect(() => (open ? pushOverlay(onClose) : undefined), [open, onClose]);
 
   if (!open) {
     return <div className="ui-drawer" aria-hidden="true" />;
