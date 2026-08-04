@@ -4,10 +4,10 @@
 
 ## 1. 共享会话 store，修复对比视图（T-15，spec REQ-015）
 
-- [ ] 1.1 写测试：渲染 App，加载 3 条会话，切到 compare 视图，断言两个选择器各有 3 个选项
-- [ ] 1.2 会话索引提到 `App.tsx` 单一持有，删除 `SampleRail` 私有 `sessions` state
-- [ ] 1.3 `SessionList` 改为受控组件（props 传入 items / 分页回调）
-- [ ] 1.4 SSE patch、滚动分页、对比选择器全部读同一份（G7.6：不得有第二份会话数组）
+- [x] 1.1 写测试：渲染 App，加载 3 条会话，切到 compare 视图，断言两个选择器各有 3 个选项
+- [x] 1.2 会话索引提到 `App.tsx` 单一持有，删除 `SampleRail` 私有 `sessions` state
+- [x] 1.3 `SessionList` 改为受控组件（props 传入 items / 分页回调）
+- [x] 1.4 SSE patch、滚动分页、对比选择器全部读同一份（G7.6：不得有第二份会话数组）
 - [ ] 1.5 验收：启动后直接点 compare，两个选择器已填充，选中两条能出结果
 
 ## 2. 四态与消灭空 catch（T-16，design-system REQ-006 + frontend REQ-022）

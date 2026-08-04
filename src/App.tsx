@@ -23,7 +23,7 @@ import { mergeSessionsPatch } from './core/list-utils.js';
 import { localSamples } from './generated/local-samples.js';
 import { LanguageToggle } from './components/LanguageToggle.js';
 import { LiveIndicator } from './components/LiveIndicator.js';
-import { SampleRail } from './components/SampleRail.js';
+import { SessionList } from './components/SessionList.js';
 import { SessionHeaderCard } from './components/SessionHeaderCard.js';
 import { PhaseTiles } from './components/PhaseTiles.js';
 import { TraceGanttTree } from './components/TraceGanttTree.js';
@@ -50,6 +50,11 @@ export default function App() {
   const theme = useTheme();
   const [live, setLive] = useState(false);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
+  const [sessionCursor, setSessionCursor] = useState<string | null>(null);
+  const [hasMoreSessions, setHasMoreSessions] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [offlineSamples, setOfflineSamples] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetailResponse | null>(null);
   const [pending, setPending] = useState(false);
@@ -72,6 +77,49 @@ export default function App() {
   const switchView = useCallback((next: View) => {
     startTransition(() => setView(next)); // REQ-002：视图切换用 startTransition
   }, []);
+
+  // REQ-015（G7.6）：会话索引由 App 单一持有，SessionList/CompareBoard 全部读这一份
+  const loadSessions = useCallback(
+    async (nextCursor?: string) => {
+      setSessionsLoading(true);
+      try {
+        const result = await api.listSessions({
+          dataSource: 'scan',
+          limit: 50,
+          cursor: nextCursor,
+        });
+        startTransition(() => {
+          setSessions((prev) => mergeSessionsPatch(prev, result.items));
+        });
+        setSessionCursor(result.nextCursor);
+        setHasMoreSessions(result.hasMore);
+        setSessionsError(null);
+        setOfflineSamples(false);
+      } catch (err) {
+        console.error('[sessions] 列表加载失败:', err);
+        setSessionsError(err instanceof Error ? err.message : String(err));
+        // REQ-014：API 不可用时用本地样本兜底，状态栏显示「离线样本」
+        startTransition(() => {
+          setSessions((prev) => (prev.length === 0 ? [...localSamples] : prev));
+        });
+        setOfflineSamples(true);
+      } finally {
+        setSessionsLoading(false);
+      }
+    },
+    [],
+  );
+
+  const loadMoreSessions = useCallback(() => {
+    if (!hasMoreSessions || sessionsLoading) {
+      return;
+    }
+    void loadSessions(sessionCursor ?? undefined);
+  }, [hasMoreSessions, sessionsLoading, sessionCursor, loadSessions]);
+
+  useEffect(() => {
+    void loadSessions();
+  }, [loadSessions]);
 
   // REQ-004：SSE 局部 patch——失效缓存 + 一次 keys 批量补丁，不重拉全量
   useEffect(() => {
@@ -191,17 +239,6 @@ export default function App() {
     [selectedKey],
   );
 
-  const fallbackLoad = useCallback(
-    (params: { dataSource: 'scan'; limit: number; cursor?: string }) =>
-      api.listSessions(params).catch(() => ({
-        items: localSamples,
-        nextCursor: null,
-        hasMore: false,
-        total: localSamples.length,
-      })),
-    [],
-  );
-
   return (
     <div className="app">
       <nav className="toolbar">
@@ -239,7 +276,18 @@ export default function App() {
 
       {view === 'session' && (
         <div className="view-body">
-          <SampleRail selectedId={selectedKey} onSelect={selectSession} locale={locale} load={fallbackLoad} />
+          <SessionList
+            items={sessions}
+            selectedId={selectedKey}
+            onSelect={selectSession}
+            locale={locale}
+            hasMore={hasMoreSessions}
+            loading={sessionsLoading}
+            error={sessionsError}
+            onLoadMore={loadMoreSessions}
+            onRetry={() => void loadSessions()}
+            offlineSamples={offlineSamples}
+          />
           <main className="main">
             {pending && <p className="hint">{t('pending.decrypting', locale)}</p>}
             {detail !== null && !pending && (

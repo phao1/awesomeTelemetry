@@ -1,82 +1,62 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { SessionIndexEntry } from '../core/trace-types.js';
 import { useVirtualList } from '../hooks/useVirtualList.js';
-import { api, type SessionListResponse } from '../api/client.js';
+import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 
-export interface SampleRailProps {
+export interface SessionListProps {
+  /** REQ-015（G7.6）：会话索引由 App 单一持有，本组件是纯受控组件。 */
+  items: SessionIndexEntry[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   locale: Locale;
-  load?: (params: { dataSource: 'scan'; limit: number; cursor?: string }) => Promise<SessionListResponse>;
+  hasMore: boolean;
+  loading: boolean;
+  error?: string | null;
+  onLoadMore: () => void;
+  onRetry: () => void;
+  offlineSamples: boolean;
 }
 
-/** REQ-008：左侧会话选择器（虚拟滚动 + 搜索/provider 过滤）。 */
-export function SampleRail({ selectedId, onSelect, locale, load = api.listSessions }: SampleRailProps) {
-  const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(false);
+/** REQ-008：左侧会话选择器（虚拟滚动 + 搜索/provider 过滤，受控）。 */
+export function SessionList({
+  items,
+  selectedId,
+  onSelect,
+  locale,
+  hasMore,
+  loading,
+  error,
+  onLoadMore,
+  onRetry,
+  offlineSamples,
+}: SessionListProps): React.JSX.Element {
   const [search, setSearch] = useState('');
   const [provider, setProvider] = useState('');
-  const [loading, setLoading] = useState(false);
-  const firstLoadRef = useRef(false);
-
-  const fetchPage = useCallback(
-    async (nextCursor?: string) => {
-      setLoading(true);
-      try {
-        const result = await load({ dataSource: 'scan', limit: 50, cursor: nextCursor });
-        setSessions((prev) => {
-          const byId = new Map(prev.map((s) => [s.id, s]));
-          for (const item of result.items) {
-            byId.set(item.id, item);
-          }
-          return [...byId.values()];
-        });
-        setCursor(result.nextCursor);
-        setHasMore(result.hasMore);
-      } catch {
-        // 列表加载失败保留旧数据
-      } finally {
-        setLoading(false);
-      }
-    },
-    [load],
-  );
-
-  useEffect(() => {
-    if (!firstLoadRef.current) {
-      firstLoadRef.current = true;
-      void fetchPage();
-    }
-  }, [fetchPage]);
 
   const filtered = useMemo(
     () =>
-      sessions.filter(
+      items.filter(
         (s) =>
           (search === '' ||
             s.title.toLowerCase().includes(search.toLowerCase()) ||
             s.id.toLowerCase().includes(search.toLowerCase())) &&
           (provider === '' || s.provider === provider),
       ),
-    [sessions, search, provider],
+    [items, search, provider],
   );
 
   const { containerRef, range, onScroll } = useVirtualList(filtered.length, 28);
 
   useEffect(() => {
     if (hasMore && range.endIndex >= filtered.length - 10 && !loading) {
-      void fetchPage(cursor ?? undefined);
+      onLoadMore();
     }
-  }, [range.endIndex, filtered.length, hasMore, loading, cursor, fetchPage]);
+  }, [range.endIndex, filtered.length, hasMore, loading, onLoadMore]);
 
-  const providers = useMemo(
-    () => [...new Set(sessions.map((s) => s.provider))].sort(),
-    [sessions],
-  );
+  const providers = useMemo(() => [...new Set(items.map((s) => s.provider))].sort(), [items]);
 
   return (
     <aside className="rail">
@@ -94,6 +74,26 @@ export function SampleRail({ selectedId, onSelect, locale, load = api.listSessio
           </option>
         ))}
       </select>
+      {error !== null && error !== undefined && (
+        <ErrorState code="LIST_LOAD_FAILED" message={error} onRetry={onRetry} />
+      )}
+      {loading && items.length === 0 && (
+        <div style={{ padding: 'var(--space-2)' }}>
+          <Skeleton variant="row" count={6} />
+        </div>
+      )}
+      {!loading && items.length === 0 && (
+        <EmptyState
+          icon={<span aria-hidden="true" />}
+          title={t('common.empty', locale)}
+          description={offlineSamples ? t('state.offlineSamples', locale) : undefined}
+          action={
+            <button type="button" className="btn" onClick={onRetry}>
+              {t('common.retry', locale)}
+            </button>
+          }
+        />
+      )}
       <div
         ref={containerRef}
         className="rail-list"
@@ -116,7 +116,7 @@ export function SampleRail({ selectedId, onSelect, locale, load = api.listSessio
           </div>
         </div>
       </div>
-      {loading && <div className="hint">{t('common.loading', locale)}</div>}
+      {loading && items.length > 0 && <div className="hint">{t('common.loading', locale)}</div>}
     </aside>
   );
 }
