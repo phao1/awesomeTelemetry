@@ -20,7 +20,8 @@
 | M9 | core 分析 | ✅ 完成 | （待提交） |
 | M9 | core 分析 | ✅ 完成 | a8c5881 |
 | M10 | 前端（a–d） | ✅ 完成 | （待提交） |
-| M11 | proxy/frida/trae（按 P-3 裁剪） | ⬜ 未开始 | — |
+| M10 | 前端（a–d） | ✅ 完成 | f059def |
+| M11 | proxy/frida/trae（按 P-3 裁剪） | ✅ 完成 | （待提交） |
 | M12 | CLI / build / 打包 | ⬜ 未开始 | — |
 
 ## 里程碑明细
@@ -111,6 +112,17 @@
   SSE 批量 patch 不重拉全量（mergeSessionsPatch 测试）；i18n 键完全对齐（测试）；
   npm run build 三阶段通过
 - 说明：compare 视图依赖 POST /api/compare，M8 后补的路由已加（server.ts）
+
+### M11 · proxy/frida/trae（按 P-3 裁剪，已完成）
+
+- 产出：desensitization（rules.ts 10 条 + engine.ts lastIndex 重置/预算守卫/对象脱敏）、
+  proxy 纯逻辑（request-context / sse-accumulator / parser-router + openai+anthropic+trae-tunnel
+  parsers / proxy-writer / ca-manager node-forge 兜底）、环境脚手架（mitm-proxy / cdp-capture /
+  frida-capture，P-3 生成但不端到端验证）、scripts（trae-extract-key.py / frida-chat-monitor-v2.js /
+  frida-check-module.js）、/api/desensitization/rules GET+PUT（原子写）+ 测试
+- 验收：10 条规则全部有用例；global regex 每次 reset lastIndex（测试）；keepRawBodies 默认 false；
+  proxy 列表不返回 body 列（M8 契约测试）；解密走 spawn 异步 + 指纹缓存（M6 trae-bridge）
+- P-3 说明：MITM/CDP/Frida 需 Windows/真实环境，脚手架保留接线骨架，未做 e2e 验证（如实记录）
 
 ## 待决清单索引
 

@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { dirname, join } from 'node:path';
 
 import type { Database } from 'better-sqlite3';
 
@@ -38,6 +39,8 @@ import { scanAndStoreDetail, scanLocalSessions } from './watch/scan-scheduler.js
 import { Router } from './http/router.js';
 import { sendJson } from './http/send-json.js';
 import { sendApiError, type ErrorCode } from './http/error-envelope.js';
+import { resolveRules } from './desensitization/rules.js';
+import { shouldKeepRawBodies } from './desensitization/engine.js';
 
 const DEV_ONLY_ROUTES = [
   '/api/cdp/start',
@@ -53,7 +56,20 @@ export interface AgentObservabilityServerOptions {
   detailCache?: DetailCache;
   projectConfigPath?: string;
   userConfigPath?: string;
+  rulesPath?: string;
 }
+
+interface DesensitizationOverride {
+  enabled: string[];
+  disabled: string[];
+  keepRawBodies: boolean;
+}
+
+const EMPTY_OVERRIDE: DesensitizationOverride = {
+  enabled: [],
+  disabled: [],
+  keepRawBodies: false,
+};
 
 export interface HealthResponse {
   ok: true;
@@ -129,6 +145,11 @@ export function createAgentObservabilityServer(
 ): Server {
   const { db, config } = opts;
   const dbPath = opts.dbPath ?? '';
+  const rulesPath =
+    opts.rulesPath ??
+    (opts.userConfigPath !== undefined
+      ? join(dirname(opts.userConfigPath), 'desensitization-rules.json')
+      : 'desensitization-rules.json');
   const detailCache = opts.detailCache ?? new DetailCache();
   const startedAt = Date.now();
   let scanInProgress = false;
@@ -364,6 +385,35 @@ export function createAgentObservabilityServer(
     sendJson(res, 200, config, _req);
   });
 
+  router.register('GET', '/api/desensitization/rules', (_req, res) => {
+    const override = loadRulesOverride(rulesPath);
+    sendJson(
+      res,
+      200,
+      { rules: resolveRules(override), keepRawBodies: shouldKeepRawBodies(override) },
+      _req,
+    );
+  });
+
+  router.register('PUT', '/api/desensitization/rules', async (req, res) => {
+    const body = await readJsonBody(req);
+    const enabled = Array.isArray(body.enabled) ? (body.enabled as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+    const disabled = Array.isArray(body.disabled) ? (body.disabled as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+    const keepRawBodies = typeof body.keepRawBodies === 'boolean' ? body.keepRawBodies : false;
+    const override: DesensitizationOverride = { enabled, disabled, keepRawBodies };
+    // REQ-005：PUT 必须原子写
+    mkdirSync(dirname(rulesPath), { recursive: true });
+    const tmp = `${rulesPath}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify(override, null, 2), 'utf8');
+    renameSync(tmp, rulesPath);
+    sendJson(
+      res,
+      200,
+      { rules: resolveRules(override), keepRawBodies: shouldKeepRawBodies(override) },
+      req,
+    );
+  });
+
   router.register('PUT', '/api/config/providers', async (req, res) => {
     const body = await readJsonBody(req);
     if (typeof body.providers !== 'object' || body.providers === null) {
@@ -495,4 +545,20 @@ function loadProjectConfig(projectConfigPath?: string): LocalSessionConfig | nul
     return null;
   }
   return JSON.parse(readFileSync(projectConfigPath, 'utf8')) as LocalSessionConfig;
+}
+
+function loadRulesOverride(rulesPath: string): DesensitizationOverride {
+  if (!existsSync(rulesPath)) {
+    return EMPTY_OVERRIDE;
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(rulesPath, 'utf8')) as Partial<DesensitizationOverride>;
+    return {
+      enabled: Array.isArray(parsed.enabled) ? parsed.enabled : [],
+      disabled: Array.isArray(parsed.disabled) ? parsed.disabled : [],
+      keepRawBodies: parsed.keepRawBodies === true,
+    };
+  } catch {
+    return EMPTY_OVERRIDE;
+  }
 }

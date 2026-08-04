@@ -335,4 +335,41 @@ describe('HTTP 行为（api.md §0.2/§0.3/§0.6）', () => {
     };
     expect(saved.providers.codex.enabled).toBe(false);
   });
+
+  it('GET/PUT /api/desensitization/rules：10 条规则 + 原子写覆盖', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'server-rules-'));
+    const rulesPath = join(dir, 'rules.json');
+    const db = new Database(':memory:');
+    initSchema(db);
+    const server = createAgentObservabilityServer({
+      db,
+      config: TEST_CONFIG,
+      rulesPath,
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const get = await request(port, 'GET', '/api/desensitization/rules');
+    expect(get.status).toBe(200);
+    const body = JSON.parse(get.text) as { rules: unknown[]; keepRawBodies: boolean };
+    expect(body.rules).toHaveLength(10);
+    expect(body.keepRawBodies).toBe(false);
+
+    const put = await request(port, 'PUT', '/api/desensitization/rules', {
+      body: JSON.stringify({ disabled: ['email'], keepRawBodies: true }),
+    });
+    expect(put.status).toBe(200);
+    const after = JSON.parse(put.text) as {
+      rules: Array<{ id: string; enabled: boolean }>;
+      keepRawBodies: boolean;
+    };
+    expect(after.keepRawBodies).toBe(true);
+    expect(after.rules.find((r) => r.id === 'email')?.enabled).toBe(false);
+
+    const { existsSync, readFileSync } = await import('node:fs');
+    expect(existsSync(rulesPath)).toBe(true);
+    expect(JSON.parse(readFileSync(rulesPath, 'utf8')).keepRawBodies).toBe(true);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    rmSync(dir, { recursive: true, force: true });
+  });
 });
