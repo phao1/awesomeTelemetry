@@ -494,7 +494,14 @@ export default function App() {
       {view === 'agent' && (
         <div className="view-body">
           <main className="main">
-            <AgentOverview locale={locale} />
+            <AgentOverview
+              locale={locale}
+              sessions={sessions}
+              onSelectSession={(key) => {
+                switchView('session');
+                selectSession(key);
+              }}
+            />
           </main>
         </div>
       )}

@@ -19,6 +19,10 @@ export interface TableProps<T> {
   sort?: { key: string; direction: 'asc' | 'desc' } | null;
   onSort?: (key: string) => void;
   className?: string;
+  /** REQ-018：行展开（复用共享 store，G11.9 禁逐行 fetch）。 */
+  expandedKey?: string | null;
+  onToggleExpand?: (key: string) => void;
+  renderExpand?: (row: T) => ReactNode;
 }
 
 /** REQ-005：Table。compact 密度、sticky 表头、可排序。 */
@@ -30,12 +34,17 @@ export function Table<T>({
   sort,
   onSort,
   className,
+  expandedKey,
+  onToggleExpand,
+  renderExpand,
 }: TableProps<T>): React.JSX.Element {
   const classes = ['ui-table', `ui-table-${density}`, className ?? ''].filter(Boolean).join(' ');
+  const expandable = renderExpand !== undefined && onToggleExpand !== undefined;
   return (
     <table className={classes}>
       <thead>
         <tr>
+          {expandable && <th style={{ width: 'var(--space-4)' }} aria-label="expand" />}
           {columns.map((column) => {
             const active = sort?.key === column.key;
             const label = (
@@ -77,17 +86,31 @@ export function Table<T>({
           })}
         </tr>
       </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={rowKey(row)}>
+      {rows.map((row) => (
+        <tbody key={rowKey(row)}>
+          <tr>
+            {expandable && (
+              <td style={{ textAlign: 'left' }}>
+                <button
+                  type="button"
+                  className="ui-table-sort"
+                  aria-label="expand"
+                  aria-expanded={expandedKey === rowKey(row)}
+                  onClick={() => onToggleExpand!(rowKey(row))}
+                >
+                  {expandedKey === rowKey(row) ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                </button>
+              </td>
+            )}
             {columns.map((column) => (
               <td key={column.key} style={{ textAlign: column.align ?? 'left' }}>
                 {column.render(row)}
               </td>
             ))}
           </tr>
-        ))}
-      </tbody>
+          {expandable && expandedKey === rowKey(row) && renderExpand!(row)}
+        </tbody>
+      ))}
     </table>
   );
 }
