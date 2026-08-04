@@ -266,7 +266,7 @@ data: {"provider":"all","count":524}
 |------|------|------|
 | `/api/proxy/start` | POST | body `{ port?: number }`；已运行返回 409 `PROXY_ALREADY_RUNNING` |
 | `/api/proxy/stop` | POST | 未运行返回 409 `PROXY_NOT_RUNNING` |
-| `/api/proxy/status` | GET | `{ running: boolean, port: number \| null, requestCount: number, startedAt: string \| null }` |
+| `/api/proxy/status` | GET | `{ running: boolean, starting: boolean, port: number \| null, requestCount: number, startedAt: string \| null }`（D4：异步启动期间 `starting=true`） |
 | `/api/proxy/requests` | GET | 列表，返回 `ProxyRequestListItem[]`，**排除全部 4 个 body 列与 systemPrompt 正文** |
 | `/api/proxy/requests/:id` | GET | 完整 `ProxyRequest`，含 body |
 | `/api/ca-cert` | GET | `application/x-pem-file`，下载 CA 证书 |
@@ -281,7 +281,7 @@ data: {"provider":"all","count":524}
 |------|------|------|
 | `/api/frida/start` | POST | body `{ pid?: number }`，省略则自动发现；失败 409 `FRIDA_TARGET_NOT_FOUND` |
 | `/api/frida/stop` | POST | |
-| `/api/frida/status` | GET | `{ running: boolean, pid: number \| null }` |
+| `/api/frida/status` | GET | `{ running: boolean, starting: boolean, pid: number \| null }` |
 | `/api/frida/captures` | GET | 分页列表，`jsonData` 截断至 500 字符 |
 | `/api/frida/captures/:id` | GET | 完整记录 |
 

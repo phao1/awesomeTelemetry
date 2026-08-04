@@ -33,7 +33,7 @@ interface MitmHandlerContext {
   onError?: (cb: (err: Error) => void) => void;
 }
 
-interface ProxyServerLike {
+export interface ProxyServerLike {
   onRequest(cb: (ctx: MitmHandlerContext, callback: () => void) => void): void;
   onError(cb: (err: Error) => void): void;
   listen(opts: { port: number }, cb: () => void): void;

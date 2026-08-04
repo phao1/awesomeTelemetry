@@ -23,11 +23,11 @@
 
 ## 3. Proxy / Frida 控制路由（T-12，contracts/api.md §4 §5）
 
-- [ ] 3.1 写测试：start → `status.running=true` → 重复 start 得 409 `PROXY_ALREADY_RUNNING` → stop → 重复 stop 得 409 `PROXY_NOT_RUNNING`
-- [ ] 3.2 实现 `POST /api/proxy/start`（body `{ port?: number }`）与 `POST /api/proxy/stop`
-- [ ] 3.3 实现 `POST /api/frida/start`（body `{ pid?: number }`，省略则自动发现，失败 409 `FRIDA_TARGET_NOT_FOUND`）与 `POST /api/frida/stop`
-- [ ] 3.4 启动异步化（D4）：handler 立即返回，`status` 增加 `starting` 态，就绪由 SSE 通知
-- [ ] 3.5 验收：`curl -X POST localhost:4213/api/proxy/start -d '{"port":8888}'` 返回 2xx，`GET /api/proxy/status` 显示 running
+- [x] 3.1 写测试：start → `status.running=true` → 重复 start 得 409 `PROXY_ALREADY_RUNNING` → stop → 重复 stop 得 409 `PROXY_NOT_RUNNING`
+- [x] 3.2 实现 `POST /api/proxy/start`（body `{ port?: number }`）与 `POST /api/proxy/stop`
+- [x] 3.3 实现 `POST /api/frida/start`（body `{ pid?: number }`，省略则自动发现，失败 409 `FRIDA_TARGET_NOT_FOUND`）与 `POST /api/frida/stop`
+- [x] 3.4 启动异步化（D4）：handler 立即返回，`status` 增加 `starting` 态，就绪由 SSE 通知
+- [x] 3.5 验收：`curl -X POST localhost:4213/api/proxy/start -d '{"port":8888}'` 返回 2xx，`GET /api/proxy/status` 显示 running
 
 ## 4. 阶段收口
 

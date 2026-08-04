@@ -42,6 +42,12 @@ import { sendApiError, type ErrorCode } from './http/error-envelope.js';
 import { serveStatic } from './http/static.js';
 import { resolveRules } from './desensitization/rules.js';
 import { shouldKeepRawBodies } from './desensitization/engine.js';
+import {
+  FridaRuntime,
+  FridaTargetError,
+  ProxyRuntime,
+  ProxyStateError,
+} from './proxy/controller.js';
 
 const DEV_ONLY_ROUTES = [
   '/api/cdp/start',
@@ -157,6 +163,13 @@ export function createAgentObservabilityServer(
   const detailCache = opts.detailCache ?? new DetailCache();
   const startedAt = Date.now();
   let scanInProgress = false;
+  // T-12（D4）：proxy/frida 运行时状态机，异步启动由 SSE 通知
+  const proxyRuntime = new ProxyRuntime(db, (payload) => {
+    eventBus.emit('proxy_status', payload);
+  });
+  const fridaRuntime = new FridaRuntime((payload) => {
+    eventBus.emit('frida_status', payload);
+  });
 
   const router = new Router();
 
@@ -356,12 +369,46 @@ export function createAgentObservabilityServer(
   });
 
   router.register('GET', '/api/proxy/status', (_req, res) => {
-    const count = cachedStmt(db, 'SELECT COUNT(*) AS c FROM proxy_requests').get() as { c: number };
-    sendJson(res, 200, { running: false, port: null, requestCount: count.c, startedAt: null }, _req);
+    sendJson(res, 200, proxyRuntime.status(), _req);
+  });
+
+  router.register('POST', '/api/proxy/start', async (req, res) => {
+    const body = await readJsonBody(req);
+    const rawPort = body.port;
+    let port: number | undefined;
+    if (rawPort !== undefined) {
+      if (typeof rawPort !== 'number' || !Number.isInteger(rawPort) || rawPort < 1 || rawPort > 65535) {
+        throw new HttpError(400, 'BAD_REQUEST', 'port 必须是 1-65535 的整数');
+      }
+      port = rawPort;
+    }
+    // D4：handler 立即返回 starting 态，不阻塞事件循环
+    sendJson(res, 200, proxyRuntime.start({ port }), req);
+  });
+
+  router.register('POST', '/api/proxy/stop', (_req, res) => {
+    sendJson(res, 200, proxyRuntime.stop(), _req);
   });
 
   router.register('GET', '/api/frida/status', (_req, res) => {
-    sendJson(res, 200, { running: false, pid: null }, _req);
+    sendJson(res, 200, fridaRuntime.status(), _req);
+  });
+
+  router.register('POST', '/api/frida/start', async (req, res) => {
+    const body = await readJsonBody(req);
+    const rawPid = body.pid;
+    let pid: number | undefined;
+    if (rawPid !== undefined) {
+      if (typeof rawPid !== 'number' || !Number.isInteger(rawPid) || rawPid <= 0) {
+        throw new HttpError(400, 'BAD_REQUEST', 'pid 必须是正整数');
+      }
+      pid = rawPid;
+    }
+    sendJson(res, 200, await fridaRuntime.start({ pid }), req);
+  });
+
+  router.register('POST', '/api/frida/stop', (_req, res) => {
+    sendJson(res, 200, fridaRuntime.stop(), _req);
   });
 
   router.register('GET', '/api/frida/captures', (_req, res) => {
@@ -536,6 +583,15 @@ export function createAgentObservabilityServer(
         // T-11（REQ-022）：详情解析失败用专属错误码，MUST NOT 返回 200 + 空（G5.6）
         if (err instanceof SessionParseError) {
           sendApiError(res, 500, 'SESSION_PARSE_FAILED', err.message, undefined, req);
+          return;
+        }
+        // T-12（api.md §4/§5）：proxy/frida 状态冲突与目标未找到用专属错误码
+        if (err instanceof ProxyStateError) {
+          sendApiError(res, 409, err.code, err.message, undefined, req);
+          return;
+        }
+        if (err instanceof FridaTargetError) {
+          sendApiError(res, 409, 'FRIDA_TARGET_NOT_FOUND', err.message, undefined, req);
           return;
         }
         const message = err instanceof Error ? err.message : String(err);

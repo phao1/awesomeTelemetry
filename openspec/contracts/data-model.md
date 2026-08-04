@@ -466,6 +466,8 @@ export interface BusEvents {
   scan_started: { provider: ProviderKey | 'all' };
   scan_completed: { provider: ProviderKey | 'all'; count: number };
   proxy_request: { id: number; hostname: string };
+  /** proxy 异步启动/停止状态（D4：starting → running / idle），就绪由该事件通知。 */
+  proxy_status: { running: boolean; starting: boolean; port?: number | null; error?: string | null };
   /** 服务端已按 100ms 窗口拼接，前端无需再节流。 */
   proxy_stream_chunk: { requestId: string; chunk: string };
   frida_capture: { id: number; model?: string; sessionId?: string };

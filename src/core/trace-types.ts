@@ -412,6 +412,8 @@ export interface BusEvents {
   scan_started: { provider: ProviderKey | 'all' };
   scan_completed: { provider: ProviderKey | 'all'; count: number };
   proxy_request: { id: number; hostname: string };
+  /** D4：proxy 启动/停止的异步状态通知（starting → running / idle）。 */
+  proxy_status: { running: boolean; starting: boolean; port?: number | null; error?: string | null };
   /** 服务端已按 100ms 窗口拼接，前端无需再节流。 */
   proxy_stream_chunk: { requestId: string; chunk: string };
   frida_capture: { id: number; model?: string; sessionId?: string };

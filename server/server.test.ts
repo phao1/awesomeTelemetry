@@ -1,6 +1,6 @@
 import { gunzipSync } from 'node:zlib';
 import http, { type IncomingHttpHeaders } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -153,6 +153,32 @@ function seedProxy(db: Db): void {
   );
 }
 
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createNetServer();
+    srv.once('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address() as AddressInfo;
+      srv.close(() => resolve(port));
+    });
+  });
+}
+
+async function waitFor(
+  fn: () => Promise<boolean>,
+  timeoutMs = 3000,
+  intervalMs = 40,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await fn()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error('waitFor 超时');
+}
+
 async function boot(seed?: (db: Db) => void, distDir?: string): Promise<BootResult> {
   const db = new Database(':memory:');
   initSchema(db);
@@ -268,6 +294,57 @@ describe('API 契约（contracts/api.md §8）', () => {
     const body = JSON.parse(r.text) as { error: { code: string; message: string } };
     expect(body.error.code).toBe('SESSION_PARSE_FAILED');
     expect(typeof body.error.message).toBe('string');
+  });
+
+  it('T-12：proxy start → running → 重复 start 409 → stop → 重复 stop 409', async () => {
+    const { port } = await boot();
+    const proxyPort = await freePort();
+
+    const started = await request(port, 'POST', '/api/proxy/start', {
+      body: JSON.stringify({ port: proxyPort }),
+    });
+    expect(started.status).toBe(200);
+    const startedBody = JSON.parse(started.text) as { running: boolean; starting: boolean };
+    expect(startedBody.running).toBe(false);
+    expect(startedBody.starting).toBe(true);
+
+    await waitFor(async () => {
+      const r = await request(port, 'GET', '/api/proxy/status');
+      return (JSON.parse(r.text) as { running: boolean }).running;
+    });
+    const running = JSON.parse((await request(port, 'GET', '/api/proxy/status')).text) as {
+      running: boolean;
+      port: number | null;
+    };
+    expect(running.running).toBe(true);
+    expect(running.port).toBe(proxyPort);
+
+    const dup = await request(port, 'POST', '/api/proxy/start');
+    expect(dup.status).toBe(409);
+    expect((JSON.parse(dup.text) as { error: { code: string } }).error.code).toBe(
+      'PROXY_ALREADY_RUNNING',
+    );
+
+    const stopped = await request(port, 'POST', '/api/proxy/stop');
+    expect(stopped.status).toBe(200);
+    expect((JSON.parse(stopped.text) as { running: boolean }).running).toBe(false);
+
+    const dupStop = await request(port, 'POST', '/api/proxy/stop');
+    expect(dupStop.status).toBe(409);
+    expect((JSON.parse(dupStop.text) as { error: { code: string } }).error.code).toBe(
+      'PROXY_NOT_RUNNING',
+    );
+  });
+
+  it('T-12：frida 自动发现在非 Windows 平台返回 409 FRIDA_TARGET_NOT_FOUND', async () => {
+    const { port } = await boot();
+    const r = await request(port, 'POST', '/api/frida/start', { body: '{}' });
+    expect(r.status).toBe(409);
+    expect((JSON.parse(r.text) as { error: { code: string } }).error.code).toBe(
+      'FRIDA_TARGET_NOT_FOUND',
+    );
+    const stopped = await request(port, 'POST', '/api/frida/stop');
+    expect(stopped.status).toBe(200);
   });
 
   it('agent-overview 单请求返回全部 provider', async () => {
