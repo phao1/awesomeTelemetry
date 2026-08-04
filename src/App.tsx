@@ -27,6 +27,9 @@ import { LanguageToggle } from './components/LanguageToggle.js';
 import { LiveIndicator } from './components/LiveIndicator.js';
 import { SessionList } from './components/SessionList.js';
 import { SessionHeaderCard } from './components/SessionHeaderCard.js';
+import { SessionFindings } from './components/SessionFindings.js';
+import { TimeCompositionBar } from './components/TimeCompositionBar.js';
+import { ContextBar } from './components/ContextBar.js';
 import { PhaseRibbon } from './components/PhaseRibbon.js';
 import { PhaseTiles } from './components/PhaseTiles.js';
 import { TraceTimeline } from './components/TraceTimeline.js';
@@ -58,8 +61,13 @@ import {
 import { HelpModal } from './components/HelpModal.js';
 import { parseHash, serializeHash, type HashState } from './hash-router.js';
 import type { CommandPaletteProps } from './components/CommandPalette.js';
+import { computeFindings, type Finding } from './core/session-findings.js';
+import { fmtDur } from './core/session-findings.js';
+import { computeTimeComposition, TIME_TOOL_KINDS, type TimeSegmentKey } from './core/time-composition.js';
 
 const PAGE_SIZE = 2000;
+/** 首帧 hash 在模块加载时解析一次：避免 state→hash 写入 effect 先把它覆盖掉。 */
+const INITIAL_HASH = parseHash(window.location.hash);
 
 interface PaletteModule {
   CommandPalette: (props: CommandPaletteProps) => React.JSX.Element;
@@ -67,7 +75,7 @@ interface PaletteModule {
 
 /** REQ-001：五视图 shell，App.tsx 是唯一 stateful shell。 */
 export default function App() {
-  const [view, setView] = useState<AppView>('session');
+  const [view, setView] = useState<AppView>(() => INITIAL_HASH?.view ?? 'session');
   const [locale, setLocaleState] = useState<Locale>(() => getStoredLocale());
   const theme = useTheme();
   const [live, setLive] = useState(false);
@@ -80,12 +88,27 @@ export default function App() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [offlineSamples, setOfflineSamples] = useState(false);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(() => INITIAL_HASH?.key ?? null);
   const [detail, setDetail] = useState<SessionDetailResponse | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [phaseFilter, setPhaseFilter] = useState<TracePhase[]>([...TRACE_PHASES]);
+  const [phaseFilter, setPhaseFilter] = useState<TracePhase[]>(() => {
+    const phases = INITIAL_HASH?.phase;
+    if (phases === undefined) {
+      return [...TRACE_PHASES];
+    }
+    const valid = phases.filter((phase): phase is TracePhase =>
+      (TRACE_PHASES as readonly string[]).includes(phase),
+    );
+    return valid.length > 0 ? valid : [...TRACE_PHASES];
+  });
   const deferredPhaseFilter = useDeferredValue(phaseFilter); // REQ-002
+  const [timeSegmentFilter, setTimeSegmentFilter] = useState<TimeSegmentKey | null>(null);
+  const [semanticGroup, setSemanticGroup] = useState(true);
+  const [sessionContextVisible, setSessionContextVisible] = useState(false);
+  const [sessionAnchor, setSessionAnchor] = useState('session-findings');
+  const timelineActions = useRef<{ collapseAll: () => void; expandAll: () => void } | null>(null);
+  const sessionScrollRef = useRef<HTMLDivElement | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<TraceEventSlim | null>(null);
   const [detailPage, setDetailPage] = useState(0);
   // REQ-026：布局偏好持久化（读取时范围校验）
@@ -111,10 +134,14 @@ export default function App() {
   const [PaletteComponent, setPaletteComponent] = useState<PaletteModule['CommandPalette'] | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [cursorIndex, setCursorIndex] = useState(0);
-  const [providerFilter, setProviderFilter] = useState<ProviderKey[]>([]);
-  const [statusFilter, setStatusFilter] = useState<TraceStatus[]>([]);
-  const [compareLeft, setCompareLeft] = useState('');
-  const [compareRight, setCompareRight] = useState('');
+  const [providerFilter, setProviderFilter] = useState<ProviderKey[]>(
+    () => (INITIAL_HASH?.provider as ProviderKey[]) ?? [],
+  );
+  const [statusFilter, setStatusFilter] = useState<TraceStatus[]>(
+    () => (INITIAL_HASH?.status as TraceStatus[]) ?? [],
+  );
+  const [compareLeft, setCompareLeft] = useState(() => INITIAL_HASH?.left ?? '');
+  const [compareRight, setCompareRight] = useState(() => INITIAL_HASH?.right ?? '');
   const [paletteHintSeen, setPaletteHintSeen] = useState(() =>
     loadBool(LAYOUT_KEYS.paletteHintSeen, false),
   );
@@ -308,9 +335,99 @@ export default function App() {
     () =>
       detail === null
         ? []
-        : detail.events.filter((e) => deferredPhaseFilter.includes(e.phase)),
-    [detail, deferredPhaseFilter],
+        : detail.events.filter((e) => {
+            if (!deferredPhaseFilter.includes(e.phase)) {
+              return false;
+            }
+            if (timeSegmentFilter === 'model') {
+              return e.kind === 'llm';
+            }
+            if (timeSegmentFilter === 'tool') {
+              return TIME_TOOL_KINDS.has(e.kind);
+            }
+            if (timeSegmentFilter === 'idle' || timeSegmentFilter === 'userWait') {
+              return false;
+            }
+            return true;
+          }),
+    [detail, deferredPhaseFilter, timeSegmentFilter],
   );
+
+  // ui-design-v2 §3.1：会话诊断（L1）——只依赖已有 slim 数据。
+  const findingsResult = useMemo(
+    () => (detail !== null && detail.events.length > 0 ? computeFindings(detail.session, detail.events as TraceEventSlim[]) : null),
+    [detail],
+  );
+  const timeComposition = useMemo(
+    () => (detail !== null ? computeTimeComposition(detail.events as TraceEventSlim[]) : null),
+    [detail],
+  );
+
+  const activateFinding = useCallback(
+    (finding: Finding) => {
+      if (finding.evidence.eventIds.length > 0 && detail !== null) {
+        const targetIds = new Set(finding.evidence.eventIds);
+        const target = detail.events.find((e) => targetIds.has(e.id));
+        if (target !== undefined) {
+          setSelectedEvent(target);
+          return;
+        }
+      }
+      if (finding.evidence.phase !== undefined) {
+        setPhaseFilter([finding.evidence.phase]);
+      }
+    },
+    [detail],
+  );
+
+  const startCompare = useCallback(
+    (left: ProviderKey, right: ProviderKey) => {
+      const pick = (provider: ProviderKey): string | null => {
+        const candidates = sessions
+          .filter((s) => s.provider === provider)
+          .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+        return candidates[0]?.id ?? null;
+      };
+      let leftKey = pick(left);
+      let rightKey = pick(right);
+      // 同一 provider 选了两个 Agent 时，退化为该 provider 最近的两个不同会话。
+      if (left === right && leftKey !== null && rightKey !== null && leftKey === rightKey) {
+        const candidates = sessions
+          .filter((s) => s.provider === left)
+          .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+        leftKey = candidates[0]?.id ?? null;
+        rightKey = candidates[1]?.id ?? candidates[0]?.id ?? null;
+      }
+      if (leftKey !== null) {
+        setCompareLeft(leftKey);
+      }
+      if (rightKey !== null) {
+        setCompareRight(rightKey);
+      }
+      switchView('compare');
+    },
+    [sessions, switchView],
+  );
+
+  const onSessionScroll = useCallback((e: React.UIEvent<HTMLDivElement>): void => {
+    const el = e.currentTarget;
+    setSessionContextVisible(el.scrollTop > 240);
+    const anchorIds = [
+      'session-findings',
+      'session-header',
+      'session-time',
+      'session-phases',
+      'session-events',
+    ];
+    let current = anchorIds[0]!;
+    for (const id of anchorIds) {
+      const node = el.querySelector<HTMLElement>(`#${id}`);
+      if (node !== null && node.offsetTop - 120 <= el.scrollTop) {
+        current = id;
+      }
+    }
+    setSessionAnchor(current);
+  }, []);
 
   const togglePhase = useCallback((phase: TracePhase) => {
     setPhaseFilter((prev) =>
@@ -433,13 +550,12 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, [switchView, selectSession]);
 
-  // 首帧应用 hash（刷新恢复状态）
+  // 首帧详情加载（其余状态已由 useState 初始化自 INITIAL_HASH）
   useEffect(() => {
-    const state = parseHash(window.location.hash);
-    if (state !== null && state.view !== 'session') {
-      switchView(state.view);
+    if (INITIAL_HASH?.key !== undefined) {
+      selectSession(INITIAL_HASH.key);
     }
-  }, [switchView]);
+  }, [switchView, selectSession]);
 
   const openTranscript = useCallback(
     (event: TraceEventSlim) => {
@@ -534,55 +650,92 @@ export default function App() {
                 />
               )}
             {detail !== null && detail.events.length > 0 && (
-              <>
-                <SessionHeaderCard
-                  session={detail.session}
-                  events={detail.events as TraceEventSlim[]}
+              <div
+                className="session-scroll"
+                ref={(node) => {
+                  sessionScrollRef.current = node;
+                }}
+                onScroll={onSessionScroll}
+              >
+                <ContextBar
+                  visible={sessionContextVisible}
+                  anchors={[
+                    { id: 'session-findings', label: t('contextbar.anchorFindings', locale) },
+                    { id: 'session-header', label: t('contextbar.anchorHeader', locale) },
+                    { id: 'session-time', label: t('contextbar.anchorTime', locale) },
+                    { id: 'session-phases', label: t('contextbar.anchorPhases', locale) },
+                    { id: 'session-events', label: t('contextbar.anchorEvents', locale) },
+                  ]}
+                  activeId={sessionAnchor}
                   locale={locale}
-                  onRescan={() => {
-                    if (selectedKey === null) {
-                      return;
-                    }
-                    void api
-                      .rescanSession(selectedKey)
-                      .then(() => {
-                        if (selectedKey !== null) {
-                          selectSession(selectedKey);
-                        }
-                      })
-                      .catch((err: unknown) => {
-                        console.error('[session] 重扫失败:', err);
-                      });
-                  }}
-                  onDelete={() => {
-                    if (selectedKey === null) {
-                      return;
-                    }
-                    const key = selectedKey;
-                    void api
-                      .deleteSession(key)
-                      .then(() => {
-                        setSessions((prev) => prev.filter((s) => s.id !== key));
-                        setSelectedKey(null);
-                        setDetail(null);
-                      })
-                      .catch((err: unknown) => {
-                        console.error('[session] 删除失败:', err);
-                      });
-                  }}
-                  onCopyId={() => {
-                    if (selectedKey !== null) {
-                      void navigator.clipboard.writeText(selectedKey).catch((err: unknown) => {
-                        console.error('[session] 复制失败:', err);
-                      });
-                    }
-                  }}
-                  onExport={() => {
-                    if (selectedKey !== null) {
-                      window.open(`/api/sessions/${encodeURIComponent(selectedKey)}/report`, '_blank');
-                    }
-                  }}
+                  summary={
+                    <span className="contextbar-summary mono">
+                      {detail.session.provider} · {(detail.session.title || detail.session.id).slice(0, 28)} ·{' '}
+                      {fmtDur(detail.session.totalDurationMs)} · {detail.session.eventCount} events
+                    </span>
+                  }
+                  onCollapseAll={() => timelineActions.current?.collapseAll()}
+                  onExpandAll={() => timelineActions.current?.expandAll()}
                 />
+                <div id="session-findings" className="session-anchor">
+                  {findingsResult !== null && (
+                    <SessionFindings
+                      result={findingsResult}
+                      locale={locale}
+                      onActivate={activateFinding}
+                    />
+                  )}
+                </div>
+                <div id="session-header" className="session-anchor">
+                  <SessionHeaderCard
+                    session={detail.session}
+                    events={detail.events as TraceEventSlim[]}
+                    locale={locale}
+                    onRescan={() => {
+                      if (selectedKey === null) {
+                        return;
+                      }
+                      void api
+                        .rescanSession(selectedKey)
+                        .then(() => {
+                          if (selectedKey !== null) {
+                            selectSession(selectedKey);
+                          }
+                        })
+                        .catch((err: unknown) => {
+                          console.error('[session] 重扫失败:', err);
+                        });
+                    }}
+                    onDelete={() => {
+                      if (selectedKey === null) {
+                        return;
+                      }
+                      const key = selectedKey;
+                      void api
+                        .deleteSession(key)
+                        .then(() => {
+                          setSessions((prev) => prev.filter((s) => s.id !== key));
+                          setSelectedKey(null);
+                          setDetail(null);
+                        })
+                        .catch((err: unknown) => {
+                          console.error('[session] 删除失败:', err);
+                        });
+                    }}
+                    onCopyId={() => {
+                      if (selectedKey !== null) {
+                        void navigator.clipboard.writeText(selectedKey).catch((err: unknown) => {
+                          console.error('[session] 复制失败:', err);
+                        });
+                      }
+                    }}
+                    onExport={() => {
+                      if (selectedKey !== null) {
+                        window.open(`/api/sessions/${encodeURIComponent(selectedKey)}/report`, '_blank');
+                      }
+                    }}
+                  />
+                </div>
                 <PhaseRibbon
                   events={detail.events as TraceEventSlim[]}
                   active={phaseFilter}
@@ -593,30 +746,52 @@ export default function App() {
                   }}
                   locale={locale}
                 />
-                <PhaseTiles
-                  active={phaseFilter}
-                  onToggle={togglePhase}
-                  locale={locale}
-                  counts={Object.fromEntries(
-                    TRACE_PHASES.map((phase) => [
-                      phase,
-                      (detail.events as TraceEventSlim[]).filter((e) => e.phase === phase).length,
-                    ]),
-                  ) as Record<TracePhase, number>}
-                  visibleCount={visibleEvents.length}
-                  onSelectAll={() => setPhaseFilter([...TRACE_PHASES])}
-                  onClearAll={() => setPhaseFilter([])}
-                />
-                <TraceTimeline
-                  events={visibleEvents as TraceEventSlim[]}
-                  total={detail.eventTotal}
-                  hasMore={detail.hasMore}
-                  onLoadMore={loadMoreEvents}
-                  onSelectEvent={setSelectedEvent}
-                  selectedEventId={selectedEvent?.id ?? null}
-                  locale={locale}
-                />
-              </>
+                <div id="session-time" className="session-anchor">
+                  {timeComposition !== null && (
+                    <TimeCompositionBar
+                      composition={timeComposition}
+                      locale={locale}
+                      active={timeSegmentFilter}
+                      onToggle={(key) =>
+                        setTimeSegmentFilter((prev) => (prev === key ? null : key))
+                      }
+                    />
+                  )}
+                </div>
+                <div id="session-phases" className="session-anchor">
+                  <PhaseTiles
+                    active={phaseFilter}
+                    onToggle={togglePhase}
+                    locale={locale}
+                    counts={Object.fromEntries(
+                      TRACE_PHASES.map((phase) => [
+                        phase,
+                        (detail.events as TraceEventSlim[]).filter((e) => e.phase === phase).length,
+                      ]),
+                    ) as Record<TracePhase, number>}
+                    visibleCount={visibleEvents.length}
+                    onSelectAll={() => setPhaseFilter([...TRACE_PHASES])}
+                    onClearAll={() => setPhaseFilter([])}
+                    findingPhases={findingsResult?.findings
+                      .map((f) => f.evidence.phase)
+                      .filter((phase): phase is TracePhase => phase !== undefined) ?? []}
+                  />
+                </div>
+                <div id="session-events" className="session-anchor">
+                  <TraceTimeline
+                    events={visibleEvents as TraceEventSlim[]}
+                    total={detail.eventTotal}
+                    hasMore={detail.hasMore}
+                    onLoadMore={loadMoreEvents}
+                    onSelectEvent={setSelectedEvent}
+                    selectedEventId={selectedEvent?.id ?? null}
+                    locale={locale}
+                    semanticGroup={semanticGroup}
+                    onSemanticGroupChange={setSemanticGroup}
+                    actionsRef={timelineActions}
+                  />
+                </div>
+              </div>
             )}
           </main>
           <EventInspector
@@ -631,6 +806,21 @@ export default function App() {
             onOpenTranscript={openTranscript}
             onOpenTokens={setTokenEvent}
             onClose={() => setSelectedEvent(null)}
+            onNavigate={(direction) => {
+              const index = visibleEvents.findIndex((e) => e.id === selectedEvent?.id);
+              const target = visibleEvents[index + direction];
+              if (target !== undefined) {
+                setSelectedEvent(target);
+              }
+            }}
+            canNavigate={{
+              prev:
+                selectedEvent !== null &&
+                visibleEvents.findIndex((e) => e.id === selectedEvent.id) > 0,
+              next:
+                selectedEvent !== null &&
+                visibleEvents.findIndex((e) => e.id === selectedEvent.id) < visibleEvents.length - 1,
+            }}
           />
         </div>
       )}
@@ -640,6 +830,7 @@ export default function App() {
             <AgentOverview
               locale={locale}
               sessions={sessions}
+              onCompareProviders={startCompare}
               onSelectSession={(key) => {
                 switchView('session');
                 selectSession(key);

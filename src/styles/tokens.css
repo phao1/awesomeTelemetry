@@ -46,6 +46,13 @@
   --neutral-emphasis: #6e7681;
   --neutral-subtle: rgba(110, 118, 129, 0.15);
 
+  /* ui-design-v2 §3.2 时间构成分段色（模型/工具/空转/用户等待） */
+  --seg-model: #14b8a6;
+  --seg-tool: #7d8ba1;
+  --seg-idle: #8b949e;
+  --seg-idle-stripe: rgba(1, 4, 9, 0.35);
+  --seg-user: #d29922;
+
   /* §2.5 Phase 色（6，产品 signature）+ -subtle（15% alpha） */
   --phase-understand: #39c5cf;
   --phase-understand-subtle: rgba(57, 197, 207, 0.15);
@@ -174,6 +181,15 @@
   --compare-timeline-height: 320px;
   --dot-size: 8px;
   --drag-handle-width: 4px;
+  --gantt-group-border: 2px;
+  --gantt-max-height: 720px;
+  --mark-radius: 2px;
+  --diff-min-width: 80px;
+  --dist-label-width: 90px;
+  --verdict-dim-min: 220px;
+  --kpi-min: 200px;
+  --dims-card-min: 280px;
+  --chart-min: 260px;
 }
 
 [data-theme="light"] {
@@ -214,6 +230,13 @@
   --neutral-fg: #59636e;
   --neutral-emphasis: #6e7681;
   --neutral-subtle: rgba(89, 99, 110, 0.1);
+
+  /* ui-design-v2 §3.2 时间构成分段色 */
+  --seg-model: #0d9488;
+  --seg-tool: #64748b;
+  --seg-idle: #cbd5e1;
+  --seg-idle-stripe: rgba(255, 255, 255, 0.6);
+  --seg-user: #f59e0b;
 
   /* §2.5 */
   --phase-understand: #1b7c83;
@@ -343,4 +366,13 @@
   --compare-timeline-height: 320px;
   --dot-size: 8px;
   --drag-handle-width: 4px;
+  --gantt-group-border: 2px;
+  --gantt-max-height: 720px;
+  --mark-radius: 2px;
+  --diff-min-width: 80px;
+  --dist-label-width: 90px;
+  --verdict-dim-min: 220px;
+  --kpi-min: 200px;
+  --dims-card-min: 280px;
+  --chart-min: 260px;
 }

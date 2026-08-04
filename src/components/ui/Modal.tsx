@@ -71,10 +71,11 @@ export interface DrawerProps {
   children: ReactNode;
   open: boolean;
   footer?: ReactNode;
+  className?: string;
 }
 
 /** REQ-005：Drawer。右侧滑入（transform 过渡，reduced-motion 归零）。 */
-export function Drawer({ title, onClose, children, open, footer }: DrawerProps): React.JSX.Element {
+export function Drawer({ title, onClose, children, open, footer, className }: DrawerProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(containerRef, open, onClose);
   useEffect(() => (open ? pushOverlay(onClose) : undefined), [open, onClose]);
@@ -87,7 +88,7 @@ export function Drawer({ title, onClose, children, open, footer }: DrawerProps):
       <div className="modal-backdrop" onMouseDown={onClose} />
       <div
         ref={containerRef}
-        className="ui-drawer ui-drawer-open"
+        className={`ui-drawer ui-drawer-open ${className ?? ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

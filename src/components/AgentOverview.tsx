@@ -1,14 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
-import type { AgentOverviewRow, SessionIndexEntry } from '../core/trace-types.js';
+import type { AgentOverviewRow, ProviderKey, SessionIndexEntry } from '../core/trace-types.js';
 import { api, type AgentOverviewResponse } from '../api/client.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 import { Table, type TableColumn } from './ui/Table.js';
 import { BarMeter, MetricCard, Sparkline } from './ui/Misc.js';
 import { ProviderBadge } from './ui/Badge.js';
-import { IconAccuracy, IconCost, IconSpeed, IconStability } from './icons/index.js';
+import {
+  IconAccuracy,
+  IconCompare,
+  IconCost,
+  IconSpeed,
+  IconStability,
+} from './icons/index.js';
+import { fmtDur } from '../core/session-findings.js';
 
 export interface AgentOverviewProps {
   locale: Locale;
@@ -16,6 +23,8 @@ export interface AgentOverviewProps {
   /** REQ-018：展开行复用共享 store，MUST NOT 逐会话 fetch（G11.9）。 */
   sessions?: SessionIndexEntry[];
   onSelectSession?: (key: string) => void;
+  /** 勾选两个 Agent 后快捷对比（App 负责跳转对比视图）。 */
+  onCompareProviders?: (left: ProviderKey, right: ProviderKey) => void;
 }
 
 const fmtNum = (v: number): string => v.toLocaleString();
@@ -27,10 +36,13 @@ function pct(v: number | null): string {
 /** REQ-018：Agent 概览。①KPI 行 ②可排序对比表（1 个请求，G11.9）。 */
 export function AgentOverview({
   locale,
-  load = () => api.agentOverview(),
+  load,
   sessions = [],
   onSelectSession,
+  onCompareProviders,
 }: AgentOverviewProps): React.JSX.Element {
+  const defaultLoad = useCallback((): Promise<AgentOverviewResponse> => api.agentOverview(), []);
+  const loader = load ?? defaultLoad;
   const [rows, setRows] = useState<AgentOverviewRow[] | null>(null);
   const [cached, setCached] = useState(false);
   const [stamp, setStamp] = useState<string | null>(null);
@@ -38,11 +50,12 @@ export function AgentOverview({
   const [retryKey, setRetryKey] = useState(0);
   const [sort, setSort] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [compareSelection, setCompareSelection] = useState<string[]>([]);
 
   useEffect(() => {
     setRows(null);
     setError(null);
-    void load()
+    void loader()
       .then((result) => {
         setRows(result.rows);
         setCached(result.cached);
@@ -52,7 +65,7 @@ export function AgentOverview({
         console.error('[agent-overview] 加载失败:', err);
         setError(err instanceof Error ? err.message : String(err));
       });
-  }, [load, retryKey]);
+  }, [loader, retryKey]);
 
   const kpi = useMemo(() => {
     if (rows === null || rows.length === 0) {
@@ -100,6 +113,67 @@ export function AgentOverview({
     [rows],
   );
 
+  // ui-design-v2 §4.1：顶部结论条 —— 最快 / 最省 / 最稳。
+  const conclusion = useMemo(() => {
+    if (rows === null || rows.length === 0) {
+      return null;
+    }
+    const withDuration = rows.filter((r) => r.avgWallClockMs > 0);
+    const fastest =
+      withDuration.length > 0
+        ? withDuration.reduce((a, b) => (a.avgWallClockMs < b.avgWallClockMs ? a : b))
+        : null;
+    const slowest =
+      withDuration.length > 0
+        ? withDuration.reduce((a, b) => (a.avgWallClockMs > b.avgWallClockMs ? a : b))
+        : null;
+    const perSessionTokens = rows
+      .filter((r) => r.sessionCount > 0 && r.tokenTotal > 0)
+      .map((r) => ({ row: r, per: r.tokenTotal / r.sessionCount }));
+    const frugal =
+      perSessionTokens.length > 0
+        ? perSessionTokens.reduce((a, b) => (a.per < b.per ? a : b))
+        : null;
+    const stable = rows.reduce((a, b) => ((a.errorRate ?? 1) < (b.errorRate ?? 1) ? a : b));
+    return {
+      fastest,
+      slowest,
+      fastestRatio: fastest !== null && slowest !== null && fastest.avgWallClockMs > 0 ? slowest.avgWallClockMs / fastest.avgWallClockMs : null,
+      frugal: frugal?.row ?? null,
+      frugalPer: frugal?.per ?? 0,
+      stable,
+    };
+  }, [rows]);
+
+  const sortChips: Array<{ key: keyof AgentOverviewRow; label: string; direction: 'asc' | 'desc' }> = [
+    { key: 'avgToolDurationMs', label: t('agent.sortDuration', locale), direction: 'asc' },
+    { key: 'tokenTotal', label: t('agent.sortTokens', locale), direction: 'desc' },
+    { key: 'errorRate', label: t('agent.sortError', locale), direction: 'asc' },
+    { key: 'verificationCoverage', label: t('agent.sortVerify', locale), direction: 'desc' },
+  ];
+
+  const toggleCompare = (key: string): void => {
+    setCompareSelection((prev) => {
+      if (prev.includes(key)) {
+        return prev.filter((k) => k !== key);
+      }
+      if (prev.length >= 2) {
+        return [...prev.slice(1), key];
+      }
+      return [...prev, key];
+    });
+  };
+
+  const runCompare = (): void => {
+    if (compareSelection.length !== 2 || rows === null || onCompareProviders === undefined) {
+      return;
+    }
+    const providers = compareSelection.map((key) => rows.find((r) => `${r.provider}/${r.sourceAgent}` === key));
+    if (providers[0] !== undefined && providers[1] !== undefined) {
+      onCompareProviders(providers[0].provider, providers[1].provider);
+    }
+  };
+
   const recentByProvider = useMemo(() => {
     const map = new Map<string, SessionIndexEntry[]>();
     const sorted = [...sessions].sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
@@ -114,6 +188,25 @@ export function AgentOverview({
   }, [sessions]);
 
   const columns: Array<TableColumn<AgentOverviewRow>> = [
+    {
+      key: 'compare',
+      label: '',
+      sortable: false,
+      width: 'var(--control-height-sm)',
+      render: (row) => {
+        const key = `${row.provider}/${row.sourceAgent}`;
+        const checked = compareSelection.includes(key);
+        return (
+          <input
+            type="checkbox"
+            aria-label={t('compare.left', locale)}
+            checked={checked}
+            onChange={() => toggleCompare(key)}
+            onClick={(e) => e.stopPropagation()}
+          />
+        );
+      },
+    },
     {
       key: 'provider',
       label: t('session.provider', locale),
@@ -240,6 +333,47 @@ export function AgentOverview({
 
   return (
     <section className="overview" style={{ padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+      {conclusion !== null && (
+        <div className="agent-conclusion">
+          <span className="agent-conclusion-title">
+            {rows!.length} {t('agent.sessions', locale)} · {t('agent.conclusion', locale)}
+          </span>
+          <div className="agent-conclusion-items">
+            {conclusion.fastest !== null && (
+              <div className="agent-conclusion-item">
+                <span className="agent-conclusion-label">{t('agent.fastest', locale)}</span>
+                <ProviderBadge provider={conclusion.fastest.provider} locale={locale} />
+                <span className="agent-conclusion-name">{conclusion.fastest.sourceAgent || conclusion.fastest.provider}</span>
+                <span className="mono agent-conclusion-detail">
+                  {conclusion.fastestRatio !== null
+                    ? t('agent.fastestDetail', locale)
+                        .replace('{dur}', fmtDur(conclusion.fastest.avgWallClockMs))
+                        .replace('{ratio}', conclusion.fastestRatio.toFixed(1))
+                    : fmtDur(conclusion.fastest.avgWallClockMs)}
+                </span>
+              </div>
+            )}
+            {conclusion.frugal !== null && (
+              <div className="agent-conclusion-item">
+                <span className="agent-conclusion-label">{t('agent.frugal', locale)}</span>
+                <ProviderBadge provider={conclusion.frugal.provider} locale={locale} />
+                <span className="agent-conclusion-name">{conclusion.frugal.sourceAgent || conclusion.frugal.provider}</span>
+                <span className="mono agent-conclusion-detail">
+                  {t('agent.frugalDetail', locale).replace('{n}', Math.round(conclusion.frugalPer).toLocaleString())}
+                </span>
+              </div>
+            )}
+            <div className="agent-conclusion-item">
+              <span className="agent-conclusion-label">{t('agent.stable', locale)}</span>
+              <ProviderBadge provider={conclusion.stable.provider} locale={locale} />
+              <span className="agent-conclusion-name">{conclusion.stable.sourceAgent || conclusion.stable.provider}</span>
+              <span className="mono agent-conclusion-detail">
+                {t('agent.stableDetail', locale).replace('{pct}', ((conclusion.stable.errorRate ?? 0) * 100).toFixed(1))}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="overview-kpis">
         {kpi !== null && (
           <>
@@ -251,6 +385,16 @@ export function AgentOverview({
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        {sortChips.map((chip) => (
+          <button
+            key={chip.key}
+            type="button"
+            className={`timeline-chip ${sort?.key === chip.key ? 'timeline-chip-on' : ''}`}
+            onClick={() => setSort({ key: chip.key, direction: chip.direction })}
+          >
+            {chip.label}
+          </button>
+        ))}
         <span className="hint" style={{ margin: 0 }}>
           {cached ? 'cached' : 'fresh'} · {stamp ?? '—'}
         </span>
@@ -308,6 +452,12 @@ export function AgentOverview({
           onToggleExpand={(key) => setExpanded((prev) => (prev === key ? null : key))}
         />
       </div>
+      {compareSelection.length === 2 && onCompareProviders !== undefined && (
+        <button type="button" className="compare-float-btn" onClick={runCompare}>
+          <IconCompare size={16} />
+          {t('agent.compareSelected', locale)}
+        </button>
+      )}
     </section>
   );
 }

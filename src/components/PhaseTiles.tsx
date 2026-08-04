@@ -20,6 +20,8 @@ export interface PhaseTilesProps {
   visibleCount: number;
   onSelectAll: () => void;
   onClearAll: () => void;
+  /** ui-design-v2 §3.3：命中 Finding 的阶段显示异常色点。 */
+  findingPhases?: TracePhase[];
 }
 
 const PHASE_ICON: Record<TracePhase, (props: IconProps) => React.JSX.Element> = {
@@ -40,13 +42,16 @@ export function PhaseTiles({
   visibleCount,
   onSelectAll,
   onClearAll,
+  findingPhases = [],
 }: PhaseTilesProps): React.JSX.Element {
   const allSelected = active.length === TRACE_PHASES.length;
+  const findingSet = new Set(findingPhases);
   return (
     <div className="phase-tiles">
       {TRACE_PHASES.map((phase) => {
         const Icon = PHASE_ICON[phase];
         const selected = active.includes(phase);
+        const flagged = findingSet.has(phase);
         return (
           <button
             key={phase}
@@ -65,6 +70,7 @@ export function PhaseTiles({
           >
             <Icon size={12} />
             {t(`phase.${phase}`, locale)}
+            {flagged && <span className="phase-tile-dot" aria-label={t('findings.title', locale)} />}
             <span className="phase-tile-count mono">{counts[phase]}</span>
           </button>
         );

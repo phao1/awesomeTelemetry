@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
@@ -33,6 +33,7 @@ export function SessionHeaderCard({
   onCopyId,
   onExport,
 }: SessionHeaderCardProps): React.JSX.Element {
+  const [menuOpen, setMenuOpen] = useState(false);
   const metrics = useMemo(() => {
     const total = events.length || 1;
     const errorEvents = events.filter((e) => e.status === 'error').length;
@@ -64,8 +65,8 @@ export function SessionHeaderCard({
         <StatusBadge status={session.status} locale={locale} />
         <span className="spacer" />
         <DropdownMenu
-          open={false}
-          onOpenChange={() => undefined}
+          open={menuOpen}
+          onOpenChange={setMenuOpen}
           trigger={(props) => (
             <button type="button" className="ui-icon-btn" aria-label="session menu" {...props}>
               <IconKebab size={16} />

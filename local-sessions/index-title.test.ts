@@ -50,7 +50,7 @@ describe('REQ-021 索引阶段真实标题（T-10）', () => {
         payload: {
           type: 'message',
           role: 'user',
-          content: [{ type: 'input_text', text: '# AGENTS.md instructions for /Users/howell/Documents/Coding/awesomeTelemetry/awesomeTelemetry' }],
+          content: [{ type: 'input_text', text: '# AGENTS.md instructions for /home/developer/project' }],
         },
       },
       {
