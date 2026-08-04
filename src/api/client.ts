@@ -1,5 +1,6 @@
 import type {
   AgentOverviewRow,
+  ProxyRequest,
   ProxyRequestListItem,
   SessionDetailResponse,
   SessionIndexEntry,
@@ -51,6 +52,27 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
     );
   }
   return body as T;
+}
+
+/** CA 证书是 PEM 文本，非 JSON（api.md §4：application/x-pem-file）。 */
+export async function fetchText(path: string): Promise<string> {
+  const res = await fetch(`${BASE}${path}`, { headers: { accept: 'application/x-pem-file' } });
+  const text = await res.text();
+  if (!res.ok) {
+    const envelope = ((): { error?: { code?: string; message?: string } } | null => {
+      try {
+        return JSON.parse(text) as { error?: { code?: string; message?: string } };
+      } catch {
+        return null;
+      }
+    })();
+    throw new ApiError(
+      envelope?.error?.code ?? 'INTERNAL_ERROR',
+      envelope?.error?.message ?? `HTTP ${res.status}`,
+      res.status,
+    );
+  }
+  return text;
 }
 
 function qs(params: Record<string, string | number | undefined>): string {
@@ -114,11 +136,52 @@ export const api = {
   }> {
     return fetchJson(`/proxy/requests${qs({ limit: params.limit ?? 50, cursor: params.cursor })}`);
   },
-  proxyStatus(): Promise<{ running: boolean; port: number | null; requestCount: number; startedAt: string | null }> {
+  proxyStatus(): Promise<{
+    running: boolean;
+    starting: boolean;
+    port: number | null;
+    requestCount: number;
+    startedAt: string | null;
+  }> {
     return fetchJson('/proxy/status');
   },
-  fridaStatus(): Promise<{ running: boolean; pid: number | null }> {
+  proxyStart(port?: number): Promise<{
+    running: boolean;
+    starting: boolean;
+    port: number | null;
+    requestCount: number;
+    startedAt: string | null;
+  }> {
+    return fetchJson('/proxy/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ port }),
+    });
+  },
+  proxyStop(): Promise<unknown> {
+    return fetchJson('/proxy/stop', { method: 'POST' });
+  },
+  proxyRequest(id: number): Promise<ProxyRequest> {
+    return fetchJson(`/proxy/requests/${id}`);
+  },
+  clearProxyRequests(): Promise<unknown> {
+    return fetchJson('/proxy/requests', { method: 'DELETE' });
+  },
+  caCert(): Promise<string> {
+    return fetchText('/ca-cert');
+  },
+  fridaStatus(): Promise<{ running: boolean; starting: boolean; pid: number | null }> {
     return fetchJson('/frida/status');
+  },
+  fridaStart(pid?: number): Promise<{ running: boolean; starting: boolean; pid: number | null }> {
+    return fetchJson('/frida/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pid }),
+    });
+  },
+  fridaStop(): Promise<unknown> {
+    return fetchJson('/frida/stop', { method: 'POST' });
   },
   fridaCaptures(): Promise<{
     items: Array<{ id: number; capturedAt: string; captureType: string; model: string | null }>;

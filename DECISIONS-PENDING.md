@@ -124,3 +124,18 @@
   白字 4.65:1 达标）；其余值逐字采用契约。T4 断言不改。
 - **建议的下一步**：人工确认后把 `contracts/design-tokens.md` §2.4 的
   light attention-emphasis 值同步改为 `#9e6a03`，消除文档自冲突。
+
+---
+
+## D-009 前端 REQ-020「清空请求」无后端端点
+
+- **问题描述**：`specs/frontend/spec.md` REQ-020 要求代理控制条含「请求计数与清空」，
+  但 `contracts/api.md` §4 与 `server/server.ts` 均无清空 proxy_requests 的端点
+  （只有 GET 列表与单条、POST start/stop）。本 change 的 Non-Goals 明确「不改任何后端 API」。
+- **尝试过的方案**：前端按钮调 `DELETE /api/proxy/requests`（api client 已加）——
+  后端返回 404 ROUTE_NOT_FOUND，失败会真实呈现在 error 态并 console.error；
+  UI 上保留按钮（含二次确认），失败提示「后端暂不支持清空（D-009）」。
+- **失败原因**：无（后端契约缺口，非前端可补）。
+- **临时方案**：按钮保留 + 确认 + 失败呈现实话；TODO(D-009) 标记。
+- **建议的下一步**：在后续 change 中为 `contracts/api.md` §4 增加
+  `DELETE /api/proxy/requests`（含 409/404 语义）并接线。
