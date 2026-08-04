@@ -9,7 +9,7 @@
 | fix-session-data-integrity | 24/24 | ✅ 已完成（T-10 ~ T-12） | fb4d88b / 4f21a53 / 075fd73 / 15bd709 |
 | add-design-system | 31/31 | ✅ 已完成（T-13 ~ T-15） | 3edd352 / 6aba1e0 / e26166c |
 | redesign-frontend-views | 50/50 | ✅ 已完成（R-01 ~ R-09） | 763c299 / 6744436 / a227c32 / feb5a76 / 25e45a5 / 68e1dc9 / 51e8862 / 1e1b405 / 40366d5 / ed26e1a |
-| add-palette-and-a11y | 0/30 | ⏳ 未开始 | — |
+| add-palette-and-a11y | 30/30 | ✅ 已完成（P-01 ~ P-05） | dff2c1b / a0032e5 |
 
 ### fix-session-data-integrity（已完成）
 
@@ -61,6 +61,17 @@
   adapter 标题黑名单共享（打开会话不再把好标题覆盖成注入内容）。
 - 验收：五视图数据端点全部 200；9,590 event DOM < 500（测试）；agent 1 请求（测试）；
   327 测试全绿。
+
+### add-palette-and-a11y（已完成）
+
+- **快捷键**：单一全局 keydown 分发（D1）+ 输入框/输入法安全 + Esc 浮层栈（D2）
+  + j/k/Enter 列表浏览 + 帮助浮层（i18n）。
+- **命令面板**：⌘K 懒加载独立 chunk（2.5KB）+ 复用共享 store 不发请求 + 发现性提示。
+- **URL hash**：手写解析/序列化（≤60 行）+ 单向数据流（replaceState 防循环）+ 脏 hash 回落。
+- **a11y**：listbox/tablist/dialog 角色、浮层焦点陷阱与回归、aria-live、
+  200% 缩放单栏兜底、键盘全流程（会话→事件→Raw→关闭）。
+- **收口**：335 测试全绿；端到端冒烟脚本全过；首屏数据链路 < 1ms、
+  资源 gzip 93.1KB（浏览器首绘留待实测，如实记录）。
 
 ## 总览
 

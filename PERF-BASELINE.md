@@ -19,6 +19,7 @@
 | 2026-08-04 | M11 proxy/脱敏 | 前端已建 | 8.551ms（slim 9,590 events） | 21.99ms 冷 / 0.256ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
 | 2026-08-04 | T-03 SQLite 多会话索引 | 前端已建 | 8.722ms（slim 9,590 events） | 22.40ms 冷 / 0.361ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
 | 2026-08-04 | fix-session-data-integrity（T-10~T-12 完成） | 前端已建 | 8.519ms（slim 9,590 events） | 22.42ms 冷 / 0.274ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
+| 2026-08-04 | add-design-system + redesign-frontend-views + add-palette-and-a11y | 前端已建 | 9.215ms（slim 9,590 events） | 24.37ms 冷 / 0.372ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
 
 > M4/M5 与 M3 数字基本持平（只新增 watch/adapter 层，不触碰被测量的查询路径），
 > 差异在 P-4 机器波动范围内（< 1%）。
@@ -26,6 +27,23 @@
 > T-10 的索引阶段新增 JSONL 流式标题提取（硬上限 1MB，同步 readSync，仅启动路径）：
 > 实测单 JSONL 最差 2.735ms（3.4MB 文件读满 1MB 未命中回落）、单 SQLite 库 0.281ms，
 > 均低于预算（5ms / 50ms）；被测量的查询路径无劣化 > 20%（最差详情 +2%）。
+> 三个前端 change 后被测量的查询路径仍无劣化 > 20%（最差详情 +8%）。
+
+## 首屏性能实测（T-07 遗留项，2026-08-04 收口）
+
+> 本机无浏览器自动化工具，浏览器级「首绘」无法实测；以下为可测部分（本地回环）：
+
+| 项 | 实测 | 说明 |
+|----|------|------|
+| GET /（index.html） | 中位 ~0.6ms | 本地回环 |
+| GET /api/sessions?limit=50 | 中位 ~0.6ms | 首屏数据（服务端 < 5ms 预算内） |
+| /api/health | ~0.3ms | 状态栏单次拉取 |
+| 前端资源 gzip 合计 | 93.1KB | JS 86.6KB + CSS 6.4KB + HTML 0.8KB |
+| CommandPalette chunk | 2.5KB（gzip 1.1KB） | 懒加载独立 chunk，不进首屏 bundle |
+| 服务端首屏预算 | < 100ms | 实测数据链路 < 1ms ✅ |
+
+**未实测**：浏览器首绘（Performance 面板）。本地回环传输 93KB gzip 可忽略，
+主要成本是 287KB 主 JS 的解析；该数字需在浏览器实测后补记，**不得用后端预算冒充**。
 
 ## M3 明细（2026-08-04，本机：macOS，Node v26.5.1）
 
