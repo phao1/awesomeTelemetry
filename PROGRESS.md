@@ -7,7 +7,7 @@
 | change | 任务 | 状态 | 提交 |
 |--------|------|------|------|
 | fix-session-data-integrity | 24/24 | ✅ 已完成（T-10 ~ T-12） | fb4d88b / 4f21a53 / 075fd73 / 15bd709 |
-| add-design-system | 0/31 | ⏳ 未开始 | — |
+| add-design-system | 31/31 | ✅ 已完成（T-13 ~ T-15） | 3edd352 / 6aba1e0 / e26166c |
 | redesign-frontend-views | 0/50 | ⏳ 未开始 | — |
 | add-palette-and-a11y | 0/30 | ⏳ 未开始 | — |
 
@@ -28,6 +28,20 @@
   冲突码；`proxy_status` 事件登记进 `contracts/data-model.md` §10。
 - 实机验收：41 条真实会话 0 条文件名标题、eventCount 全部 > 0；
   opencode 19 events / codearts 64·63·71 events；proxy start/stop 全流程 200/409。
+
+### add-design-system（已完成）
+
+- **T-13 token 层与主题**：`src/styles/tokens.css` 双主题全量变量（键集合 T1 强制相等）、
+  base/layout/components 拆分、`index.html` 内联同步主题脚本防闪白、
+  `useTheme` 三态切换 + localStorage + matchMedia 跟随；
+  T1–T5 断言全过（含 D-008：light attention-emphasis 对比度契约自冲突的修正）。
+- **T-14 图标集**：47 个手写内联 SVG（16×16、currentColor、命名导出可 tree-shake），
+  T6/T7 断言全过；路径数据合计 4.4KB、最大单路径 203B。
+- **T-15 基础组件库**：Button/IconButton/Badge 四件套/Field/Input/Select/SearchInput/
+  Tabs/Table/Tooltip/Popover/DropdownMenu/Modal/Drawer/Kbd/MetricCard/BarMeter/
+  Sparkline/SplitPane/Skeleton/EmptyState/ErrorState/Toast/VirtualList（25 项全手写）。
+- 验收：T1–T7 全过；CSS gzip 5.1KB（预算 < 16KB）；图标集 < 12KB；
+  焦点环/reduced-motion 由 base.css 全局规则 + 测试强制。
 
 ## 总览
 

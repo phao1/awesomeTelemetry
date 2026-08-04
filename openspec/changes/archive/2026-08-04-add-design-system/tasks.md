@@ -39,7 +39,7 @@
 
 ## 4. 阶段收口
 
-- [ ] 4.1 `npm run typecheck && npm run test && npm run lint` 全绿
-- [ ] 4.2 契约 §9 的 T1–T7 七条断言全部在 CI 中执行且通过
-- [ ] 4.3 更新 `PROGRESS.md`
-- [ ] 4.4 `openspec archive add-design-system`
+- [x] 4.1 `npm run typecheck && npm run test && npm run lint` 全绿
+- [x] 4.2 契约 §9 的 T1–T7 七条断言全部在 CI 中执行且通过
+- [x] 4.3 更新 `PROGRESS.md`
+- [x] 4.4 `openspec archive add-design-system`
