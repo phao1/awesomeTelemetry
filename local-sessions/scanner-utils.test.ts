@@ -18,7 +18,12 @@ import { codeagentScanner } from './codeagent.js';
 import { codexScanner } from './codex.js';
 import { qoderScanner } from './qoder.js';
 import { workbuddyScanner } from './workbuddy.js';
-import type { ScannerContext } from './scanner-utils.js';
+import {
+  buildIndexEntry,
+  cleanupDuplicateSessionRows,
+  upsertIndexEntries,
+  type ScannerContext,
+} from './scanner-utils.js';
 
 type Db = InstanceType<typeof Database>;
 
@@ -141,6 +146,62 @@ describe('REQ-010 JSONL 系 scanner', () => {
     };
     expect(row.provider).toBe('workbuddy');
     expect(row.cost_usd).toBeCloseTo(0.003);
+    db.close();
+  });
+});
+
+describe('T-02 统一 session key', () => {
+  it('同一文件先索引后详情：sessions 表只有 1 行且 detail_loaded=1、event_count>0', async () => {
+    const dir = tempDir();
+    const filePath = join(dir, 'claude-s1.jsonl');
+    writeFileSync(filePath, claudeFixture.events.map((r) => JSON.stringify(r)).join('\n') + '\n');
+    const db = newDb();
+    const cfg = config('claude', dir);
+
+    upsertIndexEntries(db, [buildIndexEntry(cfg, filePath)]);
+    const afterIndex = db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number };
+    expect(afterIndex.c).toBe(1);
+
+    const result = await claudeScanner.scanFile(cfg, filePath, ctx(db));
+    expect(result.eventCount).toBe(4);
+    const rows = db
+      .prepare('SELECT id, detail_loaded, event_count FROM sessions')
+      .all() as Array<{ id: string; detail_loaded: number; event_count: number }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.detail_loaded).toBe(1);
+    expect(rows[0]!.event_count).toBe(4);
+    db.close();
+  });
+
+  it('cleanupDuplicateSessionRows 只删同 source_path 的 detail_loaded=0 孤儿行', () => {
+    const db = newDb();
+    const insert = db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insert.run('dup-a', 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/same/file.jsonl');
+    insert.run('dup-b', 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/same/file.jsonl');
+    db.prepare("UPDATE sessions SET detail_loaded = 1 WHERE id = 'dup-b'").run();
+    insert.run('legit', 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/other/file.jsonl');
+
+    const removed = cleanupDuplicateSessionRows(db);
+    expect(removed).toBe(1);
+    const ids = db
+      .prepare('SELECT id FROM sessions ORDER BY id')
+      .all() as Array<{ id: string }>;
+    expect(ids.map((r) => r.id).sort()).toEqual(['dup-b', 'legit']);
+    db.close();
+  });
+
+  it('cleanupDuplicateSessionRows 保留正常未打开的会话（无 loaded 兄弟行）', () => {
+    const db = newDb();
+    db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
+       VALUES ('fresh', 'codex', 'Codex', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/a.jsonl')`,
+    ).run();
+    expect(cleanupDuplicateSessionRows(db)).toBe(0);
+    const count = db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number };
+    expect(count.c).toBe(1);
     db.close();
   });
 });

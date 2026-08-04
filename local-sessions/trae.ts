@@ -12,6 +12,7 @@ import {
   type ProviderScanner,
   type ScannerContext,
 } from './scanner-utils.js';
+import { deriveSessionKey } from './session-key.js';
 
 interface TraeDbRow {
   id: string;
@@ -79,7 +80,10 @@ async function scanTraeFile(
     { sourceAgent: 'Trae', session: sample.session, events: sample.turns },
     filePath,
   );
-  const key = storeTraceRecord(ctx.db, record, filePath, ctx.notify);
+  // T-02：Trae 解密发生在详情阶段，索引阶段拿不到行内 id，
+  // 统一按文件路径派生，避免索引/详情 key 不一致产生重复行。
+  const key = deriveSessionKey(config.key, filePath);
+  storeTraceRecord(ctx.db, record, filePath, key, ctx.notify);
   commitScanState(ctx.db, {
     sourcePath: filePath,
     provider: config.key,

@@ -63,6 +63,16 @@
 ### REQ-007: 会话 key 生成
 `sessionKey(provider, id, sourcePath)` SHALL 等于 `provider-` 加 SHA1(`provider:id:sourcePath`) 的前 14 位。MUST 包含 sourcePath 防撞 key。
 
+**索引阶段与详情阶段 MUST 使用同一个派生函数 `deriveSessionKey(provider, sourcePath, innerId?)`，禁止两处各算各的**（T-02：P0-2 的根因）：
+
+- JSONL 类（每文件一会话，`innerId` 缺省）：稳定来源标识 = 文件名，
+  `deriveSessionKey(p, path) == sessionKey(p, basename(path), path)`
+- SQLite 类（一库多会话，`innerId` = db 行内 session id）：稳定来源标识 = db 路径 + 行内 id，
+  `deriveSessionKey(p, path, id) == sessionKey(p, id, path)`
+
+关键约束：**索引阶段拿得到、详情阶段算得出同一个值**。adapter 解析出的 session id
+只在 SQLite 多会话场景参与 key 派生；JSONL 场景一律以文件路径为准。
+
 ### REQ-008: JSONL 尾部增量读
 `sourceKind` 为 `jsonl` 时，`readJsonlFrom(path, startOffset)` SHALL 用 `createReadStream({ start })` 流式逐行解析，返回 `{ rows, endOffset }`。
 
@@ -123,6 +133,12 @@ Trae 的 Python bridge MUST 用 `spawn` + Promise，MUST NOT 用 `spawnSync`。
 
 ### REQ-015: 惰性详情加载
 `GET /api/sessions/:key` 在 `sessions.detail_loaded = 0` 时 SHALL 触发一次同步 `scanAndStoreDetail`，成功后置 `detail_loaded = 1` 并写入 LRU 缓存。
+
+### REQ-020: 启动自愈清理（T-02）
+启动自检 MUST 调用 `cleanupDuplicateSessionRows()`：删除 `detail_loaded = 0` 且
+同 `source_path`、同 provider 存在 `detail_loaded = 1` 兄弟行的**孤儿行**
+（旧版索引/详情 key 不一致的残留），并连同其 events / event_raw / metrics / scan_state 行一起删除。
+正常未打开的会话（无 loaded 兄弟行）MUST NOT 被清理。
 
 ### REQ-016: LRU 详情缓存
 `detail-cache.ts` SHALL 提供上限 24 条的 LRU，命中即提升。`sessions_changed` 事件 MUST 使对应 key 的缓存失效。

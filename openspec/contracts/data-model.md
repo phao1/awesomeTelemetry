@@ -137,7 +137,10 @@ export interface TokenSemantics {
  * 实测依据：524 条索引 447.8KB / 5.33ms，是可接受的；带上 systemPrompt 会失控。
  */
 export interface SessionIndexEntry {
-  /** = sessionKey(provider, id, sourcePath)，见 specs/session-scanning REQ-004。 */
+  /**
+   * = deriveSessionKey(provider, sourcePath, innerId?) 的产物，
+   * 见 specs/session-scanning REQ-007（索引/详情同一口径，T-02）。
+   */
   id: string;
   provider: ProviderKey;
   /** provider 的展示名，可与 provider 不同（如 CodeArts SDD 子 agent）。 */

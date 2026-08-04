@@ -12,6 +12,7 @@ import { INDEX_SQL, SCHEMA_VERSION, initSchema } from './storage/schema.js';
 import { cachedStmt } from './storage/stmt-cache.js';
 import { enforceProxyRetention } from './storage/retention.js';
 import { loadLocalSessionConfig, type LoadConfigOptions } from '../local-sessions/config.js';
+import { cleanupDuplicateSessionRows } from '../local-sessions/scanner-utils.js';
 import { queueSessionChange } from './realtime/coalescer.js';
 import { eventBus } from './realtime/event-bus.js';
 import { initialScanAndStore } from './watch/scan-scheduler.js';
@@ -186,6 +187,11 @@ export function runStartupSelfCheck(
   }
   // 3. checkpointWal
   checkpointWal(db);
+  // 3.5. T-02：清理旧版「索引/详情 key 不一致」产生的孤儿重复行
+  const orphans = cleanupDuplicateSessionRows(db);
+  if (orphans > 0) {
+    console.log(`重复行清理: 删除 ${orphans} 条 detail_loaded=0 孤儿行`);
+  }
   // 4. proxy 保留清理
   const deleted = enforceProxyRetention(db, options.proxyRetentionDays);
   if (deleted > 0) {
