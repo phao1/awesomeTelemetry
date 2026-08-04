@@ -165,6 +165,12 @@
   --status-col-width: 70px;
   --band-label-width: 80px;
   --modal-max-width: 720px;
+  --modal-width-sm: 320px;
+  --modal-width-md: 480px;
+  --modal-width-lg: 720px;
+  --control-height-sm: 24px;
+  --control-height-md: 28px;
+  --toast-max-width: 320px;
   --dot-size: 8px;
   --drag-handle-width: 4px;
 }
@@ -327,6 +333,12 @@
   --status-col-width: 70px;
   --band-label-width: 80px;
   --modal-max-width: 720px;
+  --modal-width-sm: 320px;
+  --modal-width-md: 480px;
+  --modal-width-lg: 720px;
+  --control-height-sm: 24px;
+  --control-height-md: 28px;
+  --toast-max-width: 320px;
   --dot-size: 8px;
   --drag-handle-width: 4px;
 }

@@ -27,15 +27,15 @@
 
 ## 3. 基础组件库（spec REQ-005）
 
-- [ ] 3.1 Button / IconButton（variant × size，命中区 ≥ 24×24）
-- [ ] 3.2 Badge / StatusBadge / PhaseBadge / ProviderBadge（字母章，色见契约 §2.6）
-- [ ] 3.3 Field / Input / Select / SearchInput（与 Button 等高，`/` 聚焦）
-- [ ] 3.4 Tabs（underline / pill）/ Table（compact 密度、sticky 表头、可排序）
-- [ ] 3.5 Tooltip / Popover / DropdownMenu（Esc 关闭、点外关闭、焦点回归，手写不引库）
-- [ ] 3.6 Modal / Drawer（焦点陷阱）
-- [ ] 3.7 Kbd / MetricCard / BarMeter / Sparkline（内联 SVG）
-- [ ] 3.8 SplitPane（拖拽 + 宽度持久化）
-- [ ] 3.9 验收：所有可交互元素有 `:focus-visible` 焦点环；`prefers-reduced-motion` 下动画归零
+- [x] 3.1 Button / IconButton（variant × size，命中区 ≥ 24×24）
+- [x] 3.2 Badge / StatusBadge / PhaseBadge / ProviderBadge（字母章，色见契约 §2.6）
+- [x] 3.3 Field / Input / Select / SearchInput（与 Button 等高，`/` 聚焦）
+- [x] 3.4 Tabs（underline / pill）/ Table（compact 密度、sticky 表头、可排序）
+- [x] 3.5 Tooltip / Popover / DropdownMenu（Esc 关闭、点外关闭、焦点回归，手写不引库）
+- [x] 3.6 Modal / Drawer（焦点陷阱）
+- [x] 3.7 Kbd / MetricCard / BarMeter / Sparkline（内联 SVG）
+- [x] 3.8 SplitPane（拖拽 + 宽度持久化）
+- [x] 3.9 验收：所有可交互元素有 `:focus-visible` 焦点环；`prefers-reduced-motion` 下动画归零
 
 ## 4. 阶段收口
 

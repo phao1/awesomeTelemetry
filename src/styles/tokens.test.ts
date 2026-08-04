@@ -170,4 +170,12 @@ describe('Design Tokens 契约断言（design-tokens.md §9）', () => {
     const total = cssFiles().reduce((sum, p) => sum + statSync(p).size, 0);
     expect(total).toBeGreaterThan(0);
   });
+
+  it('REQ-009/§7: base.css 含全局 :focus-visible 焦点环与 prefers-reduced-motion 归零', () => {
+    const base = readFileSync(join(stylesDir, 'base.css'), 'utf8');
+    expect(base).toContain(':focus-visible');
+    expect(base).toContain('var(--focus-ring)');
+    expect(base).toContain('prefers-reduced-motion');
+    expect(base).toContain('transition-duration: 0ms');
+  });
 });
