@@ -8,7 +8,7 @@
 |--------|------|------|------|
 | fix-session-data-integrity | 24/24 | ✅ 已完成（T-10 ~ T-12） | fb4d88b / 4f21a53 / 075fd73 / 15bd709 |
 | add-design-system | 31/31 | ✅ 已完成（T-13 ~ T-15） | 3edd352 / 6aba1e0 / e26166c |
-| redesign-frontend-views | 0/50 | ⏳ 未开始 | — |
+| redesign-frontend-views | 50/50 | ✅ 已完成（R-01 ~ R-09） | 763c299 / 6744436 / a227c32 / feb5a76 / 25e45a5 / 68e1dc9 / 51e8862 / 1e1b405 / 40366d5 / ed26e1a |
 | add-palette-and-a11y | 0/30 | ⏳ 未开始 | — |
 
 ### fix-session-data-integrity（已完成）
@@ -42,6 +42,25 @@
   Sparkline/SplitPane/Skeleton/EmptyState/ErrorState/Toast/VirtualList（25 项全手写）。
 - 验收：T1–T7 全过；CSS gzip 5.1KB（预算 < 16KB）；图标集 < 12KB；
   焦点环/reduced-motion 由 base.css 全局规则 + 测试强制。
+
+### redesign-frontend-views（已完成）
+
+- **R-01 共享会话 store**：会话索引 App 单一持有，SessionList 受控化，compare 选择器修复。
+- **R-02 四态渲染**：REQ-022 七行表格逐条落地 + 全部空 catch 清理 + CI 守卫
+  （`src/catch-guard.test.ts` 扫描全部 TS 文件）。
+- **R-03 AppShell**：48px 头 + underline tabs + 三栏 + 28px 状态栏；
+  rail/inspector 拖拽折叠 + REQ-026 布局持久化（范围校验）。
+- **R-04 SessionList**：44px 双行密排（状态点/标题/ProviderBadge/相对时间/计数）+ 多选过滤。
+- **R-05 会话详情**：PhaseRibbon（时间占比色带）/ PhaseTiles（计数徽标）/ 四维指标条 /
+  TraceTimeline（时间比例 + 树形缩进 + 零时长 2px 竖线）/ Inspector 分页签（Raw 懒加载）/
+  Transcript 分页拉取 + 虚拟滚动。
+- **R-06 Agent 概览**：KPI 卡 + 可排序表（BarMeter/Sparkline）+ 展开行复用共享 store（1 请求）。
+- **R-07 对比视图**：Popover 搜索选择器 + 结论条 + 四维双条（L/R 字母标记）+ Ribbon 共享时间尺对照。
+- **R-08 Proxy/Frida**：控制条/密排请求表/详情抽屉/二次确认/前置条件空态（D-009 记录清空无端点）。
+- **R-09 走查修复**：compare/report 惰性详情加载、报告路由补齐（§1.4/§2.3 此前未注册）、
+  adapter 标题黑名单共享（打开会话不再把好标题覆盖成注入内容）。
+- 验收：五视图数据端点全部 200；9,590 event DOM < 500（测试）；agent 1 请求（测试）；
+  327 测试全绿。
 
 ## 总览
 
