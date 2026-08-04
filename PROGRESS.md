@@ -16,7 +16,8 @@
 | M7 | realtime | ✅ 完成 | （待提交） |
 | M7 | realtime | ✅ 完成 | 29ae86d |
 | M8 | HTTP server | ✅ 完成 | （待提交） |
-| M9 | core 分析 | ⬜ 未开始 | — |
+| M8 | HTTP server | ✅ 完成 | 0cb7c44 |
+| M9 | core 分析 | ✅ 完成 | （待提交） |
 | M10 | 前端（a–d） | ⬜ 未开始 | — |
 | M11 | proxy/frida/trae（按 P-3 裁剪） | ⬜ 未开始 | — |
 | M12 | CLI / build / 打包 | ⬜ 未开始 | — |
@@ -86,6 +87,16 @@
 - 验收：六个契约测试全绿；≥1KB + gzip 带 content-encoding/vary；非 2xx 统一信封；
   每个请求调 markForegroundRequest；cli.ts 已接 db/config/initialScanAndStore
 - 注意：server.test.ts 需要真实 HTTP 监听 127.0.0.1，沙箱内需提升权限运行
+
+### M9 · core 分析（已完成）
+
+- 产出：metrics.ts（computeMetrics + METRICS_CALC_VERSION + user_prompt 过滤）、
+  speed-metrics.ts（TTFT/TPS/TPOT/E2E/turnGap/pureInferenceMs）、token-breakdown.ts、
+  report-html.ts（大 JSON 走外部 .js）、compare-report.ts + 测试
+- 契约修正：overview 聚合改为「单会话 0|1 / 会话内占比 → 对会话求平均」，
+  对齐 metrics-analysis REQ-004/REQ-011（M3 的 overview 测试断言同步修正）
+- 验收：phase 分类（M5 已覆盖）；pureInferenceMs 只累计 llm（G4.1 语义）；
+  口径一致性测试差值 < 0.001；大 JSON 报告不内联
 
 ## 待决清单索引
 

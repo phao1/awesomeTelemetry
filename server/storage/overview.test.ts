@@ -212,7 +212,7 @@ describe('REQ-009 Agent Overview 服务端聚合', () => {
     expect(codex?.avgWallClockMs).toBeCloseTo(3000);
     expect(codex?.avgToolDurationMs).toBeCloseTo(100);
     expect(codex?.errorRate).toBeCloseTo(1 / 3);
-    expect(codex?.verificationCoverage).toBeCloseTo(1 / 3);
+    expect(codex?.verificationCoverage).toBe(1); // 单会话 0|1
     expect(codex?.debugEntryRate).toBe(0);
 
     const claude = rows.get('claude/Claude');
@@ -220,7 +220,7 @@ describe('REQ-009 Agent Overview 服务端聚合', () => {
     expect(claude?.eventCount).toBe(2);
     expect(claude?.errorRate).toBe(0);
     expect(claude?.verificationCoverage).toBe(0);
-    expect(claude?.debugEntryRate).toBeCloseTo(0.5);
+    expect(claude?.debugEntryRate).toBe(1); // 单会话 0|1
     db.close();
   });
 });

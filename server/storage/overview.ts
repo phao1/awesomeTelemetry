@@ -15,13 +15,24 @@ const SESSION_AGG_SQL =
   `FROM sessions WHERE data_source = ? GROUP BY provider, source_agent`;
 
 const EVENT_AGG_SQL =
-  `SELECT s.provider AS provider, s.source_agent AS source_agent, ` +
-  `AVG(CASE WHEN e.tool IS NOT NULL THEN e.duration_ms END) AS avg_tool_duration_ms, ` +
-  `SUM(CASE WHEN e.status = 'error' THEN 1 ELSE 0 END) AS error_count, COUNT(*) AS event_count, ` +
-  `SUM(CASE WHEN e.phase = 'verify' THEN 1 ELSE 0 END) AS verify_count, ` +
-  `SUM(CASE WHEN e.phase = 'debug' THEN 1 ELSE 0 END) AS debug_count ` +
-  `FROM events e JOIN sessions s ON s.id = e.session_id ` +
-  `WHERE s.data_source = ? GROUP BY s.provider, s.source_agent`;
+  // REQ-011 口径一致：先按会话算单会话指标（verificationCoverage / enteredDebug 为 0|1，
+  // errorRate 为会话内占比，avgToolDurationMs 为会话内均值），再对会话求平均。
+  `SELECT provider, source_agent, ` +
+  `AVG(error_rate) AS error_rate, AVG(verification_coverage) AS verification_coverage, ` +
+  `AVG(debug_entry_rate) AS debug_entry_rate, AVG(avg_tool_duration_ms) AS avg_tool_duration_ms, ` +
+  `SUM(error_count) AS error_count, SUM(event_count) AS event_count ` +
+  `FROM ( ` +
+  `  SELECT s.provider AS provider, s.source_agent AS source_agent, s.id AS session_id, ` +
+  `    COUNT(*) AS event_count, ` +
+  `    SUM(CASE WHEN e.status = 'error' THEN 1 ELSE 0 END) AS error_count, ` +
+  `    MAX(CASE WHEN e.phase = 'verify' THEN 1 ELSE 0 END) AS verification_coverage, ` +
+  `    MAX(CASE WHEN e.phase = 'debug' THEN 1 ELSE 0 END) AS debug_entry_rate, ` +
+  `    SUM(CASE WHEN e.status = 'error' THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS error_rate, ` +
+  `    COALESCE(AVG(CASE WHEN e.tool IS NOT NULL THEN e.duration_ms END), 0) AS avg_tool_duration_ms ` +
+  `  FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `  WHERE s.data_source = ? ` +
+  `  GROUP BY s.provider, s.source_agent, s.id ` +
+  `) GROUP BY provider, source_agent`;
 
 const EMPTY_STAMP = '1970-01-01T00:00:00.000Z';
 
@@ -82,10 +93,6 @@ export function getAgentOverview(db: Database, dataSource: DataSource): AgentOve
   const rows: AgentOverviewRow[] = sessionRows.map((row) => {
     const key = `${row.provider as string}\u0000${row.source_agent as string}`;
     const ev = eventByGroup.get(key);
-    const eventCount = (ev?.event_count as number | undefined) ?? 0;
-    const errorCount = (ev?.error_count as number | undefined) ?? 0;
-    const verifyCount = (ev?.verify_count as number | undefined) ?? 0;
-    const debugCount = (ev?.debug_count as number | undefined) ?? 0;
     return {
       provider: row.provider as ProviderKey,
       sourceAgent: row.source_agent as string,
@@ -98,9 +105,9 @@ export function getAgentOverview(db: Database, dataSource: DataSource): AgentOve
       avgWallClockMs: row.avg_wall_clock_ms as number,
       latestUpdatedAt: row.latest_updated_at as string,
       avgToolDurationMs: (ev?.avg_tool_duration_ms as number | null | undefined) ?? null,
-      errorRate: eventCount > 0 ? errorCount / eventCount : null,
-      verificationCoverage: eventCount > 0 ? verifyCount / eventCount : null,
-      debugEntryRate: eventCount > 0 ? debugCount / eventCount : null,
+      errorRate: ev?.error_rate as number | null | undefined ?? null,
+      verificationCoverage: ev?.verification_coverage as number | null | undefined ?? null,
+      debugEntryRate: ev?.debug_entry_rate as number | null | undefined ?? null,
     };
   });
 
