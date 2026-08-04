@@ -1,4 +1,4 @@
-import type { Database, Statement } from 'better-sqlite3';
+import type { Database } from 'better-sqlite3';
 
 import type {
   SessionIndexEntry,
@@ -6,22 +6,7 @@ import type {
   TraceMetrics,
   TraceSession,
 } from '../../src/core/trace-types.js';
-
-const statementCache = new WeakMap<Database, Map<string, Statement>>();
-
-function cachedStmt(db: Database, sql: string): Statement {
-  let cache = statementCache.get(db);
-  if (cache === undefined) {
-    cache = new Map();
-    statementCache.set(db, cache);
-  }
-  let stmt = cache.get(sql);
-  if (stmt === undefined) {
-    stmt = db.prepare(sql);
-    cache.set(sql, stmt);
-  }
-  return stmt;
-}
+import { cachedStmt } from './stmt-cache.js';
 
 function upsertSql(
   table: string,

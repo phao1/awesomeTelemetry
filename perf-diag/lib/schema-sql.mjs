@@ -1,10 +1,8 @@
-import type { Database } from 'better-sqlite3';
-
-import { cachedStmt } from './stmt-cache.js';
+// 镜像 server/storage/schema.ts 的 SCHEMA_SQL / INDEX_SQL（Node 原生 TS 无法解析 .js 相对导入）。
+// 若 schema.ts 变更，这里必须同步；M12 的 perf 校验脚本可对比两份 DDL。
 
 export const SCHEMA_VERSION = 1;
 
-// contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS _meta (
   key   TEXT PRIMARY KEY,
@@ -132,8 +130,6 @@ CREATE TABLE IF NOT EXISTS frida_captures (
 );
 `;
 
-// contracts/database.md §4 索引（全集），逐字采用。
-// 注意：不建单列 idx_events_session_id / idx_sessions_data_source，复合索引已覆盖。
 export const INDEX_SQL = `
 CREATE INDEX IF NOT EXISTS idx_events_session_seq    ON events(session_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_events_session_phase  ON events(session_id, phase);
@@ -148,7 +144,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_source_agent ON sessions(source_agent);
 CREATE INDEX IF NOT EXISTS idx_scan_state_provider   ON scan_state(provider);
 CREATE INDEX IF NOT EXISTS idx_scan_state_session    ON scan_state(session_id);
 
-CREATE INDEX IF NOT EXISTS idx_proxy_started_len     ON proxy_requests(system_prompt_len DESC, started_at); -- TODO(D-002): §4 原为 (started_at, system_prompt_len DESC)，与 §5.3 期望计划矛盾，按期望计划调整列序
+CREATE INDEX IF NOT EXISTS idx_proxy_started_len     ON proxy_requests(system_prompt_len DESC, started_at);
 CREATE INDEX IF NOT EXISTS idx_proxy_hostname        ON proxy_requests(hostname);
 CREATE INDEX IF NOT EXISTS idx_proxy_parsed_session  ON proxy_requests(parsed_session_id);
 
@@ -157,13 +153,12 @@ CREATE INDEX IF NOT EXISTS idx_frida_session         ON frida_captures(session_i
 CREATE INDEX IF NOT EXISTS idx_frida_capture_session ON frida_captures(capture_session_id);
 `;
 
-const SET_SCHEMA_VERSION_SQL =
-  "INSERT INTO _meta(key, value) VALUES('schema_version', ?) " +
-  'ON CONFLICT(key) DO UPDATE SET value = excluded.value';
-
-export function initSchema(db: Database): void {
-  db.exec(SCHEMA_SQL); // §3 全部 CREATE TABLE IF NOT EXISTS
-  db.exec(INDEX_SQL); // §4 全部 CREATE INDEX IF NOT EXISTS
-  cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
+export function initSchema(db) {
+  db.exec(SCHEMA_SQL);
+  db.exec(INDEX_SQL);
+  db.prepare(
+    "INSERT INTO _meta(key, value) VALUES('schema_version', ?) " +
+    'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+  ).run(String(SCHEMA_VERSION));
   db.exec('ANALYZE');
 }
