@@ -10,24 +10,27 @@ import type {
 import { api } from '../api/client.js';
 import { eventDetailCache } from '../cache/caches.js';
 import { ErrorState, Skeleton } from './ui/States.js';
+import { Tabs } from './ui/Tabs.js';
 
 export interface EventInspectorProps {
   sessionKey: string;
   event: TraceEventSlim | null;
   locale: Locale;
   fontPx: number;
-  /** REQ-015/REQ-026：受控宽度与折叠 */
   width: number;
   collapsed: boolean;
   onResize: (width: number) => void;
   onToggleCollapse: () => void;
   loadDetail?: (key: string, eventId: string) => Promise<TraceEvent | TraceEventRaw>;
+  loadRaw?: (key: string, eventId: string) => Promise<TraceEventRaw>;
   onOpenTranscript: (event: TraceEventSlim) => void;
   onOpenTokens: (event: TraceEventSlim) => void;
   onClose: () => void;
 }
 
-/** REQ-008/G7.1：右侧详情面板，可拖拽调宽，单 event 下钻（200ms 防抖）。 */
+type InspectorTab = 'summary' | 'input' | 'output' | 'raw' | 'tokens';
+
+/** REQ-017 ⑤：右侧详情面板。分页签 Summary/Input/Output/Raw/Tokens；Raw 按需拉取。 */
 export function EventInspector({
   sessionKey,
   event,
@@ -38,17 +41,23 @@ export function EventInspector({
   onResize,
   onToggleCollapse,
   loadDetail = (key, eventId) => api.eventDetail(key, eventId),
+  loadRaw = (key, eventId) => api.eventDetail(key, eventId, true) as Promise<TraceEventRaw>,
   onOpenTranscript,
   onOpenTokens,
   onClose,
-}: EventInspectorProps) {
+}: EventInspectorProps): React.JSX.Element {
   const [detail, setDetail] = useState<TraceEvent | TraceEventRaw | null>(null);
+  const [raw, setRaw] = useState<string | null>(null);
+  const [rawLoading, setRawLoading] = useState(false);
+  const [tab, setTab] = useState<InspectorTab>('summary');
   const [error, setError] = useState<string | null>(null);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
     if (event === null) {
       setDetail(null);
+      setRaw(null);
+      setTab('summary');
       setError(null);
       return;
     }
@@ -58,7 +67,6 @@ export function EventInspector({
       setError(null);
       return;
     }
-    // 200ms 防抖（REQ-003）
     const timer = setTimeout(() => {
       void loadDetail(sessionKey, event.id)
         .then((loaded) => {
@@ -67,13 +75,30 @@ export function EventInspector({
           setError(null);
         })
         .catch((err: unknown) => {
-          // REQ-022：正文加载失败必须可诊断，与「本来为空」区分
           console.error('[inspector] 事件正文加载失败:', err);
           setError(err instanceof Error ? err.message : String(err));
         });
     }, 200);
     return () => clearTimeout(timer);
   }, [sessionKey, event, loadDetail]);
+
+  // REQ-017 ⑤：Raw 页签切到才请求（include=raw）
+  useEffect(() => {
+    if (tab !== 'raw' || event === null || raw !== null || rawLoading) {
+      return;
+    }
+    setRawLoading(true);
+    void loadRaw(sessionKey, event.id)
+      .then((loaded) => {
+        setRaw(loaded.raw);
+        setRawLoading(false);
+      })
+      .catch((err: unknown) => {
+        console.error('[inspector] raw 拉取失败:', err);
+        setRawLoading(false);
+        setError(err instanceof Error ? err.message : String(err));
+      });
+  }, [tab, raw, rawLoading, sessionKey, event, loadRaw]);
 
   const onMouseDown = (e: ReactMouseEvent<HTMLElement>): void => {
     if (collapsed) {
@@ -100,89 +125,119 @@ export function EventInspector({
     return (
       <aside className="inspector" style={{ width: collapsed ? 0 : width }}>
         <div className="drag-handle" onMouseDown={onMouseDown} />
-        <div className="inspector-collapse">
-          <button type="button" className="ui-icon-btn ui-btn-sm" aria-label="collapse panel" onClick={onToggleCollapse}>
-            panel
-          </button>
-        </div>
         <p className="hint">{t('common.empty', locale)}</p>
       </aside>
     );
   }
 
-  const raw = (detail as TraceEventRaw | null)?.raw ?? null;
+  const tabs: Array<{ id: InspectorTab; label: string }> = [
+    { id: 'summary', label: 'Summary' },
+    { id: 'input', label: t('event.input', locale) },
+    { id: 'output', label: t('event.output', locale) },
+    { id: 'raw', label: t('event.raw', locale) },
+    { id: 'tokens', label: t('event.tokens', locale) },
+  ];
+
+  const retry = (): void => {
+    setError(null);
+    setDetail(null);
+    void loadDetail(sessionKey, event.id)
+      .then((loaded) => {
+        eventDetailCache.set(`${sessionKey}:${event.id}`, loaded);
+        setDetail(loaded);
+      })
+      .catch((err: unknown) => {
+        console.error('[inspector] 重试失败:', err);
+        setError(err instanceof Error ? err.message : String(err));
+      });
+  };
+
   return (
     <aside className="inspector" style={{ width: collapsed ? 0 : width }}>
       <div className="drag-handle" onMouseDown={onMouseDown} />
       <header className="inspector-header">
-        <span className="mono">#{event.sequence} {event.id}</span>
+        <span className="mono">#{event.sequence}</span>
         <span style={{ display: 'inline-flex', gap: 'var(--space-1)' }}>
           <button type="button" className="ui-icon-btn ui-btn-sm" aria-label="collapse panel" onClick={onToggleCollapse}>
-            panel
+            ⇥
           </button>
           <button type="button" className="ui-icon-btn ui-btn-sm" aria-label="close" onClick={onClose}>
             ×
           </button>
         </span>
       </header>
+      <div className="inspector-tabs">
+        <Tabs
+          variant="underline"
+          activeId={tab}
+          onChange={(id) => setTab(id as InspectorTab)}
+          items={tabs}
+        />
+      </div>
       <div className="inspector-body" style={{ fontSize: fontPx }}>
-        <p>{event.title}</p>
-        <p className="meta">{event.kind} · {event.phase} · {event.status} · {event.durationMs}ms</p>
-        {error !== null && (
-          <ErrorState
-            code="EVENT_DETAIL_FAILED"
-            message={error}
-            onRetry={() => {
-              const cached = eventDetailCache.get(`${sessionKey}:${event.id}`);
-              if (cached !== undefined) {
-                setDetail(cached);
-                return;
-              }
-              setError(null);
-              void loadDetail(sessionKey, event.id)
-                .then((loaded) => {
-                  eventDetailCache.set(`${sessionKey}:${event.id}`, loaded);
-                  setDetail(loaded);
-                })
-                .catch((err: unknown) => {
-                  console.error('[inspector] 重试失败:', err);
-                  setError(err instanceof Error ? err.message : String(err));
-                });
-            }}
-          />
-        )}
+        <h4 className="inspector-title">{event.title}</h4>
+        <p className="meta">
+          {event.kind} · {event.phase} · {event.status} · {event.durationMs}ms
+        </p>
+        {error !== null && <ErrorState code="EVENT_DETAIL_FAILED" message={error} onRetry={retry} />}
         {error === null && detail === null && <Skeleton variant="block" count={2} />}
-        <div className="inspector-actions">
-          <button type="button" className="btn" onClick={() => onOpenTranscript(event)}>
-            {t('transcript.title', locale)}
-          </button>
-          <button type="button" className="btn" onClick={() => onOpenTokens(event)}>
-            {t('token.title', locale)}
-          </button>
-        </div>
-        {detail?.inputSummary !== null && detail?.inputSummary !== undefined && (
-          <section>
-            <h4>{t('event.input', locale)}</h4>
-            <pre>{detail.inputSummary}</pre>
-          </section>
-        )}
-        {detail?.outputSummary !== null && detail?.outputSummary !== undefined && (
-          <section>
-            <h4>{t('event.output', locale)}</h4>
-            <pre>{detail.outputSummary}</pre>
-          </section>
-        )}
-        {event.error !== null && (
-          <section>
-            <h4>{t('event.error', locale)}</h4>
-            <pre>{event.error}</pre>
-          </section>
-        )}
-        {raw !== null && (
-          <section>
-            <h4>{t('event.raw', locale)}</h4>
-            <pre className="mono">{raw}</pre>
-          </section>
+        {error === null && detail !== null && (
+          <>
+            {tab === 'summary' && (
+              <div>
+                <p>{event.actor} · {event.tool ?? '—'}</p>
+                {event.error !== null && (
+                  <section>
+                    <h5>{t('event.error', locale)}</h5>
+                    <pre className="mono">{event.error}</pre>
+                  </section>
+                )}
+                <div className="inspector-actions">
+                  <button type="button" className="btn" onClick={() => onOpenTranscript(event)}>
+                    {t('transcript.title', locale)}
+                  </button>
+                  <button type="button" className="btn" onClick={() => onOpenTokens(event)}>
+                    {t('token.title', locale)}
+                  </button>
+                </div>
+              </div>
+            )}
+            {tab === 'input' &&
+              (detail.inputSummary === null ? (
+                <p className="hint">{t('common.empty', locale)}</p>
+              ) : (
+                <pre>{detail.inputSummary}</pre>
+              ))}
+            {tab === 'output' &&
+              (detail.outputSummary === null ? (
+                <p className="hint">{t('common.empty', locale)}</p>
+              ) : (
+                <pre>{detail.outputSummary}</pre>
+              ))}
+            {tab === 'raw' &&
+              (rawLoading ? (
+                <Skeleton variant="block" count={1} />
+              ) : raw === null ? (
+                <p className="hint">{t('common.empty', locale)}</p>
+              ) : (
+                <pre className="mono">{raw}</pre>
+              ))}
+            {tab === 'tokens' &&
+              (event.tokens === null ? (
+                <p className="hint">{t('common.empty', locale)}</p>
+              ) : (
+                <table className="ui-table ui-table-compact">
+                  <tbody>
+                    {(['input', 'output', 'reasoning', 'cacheRead', 'cacheWrite', 'total'] as const).map((key) => (
+                      <tr key={key}>
+                        <td>{key}</td>
+                        <td className="mono">{event.tokens![key]}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ))}
+          </>
         )}
       </div>
     </aside>

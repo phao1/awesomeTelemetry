@@ -25,8 +25,9 @@ import { LanguageToggle } from './components/LanguageToggle.js';
 import { LiveIndicator } from './components/LiveIndicator.js';
 import { SessionList } from './components/SessionList.js';
 import { SessionHeaderCard } from './components/SessionHeaderCard.js';
+import { PhaseRibbon } from './components/PhaseRibbon.js';
 import { PhaseTiles } from './components/PhaseTiles.js';
-import { TraceGanttTree } from './components/TraceGanttTree.js';
+import { TraceTimeline } from './components/TraceTimeline.js';
 import { EventInspector } from './components/EventInspector.js';
 import { AgentOverview } from './components/AgentOverview.js';
 import { CompareBoard } from './components/CompareBoard.js';
@@ -91,7 +92,6 @@ export default function App() {
   ); // REQ-012：8–28px
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [transcriptEvent, setTranscriptEvent] = useState<TraceEventSlim | null>(null);
-  const [transcriptEvents, setTranscriptEvents] = useState<TraceEvent[]>([]);
   const [tokenEvent, setTokenEvent] = useState<TraceEventSlim | null>(null);
   const selectedKeyRef = useRef<string | null>(null);
 
@@ -307,13 +307,8 @@ export default function App() {
   const openTranscript = useCallback(
     (event: TraceEventSlim) => {
       setTranscriptEvent(event);
-      if (selectedKey !== null) {
-        void api.sessionDetail(selectedKey, 'full').then((result) => {
-          setTranscriptEvents(result.events as TraceEvent[]);
-        });
-      }
     },
-    [selectedKey],
+    [],
   );
 
   return (
@@ -397,15 +392,86 @@ export default function App() {
               )}
             {detail !== null && detail.events.length > 0 && (
               <>
-                <SessionHeaderCard session={detail.session} locale={locale} />
-                <PhaseTiles active={phaseFilter} onToggle={togglePhase} locale={locale} />
-                <TraceGanttTree
+                <SessionHeaderCard
+                  session={detail.session}
+                  events={detail.events as TraceEventSlim[]}
+                  locale={locale}
+                  onRescan={() => {
+                    if (selectedKey === null) {
+                      return;
+                    }
+                    void api
+                      .rescanSession(selectedKey)
+                      .then(() => {
+                        if (selectedKey !== null) {
+                          selectSession(selectedKey);
+                        }
+                      })
+                      .catch((err: unknown) => {
+                        console.error('[session] 重扫失败:', err);
+                      });
+                  }}
+                  onDelete={() => {
+                    if (selectedKey === null) {
+                      return;
+                    }
+                    const key = selectedKey;
+                    void api
+                      .deleteSession(key)
+                      .then(() => {
+                        setSessions((prev) => prev.filter((s) => s.id !== key));
+                        setSelectedKey(null);
+                        setDetail(null);
+                      })
+                      .catch((err: unknown) => {
+                        console.error('[session] 删除失败:', err);
+                      });
+                  }}
+                  onCopyId={() => {
+                    if (selectedKey !== null) {
+                      void navigator.clipboard.writeText(selectedKey).catch((err: unknown) => {
+                        console.error('[session] 复制失败:', err);
+                      });
+                    }
+                  }}
+                  onExport={() => {
+                    if (selectedKey !== null) {
+                      window.open(`/api/sessions/${encodeURIComponent(selectedKey)}/report`, '_blank');
+                    }
+                  }}
+                />
+                <PhaseRibbon
+                  events={detail.events as TraceEventSlim[]}
+                  active={phaseFilter}
+                  onSelectOnly={(phase) => {
+                    setPhaseFilter((prev) =>
+                      prev.length === 1 && prev[0] === phase ? [...TRACE_PHASES] : [phase],
+                    );
+                  }}
+                  locale={locale}
+                />
+                <PhaseTiles
+                  active={phaseFilter}
+                  onToggle={togglePhase}
+                  locale={locale}
+                  counts={Object.fromEntries(
+                    TRACE_PHASES.map((phase) => [
+                      phase,
+                      (detail.events as TraceEventSlim[]).filter((e) => e.phase === phase).length,
+                    ]),
+                  ) as Record<TracePhase, number>}
+                  visibleCount={visibleEvents.length}
+                  onSelectAll={() => setPhaseFilter([...TRACE_PHASES])}
+                  onClearAll={() => setPhaseFilter([])}
+                />
+                <TraceTimeline
                   events={visibleEvents as TraceEventSlim[]}
                   total={detail.eventTotal}
                   hasMore={detail.hasMore}
                   onLoadMore={loadMoreEvents}
                   onSelectEvent={setSelectedEvent}
                   selectedEventId={selectedEvent?.id ?? null}
+                  locale={locale}
                 />
               </>
             )}
@@ -459,8 +525,8 @@ export default function App() {
       )}
       {transcriptEvent !== null && (
         <TranscriptModal
+          sessionKey={selectedKey ?? ''}
           title={transcriptEvent.title}
-          events={transcriptEvents}
           locale={locale}
           onClose={() => setTranscriptEvent(null)}
         />

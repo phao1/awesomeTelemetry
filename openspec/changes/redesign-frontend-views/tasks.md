@@ -37,14 +37,14 @@
 
 ## 5. 会话详情主区（T-19，spec REQ-017）
 
-- [ ] 5.1 SessionHeaderCard：provider + 标题 + 状态 + 溢出菜单 + meta 行
-- [ ] 5.2 四维指标条（快/准/稳/省），`null` 显示 `—` 并加 tooltip，**不得用 `0` 冒充**
-- [ ] 5.3 **PhaseRibbon**：按时间占比铺满的色带，悬停出 phase/时长/事件数，点击等价于只选该 phase
-- [ ] 5.4 PhaseTiles：6 个 tile 带计数徽标 + 全选/反选
-- [ ] 5.5 TraceTimeline：时间比例条（真实位置与时长）+ 树形缩进（最多 3 级，可折叠）+ phase 图标与色
-- [ ] 5.6 零时长事件渲染为最小 2px 竖线
-- [ ] 5.7 EventInspector 分页签（Summary/Input/Output/Raw/Tokens），**Raw 切到才请求**
-- [ ] 5.8 修 P1-6：Transcript 改分页拉取 + 弹层内虚拟滚动，**不得一次 `mode=full`**
+- [x] 5.1 SessionHeaderCard：provider + 标题 + 状态 + 溢出菜单 + meta 行
+- [x] 5.2 四维指标条（快/准/稳/省），`null` 显示 `—` 并加 tooltip，**不得用 `0` 冒充**
+- [x] 5.3 **PhaseRibbon**：按时间占比铺满的色带，悬停出 phase/时长/事件数，点击等价于只选该 phase
+- [x] 5.4 PhaseTiles：6 个 tile 带计数徽标 + 全选/反选
+- [x] 5.5 TraceTimeline：时间比例条（真实位置与时长）+ 树形缩进（最多 3 级，可折叠）+ phase 图标与色
+- [x] 5.6 零时长事件渲染为最小 2px 竖线
+- [x] 5.7 EventInspector 分页签（Summary/Input/Output/Raw/Tokens），**Raw 切到才请求**
+- [x] 5.8 修 P1-6：Transcript 改分页拉取 + 弹层内虚拟滚动，**不得一次 `mode=full`**
 - [ ] 5.9 验收：9,590 event 会话 DOM < 500、首绘 < 200ms
 
 ## 6. Agent 概览（T-20，spec REQ-018）

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { TraceEventSlim } from '../core/trace-types.js';
-import { TraceGanttTree } from './TraceGanttTree.js';
+import { TraceTimeline } from './TraceTimeline.js';
 
 function makeEvents(count: number): TraceEventSlim[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -46,13 +46,14 @@ describe('REQ-006 虚拟滚动', () => {
     const root = createRoot(container);
     act(() => {
       root.render(
-        <TraceGanttTree
+        <TraceTimeline
           events={events}
           total={9590}
           hasMore={false}
           onLoadMore={() => {}}
           onSelectEvent={() => {}}
           selectedEventId={null}
+          locale="zh"
         />,
       );
     });
@@ -79,7 +80,7 @@ describe('REQ-006 虚拟滚动', () => {
     const root = createRoot(container);
     act(() => {
       root.render(
-        <TraceGanttTree
+        <TraceTimeline
           events={events}
           total={3000}
           hasMore
@@ -88,6 +89,7 @@ describe('REQ-006 虚拟滚动', () => {
           }}
           onSelectEvent={() => {}}
           selectedEventId={null}
+          locale="zh"
         />,
       );
     });

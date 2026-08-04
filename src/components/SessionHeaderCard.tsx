@@ -1,39 +1,124 @@
+import { useMemo } from 'react';
+
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
-import type { TraceSession } from '../core/trace-types.js';
+import type { TraceEvent, TraceEventSlim, TraceSession } from '../core/trace-types.js';
+import { computeSpeedMetrics } from '../core/speed-metrics.js';
+import { DropdownMenu } from './ui/Overlay.js';
+import { MetricCard } from './ui/Misc.js';
+import { StatusBadge } from './ui/Badge.js';
+import { IconAccuracy, IconCost, IconKebab, IconSpeed, IconStability } from './icons/index.js';
 
 export interface SessionHeaderCardProps {
   session: TraceSession;
+  events: TraceEventSlim[];
   locale: Locale;
-  onOpenSystemPrompt?: () => void;
+  onRescan?: () => void;
+  onDelete?: () => void;
+  onCopyId?: () => void;
+  onExport?: () => void;
 }
 
-/** REQ-008：会话元数据 + system prompt 入口。 */
+function fmtMs(ms: number | null): string {
+  return ms === null ? '—' : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms.toFixed(0)}ms`;
+}
+
+/** REQ-017 ①：会话头 + 四维指标条（null 显示 — 加 tooltip，不得用 0 冒充）。 */
 export function SessionHeaderCard({
   session,
+  events,
   locale,
-  onOpenSystemPrompt,
-}: SessionHeaderCardProps) {
+  onRescan,
+  onDelete,
+  onCopyId,
+  onExport,
+}: SessionHeaderCardProps): React.JSX.Element {
+  const metrics = useMemo(() => {
+    const total = events.length || 1;
+    const errorEvents = events.filter((e) => e.status === 'error').length;
+    const testEvents = events.filter((e) => e.kind === 'test').length;
+    const debugEvents = events.filter((e) => e.phase === 'debug').length;
+    const speed = computeSpeedMetrics({
+      session,
+      events: events as TraceEvent[],
+      tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+    });
+    const tokensPerStep = total > 0 ? session.tokenUsage.total / total : 0;
+    return {
+      speed,
+      verification: total > 0 ? testEvents / total : null,
+      errorRate: total > 0 ? errorEvents / total : null,
+      debugRate: total > 0 ? debugEvents / total : null,
+      tokensPerStep,
+      hasData: total > 1,
+    };
+  }, [session, events]);
+
+  const pct = (v: number | null): string => (v === null ? '—' : `${(v * 100).toFixed(0)}%`);
+  const na = metrics.hasData ? '' : ' — 会话数据不足以计算';
+
   return (
     <div className="session-header">
-      <h2>{session.title || session.id}</h2>
-      <dl className="meta">
+      <div className="session-header-row">
+        <h2 className="session-header-title">{session.title || session.id}</h2>
+        <StatusBadge status={session.status} locale={locale} />
+        <span className="spacer" />
+        <DropdownMenu
+          open={false}
+          onOpenChange={() => undefined}
+          trigger={(props) => (
+            <button type="button" className="ui-icon-btn" aria-label="session menu" {...props}>
+              <IconKebab size={16} />
+            </button>
+          )}
+          items={[
+            { id: 'rescan', label: t('session.rescan', locale), onSelect: onRescan },
+            { id: 'copy', label: t('session.copyId', locale), onSelect: onCopyId },
+            { id: 'export', label: t('session.exportReport', locale), onSelect: onExport },
+            { id: 'delete', label: t('session.delete', locale), onSelect: onDelete },
+          ]}
+        />
+      </div>
+      <dl className="meta session-meta">
         <dt>{t('session.provider', locale)}</dt>
-        <dd>{session.provider}</dd>
-        <dt>{t('session.status', locale)}</dt>
-        <dd>{session.status}</dd>
-        <dt>{t('session.events', locale)}</dt>
-        <dd>{session.eventCount}</dd>
-        <dt>{t('session.tokens', locale)}</dt>
-        <dd>{session.tokenUsage.total}</dd>
-        <dt>{t('session.cost', locale)}</dt>
-        <dd>${session.costUsd.toFixed(4)}</dd>
+        <dd className="mono">{session.provider}</dd>
+        <dt>{t('session.cwd', locale)}</dt>
+        <dd className="mono session-cwd">{session.cwd ?? '—'}</dd>
+        <dt>{t('session.startedAt', locale)}</dt>
+        <dd className="mono">{new Date(session.startedAt).toLocaleString()}</dd>
+        <dt>{t('session.duration', locale)}</dt>
+        <dd className="mono">{fmtMs(session.totalDurationMs)}</dd>
       </dl>
-      {session.systemPrompt !== null && (
-        <button type="button" className="btn" onClick={onOpenSystemPrompt}>
-          {t('session.systemPrompt', locale)}
-        </button>
-      )}
+      <div className="session-metrics">
+        <MetricCard
+          icon={<IconSpeed size={16} />}
+          label={t('metric.speed', locale)}
+          value={fmtMs(metrics.speed.ttftMs)}
+          unit={`ttft · tps ${metrics.speed.tps === null ? '—' : metrics.speed.tps.toFixed(1)}`}
+          trend={`e2e ${fmtMs(metrics.speed.e2eMs)}${na}`}
+        />
+        <MetricCard
+          icon={<IconAccuracy size={16} />}
+          label={t('metric.accuracy', locale)}
+          value={pct(metrics.verification)}
+          unit="test events"
+          trend={metrics.verification === null ? t('metric.na', locale) : undefined}
+        />
+        <MetricCard
+          icon={<IconStability size={16} />}
+          label={t('metric.stability', locale)}
+          value={pct(metrics.errorRate)}
+          unit="error rate"
+          trend={`debug ${pct(metrics.debugRate)}`}
+        />
+        <MetricCard
+          icon={<IconCost size={16} />}
+          label={t('metric.cost', locale)}
+          value={`${session.tokenUsage.total.toLocaleString()}`}
+          unit={`tok · $${session.costUsd.toFixed(4)}`}
+          trend={`${metrics.tokensPerStep.toFixed(0)} tok/step`}
+        />
+      </div>
     </div>
   );
 }

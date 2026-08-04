@@ -149,6 +149,9 @@ export const api = {
   deleteSession(key: string): Promise<{ deleted: boolean; key: string }> {
     return fetchJson(`/sessions/${encodeURIComponent(key)}`, { method: 'DELETE' });
   },
+  rescanSession(key: string): Promise<{ key: string; eventCount: number; durationMs: number }> {
+    return fetchJson(`/sessions/${encodeURIComponent(key)}/rescan`, { method: 'POST' });
+  },
   scan(provider?: string, force = false): Promise<unknown> {
     return fetchJson('/scan', {
       method: 'POST',
