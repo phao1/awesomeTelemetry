@@ -10,8 +10,8 @@
 | M1 | trace-model | ✅ 完成 | 4f5c316 |
 | M2 | storage 基础 | ✅ 完成 | 7091836 |
 | M3 | storage 查询 | ✅ 完成 | 95ca72d |
-| M4 | watch 增量门禁 | ✅ 完成 | （待提交） |
-| M5 | adapters ×9 | ⬜ 未开始 | — |
+| M4 | watch 增量门禁 | ✅ 完成 | 8fe7949 |
+| M5 | adapters ×9 | ✅ 完成 | （待提交） |
 | M6 | scanners ×9 | ⬜ 未开始 | — |
 | M7 | realtime | ⬜ 未开始 | — |
 | M8 | HTTP server | ⬜ 未开始 | — |
@@ -45,6 +45,18 @@
   prewarm.ts（让路 + yield）+ 4 个测试文件
 - 验收：无变更重扫 0 写语句；scan_state 首轮后行数 > 0；只改 -wal 可检测；
   append 只读增量且 endOffset 推进；截断回退全量
+
+### M5 · adapters ×9（已完成）
+
+- 产出：sample-loader.ts（按 sourceAgent 分发）、9 个 adapter（opencode 含 OpenCodeDialect，
+  codearts/codeagent2 为 thin wrapper，codeagent 包装 claude-code）+ 9 个测试文件 +
+  每 provider 一个 fixture + helpers.ts
+- **决策**：M5 REQ-008（qoder 调 classifyEvents）硬依赖 M9 的 phase-classifier，
+  提前完整实现 src/core/phase-classifier.ts（两遍算法 + ACTION_PHASE + classifyBashCommand），
+  非占位实现，M9 在此基础上继续。
+- 验收：每 adapter ≥5 用例；OpenCode 系 cacheRead 用 max、其余 sum、reasoning 恒 sum；
+  total = input+output+reasoning+cacheRead；状态四类映射；重复 id :sequence 后缀；
+  title ≤ 200；raw 与正文分离返回
 
 ## 待决清单索引
 
