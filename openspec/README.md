@@ -25,14 +25,16 @@ openspec/
 │   ├── data-model.md            ← 完整 TypeScript 类型 + 枚举全集
 │   ├── database.md              ← 完整 SQL DDL v1 + 索引 + PRAGMA
 │   ├── api.md                   ← 完整 HTTP API 契约 + 错误信封 + 契约测试
-│   └── nfr.md                   ← 性能预算 + CI 断言 + 跳级信号
+│   ├── nfr.md                   ← 性能预算 + CI 断言 + 跳级信号
+│   └── design-tokens.md         ← 色板/字号/间距/图标规范 + 对比度断言
 └── specs/
     ├── trace-model/             ← 数据模型行为需求
     ├── storage/                 ← SQLite 存储行为需求
     ├── session-scanning/        ← 扫描器 + 增量门禁 + 预热策略
     ├── adapters/                ← 9 provider 适配器
     ├── realtime/                ← EventBus + 事件合并 + SSE
-    ├── frontend/                ← React SPA（5 视图 + 虚拟滚动）
+    ├── design-system/           ← 视觉原子层（token/图标/组件/四态/快捷键）
+    ├── frontend/                ← React SPA（5 视图 + 虚拟滚动 + 页面布局）
     ├── desensitization/         ← PII 脱敏引擎
     ├── metrics-analysis/        ← phase 分类 + 四维指标 + 报告
     ├── proxy-capture/           ← MITM + CDP + Frida
@@ -58,7 +60,8 @@ openspec/
 | 3 | session-scanning | 2 | nfr §3 启动行为 |
 | 4 | adapters | 1 | data-model §2 token 语义 |
 | 5 | realtime | 2 | data-model §10 BusEvents |
-| 6 | frontend shell | 1,5 | `contracts/api.md` §1–3 |
+| 6 | design-system | — | `contracts/design-tokens.md` 全文 |
+| 6 | frontend shell | 1,5,6 | `contracts/api.md` §1–3 + `contracts/design-tokens.md` |
 | 7 | desensitization | 无 | — |
 | 8 | proxy-capture | 2,5,7 | api §4 |
 | 9 | metrics-analysis | 1 | data-model §6 |
@@ -104,6 +107,19 @@ v5 只改变了它的**调用方式**（异步 spawn + 结果缓存 + 移出请�
 
 ## 与 OpenSpec 工具的关系
 
-本目录遵循 `specs/<domain>/spec.md` 约定（Requirements + Scenarios）。因目标是"复刻已有项目"而非"变更管理"，未使用 `changes/` 目录。`project.md`、`gotchas.md`、`contracts/` 是复刻导向 spec 额外加的三类文档，也是它区别于普通 OpenSpec 的核心。
+本目录遵循 `specs/<domain>/spec.md` 约定（Requirements + Scenarios）。`project.md`、`gotchas.md`、`contracts/` 是复刻导向 spec 额外加的三类文档，也是它区别于普通 OpenSpec 的核心。
+
+**关于 `changes/` 目录**：M0–M12 的复刻阶段未使用（目标是"复刻已有项目"而非"变更管理"，规格直接写进 `specs/`）。
+**自 2026-08-04 的 UI 设计刷新起启用**，用于执行追踪：`openspec list` 看进度、`openspec status --change <id>` 看单个 change 的 artifact 完成度。
+
+当前四个 change 的规格已先行落入主 `specs/`（`design-system`、`frontend` REQ-015+、`session-scanning` REQ-021/022、`contracts/design-tokens.md`），因此它们的 `.openspec.yaml` 均设 `skip_specs: true`，只承担 proposal / design / tasks 三份 artifact。
+**下一个新需求起走完整流程**：`openspec new change` → proposal → spec delta → design → tasks → 实现 → `openspec archive`。
+
+```bash
+openspec list                              # 看所有 change 与任务进度
+openspec status --change <id>              # 看单个 change 的 artifact 完成度
+openspec validate <id> --strict            # 提交前校验
+openspec archive <id>                      # 完成后归档（有 delta 时会并入主 specs）
+```
 
 如需用 OpenSpec CLI 管理：`npm install -g @fission-ai/openspec` → `openspec list`。

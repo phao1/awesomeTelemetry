@@ -169,6 +169,58 @@ Trae 的 Python bridge MUST 用 `spawn` + Promise，MUST NOT 用 `spawnSync`。
 ### REQ-019: vite-plugin（dev 模式）
 `local-sessions/vite-plugin.ts` SHALL 在 dev 模式提供与生产 `server.ts` 相同的 API 路由，**额外**提供 CDP 捕获路由与 CA 证书管理路由。
 
+### REQ-021: 索引阶段的真实标题与事件数
+
+索引阶段产出的 `SessionIndexEntry` SHALL 携带**可读的真实标题**与**真实 `eventCount`**，
+MUST NOT 用源文件名冒充标题、MUST NOT 用 `0` 冒充未知事件数。
+
+| 源类型 | 标题来源 | 事件数来源 |
+|--------|---------|-----------|
+| JSONL 类（claude / codex / codeagent / qoder / workbuddy） | 流式扫描首个 **user 角色**消息的前 120 字符 | 流式计数消息行数 |
+| SQLite 类（opencode / codearts / codeagent2） | 会话行自带的 title 列；为空则取该会话首条 user message | 轻量 `COUNT(*)` |
+| Trae（SQLCipher） | 解密就绪前置 `null` + `pending`，就绪后回填 | 同上 |
+
+约束：
+
+1. **MUST NOT 读取正文全文**。JSONL 类只允许**流式读取直到拿到首条 user 消息**即中断，
+   MUST NOT 把整个文件读进内存、MUST NOT 走完整 adapter 解析管线。
+2. 标题 MUST 跳过注入内容：system prompt、`<environment_context>`、`# AGENTS.md …`、
+   `<system-reminder>`、IDE 注入的上下文块。取的是**用户真正说的第一句话**。
+3. 预算：单个 JSONL 文件 < 5ms；单个 SQLite 库全部会话 < 50ms（沿用 T-03 预算）。
+4. 标题不可得时（空会话、纯系统消息）SHALL 回落为
+   `<provider> session · <本地化的起始时间>`，MUST NOT 回落为文件名。
+
+#### Scenario: 首屏列表可辨认
+- **GIVEN** 一个从未打开过详情的干净库，含 claude / codex / opencode 三类源
+- **WHEN** 调用 `GET /api/sessions?limit=50`
+- **THEN** 每一条 `title` MUST NOT 以 `.jsonl` / `.db` 结尾
+- **AND** 每一条 `title` MUST NOT 以 `rollout-` 开头
+- **AND** `eventCount` MUST > 0（真实空会话除外）
+
+> **现状实测（2026-08-04，38 条会话）**：34 条 title 为源文件名、`eventCount = 0`；
+> 已打开过的 codex 会话 title 取到了 `# AGENTS.md instructions for /Users/…`
+> 与 `<environment_context>`——都是注入内容而非用户意图。
+
+### REQ-022: SQLite 类 provider 的详情解析
+
+`opencode` / `codearts` / `codeagent2` 的详情阶段 SHALL 按 T-03 展开后的
+「db 路径 + 行内 session id」定位到具体会话并解析出事件，
+MUST NOT 返回 `events: []` + 空 title。
+
+无法解析时 SHALL 返回明确的错误码（`SESSION_PARSE_FAILED`），
+MUST NOT 返回 200 + 空结果——前端无从区分「空会话」与「解析失败」。
+
+#### Scenario: OpenCode 会话可打开
+- **GIVEN** `~/.local/share/opencode/opencode.db` 中存在 N 个真实会话
+- **WHEN** 逐个请求 `GET /api/sessions/<key>`
+- **THEN** 每个响应的 `events.length` MUST > 0
+- **AND** `session.title` MUST 非空
+
+> **现状实测**：`GET /api/sessions/opencode-7ff9bf5edb628d` 与
+> `GET /api/sessions/codearts-c79b25e584d002` 均返回
+> `events: 0` / `title: ""` / `pending: undefined`——200 但空。
+> T-03 展开了索引阶段，详情阶段未跟上。
+
 ## Gotchas
 - G2.2：路径展开三种语法
 - G5.2：db 类 provider 必须轮询；**指纹必须覆盖 `-wal`**
@@ -177,3 +229,11 @@ Trae 的 Python bridge MUST 用 `spawn` + Promise，MUST NOT 用 `spawnSync`。
 - G10.2：CDP 路由只在 dev 模式
 - G11.5（新）：`scan_state` 写入失败必须抛错。v4 静默失败导致该表为空，增量扫描形同虚设，且没有任何报警
 - G11.6（新）：`spawnSync` 在单线程 Node 里是绝对禁区，一次调用就能吃掉 1.5–2.3 秒事件循环
+- **G5.4（新）**：索引阶段「不解析正文」不等于「不产出标题」。二者被混为一谈的结果是
+  一屏文件名（REQ-021）。正确解法是**流式读到首条 user 消息即中断**，
+  既不违反预算也拿得到标题
+- **G5.5（新）**：会话标题必须跳过注入内容。Claude/Codex 的首条消息常是
+  `# AGENTS.md …`、`<environment_context>`、`<system-reminder>`——
+  取它们等于给每个会话起了同一个名字
+- **G5.6（新）**：解析失败 MUST 返回错误码，MUST NOT 返回 200 + 空数组。
+  前端无法区分「这个会话本来就空」与「后端没解析出来」，两者的正确 UI 完全不同（REQ-022）
