@@ -1,0 +1,170 @@
+/** REQ-010：zh / en 双字典，键必须完全对齐（测试断言）。 */
+export const ZH = {
+  'view.session': '会话',
+  'view.agent': 'Agent 概览',
+  'view.compare': '对比',
+  'view.proxy': '代理',
+  'view.frida': 'Frida',
+  'common.loading': '加载中…',
+  'common.error': '出错了',
+  'common.close': '关闭',
+  'common.refresh': '刷新',
+  'common.empty': '暂无数据',
+  'common.fontSmall': 'A-',
+  'common.fontLarge': 'A+',
+  'common.fontReset': 'R',
+  'session.search': '搜索会话',
+  'session.provider': 'Provider',
+  'session.date': '时间',
+  'session.title': '标题',
+  'session.status': '状态',
+  'session.events': '事件',
+  'session.tokens': 'Token',
+  'session.cost': '成本',
+  'session.systemPrompt': '系统提示词',
+  'phase.understand': '理解',
+  'phase.plan': '规划',
+  'phase.implement': '实现',
+  'phase.debug': '调试',
+  'phase.verify': '验证',
+  'phase.report': '汇报',
+  'event.input': '输入',
+  'event.output': '输出',
+  'event.raw': '原始数据',
+  'event.error': '错误',
+  'event.tokens': 'Token 分解',
+  'agent.sessions': '会话数',
+  'agent.events': '事件数',
+  'agent.tokens': 'Token',
+  'agent.cost': '成本',
+  'agent.verification': '验证覆盖',
+  'agent.errorRate': '错误率',
+  'agent.debugRate': '调试率',
+  'agent.toolDuration': '工具平均耗时',
+  'compare.left': '左侧',
+  'compare.right': '右侧',
+  'compare.load': '加载对比',
+  'compare.speed': '速度',
+  'compare.timeline': '时间线',
+  'compare.band': '维度对比',
+  'settings.title': '设置',
+  'settings.providers': 'Provider 配置',
+  'settings.save': '保存',
+  'settings.enabled': '启用',
+  'settings.traeKey': 'Trae 密钥',
+  'transcript.title': '完整 Transcript',
+  'token.title': 'Token 分解',
+  'pending.decrypting': '解密中…',
+  'live.connected': '实时已连接',
+  'live.disconnected': '实时已断开',
+  'err.SESSION_NOT_FOUND': '会话不存在',
+  'err.EVENT_NOT_FOUND': '事件不存在',
+  'err.ROUTE_NOT_FOUND': '接口不存在',
+  'err.BAD_REQUEST': '请求参数错误',
+  'err.INVALID_ENUM': '枚举值不合法',
+  'err.SCAN_IN_PROGRESS': '扫描进行中',
+  'err.TRAE_KEY_MISSING': 'Trae 密钥缺失',
+  'err.INTERNAL_ERROR': '服务器内部错误',
+  'err.PROXY_REQUEST_NOT_FOUND': '代理请求不存在',
+} as const;
+
+export type I18nKey = keyof typeof ZH;
+
+export const EN: Record<I18nKey, string> = {
+  'view.session': 'Sessions',
+  'view.agent': 'Agent Overview',
+  'view.compare': 'Compare',
+  'view.proxy': 'Proxy',
+  'view.frida': 'Frida',
+  'common.loading': 'Loading…',
+  'common.error': 'Error',
+  'common.close': 'Close',
+  'common.refresh': 'Refresh',
+  'common.empty': 'No data',
+  'common.fontSmall': 'A-',
+  'common.fontLarge': 'A+',
+  'common.fontReset': 'R',
+  'session.search': 'Search sessions',
+  'session.provider': 'Provider',
+  'session.date': 'Date',
+  'session.title': 'Title',
+  'session.status': 'Status',
+  'session.events': 'Events',
+  'session.tokens': 'Tokens',
+  'session.cost': 'Cost',
+  'session.systemPrompt': 'System prompt',
+  'phase.understand': 'Understand',
+  'phase.plan': 'Plan',
+  'phase.implement': 'Implement',
+  'phase.debug': 'Debug',
+  'phase.verify': 'Verify',
+  'phase.report': 'Report',
+  'event.input': 'Input',
+  'event.output': 'Output',
+  'event.raw': 'Raw',
+  'event.error': 'Error',
+  'event.tokens': 'Token breakdown',
+  'agent.sessions': 'Sessions',
+  'agent.events': 'Events',
+  'agent.tokens': 'Tokens',
+  'agent.cost': 'Cost',
+  'agent.verification': 'Verification',
+  'agent.errorRate': 'Error rate',
+  'agent.debugRate': 'Debug rate',
+  'agent.toolDuration': 'Avg tool duration',
+  'compare.left': 'Left',
+  'compare.right': 'Right',
+  'compare.load': 'Load compare',
+  'compare.speed': 'Speed',
+  'compare.timeline': 'Timeline',
+  'compare.band': 'Dimension band',
+  'settings.title': 'Settings',
+  'settings.providers': 'Provider config',
+  'settings.save': 'Save',
+  'settings.enabled': 'Enabled',
+  'settings.traeKey': 'Trae key',
+  'transcript.title': 'Full transcript',
+  'token.title': 'Token breakdown',
+  'pending.decrypting': 'Decrypting…',
+  'live.connected': 'Live connected',
+  'live.disconnected': 'Live disconnected',
+  'err.SESSION_NOT_FOUND': 'Session not found',
+  'err.EVENT_NOT_FOUND': 'Event not found',
+  'err.ROUTE_NOT_FOUND': 'Route not found',
+  'err.BAD_REQUEST': 'Bad request',
+  'err.INVALID_ENUM': 'Invalid enum value',
+  'err.SCAN_IN_PROGRESS': 'Scan in progress',
+  'err.TRAE_KEY_MISSING': 'Trae key missing',
+  'err.INTERNAL_ERROR': 'Internal server error',
+  'err.PROXY_REQUEST_NOT_FOUND': 'Proxy request not found',
+};
+
+export const LOCALE_STORAGE_KEY = 'agent-observability.locale';
+export type Locale = 'zh' | 'en';
+
+export function getStoredLocale(): Locale {
+  try {
+    const raw = localStorage.getItem(LOCALE_STORAGE_KEY);
+    return raw === 'en' ? 'en' : 'zh';
+  } catch {
+    return 'zh';
+  }
+}
+
+export function storeLocale(locale: Locale): void {
+  try {
+    localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+  } catch {
+    // localStorage 不可用时忽略
+  }
+}
+
+export function t(key: I18nKey, locale: Locale): string {
+  return locale === 'zh' ? ZH[key] : EN[key];
+}
+
+/** REQ-010：错误码 → 人类可读文案。 */
+export function errorMessage(code: string, locale: Locale): string {
+  const key = `err.${code}` as I18nKey;
+  return key in ZH ? t(key, locale) : code;
+}

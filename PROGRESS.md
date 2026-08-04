@@ -18,7 +18,8 @@
 | M8 | HTTP server | ✅ 完成 | （待提交） |
 | M8 | HTTP server | ✅ 完成 | 0cb7c44 |
 | M9 | core 分析 | ✅ 完成 | （待提交） |
-| M10 | 前端（a–d） | ⬜ 未开始 | — |
+| M9 | core 分析 | ✅ 完成 | a8c5881 |
+| M10 | 前端（a–d） | ✅ 完成 | （待提交） |
 | M11 | proxy/frida/trae（按 P-3 裁剪） | ⬜ 未开始 | — |
 | M12 | CLI / build / 打包 | ⬜ 未开始 | — |
 
@@ -97,6 +98,19 @@
   对齐 metrics-analysis REQ-004/REQ-011（M3 的 overview 测试断言同步修正）
 - 验收：phase 分类（M5 已覆盖）；pureInferenceMs 只累计 llm（G4.1 语义）；
   口径一致性测试差值 < 0.001；大 JSON 报告不内联
+
+### M10 · 前端（a–d，已完成）
+
+- 产出：App.tsx（五视图 + SSE 局部 patch + startTransition/useDeferredValue）、
+  i18n（zh/en 键对齐 + 错误码映射 + localStorage）、双层缓存（recordCache 30 / eventDetailCache 100）、
+  虚拟滚动（useVirtualList + computeVirtualRange）、SampleRail / TraceGanttTree / EventInspector
+  （右侧可拖拽 + 200ms 防抖）/ AgentOverview（1 请求）/ CompareBoard 全家桶 / ProxyView /
+  FridaView / SettingsModal / TranscriptModal / TokenTextModal / LanguageToggle / LiveIndicator、
+  api client、scripts/generate-local-samples.mjs + src/generated/local-samples.ts（fallback）
+- 验收：Agent 视图 1 请求（组件测试）；9590 events 虚拟滚动 DOM < 500（jsdom 测试）；
+  SSE 批量 patch 不重拉全量（mergeSessionsPatch 测试）；i18n 键完全对齐（测试）；
+  npm run build 三阶段通过
+- 说明：compare 视图依赖 POST /api/compare，M8 后补的路由已加（server.ts）
 
 ## 待决清单索引
 

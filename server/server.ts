@@ -6,8 +6,12 @@ import type { Database } from 'better-sqlite3';
 import type {
   LocalSessionConfig,
   ProviderKey,
+  SessionDetailResponse,
+  TraceEvent,
+  TraceRecord,
 } from '../src/core/trace-types.js';
 import { PROVIDER_KEYS } from '../src/core/trace-types.js';
+import { computeSpeedMetrics } from '../src/core/speed-metrics.js';
 import {
   mergeLocalSessionConfig,
   saveUserConfig,
@@ -400,6 +404,41 @@ export function createAgentObservabilityServer(
     } finally {
       scanInProgress = false;
     }
+  });
+
+  router.register('POST', '/api/compare', async (req, res) => {
+    const body = await readJsonBody(req);
+    const leftKey = body.leftKey;
+    const rightKey = body.rightKey;
+    if (typeof leftKey !== 'string' || typeof rightKey !== 'string') {
+      throw new HttpError(400, 'BAD_REQUEST', 'leftKey 与 rightKey 必填');
+    }
+    const left = getSessionDetail(db, leftKey, { mode: 'slim' });
+    if (left === null) {
+      throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${leftKey}`, { key: leftKey });
+    }
+    const right = getSessionDetail(db, rightKey, { mode: 'slim' });
+    if (right === null) {
+      throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${rightKey}`, { key: rightKey });
+    }
+    const toRecord = (detail: SessionDetailResponse): TraceRecord => ({
+      session: detail.session,
+      events: detail.events as TraceEvent[],
+      tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+    });
+    sendJson(
+      res,
+      200,
+      {
+        left,
+        right,
+        speed: {
+          left: computeSpeedMetrics(toRecord(left)),
+          right: computeSpeedMetrics(toRecord(right)),
+        },
+      },
+      req,
+    );
   });
 
   router.register('GET', '/api/events', (req, res) => {
