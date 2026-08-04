@@ -109,3 +109,18 @@
   解密详情回填后由 detail 阶段覆盖真实标题。
 - **建议的下一步**：人工确认后决定是否在后续 change 中把
   `SessionIndexEntry.title` 放宽为 `string | null` 并在前端渲染 pending 占位。
+
+---
+
+## D-008 design-tokens.md §2.4 与 §2.7 自冲突：light attention-emphasis 对比度不达标
+
+- **问题描述**：契约 §2.4 表给 light 主题 `--attention-emphasis: #bf8700`，
+  但 §2.7 硬性要求「`--fg-on-emphasis` on 任一 `*-emphasis` ≥ 4.5:1」——
+  实测白字 on #bf8700 只有 3.14:1，同一文档内部矛盾。
+- **尝试过的方案**：候选值实测——#9e6a03（4.65 ✅）、#9a6700（4.87 ✅）、
+  #a86c00（4.37 ❌）、#b87d00（3.52 ❌）。
+- **失败原因**：无（契约自身数值冲突；§9 断言是契约的可执行形式，断言优先）。
+- **临时方案**：light `--attention-emphasis` 改为 `#9e6a03`（与 dark 主题同色相，
+  白字 4.65:1 达标）；其余值逐字采用契约。T4 断言不改。
+- **建议的下一步**：人工确认后把 `contracts/design-tokens.md` §2.4 的
+  light attention-emphasis 值同步改为 `#9e6a03`，消除文档自冲突。

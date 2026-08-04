@@ -1,0 +1,163 @@
+/* components.css — 通用组件类（.btn/.badge/.phase/.modal/.table/...） */
+
+.btn {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  cursor: pointer;
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  min-height: var(--space-6);
+}
+
+.btn:hover {
+  background: var(--canvas-raised);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.phase-dot {
+  width: var(--dot-size);
+  height: var(--dot-size);
+  border-radius: var(--radius-full);
+  display: inline-block;
+}
+
+.phase-understand {
+  background: var(--phase-understand);
+}
+
+.phase-plan {
+  background: var(--phase-plan);
+}
+
+.phase-implement {
+  background: var(--phase-implement);
+}
+
+.phase-debug {
+  background: var(--phase-debug);
+}
+
+.phase-verify {
+  background: var(--phase-verify);
+}
+
+.phase-report {
+  background: var(--phase-report);
+}
+
+.phase-tiles {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.phase-tile {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+.phase-tile:hover {
+  border-color: var(--border-strong);
+  background: var(--canvas-raised);
+}
+
+.phase-tile-on {
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  border-color: var(--accent-emphasis);
+}
+
+.inspector-body pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--canvas-inset);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: inherit;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+}
+
+.modal {
+  background: var(--canvas-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: min(var(--modal-max-width), 90vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.modal-body {
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-sm);
+}
+
+.timeline li {
+  padding: var(--space-1) 0;
+}
+
+.live {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+}
+
+.live-on {
+  background: var(--success-subtle);
+  color: var(--success-fg);
+}
+
+.live-off {
+  background: var(--danger-subtle);
+  color: var(--danger-fg);
+}
+
+.transcript-row {
+  border-bottom: 1px solid var(--border-muted);
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+}
+
+.transcript-row pre {
+  white-space: pre-wrap;
+  background: var(--canvas-inset);
+  padding: var(--space-1);
+}

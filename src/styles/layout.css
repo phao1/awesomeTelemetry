@@ -1,0 +1,276 @@
+/* layout.css — app shell 骨架（header/tabs/rail/main/inspector/statusbar） */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--canvas-default);
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.view-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.rail {
+  width: var(--rail-width);
+  border-right: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  gap: var(--space-2);
+  background: var(--canvas-subtle);
+}
+
+.rail-list {
+  flex: 1;
+  min-height: 0;
+}
+
+.rail-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) var(--space-1);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+}
+
+.rail-row:hover {
+  background: var(--canvas-raised);
+}
+
+.rail-row-on {
+  background: var(--accent-subtle);
+}
+
+.rail-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gantt {
+  flex: 1;
+  min-height: 0;
+}
+
+.gantt-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.gantt-row:hover {
+  background: var(--canvas-raised);
+}
+
+.gantt-row-on {
+  background: var(--attention-subtle);
+}
+
+.gantt-seq {
+  width: var(--seq-col-width);
+  color: var(--fg-muted);
+}
+
+.gantt-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-status {
+  width: var(--status-col-width);
+  color: var(--fg-muted);
+}
+
+.inspector {
+  border-left: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-height: 0;
+  background: var(--canvas-default);
+}
+
+.drag-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--drag-handle-width);
+  cursor: col-resize;
+  z-index: var(--z-drag);
+}
+
+.drag-handle:hover {
+  background: var(--phase-understand);
+}
+
+.inspector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.inspector-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2);
+  font-size: var(--user-font-size);
+  line-height: var(--user-line-height);
+}
+
+.inspector-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+
+.session-header {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.session-header h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.meta dt {
+  color: var(--fg-muted);
+}
+
+.meta dd {
+  margin: 0;
+}
+
+.compare-bar {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  align-items: center;
+}
+
+.compare-columns h3 {
+  padding: 0 var(--space-2);
+}
+
+.columns {
+  display: flex;
+  gap: var(--space-4);
+  padding: 0 var(--space-2);
+}
+
+.columns > * {
+  flex: 1;
+}
+
+.band-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+}
+
+.band-label {
+  width: var(--band-label-width);
+  font-size: var(--text-sm);
+}
+
+.band-track {
+  flex: 1;
+  display: flex;
+  gap: var(--space-1);
+  height: var(--space-3);
+}
+
+.band-left {
+  background: var(--accent-emphasis);
+  height: var(--space-3);
+}
+
+.band-right {
+  background: var(--attention-emphasis);
+  height: var(--space-3);
+}
+
+.overview table {
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.overview th,
+.overview td {
+  border: 1px solid var(--border-muted);
+  padding: var(--space-1) var(--space-2);
+  text-align: left;
+}
+
+.proxy-row {
+  display: flex;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-1);
+}
+
+.proxy-url {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--text-base);
+  padding: var(--space-1) 0;
+}
+
+.view-toolbar {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+}

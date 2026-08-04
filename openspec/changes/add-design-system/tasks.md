@@ -3,14 +3,14 @@
 
 ## 1. Token 层与主题机制（T-13，spec REQ-001/002/003）
 
-- [ ] 1.1 新建 `src/styles/tokens.css`，落地契约 §2–§7 两套主题全部变量（键集合必须完全一致）
-- [ ] 1.2 拆分 `src/styles.css` → `base.css` / `layout.css` / `components.css`，`main.tsx` 按 tokens→base→layout→components 顺序引入
-- [ ] 1.3 `index.html` 加**内联同步**主题脚本，首帧 CSS 前设置 `data-theme`（D2 / G-DS-2）
-- [ ] 1.4 实现主题三态切换 + localStorage `agent-observability.theme` + `matchMedia` change 监听
-- [ ] 1.5 全量替换现有硬编码 hex 为 `var(--*)`
-- [ ] 1.6 写 `src/styles/tokens.test.ts`：契约 §9 的 **T1**（键集合相等）、**T2**（无字面量颜色）、**T3**（无字面量间距）
-- [ ] 1.7 写对比度断言 **T4**（WCAG 相对亮度，自己算不引库）与 **T5**（6 phase 色两两 ΔE > 15）
-- [ ] 1.8 验收：切主题不重载、不闪白；刷新后主题保持；CSS gzip < 16KB
+- [x] 1.1 新建 `src/styles/tokens.css`，落地契约 §2–§7 两套主题全部变量（键集合必须完全一致）
+- [x] 1.2 拆分 `src/styles.css` → `base.css` / `layout.css` / `components.css`，`main.tsx` 按 tokens→base→layout→components 顺序引入
+- [x] 1.3 `index.html` 加**内联同步**主题脚本，首帧 CSS 前设置 `data-theme`（D2 / G-DS-2）
+- [x] 1.4 实现主题三态切换 + localStorage `agent-observability.theme` + `matchMedia` change 监听
+- [x] 1.5 全量替换现有硬编码 hex 为 `var(--*)`
+- [x] 1.6 写 `src/styles/tokens.test.ts`：契约 §9 的 **T1**（键集合相等）、**T2**（无字面量颜色）、**T3**（无字面量间距）
+- [x] 1.7 写对比度断言 **T4**（WCAG 相对亮度，自己算不引库）与 **T5**（6 phase 色两两 ΔE > 15）
+- [x] 1.8 验收：切主题不重载、不闪白；刷新后主题保持；CSS gzip < 16KB
 
 ## 2. 图标集（T-14，spec REQ-004）
 

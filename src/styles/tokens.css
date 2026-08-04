@@ -1,0 +1,332 @@
+/*
+ * Design Tokens — 权威数值来源：openspec/contracts/design-tokens.md
+ * 本文件是 token 的唯一定义处（REQ-001）。除本文件外，任何 CSS 不得出现
+ * 字面量颜色 / 字面量间距（契约 §9 T2 / T3 强制）。
+ * 两套主题的键集合必须完全一致（T1 强制），只有值不同。
+ */
+
+:root {
+  /* §1 主题：未显式选择时跟随系统，无偏好按 dark；:root 即 dark 值 */
+
+  /* §2.1 Canvas（背景层级，由深到浅） */
+  --canvas-inset: #010409;
+  --canvas-default: #0d1117;
+  --canvas-subtle: #161b22;
+  --canvas-raised: #1c2128;
+  --canvas-overlay: #21262d;
+
+  /* §2.2 Border */
+  --border-default: #30363d;
+  --border-muted: #21262d;
+  --border-strong: #6e7681;
+
+  /* §2.3 Foreground */
+  --fg-default: #e6edf3;
+  --fg-muted: #8b949e;
+  --fg-subtle: #6e7681;
+  --fg-on-emphasis: #ffffff;
+
+  /* §2.4 语义色（-fg / -emphasis / -subtle） */
+  --accent-fg: #4493f8;
+  --accent-emphasis: #1f6feb;
+  --accent-subtle: rgba(56, 139, 253, 0.15);
+  --success-fg: #3fb950;
+  --success-emphasis: #238636;
+  --success-subtle: rgba(46, 160, 67, 0.15);
+  --attention-fg: #d29922;
+  --attention-emphasis: #9e6a03;
+  --attention-subtle: rgba(187, 128, 9, 0.15);
+  --danger-fg: #f85149;
+  --danger-emphasis: #da3633;
+  --danger-subtle: rgba(248, 81, 73, 0.15);
+  --done-fg: #ab7df8;
+  --done-emphasis: #8957e5;
+  --done-subtle: rgba(163, 113, 247, 0.15);
+  --neutral-fg: #8b949e;
+  --neutral-emphasis: #6e7681;
+  --neutral-subtle: rgba(110, 118, 129, 0.15);
+
+  /* §2.5 Phase 色（6，产品 signature）+ -subtle（15% alpha） */
+  --phase-understand: #39c5cf;
+  --phase-understand-subtle: rgba(57, 197, 207, 0.15);
+  --phase-plan: #a371f7;
+  --phase-plan-subtle: rgba(163, 113, 247, 0.15);
+  --phase-implement: #58a6ff;
+  --phase-implement-subtle: rgba(88, 166, 255, 0.15);
+  --phase-debug: #f0883e;
+  --phase-debug-subtle: rgba(240, 136, 62, 0.15);
+  --phase-verify: #3fb950;
+  --phase-verify-subtle: rgba(63, 185, 80, 0.15);
+  --phase-report: #db61a2;
+  --phase-report-subtle: rgba(219, 97, 162, 0.15);
+
+  /* §2.6 Provider 标识色（字母章）+ -subtle（15% alpha） */
+  --provider-claude: #d97757;
+  --provider-claude-subtle: rgba(217, 119, 87, 0.15);
+  --provider-codex: #10a37f;
+  --provider-codex-subtle: rgba(16, 163, 127, 0.15);
+  --provider-opencode: #4493f8;
+  --provider-opencode-subtle: rgba(68, 147, 248, 0.15);
+  --provider-codearts: #e5484d;
+  --provider-codearts-subtle: rgba(229, 72, 77, 0.15);
+  --provider-codeagent: #f2a93b;
+  --provider-codeagent-subtle: rgba(242, 169, 59, 0.15);
+  --provider-codeagent2: #a371f7;
+  --provider-codeagent2-subtle: rgba(163, 113, 247, 0.15);
+  --provider-trae: #39c5cf;
+  --provider-trae-subtle: rgba(57, 197, 207, 0.15);
+  --provider-qoder: #db61a2;
+  --provider-qoder-subtle: rgba(219, 97, 162, 0.15);
+  --provider-workbuddy: #8b949e;
+  --provider-workbuddy-subtle: rgba(139, 148, 158, 0.15);
+
+  /* §3 字体 */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+    "PingFang SC", "Microsoft YaHei", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+
+  /* §3.1 字号刻度（size / line-height） */
+  --text-xs: 11px;
+  --leading-xs: 16px;
+  --text-sm: 12px;
+  --leading-sm: 18px;
+  --text-base: 13px;
+  --leading-base: 20px;
+  --text-md: 14px;
+  --leading-md: 21px;
+  --text-lg: 16px;
+  --leading-lg: 24px;
+  --text-xl: 20px;
+  --leading-xl: 28px;
+  --text-2xl: 24px;
+  --leading-2xl: 32px;
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* §3.2 用户字号调整（仅长文本区，8–28px） */
+  --user-font-size: 13px;
+  --user-line-height: 20px;
+
+  /* §4.1 间距（4px 基准） */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* §4.2 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 999px;
+
+  /* §4.3 固定尺寸（布局骨架，虚拟滚动 itemHeight 输入，必须为常量） */
+  --header-height: 48px;
+  --tabs-height: 40px;
+  --statusbar-height: 28px;
+  --rail-width: 300px;
+  --inspector-width: 420px;
+  --row-sm: 28px;
+  --row-md: 32px;
+  --row-lg: 44px;
+
+  /* §5 阴影（只用于浮层：popover/dropdown/modal/toast/command palette） */
+  --shadow-sm: 0 1px 0 rgba(1, 4, 9, 0.2);
+  --shadow-md: 0 8px 24px rgba(1, 4, 9, 0.6);
+  --shadow-lg: 0 16px 32px rgba(1, 4, 9, 0.85);
+
+  /* §5.1 层叠顺序 */
+  --z-sticky: 10;
+  --z-drag: 20;
+  --z-dropdown: 100;
+  --z-popover: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+  --z-palette: 500;
+
+  /* §6 动效 */
+  --duration-fast: 80ms;
+  --duration-base: 160ms;
+  --duration-slow: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* §7 焦点环 */
+  --focus-ring: 0 0 0 2px var(--canvas-default), 0 0 0 4px var(--accent-emphasis);
+
+  /* 派生布局 token（契约未命名，仅用于 T2/T3 禁止字面量 px/颜色的落地） */
+  --backdrop: rgba(0, 0, 0, 0.55);
+  --seq-col-width: 70px;
+  --status-col-width: 70px;
+  --band-label-width: 80px;
+  --modal-max-width: 720px;
+  --dot-size: 8px;
+  --drag-handle-width: 4px;
+}
+
+[data-theme="light"] {
+  /* §2.1 */
+  --canvas-inset: #f6f8fa;
+  --canvas-default: #ffffff;
+  --canvas-subtle: #f6f8fa;
+  --canvas-raised: #ffffff;
+  --canvas-overlay: #ffffff;
+
+  /* §2.2 */
+  --border-default: #d1d9e0;
+  --border-muted: #e4e8ec;
+  --border-strong: #8c959f;
+
+  /* §2.3 */
+  --fg-default: #1f2328;
+  --fg-muted: #59636e;
+  --fg-subtle: #818b98;
+  --fg-on-emphasis: #ffffff;
+
+  /* §2.4 */
+  --accent-fg: #0969da;
+  --accent-emphasis: #0969da;
+  --accent-subtle: rgba(9, 105, 218, 0.1);
+  --success-fg: #1a7f37;
+  --success-emphasis: #1f883d;
+  --success-subtle: rgba(26, 127, 55, 0.1);
+  --attention-fg: #9a6700;
+  --attention-emphasis: #9e6a03;
+  --attention-subtle: rgba(154, 103, 0, 0.1);
+  --danger-fg: #d1242f;
+  --danger-emphasis: #cf222e;
+  --danger-subtle: rgba(209, 36, 47, 0.1);
+  --done-fg: #8250df;
+  --done-emphasis: #8250df;
+  --done-subtle: rgba(130, 80, 223, 0.1);
+  --neutral-fg: #59636e;
+  --neutral-emphasis: #6e7681;
+  --neutral-subtle: rgba(89, 99, 110, 0.1);
+
+  /* §2.5 */
+  --phase-understand: #1b7c83;
+  --phase-understand-subtle: rgba(27, 124, 131, 0.1);
+  --phase-plan: #8250df;
+  --phase-plan-subtle: rgba(130, 80, 223, 0.1);
+  --phase-implement: #0969da;
+  --phase-implement-subtle: rgba(9, 105, 218, 0.1);
+  --phase-debug: #bc4c00;
+  --phase-debug-subtle: rgba(188, 76, 0, 0.1);
+  --phase-verify: #1a7f37;
+  --phase-verify-subtle: rgba(26, 127, 55, 0.1);
+  --phase-report: #bf3989;
+  --phase-report-subtle: rgba(191, 57, 137, 0.1);
+
+  /* §2.6 */
+  --provider-claude: #bc4c2e;
+  --provider-claude-subtle: rgba(188, 76, 46, 0.1);
+  --provider-codex: #0d7a5f;
+  --provider-codex-subtle: rgba(13, 122, 95, 0.1);
+  --provider-opencode: #0969da;
+  --provider-opencode-subtle: rgba(9, 105, 218, 0.1);
+  --provider-codearts: #c0353a;
+  --provider-codearts-subtle: rgba(192, 53, 58, 0.1);
+  --provider-codeagent: #b87d1a;
+  --provider-codeagent-subtle: rgba(184, 125, 26, 0.1);
+  --provider-codeagent2: #8250df;
+  --provider-codeagent2-subtle: rgba(130, 80, 223, 0.1);
+  --provider-trae: #1b7c83;
+  --provider-trae-subtle: rgba(27, 124, 131, 0.1);
+  --provider-qoder: #bf3989;
+  --provider-qoder-subtle: rgba(191, 57, 137, 0.1);
+  --provider-workbuddy: #59636e;
+  --provider-workbuddy-subtle: rgba(89, 99, 110, 0.1);
+
+  /* §3 字体（与主题无关，键必须存在） */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+    "PingFang SC", "Microsoft YaHei", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+
+  /* §3.1 */
+  --text-xs: 11px;
+  --leading-xs: 16px;
+  --text-sm: 12px;
+  --leading-sm: 18px;
+  --text-base: 13px;
+  --leading-base: 20px;
+  --text-md: 14px;
+  --leading-md: 21px;
+  --text-lg: 16px;
+  --leading-lg: 24px;
+  --text-xl: 20px;
+  --leading-xl: 28px;
+  --text-2xl: 24px;
+  --leading-2xl: 32px;
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* §3.2 */
+  --user-font-size: 13px;
+  --user-line-height: 20px;
+
+  /* §4.1 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* §4.2 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 999px;
+
+  /* §4.3 */
+  --header-height: 48px;
+  --tabs-height: 40px;
+  --statusbar-height: 28px;
+  --rail-width: 300px;
+  --inspector-width: 420px;
+  --row-sm: 28px;
+  --row-md: 32px;
+  --row-lg: 44px;
+
+  /* §5 */
+  --shadow-sm: 0 1px 0 rgba(31, 35, 40, 0.04);
+  --shadow-md: 0 8px 24px rgba(66, 74, 83, 0.12);
+  --shadow-lg: 0 16px 32px rgba(66, 74, 83, 0.2);
+
+  /* §5.1 */
+  --z-sticky: 10;
+  --z-drag: 20;
+  --z-dropdown: 100;
+  --z-popover: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+  --z-palette: 500;
+
+  /* §6 */
+  --duration-fast: 80ms;
+  --duration-base: 160ms;
+  --duration-slow: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* §7 */
+  --focus-ring: 0 0 0 2px var(--canvas-default), 0 0 0 4px var(--accent-emphasis);
+
+  /* 派生布局 token */
+  --backdrop: rgba(0, 0, 0, 0.35);
+  --seq-col-width: 70px;
+  --status-col-width: 70px;
+  --band-label-width: 80px;
+  --modal-max-width: 720px;
+  --dot-size: 8px;
+  --drag-handle-width: 4px;
+}

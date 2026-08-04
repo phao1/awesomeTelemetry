@@ -35,7 +35,8 @@ import { FridaView } from './components/FridaView.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TranscriptModal } from './components/TranscriptModal.js';
 import { TokenTextModal } from './components/TokenTextModal.js';
-import './styles.css';
+import { ThemeToggle } from './components/ThemeToggle.js';
+import { useTheme } from './theme.js';
 
 type View = 'session' | 'agent' | 'compare' | 'proxy' | 'frida';
 
@@ -46,6 +47,7 @@ const PAGE_SIZE = 2000;
 export default function App() {
   const [view, setView] = useState<View>('session');
   const [locale, setLocaleState] = useState<Locale>(() => getStoredLocale());
+  const theme = useTheme();
   const [live, setLive] = useState(false);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -95,8 +97,9 @@ export default function App() {
             setPending(false);
           }
         })
-        .catch(() => {
-          // patch 失败时保留现有列表
+        .catch((err) => {
+          // 失败时保留现有列表，但必须记录错误（禁止空 catch）
+          console.error('[sse] sessions_changed patch 失败:', err);
         });
     });
     return () => es.close();
@@ -227,6 +230,11 @@ export default function App() {
         </button>
         <LiveIndicator connected={live} locale={locale} />
         <LanguageToggle locale={locale} onChange={setLocale} />
+        <ThemeToggle
+          theme={theme.theme}
+          effective={theme.effective}
+          onCycle={theme.cycle}
+        />
       </nav>
 
       {view === 'session' && (

@@ -1,0 +1,79 @@
+/* base.css — reset、html/body、滚动条、焦点环、选中态、动效归零 */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  height: 100%;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  color: var(--fg-default);
+  background: var(--canvas-default);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100%;
+}
+
+/* REQ-009：所有可交互元素必须有焦点环，MUST NOT outline: none 而不补偿 */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+::selection {
+  background: var(--accent-subtle);
+  color: var(--fg-default);
+}
+
+/* 滚动条贴合主题 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: var(--space-2);
+  height: var(--space-2);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* §6 硬性约束 1：reduced-motion 下所有 duration 归零，脉冲/骨架停止 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 等宽字承载 ID 与数字（密度即尊重） */
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.hint {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  margin: var(--space-1) 0;
+}
