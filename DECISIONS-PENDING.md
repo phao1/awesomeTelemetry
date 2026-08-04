@@ -72,3 +72,40 @@
   事件行仍为 `--row-sm`(28px) 单行，未放宽。
 - **建议的下一步**：人工确认后，同步更新 `gotchas.md` G7.3 的措辞，
   把「紧凑单行」改为「紧凑密排、非卡片」，消除字面歧义。
+
+---
+
+## D-006 REQ-001 文件级门禁与 REQ-022 按会话惰性加载的张力
+
+- **问题描述**：REQ-001 要求「任何详情读取前 MUST 先经过 shouldRescan 文件级门禁，
+  判定未变更时 MUST 直接返回」；REQ-022 / T-11 要求 SQLite 多会话按
+  「db 路径 + 行内 session id」定位单个会话。若严格执行文件级门禁，会出现
+  「db 未变更但某会话从未加载过 → 直接返回 → 该会话永远点不开」的死锁
+  （P1-2 的同类问题）。
+- **尝试过的方案**：方案 A「首开整库解析、全库落库」（T-03 现状）——满足 REQ-001，
+  但违背 T-11「定位到具体会话」且首开做无用功；方案 B「按会话定位解析 + 跳过
+  文件级门禁」（已采用）——惰性加载只解析目标会话，detail_loaded 作为会话级门禁，
+  文件级门禁保留给全量扫描（POST /api/scan）。
+- **失败原因**：无（主动取舍）。scan_state 以 source_path 为主键，无 schema 变更
+  的前提下无法做会话级 scan_state（change 声明「无 schema 变更」）。
+- **临时方案**：`scanSqliteSessionDetail` 绕过文件级门禁，代码中留 `TODO(D-006)` 标记；
+  全量扫描路径 `scanSqliteFile` 仍走文件级门禁。
+- **建议的下一步**：人工确认后，在 `specs/session-scanning/spec.md` REQ-001 补一句
+  「SQLite 多会话的惰性详情以 sessions.detail_loaded 为会话级门禁，文件级门禁
+  适用于全量扫描」，消除两需求字面冲突。
+
+## D-007 Trae 索引标题「置 null」与 SessionIndexEntry.title: string 的类型张力
+
+- **问题描述**：REQ-021 对 Trae（SQLCipher）写「解密就绪前置 `null` + `pending`，
+  就绪后回填」，但 `contracts/data-model.md` 的 `SessionIndexEntry.title` 是
+  非空 `string`，列表接口没有 null 通道（change 声明「无 BREAKING、不改变已有
+  响应结构」）。
+- **尝试过的方案**：把 title 改为 `string | null`——需要改 data-model 契约 + API
+  类型 + 前端四态，超出本 change 范围；保持 string 并用 D5 回落占位标题
+  （`<trae> session · <时间>`）——已采用，比旧行为（文件名冒充）更诚实。
+- **失败原因**：无（主动取舍）。Trae 在 macOS 无法验证（P-3 裁剪），
+  不影响其余 8 个 provider。
+- **临时方案**：Trae 索引条目沿用 `buildIndexEntry` 的 D5 回落标题；
+  解密详情回填后由 detail 阶段覆盖真实标题。
+- **建议的下一步**：人工确认后决定是否在后续 change 中把
+  `SessionIndexEntry.title` 放宽为 `string | null` 并在前端渲染 pending 占位。

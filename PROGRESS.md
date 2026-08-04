@@ -1,6 +1,33 @@
 # PROGRESS.md — 里程碑进度
 
-> 最后更新：2026-08-04（长跑开始时重建本文件；此前仓库中不存在）
+> 最后更新：2026-08-04（fix-session-data-integrity 完成）
+
+## OpenSpec change 进度
+
+| change | 任务 | 状态 | 提交 |
+|--------|------|------|------|
+| fix-session-data-integrity | 24/24 | ✅ 已完成（T-10 ~ T-12） | fb4d88b / 4f21a53 / 075fd73 / 15bd709 |
+| add-design-system | 0/31 | ⏳ 未开始 | — |
+| redesign-frontend-views | 0/50 | ⏳ 未开始 | — |
+| add-palette-and-a11y | 0/30 | ⏳ 未开始 | — |
+
+### fix-session-data-integrity（已完成）
+
+- **T-10 索引阶段真实标题与事件数**：`local-sessions/index-title.ts` 流式提取
+  （64KB 分块 readSync、首条 user 消息即中断、硬上限 1MB）、注入内容黑名单
+  （`# AGENTS.md` / `<environment_context>` / `<system-reminder>` /
+  `<user_instructions>` / `<codex_internal_context>` 等）、120 字符截断、
+  D5 回落 `<provider> session · <本地时间>`；SQLite 类取会话行 title /
+  首条 user 消息 + `COUNT(*)` 消息数。
+- **T-11 SQLite 详情按会话定位解析**：`scanSqliteSessionDetail` 按派生 key 匹配
+  行内 session id，只写目标会话；解析失败抛 `SessionParseError` →
+  HTTP 500 + `SESSION_PARSE_FAILED`（已登记 `contracts/api.md` §0.4）；
+  G4.4 核对（cache.read 累积用 max、reasoning 用 sum，已有实现 + 新测试）。
+- **T-12 Proxy/Frida 控制路由**：`server/proxy/controller.ts` 运行时状态机，
+  D4 异步启动（`starting` 态 + SSE `proxy_status`），四条 POST 路由 + 409
+  冲突码；`proxy_status` 事件登记进 `contracts/data-model.md` §10。
+- 实机验收：41 条真实会话 0 条文件名标题、eventCount 全部 > 0；
+  opencode 19 events / codearts 64·63·71 events；proxy start/stop 全流程 200/409。
 
 ## 总览
 

@@ -31,8 +31,8 @@
 
 ## 4. 阶段收口
 
-- [ ] 4.1 `npm run typecheck && npm run test && npm run lint` 全绿
-- [ ] 4.2 `npm run perf:check` 结果追加到 `PERF-BASELINE.md`
-- [ ] 4.3 更新 `PROGRESS.md`
-- [ ] 4.4 输出实机验证报告：贴 `GET /api/sessions?limit=10` 的真实 title 列表、opencode/codearts 的 events 数量、`POST /api/proxy/start` 的真实响应
-- [ ] 4.5 `openspec archive fix-session-data-integrity`
+- [x] 4.1 `npm run typecheck && npm run test && npm run lint` 全绿
+- [x] 4.2 `npm run perf:check` 结果追加到 `PERF-BASELINE.md`
+- [x] 4.3 更新 `PROGRESS.md`
+- [x] 4.4 输出实机验证报告：贴 `GET /api/sessions?limit=10` 的真实 title 列表、opencode/codearts 的 events 数量、`POST /api/proxy/start` 的真实响应
+- [x] 4.5 `openspec archive fix-session-data-integrity`
