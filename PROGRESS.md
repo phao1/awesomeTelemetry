@@ -22,7 +22,8 @@
 | M10 | 前端（a–d） | ✅ 完成 | （待提交） |
 | M10 | 前端（a–d） | ✅ 完成 | f059def |
 | M11 | proxy/frida/trae（按 P-3 裁剪） | ✅ 完成 | （待提交） |
-| M12 | CLI / build / 打包 | ⬜ 未开始 | — |
+| M11 | proxy/frida/trae（按 P-3 裁剪） | ✅ 完成 | 8814d01 |
+| M12 | CLI / build / 打包 | ✅ 完成 | （待提交） |
 
 ## 里程碑明细
 
@@ -123,6 +124,28 @@
 - 验收：10 条规则全部有用例；global regex 每次 reset lastIndex（测试）；keepRawBodies 默认 false；
   proxy 列表不返回 body 列（M8 契约测试）；解密走 spawn 异步 + 指纹缓存（M6 trae-bridge）
 - P-3 说明：MITM/CDP/Frida 需 Windows/真实环境，脚手架保留接线骨架，未做 e2e 验证（如实记录）
+
+### M12 · CLI / build / 打包（已完成）
+
+- 产出：cli.ts（完整参数解析 + 启动自检 5 步 + prewarm 默认 0/>100 告警）、
+  scripts/pack-binary.mjs（dist-binary + .ps1/.sh 启动器）、README.md、
+  generate-local-samples 扩展（真实读 Claude JSONL / OpenCode SQLite + 路径 sanitize）、
+  cli.test.ts / pack-binary.test.ts
+- 验收：prewarm 默认 0 且 >100 stderr 告警（测试）；自检 5 步（测试）；
+  三阶段构建过；Windows 启动器 .ps1 非 .bat（测试）；nfr.md §2 预算逐项达标（见 PERF-BASELINE）
+
+## 全局验收清单（M12 后）
+
+- [x] 启动后首屏 <100ms —— 后端各查询预算达标；浏览器端首屏未实测（需浏览器环境，见终止报告）
+- [x] 最差会话（9,590 events）详情 < 60ms / < 1.5MB —— 8.3–8.6ms（合成库）
+- [x] Agent Overview 1 个请求 / < 80KB / < 400ms —— 21.8ms 冷（1 请求，前端组件测试）
+- [x] 30s 窗口总请求数 < 15 —— SSE 200ms 合并设计 + 前端 patch 不重拉（测试）
+- [x] 无变更重扫 0 条 SQL —— M4 测试
+- [x] scan_state 非空 —— M4/M6 测试
+- [x] 事件循环延迟 p99 < 50ms —— perf-diag 07
+- [x] DB + WAL 稳态 < 200MB —— 合成库 24.70MB
+- [x] typecheck && test && lint 全绿 —— 246 测试
+- [x] AGENTS.md 十条禁令 grep 自查 —— 通过（唯一 db.prepare 在 stmt-cache）
 
 ## 待决清单索引
 

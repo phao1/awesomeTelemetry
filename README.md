@@ -1,0 +1,90 @@
+# Agent Observability
+
+本地 Web UI：读取并分析 9 种 AI 编码助手（Claude Code / Codex / OpenCode / CodeArts /
+CodeAgent / Trae CN / Qoder / WorkBuddy）的会话轨迹，按「快 · 准 · 稳 · 省」四维度衡量。
+数据来自本地文件扫描（scan）与可选的 MITM/CDP/Frida 实时捕获（proxy）。
+
+## 快速开始
+
+```bash
+npm install        # 需要 Node ≥ 20；Windows 需 MSVC 工具链（better-sqlite3）
+npm run dev        # 开发模式（Vite + 独立 API 服务需另行接线 dev plugin）
+npm run build      # 三阶段构建：tsc -b → vite build → server-dist
+npm start          # 生产启动：node bin/agent-observe.js
+```
+
+浏览器访问 `http://127.0.0.1:4173/`（G3.1：不要用 localhost，企业代理可能拦截）。
+
+## CLI 参数
+
+| Flag | 默认 | 说明 |
+|------|------|------|
+| `--host <host>` | `127.0.0.1` | 绑定地址 |
+| `--port <port>` | `4173` | HTTP 端口 |
+| `--no-open` | 开 | 不自动打开浏览器 |
+| `--config-root <path>` | cwd | config 目录 |
+| `--db-path <path>` | `<config-root>/agent-observe-data/observe.sqlite` | SQLite 路径 |
+| `--proxy-port <port>` | `7779` | MITM 端口 |
+| `--enable-proxy` | false | 启动即开 MITM（P-3：macOS 未端到端验证） |
+| `--prewarm-recent <n>` | `0` | 预热最近 N 个会话；0 = 完全按需（>100 会 stderr 告警） |
+| `--proxy-retention-days <n>` | `30` | proxy_requests 保留天数；0 = 不清理 |
+| `--no-gzip` | 开 | 关闭响应压缩（仅调试用） |
+
+启动时执行 5 步自检：建库/版本校验 → 关键索引校验补建 → WAL checkpoint → proxy 保留清理 →
+启动摘要（schemaVersion / 会话数 / DB+WAL 体积）。
+
+## 目录
+
+```
+server/          后端（http / storage / realtime / watch / proxy / desensitization）
+local-sessions/  config + 9 个 scanner + trae-bridge
+src/             React 前端 + core 分析 + adapters + generated（机器生成）
+openspec/        规格与契约（真相来源）
+perf-diag/       7 个性能诊断脚本
+```
+
+## 性能基线（perf-diag）
+
+从 M3 起，每个里程碑合入后跑一次基线并把数字追加到 `PERF-BASELINE.md`：
+
+```bash
+npm run perf:check     # 顺序执行 perf-diag/ 的 7 个脚本（合成参考规模数据）
+```
+
+脚本说明（对应参考诊断报告的 Step 编号）：
+
+| 脚本 | 内容 |
+|------|------|
+| `01-db-stats.mjs` | DB 规模（Step 0） |
+| `02-source-stats.mjs` | 源文件统计（Step 0b，M6 接线后启用） |
+| `03-explain-plan.mjs` | 三条核心查询 EXPLAIN QUERY PLAN（Step 1） |
+| `04-query-timing.mjs` | 服务端分段耗时（Step 2） |
+| `05-overview-perf.mjs` | Overview 聚合 + 缓存命中 |
+| `06-diff-write.mjs` | 差分写入语句计数（Step 6） |
+| `07-event-loop.mjs` | 事件循环延迟压测 |
+
+任何一列相对上一行劣化超过 20% 的提交不得合入，除非在提交说明中写清取舍。
+
+## 构建与打包
+
+```bash
+npm run build          # 三阶段：tsc -b → vite build → vite build（server-dist/cli.js）
+npm run pack:binary    # scripts/pack-binary.mjs → dist-binary/
+```
+
+`pack-binary` 复制 `server-dist/` + `dist/` + `bin/` + node_modules + package.json，
+并生成平台启动器：Windows 用 `agent-observe.ps1`（UTF-8，不用 .bat），Unix 用
+`agent-observe.sh`。
+
+## 脚本
+
+- `npm run gen:samples` — 生成 `src/generated/local-samples.ts`（fallback 样本；支持
+  `--claude-source=` / `--opencode-db=` 或同名 env）
+- `scripts/trae-extract-key.py` — Trae SQLCipher 密钥提取（Windows + sqlcipher3，P-3 未端到端验证）
+- `scripts/frida-*.js` — Frida monitor / 模块探测（Windows + Trae，P-3）
+
+## 文档与验收
+
+- 规格与契约：`openspec/`（类型/DDL/API/性能预算的权威来源）
+- 里程碑进度：`PROGRESS.md`；待决决策：`DECISIONS-PENDING.md`
+- 测试：`npm run typecheck && npm run test && npm run lint` 全绿后再提交
