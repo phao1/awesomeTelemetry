@@ -3,6 +3,7 @@ import { opencodeAdapter } from '../src/adapters/opencode.js';
 import { toIsoFromMs } from '../src/adapters/helpers.js';
 import { openReadonly } from '../server/storage/db.js';
 import type { Database } from 'better-sqlite3';
+import { extractTitleFromUserText } from './index-title.js';
 import {
   makeSqliteScanner,
   type SqliteSessionMeta,
@@ -243,6 +244,13 @@ export function readOpenCodeSessionIndex(dbPath: string): SqliteSessionMeta[] {
         ? db.prepare('SELECT id, title, time_created, time_updated FROM session ORDER BY rowid')
         : db.prepare('SELECT id, title, time FROM session ORDER BY rowid')
     ).all() as Array<Record<string, unknown>>;
+    // REQ-021：轻量 COUNT(*) 取每个会话的消息行数（不读 message/part 正文）
+    const counts = (
+      dialect.dataCols
+        ? db.prepare('SELECT session_id, COUNT(*) AS c FROM message GROUP BY session_id')
+        : db.prepare('SELECT sessionID AS session_id, COUNT(*) AS c FROM message GROUP BY sessionID')
+    ).all() as Array<{ session_id: string; c: number }>;
+    const countBySession = new Map(counts.map((r) => [String(r.session_id), Number(r.c)]));
     return rows.map((row) => {
       const title = typeof row.title === 'string' ? row.title : '';
       const time =
@@ -252,16 +260,69 @@ export function readOpenCodeSessionIndex(dbPath: string): SqliteSessionMeta[] {
       const created = time.created ?? 0;
       const updated =
         dialect.sessionTime === 'epoch' ? (Number(row.time_updated) || created) : (time.updated ?? created);
+      const sessionId = String(row.id);
+      // REQ-021：会话行无 title 时取该会话首条 user 消息（注入内容黑名单过滤）
+      const firstUserTitle =
+        title.trim() === '' ? firstUserMessageTitle(db, dialect, sessionId) : null;
       return {
-        id: String(row.id),
-        title,
+        id: sessionId,
+        title: title.trim() !== '' ? title : (firstUserTitle ?? ''),
         startedAt: toIsoFromMs(created),
         updatedAt: toIsoFromMs(updated),
+        eventCount: countBySession.get(sessionId) ?? 0,
       };
     });
   } finally {
     db.close();
   }
+}
+
+/** REQ-021：SQLite 类首条 user 消息标题（真实 schema 用 json_extract，legacy 用 role 列）。 */
+function firstUserMessageTitle(
+  db: Database,
+  dialect: OpenCodeDbDialect,
+  sessionId: string,
+): string | null {
+  const message = (
+    dialect.dataCols
+      ? db
+          .prepare(
+            `SELECT id FROM message WHERE session_id = ? AND json_extract(data, '$.role') = 'user' ` +
+              `ORDER BY time_created LIMIT 1`,
+          )
+          .get(sessionId)
+      : db
+          .prepare(
+            `SELECT id FROM message WHERE sessionID = ? AND role = 'user' ORDER BY rowid LIMIT 1`,
+          )
+          .get(sessionId)
+  ) as { id: string } | undefined;
+  if (message === undefined) {
+    return null;
+  }
+  const parts = (
+    dialect.dataCols
+      ? db
+          .prepare(`SELECT data FROM part WHERE message_id = ? ORDER BY time_created LIMIT 20`)
+          .all(message.id)
+      : db
+          .prepare(`SELECT type, text FROM part WHERE messageID = ? ORDER BY rowid LIMIT 20`)
+          .all(message.id)
+  ) as Array<Record<string, unknown>>;
+  for (const part of parts) {
+    const text = dialect.dataCols
+      ? (() => {
+          const data = parseJson<{ type?: string; text?: string }>(part.data as string | null) ?? {};
+          return data.type === 'text' && typeof data.text === 'string' ? data.text : null;
+        })()
+      : part.type === 'text' && typeof part.text === 'string'
+        ? part.text
+        : null;
+    if (text !== null && text.trim() !== '') {
+      return extractTitleFromUserText(text);
+    }
+  }
+  return null;
 }
 
 export const opencodeScanner = makeSqliteScanner(

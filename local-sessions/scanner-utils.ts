@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 
 import type { Database } from 'better-sqlite3';
 
@@ -20,6 +20,7 @@ import {
 import { fingerprintFile } from '../server/watch/fingerprint.js';
 import { commitScanState, shouldRescan, sqliteFingerprint } from '../server/watch/scan-gate.js';
 import { readJsonlFrom } from '../server/watch/jsonl-reader.js';
+import { fallbackSessionTitle, readJsonlIndexMeta } from './index-title.js';
 import { deriveSessionKey } from './session-key.js';
 import { expandLocalSessionPath } from './config.js';
 import type { TraeBridgeOptions } from './trae-bridge.js';
@@ -71,6 +72,16 @@ export interface ProviderScanner {
   scanProvider(config: ProviderConfig, ctx: ScannerContext): Promise<ProviderScanResult>;
   scanFile(config: ProviderConfig, filePath: string, ctx: ScannerContext): Promise<FileScanResult>;
   /**
+   * T-11（REQ-022）：惰性详情加载按「db 路径 + 行内 session id」定位**单个**会话
+   * 并解析，只写该会话，不整库落库。SQLite 多会话 provider 提供；JSONL 类缺省走 scanFile。
+   */
+  scanSessionDetail?(
+    config: ProviderConfig,
+    filePath: string,
+    key: string,
+    ctx: ScannerContext,
+  ): Promise<FileScanResult>;
+  /**
    * T-03 索引阶段（REQ-013 第 1 阶段）：
    * - JSONL 类：每文件 1 条（buildIndexEntry）
    * - SQLite 类：按 db 内 session 行展开为 N 条（轻量 SQL，只读 id/title/时间戳）
@@ -85,6 +96,8 @@ export interface SqliteSessionMeta {
   title: string;
   startedAt: string;
   updatedAt: string;
+  /** REQ-021：轻量 COUNT(*) 取该会话消息行数（索引阶段事件数）。 */
+  eventCount: number;
 }
 
 export type SqliteIndexReader = (dbPath: string) => SqliteSessionMeta[];
@@ -281,6 +294,43 @@ export async function scanSqliteFile(
   return { key: keys[0] ?? null, skipped: false, eventCount };
 }
 
+/**
+ * T-11（REQ-022）：按「db 路径 + 行内 session id」定位**单个**会话并解析事件。
+ * 索引与详情共用 deriveSessionKey 单一口径（T-02/REQ-007），key 无法反向推出
+ * 行内 id，因此解析后按派生 key 匹配目标会话，只写该会话。
+ *
+ * TODO(D-006)：惰性详情按会话定位，文件级 shouldRescan 门禁对「文件未变但
+ * 本会话尚未加载」不适用（REQ-001 与 REQ-022 的张力，见 DECISIONS-PENDING.md）。
+ */
+export async function scanSqliteSessionDetail(
+  config: ProviderConfig,
+  filePath: string,
+  key: string,
+  ctx: ScannerContext,
+  toRecords: (dbPath: string, filePath: string) => TraceRecord[],
+): Promise<FileScanResult> {
+  const records = toRecords(filePath, filePath);
+  const record = records.find(
+    (r) => deriveSessionKey(config.key, filePath, r.session.id) === key,
+  );
+  if (record === undefined) {
+    // 目标会话在源库中不存在：必须抛错，MUST NOT 返回 200 + 空数组（G5.6）
+    throw new Error(`会话 ${key} 在源库 ${filePath} 中不存在`);
+  }
+  storeTraceRecord(ctx.db, record, filePath, key, ctx.notify);
+  // REQ-003：每次成功详情扫描后必须写 scan_state；写入失败抛错（G11.5）
+  const gate = shouldRescan(ctx.db, filePath, sqliteFingerprint);
+  commitScanState(ctx.db, {
+    sourcePath: filePath,
+    provider: config.key,
+    sessionId: key,
+    fp: gate.fp,
+    byteOffset: gate.fp.size,
+    eventCount: record.events.length,
+  });
+  return { key, skipped: false, eventCount: record.events.length };
+}
+
 export function makeJsonlScanner(
   key: ProviderKey,
   toRecord: (rows: unknown[], filePath: string) => TraceRecord,
@@ -289,7 +339,7 @@ export function makeJsonlScanner(
     key,
     sourceKind: 'jsonl',
     buildIndexEntries(config, filePath) {
-      return [buildIndexEntry(config, filePath)];
+      return [jsonlIndexEntry(config, filePath)];
     },
     async scanProvider(config, ctx) {
       const files = enumerateSourceFiles(config.path, 'jsonl');
@@ -327,6 +377,9 @@ export function makeSqliteScanner(
       }
       return metas.map((meta) => sqliteIndexEntry(config, filePath, meta));
     },
+    scanSessionDetail(config, filePath, sessionKey, ctx) {
+      return scanSqliteSessionDetail(config, filePath, sessionKey, ctx, toRecords);
+    },
     async scanProvider(config, ctx) {
       const files = enumerateSourceFiles(config.path, 'sqlite');
       const results: FileScanResult[] = [];
@@ -355,7 +408,8 @@ export function buildIndexEntry(
     id: deriveSessionKey(config.key, filePath),
     provider: config.key,
     sourceAgent: config.label,
-    title: basename(filePath),
+    // REQ-021：不得用文件名冒充标题；无正文可读的源（如 Trae 加密库）回落 D5
+    title: fallbackSessionTitle(config.key, st.mtimeMs),
     startedAt: iso,
     updatedAt: iso,
     status: 'unknown',
@@ -372,7 +426,38 @@ export function buildIndexEntry(
   };
 }
 
-/** T-03：SQLite 类索引条目，key/title 均来自 db 行内元数据，title 不等于文件名。 */
+/**
+ * T-10（REQ-021）：JSONL 类索引条目——流式读到首条 user 消息，真实标题 + 事件数，
+ * 不再用文件名冒充。索引阶段不读全文（硬上限 1MB）。
+ */
+export function jsonlIndexEntry(
+  config: ProviderConfig,
+  filePath: string,
+): SessionIndexEntry {
+  const st = statSync(filePath);
+  const meta = readJsonlIndexMeta(filePath, config.key);
+  return {
+    id: deriveSessionKey(config.key, filePath),
+    provider: config.key,
+    sourceAgent: config.label,
+    title: meta.title,
+    startedAt: meta.startedAt,
+    updatedAt: new Date(st.mtimeMs).toISOString(),
+    status: 'unknown',
+    cwd: null,
+    eventCount: meta.eventCount,
+    messageCount: meta.eventCount,
+    tokenTotal: 0,
+    costUsd: 0,
+    dataSource: 'scan',
+    sourcePath: filePath,
+    detailLoaded: false,
+    mergeGroupId: null,
+    hasSystemPrompt: false,
+  };
+}
+
+/** T-03/T-10：SQLite 类索引条目，key/title 均来自 db 行内元数据，title 不等于文件名。 */
 export function sqliteIndexEntry(
   config: ProviderConfig,
   filePath: string,
@@ -382,12 +467,16 @@ export function sqliteIndexEntry(
     id: deriveSessionKey(config.key, filePath, meta.id),
     provider: config.key,
     sourceAgent: config.label,
-    title: meta.title,
+    // REQ-021：title 为空（会话行无 title 且无 user 消息）回落 D5，MUST NOT 用文件名
+    title:
+      meta.title !== ''
+        ? meta.title
+        : fallbackSessionTitle(config.key, Date.parse(meta.startedAt)),
     startedAt: meta.startedAt,
     updatedAt: meta.updatedAt,
     status: 'unknown',
     cwd: null,
-    eventCount: 0,
+    eventCount: meta.eventCount,
     messageCount: 0,
     tokenTotal: 0,
     costUsd: 0,
