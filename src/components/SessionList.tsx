@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 
-import type { Locale } from '../i18n.js';
+import type { Locale, I18nKey } from '../i18n.js';
 import { t } from '../i18n.js';
-import type { SessionIndexEntry } from '../core/trace-types.js';
+import type { ProviderKey, SessionIndexEntry, TraceStatus } from '../core/trace-types.js';
 import { useVirtualList } from '../hooks/useVirtualList.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 import { IconSidebar } from './icons/index.js';
+import { ProviderBadge } from './ui/Badge.js';
+import { SearchInput } from './ui/Input.js';
+import { Popover } from './ui/Overlay.js';
 
 export interface SessionListProps {
   /** REQ-015（G7.6）：会话索引由 App 单一持有，本组件是纯受控组件。 */
@@ -26,7 +29,38 @@ export interface SessionListProps {
   onToggleCollapse: () => void;
 }
 
-/** REQ-008：左侧会话选择器（虚拟滚动 + 搜索/provider 过滤，受控）。 */
+const PROVIDERS: ProviderKey[] = [
+  'claude',
+  'codex',
+  'opencode',
+  'codearts',
+  'codeagent',
+  'codeagent2',
+  'trae',
+  'qoder',
+  'workbuddy',
+];
+
+const STATUSES: TraceStatus[] = ['success', 'error', 'running', 'cancelled', 'unknown'];
+
+function relativeTime(iso: string, locale: Locale): string {
+  const diffMs = Date.now() - Date.parse(iso);
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) {
+    return t('time.justNow', locale);
+  }
+  if (minutes < 60) {
+    return t('time.minutesAgo', locale).replace('{n}', String(minutes));
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return t('time.hoursAgo', locale).replace('{n}', String(hours));
+  }
+  const days = Math.floor(hours / 24);
+  return t('time.daysAgo', locale).replace('{n}', String(days));
+}
+
+/** REQ-008/REQ-016：左侧会话选择器（44px 双行密排，虚拟滚动，受控）。 */
 export function SessionList({
   items,
   selectedId,
@@ -44,7 +78,10 @@ export function SessionList({
   onToggleCollapse,
 }: SessionListProps): React.JSX.Element {
   const [search, setSearch] = useState('');
-  const [provider, setProvider] = useState('');
+  const [providerFilter, setProviderFilter] = useState<ProviderKey[]>([]);
+  const [statusFilter, setStatusFilter] = useState<TraceStatus[]>([]);
+  const [providerOpen, setProviderOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
 
   const filtered = useMemo(
     () =>
@@ -53,12 +90,13 @@ export function SessionList({
           (search === '' ||
             s.title.toLowerCase().includes(search.toLowerCase()) ||
             s.id.toLowerCase().includes(search.toLowerCase())) &&
-          (provider === '' || s.provider === provider),
+          (providerFilter.length === 0 || providerFilter.includes(s.provider)) &&
+          (statusFilter.length === 0 || statusFilter.includes(s.status)),
       ),
-    [items, search, provider],
+    [items, search, providerFilter, statusFilter],
   );
 
-  const { containerRef, range, onScroll } = useVirtualList(filtered.length, 28);
+  const { containerRef, range, onScroll } = useVirtualList(filtered.length, 44);
 
   useEffect(() => {
     if (hasMore && range.endIndex >= filtered.length - 10 && !loading) {
@@ -66,9 +104,7 @@ export function SessionList({
     }
   }, [range.endIndex, filtered.length, hasMore, loading, onLoadMore]);
 
-  const providers = useMemo(() => [...new Set(items.map((s) => s.provider))].sort(), [items]);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-
   const onDragStart = (event: ReactMouseEvent<HTMLElement>): void => {
     if (collapsed) {
       return;
@@ -76,7 +112,9 @@ export function SessionList({
     dragRef.current = { startX: event.clientX, startWidth: width };
     const onMove = (ev: globalThis.MouseEvent): void => {
       if (dragRef.current !== null) {
-        onResize(Math.max(260, Math.min(480, dragRef.current.startWidth + (ev.clientX - dragRef.current.startX))));
+        onResize(
+          Math.max(260, Math.min(480, dragRef.current.startWidth + (ev.clientX - dragRef.current.startX))),
+        );
       }
     };
     const onUp = (): void => {
@@ -88,32 +126,81 @@ export function SessionList({
     window.addEventListener('mouseup', onUp);
   };
 
+  const filterBadge = (count: number): string => (count > 0 ? ` (${count})` : '');
+
   return (
     <aside className="rail" style={{ width: collapsed ? 0 : width }}>
       <div className="rail-header">
-        <button
-          type="button"
-          className="ui-icon-btn ui-btn-sm"
-          aria-label="collapse rail"
-          onClick={onToggleCollapse}
-        >
+        <button type="button" className="ui-icon-btn ui-btn-sm" aria-label="collapse rail" onClick={onToggleCollapse}>
           <IconSidebar size={12} />
         </button>
       </div>
-      <input
-        type="search"
-        placeholder={t('session.search', locale)}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-      <select value={provider} onChange={(e) => setProvider(e.target.value)}>
-        <option value="">{t('session.provider', locale)}</option>
-        {providers.map((p) => (
-          <option key={p} value={p}>
-            {p}
-          </option>
-        ))}
-      </select>
+      <div className="session-filters">
+        <SearchInput placeholder={t('session.search', locale)} value={search} onChange={(e) => setSearch(e.target.value)} />
+        <div className="session-filter-row">
+          <Popover
+            open={providerOpen}
+            onOpenChange={setProviderOpen}
+            trigger={(props) => (
+              <button type="button" className="btn ui-btn-sm" {...props}>
+                {t('session.provider', locale)}
+                {filterBadge(providerFilter.length)}
+              </button>
+            )}
+          >
+            <div className="session-filter-list">
+              {PROVIDERS.map((provider) => {
+                const checked = providerFilter.includes(provider);
+                return (
+                  <label key={provider} className="session-filter-item">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        setProviderFilter((prev) =>
+                          checked ? prev.filter((p) => p !== provider) : [...prev, provider],
+                        )
+                      }
+                    />
+                    <ProviderBadge provider={provider} locale={locale} />
+                    <span>{t(`provider.${provider}`, locale)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </Popover>
+          <Popover
+            open={statusOpen}
+            onOpenChange={setStatusOpen}
+            trigger={(props) => (
+              <button type="button" className="btn ui-btn-sm" {...props}>
+                {t('session.status', locale)}
+                {filterBadge(statusFilter.length)}
+              </button>
+            )}
+          >
+            <div className="session-filter-list">
+              {STATUSES.map((status) => {
+                const checked = statusFilter.includes(status);
+                return (
+                  <label key={status} className="session-filter-item">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        setStatusFilter((prev) =>
+                          checked ? prev.filter((s) => s !== status) : [...prev, status],
+                        )
+                      }
+                    />
+                    <span>{t(`status.${status}` as I18nKey, locale)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </Popover>
+        </div>
+      </div>
       {error !== null && error !== undefined && (
         <ErrorState code="LIST_LOAD_FAILED" message={error} onRetry={onRetry} />
       )}
@@ -142,17 +229,33 @@ export function SessionList({
       >
         <div style={{ height: range.totalHeight, position: 'relative' }}>
           <div style={{ transform: `translateY(${range.offsetY}px)` }}>
-            {filtered.slice(range.startIndex, range.endIndex).map((session) => (
-              <div
-                key={session.id}
-                className={`rail-row ${session.id === selectedId ? 'rail-row-on' : ''}`}
-                onClick={() => onSelect(session.id)}
-              >
-                <span className="mono">{session.id}</span>
-                <span className="rail-title">{session.title}</span>
-                <span>{new Date(session.startedAt).toLocaleTimeString()}</span>
-              </div>
-            ))}
+            {filtered.slice(range.startIndex, range.endIndex).map((session) => {
+              const selected = session.id === selectedId;
+              return (
+                <div
+                  key={session.id}
+                  className={`session-row ${selected ? 'session-row-on' : ''}`}
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => onSelect(session.id)}
+                  title={`${session.title}\n${new Date(session.startedAt).toLocaleString()}`}
+                >
+                  <div className="session-row-main">
+                    <span
+                      className={`status-dot status-${session.status}`}
+                      aria-hidden="true"
+                    />
+                    <span className="session-row-title">{session.title}</span>
+                  </div>
+                  <div className="session-row-meta">
+                    <ProviderBadge provider={session.provider} locale={locale} />
+                    <span>{relativeTime(session.startedAt, locale)}</span>
+                    <span className="mono">{session.eventCount} ev</span>
+                    <span className="mono">{(session.tokenTotal / 1000).toFixed(1)}k tok</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

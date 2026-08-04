@@ -64,32 +64,6 @@
   min-height: 0;
 }
 
-.rail-row {
-  display: flex;
-  gap: var(--space-2);
-  align-items: baseline;
-  padding: var(--space-1) var(--space-1);
-  cursor: pointer;
-  font-size: var(--text-sm);
-  white-space: nowrap;
-  overflow: hidden;
-  border-radius: var(--radius-md);
-}
-
-.rail-row:hover {
-  background: var(--canvas-raised);
-}
-
-.rail-row-on {
-  background: var(--accent-subtle);
-}
-
-.rail-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-}
-
 .main {
   flex: 1;
   display: flex;

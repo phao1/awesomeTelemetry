@@ -30,9 +30,9 @@
 
 ## 4. 会话列表行（T-18，spec REQ-016）
 
-- [ ] 4.1 44px 双行密排：状态点 + 标题 / ProviderBadge + 相对时间 + events + tokens
-- [ ] 4.2 选中态左侧 2px 竖条；hover 无过渡（G-DS-4）
-- [ ] 4.3 过滤区：SearchInput + provider 多选 + status 多选
+- [x] 4.1 44px 双行密排：状态点 + 标题 / ProviderBadge + 相对时间 + events + tokens
+- [x] 4.2 选中态左侧 2px 竖条；hover 无过渡（G-DS-4）
+- [x] 4.3 过滤区：SearchInput + provider 多选 + status 多选
 - [ ] 4.4 验收：500 条会话滚动掉帧 < 5%；行高恒为 `--row-lg`（G-DS-1）
 
 ## 5. 会话详情主区（T-19，spec REQ-017）
