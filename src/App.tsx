@@ -36,6 +36,7 @@ import { SettingsModal } from './components/SettingsModal.js';
 import { TranscriptModal } from './components/TranscriptModal.js';
 import { TokenTextModal } from './components/TokenTextModal.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
+import { ErrorState, EmptyState } from './components/ui/States.js';
 import { useTheme } from './theme.js';
 
 type View = 'session' | 'agent' | 'compare' | 'proxy' | 'frida';
@@ -57,6 +58,7 @@ export default function App() {
   const [offlineSamples, setOfflineSamples] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetailResponse | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [phaseFilter, setPhaseFilter] = useState<TracePhase[]>([...TRACE_PHASES]);
   const deferredPhaseFilter = useDeferredValue(phaseFilter); // REQ-002
@@ -163,10 +165,12 @@ export default function App() {
       if (cached !== undefined) {
         setDetail(cached);
         setPending(false);
+        setDetailError(null);
         return;
       }
       setDetail(null);
       setPending(false);
+      setDetailError(null);
       void api
         .sessionDetail(key, 'slim')
         .then((result) => {
@@ -177,9 +181,12 @@ export default function App() {
           }
           recordCache.set(`${key}:slim`, result);
           setDetail(result);
+          setDetailError(null);
         })
-        .catch(() => {
-          // 详情加载失败保留空态
+        .catch((err: unknown) => {
+          // REQ-022：失败必须可见 —— 错误码 + 重试（禁止空 catch）
+          console.error('[detail] 会话详情加载失败:', err);
+          setDetailError(err instanceof Error ? err.message : String(err));
         });
     },
     [],
@@ -190,23 +197,28 @@ export default function App() {
       return;
     }
     const nextPage = detailPage + 1;
-    void api.sessionDetail(selectedKey, 'slim', nextPage * PAGE_SIZE, PAGE_SIZE).then((result) => {
-      setDetail((prev) => {
-        if (prev === null) {
-          return prev;
-        }
-        const seen = new Set(prev.events.map((e) => e.id));
-        return {
-          ...prev,
-          events: [...prev.events, ...result.events.filter((e) => !seen.has(e.id))],
-          eventTotal: result.eventTotal,
-          hasMore: result.hasMore,
-          eventOffset: result.eventOffset,
-          eventLimit: result.eventLimit,
-        };
+    void api
+      .sessionDetail(selectedKey, 'slim', nextPage * PAGE_SIZE, PAGE_SIZE)
+      .then((result) => {
+        setDetail((prev) => {
+          if (prev === null) {
+            return prev;
+          }
+          const seen = new Set(prev.events.map((e) => e.id));
+          return {
+            ...prev,
+            events: [...prev.events, ...result.events.filter((e) => !seen.has(e.id))],
+            eventTotal: result.eventTotal,
+            hasMore: result.hasMore,
+            eventOffset: result.eventOffset,
+            eventLimit: result.eventLimit,
+          };
+        });
+        setDetailPage(nextPage);
+      })
+      .catch((err: unknown) => {
+        console.error('[detail] 分页加载失败:', err);
       });
-      setDetailPage(nextPage);
-    });
   }, [selectedKey, detail, detailPage]);
 
   const visibleEvents = useMemo(
@@ -290,18 +302,54 @@ export default function App() {
           />
           <main className="main">
             {pending && <p className="hint">{t('pending.decrypting', locale)}</p>}
-            {detail !== null && !pending && (
-              <SessionHeaderCard session={detail.session} locale={locale} />
+            {detailError !== null && (
+              <ErrorState
+                code="SESSION_DETAIL_FAILED"
+                message={detailError}
+                onRetry={() => {
+                  if (selectedKey !== null) {
+                    selectSession(selectedKey);
+                  }
+                }}
+              />
             )}
-            <PhaseTiles active={phaseFilter} onToggle={togglePhase} locale={locale} />
-            <TraceGanttTree
-              events={visibleEvents as TraceEventSlim[]}
-              total={detail?.eventTotal ?? 0}
-              hasMore={detail?.hasMore ?? false}
-              onLoadMore={loadMoreEvents}
-              onSelectEvent={setSelectedEvent}
-              selectedEventId={selectedEvent?.id ?? null}
-            />
+            {detailError === null &&
+              detail !== null &&
+              !pending &&
+              detail.events.length === 0 && (
+                <EmptyState
+                  icon={<span aria-hidden="true" />}
+                  title={t('state.noEvents', locale)}
+                  description={t('state.empty', locale)}
+                  action={
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        if (selectedKey !== null) {
+                          selectSession(selectedKey);
+                        }
+                      }}
+                    >
+                      {t('state.retry', locale)}
+                    </button>
+                  }
+                />
+              )}
+            {detail !== null && detail.events.length > 0 && (
+              <>
+                <SessionHeaderCard session={detail.session} locale={locale} />
+                <PhaseTiles active={phaseFilter} onToggle={togglePhase} locale={locale} />
+                <TraceGanttTree
+                  events={visibleEvents as TraceEventSlim[]}
+                  total={detail.eventTotal}
+                  hasMore={detail.hasMore}
+                  onLoadMore={loadMoreEvents}
+                  onSelectEvent={setSelectedEvent}
+                  selectedEventId={selectedEvent?.id ?? null}
+                />
+              </>
+            )}
           </main>
           <EventInspector
             sessionKey={selectedKey ?? ''}

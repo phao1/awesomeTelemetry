@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { AgentOverviewRow } from '../core/trace-types.js';
 import { api, type AgentOverviewResponse } from '../api/client.js';
+import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 
 export interface AgentOverviewProps {
   locale: Locale;
@@ -15,26 +16,40 @@ export function AgentOverview({ locale, load = () => api.agentOverview() }: Agen
   const [rows, setRows] = useState<AgentOverviewRow[] | null>(null);
   const [cached, setCached] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const loadedRef = useRef(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
-    if (loadedRef.current) {
-      return;
-    }
-    loadedRef.current = true;
+    setRows(null);
+    setError(null);
     void load()
       .then((result) => {
         setRows(result.rows);
         setCached(result.cached);
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
-  }, [load]);
+      .catch((err: unknown) => {
+        console.error('[agent-overview] 加载失败:', err);
+        setError(err instanceof Error ? err.message : String(err));
+      });
+  }, [load, retryKey]);
 
   if (error !== null) {
-    return <p className="hint">{t('common.error', locale)}: {error}</p>;
+    return <ErrorState code="OVERVIEW_LOAD_FAILED" message={error} onRetry={() => setRetryKey((k) => k + 1)} />;
   }
   if (rows === null) {
-    return <p className="hint">{t('common.loading', locale)}</p>;
+    return (
+      <div style={{ padding: 'var(--space-3)' }}>
+        <Skeleton variant="row" count={8} />
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon={<span aria-hidden="true" />}
+        title={t('common.empty', locale)}
+        description={t('state.empty', locale)}
+      />
+    );
   }
   return (
     <section className="overview">

@@ -12,11 +12,11 @@
 
 ## 2. 四态与消灭空 catch（T-16，design-system REQ-006 + frontend REQ-022）
 
-- [ ] 2.1 实现 `Skeleton` / `EmptyState` / `ErrorState` / `Toast` 四个组件
-- [ ] 2.2 按 `specs/frontend/spec.md` REQ-022 的 7 行表格逐条改造（SessionList / selectSession / EventInspector / AgentOverview / CompareBoard / Proxy+Frida / SettingsModal）
-- [ ] 2.3 所有 `catch` 块：设 error 态 + `console.error` 原始错误，**不得为空、不得只含注释**
-- [ ] 2.4 加 CI 断言：`src/**/*.tsx` 中不存在空 `catch {}` 或只含注释的 catch
-- [ ] 2.5 i18n 补 `state.*` 前缀文案（zh + en 同时加，`i18n.test.ts` 有键对齐断言）
+- [x] 2.1 实现 `Skeleton` / `EmptyState` / `ErrorState` / `Toast` 四个组件
+- [x] 2.2 按 `specs/frontend/spec.md` REQ-022 的 7 行表格逐条改造（SessionList / selectSession / EventInspector / AgentOverview / CompareBoard / Proxy+Frida / SettingsModal）
+- [x] 2.3 所有 `catch` 块：设 error 态 + `console.error` 原始错误，**不得为空、不得只含注释**
+- [x] 2.4 加 CI 断言：`src/**/*.tsx` 中不存在空 `catch {}` 或只含注释的 catch
+- [x] 2.5 i18n 补 `state.*` 前缀文案（zh + en 同时加，`i18n.test.ts` 有键对齐断言）
 - [ ] 2.6 验收：`kill` 掉后端后点击任意会话，5 秒内出现错误码 + 重试按钮，状态栏变断开
 - [ ] 2.7 验收：loading 骨架行高 == 真实行高，数据到达时 CLS = 0
 

@@ -4,6 +4,7 @@ import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { ProxyRequestListItem } from '../core/trace-types.js';
 import { api } from '../api/client.js';
+import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 
 export interface ProxyViewProps {
   locale: Locale;
@@ -22,6 +23,7 @@ export function ProxyView({ locale }: ProxyViewProps) {
       setStatus(st);
       setError(null);
     } catch (err) {
+      console.error('[proxy] 加载失败:', err);
       setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
@@ -40,7 +42,14 @@ export function ProxyView({ locale }: ProxyViewProps) {
           {t('common.refresh', locale)}
         </button>
       </div>
-      {error !== null && <p className="hint">{t('common.error', locale)}: {error}</p>}
+      {error !== null && (
+        <ErrorState code="PROXY_LOAD_FAILED" message={error} onRetry={() => void load()} />
+      )}
+      {error === null && status === null && (
+        <div style={{ padding: 'var(--space-3)' }}>
+          <Skeleton variant="row" count={4} />
+        </div>
+      )}
       <ul className="proxy-list">
         {items.map((item) => (
           <li key={item.id} className="proxy-row">
@@ -52,7 +61,13 @@ export function ProxyView({ locale }: ProxyViewProps) {
           </li>
         ))}
       </ul>
-      {items.length === 0 && <p className="hint">{t('common.empty', locale)}</p>}
+      {error === null && status !== null && items.length === 0 && (
+        <EmptyState
+          icon={<span aria-hidden="true" />}
+          title={t('state.proxyNotRunning', locale)}
+          description={t('state.empty', locale)}
+        />
+      )}
     </section>
   );
 }

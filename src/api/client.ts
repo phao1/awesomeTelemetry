@@ -35,10 +35,12 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
   });
   const text = await res.text();
   let body: unknown = null;
-  try {
-    body = text === '' ? null : JSON.parse(text);
-  } catch {
-    // 非 JSON 响应体保持 null
+  if (text !== '') {
+    try {
+      body = JSON.parse(text);
+    } catch (err) {
+      console.error('[api] 响应体不是合法 JSON:', err);
+    }
   }
   if (!res.ok) {
     const envelope = body as { error?: { code?: string; message?: string } } | null;

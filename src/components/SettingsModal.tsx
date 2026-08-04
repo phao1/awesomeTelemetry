@@ -4,6 +4,7 @@ import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { LocalSessionConfig } from '../core/trace-types.js';
 import { api } from '../api/client.js';
+import { ErrorState, Skeleton } from './ui/States.js';
 
 export interface SettingsModalProps {
   locale: Locale;
@@ -15,12 +16,17 @@ export interface SettingsModalProps {
 /** REQ-008：provider 配置设置。 */
 export function SettingsModal({ locale, onClose, load = () => api.configProviders(), save = (c) => api.saveConfigProviders(c) }: SettingsModalProps) {
   const [config, setConfig] = useState<LocalSessionConfig | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     void load()
       .then((loaded) => setConfig(loaded as LocalSessionConfig))
-      .catch(() => setConfig(null));
+      .catch((err: unknown) => {
+        // REQ-022：失败不得永久停在「加载中」
+        console.error('[settings] 配置加载失败:', err);
+        setError(err instanceof Error ? err.message : String(err));
+      });
   }, [load]);
 
   const toggle = (key: string): void => {
@@ -48,7 +54,23 @@ export function SettingsModal({ locale, onClose, load = () => api.configProvider
         </header>
         <div className="modal-body">
           <h4>{t('settings.providers', locale)}</h4>
-          {config === null && <p className="hint">{t('common.loading', locale)}</p>}
+          {error !== null && (
+            <ErrorState
+              code="CONFIG_LOAD_FAILED"
+              message={error}
+              onRetry={() => {
+                setError(null);
+                setConfig(null);
+                void load()
+                  .then((loaded) => setConfig(loaded as LocalSessionConfig))
+                  .catch((err: unknown) => {
+                    console.error('[settings] 重试失败:', err);
+                    setError(err instanceof Error ? err.message : String(err));
+                  });
+              }}
+            />
+          )}
+          {error === null && config === null && <Skeleton variant="row" count={5} />}
           {config !== null &&
             Object.entries(config.providers).map(([key, provider]) => (
               <label key={key} className="settings-row">

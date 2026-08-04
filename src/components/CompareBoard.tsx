@@ -9,6 +9,7 @@ import type {
   TraceEventSlim,
 } from '../core/trace-types.js';
 import { api } from '../api/client.js';
+import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 
 export interface CompareResult {
   left: SessionDetailResponse;
@@ -180,8 +181,21 @@ export function CompareBoard({ sessions, locale, loadCompare }: CompareBoardProp
   return (
     <section className="compare">
       <CompareSelectorBar sessions={sessions} locale={locale} onCompare={onCompare} />
-      {loading && <p className="hint">{t('common.loading', locale)}</p>}
-      {error !== null && <p className="hint">{t('common.error', locale)}: {error}</p>}
+      {error !== null && (
+        <ErrorState code="COMPARE_FAILED" message={error} onRetry={() => undefined} />
+      )}
+      {loading && result === null && (
+        <div style={{ padding: 'var(--space-3)' }}>
+          <Skeleton variant="row" count={5} />
+        </div>
+      )}
+      {!loading && error === null && result === null && (
+        <EmptyState
+          icon={<span aria-hidden="true" />}
+          title={t('state.selectTwo', locale)}
+          description={t('state.empty', locale)}
+        />
+      )}
       {result !== null && (
         <>
           <CompareSpeedMetrics speed={result.speed} locale={locale} />

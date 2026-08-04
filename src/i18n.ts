@@ -202,8 +202,9 @@ export function getStoredLocale(): Locale {
 export function storeLocale(locale: Locale): void {
   try {
     localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-  } catch {
-    // localStorage 不可用时忽略
+  } catch (err) {
+    // localStorage 不可用（隐私模式）时持久化失败，但不影响本次会话
+    console.error('[i18n] locale 持久化失败:', err);
   }
 }
 

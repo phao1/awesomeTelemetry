@@ -9,6 +9,7 @@ import type {
 } from '../core/trace-types.js';
 import { api } from '../api/client.js';
 import { eventDetailCache } from '../cache/caches.js';
+import { ErrorState, Skeleton } from './ui/States.js';
 
 export interface EventInspectorProps {
   sessionKey: string;
@@ -34,16 +35,19 @@ export function EventInspector({
 }: EventInspectorProps) {
   const [width, setWidth] = useState(420);
   const [detail, setDetail] = useState<TraceEvent | TraceEventRaw | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
     if (event === null) {
       setDetail(null);
+      setError(null);
       return;
     }
     const cached = eventDetailCache.get(`${sessionKey}:${event.id}`);
     if (cached !== undefined) {
       setDetail(cached);
+      setError(null);
       return;
     }
     // 200ms 防抖（REQ-003）
@@ -52,8 +56,13 @@ export function EventInspector({
         .then((loaded) => {
           eventDetailCache.set(`${sessionKey}:${event.id}`, loaded);
           setDetail(loaded);
+          setError(null);
         })
-        .catch(() => setDetail(null));
+        .catch((err: unknown) => {
+          // REQ-022：正文加载失败必须可诊断，与「本来为空」区分
+          console.error('[inspector] 事件正文加载失败:', err);
+          setError(err instanceof Error ? err.message : String(err));
+        });
     }, 200);
     return () => clearTimeout(timer);
   }, [sessionKey, event, loadDetail]);
@@ -96,6 +105,30 @@ export function EventInspector({
       <div className="inspector-body" style={{ fontSize: fontPx }}>
         <p>{event.title}</p>
         <p className="meta">{event.kind} · {event.phase} · {event.status} · {event.durationMs}ms</p>
+        {error !== null && (
+          <ErrorState
+            code="EVENT_DETAIL_FAILED"
+            message={error}
+            onRetry={() => {
+              const cached = eventDetailCache.get(`${sessionKey}:${event.id}`);
+              if (cached !== undefined) {
+                setDetail(cached);
+                return;
+              }
+              setError(null);
+              void loadDetail(sessionKey, event.id)
+                .then((loaded) => {
+                  eventDetailCache.set(`${sessionKey}:${event.id}`, loaded);
+                  setDetail(loaded);
+                })
+                .catch((err: unknown) => {
+                  console.error('[inspector] 重试失败:', err);
+                  setError(err instanceof Error ? err.message : String(err));
+                });
+            }}
+          />
+        )}
+        {error === null && detail === null && <Skeleton variant="block" count={2} />}
         <div className="inspector-actions">
           <button type="button" className="btn" onClick={() => onOpenTranscript(event)}>
             {t('transcript.title', locale)}
