@@ -356,16 +356,26 @@ export function CompareSpeedMetrics({
 export interface CompareBoardProps {
   sessions: SessionIndexEntry[];
   locale: Locale;
+  leftKey: string;
+  rightKey: string;
+  onLeftChange: (key: string) => void;
+  onRightChange: (key: string) => void;
   loadCompare?: (left: string, right: string) => Promise<CompareResult>;
 }
 
 /** REQ-019：对比视图。未选择时给 EmptyState 引导，不是两个空下拉。 */
-export function CompareBoard({ sessions, locale, loadCompare }: CompareBoardProps): React.JSX.Element {
+export function CompareBoard({
+  sessions,
+  locale,
+  leftKey,
+  rightKey,
+  onLeftChange,
+  onRightChange,
+  loadCompare,
+}: CompareBoardProps): React.JSX.Element {
   const [result, setResult] = useState<CompareResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [leftKey, setLeftKey] = useState('');
-  const [rightKey, setRightKey] = useState('');
 
   const onCompare = (left: string, right: string): void => {
     const loader = loadCompare ?? ((l: string, r: string) => api.compare(l, r));
@@ -389,8 +399,8 @@ export function CompareBoard({ sessions, locale, loadCompare }: CompareBoardProp
         onCompare={onCompare}
         leftKey={leftKey}
         rightKey={rightKey}
-        onLeftChange={setLeftKey}
-        onRightChange={setRightKey}
+        onLeftChange={onLeftChange}
+        onRightChange={onRightChange}
       />
       {error !== null && (
         <ErrorState

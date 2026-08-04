@@ -9,11 +9,13 @@ import {
 } from 'react';
 
 import type {
+  ProviderKey,
   SessionDetailResponse,
   SessionIndexEntry,
   TraceEvent,
   TraceEventSlim,
   TracePhase,
+  TraceStatus,
 } from './core/trace-types.js';
 import { TRACE_PHASES } from './core/trace-types.js';
 import { getStoredLocale, storeLocale, t, type Locale } from './i18n.js';
@@ -48,8 +50,20 @@ import {
   storeBool,
   storeNumber,
 } from './layout.js';
+import {
+  installKeyboardShortcuts,
+  registerShortcut,
+  setEscapeFallback,
+} from './keyboard.js';
+import { HelpModal } from './components/HelpModal.js';
+import { parseHash, serializeHash, type HashState } from './hash-router.js';
+import type { CommandPaletteProps } from './components/CommandPalette.js';
 
 const PAGE_SIZE = 2000;
+
+interface PaletteModule {
+  CommandPalette: (props: CommandPaletteProps) => React.JSX.Element;
+}
 
 /** REQ-001：五视图 shell，App.tsx 是唯一 stateful shell。 */
 export default function App() {
@@ -93,6 +107,18 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [transcriptEvent, setTranscriptEvent] = useState<TraceEventSlim | null>(null);
   const [tokenEvent, setTokenEvent] = useState<TraceEventSlim | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [PaletteComponent, setPaletteComponent] = useState<PaletteModule['CommandPalette'] | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [cursorIndex, setCursorIndex] = useState(0);
+  const [providerFilter, setProviderFilter] = useState<ProviderKey[]>([]);
+  const [statusFilter, setStatusFilter] = useState<TraceStatus[]>([]);
+  const [compareLeft, setCompareLeft] = useState('');
+  const [compareRight, setCompareRight] = useState('');
+  const [paletteHintSeen, setPaletteHintSeen] = useState(() =>
+    loadBool(LAYOUT_KEYS.paletteHintSeen, false),
+  );
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectedKeyRef = useRef<string | null>(null);
 
   const setLocale = useCallback((next: Locale) => {
@@ -304,6 +330,117 @@ export default function App() {
       });
   }, []);
 
+  useEffect(() => {
+    installKeyboardShortcuts();
+    setEscapeFallback(() => {
+      setSelectedEvent(null);
+      setCursorIndex(-1);
+    });
+    return () => setEscapeFallback(null);
+  }, []);
+
+  // REQ-008（D1）：单一全局监听 + 映射表
+  useEffect(() => {
+    const unsubs: Array<() => void> = [];
+    const add = (spec: Parameters<typeof registerShortcut>[0], handler: () => void): void => {
+      unsubs.push(registerShortcut(spec, handler));
+    };
+    add({ key: '1' }, () => switchView('session'));
+    add({ key: '2' }, () => switchView('agent'));
+    add({ key: '3' }, () => switchView('compare'));
+    add({ key: '4' }, () => switchView('proxy'));
+    add({ key: '5' }, () => switchView('frida'));
+    add({ key: '/' }, () => searchInputRef.current?.focus());
+    add({ key: 'j' }, () => {
+      setCursorIndex((prev) => Math.min(sessions.length - 1, prev + 1));
+    });
+    add({ key: 'k' }, () => {
+      setCursorIndex((prev) => Math.max(0, prev - 1));
+    });
+    add({ key: 'Enter' }, () => {
+      const target = sessions[cursorIndex];
+      if (target !== undefined) {
+        selectSession(target.id);
+      }
+    });
+    add({ key: '[' }, () => setRailCollapsed((prev) => !prev));
+    add({ key: ']' }, () => setInspectorCollapsed((prev) => !prev));
+    add({ key: '\\', ctrlOrMeta: true }, () => theme.cycle());
+    add({ key: 'k', ctrlOrMeta: true }, () => {
+      setPaletteOpen((prev) => {
+        if (!prev) {
+          void import('./components/CommandPalette.js').then((module) => {
+            setPaletteComponent(() => module.CommandPalette);
+          });
+        }
+        return !prev;
+      });
+    });
+    add({ key: '?' }, () => setHelpOpen((prev) => !prev));
+    return () => {
+      for (const unsubscribe of unsubs) {
+        unsubscribe();
+      }
+    };
+  }, [sessions, cursorIndex, selectSession, switchView, theme, setRailCollapsed, setInspectorCollapsed]);
+
+  // REQ-024（D3）：状态变 → 写 hash（replaceState 不触发 hashchange，避免循环）
+  useEffect(() => {
+    const state: HashState = {
+      view,
+      ...(selectedKey !== null ? { key: selectedKey } : {}),
+      ...(phaseFilter.length < TRACE_PHASES.length ? { phase: phaseFilter } : {}),
+      ...(providerFilter.length > 0 ? { provider: providerFilter } : {}),
+      ...(statusFilter.length > 0 ? { status: statusFilter } : {}),
+      ...(compareLeft !== '' ? { left: compareLeft } : {}),
+      ...(compareRight !== '' ? { right: compareRight } : {}),
+    };
+    history.replaceState(null, '', serializeHash(state));
+  }, [view, selectedKey, phaseFilter, providerFilter, statusFilter, compareLeft, compareRight]);
+
+  // REQ-024：hashchange → 解析并应用（脏 hash 回落默认视图，不抛错）
+  useEffect(() => {
+    const onHashChange = (): void => {
+      const state = parseHash(window.location.hash);
+      if (state === null) {
+        switchView('session');
+        return;
+      }
+      switchView(state.view);
+      if (state.key !== undefined) {
+        selectSession(state.key);
+      }
+      if (state.phase !== undefined) {
+        const valid = state.phase.filter((phase): phase is TracePhase =>
+          (TRACE_PHASES as readonly string[]).includes(phase),
+        );
+        setPhaseFilter(valid.length > 0 ? valid : [...TRACE_PHASES]);
+      }
+      if (state.provider !== undefined) {
+        setProviderFilter(state.provider as ProviderKey[]);
+      }
+      if (state.status !== undefined) {
+        setStatusFilter(state.status as TraceStatus[]);
+      }
+      if (state.left !== undefined) {
+        setCompareLeft(state.left);
+      }
+      if (state.right !== undefined) {
+        setCompareRight(state.right);
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [switchView, selectSession]);
+
+  // 首帧应用 hash（刷新恢复状态）
+  useEffect(() => {
+    const state = parseHash(window.location.hash);
+    if (state !== null && state.view !== 'session') {
+      switchView(state.view);
+    }
+  }, [switchView]);
+
   const openTranscript = useCallback(
     (event: TraceEventSlim) => {
       setTranscriptEvent(event);
@@ -349,6 +486,12 @@ export default function App() {
             onLoadMore={loadMoreSessions}
             onRetry={() => void loadSessions()}
             offlineSamples={offlineSamples}
+            providerFilter={providerFilter}
+            statusFilter={statusFilter}
+            onProviderFilterChange={setProviderFilter}
+            onStatusFilterChange={setStatusFilter}
+            cursorIndex={cursorIndex}
+            searchInputRef={searchInputRef}
             width={railWidth}
             collapsed={railCollapsed}
             onResize={setRailWidth}
@@ -508,7 +651,14 @@ export default function App() {
       {view === 'compare' && (
         <div className="view-body">
           <main className="main">
-            <CompareBoard sessions={sessions} locale={locale} />
+            <CompareBoard
+              sessions={sessions}
+              locale={locale}
+              leftKey={compareLeft}
+              rightKey={compareRight}
+              onLeftChange={setCompareLeft}
+              onRightChange={setCompareRight}
+            />
           </main>
         </div>
       )}
@@ -540,6 +690,34 @@ export default function App() {
       )}
       {tokenEvent !== null && (
         <TokenTextModal event={tokenEvent as TraceEvent} locale={locale} onClose={() => setTokenEvent(null)} />
+      )}
+      {paletteOpen && PaletteComponent !== null && (
+        <PaletteComponent
+          sessions={sessions}
+          locale={locale}
+          onClose={() => setPaletteOpen(false)}
+          onAction={(action) => {
+            setPaletteHintSeen(true);
+            storeBool(LAYOUT_KEYS.paletteHintSeen, true);
+            if (action.type === 'session') {
+              selectSession(action.key);
+            } else if (action.type === 'view') {
+              switchView(action.view as AppView);
+            } else if (action.type === 'theme') {
+              theme.cycle();
+            } else if (action.type === 'language') {
+              setLocale(locale === 'zh' ? 'en' : 'zh');
+            } else if (action.type === 'scan') {
+              triggerScan();
+            } else if (action.type === 'settings') {
+              setSettingsOpen(true);
+            }
+          }}
+        />
+      )}
+      {helpOpen && <HelpModal locale={locale} onClose={() => setHelpOpen(false)} />}
+      {!paletteHintSeen && view === 'session' && (
+        <div className="palette-hint mono">{t('palette.hint', locale)}</div>
       )}
       <StatusBar
         live={live}

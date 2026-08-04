@@ -1457,3 +1457,67 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ===== REQ-025 命令面板 / REQ-008 键盘游标 / REQ-024 hash ===== */
+
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+  text-align: left;
+  padding: 0 var(--space-2);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+}
+
+.palette-row:hover {
+  background: var(--accent-subtle);
+}
+
+.palette-row-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-row-hint {
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+
+.session-row-cursor {
+  outline: 1px solid var(--accent-fg);
+  outline-offset: -1px;
+}
+
+.palette-hint {
+  position: fixed;
+  bottom: var(--statusbar-height);
+  left: var(--space-4);
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  pointer-events: none;
+  z-index: var(--z-sticky);
+}
+
+/* REQ-009：200% 缩放（等效窄视口）兜底——单栏，无横向滚动 */
+@media (max-width: 56.25em) {
+  .rail,
+  .inspector {
+    display: none;
+  }
+
+  .view-body {
+    flex-direction: column;
+  }
+
+  .main {
+    min-width: 0;
+    overflow-x: hidden;
+  }
+}

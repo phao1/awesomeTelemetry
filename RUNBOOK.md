@@ -26,3 +26,13 @@
 4. **验收**：跑该里程碑验收项（测试、EXPLAIN QUERY PLAN、性能断言等），
    不通过就改实现，不改测试断言。
 5. **收尾**：全量门禁通过后提交（`M<n>: <模块名> — <一句话>`），更新 PROGRESS.md。
+
+## 四、端到端冒烟（add-palette-and-a11y 5.3/5.4）
+
+- 脚本：`node scripts/smoke-e2e.mjs [--port=4215]`。
+- **端口要求**：脚本占用一个本地回环端口（默认 4215），
+  CI 需放行 `127.0.0.1` 出站/回环，或显式传 `--port=<空闲端口>` 单独跑。
+- 覆盖：GET / 200 → 列表 title 非文件名且 eventCount > 0 → 点开会话有事件 →
+  agent/proxy/frida 端点 200 → compare 200 且有事件。
+- 注意：该脚本真实启动 `bin/agent-observe.js`，会读取本机真实会话数据；
+  在 CI 的隔离环境里若无真实数据，请先用 `scripts/generate-local-samples.mjs` 生成样本。

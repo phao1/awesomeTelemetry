@@ -163,6 +163,13 @@ export function TraceTimeline({
               <div
                 key={`${event.id}-${event.sequence}`}
                 className={`gantt-row ${event.id === selectedEventId ? 'gantt-row-on' : ''}`}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onSelectEvent(event);
+                  }
+                }}
                 style={{
                   height: ROW_HEIGHT,
                   paddingLeft: `calc(var(--space-3) * ${event.depth})`,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type InputHTMLAttributes, type SelectHTMLAttributes } from 'react';
+import { useState, type InputHTMLAttributes, type RefObject, type SelectHTMLAttributes } from 'react';
 
 import { IconClose, IconSearch } from '../icons/index.js';
 
@@ -58,6 +58,8 @@ export interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElem
   placeholder?: string;
   /** REQ-005：内置 IconSearch + 清除按钮 + `/` 聚焦 */
   clearable?: boolean;
+  /** 转发 ref（REQ-008：全局快捷键 `/` 聚焦由 App 的单一监听器完成） */
+  inputRef?: RefObject<HTMLInputElement | null>;
 }
 
 /**
@@ -68,25 +70,13 @@ export function SearchInput({
   placeholder,
   clearable = true,
   value,
+  defaultValue,
   onChange,
   onKeyDown,
+  inputRef,
   ...rest
 }: SearchInputProps): React.JSX.Element {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [internalValue, setInternalValue] = useState('');
-
-  useEffect(() => {
-    const onSlash = (event: KeyboardEvent): void => {
-      const target = event.target as HTMLElement | null;
-      const tag = target?.tagName ?? '';
-      if (event.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
-        event.preventDefault();
-        inputRef.current?.focus();
-      }
-    };
-    document.addEventListener('keydown', onSlash);
-    return () => document.removeEventListener('keydown', onSlash);
-  }, []);
+  const [internalValue, setInternalValue] = useState(() => String(defaultValue ?? ''));
 
   const controlled = value !== undefined;
   const current = controlled ? String(value ?? '') : internalValue;
@@ -120,7 +110,7 @@ export function SearchInput({
             aria-label="clear search"
             onClick={() => {
               commit('');
-              inputRef.current?.focus();
+              inputRef?.current?.focus();
             }}
           >
             <IconClose size={12} />

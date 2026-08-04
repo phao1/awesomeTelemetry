@@ -5,6 +5,7 @@ import {
   type ReactNode,
   type CSSProperties,
 } from 'react';
+import { pushOverlay } from '../../keyboard.js';
 
 export type Placement = 'top' | 'bottom' | 'left' | 'right';
 
@@ -113,7 +114,18 @@ export function Popover({
   style,
 }: PopoverProps): React.JSX.Element {
   const anchorRef = useRef<HTMLDivElement | null>(null);
+  const lastTriggerRef = useRef<HTMLElement | null>(null);
   useOutsideClose(anchorRef, open, () => onOpenChange(false));
+  useEffect(() => (open ? pushOverlay(() => onOpenChange(false)) : undefined), [open, onOpenChange]);
+  // REQ-009：关闭后焦点回归触发元素
+  useEffect(() => {
+    if (open) {
+      lastTriggerRef.current =
+        anchorRef.current?.querySelector<HTMLElement>('button, input, a[href]') ?? null;
+    } else if (lastTriggerRef.current !== null) {
+      lastTriggerRef.current.focus();
+    }
+  }, [open]);
 
   return (
     <div className="ui-overlay-anchor" ref={anchorRef}>
@@ -152,7 +164,17 @@ export function DropdownMenu({
   onOpenChange,
 }: DropdownMenuProps): React.JSX.Element {
   const anchorRef = useRef<HTMLDivElement | null>(null);
+  const lastTriggerRef = useRef<HTMLElement | null>(null);
   useOutsideClose(anchorRef, open, () => onOpenChange(false));
+  useEffect(() => (open ? pushOverlay(() => onOpenChange(false)) : undefined), [open, onOpenChange]);
+  useEffect(() => {
+    if (open) {
+      lastTriggerRef.current =
+        anchorRef.current?.querySelector<HTMLElement>('button, input, a[href]') ?? null;
+    } else if (lastTriggerRef.current !== null) {
+      lastTriggerRef.current.focus();
+    }
+  }, [open]);
 
   return (
     <div className="ui-overlay-anchor" ref={anchorRef}>

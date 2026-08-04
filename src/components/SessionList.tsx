@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type RefObject,
+} from 'react';
 
 import type { Locale, I18nKey } from '../i18n.js';
 import { t } from '../i18n.js';
@@ -22,6 +29,14 @@ export interface SessionListProps {
   onLoadMore: () => void;
   onRetry: () => void;
   offlineSamples: boolean;
+  /** REQ-016/REQ-024：受控过滤（App 持有并同步 URL hash） */
+  providerFilter: ProviderKey[];
+  statusFilter: TraceStatus[];
+  onProviderFilterChange: (providers: ProviderKey[]) => void;
+  onStatusFilterChange: (statuses: TraceStatus[]) => void;
+  /** REQ-008：键盘浏览游标 + 全局 `/` 聚焦入口 */
+  cursorIndex: number;
+  searchInputRef: RefObject<HTMLInputElement | null>;
   /** REQ-015/REQ-026：受控宽度与折叠（App 单一持有并持久化） */
   width: number;
   collapsed: boolean;
@@ -72,14 +87,18 @@ export function SessionList({
   onLoadMore,
   onRetry,
   offlineSamples,
+  providerFilter,
+  statusFilter,
+  onProviderFilterChange,
+  onStatusFilterChange,
+  cursorIndex,
+  searchInputRef,
   width,
   collapsed,
   onResize,
   onToggleCollapse,
 }: SessionListProps): React.JSX.Element {
   const [search, setSearch] = useState('');
-  const [providerFilter, setProviderFilter] = useState<ProviderKey[]>([]);
-  const [statusFilter, setStatusFilter] = useState<TraceStatus[]>([]);
   const [providerOpen, setProviderOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
 
@@ -97,6 +116,20 @@ export function SessionList({
   );
 
   const { containerRef, range, onScroll } = useVirtualList(filtered.length, 44);
+
+  // REQ-008：游标滚动进视口
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container === null || cursorIndex < 0) {
+      return;
+    }
+    const top = cursorIndex * 44;
+    if (top < container.scrollTop) {
+      container.scrollTop = top;
+    } else if (top + 44 > container.scrollTop + container.clientHeight) {
+      container.scrollTop = top + 44 - container.clientHeight;
+    }
+  }, [cursorIndex, containerRef]);
 
   useEffect(() => {
     if (hasMore && range.endIndex >= filtered.length - 10 && !loading) {
@@ -136,7 +169,12 @@ export function SessionList({
         </button>
       </div>
       <div className="session-filters">
-        <SearchInput placeholder={t('session.search', locale)} value={search} onChange={(e) => setSearch(e.target.value)} />
+        <SearchInput
+          inputRef={searchInputRef}
+          placeholder={t('session.search', locale)}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         <div className="session-filter-row">
           <Popover
             open={providerOpen}
@@ -157,8 +195,8 @@ export function SessionList({
                       type="checkbox"
                       checked={checked}
                       onChange={() =>
-                        setProviderFilter((prev) =>
-                          checked ? prev.filter((p) => p !== provider) : [...prev, provider],
+                        onProviderFilterChange(
+                          checked ? providerFilter.filter((p) => p !== provider) : [...providerFilter, provider],
                         )
                       }
                     />
@@ -188,8 +226,8 @@ export function SessionList({
                       type="checkbox"
                       checked={checked}
                       onChange={() =>
-                        setStatusFilter((prev) =>
-                          checked ? prev.filter((s) => s !== status) : [...prev, status],
+                        onStatusFilterChange(
+                          checked ? statusFilter.filter((s) => s !== status) : [...statusFilter, status],
                         )
                       }
                     />
@@ -224,17 +262,22 @@ export function SessionList({
       <div
         ref={containerRef}
         className="rail-list"
+        role="listbox"
+        aria-label={t('session.title', locale)}
         style={{ height: '100%', overflowY: 'auto', position: 'relative' }}
         onScroll={onScroll}
       >
         <div style={{ height: range.totalHeight, position: 'relative' }}>
           <div style={{ transform: `translateY(${range.offsetY}px)` }}>
-            {filtered.slice(range.startIndex, range.endIndex).map((session) => {
+            {filtered.slice(range.startIndex, range.endIndex).map((session, visibleIndex) => {
+              const index = range.startIndex + visibleIndex;
               const selected = session.id === selectedId;
               return (
                 <div
                   key={session.id}
-                  className={`session-row ${selected ? 'session-row-on' : ''}`}
+                  className={`session-row ${selected ? 'session-row-on' : ''} ${
+                    index === cursorIndex ? 'session-row-cursor' : ''
+                  }`}
                   role="option"
                   aria-selected={selected}
                   onClick={() => onSelect(session.id)}

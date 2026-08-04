@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it } from 'vitest';
 
-import type { SessionIndexEntry } from '../core/trace-types.js';
+import type { ProviderKey, SessionIndexEntry, TraceStatus } from '../core/trace-types.js';
 import { SessionList } from './SessionList.js';
 
 function entry(id: string, title: string): SessionIndexEntry {
@@ -36,6 +36,15 @@ function render(node: React.JSX.Element): HTMLDivElement {
   return container;
 }
 
+const baseProps = {
+  providerFilter: [] as ProviderKey[],
+  statusFilter: [] as TraceStatus[],
+  onProviderFilterChange: () => undefined,
+  onStatusFilterChange: () => undefined,
+  cursorIndex: -1,
+  searchInputRef: { current: null } as React.RefObject<HTMLInputElement | null>,
+};
+
 describe('REQ-016 会话列表', () => {
   it('44px 双行密排：标题 + ProviderBadge + 相对时间 + events/tokens 计数', () => {
     const container = render(
@@ -49,6 +58,7 @@ describe('REQ-016 会话列表', () => {
         onLoadMore={() => undefined}
         onRetry={() => undefined}
         offlineSamples={false}
+        {...baseProps}
         width={300}
         collapsed={false}
         onResize={() => undefined}
@@ -77,6 +87,7 @@ describe('REQ-016 会话列表', () => {
         onLoadMore={() => undefined}
         onRetry={() => undefined}
         offlineSamples={false}
+        {...baseProps}
         width={300}
         collapsed={false}
         onResize={() => undefined}
@@ -104,6 +115,7 @@ describe('REQ-016 会话列表', () => {
         onLoadMore={() => undefined}
         onRetry={() => undefined}
         offlineSamples={false}
+        {...baseProps}
         width={300}
         collapsed={false}
         onResize={() => undefined}
