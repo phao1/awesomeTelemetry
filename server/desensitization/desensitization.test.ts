@@ -22,8 +22,8 @@ describe('REQ-001 十条规则', () => {
       ['bearer_token', 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9', 'Authorization: Bearer ***'],
       ['email', 'contact me at alice@example.com now', 'contact me at u***@e***.c*** now'],
       ['ip_address', 'server at 192.168.1.10 responds', 'server at ***.***.***.*** responds'],
-      ['file_path_win', 'load C:\\Users\\howell\\secret.txt ok', 'load C:\\*** ok'],
-      ['file_path_unix', 'cat /home/howell/secret.txt', 'cat /home/***'],
+      ['file_path_win', 'load C:\\Users\\alice\\secret.txt ok', 'load C:\\*** ok'],
+      ['file_path_unix', 'cat /home/alice/secret.txt', 'cat /home/***'],
       ['aws_access_key', 'AKIAIOSFODNN7EXAMPLE', 'AKIA***'],
       ['private_key', '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----', '***PRIVATE KEY REDACTED***'],
     ];

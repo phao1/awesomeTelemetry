@@ -8,6 +8,33 @@ server-dist/
 config/local-sessions.local.json
 config/session-groups.json
 
+# 本机真实数据（扫描库/会话轨迹，含个人内容，严禁上传）
+agent-observe-data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# 本地交接/工作文档（含真实会话 key 与本机路径，勿上传；如需公开请先脱敏）
+NEXT-TASKS.md
+UI-TASKS.md
+
+# 本地 Claude 权限配置（个人允许规则，勿上传）
+.claude/settings.local.json
+
+# 环境变量 / 密钥 / 证书
+.env
+.env.*
+*.pem
+*.key
+
+# M0 遗留脚手架包（内容已并入仓库）
+agent-observability-dev-kit.zip
+
+# macOS / IDE
+.DS_Store
+.vscode/
+.idea/
+
 # 运行产物
 *.db
 *.db-wal
