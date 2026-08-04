@@ -9,8 +9,8 @@
 | M0 | 脚手架 | ✅ 完成 | fc111df |
 | M1 | trace-model | ✅ 完成 | 4f5c316 |
 | M2 | storage 基础 | ✅ 完成 | 7091836 |
-| M3 | storage 查询 | ✅ 完成 | （待提交） |
-| M4 | watch 增量门禁 | ⬜ 未开始 | — |
+| M3 | storage 查询 | ✅ 完成 | 95ca72d |
+| M4 | watch 增量门禁 | ✅ 完成 | （待提交） |
 | M5 | adapters ×9 | ⬜ 未开始 | — |
 | M6 | scanners ×9 | ⬜ 未开始 | — |
 | M7 | realtime | ⬜ 未开始 | — |
@@ -28,7 +28,7 @@
 - 决策：D-001（规则文件缺失）、D-002（proxy 索引列序与 §5.3 期望计划冲突）
 - 验收：建库幂等 / 8 项 PRAGMA / 差分 upsert 只 1 条 INSERT / 三查询无临时 B 树
 
-### M3 · storage 查询（已完成，待提交）
+### M3 · storage 查询（已完成）
 
 - 产出：query-engine.ts（listSessions keyset 分页 / getSessionDetail 三档+分页 /
   getEventDetail / getSystemPromptForSession / listProxyRequests）、detail-cache.ts（LRU 24）、
@@ -37,6 +37,14 @@
 - 验收：slim 档不含 inputSummary/outputSummary/raw；列表不含 systemPrompt 含 hasSystemPrompt；
   overview 聚合 2 SQL、stamp 未变命中缓存；perf:check 全绿
 - 决策：D-002 已落地（proxy 索引列序）
+
+### M4 · watch 增量门禁（已完成）
+
+- 产出：fingerprint.ts（首尾 4KB 指纹 + WAL 双文件指纹）、scan-gate.ts（shouldRescan /
+  commitScanState）、jsonl-reader.ts（流式逐行 + byte offset + 截断回退）、
+  prewarm.ts（让路 + yield）+ 4 个测试文件
+- 验收：无变更重扫 0 写语句；scan_state 首轮后行数 > 0；只改 -wal 可检测；
+  append 只读增量且 endOffset 推进；截断回退全量
 
 ## 待决清单索引
 
