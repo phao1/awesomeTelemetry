@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { SessionIndexEntry } from '../core/trace-types.js';
 import { useVirtualList } from '../hooks/useVirtualList.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
+import { IconSidebar } from './icons/index.js';
 
 export interface SessionListProps {
   /** REQ-015（G7.6）：会话索引由 App 单一持有，本组件是纯受控组件。 */
@@ -18,6 +19,11 @@ export interface SessionListProps {
   onLoadMore: () => void;
   onRetry: () => void;
   offlineSamples: boolean;
+  /** REQ-015/REQ-026：受控宽度与折叠（App 单一持有并持久化） */
+  width: number;
+  collapsed: boolean;
+  onResize: (width: number) => void;
+  onToggleCollapse: () => void;
 }
 
 /** REQ-008：左侧会话选择器（虚拟滚动 + 搜索/provider 过滤，受控）。 */
@@ -32,6 +38,10 @@ export function SessionList({
   onLoadMore,
   onRetry,
   offlineSamples,
+  width,
+  collapsed,
+  onResize,
+  onToggleCollapse,
 }: SessionListProps): React.JSX.Element {
   const [search, setSearch] = useState('');
   const [provider, setProvider] = useState('');
@@ -57,9 +67,39 @@ export function SessionList({
   }, [range.endIndex, filtered.length, hasMore, loading, onLoadMore]);
 
   const providers = useMemo(() => [...new Set(items.map((s) => s.provider))].sort(), [items]);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  const onDragStart = (event: ReactMouseEvent<HTMLElement>): void => {
+    if (collapsed) {
+      return;
+    }
+    dragRef.current = { startX: event.clientX, startWidth: width };
+    const onMove = (ev: globalThis.MouseEvent): void => {
+      if (dragRef.current !== null) {
+        onResize(Math.max(260, Math.min(480, dragRef.current.startWidth + (ev.clientX - dragRef.current.startX))));
+      }
+    };
+    const onUp = (): void => {
+      dragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   return (
-    <aside className="rail">
+    <aside className="rail" style={{ width: collapsed ? 0 : width }}>
+      <div className="rail-header">
+        <button
+          type="button"
+          className="ui-icon-btn ui-btn-sm"
+          aria-label="collapse rail"
+          onClick={onToggleCollapse}
+        >
+          <IconSidebar size={12} />
+        </button>
+      </div>
       <input
         type="search"
         placeholder={t('session.search', locale)}
@@ -117,6 +157,7 @@ export function SessionList({
         </div>
       </div>
       {loading && items.length > 0 && <div className="hint">{t('common.loading', locale)}</div>}
+      <div className="rail-resize" onMouseDown={onDragStart} aria-hidden="true" />
     </aside>
   );
 }

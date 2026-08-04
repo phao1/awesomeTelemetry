@@ -127,6 +127,15 @@ export const api = {
   }> {
     return fetchJson('/frida/captures');
   },
+  health(): Promise<{
+    ok: boolean;
+    schemaVersion: number;
+    uptimeMs: number;
+    dbSizeBytes: number;
+    walSizeBytes: number;
+  }> {
+    return fetchJson('/health');
+  },
   configProviders(): Promise<unknown> {
     return fetchJson('/config/providers');
   },

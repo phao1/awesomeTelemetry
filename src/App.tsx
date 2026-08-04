@@ -38,18 +38,27 @@ import { TokenTextModal } from './components/TokenTextModal.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
 import { ErrorState, EmptyState } from './components/ui/States.js';
 import { useTheme } from './theme.js';
+import { AppHeader, StatusBar, ViewTabs, type AppView } from './components/AppShell.js';
+import {
+  LAYOUT_KEYS,
+  LAYOUT_RANGES,
+  loadBool,
+  loadNumber,
+  storeBool,
+  storeNumber,
+} from './layout.js';
 
-type View = 'session' | 'agent' | 'compare' | 'proxy' | 'frida';
-
-const VIEWS: View[] = ['session', 'agent', 'compare', 'proxy', 'frida'];
 const PAGE_SIZE = 2000;
 
 /** REQ-001：五视图 shell，App.tsx 是唯一 stateful shell。 */
 export default function App() {
-  const [view, setView] = useState<View>('session');
+  const [view, setView] = useState<AppView>('session');
   const [locale, setLocaleState] = useState<Locale>(() => getStoredLocale());
   const theme = useTheme();
   const [live, setLive] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [lastScanAt, setLastScanAt] = useState<string | null>(null);
+  const [health, setHealth] = useState<{ dbSizeBytes: number; walSizeBytes: number } | null>(null);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
   const [sessionCursor, setSessionCursor] = useState<string | null>(null);
   const [hasMoreSessions, setHasMoreSessions] = useState(false);
@@ -64,7 +73,22 @@ export default function App() {
   const deferredPhaseFilter = useDeferredValue(phaseFilter); // REQ-002
   const [selectedEvent, setSelectedEvent] = useState<TraceEventSlim | null>(null);
   const [detailPage, setDetailPage] = useState(0);
-  const [fontPx, setFontPx] = useState(14); // REQ-012：8–28px
+  // REQ-026：布局偏好持久化（读取时范围校验）
+  const [railWidth, setRailWidth] = useState(() =>
+    loadNumber(LAYOUT_KEYS.railWidth, 300, LAYOUT_RANGES.railWidth),
+  );
+  const [inspectorWidth, setInspectorWidth] = useState(() =>
+    loadNumber(LAYOUT_KEYS.inspectorWidth, 420, LAYOUT_RANGES.inspectorWidth),
+  );
+  const [railCollapsed, setRailCollapsed] = useState(() =>
+    loadBool(LAYOUT_KEYS.railCollapsed, false),
+  );
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(() =>
+    loadBool(LAYOUT_KEYS.inspectorCollapsed, false),
+  );
+  const [fontPx, setFontPx] = useState(() =>
+    loadNumber(LAYOUT_KEYS.fontSize, 14, LAYOUT_RANGES.fontSize),
+  ); // REQ-012：8–28px
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [transcriptEvent, setTranscriptEvent] = useState<TraceEventSlim | null>(null);
   const [transcriptEvents, setTranscriptEvents] = useState<TraceEvent[]>([]);
@@ -76,8 +100,34 @@ export default function App() {
     storeLocale(next);
   }, []);
 
-  const switchView = useCallback((next: View) => {
+  const switchView = useCallback((next: AppView) => {
     startTransition(() => setView(next)); // REQ-002：视图切换用 startTransition
+  }, []);
+
+  useEffect(() => {
+    storeNumber(LAYOUT_KEYS.railWidth, railWidth);
+  }, [railWidth]);
+  useEffect(() => {
+    storeNumber(LAYOUT_KEYS.inspectorWidth, inspectorWidth);
+  }, [inspectorWidth]);
+  useEffect(() => {
+    storeBool(LAYOUT_KEYS.railCollapsed, railCollapsed);
+  }, [railCollapsed]);
+  useEffect(() => {
+    storeBool(LAYOUT_KEYS.inspectorCollapsed, inspectorCollapsed);
+  }, [inspectorCollapsed]);
+  useEffect(() => {
+    storeNumber(LAYOUT_KEYS.fontSize, fontPx);
+  }, [fontPx]);
+
+  // REQ-023：health 只在启动时取一次，MUST NOT 轮询
+  useEffect(() => {
+    void api
+      .health()
+      .then((h) => setHealth(h))
+      .catch((err: unknown) => {
+        console.error('[health] 获取失败:', err);
+      });
   }, []);
 
   // REQ-015（G7.6）：会话索引由 App 单一持有，SessionList/CompareBoard 全部读这一份
@@ -128,6 +178,13 @@ export default function App() {
     const es = new EventSource('/api/events');
     es.onopen = () => setLive(true);
     es.onerror = () => setLive(false);
+    es.addEventListener('scan_started', () => {
+      setScanning(true);
+    });
+    es.addEventListener('scan_completed', () => {
+      setScanning(false);
+      setLastScanAt(new Date().toISOString());
+    });
     es.addEventListener('sessions_changed', (event) => {
       const data = JSON.parse((event as MessageEvent).data) as { keys: string[] };
       for (const key of data.keys) {
@@ -239,6 +296,14 @@ export default function App() {
     setFontPx((prev) => Math.min(28, Math.max(8, prev + delta)));
   }, []);
 
+  const triggerScan = useCallback(() => {
+    void api
+      .scan()
+      .catch((err: unknown) => {
+        console.error('[scan] 手动扫描失败:', err);
+      });
+  }, []);
+
   const openTranscript = useCallback(
     (event: TraceEventSlim) => {
       setTranscriptEvent(event);
@@ -253,18 +318,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <nav className="toolbar">
-        {VIEWS.map((v) => (
-          <button
-            key={v}
-            type="button"
-            className={`btn ${view === v ? 'phase-tile-on' : ''}`}
-            onClick={() => switchView(v)}
-          >
-            {t(`view.${v}`, locale)}
-          </button>
-        ))}
-        <span className="spacer" />
+      <AppHeader locale={locale}>
         <button type="button" className="btn" onClick={() => adjustFont(-2)}>
           {t('common.fontSmall', locale)}
         </button>
@@ -284,7 +338,8 @@ export default function App() {
           effective={theme.effective}
           onCycle={theme.cycle}
         />
-      </nav>
+      </AppHeader>
+      <ViewTabs active={view} onChange={switchView} locale={locale} />
 
       {view === 'session' && (
         <div className="view-body">
@@ -299,6 +354,10 @@ export default function App() {
             onLoadMore={loadMoreSessions}
             onRetry={() => void loadSessions()}
             offlineSamples={offlineSamples}
+            width={railWidth}
+            collapsed={railCollapsed}
+            onResize={setRailWidth}
+            onToggleCollapse={() => setRailCollapsed((prev) => !prev)}
           />
           <main className="main">
             {pending && <p className="hint">{t('pending.decrypting', locale)}</p>}
@@ -356,6 +415,10 @@ export default function App() {
             event={selectedEvent}
             locale={locale}
             fontPx={fontPx}
+            width={inspectorWidth}
+            collapsed={inspectorCollapsed}
+            onResize={setInspectorWidth}
+            onToggleCollapse={() => setInspectorCollapsed((prev) => !prev)}
             onOpenTranscript={openTranscript}
             onOpenTokens={setTokenEvent}
             onClose={() => setSelectedEvent(null)}
@@ -405,6 +468,18 @@ export default function App() {
       {tokenEvent !== null && (
         <TokenTextModal event={tokenEvent as TraceEvent} locale={locale} onClose={() => setTokenEvent(null)} />
       )}
+      <StatusBar
+        live={live}
+        locale={locale}
+        sessionCount={sessions.length}
+        eventCount={sessions.reduce((sum, s) => sum + s.eventCount, 0)}
+        scanning={scanning}
+        lastScanAt={lastScanAt}
+        dbSizeBytes={health?.dbSizeBytes ?? null}
+        walSizeBytes={health?.walSizeBytes ?? null}
+        offlineSamples={offlineSamples}
+        onScan={triggerScan}
+      />
     </div>
   );
 }

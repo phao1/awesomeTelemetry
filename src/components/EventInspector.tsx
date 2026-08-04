@@ -16,6 +16,11 @@ export interface EventInspectorProps {
   event: TraceEventSlim | null;
   locale: Locale;
   fontPx: number;
+  /** REQ-015/REQ-026：受控宽度与折叠 */
+  width: number;
+  collapsed: boolean;
+  onResize: (width: number) => void;
+  onToggleCollapse: () => void;
   loadDetail?: (key: string, eventId: string) => Promise<TraceEvent | TraceEventRaw>;
   onOpenTranscript: (event: TraceEventSlim) => void;
   onOpenTokens: (event: TraceEventSlim) => void;
@@ -28,12 +33,15 @@ export function EventInspector({
   event,
   locale,
   fontPx,
+  width,
+  collapsed,
+  onResize,
+  onToggleCollapse,
   loadDetail = (key, eventId) => api.eventDetail(key, eventId),
   onOpenTranscript,
   onOpenTokens,
   onClose,
 }: EventInspectorProps) {
-  const [width, setWidth] = useState(420);
   const [detail, setDetail] = useState<TraceEvent | TraceEventRaw | null>(null);
   const [error, setError] = useState<string | null>(null);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -68,10 +76,15 @@ export function EventInspector({
   }, [sessionKey, event, loadDetail]);
 
   const onMouseDown = (e: ReactMouseEvent<HTMLElement>): void => {
+    if (collapsed) {
+      return;
+    }
     dragRef.current = { startX: e.clientX, startWidth: width };
     const onMove = (ev: globalThis.MouseEvent): void => {
       if (dragRef.current !== null) {
-        setWidth(Math.max(260, Math.min(900, dragRef.current.startWidth + (dragRef.current.startX - ev.clientX))));
+        onResize(
+          Math.max(280, Math.min(900, dragRef.current.startWidth + (dragRef.current.startX - ev.clientX))),
+        );
       }
     };
     const onUp = (): void => {
@@ -85,8 +98,13 @@ export function EventInspector({
 
   if (event === null) {
     return (
-      <aside className="inspector" style={{ width }}>
+      <aside className="inspector" style={{ width: collapsed ? 0 : width }}>
         <div className="drag-handle" onMouseDown={onMouseDown} />
+        <div className="inspector-collapse">
+          <button type="button" className="ui-icon-btn ui-btn-sm" aria-label="collapse panel" onClick={onToggleCollapse}>
+            panel
+          </button>
+        </div>
         <p className="hint">{t('common.empty', locale)}</p>
       </aside>
     );
@@ -94,13 +112,18 @@ export function EventInspector({
 
   const raw = (detail as TraceEventRaw | null)?.raw ?? null;
   return (
-    <aside className="inspector" style={{ width }}>
+    <aside className="inspector" style={{ width: collapsed ? 0 : width }}>
       <div className="drag-handle" onMouseDown={onMouseDown} />
       <header className="inspector-header">
         <span className="mono">#{event.sequence} {event.id}</span>
-        <button type="button" className="btn" onClick={onClose}>
-          {t('common.close', locale)}
-        </button>
+        <span style={{ display: 'inline-flex', gap: 'var(--space-1)' }}>
+          <button type="button" className="ui-icon-btn ui-btn-sm" aria-label="collapse panel" onClick={onToggleCollapse}>
+            panel
+          </button>
+          <button type="button" className="ui-icon-btn ui-btn-sm" aria-label="close" onClick={onClose}>
+            ×
+          </button>
+        </span>
       </header>
       <div className="inspector-body" style={{ fontSize: fontPx }}>
         <p>{event.title}</p>

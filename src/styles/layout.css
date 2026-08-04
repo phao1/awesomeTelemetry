@@ -33,6 +33,30 @@
   padding: var(--space-2);
   gap: var(--space-2);
   background: var(--canvas-subtle);
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  transition: width var(--duration-base) var(--ease-out);
+}
+
+.rail-header {
+  display: flex;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+
+.rail-resize {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--drag-handle-width);
+  cursor: col-resize;
+  z-index: var(--z-drag);
+}
+
+.rail-resize:hover {
+  background: var(--accent-subtle);
 }
 
 .rail-list {
@@ -273,4 +297,90 @@
   gap: var(--space-2);
   align-items: center;
   padding: var(--space-2) var(--space-3);
+}
+
+/* ===== REQ-015 AppShell（header / tabs / statusbar） ===== */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--canvas-default);
+  flex: 0 0 auto;
+}
+
+.app-title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.app-header-hint {
+  color: var(--fg-subtle);
+  display: inline-flex;
+  align-items: center;
+}
+
+.view-tabs {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--canvas-default);
+  flex: 0 0 auto;
+}
+
+.view-tabs .ui-tabs {
+  width: 100%;
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border-top: 1px solid var(--border-default);
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  flex: 0 0 auto;
+}
+
+.statusbar-sep {
+  color: var(--border-strong);
+}
+
+.status-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  display: inline-block;
+}
+
+.status-dot-live {
+  background: var(--success-fg);
+}
+
+.status-dot-dead {
+  background: var(--danger-fg);
+}
+
+.statusbar-scan {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  padding: 0;
+}
+
+.statusbar-scan:hover {
+  color: var(--fg-default);
+}
+
+.statusbar-scan:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
