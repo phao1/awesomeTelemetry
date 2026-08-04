@@ -1,25 +1,28 @@
 import { gzipSync } from 'node:zlib';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
-const GZIP_THRESHOLD = 1024;
+export const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
+export const GZIP_THRESHOLD = 1024;
+
+export function acceptsGzip(req?: IncomingMessage): boolean {
+  return (req?.headers['accept-encoding'] ?? '').toString().includes('gzip');
+}
 
 /**
  * contracts/api.md §0.2：响应体 ≥ 1024 字节且 accept-encoding 含 gzip 时
  * 必须 gzip 并带 content-encoding + vary；否则带 content-length。
  */
-export function sendJson(
+export function sendCompressedOrPlain(
   res: ServerResponse,
   status: number,
-  body: unknown,
+  headers: Record<string, string | number>,
+  payload: Buffer,
   req?: IncomingMessage,
 ): void {
-  const payload = Buffer.from(JSON.stringify(body), 'utf8');
-  const acceptGzip = (req?.headers['accept-encoding'] ?? '').toString().includes('gzip');
-  if (payload.length >= GZIP_THRESHOLD && acceptGzip) {
+  if (payload.length >= GZIP_THRESHOLD && acceptsGzip(req)) {
     const compressed = gzipSync(payload);
     res.writeHead(status, {
-      'content-type': JSON_CONTENT_TYPE,
+      ...headers,
       'content-encoding': 'gzip',
       vary: 'accept-encoding',
       'content-length': compressed.length,
@@ -28,8 +31,24 @@ export function sendJson(
     return;
   }
   res.writeHead(status, {
-    'content-type': JSON_CONTENT_TYPE,
+    ...headers,
     'content-length': payload.length,
   });
   res.end(payload);
+}
+
+export function sendJson(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  req?: IncomingMessage,
+): void {
+  const payload = Buffer.from(JSON.stringify(body), 'utf8');
+  sendCompressedOrPlain(
+    res,
+    status,
+    { 'content-type': JSON_CONTENT_TYPE },
+    payload,
+    req,
+  );
 }

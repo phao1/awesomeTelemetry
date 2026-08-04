@@ -197,7 +197,8 @@ export function runStartupSelfCheck(
   const walSizeBytes = existsSync(`${options.dbPath}-wal`) ? statSync(`${options.dbPath}-wal`).size : 0;
   console.log(
     `启动自检完成: schemaVersion=${SCHEMA_VERSION} sessions=${sessionCount} ` +
-      `db=${(dbSizeBytes / 1024 / 1024).toFixed(2)}MB wal=${(walSizeBytes / 1024 / 1024).toFixed(2)}MB`,
+      `db=${(dbSizeBytes / 1024 / 1024).toFixed(2)}MB wal=${(walSizeBytes / 1024 / 1024).toFixed(2)}MB ` +
+      `http://${options.host}:${options.port}/`,
   );
   return { sessionCount, dbSizeBytes, walSizeBytes };
 }

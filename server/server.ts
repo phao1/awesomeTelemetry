@@ -39,6 +39,7 @@ import { scanAndStoreDetail, scanLocalSessions } from './watch/scan-scheduler.js
 import { Router } from './http/router.js';
 import { sendJson } from './http/send-json.js';
 import { sendApiError, type ErrorCode } from './http/error-envelope.js';
+import { serveStatic } from './http/static.js';
 import { resolveRules } from './desensitization/rules.js';
 import { shouldKeepRawBodies } from './desensitization/engine.js';
 
@@ -53,6 +54,8 @@ export interface AgentObservabilityServerOptions {
   db: Database;
   config: LocalSessionConfig;
   dbPath?: string;
+  /** 前端构建产物目录。缺省为 cwd/dist（T-01：静态兜底）。 */
+  distDir?: string;
   detailCache?: DetailCache;
   projectConfigPath?: string;
   userConfigPath?: string;
@@ -145,6 +148,7 @@ export function createAgentObservabilityServer(
 ): Server {
   const { db, config } = opts;
   const dbPath = opts.dbPath ?? '';
+  const distDir = opts.distDir ?? join(process.cwd(), 'dist');
   const rulesPath =
     opts.rulesPath ??
     (opts.userConfigPath !== undefined
@@ -505,6 +509,12 @@ export function createAgentObservabilityServer(
     const pathname = rawUrl.split('?')[0] ?? '/';
     const match = router.match(method, pathname);
     if (match === null) {
+      if (!pathname.startsWith('/api')) {
+        // T-01：所有 /api/* 路由之后挂静态兜底；/api/* 仍走统一 404 信封
+        if (serveStatic(req, res, distDir)) {
+          return;
+        }
+      }
       sendApiError(
         res,
         404,

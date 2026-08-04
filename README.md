@@ -8,12 +8,22 @@ CodeAgent / Trae CN / Qoder / WorkBuddy）的会话轨迹，按「快 · 准 · 
 
 ```bash
 npm install        # 需要 Node ≥ 20；Windows 需 MSVC 工具链（better-sqlite3）
-npm run dev        # 开发模式（Vite + 独立 API 服务需另行接线 dev plugin）
 npm run build      # 三阶段构建：tsc -b → vite build → server-dist
 npm start          # 生产启动：node bin/agent-observe.js
 ```
 
-浏览器访问 `http://127.0.0.1:4173/`（G3.1：不要用 localhost，企业代理可能拦截）。
+生产模式下 `npm start` 同时提供 API 与前端静态资源，浏览器访问
+`http://127.0.0.1:4173/`（G3.1：不要用 localhost，企业代理可能拦截）。
+
+开发模式（前后端分离，前端热更新）：
+
+```bash
+终端 1：npm start          # 后端 API 于 http://127.0.0.1:4173/
+终端 2：npm run dev        # Vite 于 http://127.0.0.1:5173/，/api 代理到 4173
+```
+
+`npm run dev` 只起 Vite 前端（端口 5173），后端必须另开 `npm start`，
+否则 `/api/*` 请求会代理失败。
 
 ## CLI 参数
 
@@ -28,7 +38,7 @@ npm start          # 生产启动：node bin/agent-observe.js
 | `--enable-proxy` | false | 启动即开 MITM（P-3：macOS 未端到端验证） |
 | `--prewarm-recent <n>` | `0` | 预热最近 N 个会话；0 = 完全按需（>100 会 stderr 告警） |
 | `--proxy-retention-days <n>` | `30` | proxy_requests 保留天数；0 = 不清理 |
-| `--no-gzip` | 开 | 关闭响应压缩（仅调试用） |
+| `--no-gzip` | 关 | 关闭响应压缩（仅调试用） |
 
 启动时执行 5 步自检：建库/版本校验 → 关键索引校验补建 → WAL checkpoint → proxy 保留清理 →
 启动摘要（schemaVersion / 会话数 / DB+WAL 体积）。

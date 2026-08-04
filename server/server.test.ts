@@ -83,6 +83,16 @@ interface BootResult {
 }
 
 const booted: BootResult[] = [];
+const staticDirs: string[] = [];
+
+afterEach(() => {
+  while (staticDirs.length > 0) {
+    const dir = staticDirs.pop();
+    if (dir !== undefined) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
 
 function seedSession(db: Db, id: string, provider: ProviderKey, over: Partial<{ systemPrompt: string | null }> = {}): void {
   upsertSessionFromTrace(db, {
@@ -143,7 +153,7 @@ function seedProxy(db: Db): void {
   );
 }
 
-async function boot(seed?: (db: Db) => void): Promise<BootResult> {
+async function boot(seed?: (db: Db) => void, distDir?: string): Promise<BootResult> {
   const db = new Database(':memory:');
   initSchema(db);
   seed?.(db);
@@ -154,6 +164,7 @@ async function boot(seed?: (db: Db) => void): Promise<BootResult> {
     config: TEST_CONFIG,
     detailCache: new (await import('./storage/detail-cache.js')).DetailCache(),
     userConfigPath,
+    distDir,
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
@@ -371,5 +382,64 @@ describe('HTTP 行为（api.md §0.2/§0.3/§0.6）', () => {
     expect(JSON.parse(readFileSync(rulesPath, 'utf8')).keepRawBodies).toBe(true);
     await new Promise<void>((resolve) => server.close(() => resolve()));
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('T-01 静态兜底（前端可达）', () => {
+  async function distDirWith(assets: Record<string, string>): Promise<string> {
+    const dir = mkdtempSync(join(tmpdir(), 'server-dist-'));
+    staticDirs.push(dir);
+    const assetDir = join(dir, 'assets');
+    const { mkdirSync, writeFileSync } = await import('node:fs');
+    mkdirSync(assetDir, { recursive: true });
+    writeFileSync(
+      join(dir, 'index.html'),
+      '<!doctype html><html><body><div id="root"></div></body></html>',
+      'utf8',
+    );
+    for (const [name, content] of Object.entries(assets)) {
+      writeFileSync(join(assetDir, name), content, 'utf8');
+    }
+    return dir;
+  }
+
+  it('GET / 返回 200 且 content-type 为 text/html', async () => {
+    const { port } = await boot(undefined, await distDirWith({}));
+    const r = await request(port, 'GET', '/');
+    expect(r.status).toBe(200);
+    expect(r.headers['content-type']).toContain('text/html');
+    expect(r.text).toContain('<div id="root"');
+  });
+
+  it('GET /assets/<真实文件名> 返回 200 与正确 content-type', async () => {
+    const { port } = await boot(undefined, await distDirWith({ 'app.js': 'console.log("hi");' }));
+    const r = await request(port, 'GET', '/assets/app.js');
+    expect(r.status).toBe(200);
+    expect(r.headers['content-type']).toContain('text/javascript');
+    expect(r.text).toContain('console.log');
+  });
+
+  it('GET /api/nope 仍返回 404 JSON 信封（不被 SPA fallback 吞掉）', async () => {
+    const { port } = await boot(undefined, await distDirWith({}));
+    const r = await request(port, 'GET', '/api/nope');
+    expect(r.status).toBe(404);
+    expect(r.headers['content-type']).toContain('application/json');
+    const body = JSON.parse(r.text) as { error: { code: string } };
+    expect(body.error.code).toBe('ROUTE_NOT_FOUND');
+  });
+
+  it('路径穿越 GET /../../etc/passwd 返回 403', async () => {
+    const { port } = await boot(undefined, await distDirWith({}));
+    const r = await request(port, 'GET', '/../../etc/passwd');
+    expect(r.status).toBe(403);
+  });
+
+  it('dist/ 不存在时返回人话提示而不是 500', async () => {
+    const missing = join(tmpdir(), 'no-such-dist-12345');
+    const { port } = await boot(undefined, missing);
+    const r = await request(port, 'GET', '/');
+    expect(r.status).toBe(200);
+    expect(r.headers['content-type']).toContain('text/html');
+    expect(r.text).toContain('npm run build');
   });
 });
