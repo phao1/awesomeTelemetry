@@ -11,8 +11,8 @@
 | M2 | storage 基础 | ✅ 完成 | 7091836 |
 | M3 | storage 查询 | ✅ 完成 | 95ca72d |
 | M4 | watch 增量门禁 | ✅ 完成 | 8fe7949 |
-| M5 | adapters ×9 | ✅ 完成 | （待提交） |
-| M6 | scanners ×9 | ⬜ 未开始 | — |
+| M5 | adapters ×9 | ✅ 完成 | 9a2824f |
+| M6 | scanners ×9 | ✅ 完成 | （待提交） |
 | M7 | realtime | ⬜ 未开始 | — |
 | M8 | HTTP server | ⬜ 未开始 | — |
 | M9 | core 分析 | ⬜ 未开始 | — |
@@ -57,6 +57,16 @@
 - 验收：每 adapter ≥5 用例；OpenCode 系 cacheRead 用 max、其余 sum、reasoning 恒 sum；
   total = input+output+reasoning+cacheRead；状态四类映射；重复 id :sequence 后缀；
   title ≤ 200；raw 与正文分离返回
+
+### M6 · scanners ×9（已完成）
+
+- 产出：config.ts（三层覆盖 + 三种路径展开 + 原子写）、session-key.ts、scanner-utils.ts
+  （枚举/门禁/存储公共层）、9 个 scanner（opencode/codearts/codeagent2 读真实 SQLite
+  message+part；trae 走 spawn 解密桥）、trae-bridge.ts（spawn+Promise+指纹缓存）、
+  scan-scheduler.ts（并行 + 超时熔断 + 两阶段启动）+ 测试
+- 验收：路径展开三种语法；并行扫描 + 超时跳过不阻塞；索引阶段 1500 文件 < 3s；
+  prewarmRecent 默认 0；Trae 密钥缺失返回 TRAE_KEY_MISSING
+- 决策：D-003 已记录（scanner 级增量读待接线，暂全量重读保正确）
 
 ## 待决清单索引
 

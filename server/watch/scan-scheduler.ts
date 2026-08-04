@@ -1,0 +1,184 @@
+import type { Database } from 'better-sqlite3';
+
+import type {
+  BusEvents,
+  LocalSessionConfig,
+  ProviderConfig,
+  ProviderKey,
+  SessionIndexEntry,
+} from '../../src/core/trace-types.js';
+import { PROVIDER_KEYS } from '../../src/core/trace-types.js';
+import { claudeScanner } from '../../local-sessions/claude.js';
+import { codeagentScanner } from '../../local-sessions/codeagent.js';
+import { codeagent2Scanner } from '../../local-sessions/codeagent2.js';
+import { codeartsScanner } from '../../local-sessions/codearts.js';
+import { codexScanner } from '../../local-sessions/codex.js';
+import { opencodeScanner } from '../../local-sessions/opencode.js';
+import { qoderScanner } from '../../local-sessions/qoder.js';
+import { traeScanner } from '../../local-sessions/trae.js';
+import { workbuddyScanner } from '../../local-sessions/workbuddy.js';
+import {
+  buildIndexEntry,
+  enumerateSourceFiles,
+  upsertIndexEntries,
+  type ProviderScanResult,
+  type ProviderScanner,
+  type ScannerContext,
+} from '../../local-sessions/scanner-utils.js';
+import { cachedStmt } from '../storage/stmt-cache.js';
+import { backgroundPrewarm } from './prewarm.js';
+
+const scanners: Record<ProviderKey, ProviderScanner> = {
+  claude: claudeScanner,
+  codex: codexScanner,
+  opencode: opencodeScanner,
+  codearts: codeartsScanner,
+  codeagent: codeagentScanner,
+  codeagent2: codeagent2Scanner,
+  trae: traeScanner,
+  qoder: qoderScanner,
+  workbuddy: workbuddyScanner,
+};
+
+export interface ScanSchedulerDeps {
+  db: Database;
+  config: LocalSessionConfig;
+  force?: boolean;
+  timeoutMs?: number;
+  providers?: ProviderKey[];
+  notify?: (key: string) => void;
+  emit?: (event: SchedulerEvent) => void;
+  isForegroundBusy?: () => boolean;
+  /** 测试注入点：替换单个 provider 的扫描实现（不是 mock 被测逻辑，是调度器的依赖注入）。 */
+  scannerOverride?: Partial<Record<ProviderKey, ProviderScanner>>;
+}
+
+export type SchedulerEvent = {
+  [K in keyof BusEvents]: { type: K } & BusEvents[K];
+}[keyof BusEvents];
+
+function enabledProviders(deps: ScanSchedulerDeps): ProviderConfig[] {
+  return PROVIDER_KEYS.filter(
+    (key) =>
+      deps.config.providers[key]!.enabled &&
+      (deps.providers === undefined || deps.providers.includes(key)),
+  ).map((key) => deps.config.providers[key]!);
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, provider: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${provider} 扫描超时（>${ms}ms），已跳过`)),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+/** REQ-011：provider 并行扫描，单个超时被跳过并记录，不阻塞其他。 */
+export async function scanLocalSessions(
+  deps: ScanSchedulerDeps,
+): Promise<ProviderScanResult[]> {
+  const providers = enabledProviders(deps);
+  const ctx: ScannerContext = {
+    db: deps.db,
+    force: deps.force,
+    notify: deps.notify,
+    traeKeyPath: deps.config.traeKeyPath,
+  };
+  const timeoutMs = deps.timeoutMs ?? 30_000;
+  const results = await Promise.all(
+    providers.map(async (config) => {
+      const scanner = deps.scannerOverride?.[config.key] ?? scanners[config.key];
+      try {
+        return await withTimeout(
+          scanner.scanProvider(config, ctx),
+          timeoutMs,
+          config.key,
+        );
+      } catch (err) {
+        return {
+          provider: config.key,
+          files: 0,
+          scanned: 0,
+          skipped: 0,
+          eventCount: 0,
+          error: err instanceof Error ? err.message : String(err),
+        } satisfies ProviderScanResult;
+      }
+    }),
+  );
+  return results;
+}
+
+const SELECT_SESSION_SOURCE_SQL =
+  'SELECT provider, source_path FROM sessions WHERE id = ?';
+
+/** REQ-015：惰性详情加载。sessions.detail_loaded = 0 时由 HTTP 层调用。 */
+export async function scanAndStoreDetail(
+  db: Database,
+  key: string,
+  opts: { config: LocalSessionConfig; force?: boolean; notify?: (k: string) => void },
+): Promise<{ key: string; eventCount: number; skipped: boolean } | null> {
+  const row = cachedStmt(db, SELECT_SESSION_SOURCE_SQL).get(key) as
+    | { provider: ProviderKey; source_path: string }
+    | undefined;
+  if (row === undefined) {
+    return null;
+  }
+  const config = opts.config.providers[row.provider];
+  const scanner = scanners[row.provider];
+  const ctx: ScannerContext = {
+    db,
+    force: opts.force,
+    notify: opts.notify,
+    traeKeyPath: opts.config.traeKeyPath,
+  };
+  // 门禁在最外层：跳过时零 IO 零 SQL 写入（F1.4）
+  const result = await scanner.scanFile(config, row.source_path, ctx);
+  return { key, eventCount: result.eventCount, skipped: result.skipped };
+}
+
+/**
+ * REQ-013：两阶段启动。
+ * 1. 索引阶段（同步）：只枚举 + 轻量元数据 + upsert 索引，不读详情。
+ * 2. 预热阶段（默认关闭）：prewarmRecent > 0 时 void backgroundPrewarm，不 await。
+ */
+export function initialScanAndStore(
+  deps: ScanSchedulerDeps,
+): { indexCount: number } {
+  const providers = enabledProviders(deps);
+  const entries: SessionIndexEntry[] = [];
+  for (const config of providers) {
+    const files = enumerateSourceFiles(config.path, config.sourceKind);
+    for (const filePath of files) {
+      entries.push(buildIndexEntry(config, filePath));
+    }
+  }
+  upsertIndexEntries(deps.db, entries);
+  deps.emit?.({ type: 'scan_completed', provider: 'all', count: entries.length });
+
+  if (deps.config.prewarmRecent > 0) {
+    const recent = entries.slice(0, deps.config.prewarmRecent);
+    void backgroundPrewarm({
+      sessions: recent,
+      isForegroundBusy: deps.isForegroundBusy ?? (() => false),
+      loadSession: async (entry) => {
+        await scanAndStoreDetail(deps.db, entry.id, {
+          config: deps.config,
+          notify: deps.notify,
+        });
+      },
+    });
+  }
+  return { indexCount: entries.length };
+}

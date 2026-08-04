@@ -35,3 +35,19 @@
 - **临时方案**：将索引改为 `(system_prompt_len DESC, started_at)`（schema.ts 已改，含 TODO 标记），
   语义不变（窗口内最长 prompt），验收测试不改。
 - **建议的下一步**：人工确认后更新 contracts/database.md §4 的索引行，消除文档内部矛盾。
+
+---
+
+## D-003 scanner 级 JSONL 尾部增量读待接线（F11）
+
+- **问题描述**：REQ-008 的 readJsonlFrom 已支持 byte-offset 增量读，但 scanner 层
+  （scanJsonlFile）对变更文件一律全量重读。原因是增量读只返回尾部新行，无法单独重建
+  会话级聚合（tokenUsage / eventCount / totalDurationMs 需要全量视图）。
+- **尝试过的方案**：考虑「尾行记录 + 与已存会话聚合合并」的方案，需要为每个 adapter
+  定义增量合并语义，且首轮/重启后无 prevHeadHash 可校验头部是否重写，风险高于收益。
+- **失败原因**：无（主动取舍）。全量重读保证正确性；F11 的收益（739MB 文件只读尾部）
+  在连续监视场景下可后续补做。
+- **临时方案**：全量重读，代码中已留 TODO(D-003) 标记；M4 的 readJsonlFrom 增量能力
+  与单元测试保留。
+- **建议的下一步**：若 codeagent 类大文件成为瓶颈，实现「尾行记录 + 已存会话聚合合并」，
+  并在 scan_state 或内存缓存中记录首 4KB hash 用于重写检测。
