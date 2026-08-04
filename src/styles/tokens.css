@@ -171,6 +171,7 @@
   --control-height-sm: 24px;
   --control-height-md: 28px;
   --toast-max-width: 320px;
+  --compare-timeline-height: 320px;
   --dot-size: 8px;
   --drag-handle-width: 4px;
 }
@@ -339,6 +340,7 @@
   --control-height-sm: 24px;
   --control-height-md: 28px;
   --toast-max-width: 320px;
+  --compare-timeline-height: 320px;
   --dot-size: 8px;
   --drag-handle-width: 4px;
 }

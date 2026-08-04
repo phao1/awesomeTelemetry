@@ -86,14 +86,17 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     expect(compareTab).toBeDefined();
     act(() => compareTab!.click());
 
-    const selects = container.querySelectorAll('select');
-    expect(selects.length).toBeGreaterThanOrEqual(2);
-    for (const select of Array.from(selects).slice(0, 2)) {
-      const options = Array.from(select.querySelectorAll('option')).filter(
-        (o) => o.getAttribute('value') !== '',
-      );
-      expect(options.map((o) => o.getAttribute('value')).sort()).toEqual(['s-1', 's-2', 's-3']);
-    }
+    // REQ-019：MUST NOT 用原生 select（7.1）——选择器是 Popover 搜索按钮
+    expect(container.querySelectorAll('select')).toHaveLength(0);
+    const pickers = Array.from(container.querySelectorAll('.compare-picker'));
+    expect(pickers).toHaveLength(2);
+    act(() => (pickers[0] as HTMLButtonElement).click());
+    const items = Array.from(container.querySelectorAll('.compare-picker-item'));
+    expect(items.length).toBe(3);
+    const titles = items.map((el) => el.textContent ?? '');
+    expect(titles.some((t) => t.includes('fix build'))).toBe(true);
+    expect(titles.some((t) => t.includes('refactor api'))).toBe(true);
+    expect(titles.some((t) => t.includes('debug login'))).toBe(true);
   });
 
   it('REQ-023：/api/health 只请求一次，不轮询', async () => {
