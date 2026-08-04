@@ -10,6 +10,7 @@ import {
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
+import { extractTitleFromUserText } from '../core/title-utils.js';
 import type { Adapter, RawSample } from './sample-loader.js';
 
 export interface CodexRawPayload {
@@ -177,7 +178,15 @@ export function normalizeCodexSample(
     id: sessionId,
     provider: 'codex',
     sourceAgent: 'Codex',
-    title: classified.find((e) => e.kind === 'user_prompt')?.title ?? '',
+    title:
+      classified.find(
+        (e) =>
+          e.kind === 'user_prompt' &&
+          e.inputSummary !== null &&
+          extractTitleFromUserText(e.inputSummary) !== null,
+      )?.title ??
+      classified.find((e) => e.kind === 'user_prompt')?.title ??
+      '',
     startedAt: times.startedAt,
     updatedAt: times.updatedAt,
     status: classified.at(-1)?.status ?? 'unknown',

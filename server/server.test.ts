@@ -17,6 +17,7 @@ import {
   upsertSessionFromTrace,
 } from './storage/writers.js';
 import { createAgentObservabilityServer } from './server.js';
+import { deriveSessionKey } from '../local-sessions/session-key.js';
 
 type Db = InstanceType<typeof Database>;
 
@@ -345,6 +346,56 @@ describe('API 契约（contracts/api.md §8）', () => {
     );
     const stopped = await request(port, 'POST', '/api/frida/stop');
     expect(stopped.status).toBe(200);
+  });
+
+  it('R-09：compare 触发惰性详情加载且标题不被注入内容覆盖', async () => {
+    const userDir = mkdtempSync(join(tmpdir(), 'server-compare-'));
+    staticDirs.push(userDir);
+    const sourcePath = join(userDir, 'codex-s1.jsonl');
+    writeFileSync(
+      sourcePath,
+      [
+        { timestamp: '2026-08-04T06:00:00.000Z', type: 'session_meta', payload: { session_id: 's1' } },
+        { timestamp: '2026-08-04T06:00:01.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '# AGENTS.md instructions for /tmp' }] } },
+        { timestamp: '2026-08-04T06:00:02.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '读 NEXT-TASKS.md 并按顺序执行' }] } },
+      ].map((row) => JSON.stringify(row)).join('\n') + '\n',
+    );
+    const key = deriveSessionKey('codex', sourcePath);
+    const { port } = await boot((db) => {
+      seedSession(db, key, 'codex');
+      db.prepare('UPDATE sessions SET detail_loaded = 0, source_path = ?, title = ? WHERE id = ?').run(
+        sourcePath,
+        'placeholder',
+        key,
+      );
+    });
+    const r = await request(port, 'POST', '/api/compare', {
+      body: JSON.stringify({ leftKey: key, rightKey: key }),
+    });
+    expect(r.status).toBe(200);
+    const body = JSON.parse(r.text) as {
+      left: { events: unknown[]; session: { title: string } };
+    };
+    expect(body.left.events.length).toBeGreaterThan(0);
+    expect(body.left.session.title).toBe('读 NEXT-TASKS.md 并按顺序执行');
+  });
+
+  it('R-09：会话报告与对比报告路由返回 text/html', async () => {
+    const { port } = await boot((db) => {
+      seedSession(db, 'codex-r1', 'codex');
+      seedEvent(db, 'codex-r1', 'e1', 1);
+    });
+    const report = await request(port, 'GET', '/api/sessions/codex-r1/report');
+    expect(report.status).toBe(200);
+    expect(report.headers['content-type']).toContain('text/html');
+    expect(report.text).toContain('<!doctype html>');
+    const compare = await request(
+      port,
+      'GET',
+      '/api/compare/report?left=codex-r1&right=codex-r1',
+    );
+    expect(compare.status).toBe(200);
+    expect(compare.headers['content-type']).toContain('text/html');
   });
 
   it('agent-overview 单请求返回全部 provider', async () => {

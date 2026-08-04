@@ -3,6 +3,12 @@ import { StringDecoder } from 'node:string_decoder';
 
 import { extractUserQuery } from '../src/adapters/workbuddy.js';
 import type { ProviderKey } from '../src/core/trace-types.js';
+import {
+  extractTitleFromUserText,
+  fallbackSessionTitle,
+  isInjectedFirstLine,
+  TITLE_MAX_LENGTH,
+} from '../src/core/title-utils.js';
 
 /**
  * REQ-021（T-10）：索引阶段的真实标题与事件数提取。
@@ -11,7 +17,7 @@ import type { ProviderKey } from '../src/core/trace-types.js';
  * 不做语义判断。标题截断 120 字符，取不到时回落 D5。
  */
 
-export const TITLE_MAX_LENGTH = 120;
+export { TITLE_MAX_LENGTH };
 /** 单个 JSONL 文件索引阶段的读取硬上限（design.md Risk：739MB 级文件也不失控）。 */
 export const JSONL_INDEX_READ_CAP = 1024 * 1024;
 
@@ -21,44 +27,7 @@ const READ_CHUNK_BYTES = 64 * 1024;
  * D2：实测注入块的稳定特征。命中即跳过**整条消息**——真实会话中注入块与
  * 用户提问是两条独立 user 消息，逐条跳过即可拿到真正第一句（G5.5）。
  */
-const INJECTION_PREFIXES = [
-  '# AGENTS.md',
-  '<environment_context>',
-  '<system-reminder>',
-  '<user_instructions>',
-  '<codex_internal_context',
-  '<recommended_plugins>',
-  '<app-context>',
-] as const;
-
-export function isInjectedFirstLine(firstLine: string): boolean {
-  const normalized = firstLine.trim().toLowerCase();
-  return INJECTION_PREFIXES.some((prefix) =>
-    normalized.startsWith(prefix.toLowerCase()),
-  );
-}
-
-/** 从用户消息正文提取标题：首个非空行，截断 120 字符；注入内容返回 null。 */
-export function extractTitleFromUserText(text: string): string | null {
-  const firstLine = text
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line !== '');
-  if (firstLine === undefined) {
-    return null;
-  }
-  if (isInjectedFirstLine(firstLine)) {
-    return null;
-  }
-  return firstLine.length <= TITLE_MAX_LENGTH
-    ? firstLine
-    : firstLine.slice(0, TITLE_MAX_LENGTH);
-}
-
-/** D5：标题取不到时回落 `<provider> session · <本地化的起始时间>`，MUST NOT 回落为文件名。 */
-export function fallbackSessionTitle(provider: string, startMs: number): string {
-  return `${provider} session · ${new Date(startMs).toLocaleString()}`;
-}
+export { extractTitleFromUserText, fallbackSessionTitle, isInjectedFirstLine };
 
 export interface JsonlIndexMeta {
   title: string;

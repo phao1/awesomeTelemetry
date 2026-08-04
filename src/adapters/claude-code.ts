@@ -14,6 +14,7 @@ import {
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
+import { extractTitleFromUserText } from '../core/title-utils.js';
 import type { Adapter, RawSample } from './sample-loader.js';
 
 export interface ClaudeContentPart {
@@ -204,12 +205,18 @@ export function normalizeClaudeSample(
   const classified = classifyEvents(deduped);
   const times = minMaxIso(classified);
   const firstUser = classified.find((e) => e.kind === 'user_prompt');
+  const firstRealUser = classified.find(
+    (e) =>
+      e.kind === 'user_prompt' &&
+      e.inputSummary !== null &&
+      extractTitleFromUserText(e.inputSummary) !== null,
+  );
   const semantics = { cacheRead: 'incremental' as const, reasoning: 'incremental' as const };
   const session: TraceSession = {
     id: sessionId,
     provider: 'claude',
     sourceAgent: 'Claude',
-    title: firstUser?.title ?? '',
+    title: firstRealUser?.title ?? firstUser?.title ?? '',
     startedAt: times.startedAt,
     updatedAt: times.updatedAt,
     status: classified.at(-1)?.status ?? 'unknown',

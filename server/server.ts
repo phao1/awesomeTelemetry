@@ -18,6 +18,8 @@ import {
   saveUserConfig,
 } from '../local-sessions/config.js';
 import { getProxyRequestById } from './storage/query-engine.js';
+import { buildTraceReportHtml } from '../src/core/report-html.js';
+import { buildCompareReportHtml } from '../src/core/compare-report.js';
 import { DetailCache } from './storage/detail-cache.js';
 import {
   getAgentOverview,
@@ -170,6 +172,23 @@ export function createAgentObservabilityServer(
   const fridaRuntime = new FridaRuntime((payload) => {
     eventBus.emit('frida_status', payload);
   });
+
+  /** REQ-015：惰性详情加载（compare/report 与 GET 详情同口径）。 */
+  const ensureDetail = async (
+    key: string,
+    mode: 'slim' | 'full',
+  ): Promise<SessionDetailResponse | null> => {
+    const meta = cachedStmt(db, 'SELECT detail_loaded FROM sessions WHERE id = ?').get(key) as
+      | { detail_loaded: number }
+      | undefined;
+    if (meta === undefined) {
+      return null;
+    }
+    if (meta.detail_loaded === 0) {
+      await scanAndStoreDetail(db, key, { config, notify: queueSessionChange });
+    }
+    return getSessionDetail(db, key, { mode });
+  };
 
   const router = new Router();
 
@@ -514,11 +533,11 @@ export function createAgentObservabilityServer(
     if (typeof leftKey !== 'string' || typeof rightKey !== 'string') {
       throw new HttpError(400, 'BAD_REQUEST', 'leftKey 与 rightKey 必填');
     }
-    const left = getSessionDetail(db, leftKey, { mode: 'slim' });
+    const left = await ensureDetail(leftKey, 'slim');
     if (left === null) {
       throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${leftKey}`, { key: leftKey });
     }
-    const right = getSessionDetail(db, rightKey, { mode: 'slim' });
+    const right = await ensureDetail(rightKey, 'slim');
     if (right === null) {
       throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${rightKey}`, { key: rightKey });
     }
@@ -540,6 +559,62 @@ export function createAgentObservabilityServer(
       },
       req,
     );
+  });
+
+  router.register('GET', '/api/sessions/:key/report', async (req, res, params) => {
+    const key = params.key!;
+    const detail = await ensureDetail(key, 'full');
+    if (detail === null) {
+      throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
+    }
+    const record: TraceRecord = {
+      session: detail.session,
+      events: detail.events as TraceEvent[],
+      tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+    };
+    const report = buildTraceReportHtml(record);
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end(report.html);
+  });
+
+  router.register('GET', '/api/sessions/:key/report-data.js', async (req, res, params) => {
+    const key = params.key!;
+    const detail = await ensureDetail(key, 'full');
+    if (detail === null) {
+      throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
+    }
+    const record: TraceRecord = {
+      session: detail.session,
+      events: detail.events as TraceEvent[],
+      tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+    };
+    const report = buildTraceReportHtml(record);
+    if (report.externalDataJs === undefined) {
+      throw new HttpError(404, 'ROUTE_NOT_FOUND', '该会话报告无需外部数据文件');
+    }
+    res.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8' });
+    res.end(report.externalDataJs);
+  });
+
+  router.register('GET', '/api/compare/report', async (req, res) => {
+    const query = parseQuery(req);
+    const leftKey = query.get('left');
+    const rightKey = query.get('right');
+    if (leftKey === null || rightKey === null) {
+      throw new HttpError(400, 'BAD_REQUEST', 'left 与 right 必填');
+    }
+    const left = await ensureDetail(leftKey, 'full');
+    const right = await ensureDetail(rightKey, 'full');
+    if (left === null || right === null) {
+      throw new HttpError(404, 'SESSION_NOT_FOUND', '对比会话不存在');
+    }
+    const toRecord = (detail: SessionDetailResponse): TraceRecord => ({
+      session: detail.session,
+      events: detail.events as TraceEvent[],
+      tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+    });
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end(buildCompareReportHtml(toRecord(left), toRecord(right)));
   });
 
   router.register('GET', '/api/events', (req, res) => {
