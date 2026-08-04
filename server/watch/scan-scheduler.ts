@@ -18,7 +18,6 @@ import { qoderScanner } from '../../local-sessions/qoder.js';
 import { traeScanner } from '../../local-sessions/trae.js';
 import { workbuddyScanner } from '../../local-sessions/workbuddy.js';
 import {
-  buildIndexEntry,
   enumerateSourceFiles,
   upsertIndexEntries,
   type ProviderScanResult,
@@ -159,9 +158,11 @@ export function initialScanAndStore(
   const providers = enabledProviders(deps);
   const entries: SessionIndexEntry[] = [];
   for (const config of providers) {
+    const scanner = scanners[config.key];
     const files = enumerateSourceFiles(config.path, config.sourceKind);
     for (const filePath of files) {
-      entries.push(buildIndexEntry(config, filePath));
+      // T-03：SQLite 类按 session 行展开，JSONL 类每文件 1 条
+      entries.push(...scanner.buildIndexEntries(config, filePath));
     }
   }
   upsertIndexEntries(deps.db, entries);

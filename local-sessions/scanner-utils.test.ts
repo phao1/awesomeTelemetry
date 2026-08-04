@@ -17,6 +17,7 @@ import { claudeScanner } from './claude.js';
 import { codeagentScanner } from './codeagent.js';
 import { codexScanner } from './codex.js';
 import { qoderScanner } from './qoder.js';
+import { deriveSessionKey } from './session-key.js';
 import { workbuddyScanner } from './workbuddy.js';
 import {
   buildIndexEntry,
@@ -173,32 +174,55 @@ describe('T-02 统一 session key', () => {
     db.close();
   });
 
-  it('cleanupDuplicateSessionRows 只删同 source_path 的 detail_loaded=0 孤儿行', () => {
+  it('清理 JSONL 旧 bug 残留：canonical 0 行 + 非 canonical loaded 行都删，保留规范未打开行', () => {
     const db = newDb();
     const insert = db.prepare(
       `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
-    insert.run('dup-a', 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/same/file.jsonl');
-    insert.run('dup-b', 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/same/file.jsonl');
-    db.prepare("UPDATE sessions SET detail_loaded = 1 WHERE id = 'dup-b'").run();
-    insert.run('legit', 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/other/file.jsonl');
+    const canonical = deriveSessionKey('claude', '/same/file.jsonl');
+    insert.run(canonical, 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/same/file.jsonl');
+    insert.run('claude-00000000000000', 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/same/file.jsonl');
+    db.prepare("UPDATE sessions SET detail_loaded = 1 WHERE id = 'claude-00000000000000'").run();
+    const legit = deriveSessionKey('claude', '/other/file.jsonl');
+    insert.run(legit, 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/other/file.jsonl');
+
+    const removed = cleanupDuplicateSessionRows(db);
+    expect(removed).toBe(2);
+    const ids = db
+      .prepare('SELECT id FROM sessions ORDER BY id')
+      .all() as Array<{ id: string }>;
+    expect(ids.map((r) => r.id)).toEqual([legit]);
+    db.close();
+  });
+
+  it('清理 SQLite 文件级伪会话（basename key），保留 session 级规范行', () => {
+    const db = newDb();
+    const insert = db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const fileKey = deriveSessionKey('opencode', '/data/opencode.db');
+    const sessionKey = deriveSessionKey('opencode', '/data/opencode.db', 'oc-s1');
+    insert.run(fileKey, 'opencode', 'OpenCode', 'opencode.db', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/data/opencode.db');
+    insert.run(sessionKey, 'opencode', 'OpenCode', 'fix build', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/data/opencode.db');
 
     const removed = cleanupDuplicateSessionRows(db);
     expect(removed).toBe(1);
     const ids = db
-      .prepare('SELECT id FROM sessions ORDER BY id')
+      .prepare('SELECT id FROM sessions')
       .all() as Array<{ id: string }>;
-    expect(ids.map((r) => r.id).sort()).toEqual(['dup-b', 'legit']);
+    expect(ids.map((r) => r.id)).toEqual([sessionKey]);
     db.close();
   });
 
-  it('cleanupDuplicateSessionRows 保留正常未打开的会话（无 loaded 兄弟行）', () => {
+  it('保留正常未打开的会话（canonical 0 行、无 loaded 兄弟行）', () => {
     const db = newDb();
+    const canonical = deriveSessionKey('codex', '/a.jsonl');
     db.prepare(
       `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
-       VALUES ('fresh', 'codex', 'Codex', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/a.jsonl')`,
-    ).run();
+       VALUES (?, 'codex', 'Codex', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/a.jsonl')`,
+    ).run(canonical);
     expect(cleanupDuplicateSessionRows(db)).toBe(0);
     const count = db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number };
     expect(count.c).toBe(1);

@@ -6,6 +6,7 @@ import { openReadonly } from '../server/storage/db.js';
 import { commitScanState, shouldRescan, sqliteFingerprint } from '../server/watch/scan-gate.js';
 import { decryptTraeDb } from './trae-bridge.js';
 import {
+  buildIndexEntry,
   enumerateSourceFiles,
   storeTraceRecord,
   type FileScanResult,
@@ -98,6 +99,11 @@ async function scanTraeFile(
 export const traeScanner: ProviderScanner = {
   key: 'trae',
   sourceKind: 'sqlcipher',
+  // T-03 说明：Trae SQLCipher 需解密后才能读 session 行，索引阶段不得解密（REQ-013），
+  // 因此索引粒度保持「1 文件 = 1 条目」，key 与详情阶段同为 deriveSessionKey(config.key, filePath)。
+  buildIndexEntries(config, filePath) {
+    return [buildIndexEntry(config, filePath)];
+  },
   async scanProvider(config, ctx) {
     const files = enumerateSourceFiles(config.path, 'sqlcipher');
     if (ctx.traeKeyPath === null || ctx.traeKeyPath === undefined || ctx.traeKeyPath === '') {

@@ -91,8 +91,11 @@ MUST NOT 用正则 split 整个文件字符串。
 ### REQ-010: 各 scanner 行为
 - **claude.ts** — 扫 `.jsonl`，首行取 sessionId，首条 user message 取 title
 - **codex.ts** — 扫 `.jsonl` + 读 `session_index.jsonl` + `state_5.sqlite`（threads 表）取 title
-- **opencode.ts** — 支持 db / logs / otel 三源，用 `OpenCodeDialect` 参数定制
-- **codearts.ts / codeagent2.ts** — thin wrapper 调 opencode.ts，传不同 dialect
+- **opencode.ts** — 支持 db / logs / otel 三源，用 `OpenCodeDialect` 参数定制。
+  db 源 MUST 按 `session` 行展开为 N 个会话（T-03，1 个 .db 文件 ≠ 1 个会话），
+  详情读取同样按 session 分组后逐个 normalize。
+- **codearts.ts / codeagent2.ts** — thin wrapper 调 opencode.ts，传不同 dialect，
+  继承多会话展开行为
 - **codeagent.ts** — 扫 `.jsonl`，过滤 `file-history-snapshot` 行
 - **trae.ts** — 见 REQ-012
 - **workbuddy.ts** — 扫 `.jsonl` + 读 `workbuddy.db` 取 title，过滤 `file-history-snapshot`，从 `<user_query>` 提取用户问题
@@ -117,7 +120,13 @@ Trae 的 Python bridge MUST 用 `spawn` + Promise，MUST NOT 用 `spawnSync`。
 
 ### REQ-013: 启动流程
 `initialScanAndStore(opts)` SHALL 分两阶段：
-1. **索引阶段（同步，必须快）** — 仅目录遍历 + 轻量元数据，upsert 索引，emit `scan_completed`。MUST NOT 读详情、解密、spawn 子进程。耗时 < 3s @ 1,514 文件。
+1. **索引阶段（同步，必须快）** — 仅目录遍历 + 轻量元数据，upsert 索引，emit `scan_completed`。
+   MUST NOT 读详情、解密、spawn 子进程。耗时 < 3s @ 1,514 文件。
+   SQLite 类（opencode / codearts / codeagent2）MUST 按 db 内 session 行展开为 N 条，
+   轻量 SQL 只取 id / title / 时间戳（不读 message/part 正文），单库 < 50ms；
+   无法读取的 .db（损坏 / 非本 provider 格式）在索引阶段跳过该文件，
+   不阻塞整体启动（详情阶段由 provider 级错误记录暴露）。Trae 因 SQLCipher
+   需解密才能读行，索引粒度保持「1 文件 = 1 条目」（REQ-013 禁止索引阶段解密）。
 2. **预热阶段（可选，默认关闭）** — `opts.prewarmRecent` 默认 `0`。非 0 时 `void backgroundPrewarm(...)`，MUST NOT `await`。
 
 #### Scenario: 默认不预热
@@ -135,10 +144,18 @@ Trae 的 Python bridge MUST 用 `spawn` + Promise，MUST NOT 用 `spawnSync`。
 `GET /api/sessions/:key` 在 `sessions.detail_loaded = 0` 时 SHALL 触发一次同步 `scanAndStoreDetail`，成功后置 `detail_loaded = 1` 并写入 LRU 缓存。
 
 ### REQ-020: 启动自愈清理（T-02）
-启动自检 MUST 调用 `cleanupDuplicateSessionRows()`：删除 `detail_loaded = 0` 且
-同 `source_path`、同 provider 存在 `detail_loaded = 1` 兄弟行的**孤儿行**
-（旧版索引/详情 key 不一致的残留），并连同其 events / event_raw / metrics / scan_state 行一起删除。
-正常未打开的会话（无 loaded 兄弟行）MUST NOT 被清理。
+启动自检 MUST 调用 `cleanupDuplicateSessionRows()`（仅 `data_source = 'scan'`），
+三类残留逐条删除并连同其 events / event_raw / metrics / scan_state 行：
+
+1. 旧版 key 不一致残留：`detail_loaded = 0` 且同 `source_path`、同 provider 存在
+   `detail_loaded = 1` 兄弟行的**孤儿行**；
+2. JSONL 类：`id ≠ deriveSessionKey(provider, source_path)` 的行
+   （旧 adapter-id 派生的不可达残留；源文件仍在时由索引阶段重建）；
+3. 可读 SQLite 类（opencode / codearts / codeagent2）：
+   `id == deriveSessionKey(provider, source_path)` 的**文件级伪会话**
+   （T-03 后索引按 session 行展开，不再产生该 key）。
+
+正常未打开的会话（key 规范且无 loaded 兄弟行）MUST NOT 被清理。
 
 ### REQ-016: LRU 详情缓存
 `detail-cache.ts` SHALL 提供上限 24 条的 LRU，命中即提升。`sessions_changed` 事件 MUST 使对应 key 的缓存失效。
