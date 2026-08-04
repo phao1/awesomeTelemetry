@@ -12,8 +12,8 @@
 | M3 | storage 查询 | ✅ 完成 | 95ca72d |
 | M4 | watch 增量门禁 | ✅ 完成 | 8fe7949 |
 | M5 | adapters ×9 | ✅ 完成 | 9a2824f |
-| M6 | scanners ×9 | ✅ 完成 | （待提交） |
-| M7 | realtime | ⬜ 未开始 | — |
+| M6 | scanners ×9 | ✅ 完成 | 6428fc1 |
+| M7 | realtime | ✅ 完成 | （待提交） |
 | M8 | HTTP server | ⬜ 未开始 | — |
 | M9 | core 分析 | ⬜ 未开始 | — |
 | M10 | 前端（a–d） | ⬜ 未开始 | — |
@@ -67,6 +67,14 @@
 - 验收：路径展开三种语法；并行扫描 + 超时跳过不阻塞；索引阶段 1500 文件 < 3s；
   prewarmRecent 默认 0；Trae 密钥缺失返回 TRAE_KEY_MISSING
 - 决策：D-003 已记录（scanner 级增量读待接线，暂全量重读保正确）
+
+### M7 · realtime（已完成）
+
+- 产出：event-bus.ts（TypedEventBus 单例）、coalescer.ts（200ms 会话合并 + 100ms chunk 拼接 +
+  unref）、sse.ts（connected/心跳/cleanup/closeSseBroadcaster）、frontline.ts（750ms 前台标记）
+  + 4 个测试文件
+- 验收：524 次 queueSessionChange → 1 条 sessions_changed（≤10）；定时器 unref 进程正常退出；
+  断开后订阅全部解除
 
 ## 待决清单索引
 
