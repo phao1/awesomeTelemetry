@@ -95,4 +95,20 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       expect(options.map((o) => o.getAttribute('value')).sort()).toEqual(['s-1', 's-2', 's-3']);
     }
   });
+
+  it('REQ-023：/api/health 只请求一次，不轮询', async () => {
+    const container = renderApp();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    const fetchMock = vi.mocked(fetch);
+    const healthCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).includes('/api/health'),
+    );
+    expect(healthCalls).toHaveLength(1);
+    container.remove();
+  });
 });
