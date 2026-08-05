@@ -1,94 +1,163 @@
 # Spec: Adapters
 
-> 9 个 provider 适配器：原始数据转规范 TraceRecord。源文件：`src/adapters/`
+> 9 provider adapters: raw data → normalized TraceRecord. Source files:
+> `src/adapters/`
 
 ## Purpose
 
-每个 provider 的原始数据格式不同，adapter 负责归一化到 `TraceRecord`。
+Each provider's raw data format differs; adapters normalize it into
+`TraceRecord`.
 
 ## Requirements
 
-### REQ-001: sample-loader 分发
-`sample-loader.ts` SHALL 按 `sourceAgent` 分发到对应 adapter。新增 provider = 加 adapter + 注册 + 更新 `PROVIDER_KEYS` + 两个 i18n locale。
+### REQ-001: sample-loader dispatch
+`sample-loader.ts` SHALL dispatch by `sourceAgent` to the matching adapter.
+Adding a provider = add adapter + register + update `PROVIDER_KEYS` + both i18n
+locales.
 
-### REQ-002: 必须声明 token 语义
-每个 adapter MUST 返回 `TokenSemantics`。这是编译期强制字段，不是约定。
+### REQ-002: token semantics must be declared
+Every adapter MUST return `TokenSemantics`. This is a compile-time enforced
+field, not a convention.
 
 | Provider | cacheRead | reasoning |
 |----------|-----------|-----------|
 | claude / codeagent | incremental | incremental |
 | codex | incremental | incremental |
-| opencode / codearts / codeagent2 | **cumulative** | incremental |
+| opencode / codearts / codeagent2 | **incremental** | incremental |
 | trae | incremental | incremental |
 | qoder / workbuddy | incremental | incremental |
 
-### REQ-003: 正文截断与分离
-adapter MUST 把每个 event 拆成三部分：slim 字段（title ≤ 200 字符）、`inputSummary` / `outputSummary`、`raw`。`raw` MUST 独立返回，由 storage 写入 `event_raw` 表。
+### REQ-003: Body truncation and separation
+Adapters MUST split every event into three parts: slim fields (title <= 200
+chars), `inputSummary` / `outputSummary`, and `raw`. `raw` MUST be returned
+separately and written by storage into the `event_raw` table.
 
-### REQ-004: Claude Code 适配
-`claude-code.ts` SHALL 把 Claude JSONL 转 TraceRecord。`codeagent.ts` 包装它：drop `file-history-snapshot` 行，relabel actor。
+### REQ-004: Claude Code adapter
+`claude-code.ts` SHALL convert Claude JSONL into TraceRecord. `codeagent.ts`
+wraps it: drop `file-history-snapshot` rows, relabel actor.
 
-### REQ-005: OpenCode 适配（被复用）
-`opencode.ts` SHALL 处理 SQLite DB 行（part 表 join message 表）/ JSONL / OTel span 三源，用 `OpenCodeDialect` 参数区分 CodeArts / CodeAgent2 / OpenCode。后两者是 thin wrapper。
+### REQ-005: OpenCode adapter (reused)
+`opencode.ts` SHALL handle three sources — SQLite DB rows (part table joined
+with message table) / JSONL / OTel spans — and use the `OpenCodeDialect` param
+to distinguish CodeArts / CodeAgent2 / OpenCode. The latter two are thin
+wrappers.
 
-#### Scenario: subagent 检测
-- **GIVEN** 会话标题匹配 `/\(@.*\bsubagent\)/i`
+#### Scenario: subagent detection
+- **GIVEN** a session title matching `/\(@.*\bsubagent\)/i`
 - **THEN** `session.isSubagent = true`
 
-#### Scenario: cacheRead 累积
-- **GIVEN** 一个 OpenCode 会话有 100 个 event，各自的 `cacheRead` 为递增值
-- **WHEN** 计算会话级 tokenUsage
-- **THEN** `cacheRead` 取 `Math.max()` 而非 sum
-- **AND** `total = input + output + reasoning + cacheRead`
+#### Scenario: cacheRead incremental (calibrated 2026-08-03)
+- **GIVEN** an OpenCode session with 3 events whose `cacheRead` values are
+  6016/4000/2000
+- **WHEN** computing session-level tokenUsage
+- **THEN** `cacheRead` takes the sum (12016), not max
+- **AND** `total = input + output + reasoning + cacheRead + cacheWrite`
 
-### REQ-006: Trae 适配
-`trae.ts` SHALL 把 TraeRecord 转 TraceRecord：
-- turn status 映射：completed→success、paused→running、canceled→cancelled
-- phase 内联映射：read_file→understand、write_file→implement、reasoning→plan、bash→implement（命中 test 正则时为 verify）
-- **`token_usage / 2` 校准**（双向累计）
-- 非 LLM 行的纯数字 `token_usage` 是 message size，MUST 跳过；只有 `content_source === 'llm_default'` 计入 outputTokens
-- 秒级时间戳 MUST 乘 1000
+> #6 was settled with real data (2026-08-04):
+> - OpenCode `ses_0fdca2dc`: tokens.total = input+output+reasoning+cache,
+>   output excludes reasoning → `reasoningInTotal: true`
+> - CodeArts/DeepSeek `ses_1afaab585ffe`: tokens.total = input+output+cache
+>   (no reasoning), reasoning is a subset of output →
+>   `reasoningInTotal: false`, avoiding double counting
+> Adapters MUST declare their provider's accounting via
+> `TokenSemantics.reasoningInTotal`.
 
-### REQ-007: Codex 适配
-`codex.ts` SHALL 把 Codex JSONL 转 TraceRecord：`function_call`→tool/implement、`function_call_output`→tool/implement、`user`→user_prompt、`assistant`→llm。
+### REQ-006: Trae adapter
+`trae.ts` SHALL convert TraeRecord into TraceRecord:
+- turn status mapping: completed→success, paused→running, canceled→cancelled
+- inline phase mapping: read_file→understand, write_file→implement,
+  reasoning→plan, bash→implement (verify when the test regex matches)
+- **`token_usage` is the real total (calibrated 2026-08-03)**:
+  `output = item_token_usage`, `input = token_usage - item_token_usage`;
+  when item_token_usage is missing, `output = token_usage`, input = 0
+- non-LLM rows' numeric `token_usage` is message size, MUST skip; only rows
+  with `content_source === 'llm_default'` count into outputTokens
+- second-level timestamps MUST be ×1000
+- **#7 multi-table enhancement**: chat_session provides
+  title/agent_type/agent_name; history_v2.messages JSON provides a
+  reasoning_content fallback (shown when llm rows have no body);
+  chat_message_task provides tool name/params/result; all guarded by
+  table/column existence and degrade to single-table server_history_info
+  behavior when missing
 
-### REQ-008: Qoder 适配
-`qoder.ts` SHALL 把 Qoder JSONL 转 TraceRecord，调 `classifyEvents`，`durationMs` 从相邻时间戳算。
+### REQ-007: Codex adapter
+`codex.ts` SHALL convert Codex JSONL into TraceRecord:
+`function_call`→tool/implement, `function_call_output`→tool/implement,
+`user`→user_prompt, `assistant`→llm.
 
-### REQ-009: WorkBuddy 适配
-`workbuddy.ts` SHALL：
-- 按 `callId` 配对 `function_call` 与 `function_call_result`（注意 `function_call` 不等于 `tool_use`）
-- 从 `<user_query>` 标签提取用户问题
-- 按 tool name 检测 kind：Bash/PowerShell→bash、Read/Glob/Grep→file_read、Write/Edit→file_write、Agent→subagent_prompt、Skill→agent
-- 错误检测：`Exit Code: [1-9]` 正则 + `skipRun` 标志
-- cost 从 `rawUsage.credit` 累计
+### REQ-008: Qoder adapter
+`qoder.ts` SHALL convert Qoder JSONL into TraceRecord, calling
+`classifyEvents`; `durationMs` computed from adjacent timestamps.
 
-### REQ-010: 状态归一化表
-| 原生值 | TraceStatus |
-|--------|-------------|
+### REQ-009: WorkBuddy adapter
+`workbuddy.ts` SHALL:
+- pair `function_call` with `function_call_result` by `callId` (note:
+  `function_call` ≠ `tool_use`)
+- extract the user question from `<user_query>` tags
+- detect kind by tool name: Bash/PowerShell→bash, Read/Glob/Grep→file_read,
+  Write/Edit→file_write, Agent→subagent_prompt, Skill→agent
+- detect errors: `Exit Code: [1-9]` regex + the `skipRun` flag
+- accumulate cost from `rawUsage.credit`
+
+### REQ-010: Status normalization table
+| Native value | TraceStatus |
+|--------------|-------------|
 | completed / done / finished / ok | success |
 | failed / error / exception | error |
 | running / in_progress / paused / pending | running |
 | canceled / cancelled / aborted / interrupted | cancelled |
-| 其他 | unknown |
+| anything else | unknown |
 
 ### REQ-011: normalizeRawSample
-`normalizeRawSample(rawSample)` SHALL 把含 `sourceAgent` 的 RawSample 转 TraceRecord，供 scan-scheduler 调用。
+`normalizeRawSample(rawSample)` SHALL convert a `sourceAgent`-carrying
+RawSample into TraceRecord for scan-scheduler.
 
-### REQ-012: 每 adapter 必备测试
-每个 adapter MUST 有 colocated `*.test.ts`，至少覆盖：
-1. 一个最小 fixture 的完整 TraceRecord 快照
-2. token 聚合语义（尤其 OpenCode 系的 max vs sum）
-3. 状态归一化的四类映射
-4. 重复 event id 的 `:sequence` 后缀
-5. slim 字段中 title 的截断
+### REQ-012: required per-adapter tests
+Every adapter MUST have a colocated `*.test.ts` covering at least:
+1. a full TraceRecord snapshot of one minimal fixture
+2. token aggregation semantics (especially the OpenCode-family max vs sum)
+3. the four-class status normalization mapping
+4. the `:sequence` suffix for duplicate event ids
+5. slim-field title truncation
+
+### REQ-013: duration derivation & model attribution (add-mission-control)
+Adapters whose source data does not carry real event durations MUST run
+`deriveDurations()` (`src/adapters/helpers.ts`) and label the session
+`durationSource: 'derived'`; sources with real span durations keep
+`durationSource: 'measured'`. The choice MUST follow the actual parse path
+(e.g. opencode db/jsonl vs otel), NEVER a per-provider hardcode.
+
+Every adapter MUST populate `TraceEventSlim.model` for llm events when the
+source carries a model id (`claude-code.ts` reads `message.model`;
+opencode/trae/codex/workbuddy read their own fields), and MUST leave it
+`null` when the source has none — never guess. Sessions get
+`primaryModel` from `pickPrimaryModel(events)` (highest token share).
+
+`duration_source` / `primary_model` / `cost_source` produced by adapters MUST
+be persisted by the storage layer on the next scan (writers + query-engine),
+never dropped.
+
+#### Scenario: claude fixture model attribution
+- **GIVEN** a claude fixture whose llm messages carry `model`
+- **WHEN** the adapter parses it
+- **THEN** llm events have `model` set and the session has a non-null
+  `primaryModel`
+
+#### Scenario: provider without model data
+- **GIVEN** a provider whose source rows have no model field
+- **THEN** llm events get `model: null` and `primaryModel: null`
+- **AND** the pipeline must not throw or fabricate a model
 
 ## Gotchas
-- G4.4：cacheRead 累积用 max，reasoning 增量用 sum（最易踩坑）
-- G4.2：Trae `token_usage` 需 /2 校准
-- G4.3：Trae 非 LLM 行 token_usage 是 message size，不重复计数
-- G4.6：总时长用 wall-clock
-- G9.1：CodeArts / CodeAgent2 复用 opencode（dialect 参数），先实现 opencode 再 2 行 wrapper
-- G9.2：CodeAgent 3.0 包装 claude-code（drop file-history-snapshot）
-- G9.3：OpenCode subagent 标题正则检测
-- G11.10（新）：adapter 必须把 raw 与正文分离返回，混在一起会让 storage 无法实现三档切分
+- G4.4: cacheRead incremental uses sum (2026-08-03 calibration overturns the
+  max assumption)
+- G4.2: Trae `token_usage` is the real total; input =
+  token_usage - item_token_usage
+- G4.3: Trae non-LLM rows' token_usage is message size; do not double count
+- G4.6: total duration uses wall-clock
+- G9.1: CodeArts / CodeAgent2 reuse opencode (dialect param); implement
+  opencode first, then a 2-line wrapper
+- G9.2: CodeAgent 3.0 wraps claude-code (drops file-history-snapshot)
+- G9.3: OpenCode subagent title regex detection
+- G11.10 (new): adapters must return raw and body separately; mixed together,
+  storage cannot do the three-tier split

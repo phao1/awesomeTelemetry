@@ -166,7 +166,7 @@ describe('Design Tokens 契约断言（design-tokens.md §9）', () => {
     expect(blocks).toHaveLength(2);
   });
 
-  it('CSS 文件总量存在（供 REQ-010 预算审计）', () => {
+  it('CSS 文件总量存在（供 REQ-011 预算审计）', () => {
     const total = cssFiles().reduce((sum, p) => sum + statSync(p).size, 0);
     expect(total).toBeGreaterThan(0);
   });

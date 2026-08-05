@@ -1,83 +1,98 @@
-# Contract: 非功能需求（性能预算）
+# Contract: Non-functional requirements (performance budget)
 
-> **被复刻项目最大的规格缺陷：整份 spec 没有一条性能需求。** 结果是它的首屏要 5.9–12.4 秒。
-> 本文件把性能定义为**可验证的硬需求**，与功能需求同等级别。违反预算等同于功能缺陷。
-> 「参考实现」一列的数字来自那份实测诊断报告（524 会话 / 73,588 event / 源文件 800MB）——
-> 那是**不做这些约束会长成的样子**，不是本项目的起点。本项目从第一行代码就按预算列写。
+> **The biggest spec flaw in the recreated project: its spec had zero
+> performance requirements.** As a result its first screen took 5.9-12.4
+> seconds. This file defines performance as a **verifiable hard requirement**
+> at the same level as functional requirements. Exceeding the budget equals a
+> functional defect. The "reference implementation" column comes from that
+> measured diagnostic report (524 sessions / 73,588 events / 800MB source
+> files) — it describes what the project would grow into **without these
+> constraints**, not where this project starts. This project is written to the
+> budget columns from the first line of code.
 
-## 1. 规模假设
+## 1. Scale assumptions
 
-系统按 **B 档** 设计。超出上界时必须按 §7 的跳级规则升级架构。
+The system is designed for **tier B**. When the design ceiling is exceeded,
+upgrade the architecture per the §7 escalation rules.
 
-| 维度 | 参考实现实测规模 | 设计上界 | 超限后的动作 |
-|------|----------------|---------|-------------|
-| 会话数 | 524 | 5,000 | 列表虚拟滚动 + 服务端搜索 |
-| event 总数 | 73,588 | 500,000 | events 按时间分表 |
-| 单会话 event 数 | p50=36 / p95=401 / max=9,590 | 20,000 | Gantt 时间轴降采样(LOD) |
-| 源文件总量 | 800.21MB（1,514 文件） | 5GB | 扫描移入 worker pool |
-| 单 provider 最大 | codeagent 739.21MB / 948 文件 | 2GB | 强制 byte-offset 增量读 |
-| DB 体积 | 目标 < 200MB | 2GB | 拆库 index/detail/proxy |
-| proxy_requests | 1,820 | 100,000 | 保留策略 + FTS5 |
-
----
-
-## 2. 响应预算（硬需求）
-
-| 场景 | 参考实现实测（反面基线） | **本项目预算** | 验证方式 |
-|------|--------|-----------|---------|
-| 首屏（启动后 10s 内） | 5,884ms | **< 100ms** | A/B 脚本 Step 4 |
-| 首屏（启动后 180s） | 12,399ms | **< 100ms** | 同上 |
-| 会话列表 500 条 | 5.33ms / 447.8KB | **< 5ms / < 60KB（gzip）** | 契约测试 |
-| 详情：中位会话（36 events） | 1.57ms / 193.3KB | **< 5ms / < 15KB** | 契约测试 |
-| 详情：P95 会话（401 events） | 12.94ms / 1,621.6KB | **< 8ms / < 80KB** | 契约测试 |
-| 详情：最差会话（9,590 events） | 625.29ms / 32,332.3KB | **< 60ms / < 1,500KB** | 契约测试 |
-| 单 event 下钻 | 不存在 | **< 20ms** | 契约测试 |
-| Agent Overview | 4,732ms / 524 请求 / 299.6MB | **< 400ms / 1 请求 / < 80KB** | Playwright |
-| events 排序查询（最差） | 210.48ms | **< 15ms** | EXPLAIN 断言 |
-| 30s 窗口总请求数 | 508 / 151.2MB | **< 15 / < 2MB** | Playwright |
-| 无变更增量扫描 | 18,235 SQL / 重读 800MB | **0 SQL / 读 < 20MB** | 写入统计测试 |
-| 单会话增量写入（append 1 event） | 348 SQL / 181.91ms | **1 SQL / < 20ms** | 写入统计测试 |
-| 事件循环延迟 p99（服务期间） | 未测（spawnSync 阻塞 6,074ms） | **< 50ms** | `monitorEventLoopDelay` |
-| DB + WAL 稳态体积 | 471.64MB | **< 200MB，WAL < 20MB** | health 端点 |
+| Dimension | Reference measured scale | Design ceiling | Action when exceeded |
+|-----------|--------------------------|----------------|----------------------|
+| Sessions | 524 | 5,000 | list virtualization + server-side search |
+| Total events | 73,588 | 500,000 | partition events by time |
+| Events per session | p50=36 / p95=401 / max=9,590 | 20,000 | Gantt timeline LOD downsampling |
+| Total source size | 800.21MB (1,514 files) | 5GB | move scanning into a worker pool |
+| Largest provider | codeagent 739.21MB / 948 files | 2GB | force byte-offset incremental reads |
+| DB size | target < 200MB | 2GB | split DB into index/detail/proxy |
+| proxy_requests | 1,820 | 100,000 | retention policy + FTS5 |
 
 ---
 
-## 3. 启动行为（硬需求）
+## 2. Response budget (hard requirement)
 
-| 要求 | 说明 |
-|------|------|
-| **默认不做全量详情预热** | `prewarmRecent` 默认 `0`。实测按需读取中位 1.57ms、P95 12.94ms，预热收益远小于其造成的 200–1240 倍劣化 |
-| 索引阶段必须同步完成 | 仅目录遍历 + 轻量元数据，不读详情、不解密、不 spawn 子进程 |
-| 索引阶段耗时 | < 3s @ 1,514 文件 |
-| 可选预热必须让路 | 检测到 750ms 内有前台请求则暂停，每个会话之间 `await setTimeout(0)` 让出整轮事件循环 |
-| 服务端 listen 不得被预热阻塞 | 预热用 `void backgroundPrewarm(...)`，不 `await` |
-| 禁止在请求路径上 spawn 子进程 | Trae 解密只在 30s 轮询中进行，请求路径遇到未就绪返回 `pending: true` |
-
----
-
-## 4. 禁止事项（会直接违反预算）
-
-1. **禁止 `SELECT *`** —— 一律显式列出返回列
-2. **禁止在详情列表接口返回 `raw` / `inputSummary` / `outputSummary`** —— 这三列合计占 DB 的 96%
-3. **禁止在循环内 `db.prepare()`** —— 复用 prepared statement
-4. **禁止 `spawnSync` / `readFileSync` 出现在 HTTP 请求处理路径上**
-5. **禁止逐 session 发射 SSE 事件** —— 必须 200ms 窗口合并
-6. **禁止前端为聚合视图逐会话拉详情** —— 必须走服务端聚合端点
-7. **禁止全删全插式 `upsertEvents`** —— 必须差分 upsert
-8. **禁止跳过 `scan_state` 写入** —— 写入失败必须抛错，不得静默 catch
-9. **禁止用正则 split 整个文件字符串解析 JSONL** —— 必须流式逐行（v4 中 `RegExp: \r?\n` self time 459.8ms）
-10. **禁止 `ORDER BY LENGTH(col)`** —— 用冗余长度列 + 索引
+| Scenario | Reference measured (negative baseline) | **This project's budget** | Verification |
+|----------|----------------------------------------|---------------------------|--------------|
+| First screen (within 10s of startup) | 5,884ms | **< 100ms** | A/B script Step 4 |
+| First screen (within 180s) | 12,399ms | **< 100ms** | same |
+| Session list, 500 items | 5.33ms / 447.8KB | **< 5ms / < 60KB (gzip)** | contract test |
+| Detail: median session (36 events) | 1.57ms / 193.3KB | **< 5ms / < 15KB** | contract test |
+| Detail: P95 session (401 events) | 12.94ms / 1,621.6KB | **< 8ms / < 80KB** | contract test |
+| Detail: worst session (9,590 events) | 625.29ms / 32,332.3KB | **< 60ms / < 1,500KB** | contract test |
+| Single event drill-down | did not exist | **< 20ms** | contract test |
+| Agent Overview | 4,732ms / 524 requests / 299.6MB | **< 400ms / 1 request / < 80KB** | Playwright |
+| Mission 冷启（add-mission-control） | — | **< 500ms / 1 request / < 120KB (gzip)** | `perf-diag/08-mission.mjs` |
+| Mission 缓存命中 | — | **< 20ms** | 同上 |
+| Mission 单 widget SQL | — | **< 30ms @ tier B**（逐条 EXPLAIN + 计时断言） | 同上 |
+| 事件循环 p99（mission 请求期间） | unmeasured（同步 GROUP BY 会顶穿） | **< 50ms**（沿用 §2；A/B/C 三区之间 `await setTimeout(0)` 让出） | 同上 |
+| Event sort query (worst) | 210.48ms | **< 15ms** | EXPLAIN assertion |
+| Total requests in a 30s window | 508 / 151.2MB | **< 15 / < 2MB** | Playwright |
+| Incremental scan, no changes | 18,235 SQL / reread 800MB | **0 SQL / read < 20MB** | write-counter test |
+| Incremental write of one session (append 1 event) | 348 SQL / 181.91ms | **1 SQL / < 20ms** | write-counter test |
+| Event-loop delay p99 (during service) | unmeasured (spawnSync blocked 6,074ms) | **< 50ms** | `monitorEventLoopDelay` |
+| Steady-state DB + WAL size | 471.64MB | **< 200MB, WAL < 20MB** | health endpoint |
 
 ---
 
-## 5. CI 断言
+## 3. Startup behavior (hard requirement)
 
-以下测试必须存在并在 CI 中执行。它们分别锁住最容易被后续迭代无意破坏的点。
+| Requirement | Description |
+|-------------|-------------|
+| **No full detail prewarm by default** | `prewarmRecent` defaults to `0`. Measured on-demand reads: median 1.57ms, P95 12.94ms; prewarm's benefit is nowhere near its 200-1240x degradation |
+| Index phase must complete synchronously | directory traversal + lightweight metadata only; no detail reads, no decryption, no child processes |
+| Index phase time | < 3s @ 1,514 files |
+| Optional prewarm must yield | pause when a foreground request is detected within 750ms; `await setTimeout(0)` between sessions to yield a full event-loop round |
+| Server listen must not be blocked by prewarm | prewarm uses `void backgroundPrewarm(...)`, never `await` |
+| No child process spawns on the request path | Trae decryption only runs in 30s polling; the request path returns `pending: true` when not ready |
+
+---
+
+## 4. Prohibitions (directly violate the budget)
+
+1. **No `SELECT *`** — always list return columns explicitly
+2. **Never return `raw` / `inputSummary` / `outputSummary` from detail list
+   endpoints** — these three columns total 96% of DB size
+3. **No `db.prepare()` inside loops** — reuse prepared statements
+4. **No `spawnSync` / `readFileSync` on HTTP request handling paths**
+5. **No per-session SSE events** — must coalesce on a 200ms window
+6. **No frontend per-session detail fetches for aggregation views** — must use
+   server-side aggregation endpoints
+7. **No delete-and-reinsert `upsertEvents`** — must use differential upsert
+8. **No skipping `scan_state` writes** — write failures must throw, never
+   silently catch
+9. **No regex-splitting the whole file to parse JSONL** — must stream line by
+   line (v4: `RegExp: \r?\n` self time 459.8ms)
+10. **No `ORDER BY LENGTH(col)`** — use a redundant length column + index
+
+---
+
+## 5. CI assertions
+
+The following tests must exist and run in CI. Each locks down a point most
+likely to be broken unintentionally by later iterations.
 
 ```ts
 // server/storage/perf.test.ts
 
-it('热查询不产生临时排序', () => {
+it('hot queries do not produce temp sorts', () => {
   const plans = [
     "SELECT id FROM events WHERE session_id = ? ORDER BY sequence",
     "SELECT id FROM sessions WHERE data_source = ? ORDER BY started_at DESC LIMIT 50",
@@ -88,12 +103,12 @@ it('热查询不产生临时排序', () => {
   }
 });
 
-it('slim 详情响应在体积预算内', () => {
+it('slim detail response is within the size budget', () => {
   const rec = getSessionDetail(db, worstCaseKey, { mode: 'slim' });
   expect(Buffer.byteLength(JSON.stringify(rec))).toBeLessThan(1_500_000);
 });
 
-it('无变更重扫零写入零解析', () => {
+it('no-change rescan produces zero writes and zero parsing', () => {
   scanAndStoreDetail(db, key);
   const before = writeCounter.value;
   const r = scanAndStoreDetail(db, key);
@@ -101,38 +116,38 @@ it('无变更重扫零写入零解析', () => {
   expect(writeCounter.value).toBe(before);
 });
 
-it('append 1 event 只产生 1 条 INSERT', () => {
+it('appending 1 event produces exactly 1 INSERT', () => {
   appendEventToFixture(key);
   const before = writeCounter.value;
   scanAndStoreDetail(db, key);
   expect(writeCounter.value - before).toBe(1);
 });
 
-it('SSE 一轮扫描事件数受控', async () => {
+it('SSE events per scan round stay bounded', async () => {
   const seen: unknown[] = [];
   eventBus.on('sessions_changed', e => seen.push(e));
   await scanAndStore({ db });
-  await sleep(300);                       // 等合并窗口 flush
+  await sleep(300);                       // wait for the coalescing window to flush
   expect(seen.length).toBeLessThanOrEqual(10);
 });
 
-it('scan_state 在首轮扫描后非空', async () => {
+it('scan_state is non-empty after the first scan', async () => {
   await scanAndStore({ db });
   const n = db.prepare('SELECT COUNT(*) c FROM scan_state').get().c;
-  expect(n).toBeGreaterThan(0);           // v4 实测为 0，这是回归防线
+  expect(n).toBeGreaterThan(0);           // v4 measured 0; this is the regression guard
 });
 ```
 
 ```ts
-// server/server.perf.test.ts —— 端到端预算
-it('启动后 10s 首屏在预算内', async () => {
+// server/server.perf.test.ts —— end-to-end budget
+it('first screen 10s after startup is within budget', async () => {
   const server = await bootServer({ prewarmRecent: 0 });
   await sleep(10_000);
   const t = await timeRequest('/api/sessions?limit=50');
   expect(t).toBeLessThan(100);
 });
 
-it('事件循环延迟受控', async () => {
+it('event loop delay stays controlled', async () => {
   const h = monitorEventLoopDelay({ resolution: 10 });
   h.enable();
   await hammerRequests(200);
@@ -143,31 +158,35 @@ it('事件循环延迟受控', async () => {
 
 ---
 
-## 6. 回归基线维护
+## 6. Regression baseline maintenance
 
-从 M3（storage 可跑通）起，每个里程碑合入后跑一次 `perf-diag/` 的 Step 2（分段耗时）与 Step 4（A/B），
-把数字追加到仓库根的 `PERF-BASELINE.md`：
+From M3 (storage working), after every milestone merge run Step 2 (segment
+timing) and Step 4 (A/B) of `perf-diag/` and append the numbers to
+`PERF-BASELINE.md` at the repo root:
 
 ```
-| 日期 | 里程碑 | 首屏@10s | 最差详情 | Overview | 30s请求数 | DB+WAL |
-|------|--------|---------|---------|----------|----------|--------|
-| —    | 参考实现（反面基线） | 5,884ms | 625ms/32.3MB | 4,732ms/524req | 508 | 471.6MB |
+| Date | Milestone | First screen @10s | Worst detail | Overview | Requests in 30s | DB+WAL |
+|------|-----------|-------------------|--------------|----------|-----------------|--------|
+| —    | reference (negative baseline) | 5,884ms | 625ms/32.3MB | 4,732ms/524req | 508 | 471.6MB |
 | ...  | M3 storage | | | | | |
 ```
 
-任何一列相对上一行劣化超过 20% 的提交不得合入，除非在提交说明中写清取舍并同步更新本文件的预算表。
+Any column degrading more than 20% vs the previous row blocks the commit
+unless the trade-off is documented in the commit message and the budget table
+in this file is updated in sync.
 
 ---
 
-## 7. 跳级信号
+## 7. Escalation signals
 
-出现以下任意一条，立刻按更高档位重新设计对应模块，不要等到全面超限：
+If any of the following appears, immediately redesign the affected module for
+the next tier — do not wait until everything is over budget:
 
-| 信号 | 触发的升级 |
-|------|-----------|
-| 单会话 event 数 > 20,000 | Gantt 时间轴 LOD 降采样 + 详情强制分页 |
-| 单个源文件 > 200MB | byte-offset 增量读从 P2 提升为强制项 |
-| 长期开启 MITM 采集 | `proxy_requests` 独立库 + FTS5 + 强制保留策略 |
-| 会话数 > 5,000 | 服务端搜索（FTS5）取代前端 filter |
-| 多人共用一个实例 | SQLite 单写锁成为瓶颈，需要写入串行化队列或改用外部 DB |
-| 扫描一轮 > 10s | 扫描移入 `worker_threads` pool |
+| Signal | Triggered upgrade |
+|--------|-------------------|
+| Events per session > 20,000 | Gantt timeline LOD downsampling + forced detail pagination |
+| Single source file > 200MB | byte-offset incremental reads promoted from P2 to mandatory |
+| Long-term MITM capture enabled | `proxy_requests` in a separate DB + FTS5 + enforced retention |
+| Sessions > 5,000 | server-side search (FTS5) replaces frontend filtering |
+| Multiple people share one instance | SQLite single-writer lock becomes the bottleneck; need a write serialization queue or external DB |
+| One scan round > 10s | move scanning into a `worker_threads` pool |

@@ -1,23 +1,29 @@
-# Contract: 数据模型
+# Contract: Data Model
 
-> **权威来源。** 所有 adapter、storage、API、前端组件的类型必须逐字采用本文件定义。
-> 本文件与 `contracts/database.md`、`contracts/api.md` 三者互相引用，冲突时以本文件为准。
-> 对应源文件：`src/core/trace-types.ts`
+> **Authoritative source.** All adapters, storage, API, and frontend component
+> types must adopt this file's definitions verbatim. This file cross-references
+> `contracts/database.md` and `contracts/api.md`; on conflict, this file wins.
+> Corresponding source file: `src/core/trace-types.ts`
 
-## 0. 通用约定
+## 0. General conventions
 
-- 所有时间戳为 **ISO 8601 UTC 字符串**（`2026-08-03T02:38:49.000Z`），不用毫秒数。唯一例外见 `contracts/database.md` §5（Trae 秒级时间戳的转换发生在 adapter 内部，出了 adapter 一律 ISO）。
-- 所有可选字段用 `?:`，**不用 `| undefined`**，且写库时 `undefined` 必须转 `null`。
-- 所有金额单位为 USD，`number`，保留原始精度不做四舍五入。
-- 所有 token 计数为 `number`，非负整数。
-- 字段命名：TypeScript 侧 camelCase，SQLite 侧 snake_case，映射在 storage 层完成，不泄漏到 API。
+- All timestamps are **ISO 8601 UTC strings** (`2026-08-03T02:38:49.000Z`), not
+  millisecond numbers. The only exception is `contracts/database.md` §5 (Trae's
+  second-level timestamps are converted inside the adapter; everything leaving
+  the adapter is ISO).
+- All optional fields use `?:`, **not `| undefined`**, and `undefined` must be
+  converted to `null` before writing to the DB.
+- All amounts are USD, `number`, preserving original precision without rounding.
+- All token counts are `number`, non-negative integers.
+- Field naming: camelCase on the TypeScript side, snake_case on the SQLite
+  side; the mapping happens in the storage layer and never leaks to the API.
 
 ---
 
-## 1. 枚举（全集，不得扩展）
+## 1. Enums (full set, must not be extended)
 
 ```ts
-/** 六阶段。分类算法见 specs/metrics-analysis REQ-001。 */
+/** Six phases. Classification algorithm: specs/metrics-analysis REQ-001. */
 export type TracePhase =
   | 'understand'
   | 'plan'
@@ -30,7 +36,7 @@ export const TRACE_PHASES: readonly TracePhase[] = [
   'understand', 'plan', 'implement', 'debug', 'verify', 'report',
 ] as const;
 
-/** 事件类型。 */
+/** Event kinds. */
 export type TraceKind =
   | 'llm'
   | 'tool'
@@ -50,13 +56,14 @@ export const TRACE_KINDS: readonly TraceKind[] = [
 ] as const;
 
 /**
- * 统一状态。各 provider 的原生状态由 adapter 归一化：
+ * Unified status. Provider-native statuses are normalized by adapters:
  *   completed → success | paused → running | canceled → cancelled
- * 归一化表见 specs/adapters REQ-010。
+ * Normalization table: specs/adapters REQ-010.
  */
 export type TraceStatus = 'success' | 'error' | 'running' | 'cancelled' | 'unknown';
 
-/** 9 个 provider。新增 provider 必须同时更新此枚举、扫描器、适配器、i18n 两个 locale。 */
+/** 9 providers. Adding a provider must update this enum, the scanner, the
+ * adapter, and both i18n locales at the same time. */
 export type ProviderKey =
   | 'claude'
   | 'codex'
@@ -73,46 +80,80 @@ export const PROVIDER_KEYS: readonly ProviderKey[] = [
   'codeagent', 'codeagent2', 'trae', 'qoder', 'workbuddy',
 ] as const;
 
-/** 数据来源。scan 与 proxy 在 UI 上分开展示（G7.4），不得混合。 */
+/** Data source. scan and proxy are shown separately in the UI (G7.4),
+ * never mixed. */
 export type DataSource = 'scan' | 'proxy';
 
-/** 代理捕获方式。 */
+/** Proxy capture method. */
 export type CaptureMethod = 'mitm' | 'cdp' | 'frida';
 
 /**
- * 详情返回档位。默认 slim。见 specs/storage REQ-006 与 contracts/nfr.md §2。
- *   slim — 仅渲染 Gantt 树所需字段，不含任何正文
+ * Detail response tier. Default slim. See specs/storage REQ-006 and
+ * contracts/nfr.md §2.
+ *   slim — fields needed to render the Gantt tree only, no body text
  *   full — slim + inputSummary + outputSummary
- *   raw  — full + raw（仅单 event 下钻端点支持）
+ *   raw  — full + raw (single-event drill-down endpoint only)
  */
 export type EventMode = 'slim' | 'full' | 'raw';
 
-/** 源文件类型，决定文件监视策略（chokidar vs 30s 轮询，见 G5.2）。 */
+/** Source file type; decides the watch strategy (chokidar vs 30s poll, G5.2). */
 export type SourceKind = 'jsonl' | 'json' | 'sqlite' | 'sqlcipher' | 'otel';
+```
+
+### 1.1 Cost & duration provenance (add-mission-control)
+
+```ts
+/**
+ * 成本来源。add-mission-control §1 P0-C：
+ * - reported：厂商直接给出金额（workbuddy credit）
+ * - estimated：由 pricing.ts 按 model 定价表估算
+ * - unknown：模型未知或定价表无此模型 → UI 必须渲染 `—`，禁止显示 $0.0000
+ */
+export type CostSource = 'reported' | 'estimated' | 'unknown';
+
+/**
+ * 事件时长来源。add-mission-control §1 P0-A：
+ * - measured：源数据自带真实起止（opencode OTel span / trae / workbuddy）
+ * - derived：由相邻时间戳推导，**含调度间隙**，消费方必须在口径行标注
+ * - unknown：既无测量也无推导
+ * ⚠️ 与 G4.1 同类风险：把推导值当测量值用会系统性高估。
+ */
+export type DurationSource = 'measured' | 'derived' | 'unknown';
 ```
 
 ---
 
-## 2. Token 与成本
+## 2. Tokens & cost
 
 ```ts
 export interface TokenUsage {
-  /** 提示词 token。增量语义，跨 event 求和。 */
+  /** Prompt tokens. Incremental semantics; summed across events. */
   input: number;
-  /** 生成 token。增量语义，跨 event 求和。 */
+  /** Generated tokens. Incremental semantics; summed across events. */
   output: number;
-  /** 推理 token。增量语义，跨 event 求和（G4.4）。 */
+  /** Reasoning tokens. Incremental semantics; summed across events (G4.4). */
   reasoning: number;
   /**
-   * 缓存读取 token。
-   * ⚠️ OpenCode / CodeArts / CodeAgent2 系为 session 级**累积值**，
-   * 跨 event 聚合必须用 Math.max()，不得 sum（G4.4，最易踩坑）。
-   * 其余 provider 为增量，用 sum。语义由 adapter 的 tokenSemantics 声明。
+   * Cache read tokens.
+   * ⚠️ OpenCode / CodeArts / CodeAgent2 family is **incremental per step**
+   * (measured calibration 2026-08-03: DeepSeek billing input =
+   * SUM(input) + SUM(cache.read); three steps 6016/4000/2000 should total
+   * 12016). Cross-event aggregation must use sum, never Math.max() (the old
+   * G4.4 cumulative assumption has been overturned). Other providers are
+   * incremental too, use sum. Semantics declared by the adapter's
+   * tokenSemantics.
    */
   cacheRead: number;
-  /** 缓存写入 token。增量语义。 */
+  /** Cache write tokens. Incremental semantics. */
   cacheWrite: number;
-  /** total = input + output + reasoning + cacheRead（G4.5，不要漏 reasoning）。 */
+  /**
+   * total = input + output + reasoning + cacheRead + cacheWrite.
+   * ⚠️ Whether reasoning counts is declared by the adapter's
+   * `reasoningInTotal` (#6, calibrated with real data 2026-08-04):
+   * OpenCode's total includes reasoning (output excludes it);
+   * CodeArts/DeepSeek's total excludes reasoning (reasoning is a subset of
+   * output).
+   */
   total: number;
 }
 
@@ -120,30 +161,41 @@ export const EMPTY_TOKEN_USAGE: TokenUsage = {
   input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 0,
 };
 
-/** adapter 必须声明其 provider 的 token 聚合语义，供 storage 层正确汇总。 */
+/** Adapters must declare their provider's token aggregation semantics so the
+ * storage layer aggregates correctly. */
 export interface TokenSemantics {
   cacheRead: 'cumulative' | 'incremental';
   reasoning: 'cumulative' | 'incremental';
+  /**
+   * #6 (calibrated with real data 2026-08-04):
+   * - OpenCode: tokens.total = input+output+reasoning+cache → true
+   * - CodeArts/CodeAgent2 (DeepSeek): tokens.total = input+output+cache,
+   *   reasoning is a subset of output → false
+   * Default true (other providers usually have reasoning 0 or unverified).
+   */
+  reasoningInTotal?: boolean;
 }
 ```
 
 ---
 
-## 3. 会话
+## 3. Sessions
 
 ```ts
 /**
- * 会话索引条目。列表接口返回此形状，**绝不包含 systemPrompt 正文**。
- * 实测依据：524 条索引 447.8KB / 5.33ms，是可接受的；带上 systemPrompt 会失控。
+ * Session index entry. List endpoints return this shape and **never include
+ * the systemPrompt body**. Measured basis: 524 index entries at 447.8KB /
+ * 5.33ms is acceptable; including systemPrompt would blow up.
  */
 export interface SessionIndexEntry {
   /**
-   * = deriveSessionKey(provider, sourcePath, innerId?) 的产物，
-   * 见 specs/session-scanning REQ-007（索引/详情同一口径，T-02）。
+   * = deriveSessionKey(provider, sourcePath, innerId?) result,
+   * see specs/session-scanning REQ-007 (index/detail share one derivation, T-02).
    */
   id: string;
   provider: ProviderKey;
-  /** provider 的展示名，可与 provider 不同（如 CodeArts SDD 子 agent）。 */
+  /** Display name of the provider; may differ from provider
+   * (e.g. CodeArts SDD subagents). */
   sourceAgent: string;
   title: string;
   startedAt: string;
@@ -155,13 +207,15 @@ export interface SessionIndexEntry {
   tokenTotal: number;
   costUsd: number;
   dataSource: DataSource;
-  /** 脱敏后的路径（home 目录已替换为 ~）。 */
+  /** Desensitized path (home dir replaced with ~). */
   sourcePath: string;
-  /** 是否已加载过详情。false 表示点开时会触发惰性扫描。 */
+  /** Whether detail was already loaded. false means opening triggers a lazy scan. */
   detailLoaded: boolean;
-  /** 合并组主键。非 null 时该条目代表一个合并组，见 specs/session-merge。 */
+  /** Merge-group primary key. Non-null means this entry represents a merge
+   * group, see specs/session-merge. */
   mergeGroupId: string | null;
-  /** systemPrompt 是否存在。正文不在此返回，需走详情接口。 */
+  /** Whether a systemPrompt exists. Body is not returned here; use the detail
+   * endpoint. */
   hasSystemPrompt: boolean;
 }
 
@@ -178,55 +232,78 @@ export interface TraceSession {
   eventCount: number;
   tokenUsage: TokenUsage;
   costUsd: number;
-  /** 由 proxy 捕获时间窗口关联而来，scan 数据本身没有（G5.4）。 */
+  /** Associated from proxy captures by time window; scan data itself has none
+   * (G5.4). */
   systemPrompt: string | null;
   dataSource: DataSource;
   sourcePath: string;
-  /** wall-clock 总时长 = 末 event.startedAt − 首 event.startedAt（G4.6，不是 sum）。 */
+  /** wall-clock total duration = last event.startedAt − first event.startedAt
+   * (G4.6, not a sum). */
   totalDurationMs: number;
-  /** OpenCode 系子 agent 会话标记，标题匹配 /\(@.*\bsubagent\)/i（G9.3）。 */
+  /** OpenCode-family subagent session flag, title matches /\(@.*\bsubagent\)/i
+   * (G9.3). */
   isSubagent: boolean;
+  /** Highest-token-share model of this session; null when the source data
+   * has no model (add-mission-control §1 P0-B, produced by the adapter's
+   * pickPrimaryModel). */
+  primaryModel?: string | null;
+  /** Trustworthiness of costUsd, see CostSource (add-mission-control §1
+   * P0-C). */
+  costSource?: CostSource;
+  /** Provenance of per-event durationMs, see DurationSource
+   * (add-mission-control §1 P0-A). When 'derived', every duration panel's
+   * criteria line MUST state "durations derived from adjacent timestamps,
+   * includes scheduling gaps". */
+  durationSource?: DurationSource;
 }
 ```
 
 ---
 
-## 4. 事件
+## 4. Events
 
 ```ts
-/** slim 档：Gantt 树渲染所需的全部字段，不含任何正文。 */
+/** slim tier: all fields needed to render the Gantt tree, no body text. */
 export interface TraceEventSlim {
   id: string;
   sessionId: string;
-  /** 1-based，同 session 内唯一且连续。合并后必须重排（G10.3）。 */
+  /** 1-based, unique and continuous within a session. Must be re-sequenced
+   * after merging (G10.3). */
   sequence: number;
   kind: TraceKind;
   phase: TracePhase;
-  /** 单行摘要，UI 直接展示。长度上限 200 字符，超出由 adapter 截断。 */
+  /** Single-line summary, shown directly in the UI. Max 200 chars; adapters
+   * truncate beyond that. */
   title: string;
   startedAt: string;
   durationMs: number;
   status: TraceStatus;
-  /** 执行者：user / assistant / subagent 名 / 工具名。 */
+  /** Actor: user / assistant / subagent name / tool name. */
   actor: string;
-  /** 工具名，非工具事件为 null。 */
+  /** Tool name, null for non-tool events. */
   tool: string | null;
   tokens: TokenUsage | null;
-  /** 错误摘要，上限 500 字符。完整错误在 full 档。 */
+  /** Error summary, max 500 chars. Full error lives in the full tier. */
   error: string | null;
-  /** 正文是否存在，供 UI 决定是否显示"展开"按钮。 */
+  /** Whether body text exists; lets the UI decide whether to show an
+   * "expand" button. */
   hasInput: boolean;
   hasOutput: boolean;
   hasRaw: boolean;
+  /** Model id for llm events; null for non-llm events or when the source has
+   * no model (add-mission-control §1 P0-B). */
+  model?: string | null;
 }
 
-/** full 档：slim + 正文。仅导出、报告生成、单 event 下钻使用。 */
+/** full tier: slim + body. Only for export, report generation, and
+ * single-event drill-down. */
 export interface TraceEvent extends TraceEventSlim {
   inputSummary: string | null;
   outputSummary: string | null;
 }
 
-/** raw 档：仅 GET /api/sessions/:key/events/:eventId?include=raw 返回。 */
+/** raw tier: only GET /api/sessions/:key/events/:eventId?include=raw returns
+ * this. */
 export interface TraceEventRaw extends TraceEvent {
   raw: string | null;
 }
@@ -234,10 +311,10 @@ export interface TraceEventRaw extends TraceEvent {
 
 ---
 
-## 5. 聚合单元
+## 5. Aggregation units
 
 ```ts
-/** adapter 的输出、UI 消费的完整单元。 */
+/** Adapter output; the complete unit consumed by the UI. */
 export interface TraceRecord {
   session: TraceSession;
   events: TraceEvent[];
@@ -245,73 +322,279 @@ export interface TraceRecord {
   tokenSemantics: TokenSemantics;
 }
 
-/** API 返回的详情形状。events 的档位由 mode 决定。 */
+/** Detail shape returned by the API. The events tier is decided by mode. */
 export interface SessionDetailResponse {
   session: TraceSession;
   events: TraceEventSlim[] | TraceEvent[];
   mode: EventMode;
-  /** 分页信息。event 数 > 2000 时启用，见 specs/storage REQ-007。 */
+  /** Pagination info. Enabled when event count > 2000, see
+   * specs/storage REQ-007. */
   eventTotal: number;
   eventOffset: number;
   eventLimit: number;
   hasMore: boolean;
-  /** Trae 等需异步解密的 provider，详情尚未就绪时为 true，由 SSE 后续推送。 */
+  /** true when providers requiring async decryption (e.g. Trae) don't have
+   * detail ready yet; SSE pushes later. */
   pending: boolean;
+}
+```
+
+### 5.1 Mission aggregation (add-mission-control)
+
+> Mission 视图的 widget 统一信封与完整响应。每个 widget 必带服务端下发的
+> `criteria` 口径行；`available=false` 时 `data` 必须为 `null` 且
+> `unavailableReason` 非空，前端渲染 EmptyState —— **禁止用 0 冒充**
+> （design.md §7.2，落实 frontend REQ-017/018）。
+
+```ts
+export type MissionRange = '7d' | '30d' | 'all';
+
+/** widget 统一信封 —— 这是本设计的核心机制。 */
+export interface MissionWidget<T> {
+  id: string;
+  /** 数据口径：表名 / 字段 / 计算方式 / 覆盖范围。服务端下发，前端不得自撰。 */
+  criteria: string;
+  /** false 时 data 为 null，前端渲染 EmptyState + reason，禁止渲染 0。 */
+  available: boolean;
+  /** available=false 时必填，如 'NO_PRICING_TABLE' / 'DURATION_NOT_MEASURED'。 */
+  unavailableReason: string | null;
+  data: T | null;
+}
+
+export interface NamedCount {
+  name: string;
+  count: number;
+  /** 该项中失败的次数（工具榜用）。 */
+  errorCount?: number;
+}
+
+export interface MissionToolRow {
+  tool: string;
+  calls: number;
+  errors: number;
+  /** MCP 工具（名字以 mcp__ 开头）。 */
+  isMcp: boolean;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  inBytes: number;
+  outBytes: number;
+}
+
+export interface MissionModelRow {
+  model: string;
+  calls: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  costUsd: number;
+  costSource: CostSource;
+}
+
+export interface MissionDayPoint {
+  day: string;
+  sessions: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  costUsd: number;
+  errorEvents: number;
+  successRate: number | null;
+}
+
+export interface MissionHourPoint {
+  /** 本地时区（按 tz 偏移后）的小时桶，ISO 到小时。 */
+  hour: string;
+  sessions: number;
+  messages: number;
+}
+
+export interface MissionUsage {
+  toolTop: MissionWidget<MissionToolRow[]>;
+  skillTop: MissionWidget<NamedCount[]>;
+  subagent: MissionWidget<{ rows: NamedCount[]; avgPerSession: number; sessionsWithSubagent: number }>;
+  /** 7×24 网格，heat[weekday][hour]，weekday 0=周一。 */
+  heatmap: MissionWidget<{ grid: number[][]; peak: number }>;
+  promptHabits: MissionWidget<{ n: number; p50: number; p95: number; max: number }>;
+  activity: MissionWidget<MissionHourPoint[]>;
+}
+
+export interface MissionQuality {
+  closure: MissionWidget<{
+    successRate: number | null;
+    sessions: number;
+    ok: number;
+    err: number;
+    e2eP50Ms: number | null;
+    e2eP90Ms: number | null;
+    e2eP99Ms: number | null;
+    turnsP50: number;
+    repairSessions: number;
+  }>;
+  costEfficiency: MissionWidget<{
+    totalUsd: number;
+    perTurnUsd: number | null;
+    perOkToolUsd: number | null;
+    perSessionUsd: number | null;
+    turns: number;
+    tools: number;
+    pricedSessions: number;
+    unpricedSessions: number;
+  }>;
+  toolFailure: MissionWidget<Array<{ tool: string; rate: number; errors: number; attempts: number }>>;
+  tokenTrend: MissionWidget<MissionDayPoint[]>;
+  apiQuality: MissionWidget<{
+    cacheHitRate: number | null;
+    totalIn: number;
+    totalCacheRead: number;
+    totalCacheWrite: number;
+    ttftP50Ms: number | null;
+    ttftP95Ms: number | null;
+    proxyCalls: number;
+    proxyErrorRate: number | null;
+  }>;
+  errorReasons: MissionWidget<NamedCount[]>;
+  riskyCommands: MissionWidget<Array<{ pattern: string; hits: number; sessionId: string; preview: string }>>;
+  drift: MissionWidget<MissionDayPoint[]>;
+  contextPressure: MissionWidget<{
+    windowSource: string;
+    peakPct: number | null;
+    p50Pct: number | null;
+    p95Pct: number | null;
+    over80Pct: number;
+    over95Pct: number;
+    samples: number;
+    histogram: NamedCount[];
+    compactions: number;
+    savedTokens: number;
+  }>;
+  models: MissionWidget<MissionModelRow[]>;
+  depth: MissionWidget<NamedCount[]>;
+  parallelism: MissionWidget<{
+    sessions: number;
+    avgRatio: number | null;
+    maxRatio: number | null;
+    parallelSessions: number;
+  }>;
+}
+
+export interface MissionHealth {
+  collectors: MissionWidget<{
+    scanStateRows: number;
+    providers: Array<{
+      key: ProviderKey;
+      enabled: boolean;
+      sessionCount: number;
+      lastScanAt: string | null;
+      ready: boolean;
+      blockedBy: string | null;
+    }>;
+    dbSizeBytes: number;
+    walSizeBytes: number;
+    schemaVersion: number;
+    uptimeMs: number;
+  }>;
+  dualChannel: MissionWidget<{
+    scanSessions: number;
+    proxyRequests: number;
+    linkedSessions: number;
+    scanOnly: number;
+    proxyOnly: number;
+    hints: string[];
+  }>;
+  calendar: MissionWidget<Array<{ day: string; sessions: number; hasError: boolean }>>;
+  hotSessions: MissionWidget<Array<{
+    id: string;
+    title: string;
+    provider: ProviderKey;
+    tokenTotal: number;
+    costUsd: number;
+    costSource: CostSource;
+  }>>;
+}
+
+/** GET /api/mission 完整响应（contracts/api.md §2.4）。 */
+export interface MissionResponse {
+  meta: {
+    range: MissionRange;
+    generatedAt: string;
+    tz: number;
+    widgetCount: number;
+    durationMs: number;
+    stamp: string;
+    cached: boolean;
+  };
+  usage: MissionUsage;
+  quality: MissionQuality;
+  health: MissionHealth;
 }
 ```
 
 ---
 
-## 6. 指标
+## 6. Metrics
 
 ```ts
-/** 持久化的基础指标。见 contracts/database.md 的 metrics 表。 */
+/** Persisted base metrics. See the metrics table in contracts/database.md. */
 export interface TraceMetricsBase {
   totalSteps: number;
-  /** 每个 phase 的累计时长，键为 TracePhase 全集，缺失阶段值为 0。 */
+  /** Cumulative duration per phase; keys are the full TracePhase set, missing
+   * phases are 0. */
   durationByPhase: Record<TracePhase, number>;
   toolCallCount: number;
   verificationPresent: boolean;
-  /** 算法版本。算法变更时 bump，触发重算。见 specs/metrics-analysis REQ-011。 */
+  /** Algorithm version. Bump on algorithm changes to trigger recompute.
+   * See specs/metrics-analysis REQ-011. */
   calcVersion: number;
 }
 
-/** 四维度指标。v5 起**持久化**（推翻 v4 的 G5.3 设计选择）。 */
+/** Four-dimension metrics. **Persisted since v5** (overturns v4's G5.3 design
+ * choice). */
 export interface TraceDimensionMetrics {
-  /** 快 */
+  /** Speed */
   avgToolDurationMs: number;
-  /** 准：有 verify phase 事件的比例，单会话为 0 或 1 */
+  /** Accuracy: verify-phase event count / step event count (#15, no longer
+   * always 0|1). */
   verificationCoverage: number;
-  /** 稳 */
+  /** Stability: error step count / step event count (#14; denominator
+   * excludes non-step events like user_prompt/message). */
   errorRate: number;
   enteredDebug: boolean;
-  /** 省 */
+  /** Cost */
   tokensPerStep: number;
   costUsd: number;
 }
 
 export interface TraceMetrics extends TraceMetricsBase, TraceDimensionMetrics {}
 
-/** 速度指标，运行时计算，不持久化。 */
+/** Speed metrics, computed at runtime, not persisted. */
 export interface SpeedMetrics {
-  /** 首 token 时延 (ms)。 */
+  /** Time to first token (ms). */
   ttftMs: number | null;
-  /** 每秒 token 数。 */
+  /** Tokens per second. */
   tps: number | null;
-  /** 每输出 token 时延 (ms)。 */
+  /** Time per output token (ms). */
   tpotMs: number | null;
-  /** 端到端 wall-clock (ms)。 */
+  /** End-to-end wall-clock (ms). */
   e2eMs: number;
-  /** 相邻 turn 间隔中位数 (ms)。 */
+  /** Median gap between adjacent turns (ms). */
   turnGapMedianMs: number | null;
   /**
-   * ⚠️ 纯 LLM 推理时长必须取自 InferHub.inference_duration。
-   * Kernel-Inference 的 duration 包含 Tool 执行时间（G4.1）。
+   * ⚠️ Pure LLM inference time must come from InferHub.inference_duration.
+   * Kernel-Inference duration includes tool execution time (G4.1).
    */
   pureInferenceMs: number | null;
+  /**
+   * Avg model response latency (ms): mean of the difference between each
+   * user_prompt and the next llm event's startedAt in time order (#12).
+   * turnGapMedianMs stays as the median "gap between two user inputs".
+   */
+  avgLlmResponseLatencyMs: number | null;
 }
 
-/** Agent Overview 聚合行，由服务端 SQL 直接产出，见 specs/storage REQ-009。 */
+/** Agent Overview aggregation row, produced directly by server SQL,
+ * see specs/storage REQ-009. */
 export interface AgentOverviewRow {
   provider: ProviderKey;
   sourceAgent: string;
@@ -332,7 +615,7 @@ export interface AgentOverviewRow {
 
 ---
 
-## 7. 代理与 Frida
+## 7. Proxy & Frida
 
 ```ts
 export interface ProxyRequest {
@@ -343,10 +626,11 @@ export interface ProxyRequest {
   url: string;
   hostname: string;
   requestHeaders: Record<string, string>;
-  /** 已脱敏。原文见 rawRequestBody。列表接口不返回本字段。 */
+  /** Desensitized. Original in rawRequestBody. List endpoints do not return
+   * this field. */
   requestBody: string | null;
   responseStatus: number | null;
-  /** 已脱敏。列表接口不返回本字段。 */
+  /** Desensitized. List endpoints do not return this field. */
   responseBody: string | null;
   contentType: string | null;
   isStreaming: boolean;
@@ -354,22 +638,26 @@ export interface ProxyRequest {
   completedAt: string | null;
   durationMs: number | null;
   captureMethod: CaptureMethod;
-  /** x-tt-encrypt-* 头存在时为 true。TTNet body 无法 MITM 解密（G6.2）。 */
+  /** true when x-tt-encrypt-* headers are present. TTNet bodies cannot be
+   * MITM-decrypted (G6.2). */
   ttnetEncrypted: boolean;
   systemPrompt: string | null;
-  /** 冗余长度列，为 getSystemPromptForSession 避免 LENGTH() 排序。 */
+  /** Redundant length column, avoids LENGTH() sorting for
+   * getSystemPromptForSession. */
   systemPromptLen: number;
   model: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
   parsedSessionId: string | null;
   parserRoute: string | null;
-  /** 未脱敏原文。仅在脱敏开启时填充（G8.3）。列表接口不返回。 */
+  /** Un-desensitized original. Filled only when desensitization is enabled
+   * (G8.3). List endpoints do not return it. */
   rawRequestBody: string | null;
   rawResponseBody: string | null;
 }
 
-/** 列表接口返回形状。显式排除 4 个 body 列 + systemPrompt 正文。 */
+/** List endpoint shape. Explicitly excludes the 4 body columns + the
+ * systemPrompt body. */
 export type ProxyRequestListItem = Omit<
   ProxyRequest,
   'requestBody' | 'responseBody' | 'rawRequestBody' | 'rawResponseBody' | 'systemPrompt' | 'requestHeaders'
@@ -391,23 +679,25 @@ export interface FridaCapture {
 
 ---
 
-## 8. 扫描状态
+## 8. Scan state
 
 ```ts
 /**
- * 增量扫描状态。**v4 中此表为空（实测 0 行）导致每轮重扫 800MB 源文件。**
- * v5 起为必填路径，写入失败必须抛错，不得静默跳过。
+ * Incremental scan state. **In v4 this table was empty (measured 0 rows),
+ * causing every round to rescan 800MB of sources.** Since v5 it is a
+ * mandatory path; write failures must throw, never fail silently.
  */
 export interface ScanState {
-  /** 主键。脱敏前的真实路径。 */
+  /** Primary key. The real path before desensitization. */
   sourcePath: string;
   provider: ProviderKey;
   sessionId: string | null;
   fileSize: number;
   fileMtimeMs: number;
-  /** SHA1(size + 首 4KB + 尾 4KB)，恒定成本指纹。 */
+  /** SHA1(size + first 4KB + last 4KB), constant-cost fingerprint. */
   contentHash: string;
-  /** JSONL 尾部增量读的续读位置。非 JSONL 源恒为 fileSize。 */
+  /** Resume position for JSONL tail incremental reads. Always fileSize for
+   * non-JSONL sources. */
   byteOffset: number;
   lastScanAt: string;
   eventCount: number;
@@ -422,18 +712,19 @@ export interface FileFingerprint {
 
 ---
 
-## 9. 配置
+## 9. Config
 
 ```ts
 export interface ProviderConfig {
   key: ProviderKey;
   enabled: boolean;
-  /** 支持 ~、~\、%VAR% 三种展开语法（G2.2）。 */
+  /** Supports ~, ~\, %VAR% expansion syntaxes (G2.2). */
   path: string;
   sourceKind: SourceKind;
   /**
-   * 监视策略。sqlite / sqlcipher 必须为 poll（WAL 模式下 chokidar 不可靠，G5.2）。
-   * poll 的指纹必须同时覆盖 -wal 文件，否则仍然检测不到变更。
+   * Watch strategy. sqlite / sqlcipher must be poll (chokidar unreliable in
+   * WAL mode, G5.2). poll fingerprints must also cover the -wal file, or
+   * changes still go undetected.
    */
   watchStrategy: 'chokidar' | 'poll';
   pollIntervalMs: number;
@@ -442,33 +733,37 @@ export interface ProviderConfig {
 
 export interface LocalSessionConfig {
   providers: Record<ProviderKey, ProviderConfig>;
-  /** Trae SQLCipher 密钥文件路径。 */
+  /** Trae SQLCipher key file path. */
   traeKeyPath: string | null;
-  /** 启动预热最近 N 个会话。默认 0（完全按需）。见 contracts/nfr.md §3。 */
+  /** Prewarm the most recent N sessions on startup. Default 0 (fully on
+   * demand). See contracts/nfr.md §3. */
   prewarmRecent: number;
 }
 ```
 
 ---
 
-## 10. 事件总线
+## 10. Event bus
 
 ```ts
 export interface BusEvents {
-  /** 单条会话新建。低频，不合并。 */
+  /** Single session created. Low frequency, not coalesced. */
   session_created: { key: string; provider: ProviderKey };
   /**
-   * ⚠️ v5 起**禁止**逐 session 发射。改用 sessions_changed 合并事件。
-   * 实测：逐条发射导致前端 30s 内 508 请求 / 151.2MB。
+   * ⚠️ Since v5, **per-session emission is forbidden**. Use the
+   * sessions_changed coalesced event instead. Measured: per-event emission
+   * caused 508 requests / 151.2MB in 30s on the frontend.
    */
   sessions_changed: { keys: string[]; count: number };
   session_deleted: { key: string };
   scan_started: { provider: ProviderKey | 'all' };
   scan_completed: { provider: ProviderKey | 'all'; count: number };
   proxy_request: { id: number; hostname: string };
-  /** proxy 异步启动/停止状态（D4：starting → running / idle），就绪由该事件通知。 */
+  /** Proxy async start/stop status (D4: starting → running / idle); readiness
+   * is signaled by this event. */
   proxy_status: { running: boolean; starting: boolean; port?: number | null; error?: string | null };
-  /** 服务端已按 100ms 窗口拼接，前端无需再节流。 */
+  /** Server already concatenates on a 100ms window; frontend needs no further
+   * throttling. */
   proxy_stream_chunk: { requestId: string; chunk: string };
   frida_capture: { id: number; model?: string; sessionId?: string };
   frida_status: { running: boolean; pid?: number };
@@ -477,26 +772,27 @@ export interface BusEvents {
 
 ---
 
-## 11. 类型级验收
+## 11. Type-level acceptance
 
-以下断言必须存在于 `src/core/trace-types.test.ts`，编译期即失败：
+The following assertions must exist in `src/core/trace-types.test.ts` and fail
+at compile time:
 
 ```ts
 import { expectTypeOf } from 'vitest';
 
-// 枚举全集不得遗漏
+// The full enum set must not lose entries
 expectTypeOf<TracePhase>().toEqualTypeOf<
   'understand' | 'plan' | 'implement' | 'debug' | 'verify' | 'report'
 >();
 
-// slim 档绝不含正文字段
+// slim tier must never contain body fields
 expectTypeOf<TraceEventSlim>().not.toHaveProperty('inputSummary');
 expectTypeOf<TraceEventSlim>().not.toHaveProperty('raw');
 
-// 索引条目绝不含 systemPrompt 正文
+// Index entries must never contain the systemPrompt body
 expectTypeOf<SessionIndexEntry>().not.toHaveProperty('systemPrompt');
 
-// 代理列表项绝不含任何 body
+// Proxy list items must never contain any body
 expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('requestBody');
 expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('rawResponseBody');
 ```

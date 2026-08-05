@@ -1,454 +1,577 @@
 # Spec: Frontend
 
-> React 19 SPA。源文件：`src/`
+> React 19 SPA. Source files: `src/`
 >
-> 视觉与原子组件见 `specs/design-system/spec.md`，数值见 `contracts/design-tokens.md`。
-> 本文件描述**页面怎么拼、数据怎么流、每个视图长什么样**。
+> Visuals and atomic components: `specs/design-system/spec.md`; numeric
+> values: `contracts/design-tokens.md`. This file describes **how the pages
+> are assembled, how data flows, and what each view looks like**.
 >
-> **REQ-001 – REQ-014 是既有编号，语义保持不变**（代码注释引用它们做溯源）。
-> REQ-015 起为本次设计刷新新增。
+> **REQ-001 through REQ-014 are existing numbers whose semantics are
+> unchanged** (code comments reference them for traceability). REQ-015 onward
+> are new in this design refresh.
 
 ## Purpose
 
-单页应用，展示 scan 会话轨迹、proxy 捕获、对比分析。`App.tsx` 是唯一 stateful shell。
+A single-page app showing scan session traces, proxy captures, and compare
+analysis. `App.tsx` is the only stateful shell.
 
-产品定位：**开发者最愿意打开的 Agent 可观测工具**。参照 GitHub / Linear / Grafana 的取舍——
-暗色优先、信息密集、键盘可达、语义克制。
+Product positioning: **the agent observability tool developers most want to
+open**. Modeled on GitHub / Linear / Grafana trade-offs — dark first,
+information-dense, keyboard-reachable, semantically restrained.
 
 ---
 
 ## Requirements
 
-### REQ-001: 五视图 shell
-`App.tsx` SHALL 提供 5 个视图：session / agent / compare / proxy / frida。
+### REQ-001: Six-view shell
+`App.tsx` SHALL provide 6 views: session / agent / compare / proxy / frida /
+mission.
 
-### REQ-002: 状态管理
-用 useState / useCallback / useMemo。phase、kind 过滤用 `useDeferredValue`，视图切换用 `startTransition`。
+### REQ-002: State management
+Use useState / useCallback / useMemo. phase/kind filtering uses
+`useDeferredValue`; view switching uses `startTransition`.
 
-> 注意：这两个是**调度**优化，不减少 DOM 节点数。渲染量问题由 REQ-006 的虚拟滚动解决。v4 把二者混为一谈是性能问题的成因之一。
+> Note: these are **scheduling** optimizations; they don't reduce DOM node
+> counts. Rendering volume is solved by REQ-006 virtual scrolling. v4
+> conflating the two was one cause of its performance problems.
 
-### REQ-003: 数据加载策略
-| 视图 | 请求 | 禁止 |
-|------|------|------|
-| session 列表 | `GET /api/sessions?dataSource=scan&limit=50` + 滚动加载 | 一次拉全量 |
-| session 详情 | `GET /api/sessions/:key`（slim） | 请求 `mode=full` |
-| event 正文 | `GET /api/sessions/:key/events/:id`（点击时，200ms 防抖） | 随详情一起拉 |
-| agent 视图 | `GET /api/agent-overview`（**1 个请求**） | 逐会话拉详情 |
-| compare | `POST /api/compare` | 分别拉两次详情 |
+### REQ-003: Data loading strategy
+| View | Request | Forbidden |
+|------|---------|-----------|
+| session list | `GET /api/sessions?dataSource=scan&limit=50` + scroll loading | fetching all at once |
+| session detail | `GET /api/sessions/:key` (slim) | requesting `mode=full` |
+| event body | `GET /api/sessions/:key/events/:id` (on click, 200ms debounce) | fetching with the detail |
+| agent view | `GET /api/agent-overview` (**1 request**) | per-session detail fetches |
+| compare | `POST /api/compare` | fetching the two details separately |
 
-#### Scenario: Agent 视图请求数
-- **GIVEN** 用户切到 agent 视图
-- **THEN** 网络面板中该视图产生的请求数 MUST 等于 1
-- **AND** v4 实测为 524 请求 / 299.6MB / 4,732ms
+#### Scenario: Agent view request count
+- **GIVEN** the user switches to the agent view
+- **THEN** the number of requests this view produces in the network panel MUST
+  equal 1
+- **AND** v4 measured 524 requests / 299.6MB / 4,732ms
 
-### REQ-004: SSE 局部 patch
-收到 `sessions_changed { keys }` 时 SHALL：
-1. 失效 `recordCache` 中对应 key
-2. 发起一次 `GET /api/sessions?keys=<逗号分隔>` 取回这些索引行
-3. 在 `startTransition` 中把返回行合并进**共享会话 store**（REQ-015）并按 `startedAt` 降序重排
+### REQ-004: SSE local patching
+On `sessions_changed { keys }`, SHALL:
+1. invalidate the matching keys in `recordCache`
+2. issue one `GET /api/sessions?keys=<comma-separated>` to fetch those index
+   rows
+3. merge the returned rows into the **shared session store** (REQ-015) inside
+   `startTransition`, sorted by `startedAt` descending
 
-MUST NOT 重新拉取全量索引。
+MUST NOT refetch the full index.
 
-### REQ-005: 双层缓存
-前端 SHALL 维护两层缓存：
-- `recordCache` — 会话详情（slim），上限 30 条 LRU
-- `eventDetailCache` — 单 event 正文，上限 100 条 LRU
+### REQ-005: Two-layer cache
+The frontend SHALL maintain two cache layers:
+- `recordCache` — session details (slim), LRU capped at 30
+- `eventDetailCache` — single-event bodies, LRU capped at 100
 
-### REQ-006: 虚拟滚动
-`SessionList`（会话列表）与 `TraceTimeline`（事件树）MUST 窗口化渲染，仅挂载视口内正负 10 行。
-命令面板的结果列表（REQ-025）同样 MUST 虚拟滚动。
+### REQ-006: Virtual scrolling
+`SessionList` (session list) and `TraceTimeline` (event tree) MUST
+window-render, mounting only 10 rows above and below the viewport. The command
+palette's result list (REQ-025) MUST also virtualize.
 
-#### Scenario: 最差会话渲染
-- **GIVEN** 打开 9,590 event 的会话
-- **THEN** DOM 节点数 < 500，首次绘制 < 200ms
+#### Scenario: worst-session rendering
+- **GIVEN** opening a session with 9,590 events
+- **THEN** DOM node count < 500, first paint < 200ms
 
-### REQ-007: 详情分页衔接
-`TraceTimeline` 滚动接近已加载数据末尾时 SHALL 请求下一页（`offset` 递增 2000），追加而非替换。
+### REQ-007: Detail pagination continuity
+When `TraceTimeline` scrolls near the end of loaded data, SHALL request the
+next page (`offset` incremented by 2000), appending rather than replacing.
 
-### REQ-008: 组件清单
+### REQ-008: Component list
 
-| 组件 | 职责 | 消费的数据档位 |
-|------|------|--------------|
-| `AppShell` | 全局头 + 视图 tabs + 三栏骨架 + 状态栏（REQ-015） | — |
-| `SessionList` | 左栏会话选择器 + 搜索 + 过滤（虚拟滚动，REQ-016） | SessionIndexEntry |
-| `SessionHeaderCard` | 会话元数据 + 四维指标条 + system prompt 入口（REQ-017） | TraceSession |
-| `PhaseRibbon` | 会话 phase 时间分布带（REQ-017） | slim events |
-| `PhaseTiles` | 6 phase 过滤 tile | slim events |
-| `TraceTimeline` | 时间比例甘特 + 树形缩进（虚拟滚动，REQ-017） | slim events |
-| `EventInspector` | **右栏**详情面板，拖拽调宽 + 分页签（REQ-017） | 单 event 下钻 |
-| `AgentOverview` | 跨会话聚合：KPI 卡 + 可排序对比表（REQ-018） | AgentOverviewRow[] |
-| `CompareBoard` | 左右并排对比（REQ-019） | slim events + SpeedMetrics |
-| `ProxyView` | MITM 控制 + 请求列表 + 详情抽屉（REQ-020） | ProxyRequestListItem[] |
-| `FridaView` | Frida 控制 + 捕获列表（REQ-021） | FridaCapture |
-| `StatusBar` | 连接/扫描/库状态（REQ-023） | health + SSE |
-| `CommandPalette` | ⌘K 全局跳转（REQ-025，懒加载） | SessionIndexEntry |
-| `SettingsModal` | provider 配置 | LocalSessionConfig |
-| `TranscriptModal` | 完整 transcript | mode=full（REQ-017 约束） |
-| `TokenTextModal` | token 分解下钻 | mode=full |
-| `LanguageToggle` / `ThemeToggle` | zh/en 切换、主题三态 | — |
+| Component | Responsibility | Data tier consumed |
+|-----------|----------------|--------------------|
+| `AppShell` | global header + view tabs + three-column skeleton + status bar (REQ-015) | — |
+| `SessionList` | left rail session selector + search + filters (virtual scroll, REQ-016) | SessionIndexEntry |
+| `SessionHeaderCard` | session metadata + four-dimension metric strip + system prompt entry (REQ-017) | TraceSession |
+| `PhaseRibbon` | session phase time-distribution band (REQ-017) | slim events |
+| `PhaseTiles` | 6 phase filter tiles | slim events |
+| `TraceTimeline` | time-proportional Gantt + tree indentation (virtual scroll, REQ-017) | slim events |
+| `EventInspector` | **right-rail** detail panel, draggable width + tabs (REQ-017) | single-event drill-down |
+| `AgentOverview` | cross-session aggregation: KPI cards + sortable compare table (REQ-018) | AgentOverviewRow[] |
+| `CompareBoard` | left/right side-by-side compare (REQ-019) | slim events + SpeedMetrics |
+| `ProxyView` | MITM control + request list + detail drawer (REQ-020) | ProxyRequestListItem[] |
+| `FridaView` | Frida control + capture list (REQ-021) | FridaCapture |
+| `StatusBar` | connection/scan/DB status (REQ-023) | health + SSE |
+| `CommandPalette` | ⌘K global jump (REQ-025, lazy-loaded) | SessionIndexEntry |
+| `SettingsModal` | provider config | LocalSessionConfig |
+| `TranscriptModal` | full transcript | mode=full (REQ-017 constraint) |
+| `TokenTextModal` | token breakdown drill-down | mode=full |
+| `LanguageToggle` / `ThemeToggle` | zh/en switch, three-state theme | — |
 
-> 组件重命名：`SampleRail` → `SessionList`、`TraceGanttTree` → `TraceTimeline`。
-> 旧名描述的是「样本轨」与「甘特树」，与实际职责不符。改名时同步改测试文件名。
+> Component renames: `SampleRail` → `SessionList`, `TraceGanttTree` →
+> `TraceTimeline`. The old names described "sample rail" and "Gantt tree",
+> which don't match actual responsibilities. Rename test files in sync.
 
-### REQ-009: pending 状态
-详情响应 `pending: true` 时 SHALL 展示"解密中"占位，并等待 SSE 通知后自动重取。MUST NOT 轮询。
+### REQ-009: pending state
+When the detail response has `pending: true`, SHALL show a "decrypting"
+placeholder and wait for the SSE notification to refetch. MUST NOT poll.
 
 ### REQ-010: i18n
-`t(key, locale)` 函数，`zh` / `en` 双字典。新字符串 MUST 同时加两个 locale。locale 存 localStorage 键 `agent-observability.locale`。错误码到人类可读文案的映射也走 i18n（后端只返回英文 message 与稳定 code）。
+`t(key, locale)` with `zh` / `en` dictionaries. New strings MUST be added to
+both locales. locale persists in localStorage key `agent-observability.locale`.
+Error-code → human-readable copy also goes through i18n (the backend only
+returns English messages and stable codes).
 
-**本次新增的 key 前缀**：`nav.*`、`state.*`（空/错/加载文案）、`metric.*`（快准稳省）、
-`palette.*`、`shortcut.*`、`theme.*`、`proxy.*`、`frida.*`。
+**New key prefixes this round**: `nav.*`, `state.*` (empty/error/loading copy),
+`metric.*` (Speed/Accuracy/Stability/Cost), `palette.*`, `shortcut.*`,
+`theme.*`, `proxy.*`, `frida.*`.
 
-### REQ-011: 紧凑 UI
-列表用紧凑密排行，不用留白型卡片。分组默认折叠。表格默认 `compact` 密度。
+### REQ-011: Compact UI
+Lists use compact dense rows, not whitespace cards. Groups collapsed by
+default. Tables default to `compact` density.
 
-> **对原文「紧凑单行」的细化（见 D-005）**：会话列表行为 `--row-lg`(44px) 的**双行密排**——
-> 首行标题、次行 meta。单行会强制截断唯一有意义的标签（现状即：一行只放得下
-> `rollout-2026-08-04T14-08-32-019fcb63…jsonl`）。
-> 约束的实质是「密排、非卡片」，不是「物理一行」。事件行仍为 `--row-sm`(28px) 单行。
+> **Refinement of the original "compact single row" (see D-005)**: session list
+> rows are **two-line dense** at `--row-lg` (44px) — first line title, second
+> line meta. A single line forces truncating the only meaningful label (today:
+> one line fits only
+> `rollout-2026-08-04T14-08-32-019fcb63…jsonl`). The essence of the constraint
+> is "dense, not cards", not "physically one line". Event rows stay single-line
+> at `--row-sm` (28px).
 
-### REQ-012: 字体调整
-长文本区域（inspector body、transcript、report）SHALL 支持 A- / A+ / R 调整，范围 8–28px。
-MUST NOT 影响 chrome（头、tabs、侧栏、状态栏）。
+### REQ-012: Font adjustment
+Long-text areas (inspector body, transcript, report) SHALL support A- / A+ /
+R, range 8-28px. MUST NOT affect chrome (header, tabs, side rails, status
+bar).
 
-### REQ-013: scan/proxy 分开展示
-scan 会话与 proxy 捕获是独立视图，不混在一起。
+### REQ-013: scan/proxy shown separately
+Scan sessions and proxy captures are independent views; never mixed.
 
-### REQ-014: bundled fallback
-`src/generated/local-samples.ts`（机器生成）提供 API 不可用时的 fallback 样本。
-使用 fallback 时 MUST 在状态栏显示「离线样本」标识，MUST NOT 让用户误以为是真实数据。
+### REQ-014: Bundled fallback
+`src/generated/local-samples.ts` (machine-generated) provides fallback samples
+when the API is unavailable. When using the fallback, MUST show an "offline
+samples" marker in the status bar; MUST NOT let the user mistake it for real
+data.
 
 ---
 
-### REQ-015: 应用骨架与共享会话 store
+### REQ-015: App skeleton and shared session store
 
-SHALL 采用固定三栏 + 上下 chrome 的骨架：
+SHALL use a fixed three-column + top/bottom chrome skeleton:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ AppHeader        ⌘K 搜索        [scan] [⚙] [☾] [文A]           │ 48px
+│ AppHeader        ⌘K search       [scan] [⚙] [☾] [EN]            │ 48px
 ├─────────────────────────────────────────────────────────────────┤
 │ ViewTabs   Sessions │ Agents │ Compare │ Proxy │ Frida          │ 40px
 ├──────────────┬──────────────────────────────┬───────────────────┤
 │ SessionList  │  Main                        │  EventInspector   │
-│ 300px 可拖   │  flex, min-width 0           │  420px 可拖       │
+│ 300px drag   │  flex, min-width 0           │  420px drag       │
 │ 260–480      │                              │  280–900          │
 ├──────────────┴──────────────────────────────┴───────────────────┤
 │ StatusBar  ● live · 38 sessions · db 2.4MB · scan idle          │ 28px
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-- ViewTabs 用 `underline` 变体（GitHub 式），选中项底部 2px `--accent-emphasis`。
-- 左/右栏可折叠（`[` / `]`），折叠状态与宽度持久化（REQ-026）。
-- 只有 session 视图是三栏；agent / compare / proxy / frida 为单栏主区（proxy 的请求详情走 `Drawer`）。
+- ViewTabs uses the `underline` variant (GitHub-style), selected item has a
+  2px `--accent-emphasis` bottom bar.
+- Left/right rails collapsible (`[` / `]`); collapse state and widths persist
+  (REQ-026).
+- Only the session view is three-column; agent / compare / proxy / frida are
+  single-column main areas (proxy detail goes in a `Drawer`).
 
-**共享会话 store**：会话索引列表 SHALL 由 `App.tsx` 单一持有并向下传递，
-`SessionList` MUST NOT 维护自己的会话数组。
+**Shared session store**: the session index list SHALL be owned solely by
+`App.tsx` and passed down; `SessionList` MUST NOT maintain its own session
+array.
 
-#### Scenario: 对比视图能选到会话（修复既有缺陷）
-- **GIVEN** 应用刚启动，用户直接切到 compare 视图
-- **THEN** 左右两个会话选择器 MUST 已填充与 session 视图相同的会话列表
-- **AND** MUST NOT 为空
+#### Scenario: compare view can select sessions (fixes an existing defect)
+- **GIVEN** the app just started and the user switches directly to compare
+- **THEN** both left and right session pickers MUST be populated with the same
+  session list as the session view
+- **AND** MUST NOT be empty
 
-> **现状缺陷**：`App.tsx` 的 `sessions` state 只被 SSE patch 写入，
-> 而 `SampleRail` 持有另一份独立 state。`CompareBoard sessions={sessions}` 收到的
-> 永远是 `[]`，两个下拉框永远为空，对比功能 100% 不可用。
-> 这是「点击后无法加载」中**最确凿**的一条。
+> **Current defect**: App.tsx's `sessions` state is only written by SSE
+> patches, while `SampleRail` holds a separate independent state.
+> `CompareBoard sessions={sessions}` always receives `[]`, so both dropdowns
+> are always empty and compare is 100% unusable. This is the most
+> unequivocal "click and nothing loads" case.
 
 ---
 
-### REQ-016: 会话列表行
+### REQ-016: Session list rows
 
-行高 `--row-lg`(44px)，双行密排：
+Row height `--row-lg` (44px), two-line dense:
 
 ```
 ┌────────────────────────────────────────────────┐
-│ ●  修复 SQLite 索引展开逻辑                     │  ← 状态点 + 标题（省略号截断）
-│    ⟨C⟩ claude · 2h ago · 110 events · 1.9M tok │  ← provider 章 + 相对时间 + 计数
+│ ●  Fix SQLite index expansion logic            │  ← status dot + title (ellipsis truncation)
+│    ⟨C⟩ claude · 2h ago · 110 events · 1.9M tok │  ← provider monogram + relative time + counts
 └────────────────────────────────────────────────┘
 ```
 
-| 元素 | 规则 |
-|------|------|
-| 状态点 | `StatusBadge` 的点形态，色见契约 §2.4 |
-| 标题 | `--text-base`，`--fg-default`，单行省略号 |
-| provider | `ProviderBadge` 字母章 12px |
-| 时间 | 相对时间（`2h ago` / `3天前`），`title` 属性给绝对时间 |
-| 计数 | events 与 token，`--font-mono`，`--text-xs`，`--fg-muted` |
-| 选中 | 底 `--accent-subtle` + 左侧 2px `--accent-emphasis` 竖条 |
-| hover | 底 `--canvas-raised`，无过渡（G-DS-4） |
+| Element | Rule |
+|---------|------|
+| Status dot | `StatusBadge` dot form, color per contract §2.4 |
+| Title | `--text-base`, `--fg-default`, single-line ellipsis |
+| Provider | `ProviderBadge` monogram 12px |
+| Time | relative (`2h ago` / `3d ago`); `title` attribute gives absolute time |
+| Counts | events and tokens, `--font-mono`, `--text-xs`, `--fg-muted` |
+| Selected | `--accent-subtle` background + 2px `--accent-emphasis` left bar |
+| Hover | `--canvas-raised` background, no transition (G-DS-4) |
 
-**过滤区**（列表顶部，`--row-md` 高）：`SearchInput`（`/` 聚焦）+ provider 多选 + status 多选。
-过滤条件 MUST 反映在 URL hash，便于分享与刷新保持。
+**Filter area** (list top, `--row-md` height): `SearchInput` (`/` focus) +
+provider multi-select + status multi-select. Filters MUST be reflected in the
+URL hash for sharing and refresh persistence.
 
-#### Scenario: 列表显示真实标题而非文件名
-- **GIVEN** 库中存在尚未加载详情的会话（`detailLoaded = false`）
-- **THEN** 列表行 MUST 显示真实会话标题与真实 `eventCount`
-- **AND** MUST NOT 显示 `rollout-2026-08-04T14-08-32-019fcb63-566f-70d1-….jsonl` 这类源文件名
-- **AND** MUST NOT 显示 `0 events`
+#### Scenario: list shows real titles, not file names
+- **GIVEN** the DB contains sessions whose details were never loaded
+  (`detailLoaded = false`)
+- **THEN** list rows MUST show the real session title and real `eventCount`
+- **AND** MUST NOT show source file names like
+  `rollout-2026-08-04T14-08-32-019fcb63-566f-70d1-….jsonl`
+- **AND** MUST NOT show `0 events`
 
-> **现状缺陷**：索引阶段不解析正文，38 条会话里 34 条的 title 是源文件名、`eventCount` 是 0，
-> 只有点开过的 4 条才有真值。用户看到的是一屏无法辨认的文件名——
-> 「点了才知道是什么」正是本条要消灭的体感。
-> **依赖后端**：由 `specs/session-scanning/spec.md` REQ-021 提供轻量标题提取。
+> **Current defect**: the index phase doesn't parse bodies, so of 38 sessions
+> 34 had file-name titles and `eventCount` 0; only the 4 opened ones had real
+> values. The user sees a screen of unidentifiable file names — "you only know
+> after clicking" is exactly the feel this REQ eliminates. **Backend
+> dependency**: lightweight title extraction per
+> `specs/session-scanning/spec.md` REQ-021.
 
-#### Scenario: 已加载与未加载视觉一致
-- **GIVEN** 同屏内既有 `detailLoaded=true` 也有 `false` 的行
-- **THEN** 两者渲染结构 MUST 完全一致，MUST NOT 出现某些行缺字段导致的高度差
+#### Scenario: loaded and unloaded look identical
+- **GIVEN** both `detailLoaded=true` and `false` rows on screen
+- **THEN** both render identically; MUST NOT have height differences from
+  missing fields on some rows
 
 ---
 
-### REQ-017: 会话详情主区
+### REQ-017: Session detail main area
 
-自上而下四段：
+Four segments top to bottom:
 
 **① SessionHeaderCard**
-- 第一行：`ProviderBadge` + 会话标题（`--text-xl`）+ `StatusBadge` + 溢出菜单（重扫 / 删除 / 复制 id / 导出报告）
-- 第二行 meta：`cwd`（等宽、可复制）· 起止时间 · 时长 · model
-- 第三行**四维指标条**：4 个 `MetricCard`
+- First row: `ProviderBadge` + session title (`--text-xl`) + `StatusBadge` +
+  overflow menu (rescan / delete / copy id / export report)
+- Second row meta: `cwd` (monospace, copyable) · start/end times · duration ·
+  model
+- Third row **four-dimension metric strip**: 4 `MetricCard`s
 
-  | 维度 | 图标 | 主数 | 副文 |
-  |------|------|------|------|
-  | 快 | `IconSpeed` | TTFT / TPS | 端到端时长 |
-  | 准 | `IconAccuracy` | verificationCoverage | 是否跑过测试 |
-  | 稳 | `IconStability` | errorRate | 是否进入过 debug |
-  | 省 | `IconCost` | tokenTotal | costUsd · tokensPerStep |
+  | Dimension | Icon | Primary | Secondary |
+  |-----------|------|---------|-----------|
+  | Speed | `IconSpeed` | TTFT / TPS | end-to-end duration |
+  | Accuracy | `IconAccuracy` | verificationCoverage | whether tests ran |
+  | Stability | `IconStability` | errorRate | whether debug was entered |
+  | Cost | `IconCost` | tokenTotal | costUsd · tokensPerStep |
 
-  数值为 `null` 时显示 `—` 并加 tooltip 说明为何不可用，MUST NOT 显示 `0` 冒充。
+  `null` values display `—` with a tooltip explaining why; MUST NOT show `0`
+  as a stand-in.
 
-**② PhaseRibbon**（产品 signature）
-按时间轴铺满宽度的横向色带，每段宽度 = 该 phase 的时间占比，色 = `--phase-*`。
-悬停显示 phase 名 + 时长 + 事件数；点击等价于只勾选该 phase。
-高度 8px，`--radius-full`。这是「一眼看出这次会话把时间花在哪」的核心视觉。
+**② PhaseRibbon** (product signature)
+A horizontal color band spanning the full width on the time axis; each
+segment's width = that phase's time share, color = `--phase-*`. Hover shows
+phase name + duration + event count; click equals selecting only that phase.
+Height 8px, `--radius-full`. This is the core visual for "see at a glance
+where this session spent its time".
 
 **③ PhaseTiles**
-6 个 tile，选中态用该 phase 的 `-subtle` 底 + 本色文字 + 图标；每个 tile 带计数徽标。
-附「全选 / 反选」与当前可见事件数。
+6 tiles; selected state uses that phase's `-subtle` background + same-hue text
++ icon; each tile carries a count badge. Plus "select all / deselect all" and
+the currently visible event count.
 
 **④ TraceTimeline**
-行高 `--row-sm`(28px)，虚拟滚动。每行：
+Row height `--row-sm` (28px), virtual scroll. Each row:
 
 ```
 │ ▸ │ #142 │ ⟨icon⟩ │ ████▌        │ Read src/App.tsx      │ 1.2s │ ✓ │
    ↑     ↑      ↑         ↑               ↑                   ↑     ↑
- 折叠  序号  phase图标  时间比例条      标题（树形缩进）      时长  状态
+fold  seq  phase icon  time bar       title (tree indent)  duration  status
 ```
 
-| 要求 | 说明 |
-|------|------|
-| 时间比例条 | 左偏移与宽度按事件在会话时间轴上的真实位置/时长计算，**不是等宽条** |
-| 树形缩进 | tool 调用相对其父 message 缩进一级，最多 3 级；父行可折叠 |
-| phase | 图标 + 色（REQ-004 of design-system：颜色不单独承载语义） |
-| 零时长事件 | 渲染为最小 2px 竖线，MUST NOT 不可见 |
-| 选中行 | `--accent-subtle` 底 + 左侧竖条 |
+| Requirement | Description |
+|-------------|--------------|
+| Time-proportional bar | left offset and width computed from the event's real position/duration on the session timeline, **not equal-width bars** |
+| Tree indentation | tool calls indent one level under their parent message, max 3 levels; parent rows collapsible |
+| phase | icon + color (design-system REQ-004: color alone carries no meaning) |
+| zero-duration events | render as a minimum 2px vertical line, MUST NOT be invisible |
+| selected row | `--accent-subtle` background + left bar |
 
-**⑤ EventInspector**（右栏）
-- 头部：`#序号` + 事件标题 + 复制 id + 关闭
-- 分页签：`Summary` / `Input` / `Output` / `Raw` / `Tokens`
-- `Raw` 页签**按需拉取**（`include=raw`），切到该页签才请求
-- 正文区域受 REQ-012 字号调整控制，代码块 `--font-mono` + `--canvas-inset` 底 + 复制按钮
+**⑤ EventInspector** (right rail)
+- Header: `#sequence` + event title + copy id + close
+- Tabs: `Summary` / `Input` / `Output` / `Raw` / `Tokens`
+- The `Raw` tab fetches **on demand** (`include=raw`); request only when the
+  tab is switched to
+- Body area controlled by REQ-012 font adjustment; code blocks
+  `--font-mono` + `--canvas-inset` background + copy button
 
-#### Scenario: transcript 不拉全量
-- **GIVEN** 用户在一个 648 event 的会话中打开 Transcript
-- **THEN** MUST NOT 一次性请求整个会话的 `mode=full`
-- **AND** SHALL 分页拉取（复用 REQ-007 的 offset/limit 机制）并在弹层内虚拟滚动
+#### Scenario: transcript does not fetch everything
+- **GIVEN** the user opens Transcript in a 648-event session
+- **THEN** MUST NOT request the whole session's `mode=full` at once
+- **AND** SHALL paginate (reusing the REQ-007 offset/limit mechanism) and
+  virtualize inside the modal
 
-> **现状缺陷**：`App.tsx` 的 `openTranscript` 无条件 `api.sessionDetail(key, 'full')`，
-> 对大会话会拉出数十 MB 阻塞主线程——违反 `gotchas.md` G11.1。
+> **Current defect**: App.tsx's `openTranscript` unconditionally calls
+> `api.sessionDetail(key, 'full')`; for large sessions this pulls tens of MB
+> and blocks the main thread — violating `gotchas.md` G11.1.
 
 ---
 
-### REQ-018: Agent 概览视图
+### REQ-018: Agent overview view
 
-**① 顶部 KPI 行**：4 张 `MetricCard`，为全部 provider 的加权聚合（快 / 准 / 稳 / 省）。
+**① Top KPI row**: 4 `MetricCard`s aggregating all providers (Speed /
+Accuracy / Stability / Cost).
 
-**② Provider 对比表**：可排序，密度 `compact`，表头 sticky。
+**② Provider compare table**: sortable, density `compact`, sticky header.
 
-| 列 | 渲染 |
-|----|------|
-| Provider | `ProviderBadge` + 名称 + sourceAgent |
-| Sessions | 数字 |
-| Events | 数字 + `Sparkline`（按时间分桶） |
-| Tokens | 数字（千分位）+ `BarMeter`（相对最大值） |
+| Column | Render |
+|--------|--------|
+| Provider | `ProviderBadge` + name + sourceAgent |
+| Sessions | number |
+| Events | number + `Sparkline` (time-bucketed) |
+| Tokens | number (thousands separator) + `BarMeter` (relative to max) |
 | Cost | `$x.xxx` + `BarMeter` |
-| 验证覆盖 | 百分比 + `BarMeter`（tone=success） |
-| 错误率 | 百分比 + `BarMeter`（tone=danger） |
-| Debug 率 | 百分比 + `BarMeter`（tone=attention） |
-| 平均工具耗时 | `xxxms` |
+| Verification coverage | percent + `BarMeter` (tone=success) |
+| Error rate | percent + `BarMeter` (tone=danger) |
+| Debug rate | percent + `BarMeter` (tone=attention) |
+| Avg tool duration | `xxxms` |
 
-- 数值列右对齐、`--font-mono`；`null` 显示 `—` 而非 `0`（现状表格把 `null` 和 `0` 混淆）。
-- 行可展开，展开后列出该 provider 下最近 10 条会话（点击跳到 session 视图并选中）。
-- 表头显示数据新鲜度（`cached` / `fresh` + 时间戳），带手动刷新按钮。
+- Numeric columns right-aligned, `--font-mono`; `null` shows `—` not `0` (the
+  current table confuses `null` and `0`).
+- Rows expandable; expanding lists the provider's 10 most recent sessions
+  (click jumps to the session view and selects).
+- Table header shows data freshness (`cached` / `fresh` + timestamp) with a
+  manual refresh button.
 
-仍受 REQ-003 约束：整个视图 **1 个请求**。展开行复用已有会话 store，MUST NOT 逐会话 fetch（G11.9）。
-
----
-
-### REQ-019: 对比视图
-
-**① 选择条**：左右两个会话选择器。SHALL 用 `Popover` + 搜索的选择器（复用命令面板的匹配逻辑），
-MUST NOT 用原生 `<select>` 罗列数百条会话。左标 `L`、右标 `R`，配色 accent / attention，
-且 MUST 附字母标记（颜色不单独承载语义）。
-
-**② 结论条**：对比加载后，顶部用一句话给结论 —— 例如
-「Claude 快 2.3×，但 token 多 41%」。这是开发者最想先看到的东西。
-
-**③ 四维对比**：4 组 `BarMeter` 双条（L/R 各一条），差值用 `+41%` / `−2.3×` 标注，
-颜色按「谁更优」着色而非固定左右色。
-
-**④ PhaseRibbon 对照**：两条 ribbon 上下堆叠、共享同一时间比例尺，直观看出阶段分布差异。
-
-**⑤ 时间线并排**：两列虚拟滚动，同屏最多各 100 行；行结构复用 `TraceTimeline`。
-
-#### Scenario: 未选择时的引导
-- **GIVEN** 用户刚进入 compare 视图，尚未选择会话
-- **THEN** SHALL 渲染 `EmptyState`：图标 + 「选择两个会话开始对比」+ 直接打开左侧选择器的按钮
-- **AND** MUST NOT 只渲染两个空下拉框
+Still constrained by REQ-003: the whole view is **1 request**. Expanded rows
+reuse the existing session store; MUST NOT fetch per session (G11.9).
 
 ---
 
-### REQ-020: 代理视图
+### REQ-019: Compare view
 
-**① 控制条**
-- 状态指示：`stopped` / `running :8888` / `starting`
-- 主按钮：启动 / 停止（停止为破坏性，需二次确认）
-- 端口输入（停止态可改）
-- 「下载 CA 证书」按钮 + 一句安装指引链接
-- 请求计数 + 清空按钮（破坏性，二次确认）
+**① Selector strip**: left/right session pickers. SHALL use a `Popover` +
+search picker (reusing the command palette's matching logic), MUST NOT use a
+native `<select>` listing hundreds of sessions. Left marked `L`, right `R`,
+colors accent / attention, and MUST also carry letter markers (color alone
+carries no meaning).
 
-对应后端端点 `POST /api/proxy/start`、`POST /api/proxy/stop`
-（已在 `contracts/api.md` §4 定义，**当前未实现**，见 `UI-TASKS.md` T-12）。
+**② Verdict strip**: after loading, one sentence at the top — e.g. "Claude is
+2.3× faster but uses 41% more tokens". This is what developers want to see
+first.
 
-**② 请求列表**：密排表格，虚拟滚动。列：方法（色标 badge）· URL（省略中段保留域名与末段）·
-状态码（2xx success / 3xx neutral / 4xx attention / 5xx danger）· 耗时 · 大小 · 时间。
-支持按方法/状态码/域名过滤。
+**③ Four-dimension compare**: 4 pairs of `BarMeter` double bars (one per L/R),
+deltas labeled `+41%` / `−2.3×`, colored by "who is better" rather than fixed
+left/right colors.
 
-**③ 详情抽屉**：点击行右侧滑出，分页签 `Request` / `Response` / `Headers` / `Timing`，
-正文 `--font-mono` + 复制按钮，脱敏后的字段用 `Badge` 标注「已脱敏」。
+**④ PhaseRibbon comparison**: two ribbons stacked, sharing one time scale, to
+see phase-distribution differences at a glance.
 
-#### Scenario: 代理未启动时的空态
-- **GIVEN** 代理从未启动，请求列表为空
-- **THEN** SHALL 渲染 `EmptyState`：说明「代理未运行」+ 启动按钮 + CA 证书安装提示
-- **AND** MUST NOT 只渲染一句「暂无数据」
+**⑤ Side-by-side timelines**: two columns of virtual scroll, at most 100 rows
+each on screen; row structure reuses `TraceTimeline`.
 
----
-
-### REQ-021: Frida 视图
-
-**① 控制条**：状态（`stopped` / `running pid=xxxx`）· 启动/停止按钮 · 目标进程选择（省略则自动发现）。
-对应 `POST /api/frida/start`、`POST /api/frida/stop`（`contracts/api.md` §5 已定义，**当前未实现**）。
-
-**② 捕获列表**：密排表格，列：类型 badge · model · 时间 · 大小；点击进详情抽屉。
-
-**③ 前置条件未满足时**：Frida 未安装 / 无目标进程 → `EmptyState` 说明具体缺什么、怎么装，
-MUST NOT 只显示 `stopped`。
+#### Scenario: guidance when nothing is selected
+- **GIVEN** the user just entered compare without selecting sessions
+- **THEN** SHALL render `EmptyState`: icon + "select two sessions to compare"
+  + a button that opens the left picker directly
+- **AND** MUST NOT just render two empty dropdowns
 
 ---
 
-### REQ-022: 四态落地（**本次核心修复**）
+### REQ-020: Proxy view
 
-下列每一处 SHALL 实现 `design-system` REQ-006 的四态，且 `catch` 块 MUST NOT 为空：
+**① Control strip**
+- Status indicator: `stopped` / `running :8888` / `starting`
+- Primary buttons: start / stop (stop is destructive, needs confirmation)
+- Port input (editable while stopped)
+- "Download CA cert" button + one-line install guide link
+- Request count + clear button (destructive, confirmation)
 
-| 位置 | 现状 | 要求 |
-|------|------|------|
-| `SessionList` 列表加载 | `catch {}` 静默 | skeleton / empty / error+重试 |
-| `App.selectSession` 详情加载 | `catch {}` 静默 | 主区 skeleton；失败显示错误码 + 重试 |
-| `EventInspector` 事件正文 | `catch` → `setDetail(null)` 与「无数据」不可区分 | 区分 empty 与 error |
-| `AgentOverview` | 有 error 但无 skeleton / empty | 补齐四态 |
-| `CompareBoard` | 有 error 但无 empty 引导 | 补齐 |
-| `ProxyView` / `FridaView` | 空列表与失败不可区分 | 补齐 |
-| `SettingsModal` | `catch` → `setConfig(null)` 永久停在「加载中」 | 失败显示 error + 重试 |
+Backend endpoints `POST /api/proxy/start`, `POST /api/proxy/stop`
+(defined in `contracts/api.md` §4, **currently not implemented**; see
+`UI-TASKS.md` T-12).
 
-#### Scenario: 后端不可达
-- **GIVEN** 后端进程被杀死
-- **WHEN** 用户点击任意会话
-- **THEN** 主区 MUST 在 5 秒内显示错误态（错误码 + 文案 + 重试按钮）
-- **AND** 状态栏的 live 指示 MUST 变为断开
-- **AND** MUST NOT 停留在空白或无限骨架
+**② Request list**: dense table, virtual scroll. Columns: method (colored
+badge) · URL (ellipsized middle, keeping host and tail) · status code (2xx
+success / 3xx neutral / 4xx attention / 5xx danger) · duration · size · time.
+Filterable by method/status/hostname.
 
-#### Scenario: SQLite 类 provider 详情为空
-- **GIVEN** 用户点击一条 opencode 或 codearts 会话，后端返回 `events: []` 且 `title` 为空
-- **THEN** SHALL 渲染 `EmptyState` 说明「该会话未解析出事件」并提供「重新扫描」动作
-- **AND** MUST NOT 渲染一个什么都没有的空白主区
+**③ Detail drawer**: slides in from the right on row click, tabs `Request` /
+`Response` / `Headers` / `Timing`, body `--font-mono` + copy button,
+desensitized fields marked with a "desensitized" `Badge`.
 
-> **现状缺陷**：`GET /api/sessions/opencode-7ff9bf5edb628d` 与
-> `.../codearts-c79b25e584d002` 实测返回 `events: 0`、`title: ""`、`pending: undefined`。
-> 前端对此没有任何呈现，表现为纯白空白。后端修复见 `UI-TASKS.md` T-11。
+#### Scenario: empty state when proxy never started
+- **GIVEN** the proxy never started and the request list is empty
+- **THEN** SHALL render `EmptyState`: "proxy is not running" + start button +
+  CA cert install hint
+- **AND** MUST NOT just render "no data"
 
 ---
 
-### REQ-023: 状态栏
+### REQ-021: Frida view
 
-底部固定 28px，左起：
+**① Control strip**: status (`stopped` / `running pid=xxxx`) · start/stop
+buttons · target process picker (auto-discover when omitted). Backend
+`POST /api/frida/start`, `POST /api/frida/stop` (defined in
+`contracts/api.md` §5, **currently not implemented**).
 
-| 段 | 内容 |
-|----|------|
-| 连接 | SSE 状态点 + `live` / `disconnected`（`aria-live="polite"`） |
-| 数据 | `38 sessions · 12,405 events` |
-| 扫描 | `idle` / `scanning claude…` / `last scan 2m ago`，可点击触发手动扫描 |
-| 库 | `db 2.4MB · wal 0.03MB`（来自 `/api/health`） |
-| 右侧 | 数据源标识：`scan` / `offline samples`（REQ-014）· 版本号 |
+**② Capture list**: dense table, columns: type badge · model · time · size;
+click opens a detail drawer.
 
-状态栏 MUST NOT 轮询 `/api/health`——数据随 SSE 心跳更新，或用户手动刷新时更新。
+**③ Prerequisites not met**: Frida not installed / no target process →
+`EmptyState` explaining exactly what's missing and how to install; MUST NOT
+just show `stopped`.
 
 ---
 
-### REQ-024: URL 状态同步
+### REQ-022: Four states landed (the core fix this round)
 
-视图、选中会话、过滤条件 SHALL 反映在 URL hash，形如：
+Every location below SHALL implement the design-system REQ-006 four states,
+and `catch` blocks MUST NOT be empty:
+
+| Location | Current | Required |
+|----------|---------|----------|
+| `SessionList` list loading | `catch {}` silent | skeleton / empty / error+retry |
+| `App.selectSession` detail loading | `catch {}` silent | main-area skeleton; failure shows code + retry |
+| `EventInspector` event body | `catch` → `setDetail(null)` indistinguishable from "no data" | distinguish empty and error |
+| `AgentOverview` | has error but no skeleton / empty | complete the four states |
+| `CompareBoard` | has error but no empty guidance | complete |
+| `ProxyView` / `FridaView` | empty list and failure indistinguishable | complete |
+| `SettingsModal` | `catch` → `setConfig(null)` stuck at "loading" forever | failure shows error + retry |
+
+#### Scenario: backend unreachable
+- **GIVEN** the backend process is killed
+- **WHEN** the user clicks any session
+- **THEN** the main area MUST show the error state within 5 seconds (error
+  code + copy + retry button)
+- **AND** the status bar's live indicator MUST turn disconnected
+- **AND** MUST NOT stay blank or on an infinite skeleton
+
+#### Scenario: SQLite-class provider detail empty
+- **GIVEN** the user clicks an opencode or codearts session and the backend
+  returns `events: []` with an empty `title`
+- **THEN** SHALL render `EmptyState` saying "no events parsed for this
+  session" with a "rescan" action
+- **AND** MUST NOT render an empty blank main area
+
+> **Current defect**: `GET /api/sessions/opencode-7ff9bf5edb628d` and
+> `.../codearts-c79b25e584d002` measurably returned `events: 0`, `title: ""`,
+> `pending: undefined`. The frontend has no presentation for this — pure
+> white blank. Backend fix: `UI-TASKS.md` T-11.
+
+---
+
+### REQ-023: Status bar
+
+Fixed 28px bottom, left to right:
+
+| Segment | Content |
+|---------|---------|
+| Connection | SSE status dot + `live` / `disconnected` (`aria-live="polite"`) |
+| Data | `38 sessions · 12,405 events` |
+| Scan | `idle` / `scanning claude…` / `last scan 2m ago`, clickable to trigger manual scan |
+| DB | `db 2.4MB · wal 0.03MB` (from `/api/health`) |
+| Right | data-source marker: `scan` / `offline samples` (REQ-014) · version |
+
+The status bar MUST NOT poll `/api/health` — data updates with SSE heartbeats
+or manual refresh.
+
+---
+
+### REQ-024: URL state sync
+
+View, selected session, and filters SHALL be reflected in the URL hash:
 
 ```
 #/sessions?key=claude-09893f87625581&phase=implement,debug&provider=claude
 #/agents
 #/compare?left=claude-xxx&right=codex-yyy
+#/mission?range=7d
 ```
 
-刷新页面 MUST 恢复到同一状态。不引入路由库（`project.md` §2：SPA 无路由），
-用 `hashchange` + 一个 60 行以内的解析/序列化模块。
+Refreshing MUST restore the same state. No router library
+(`project.md` §2: SPA without routing); use `hashchange` + a parse/serialize
+module within 60 lines.
 
 ---
 
-### REQ-025: 命令面板与快捷键
+### REQ-025: Command palette & shortcuts
 
-按 `design-system` REQ-008 实现。命令面板的会话搜索 SHALL 复用共享会话 store（REQ-015），
-MUST NOT 另发请求。首次按 `⌘K` 才懒加载组件。
+Implement per design-system REQ-008. The palette's session search SHALL reuse
+the shared session store (REQ-015), MUST NOT issue additional requests. The
+component lazy-loads on the first `⌘K`.
 
-首屏 SHALL 在主区显示一行极轻的提示（`⌘K 搜索会话 · ? 查看快捷键`），
-让快捷键可被发现；用户使用过一次后不再显示（localStorage 标记）。
+First screen SHALL show a light hint line in the main area
+(`⌘K search sessions · ? shortcuts`) to make shortcuts discoverable; hidden
+after first use (localStorage marker).
 
 ---
 
-### REQ-026: 布局持久化
+### REQ-026: Layout persistence
 
-下列偏好 SHALL 存 localStorage，键统一前缀 `agent-observability.`：
+The following preferences SHALL persist to localStorage, key prefix
+`agent-observability.`:
 
-| 键 | 内容 |
-|----|------|
+| Key | Content |
+|-----|---------|
 | `.theme` | `system` / `dark` / `light` |
-| `.locale` | `zh` / `en`（既有） |
-| `.layout.railWidth` | 数字 px |
-| `.layout.inspectorWidth` | 数字 px |
-| `.layout.railCollapsed` / `.layout.inspectorCollapsed` | 布尔 |
-| `.fontSize` | 长文本区字号（REQ-012） |
-| `.paletteHintSeen` | 布尔（REQ-025） |
+| `.locale` | `zh` / `en` (existing) |
+| `.layout.railWidth` | number px |
+| `.layout.inspectorWidth` | number px |
+| `.layout.railCollapsed` / `.layout.inspectorCollapsed` | booleans |
+| `.fontSize` | long-text font size (REQ-012) |
+| `.paletteHintSeen` | boolean (REQ-025) |
 
-读取时 MUST 做范围校验（宽度越界回落到默认），MUST NOT 因 localStorage 脏数据崩溃。
+Reading MUST range-check (out-of-range widths fall back to defaults) and
+MUST NOT crash on dirty localStorage data.
+
+### REQ-027: Mission view (add-mission-control)
+The 6th view `mission` SHALL render `MissionControl`, a single-column main
+area (NOT three columns) with A/B/C section chip navigation:
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Mission                                    [刷新]    │
+│ 7d · 30d · all            generated … · N widgets · xms │  ← meta 行
+├─────────────────────────────────────────────────────┤
+│ [A 使用行为] [B 效能质量] [C 采集健康]                 │  ← chip 导航
+├─────────────────────────────────────────────────────┤
+│ …widgets (single column)…                            │
+└─────────────────────────────────────────────────────┘
+```
+
+| Requirement | Description |
+|-------------|-------------|
+| Data loading | `GET /api/mission?range=&dataSource=&tz=` — the whole view is **exactly 1 request** (REQ-003 / G11.9). No per-session fetches. |
+| meta row | `generated <time> · N widgets · xxxms` — expose the server-side duration, which doubles as the nfr budget readout. |
+| range | 7d / 30d / all, reflected in the hash (`#/mission?range=7d`). |
+| refresh | Manual refresh button + SSE `sessions_changed` stamp invalidation. **Explicitly no polling** — Tengu's 60s auto-refresh is rejected (REQ-023 / nfr §2 30s-window budget). |
+| criteria line | Every widget MUST render the server-provided `criteria` line below its title (design-system REQ-010); the frontend MUST NOT write its own criteria text. |
+| unavailable widgets | `available=false` renders `EmptyState` + `unavailableReason` (REQ-022 four states + REQ-017 "null shows —, never 0"). |
+| tz | The frontend passes its local `-new Date().getTimezoneOffset()` as `tz`; time bucketing happens server-side (A4/A7/C3). |
+| Drill-down | Hot sessions reuse the existing hash route `#/sessions?key=<id>` (REQ-024); no new navigation mechanism. |
+
+#### Scenario: mission request count
+- **GIVEN** the user switches to the mission view
+- **THEN** the network panel shows exactly 1 request for the view's data
+- **AND** no `sessions.map(s => fetch(...))` pattern exists anywhere in the
+  mission components
+
+#### Scenario: pricing gap renders dash
+- **GIVEN** sessions whose `cost_source = 'unknown'`
+- **WHEN** the cost widgets render
+- **THEN** those sessions show `—` and are excluded from `$/turn` numerator
+  and denominator
 
 ---
 
 ## Gotchas
 
-- G7.1：详情面板放右侧非底部，支持拖拽调宽
-- G7.3：列表密排非卡片，分组默认折叠（细化见 REQ-011 与 D-005）
-- G7.4：scan/proxy 分开展示
-- G7.5：`useDeferredValue` + `startTransition` 是调度优化，**不能替代虚拟滚动**
-- G7.2：字体 A-/A+/R 调整，且不影响 chrome
-- `src/generated/` 勿手改，改 generator
-- G11.9：任何"遍历会话数组逐个 fetch"的代码都是设计错误，正确做法是新增服务端聚合端点
-- **G7.6（新）**：任何组件都不得持有第二份会话索引数组。现状 `SampleRail` 的私有
-  `sessions` state 让 `CompareBoard` 永远拿到空数组——这是 100% 复现的功能缺失，
-  不是边缘情况。
-- **G7.7（新）**：空 `catch` 块在本项目里等价于「功能不可用且无人知道」。
-  已确认 7 处（REQ-022 表），全部要改。评审时把空 catch 当编译错误看。
-- **G7.8（新）**：`mode=full` 只在用户显式要 raw/transcript 时用，且必须分页。
-  一次全量 full 对 648 event 会话即数十 MB。
+- G7.1: detail panel on the right, not the bottom, draggable width
+- G7.3: lists dense, not cards; groups collapsed by default (refined in
+  REQ-011 and D-005)
+- G7.4: scan/proxy shown separately
+- G7.5: `useDeferredValue` + `startTransition` are scheduling optimizations;
+  **they cannot replace virtual scrolling**
+- G7.2: font A-/A+/R adjustment without affecting chrome
+- `src/generated/` must not be hand-edited; change the generator
+- G11.9: any "loop over sessions and fetch each" code is a design error; the
+  correct approach is a server-side aggregation endpoint
+- **G7.6 (new)**: no component may hold a second session-index array. The
+  current `SampleRail` private `sessions` state makes `CompareBoard` always
+  receive an empty array — a 100%-reproducible missing feature, not an edge
+  case.
+- **G7.7 (new)**: an empty `catch` block here equals "feature broken and
+  nobody knows". Seven confirmed locations (REQ-022 table) all need fixing.
+  Treat empty catches as compile errors in review.
+- **G7.8 (new)**: `mode=full` is only for explicit raw/transcript needs, and
+  must paginate. One full fetch for a 648-event session is tens of MB.

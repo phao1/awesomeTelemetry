@@ -1,68 +1,89 @@
-# Contract: 数据库
+# Contract: Database
 
-> **权威来源。** 本项目为全新构建，schema 从 **v1** 起，无历史迁移负担。
-> 所有 DDL 逐字采用，不得改列名、不得增删列。
-> 对应源文件：`server/storage/schema.ts`
+> **Authoritative source.** This is a fresh build; the schema starts at **v1**
+> and is currently at **v2** (add-mission-control: model attribution + cost /
+> duration sources + ttft/e2e persistence). All DDL must be adopted verbatim —
+> no column renames, no added or removed columns beyond this contract.
+> Corresponding source file: `server/storage/schema.ts`
 >
-> 文中标注「参考实现实测」的数字来自被复刻项目的性能诊断报告
-> （524 会话 / 73,588 event / 源文件 800.21MB），是这些设计决策的依据。
+> Numbers marked "reference-implementation measured" come from the recreated
+> project's performance diagnostic report (524 sessions / 73,588 events /
+> 800.21MB source files) and are the basis for these design decisions.
 
-## 0. 设计要点速览
+## 0. Design points at a glance
 
-| 决策 | 依据（参考实现实测） |
-|------|-------------------|
-| `raw` 独立成 `event_raw` 表，不放 `events` | 该列占参考实现 DB 总量 64.2%（147.82MB），留在主表会让任何详情查询都被迫加载 |
-| `events` 用 `(session_id, id)` 复合主键，`WITHOUT ROWID` | 支撑差分 upsert，取代全删全插（参考实现改 1 个 event 要 348 条 SQL） |
-| 索引一律用复合而非单列 | 参考实现 4 条热查询全部 `USE TEMP B-TREE`，最差 210.48ms |
-| `metrics` 持久化四维指标 + `calc_version` | 不持久化会逼上游做 N+1（参考实现 Agent Overview 524 请求 / 299.6MB） |
-| `proxy_requests` 带冗余列 `system_prompt_len` | 避免 `ORDER BY LENGTH(col)` 无法走索引 |
-| `scan_state` 为必经路径，写入失败必须抛错 | 参考实现该表为 0 行，增量扫描完全失效且无声 |
-| PRAGMA 组合固化在代码里 | 参考实现未设 `wal_autocheckpoint`，WAL 涨到 151.82MB |
+| Decision | Basis (reference-implementation measured) |
+|----------|------------------------------------------|
+| `raw` split into its own `event_raw` table, not in `events` | that column was 64.2% of the reference DB (147.82MB); kept in the main table every detail query is forced to load it |
+| `events` uses a `(session_id, id)` composite PK, `WITHOUT ROWID` | supports differential upsert instead of delete-and-reinsert (reference changed 1 event with 348 SQL statements) |
+| Composite indexes instead of single-column | all 4 hot queries in the reference showed `USE TEMP B-TREE`, worst 210.48ms |
+| `metrics` persists four-dimension metrics + `calc_version` | not persisting forces N+1 on callers (reference Agent Overview: 524 requests / 299.6MB) |
+| `proxy_requests` carries redundant `system_prompt_len` | avoids `ORDER BY LENGTH(col)` which cannot use an index |
+| `scan_state` is a mandatory path; write failures must throw | the reference table had 0 rows, incremental scanning completely dead and silent |
+| PRAGMA set fixed in code | the reference never set `wal_autocheckpoint`; WAL grew to 151.82MB |
 
-## 1. 连接初始化
+## 1. Connection initialization
 
-`openWritable(path)` MUST 先创建父目录，再**按此顺序**设置全部 8 项 PRAGMA：
+`openWritable(path)` MUST create the parent dir first, then set all 8 PRAGMAs
+**in this order**:
 
 ```ts
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
-db.pragma('synchronous = NORMAL');        // WAL 下崩溃安全，写入快数倍
+db.pragma('synchronous = NORMAL');        // crash-safe under WAL, much faster writes
 db.pragma('wal_autocheckpoint = 2000');
-db.pragma('cache_size = -65536');         // 64MB page cache（负数 = KB）
+db.pragma('cache_size = -65536');         // 64MB page cache (negative = KB)
 db.pragma('mmap_size = 268435456');       // 256MB
 db.pragma('temp_store = MEMORY');
 db.pragma('busy_timeout = 5000');
 ```
 
-`openReadonly(path)` 用 `{ readonly: true, fileMustExist: true }`，只设 `mmap_size` 与 `busy_timeout`。
+`openReadonly(path)` uses `{ readonly: true, fileMustExist: true }` and only
+sets `mmap_size` and `busy_timeout`.
 
-**主动 checkpoint**：每轮扫描结束后调用一次。有活跃读事务时返回 busy，捕获后跳过，**不得重试阻塞**。
+**Active checkpoint**: called once after each scan round. Returns busy when a
+read transaction is active; catch and skip, **never retry blocking**.
 
 ```ts
 export function checkpointWal(db: Database): void {
-  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* 下轮再来 */ }
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* next round */ }
 }
 ```
 
-## 2. 初始化流程
+## 2. Initialization flow
 
-全新库的建库流程 MUST 是幂等的单一路径，不存在多版本分支：
+Fresh-DB creation MUST be a single idempotent path with no multi-version
+branches:
 
 ```ts
 export function initSchema(db: Database): void {
-  db.exec(SCHEMA_SQL);            // §3 全部 CREATE TABLE IF NOT EXISTS
-  db.exec(INDEX_SQL);             // §4 全部 CREATE INDEX IF NOT EXISTS
+  db.exec(SCHEMA_SQL);            // §3, all CREATE TABLE IF NOT EXISTS
+  db.exec(INDEX_SQL);             // §4, all CREATE INDEX IF NOT EXISTS
   db.prepare(
     "INSERT INTO _meta(key, value) VALUES('schema_version', ?) " +
     "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-  ).run(String(SCHEMA_VERSION));  // SCHEMA_VERSION = 1
+  ).run(String(SCHEMA_VERSION));  // SCHEMA_VERSION = 2
   db.exec('ANALYZE');
 }
 ```
 
-启动时若读到的 `schema_version` 大于代码常量，MUST 中止并提示"数据库由更新版本创建"。小于时（未来才会出现）预留 `migrations/` 目录但当前为空。
+On startup, if the read `schema_version` is greater than the code constant,
+MUST abort with "Database was created by a newer version". When it is lower,
+run the migration chain implemented in `server/storage/schema.ts`
+(`migrateSchema`):
 
-## 3. 表定义
+- **v1 → v2** (the first landed migration): eight `ALTER TABLE ADD COLUMN`
+  statements (see §3) plus three `CREATE INDEX IF NOT EXISTS` (see §4). All
+  `ADD COLUMN` are non-destructive — existing rows keep their values and the
+  new columns are backfilled naturally on the next scan round.
+- Migration failure MUST throw with a "delete the DB and rescan" hint; the
+  database is a rebuildable cache of local session files, and a half-migrated
+  state is more dangerous than a rescan (decision: tasks.md "已做的决策" #3).
+- `initSchema(db)` is idempotent: `CREATE TABLE IF NOT EXISTS` + `ADD COLUMN`
+  (duplicate-column errors are caught per statement) + `CREATE INDEX IF NOT
+  EXISTS` + `schema_version` upsert + `ANALYZE`.
+
+## 3. Table definitions
 
 ### 3.1 `_meta`
 
@@ -99,11 +120,16 @@ CREATE TABLE IF NOT EXISTS sessions (
   data_source       TEXT    NOT NULL DEFAULT 'scan',
   total_duration_ms INTEGER NOT NULL DEFAULT 0,
   is_subagent       INTEGER NOT NULL DEFAULT 0,
-  detail_loaded     INTEGER NOT NULL DEFAULT 0
+  detail_loaded     INTEGER NOT NULL DEFAULT 0,
+  primary_model     TEXT,
+  cost_source       TEXT    NOT NULL DEFAULT 'unknown',
+  duration_source   TEXT    NOT NULL DEFAULT 'unknown'
 ) WITHOUT ROWID;
 ```
 
-> `system_prompt` 留在本表（参考实现 524 行索引查询 447.8KB / 5.33ms，可接受），但**列表查询必须显式列出返回列，绝不 `SELECT *`**。
+> `system_prompt` stays in this table (reference 524-row index query at
+> 447.8KB / 5.33ms is acceptable), but **list queries must list columns
+> explicitly, never `SELECT *`**.
 
 ### 3.3 `events`
 
@@ -124,12 +150,16 @@ CREATE TABLE IF NOT EXISTS events (
   output_summary TEXT,
   tokens_json    TEXT,
   error          TEXT,
+  model          TEXT,
+  input_len      INTEGER NOT NULL DEFAULT 0,
+  output_len     INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (session_id, id)
 ) WITHOUT ROWID;
 ```
 
-> **没有 `raw` 列。** raw 在 `event_raw`。
-> 同 session 内重复 event id 由 adapter 追加 `:{sequence}` 后缀，写库前已唯一。
+> **No `raw` column.** raw lives in `event_raw`.
+> Duplicate event ids within a session get a `:{sequence}` suffix from the
+> adapter; they are unique before hitting the DB.
 
 ### 3.4 `event_raw`
 
@@ -142,7 +172,9 @@ CREATE TABLE IF NOT EXISTS event_raw (
 ) WITHOUT ROWID;
 ```
 
-> 故意**不加外键**：raw 是可丢弃的调试数据，级联删除由 `deleteSession()` 显式执行，避免外键检查拖慢批量写入。
+> **Deliberately no foreign key**: raw is discardable debug data; cascade
+> deletes are executed explicitly by `deleteSession()` to avoid FK checks
+> slowing bulk writes.
 
 ### 3.5 `metrics`
 
@@ -159,11 +191,31 @@ CREATE TABLE IF NOT EXISTS metrics (
   entered_debug         INTEGER NOT NULL DEFAULT 0,
   tokens_per_step       REAL    NOT NULL DEFAULT 0,
   cost_usd              REAL    NOT NULL DEFAULT 0,
-  calc_version          INTEGER NOT NULL DEFAULT 0
+  calc_version          INTEGER NOT NULL DEFAULT 0,
+  ttft_ms               REAL,
+  e2e_ms                REAL
 ) WITHOUT ROWID;
 ```
 
-> `calc_version` 默认 0，与代码常量 `METRICS_CALC_VERSION`（初始为 1）不等，因此首次读取必然触发计算并回写。
+> v2 columns:
+> - `events.model` — llm 事件的模型标识；非 llm 事件或源数据无 model 时为
+>   null（design.md §1 P0-B）。
+> - `events.input_len` / `events.output_len` — 冗余长度列，避免
+>   `ORDER BY LENGTH(col)` 全表扫描（design.md §4 B15，同
+>   `proxy_requests.system_prompt_len` 套路）。
+> - `sessions.primary_model` — 该会话 token 占比最高的模型（adapter 侧
+>   `pickPrimaryModel` 产出，design.md §1 P0-B）。
+> - `sessions.cost_source` ∈ `reported | estimated | unknown` — costUsd 的
+>   可信度（design.md §1 P0-C）。
+> - `sessions.duration_source` ∈ `measured | derived | unknown` — 逐事件
+>   durationMs 的来源（design.md §1 P0-A）。
+> - `metrics.ttft_ms` / `metrics.e2e_ms` — 持久化的速度指标，避免跨会话聚合
+>   触发 N+1（design.md §4 B6；G11.11：改算法必须 bump
+>   `METRICS_CALC_VERSION`）。
+
+> `calc_version` defaults to 0, unequal to the code constant
+> `METRICS_CALC_VERSION` (initially 1), so the first read always triggers
+> computation and write-back.
 
 ### 3.6 `scan_state`
 
@@ -230,20 +282,26 @@ CREATE TABLE IF NOT EXISTS frida_captures (
 );
 ```
 
-## 4. 索引（全集）
+## 4. Indexes (full set)
 
 ```sql
--- events：唯一热路径是 WHERE session_id = ? ORDER BY sequence
+-- events: the only hot path is WHERE session_id = ? ORDER BY sequence
 CREATE INDEX IF NOT EXISTS idx_events_session_seq    ON events(session_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_events_session_phase  ON events(session_id, phase);
 CREATE INDEX IF NOT EXISTS idx_events_kind           ON events(kind);
 CREATE INDEX IF NOT EXISTS idx_events_phase          ON events(phase);
+-- v2 (add-mission-control)：Mission A1/B4/B15 按 tool 聚合
+CREATE INDEX IF NOT EXISTS idx_events_tool           ON events(tool);
+-- v2：Mission 按 (session, kind) 过滤；不是 idx_events_session_seq 的前缀
+CREATE INDEX IF NOT EXISTS idx_events_session_kind   ON events(session_id, kind);
 
 -- sessions
 CREATE INDEX IF NOT EXISTS idx_sessions_ds_started   ON sessions(data_source, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_started_at   ON sessions(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_provider     ON sessions(provider);
 CREATE INDEX IF NOT EXISTS idx_sessions_source_agent ON sessions(source_agent);
+-- v2：Mission 按 provider 过滤 + started_at 排序的复合索引
+CREATE INDEX IF NOT EXISTS idx_sessions_started_prov ON sessions(started_at DESC, provider);
 
 -- scan_state
 CREATE INDEX IF NOT EXISTS idx_scan_state_provider   ON scan_state(provider);
@@ -260,20 +318,24 @@ CREATE INDEX IF NOT EXISTS idx_frida_session         ON frida_captures(session_i
 CREATE INDEX IF NOT EXISTS idx_frida_capture_session ON frida_captures(capture_session_id);
 ```
 
-> **不要建单列的 `idx_events_session_id` 或 `idx_sessions_data_source`。**
-> 它们是上面两个复合索引的前缀，SQLite 会自动利用；单独建只会增加写入成本。
-> 参考实现正是只建了单列版本，导致每次排序都走临时 B 树。
+> **Do not create single-column `idx_events_session_id` or
+> `idx_sessions_data_source`.** They are prefixes of the two composite indexes
+> above and SQLite uses them automatically; standalone versions only add write
+> cost. The reference built only the single-column versions, forcing a temp
+> B-tree sort every time.
 
-## 5. 查询规范
+## 5. Query rules
 
-### 5.1 强制规则
+### 5.1 Mandatory rules
 
-1. **禁止 `SELECT *`**，一律显式列出返回列
-2. 所有语句用模块级缓存的 `db.prepare()` 复用，**禁止在循环内 prepare**
-3. 批量写入必须包在 `db.transaction()` 内
-4. 时间戳一律 ISO 字符串比较（字典序等于时序）
+1. **No `SELECT *`** — always list return columns explicitly
+2. All statements reuse module-level cached `db.prepare()`, **no prepare inside
+   loops**
+3. Bulk writes must be wrapped in `db.transaction()`
+4. Timestamps are always ISO strings for comparison (lexicographic order
+   equals time order)
 
-### 5.2 列常量
+### 5.2 Column constants
 
 ```ts
 export const SESSION_LIST_COLS = [
@@ -285,12 +347,21 @@ export const SESSION_LIST_COLS = [
 
 export const EVENT_SLIM_COLS = [
   'session_id', 'id', 'sequence', 'kind', 'phase', 'title', 'started_at',
-  'duration_ms', 'status', 'actor', 'tool', 'tokens_json', 'error',
+  'duration_ms', 'status', 'actor', 'tool', 'tokens_json', 'error', 'model',
   "CASE WHEN input_summary  IS NOT NULL AND input_summary  != '' THEN 1 ELSE 0 END AS has_input",
   "CASE WHEN output_summary IS NOT NULL AND output_summary != '' THEN 1 ELSE 0 END AS has_output",
 ].join(', ');
 
 export const EVENT_FULL_COLS = `${EVENT_SLIM_COLS}, input_summary, output_summary`;
+
+export const SESSION_DETAIL_COLS = [
+  'id', 'provider', 'source_agent', 'title', 'started_at', 'updated_at',
+  'status', 'cwd', 'message_count', 'event_count', 'token_input',
+  'token_output', 'token_reasoning', 'token_cache_read', 'token_cache_write',
+  'token_total', 'cost_usd', 'system_prompt', 'source_path', 'data_source',
+  'total_duration_ms', 'is_subagent', 'detail_loaded', 'primary_model',
+  'cost_source', 'duration_source',
+].join(', ');
 
 export const PROXY_LIST_COLS = [
   'id', 'request_id', 'method', 'url', 'hostname', 'response_status',
@@ -301,25 +372,28 @@ export const PROXY_LIST_COLS = [
 ].join(', ');
 ```
 
-> `has_raw` 需 join `event_raw`，成本高于收益。slim 档统一置 `hasRaw = true`，由下钻接口返回 null 表示实际不存在。
+> `has_raw` would require joining `event_raw`; cost exceeds benefit. The slim
+> tier uniformly sets `hasRaw = true`; the drill-down endpoint returns null
+> when the raw does not actually exist.
 
-### 5.3 三条核心查询的期望计划
+### 5.3 Expected plans for the three core queries
 
-`EXPLAIN QUERY PLAN` 输出中**不得出现** `USE TEMP B-TREE`：
+`EXPLAIN QUERY PLAN` output **must not contain** `USE TEMP B-TREE`:
 
-| 查询 | 期望计划 | 预算 |
-|------|---------|------|
+| Query | Expected plan | Budget |
+|-------|---------------|--------|
 | `SELECT {SESSION_LIST_COLS} FROM sessions WHERE data_source=? ORDER BY started_at DESC LIMIT ?` | `SEARCH sessions USING INDEX idx_sessions_ds_started` | < 1ms |
-| `SELECT {EVENT_SLIM_COLS} FROM events WHERE session_id=? ORDER BY sequence LIMIT ? OFFSET ?` | `SEARCH events USING INDEX idx_events_session_seq` | < 15ms @ 9,590 行 |
+| `SELECT {EVENT_SLIM_COLS} FROM events WHERE session_id=? ORDER BY sequence LIMIT ? OFFSET ?` | `SEARCH events USING INDEX idx_events_session_seq` | < 15ms @ 9,590 rows |
 | `SELECT system_prompt FROM proxy_requests WHERE started_at BETWEEN ? AND ? AND system_prompt_len > 0 ORDER BY system_prompt_len DESC LIMIT 1` | `SEARCH proxy_requests USING INDEX idx_proxy_started_len` | < 1ms |
 
-## 6. 数据保留
+## 6. Data retention
 
-`proxy_requests` 无上限增长是长期风险。启动时执行一次：
+Unbounded growth of `proxy_requests` is a long-term risk. On startup, run once:
 
 ```sql
 DELETE FROM proxy_requests
  WHERE started_at < datetime('now', '-' || :retentionDays || ' days');
 ```
 
-默认 `retentionDays = 30`，CLI 参数 `--proxy-retention-days`，设为 `0` 表示不清理。删除行数 > 1000 时触发一次 `checkpointWal()`。
+Default `retentionDays = 30`, CLI flag `--proxy-retention-days`; `0` disables
+cleanup. When more than 1000 rows are deleted, trigger one `checkpointWal()`.

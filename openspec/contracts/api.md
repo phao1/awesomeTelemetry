@@ -1,102 +1,109 @@
 # Contract: HTTP API
 
-> **权威来源。** 所有端点的路径、参数、响应形状、状态码逐字采用。
-> 类型引用见 `contracts/data-model.md`。
-> 对应源文件：`server/server.ts`（生产）+ `local-sessions/vite-plugin.ts`（dev）
+> **Authoritative source.** All endpoint paths, params, response shapes, and
+> status codes must be adopted verbatim. Type references:
+> `contracts/data-model.md`. Corresponding source files:
+> `server/server.ts` (production) + `local-sessions/vite-plugin.ts` (dev)
 
-## 0. 通用约定
+## 0. General conventions
 
-### 0.1 基础
+### 0.1 Basics
 
-- Base path：`/api`
-- 请求与响应均为 `application/json; charset=utf-8`
-- 服务器：纯 Node `http`，不使用 Express/Fastify
-- 绑定地址默认 `127.0.0.1`（**不是 localhost**，G3.1）
+- Base path: `/api`
+- Requests and responses are `application/json; charset=utf-8`
+- Server: plain Node `http`, no Express/Fastify
+- Default bind address `127.0.0.1` (**not localhost**, G3.1)
 
-### 0.2 响应压缩
+### 0.2 Response compression
 
-响应体 ≥ 1024 字节且请求头含 `accept-encoding: gzip` 时，必须以 gzip 返回，并设置：
+When the response body is >= 1024 bytes and the request carries
+`accept-encoding: gzip`, respond with gzip and set:
 
 ```
 content-encoding: gzip
 vary: accept-encoding
 ```
 
-< 1024 字节的响应不压缩，且必须带 `content-length`。
+Responses under 1024 bytes are not compressed and must carry `content-length`.
 
-### 0.3 错误信封
+### 0.3 Error envelope
 
-**所有**非 2xx 响应使用统一形状，无例外：
+**All** non-2xx responses use the unified shape, no exceptions:
 
 ```ts
 interface ApiError {
   error: {
-    /** 机器可读，稳定不变。见 §0.4 全集。 */
+    /** Machine-readable, stable. Full set in §0.4. */
     code: string;
-    /** 人类可读，英文。前端负责 i18n。 */
+    /** Human-readable, English. i18n is the frontend's job. */
     message: string;
-    /** 可选上下文，仅用于调试展示。 */
+    /** Optional context, debug display only. */
     details?: Record<string, unknown>;
   };
 }
 ```
 
-示例：
+Example:
 
 ```json
 { "error": { "code": "SESSION_NOT_FOUND", "message": "No session with key codeagent-abf46f48171c01", "details": { "key": "codeagent-abf46f48171c01" } } }
 ```
 
-### 0.4 错误码全集
+### 0.4 Error code full set
 
-| code | HTTP | 含义 |
-|------|------|------|
-| `BAD_REQUEST` | 400 | 参数缺失或格式错误 |
-| `INVALID_ENUM` | 400 | 枚举值不在允许集合内 |
-| `SESSION_NOT_FOUND` | 404 | 会话 key 不存在 |
-| `EVENT_NOT_FOUND` | 404 | event id 在该会话中不存在 |
-| `PROXY_REQUEST_NOT_FOUND` | 404 | proxy 请求 id 不存在 |
-| `ROUTE_NOT_FOUND` | 404 | 路径未注册 |
-| `PROVIDER_DISABLED` | 409 | provider 在配置中被禁用 |
-| `SESSION_PARSE_FAILED` | 500 | 会话源数据解析失败（损坏/非本 provider 格式，G5.6） |
-| `PROXY_ALREADY_RUNNING` | 409 | 代理已在运行 |
-| `PROXY_NOT_RUNNING` | 409 | 代理未运行 |
-| `FRIDA_TARGET_NOT_FOUND` | 409 | 未发现 Trae 进程或 ai_agent.dll 未加载 |
-| `TRAE_KEY_MISSING` | 412 | Trae SQLCipher 密钥未提取（G6.1） |
-| `SCAN_IN_PROGRESS` | 429 | 已有扫描在执行 |
-| `INTERNAL_ERROR` | 500 | 未分类异常，`details` 不含堆栈 |
-| `DECRYPT_FAILED` | 500 | Python bridge 解密失败 |
+| code | HTTP | Meaning |
+|------|------|---------|
+| `BAD_REQUEST` | 400 | missing or malformed params |
+| `INVALID_ENUM` | 400 | enum value outside the allowed set |
+| `SESSION_NOT_FOUND` | 404 | session key does not exist |
+| `EVENT_NOT_FOUND` | 404 | event id not in this session |
+| `PROXY_REQUEST_NOT_FOUND` | 404 | proxy request id does not exist |
+| `ROUTE_NOT_FOUND` | 404 | path not registered |
+| `PROVIDER_DISABLED` | 409 | provider disabled in config |
+| `SESSION_PARSE_FAILED` | 500 | session source parse failed (corrupt / not this provider's format, G5.6) |
+| `PROXY_ALREADY_RUNNING` | 409 | proxy already running |
+| `PROXY_NOT_RUNNING` | 409 | proxy not running |
+| `FRIDA_TARGET_NOT_FOUND` | 409 | no Trae process or ai_agent.dll not loaded |
+| `TRAE_KEY_MISSING` | 412 | Trae SQLCipher key not extracted (G6.1) |
+| `SCAN_IN_PROGRESS` | 429 | a scan is already running |
+| `INTERNAL_ERROR` | 500 | unclassified exception; `details` never contains a stack |
+| `DECRYPT_FAILED` | 500 | Python bridge decryption failed |
 
-### 0.5 分页约定
+### 0.5 Pagination conventions
 
-列表端点统一使用 `limit` + `cursor`（keyset），**不使用 offset**（数据变动时会漏行/重复）：
+List endpoints use `limit` + `cursor` (keyset), **never offset** (offset misses
+rows / duplicates when data changes):
 
-- `limit`：默认 50，上限 500
-- `cursor`：上一页最后一条的 `startedAt`，首页省略
-- 响应含 `{ items, nextCursor, hasMore }`，`nextCursor` 为 `null` 表示到底
+- `limit`: default 50, max 500
+- `cursor`: the last item's `startedAt` from the previous page; omitted on the first page
+- Response contains `{ items, nextCursor, hasMore }`; `nextCursor: null` means end
 
-> 例外：会话内 event 分页用 `offset` + `limit`，因为 `sequence` 连续且不会变动，offset 语义稳定且前端虚拟滚动需要随机跳转。
+> Exception: in-session event pagination uses `offset` + `limit`, because
+> `sequence` is continuous and immutable, offset semantics are stable, and the
+> frontend virtual scroll needs random jumps.
 
-### 0.6 前台请求标记
+### 0.6 Foreground request marking
 
-**每个** `/api/*` 请求进入时必须调用 `markForegroundRequest()`，供后台预热让路使用（见 `specs/session-scanning` REQ-012）。
+**Every** `/api/*` request must call `markForegroundRequest()` on entry so
+background prewarm yields (see `specs/session-scanning` REQ-012).
 
 ---
 
-## 1. 会话
+## 1. Sessions
 
 ### 1.1 `GET /api/sessions`
 
-会话索引列表。**响应中绝不包含 `systemPrompt` 正文或任何 event。**
+Session index list. **The response never contains the `systemPrompt` body or
+any events.**
 
-| 参数 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `dataSource` | `'scan' \| 'proxy'` | `'scan'` | 数据来源，scan/proxy 分开展示（G7.4） |
-| `provider` | `ProviderKey` | — | 可选过滤 |
-| `limit` | number | 50 | 上限 500 |
-| `cursor` | string | — | 上页末条 `startedAt` |
-| `keys` | string | — | 逗号分隔的 key 列表，用于 SSE 后的批量补丁；上限 200 个，超出返回 `BAD_REQUEST` |
-| `merged` | `'1' \| '0'` | `'1'` | 是否应用会话合并（见 `specs/session-merge`） |
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `dataSource` | `'scan' \| 'proxy'` | `'scan'` | data source; scan/proxy shown separately (G7.4) |
+| `provider` | `ProviderKey` | — | optional filter |
+| `limit` | number | 50 | max 500 |
+| `cursor` | string | — | last item's `startedAt` of the previous page |
+| `keys` | string | — | comma-separated key list for batched patches after SSE; max 200, more returns `BAD_REQUEST` |
+| `merged` | `'1' \| '0'` | `'1'` | whether to apply session merging (see `specs/session-merge`) |
 
 ```ts
 // 200
@@ -104,63 +111,68 @@ interface SessionListResponse {
   items: SessionIndexEntry[];
   nextCursor: string | null;
   hasMore: boolean;
-  total: number;          // 当前过滤条件下的总数，来自 COUNT(*)
+  total: number;          // total under the current filters, from COUNT(*)
 }
 ```
 
-> 传 `keys` 时忽略 `limit` / `cursor` / `total`，直接返回匹配项，`hasMore` 恒为 `false`。
+> When `keys` is passed, `limit` / `cursor` / `total` are ignored; matching
+> items are returned directly and `hasMore` is always `false`.
 
-**预算**：500 条 < 60KB（gzip 后）、服务端 < 5ms。
+**Budget**: 500 items < 60KB (gzipped), server < 5ms.
 
 ### 1.2 `GET /api/sessions/:key`
 
-会话详情。**默认 `mode=slim`。**
+Session detail. **Defaults to `mode=slim`.**
 
-| 参数 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `mode` | `'slim' \| 'full'` | `'slim'` | `raw` 不在此端点支持，走 §1.3 |
-| `offset` | number | 0 | event 偏移 |
-| `limit` | number | 2000 | event 数上限，上限 5000 |
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `mode` | `'slim' \| 'full'` | `'slim'` | `raw` is not supported here; use §1.3 |
+| `offset` | number | 0 | event offset |
+| `limit` | number | 2000 | max event count, cap 5000 |
 
-响应：`SessionDetailResponse`（见 `contracts/data-model.md` §5）。
+Response: `SessionDetailResponse` (see `contracts/data-model.md` §5).
 
-行为要求：
+Behavior requirements:
 
-1. 命中 LRU 详情缓存直接返回
-2. 未命中且 `sessions.detail_loaded = 0` → 触发一次惰性 `scanAndStoreDetail`
-3. 该会话属于需异步解密的 provider（Trae）且解密未完成 → 返回已有索引数据 + `pending: true`，**不阻塞**，解密完成后由 SSE `sessions_changed` 通知
-4. key 不存在 → 404 `SESSION_NOT_FOUND`
+1. LRU detail-cache hit returns directly
+2. Miss and `sessions.detail_loaded = 0` → trigger one lazy `scanAndStoreDetail`
+3. Session belongs to an async-decryption provider (Trae) and decryption is
+   not done → return existing index data + `pending: true`, **non-blocking**;
+   SSE `sessions_changed` notifies when decryption completes
+4. Key does not exist → 404 `SESSION_NOT_FOUND`
 
-**预算**：9,590 events 的最差会话 slim 档 < 1.5MB、服务端 < 60ms。
+**Budget**: worst session (9,590 events) slim tier < 1.5MB, server < 60ms.
 
 ### 1.3 `GET /api/sessions/:key/events/:eventId`
 
-单 event 下钻。EventInspector 点击时调用。
+Single-event drill-down. Called when EventInspector clicks.
 
-| 参数 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `include` | `'raw'` | — | 带上则从 `event_raw` 表补 `raw` 字段 |
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `include` | `'raw'` | — | when set, fills `raw` from the `event_raw` table |
 
 ```ts
-// 200 → TraceEvent 或 TraceEventRaw
+// 200 → TraceEvent or TraceEventRaw
 // 404 → EVENT_NOT_FOUND
 ```
 
-**预算**：< 20ms。
+**Budget**: < 20ms.
 
 ### 1.4 `GET /api/sessions/:key/report`
 
-生成自包含 HTML 报告。
+Generates a self-contained HTML report.
 
-| 参数 | 类型 | 默认 |
-|------|------|------|
+| Param | Type | Default |
+|-------|------|---------|
 | `format` | `'html'` | `'html'` |
 
-响应 `text/html`。**大 JSON 必须写入外部 `.js` 文件引用，禁止内联 `<script>var data=...</script>`（G7.6）。**
+Responds `text/html`. **Large JSON must be written to an external `.js` file
+and referenced; inline `<script>var data=...</script>` is forbidden (G7.6).**
 
 ### 1.5 `DELETE /api/sessions/:key`
 
-级联删除 `events` + `event_raw` + `metrics` + `sessions` + 对应 `scan_state` 行。
+Cascade-deletes `events` + `event_raw` + `metrics` + `sessions` + the matching
+`scan_state` row.
 
 ```ts
 // 200 → { deleted: true, key: string }
@@ -168,7 +180,8 @@ interface SessionListResponse {
 
 ### 1.6 `POST /api/sessions/:key/rescan`
 
-强制重扫单个会话，绕过 `scan_state` 门禁（`force: true`）。
+Force-rescans a single session, bypassing the `scan_state` gate
+(`force: true`).
 
 ```ts
 // 200 → { key: string, eventCount: number, durationMs: number }
@@ -176,29 +189,33 @@ interface SessionListResponse {
 
 ---
 
-## 2. 聚合
+## 2. Aggregations
 
 ### 2.1 `GET /api/agent-overview`
 
-**替代 v4 的前端 N+1。** 实测 v4 该视图产生 524 请求 / 299.6MB / 4,732ms。
+**Replaces v4's frontend N+1.** Measured: v4's view produced 524 requests /
+299.6MB / 4,732ms.
 
-| 参数 | 类型 | 默认 |
-|------|------|------|
+| Param | Type | Default |
+|-------|------|---------|
 | `dataSource` | `'scan' \| 'proxy'` | `'scan'` |
 
 ```ts
 // 200
 interface AgentOverviewResponse {
   rows: AgentOverviewRow[];
-  /** 缓存失效键 = MAX(sessions.updated_at)。前端可用于判断是否需刷新。 */
+  /** Cache invalidation key = MAX(sessions.updated_at). Frontend can use it
+   * to decide whether to refresh. */
   stamp: string;
   cached: boolean;
 }
 ```
 
-**实现要求**：两条 SQL（会话级聚合 + event 级聚合）在服务端合并，结果按 `stamp` 缓存。前端**不得**为此视图逐会话拉详情。
+**Implementation requirement**: two SQL queries (session-level aggregation +
+event-level aggregation) merged server-side, cached by `stamp`. The frontend
+**must not** fetch per-session details for this view.
 
-**预算**：1 个请求、< 80KB、< 400ms（缓存命中 < 20ms）。
+**Budget**: 1 request, < 80KB, < 400ms (cache hit < 20ms).
 
 ### 2.2 `GET /api/providers/status`
 
@@ -210,9 +227,9 @@ interface ProviderStatusResponse {
     enabled: boolean;
     sessionCount: number;
     lastScanAt: string | null;
-    /** Trae 专用：密钥是否就绪 */
+    /** Trae-specific: whether the key is ready */
     ready: boolean;
-    /** ready=false 时的原因码，如 TRAE_KEY_MISSING */
+    /** reason code when ready=false, e.g. TRAE_KEY_MISSING */
     blockedBy: string | null;
   }>;
 }
@@ -221,22 +238,56 @@ interface ProviderStatusResponse {
 ### 2.3 `POST /api/compare`
 
 ```ts
-// 请求
+// request
 { leftKey: string; rightKey: string }
 // 200 → { left: SessionDetailResponse; right: SessionDetailResponse; speed: { left: SpeedMetrics; right: SpeedMetrics } }
 ```
 
-`mode` 固定为 `slim`。对比报告 HTML 走 `GET /api/compare/report?left=&right=`。
+`mode` is fixed to `slim`. The compare report HTML goes through
+`GET /api/compare/report?left=&right=`.
+
+### 2.4 `GET /api/mission`
+
+Mission 指挥中心聚合：**一次请求返回全部 A/B/C 三区 widget**（G11.9 红线：
+禁止前端逐会话拉取，frontend REQ-003）。响应形状见
+`contracts/data-model.md` §5.1 `MissionResponse`。
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `range` | `'7d' \| '30d' \| 'all'` | `'7d'` | 时间窗（按 `sessions.started_at` 过滤） |
+| `dataSource` | `'scan' \| 'proxy'` | `'scan'` | G7.4：scan/proxy 分开展示，不混列 |
+| `tz` | number | `0` | 本地时区偏移分钟数，用于 A4 活跃热力图 / A7 会话活跃曲线 / C3 任务日历的分桶（**分桶前在 SQL 里偏移**，分桶后无法再转换） |
+
+```ts
+// 200 → MissionResponse（见 contracts/data-model.md §5.1）
+```
+
+**实现要求**：
+
+1. 每个 widget 必带非空 `criteria`（表名/字段/计算方式/覆盖范围，服务端下发）。
+2. `available=false` 时 `data` 必须为 `null` 且 `unavailableReason` 非空
+   （如 `'NO_PRICING_TABLE'` / `'DURATION_NOT_MEASURED'`）；**禁止用 0 冒充**。
+3. stamp 缓存：`stamp = MAX(sessions.updated_at)`，复用
+   `server/storage/overview.ts` 的 `cacheByDb` WeakMap 模式；stamp 未变直接
+   返回缓存（`cached: true`）。
+4. ⚠️ better-sqlite3 是同步 API：单 widget SQL 必须 < 30ms（tier B），
+   A / B / C 三区之间 `await setTimeout(0)` 让出一整轮事件循环
+   （design.md §7.3 R1）。
+5. 入口由 `createServer` 的统一 handler 调 `markForegroundRequest()`（§0.6）。
+
+**Budget**：冷启 < 500ms / 1 请求 / < 120KB (gzip)；缓存命中 < 20ms；
+事件循环 p99 < 50ms（见 `contracts/nfr.md` §2）。
 
 ---
 
-## 3. 实时
+## 3. Realtime
 
-### 3.1 `GET /api/events`（SSE）
+### 3.1 `GET /api/events` (SSE)
 
-`text/event-stream`。连接建立后立即发一条 `connected`。
+`text/event-stream`. Sends a `connected` event immediately on connection.
 
-事件类型与载荷严格对应 `contracts/data-model.md` §10 的 `BusEvents`。
+Event types and payloads map exactly to `BusEvents` in
+`contracts/data-model.md` §10.
 
 ```
 event: connected
@@ -249,77 +300,91 @@ event: scan_completed
 data: {"provider":"all","count":524}
 ```
 
-**强制要求**：
+**Mandatory requirements**:
 
-1. `sessions_changed` 由服务端按 **200ms 窗口**合并后发出。**禁止**逐 session 发射 `session_updated`（v4 的做法，实测导致前端 30s 内 508 请求 / 151.2MB）。
-2. `proxy_stream_chunk` 由服务端按 **100ms 窗口**拼接后发出，前端不再逐 chunk 渲染。
-3. 客户端断开时必须执行 cleanup，解除全部订阅。
-4. 每 30s 发一条注释行心跳（`: ping\n\n`）防止代理层超时断连。
+1. `sessions_changed` is emitted by the server after coalescing on a **200ms
+   window**. Per-session `session_updated` emission is **forbidden** (v4's
+   approach, measured 508 requests / 151.2MB in 30s on the frontend).
+2. `proxy_stream_chunk` is concatenated by the server on a **100ms window**;
+   the frontend no longer renders chunk by chunk.
+3. On client disconnect, cleanup must run and unsubscribe everything.
+4. Send a comment-line heartbeat every 30s (`: ping\n\n`) to prevent
+   proxy-layer timeouts.
 
-**前端消费规则**：收到 `sessions_changed` 后**只做局部 patch**——失效对应 key 的详情缓存，并用一次 `GET /api/sessions?keys=...` 补索引行。**禁止**重拉全量索引。
+**Frontend consumption rules**: on `sessions_changed`, do **only a local
+patch** — invalidate the detail cache for the matching keys and fetch index
+rows once via `GET /api/sessions?keys=...`. **Refetching the full index is
+forbidden.**
 
 ---
 
-## 4. 代理
+## 4. Proxy
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/proxy/start` | POST | body `{ port?: number }`；已运行返回 409 `PROXY_ALREADY_RUNNING` |
-| `/api/proxy/stop` | POST | 未运行返回 409 `PROXY_NOT_RUNNING` |
-| `/api/proxy/status` | GET | `{ running: boolean, starting: boolean, port: number \| null, requestCount: number, startedAt: string \| null }`（D4：异步启动期间 `starting=true`） |
-| `/api/proxy/requests` | GET | 列表，返回 `ProxyRequestListItem[]`，**排除全部 4 个 body 列与 systemPrompt 正文** |
-| `/api/proxy/requests/:id` | GET | 完整 `ProxyRequest`，含 body |
-| `/api/ca-cert` | GET | `application/x-pem-file`，下载 CA 证书 |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/proxy/start` | POST | body `{ port?: number }`; running → 409 `PROXY_ALREADY_RUNNING` |
+| `/api/proxy/stop` | POST | not running → 409 `PROXY_NOT_RUNNING` |
+| `/api/proxy/status` | GET | `{ running: boolean, starting: boolean, port: number \| null, requestCount: number, startedAt: string \| null }` (D4: `starting=true` during async startup) |
+| `/api/proxy/requests` | GET | list, `ProxyRequestListItem[]`, **excludes all 4 body columns and the systemPrompt body** |
+| `/api/proxy/requests/:id` | GET | full `ProxyRequest` incl. bodies |
+| `/api/ca-cert` | GET | `application/x-pem-file`, downloads the CA certificate |
 
-`/api/proxy/requests` 参数：`limit`（默认 50，上限 500）、`cursor`、`hostname`、`captureMethod`。
+`/api/proxy/requests` params: `limit` (default 50, max 500), `cursor`,
+`hostname`, `captureMethod`.
 
 ---
 
 ## 5. Frida
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/frida/start` | POST | body `{ pid?: number }`，省略则自动发现；失败 409 `FRIDA_TARGET_NOT_FOUND` |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/frida/start` | POST | body `{ pid?: number }`, auto-discover when omitted; failure → 409 `FRIDA_TARGET_NOT_FOUND` |
 | `/api/frida/stop` | POST | |
 | `/api/frida/status` | GET | `{ running: boolean, starting: boolean, pid: number \| null }` |
-| `/api/frida/captures` | GET | 分页列表，`jsonData` 截断至 500 字符 |
-| `/api/frida/captures/:id` | GET | 完整记录 |
+| `/api/frida/captures` | GET | paginated list; `jsonData` truncated to 500 chars |
+| `/api/frida/captures/:id` | GET | full record |
 
 ---
 
-## 6. 配置
+## 6. Config
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/config/providers` | GET | 返回合并后的 `LocalSessionConfig` |
-| `/api/config/providers` | PUT | 写用户配置层，**必须原子写**（tmp + rename，G2.3）；返回合并后的新配置 |
-| `/api/desensitization/rules` | GET | 当前规则集（含 enabled 状态） |
-| `/api/desensitization/rules` | PUT | 更新规则；同样原子写 |
-| `/api/scan` | POST | body `{ provider?: ProviderKey, force?: boolean }`；已有扫描进行中返回 429 `SCAN_IN_PROGRESS` |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/config/providers` | GET | returns the merged `LocalSessionConfig` |
+| `/api/config/providers` | PUT | writes the user config layer, **must be atomic** (tmp + rename, G2.3); returns the new merged config |
+| `/api/desensitization/rules` | GET | current rule set (incl. enabled state) |
+| `/api/desensitization/rules` | PUT | updates rules; also atomic write |
+| `/api/scan` | POST | body `{ provider?: ProviderKey, force?: boolean }`; scan in progress → 429 `SCAN_IN_PROGRESS` |
 | `/api/health` | GET | `{ ok: true, schemaVersion: 1, uptimeMs: number, dbSizeBytes: number, walSizeBytes: number }` |
 
 ---
 
-## 7. dev-only 端点
+## 7. Dev-only endpoints
 
-以下**仅**在 `local-sessions/vite-plugin.ts` 中接线，生产 `server.ts` 不暴露（G10.2）。请求生产实例时返回 404 `ROUTE_NOT_FOUND`：
+The following are wired **only** in `local-sessions/vite-plugin.ts`; production
+`server.ts` does not expose them (G10.2). Requests to a production instance
+return 404 `ROUTE_NOT_FOUND`:
 
-| 端点 | 说明 |
-|------|------|
-| `/api/cdp/start` `/api/cdp/stop` `/api/cdp/status` | CDP 捕获控制 |
-| `/api/cdp/targets` | 列出可连接的 Electron target |
+| Endpoint | Description |
+|----------|-------------|
+| `/api/cdp/start` `/api/cdp/stop` `/api/cdp/status` | CDP capture control |
+| `/api/cdp/targets` | list connectable Electron targets |
 
-> v4 已知缺口：CDP 只在 dev 可用。v5 保持现状但**必须在 `/api/health` 响应中暴露 `devOnly: string[]` 字段**，列出当前实例未提供的 dev-only 路由，避免前端静默失败。
+> v4 known gap: CDP is dev-only. v5 keeps that but **must expose a
+> `devOnly: string[]` field in the `/api/health` response** listing the
+> dev-only routes the current instance does not provide, so the frontend never
+> fails silently.
 
 ---
 
-## 8. 契约测试
+## 8. Contract tests
 
-以下测试必须存在于 `server/server.test.ts`，作为 API 契约的可执行验收：
+The following tests must exist in `server/server.test.ts` as executable API
+contract acceptance:
 
 ```ts
-describe('API 契约', () => {
-  it('会话列表不泄漏 systemPrompt 正文', async () => {
+describe('API contract', () => {
+  it('session list does not leak the systemPrompt body', async () => {
     const r = await get('/api/sessions?limit=10');
     for (const item of r.items) {
       expect(item).not.toHaveProperty('systemPrompt');
@@ -327,7 +392,7 @@ describe('API 契约', () => {
     }
   });
 
-  it('详情默认 slim 且不含正文', async () => {
+  it('detail defaults to slim and contains no body', async () => {
     const r = await get(`/api/sessions/${key}`);
     expect(r.mode).toBe('slim');
     for (const e of r.events) {
@@ -336,7 +401,7 @@ describe('API 契约', () => {
     }
   });
 
-  it('proxy 列表排除全部 body 列', async () => {
+  it('proxy list excludes all body columns', async () => {
     const r = await get('/api/proxy/requests?limit=5');
     for (const item of r.items) {
       for (const col of ['requestBody', 'responseBody', 'rawRequestBody', 'rawResponseBody']) {
@@ -345,23 +410,48 @@ describe('API 契约', () => {
     }
   });
 
-  it('所有错误使用统一信封', async () => {
+  it('all errors use the unified envelope', async () => {
     const r = await getRaw('/api/sessions/does-not-exist');
     expect(r.status).toBe(404);
     expect(r.body.error.code).toBe('SESSION_NOT_FOUND');
     expect(typeof r.body.error.message).toBe('string');
   });
 
-  it('agent-overview 单请求返回全部 provider', async () => {
+  it('agent-overview returns all providers in one request', async () => {
     const r = await get('/api/agent-overview');
     expect(Array.isArray(r.rows)).toBe(true);
     expect(typeof r.stamp).toBe('string');
   });
 
-  it('生产实例不暴露 dev-only 路由', async () => {
+  it('production instance does not expose dev-only routes', async () => {
     const r = await getRaw('/api/cdp/status');
     expect(r.status).toBe(404);
     expect(r.body.error.code).toBe('ROUTE_NOT_FOUND');
+  });
+
+  it('mission returns all sections in one request with criteria on every widget', async () => {
+    const r = await get('/api/mission?range=all');
+    expect(r.meta.widgetCount).toBeGreaterThan(0);
+    expect(typeof r.meta.stamp).toBe('string');
+    const widgets = [
+      ...Object.values(r.usage),
+      ...Object.values(r.quality),
+      ...Object.values(r.health),
+    ] as Array<{ criteria: string; available: boolean; unavailableReason: string | null; data: unknown }>;
+    for (const w of widgets) {
+      expect(typeof w.criteria).toBe('string');
+      expect(w.criteria.length).toBeGreaterThan(0);
+      if (w.available === false) {
+        expect(w.data).toBeNull();
+        expect(w.unavailableReason).not.toBeNull();
+      }
+    }
+  });
+
+  it('mission validates range and tz params', async () => {
+    const bad = await getRaw('/api/mission?range=99d');
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe('INVALID_ENUM');
   });
 });
 ```
