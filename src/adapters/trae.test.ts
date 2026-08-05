@@ -75,4 +75,71 @@ describe('Trae adapter（REQ-006）', () => {
     expect((r.events[0] as unknown as { raw?: string }).raw).toContain('"type"');
     expect(r.events[0]?.title).not.toContain('"type"');
   });
+
+  it('§5.1 toolName 二级映射：PascalCase 工具名按小写归一化分类，type 优先', () => {
+    const turns: TraeTurn[] = [
+      { id: 't1', type: 'tool', toolName: 'SearchReplace', startTime: 1754000000 },
+      { id: 't2', type: 'tool', toolName: 'Terminal', startTime: 1754000001 },
+      { id: 't3', type: 'tool', toolName: 'Grep', startTime: 1754000002 },
+      { id: 't4', type: 'tool', toolName: 'UnknownThing', startTime: 1754000003 },
+      // type 优先级高于 toolName：type='read_file' 时即使 toolName 像 bash 也归 file_read
+      { id: 't5', type: 'read_file', toolName: 'Bash', startTime: 1754000004 },
+    ];
+    const r = normalizeTraeSample(sample(turns), SRC);
+    expect(r.events.map((e) => e.kind)).toEqual([
+      'file_write', 'bash', 'file_read', 'tool', 'file_read',
+    ]);
+  });
+
+  it('§5.2 startTime 缺失时继承前一事件 startedAt，首个事件用会话 startedAt', () => {
+    const turns: TraeTurn[] = [
+      { id: 't1', type: 'llm', startTime: 1754000000 },
+      { id: 't2', type: 'tool', toolName: 'Read' }, // 缺失 → 继承 t1
+      { id: 't3', type: 'tool', toolName: 'Write' }, // 缺失 → 继承 t2
+    ];
+    const r = normalizeTraeSample(
+      {
+        sourceAgent: 'Trae',
+        session: { id: 's', startTime: 1754000000 },
+        events: turns,
+      },
+      SRC,
+    );
+    const times = r.events.map((e) => e.startedAt);
+    expect(new Set(times).size).toBe(1);
+    expect(times[0]).toBe(new Date(1754000000 * 1000).toISOString());
+    expect(r.events[2]?.startedAt).toBe(times[0]);
+  });
+
+  it('§5.3 同时间戳组时长分摊：组内求和 == gap，余数给最后一个，user_prompt 不参与', () => {
+    const turns: TraeTurn[] = [
+      { id: 'u1', type: 'user', startTime: 1754000000 },
+      { id: 'a1', type: 'tool', toolName: 'Read', startTime: 1754000010 },
+      { id: 'a2', type: 'tool', toolName: 'Write', startTime: 1754000010 },
+      { id: 'a3', type: 'tool', toolName: 'Bash', startTime: 1754000010 },
+      { id: 'a4', type: 'llm', startTime: 1754000011 },
+    ];
+    const r = normalizeTraeSample(sample(turns), SRC);
+    const byId = new Map(r.events.map((e) => [e.id, e]));
+    // gap = a4(1754000011) − a1 组(1754000010) = 1000ms；1000 / 3 → 333/333/334
+    expect(byId.get('a1')?.durationMs).toBe(333);
+    expect(byId.get('a2')?.durationMs).toBe(333);
+    expect(byId.get('a3')?.durationMs).toBe(334);
+    expect((byId.get('a1')!.durationMs + byId.get('a2')!.durationMs + byId.get('a3')!.durationMs)).toBe(1000);
+    // user_prompt 不参与分摊，保持 0
+    expect(byId.get('u1')?.durationMs).toBe(0);
+  });
+
+  it('§5.4 status 有值时以它为准；缺失/为空时才用 toolResult 兜底（R6）', () => {
+    const turns: TraeTurn[] = [
+      // 成功的 grep "error"：status='completed' 必须判 success，不得被 toolResult 带偏
+      { id: 't1', type: 'tool', toolName: 'Grep', status: 'completed', toolResult: 'error in app.log', startTime: 1754000000 },
+      // status 缺失 + toolResult 含 Traceback → error
+      { id: 't2', type: 'tool', toolName: 'Bash', toolResult: 'Traceback (most recent call last)', startTime: 1754000001 },
+      // status 为空字符串 + toolResult 无关键词 → success（completed 兜底）
+      { id: 't3', type: 'tool', toolName: 'Read', status: '', toolResult: 'ok', startTime: 1754000002 },
+    ];
+    const r = normalizeTraeSample(sample(turns), SRC);
+    expect(r.events.map((e) => e.status)).toEqual(['success', 'error', 'success']);
+  });
 });

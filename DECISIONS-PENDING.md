@@ -255,3 +255,50 @@ attention-emphasis contrast fails
 - **Suggested next step**: 人工确认 v3 升级符合预期；schema 版本现在为 3，
   `contracts/database.md` 已同步。若未来有其他全表聚合 widget 超预算，沿用
   同一条 rollup 路径（design §7.3 R1 / nfr §7）。
+
+---
+
+## D-013 Trae 工具名映射清单未经真机验证（B4.2）
+
+- **Problem**: design §5.1 的 bash / file_read / file_write 工具名清单
+  （PascalCase 归一化后匹配）来自外部变更说明，本仓库无法在真实 Trae 库上
+  跑 `SELECT DISTINCT tool_name FROM chat_message_task` 校正 ——
+  `config/local-sessions.example.json` 里 `traeKeyPath: null`，Trae 路径是
+  Windows `%APPDATA%/Trae CN/...`，当前机器是 macOS，没有真实 Trae 库。
+- **Approaches tried**: 检查本机 `%APPDATA%` 等价路径（~/.config / ~/Library/
+  Application Support）下有无 Trae CN 数据目录，无；`traeKeyPath` 为 null，
+  解密流程本身也无法启动（TRAE_KEY_MISSING）。
+- **Why they failed**: 数据源不存在于本机，无法实测。
+- **Temporary approach**: 按 design §5.1 清单实现二级映射（`turn.toolName`
+  小写归一化）+ fixture 测试；实现处注释标明「清单未经实测」（trae.ts
+  kindOfTurn 上方）。B8 的 Trae 子代理调查同样降级为 fixture 驱动。
+- **Suggested next step**: 在真实 Trae 库可访问的机器上跑
+  `SELECT DISTINCT tool_name FROM chat_message_task`，按实测结果校正清单
+  （增删条目都在 kindOfTurn 的两个 Set 内）。
+
+---
+
+## D-014 扫描路径 metrics 生产者缺失（B3 前置调查发现，非本 change 引入）
+
+- **Problem**: `metrics` 表只有写入端（writers.upsertMetrics + schema），但
+  `local-sessions/scanner-utils.ts` 的 `storeTraceRecord` 仅在
+  `record.metrics !== undefined` 时写入，而**没有任何 adapter 或扫描路径
+  设置 record.metrics**（全仓 `computeMetrics` 仅被 report-html /
+  compare-report 在运行时调用）。实测 `agent-observe-data/observe.sqlite`：
+  50 会话 / 8754 事件，`metrics` 表 **0 行** —— mission 的
+  repair_loop / ttft_ms / tool_call_count 聚合全部读空。
+- **Approaches tried**: 全仓 grep `record.metrics` / `computeMetrics` /
+  `upsertMetrics` 调用点；翻查 makeSqliteScanner / scanSqliteFile /
+  scanJsonlFile 的存储路径 —— 全部只走 storeTraceRecord，无 metrics 生产者。
+- **Why they failed**: 这是 add-mission-control「持久化 metrics」落地时留下的
+  接线缺口（v5 推翻 G5.3 后只有 schema/writers，没有 scan-time producer）。
+- **Temporary approach**: B3 按 design 文件清单落地（字段 / schema v4 /
+  METRICS_CALC_VERSION / writers / 迁移），3.10 老库升级实测用文档化的
+  `upsertMetrics` 写入路径 + 真实会话的 `computeMetrics` 结果验证新列有真实值
+  （total_tool_duration_ms=308638 / llm_call_count=108 /
+  user_interaction_rounds=124 / calc_version=4）。未改 scanner-utils
+  （不在本 change 文件清单内）。
+- **Suggested next step**: 独立 change 在 `storeTraceRecord` 中当
+  `record.metrics === undefined` 时用 `computeMetrics(record)` 补齐并
+  upsert（一行接线），然后重扫即可回填整个 metrics 表；mission 各 widget
+  随即读到真实值。

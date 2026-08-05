@@ -2,6 +2,7 @@ import type { TraceEvent, TracePhase, TraceRecord, TraceSession, TraceStatus } f
 import {
   aggregateTokenUsage,
   dedupeEventIds,
+  DERIVED_DURATION_CAP_MS,
   type EventWithRaw,
   minMaxIso,
   normalizeStatus,
@@ -83,6 +84,114 @@ function kindOfType(type: string): TraceEvent['kind'] {
   }
 }
 
+/**
+ * §5.1（calibrate-tokens-and-compare-report）：Trae 真实工具名来自
+ * chat_message_task.tool_name（PascalCase），当前全部落进 'tool' 兜底。
+ * 按 toolName 小写归一化后的二级映射；**turn.type 优先级更高**（Trae 自己的一级
+ * 分类更可信），type 落兜底时才看 toolName。
+ *
+ * ⚠️ 清单来自外部变更说明，本仓库无真实 Trae 库可实测（traeKeyPath=null，
+ * 路径为 Windows %APPDATA%），见 TODO(D-013)。
+ */
+const BASH_TOOL_NAMES = new Set([
+  'bash', 'terminal', 'runcommand', 'run_command', 'executecommand',
+]);
+const READ_TOOL_NAMES = new Set([
+  'read', 'readfile', 'read_file', 'glob', 'grep', 'ls', 'codesearch',
+  'search', 'view',
+]);
+const WRITE_TOOL_NAMES = new Set([
+  'write', 'writefile', 'write_file', 'edit', 'searchreplace',
+  'search_replace', 'str_replace', 'create',
+]);
+
+function kindOfTurn(type: string, toolName: string | undefined): TraceEvent['kind'] {
+  const byType = kindOfType(type);
+  if (byType !== 'tool' || toolName === undefined || toolName === '') {
+    return byType;
+  }
+  const name = toolName.toLowerCase();
+  if (BASH_TOOL_NAMES.has(name)) {
+    return 'bash';
+  }
+  if (READ_TOOL_NAMES.has(name)) {
+    return 'file_read';
+  }
+  if (WRITE_TOOL_NAMES.has(name)) {
+    return 'file_write';
+  }
+  return 'tool';
+}
+
+/**
+ * §5.4：tool_call 状态兜底 —— 仅当 turn.status 缺失/为空时才读 toolResult
+ * 关键词；`turn.status` 有值时以它为准。否则一个成功的 `grep "error" app.log`
+ * 必然被误判失败（design §5.4 / R6：宁可漏判）。
+ */
+function turnStatus(turn: TraeTurn): TraceStatus {
+  const raw = turn.status;
+  if (raw !== undefined && raw !== null && raw.trim() !== '') {
+    return normalizeStatus(raw);
+  }
+  if (turn.toolResult !== undefined && /\b(error|failed|failure|exception|traceback)\b/i.test(turn.toolResult)) {
+    return 'error';
+  }
+  return normalizeStatus('completed');
+}
+
+/**
+ * §5.3：同时间戳事件组的时长分摊。Trae 的 tool_call 共享父消息时间戳 → 一组事件
+ * startedAt 完全相同 → 组内 durationMs 全为 0（无 endTime 时）。规则：
+ * - 按 startedAt 分组（非 user_prompt 成员），gap = 下一组 startedAt − 本组 startedAt；
+ * - 组内每个事件 durationMs = floor(gap / n)，余数给最后一个（组内求和 == gap）；
+ * - 单值上限沿用 DERIVED_DURATION_CAP_MS（复用，不新定义）；
+ * - user_prompt 不参与（gap 属于 TimeComposition.userWait，REQ-012）；
+ * - 有实测 endTime 的组保持实测值不重算。
+ */
+function splitSameTimestampDurations(events: EventWithRaw[]): EventWithRaw[] {
+  const byId = new Map<string, number>();
+  const sorted = events
+    .map((event, index) => ({ event, index }))
+    .sort((a, b) =>
+      a.event.startedAt === b.event.startedAt
+        ? a.index - b.index
+        : a.event.startedAt < b.event.startedAt
+          ? -1
+          : 1,
+    );
+  for (let i = 0; i < sorted.length; ) {
+    const startedAt = sorted[i]!.event.startedAt;
+    let j = i;
+    while (j < sorted.length && sorted[j]!.event.startedAt === startedAt) {
+      j += 1;
+    }
+    const group = sorted.slice(i, j).filter(({ event }) => event.kind !== 'user_prompt');
+    // 仅当组内全部成员无实测时长（durationMs === 0）时才分摊
+    if (group.length > 0 && group.every(({ event }) => event.durationMs === 0)) {
+      const next = sorted.slice(j).find(({ event }) => event.kind !== 'user_prompt');
+      const gap =
+        next === undefined
+          ? 0
+          : Date.parse(next.event.startedAt) - Date.parse(startedAt);
+      if (gap > 0 && Number.isFinite(gap)) {
+        const per = Math.floor(gap / group.length);
+        const remainder = gap - per * group.length;
+        group.forEach(({ event }, k) => {
+          const share = k === group.length - 1 ? per + remainder : per;
+          byId.set(event.id, Math.min(share, DERIVED_DURATION_CAP_MS));
+        });
+      }
+    }
+    i = j;
+  }
+  if (byId.size === 0) {
+    return events;
+  }
+  return events.map((event) =>
+    byId.has(event.id) ? { ...event, durationMs: byId.get(event.id)! } : event,
+  );
+}
+
 export function normalizeTraeSample(
   sample: RawSample<TraeRecordShape['session'], TraeTurn>,
   sourcePath: string,
@@ -90,13 +199,23 @@ export function normalizeTraeSample(
   const record = sample.session;
   const turns = sample.events;
   const events: EventWithRaw[] = [];
+  const sessionStartedAt =
+    record.startTime !== undefined
+      ? toIsoFromSeconds(record.startTime)
+      : null;
 
+  let previousStartedAt: string | null = null;
   for (const turn of turns) {
-    const status: TraceStatus = normalizeStatus(turn.status ?? 'completed');
+    const status: TraceStatus = turnStatus(turn);
     const type = turn.type ?? 'tool';
     const phase = TRAE_PHASE[type] ?? 'implement';
-    const startedAt =
-      turn.startTime !== undefined ? toIsoFromSeconds(turn.startTime) : new Date(0).toISOString();
+    // §5.2：startTime 缺失时继承前一个事件的 startedAt（首个事件用会话
+    // startedAt），而不是 new Date(0) 甩到时间线最前。
+    const startedAt: string =
+      turn.startTime !== undefined
+        ? toIsoFromSeconds(turn.startTime)
+        : previousStartedAt ?? sessionStartedAt ?? new Date(0).toISOString();
+    previousStartedAt = startedAt;
     const durationMs =
       turn.startTime !== undefined && turn.endTime !== undefined
         ? Math.max(0, Math.round((turn.endTime - turn.startTime) * 1000))
@@ -127,7 +246,7 @@ export function normalizeTraeSample(
       id: turn.id,
       sessionId: turn.sessionId ?? record.id ?? '',
       sequence: 0,
-      kind: kindOfType(type),
+      kind: kindOfTurn(type, turn.toolName),
       phase: type === 'bash' && turn.command !== undefined && TEST_CMD.test(turn.command) ? 'verify' : phase,
       title: titleFromText(turn.content ?? turn.command ?? type),
       startedAt,
@@ -152,7 +271,9 @@ export function normalizeTraeSample(
     } as EventWithRaw);
   }
 
-  const ordered = orderEventsByTime(events);
+  // §5.3：分摊在排序/去重之前做，组按 startedAt 判定。
+  const split = splitSameTimestampDurations(events);
+  const ordered = orderEventsByTime(split);
   const deduped = dedupeEventIds(ordered);
   const times = minMaxIso(deduped);
   // #16（审查 P3）：Trae server_history_info 不含 cache.read 字段，

@@ -88,19 +88,19 @@
 
 ## §4 Trae adapter 增强（B4）
 
-- [ ] 4.1 `src/adapters/trae.ts` 新增基于 `turn.toolName` 的二级 kind 映射
+- [x] 4.1 `src/adapters/trae.ts` 新增基于 `turn.toolName` 的二级 kind 映射
       （清单见 design.md §5.1，**小写归一化后匹配**，`type` 优先级高于 `toolName`）
-- [ ] 4.2 若能访问真实 Trae 库：跑 `SELECT DISTINCT tool_name FROM chat_message_task`
+- [x] 4.2 若能访问真实 Trae 库：跑 `SELECT DISTINCT tool_name FROM chat_message_task`
       校正清单，把实测输出贴进最终报告；不能访问则记 `D-###` 标注"清单未实测"
-- [ ] 4.3 修 `startTime` 缺失回退：`new Date(0)` → 继承前一事件的 `startedAt`
+- [x] 4.3 修 `startTime` 缺失回退：`new Date(0)` → 继承前一事件的 `startedAt`
       （首个事件用会话 `startedAt`）
-- [ ] 4.4 同时间戳事件组时长分摊：`gap / n`，余数给最后一个，
+- [x] 4.4 同时间戳事件组时长分摊：`gap / n`，余数给最后一个，
       复用 `DERIVED_DURATION_CAP_MS`，`user_prompt` 不参与
-- [ ] 4.5 tool_call 状态兜底：**仅当 `turn.status` 缺失/为空时**才用 `toolResult`
+- [x] 4.5 tool_call 状态兜底：**仅当 `turn.status` 缺失/为空时**才用 `toolResult`
       关键词判定（design.md §5.4）
-- [ ] 4.6 测试：工具名映射三类各一条、时长分摊求和 == gap、
+- [x] 4.6 测试：工具名映射三类各一条、时长分摊求和 == gap、
       **"成功的 `grep error` 不判失败"**（design.md R6）
-- [ ] 4.7 确认 `orderEventsByTime` **零改动**（design.md §5.2）
+- [x] 4.7 确认 `orderEventsByTime` **零改动**（design.md §5.2）
 
 ## §5 对比报告 4→3 维（B5）
 
