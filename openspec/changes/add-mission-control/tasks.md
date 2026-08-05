@@ -115,16 +115,16 @@ widget 读到的都是空值。
 
 ## 3. P0-C 定价与成本
 
-- [ ] 3.1 `src/core/pricing.ts`：`ModelPrice` / `CostSource` /
+- [x] 3.1 `src/core/pricing.ts`：`ModelPrice` / `CostSource` /
       `computeCostUsd(tokens, model)`
-- [ ] 3.2 `config/model-pricing.json` + `.example.json`，三层覆盖（G2.3）
-- [ ] 3.3 ⚠️ **内置默认价格严禁凭记忆写**：Anthropic 模型价格用 `claude-api`
+- [x] 3.2 `config/model-pricing.json` + `.example.json`，三层覆盖（G2.3）
+- [x] 3.3 ⚠️ **内置默认价格严禁凭记忆写**：Anthropic 模型价格用 `claude-api`
       skill 查证；其他厂商逐个查官方定价页。每条必填 `source`（URL + 抓取日期）
       和 `contextWindow`。**查不到的模型不写**，让它走 `unknown`
-- [ ] 3.4 未知模型返回 `{ costUsd: 0, costSource: 'unknown' }`，
+- [x] 3.4 未知模型返回 `{ costUsd: 0, costSource: 'unknown' }`，
       UI 渲染 `—`；测试断言**不得渲染 `$0.0000`**
-- [ ] 3.5 `sessions.cost_source` 落库；workbuddy 的 credit 路径标 `reported`
-- [ ] 3.6 在 `DECISIONS-PENDING.md` 登记 **D-010**：定价表数据来源与更新责任人
+- [x] 3.5 `sessions.cost_source` 落库；workbuddy 的 credit 路径标 `reported`
+- [x] 3.6 在 `DECISIONS-PENDING.md` 登记 **D-010**：定价表数据来源与更新责任人
 
 ## 4. P0-D 聚合端点骨架
 

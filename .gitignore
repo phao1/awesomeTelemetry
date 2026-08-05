@@ -17,6 +17,7 @@ agent-observe-data/
 
 # ===== 本地配置（真实配置 gitignored，只允许 *.example.json 入库）=====
 config/local-sessions.json
+config/model-pricing.json
 config/session-groups.json
 config/*.local.json
 

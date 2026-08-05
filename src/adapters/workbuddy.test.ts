@@ -16,6 +16,7 @@ describe('WorkBuddy adapter（REQ-009）', () => {
     expect(r.session.sourceAgent).toBe('WorkBuddy');
     expect(r.session.title).toBe('optimize the loader');
     expect(r.session.costUsd).toBeCloseTo(0.003);
+    expect(r.session.costSource).toBe('reported'); // credit 路径标 reported（P0-C）
     expect(r.session.eventCount).toBe(3); // call + result 配对合并为 1
     expect(r.events.map((e) => e.kind)).toEqual(['user_prompt', 'bash', 'file_write']);
     expect(r.events[1]?.status).toBe('error'); // Exit Code: 1 配对结果
@@ -29,6 +30,7 @@ describe('WorkBuddy adapter（REQ-009）', () => {
     ];
     const r = normalizeWorkBuddySample(sample(messages), SRC);
     expect(r.events[0]?.status).toBe('error');
+    expect(r.session.costSource).toBe('unknown'); // 无 credit → unknown
   });
 
   it('状态归一化四类映射', () => {

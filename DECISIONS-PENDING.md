@@ -1,141 +1,221 @@
-# DECISIONS-PENDING.md — 待决决策
+# DECISIONS-PENDING.md — pending decisions
 
-> 无人值守长跑中无法等人工确认的决策都记在这里。
-> 格式：编号 / 问题描述 / 尝试过的方案 / 失败原因（如适用）/ 建议的下一步。
-
----
-
-## D-001 规则文件缺失
-
-- **问题描述**：目标指令要求先读 AUTOPILOT.md / PROGRESS.md / RUNBOOK.md，但仓库（含 git 历史）
-  中不存在这三个文件，AGENTS.md / BOOTSTRAP.md 中也没有引用或说明。
-- **尝试过的方案**：全仓库搜索（maxdepth 4）、git 历史全量检查、解压 agent-observability-dev-kit.zip
-  比对——均无这三个文件。
-- **失败原因**：文件从未被创建或未随仓库提交。
-- **临时方案**：按目标指令内嵌的规则重建 AUTOPILOT.md / RUNBOOK.md / PROGRESS.md，
-  内容明确标注「重建」。目标指令中引用的章节编号（§一禁令、§三卡住、§五预授权、§八终止报告、
-  RUNBOOK §三五阶段）均已在重建文件中落地。
-- **建议的下一步**：人工确认重建内容与原始意图一致；如原始文件存在，用原始版本替换。
+> Decisions made during unattended long runs that could not wait for human
+> confirmation are recorded here.
+> Format: id / problem description / approaches tried / why they failed (if
+> applicable) / suggested next step.
 
 ---
 
-## D-002 idx_proxy_started_len 索引列序与 §5.3 期望计划冲突
+## D-001 Missing rule files
 
-- **问题描述**：contracts/database.md §4 定义
-  `idx_proxy_started_len ON proxy_requests(started_at, system_prompt_len DESC)`，
-  但 §5.3 对 `WHERE started_at BETWEEN ? AND ? AND system_prompt_len > 0
-  ORDER BY system_prompt_len DESC LIMIT 1` 的期望计划是 `SEARCH ... USING INDEX idx_proxy_started_len`
-  且「不得出现 USE TEMP B-TREE」。两者在 SQLite 下无法同时成立。
-- **尝试过的方案**：实测三种索引形态——(started_at, system_prompt_len DESC) 必然
-  `USE TEMP B-TREE FOR ORDER BY`（空表/有数据均如此）；(system_prompt_len DESC, started_at) 的计划
-  恰为 `SEARCH proxy_requests USING INDEX idx_proxy_started_len (system_prompt_len>?)`，无临时 B 树，
-  LIMIT 1 可短路。
-- **失败原因**：SQLite 规划器对「按 A 范围过滤 + 按 B 排序」只能用 (A, B) 覆盖搜索，无法复用
-  第二列做全局排序；§4 的列序与 §5.3 的期望计划本身矛盾。
-- **临时方案**：将索引改为 `(system_prompt_len DESC, started_at)`（schema.ts 已改，含 TODO 标记），
-  语义不变（窗口内最长 prompt），验收测试不改。
-- **建议的下一步**：人工确认后更新 contracts/database.md §4 的索引行，消除文档内部矛盾。
-
----
-
-## D-003 scanner 级 JSONL 尾部增量读待接线（F11）
-
-- **问题描述**：REQ-008 的 readJsonlFrom 已支持 byte-offset 增量读，但 scanner 层
-  （scanJsonlFile）对变更文件一律全量重读。原因是增量读只返回尾部新行，无法单独重建
-  会话级聚合（tokenUsage / eventCount / totalDurationMs 需要全量视图）。
-- **尝试过的方案**：考虑「尾行记录 + 与已存会话聚合合并」的方案，需要为每个 adapter
-  定义增量合并语义，且首轮/重启后无 prevHeadHash 可校验头部是否重写，风险高于收益。
-- **失败原因**：无（主动取舍）。全量重读保证正确性；F11 的收益（739MB 文件只读尾部）
-  在连续监视场景下可后续补做。
-- **临时方案**：全量重读，代码中已留 TODO(D-003) 标记；M4 的 readJsonlFrom 增量能力
-  与单元测试保留。
-- **建议的下一步**：若 codeagent 类大文件成为瓶颈，实现「尾行记录 + 已存会话聚合合并」，
-  并在 scan_state 或内存缓存中记录首 4KB hash 用于重写检测。
+- **Problem**: the goal instructions required reading AUTOPILOT.md /
+  PROGRESS.md / RUNBOOK.md first, but none of the three exist in the repo
+  (including git history), and AGENTS.md / BOOTSTRAP.md don't reference or
+  explain them.
+- **Approaches tried**: full-repo search (maxdepth 4), full git-history check,
+  unpacking agent-observability-dev-kit.zip for comparison — none contain the
+  three files.
+- **Why they failed**: the files were never created or never committed with
+  the repo.
+- **Temporary approach**: rebuilt AUTOPILOT.md / RUNBOOK.md / PROGRESS.md
+  from the rules embedded in the goal instructions, with the content clearly
+  marked "rebuilt". The section numbers referenced in the goal instructions
+  (§1 prohibitions, §3 stuck, §5 pre-authorized, §8 termination report,
+  RUNBOOK §3 five phases) are all present in the rebuilt files.
+- **Suggested next step**: human confirms the rebuild matches the original
+  intent; if originals exist, replace with the originals.
 
 ---
 
-## D-005 会话列表行由「紧凑单行」细化为「44px 双行密排」
+## D-002 idx_proxy_started_len column order conflicts with the §5.3 expected
+plan
 
-- **问题描述**：`specs/frontend/spec.md` REQ-011 与 `gotchas.md` G7.3 原文为
-  「列表用紧凑单行，不用多行卡片」。本次设计刷新把会话列表行定为
-  `--row-lg`(44px) 双行密排（首行标题、次行 provider/时间/计数）。
-  按禁令 A（不违背已确认行为），需留痕说明为何这不是违规。
-- **依据**：约束的实质是「密排、非留白型卡片」，反面是 v4 的多行卡片式列表。
-  单行在本项目的真实数据下会强制截断唯一有意义的标签——实测一行只放得下
-  `rollout-2026-08-04T14-08-32-019fcb63…jsonl`，provider / 时间 / 事件数
-  全部挤不进去，用户必须点开才知道每一行是什么。
-  GitHub 的通知/PR 列表同样是双行密排，并非卡片。
-- **尝试过的方案**：单行 + tooltip 补充 meta——被否，因为 meta 是筛选决策依据，
-  必须常驻可见；tooltip 无法扫视比较。
-- **失败原因**：无（主动取舍）。
-- **临时方案**：REQ-011 原文保留「密排非卡片」的实质，加一段细化说明并指向本条；
-  事件行仍为 `--row-sm`(28px) 单行，未放宽。
-- **建议的下一步**：人工确认后，同步更新 `gotchas.md` G7.3 的措辞，
-  把「紧凑单行」改为「紧凑密排、非卡片」，消除字面歧义。
-
----
-
-## D-006 REQ-001 文件级门禁与 REQ-022 按会话惰性加载的张力
-
-- **问题描述**：REQ-001 要求「任何详情读取前 MUST 先经过 shouldRescan 文件级门禁，
-  判定未变更时 MUST 直接返回」；REQ-022 / T-11 要求 SQLite 多会话按
-  「db 路径 + 行内 session id」定位单个会话。若严格执行文件级门禁，会出现
-  「db 未变更但某会话从未加载过 → 直接返回 → 该会话永远点不开」的死锁
-  （P1-2 的同类问题）。
-- **尝试过的方案**：方案 A「首开整库解析、全库落库」（T-03 现状）——满足 REQ-001，
-  但违背 T-11「定位到具体会话」且首开做无用功；方案 B「按会话定位解析 + 跳过
-  文件级门禁」（已采用）——惰性加载只解析目标会话，detail_loaded 作为会话级门禁，
-  文件级门禁保留给全量扫描（POST /api/scan）。
-- **失败原因**：无（主动取舍）。scan_state 以 source_path 为主键，无 schema 变更
-  的前提下无法做会话级 scan_state（change 声明「无 schema 变更」）。
-- **临时方案**：`scanSqliteSessionDetail` 绕过文件级门禁，代码中留 `TODO(D-006)` 标记；
-  全量扫描路径 `scanSqliteFile` 仍走文件级门禁。
-- **建议的下一步**：人工确认后，在 `specs/session-scanning/spec.md` REQ-001 补一句
-  「SQLite 多会话的惰性详情以 sessions.detail_loaded 为会话级门禁，文件级门禁
-  适用于全量扫描」，消除两需求字面冲突。
-
-## D-007 Trae 索引标题「置 null」与 SessionIndexEntry.title: string 的类型张力
-
-- **问题描述**：REQ-021 对 Trae（SQLCipher）写「解密就绪前置 `null` + `pending`，
-  就绪后回填」，但 `contracts/data-model.md` 的 `SessionIndexEntry.title` 是
-  非空 `string`，列表接口没有 null 通道（change 声明「无 BREAKING、不改变已有
-  响应结构」）。
-- **尝试过的方案**：把 title 改为 `string | null`——需要改 data-model 契约 + API
-  类型 + 前端四态，超出本 change 范围；保持 string 并用 D5 回落占位标题
-  （`<trae> session · <时间>`）——已采用，比旧行为（文件名冒充）更诚实。
-- **失败原因**：无（主动取舍）。Trae 在 macOS 无法验证（P-3 裁剪），
-  不影响其余 8 个 provider。
-- **临时方案**：Trae 索引条目沿用 `buildIndexEntry` 的 D5 回落标题；
-  解密详情回填后由 detail 阶段覆盖真实标题。
-- **建议的下一步**：人工确认后决定是否在后续 change 中把
-  `SessionIndexEntry.title` 放宽为 `string | null` 并在前端渲染 pending 占位。
+- **Problem**: contracts/database.md §4 defines
+  `idx_proxy_started_len ON proxy_requests(started_at, system_prompt_len DESC)`,
+  but §5.3's expected plan for `WHERE started_at BETWEEN ? AND ? AND
+  system_prompt_len > 0 ORDER BY system_prompt_len DESC LIMIT 1` is
+  `SEARCH ... USING INDEX idx_proxy_started_len` with "no USE TEMP B-TREE".
+  Both cannot hold simultaneously in SQLite.
+- **Approaches tried**: measured three index shapes —
+  (started_at, system_prompt_len DESC) always yields
+  `USE TEMP B-TREE FOR ORDER BY` (empty and populated tables alike);
+  (system_prompt_len DESC, started_at) yields exactly
+  `SEARCH proxy_requests USING INDEX idx_proxy_started_len
+  (system_prompt_len>?)` with no temp B-tree and LIMIT 1 short-circuits.
+- **Why they failed**: the SQLite planner can only use a (A, B) covering
+  search for "range-filter by A + sort by B"; it cannot reuse the second
+  column for a global sort. §4's column order and §5.3's expected plan
+  contradict each other.
+- **Temporary approach**: changed the index to
+  `(system_prompt_len DESC, started_at)` (schema.ts already changed, with a
+  TODO marker); semantics unchanged (longest prompt in window), acceptance
+  tests unchanged.
+- **Suggested next step**: after human confirmation, update the §4 index line
+  in contracts/database.md to remove the internal contradiction.
 
 ---
 
-## D-008 design-tokens.md §2.4 与 §2.7 自冲突：light attention-emphasis 对比度不达标
+## D-003 scanner-level JSONL tail incremental reads not yet wired (F11)
 
-- **问题描述**：契约 §2.4 表给 light 主题 `--attention-emphasis: #bf8700`，
-  但 §2.7 硬性要求「`--fg-on-emphasis` on 任一 `*-emphasis` ≥ 4.5:1」——
-  实测白字 on #bf8700 只有 3.14:1，同一文档内部矛盾。
-- **尝试过的方案**：候选值实测——#9e6a03（4.65 ✅）、#9a6700（4.87 ✅）、
-  #a86c00（4.37 ❌）、#b87d00（3.52 ❌）。
-- **失败原因**：无（契约自身数值冲突；§9 断言是契约的可执行形式，断言优先）。
-- **临时方案**：light `--attention-emphasis` 改为 `#9e6a03`（与 dark 主题同色相，
-  白字 4.65:1 达标）；其余值逐字采用契约。T4 断言不改。
-- **建议的下一步**：人工确认后把 `contracts/design-tokens.md` §2.4 的
-  light attention-emphasis 值同步改为 `#9e6a03`，消除文档自冲突。
+- **Problem**: REQ-008's readJsonlFrom supports byte-offset incremental reads,
+  but the scanner layer (scanJsonlFile) always full-rereads changed files. The
+  reason: incremental reads only return new tail rows, which cannot rebuild
+  session-level aggregates alone (tokenUsage / eventCount / totalDurationMs
+  need the full view).
+- **Approaches tried**: considered "tail rows + merge with stored session
+  aggregates", which would need per-adapter incremental merge semantics, and
+  with no prevHeadHash after first run/restart to verify whether the head was
+  rewritten — risk outweighs benefit.
+- **Why they failed**: none (deliberate trade-off). Full rereads guarantee
+  correctness; F11's benefit (reading only the tail of a 739MB file) can be
+  added later for continuous-watch scenarios.
+- **Temporary approach**: full rereads; code carries a TODO(D-003) marker; the
+  M4 readJsonlFrom incremental capability and its unit tests are kept.
+- **Suggested next step**: if codeagent-class large files become the
+  bottleneck, implement "tail rows + merge with stored session aggregates",
+  and record the first-4KB hash in scan_state or an in-memory cache for
+  rewrite detection.
 
 ---
 
-## D-009 前端 REQ-020「清空请求」无后端端点
+## D-005 Session list rows refined from "compact single line" to "44px
+two-line dense"
 
-- **问题描述**：`specs/frontend/spec.md` REQ-020 要求代理控制条含「请求计数与清空」，
-  但 `contracts/api.md` §4 与 `server/server.ts` 均无清空 proxy_requests 的端点
-  （只有 GET 列表与单条、POST start/stop）。本 change 的 Non-Goals 明确「不改任何后端 API」。
-- **尝试过的方案**：前端按钮调 `DELETE /api/proxy/requests`（api client 已加）——
-  后端返回 404 ROUTE_NOT_FOUND，失败会真实呈现在 error 态并 console.error；
-  UI 上保留按钮（含二次确认），失败提示「后端暂不支持清空（D-009）」。
-- **失败原因**：无（后端契约缺口，非前端可补）。
-- **临时方案**：按钮保留 + 确认 + 失败呈现实话；TODO(D-009) 标记。
-- **建议的下一步**：在后续 change 中为 `contracts/api.md` §4 增加
-  `DELETE /api/proxy/requests`（含 409/404 语义）并接线。
+- **Problem**: `specs/frontend/spec.md` REQ-011 and `gotchas.md` G7.3
+  originally say "lists use compact single lines, not multi-line cards". This
+  design refresh sets session list rows to `--row-lg` (44px) two-line dense
+  (first line title, second line provider/time/counts). Per prohibition A
+  (don't violate confirmed behavior), this needs a trace explaining why it is
+  not a violation.
+- **Basis**: the essence of the constraint is "dense, not whitespace cards";
+  the anti-pattern is v4's multi-line card lists. Single lines under this
+  project's real data force truncation of the only meaningful label —
+  measured, one line fits only
+  `rollout-2026-08-04T14-08-32-019fcb63…jsonl`; provider / time / event count
+  all get squeezed out, forcing users to open each row to know what it is.
+  GitHub's notification/PR lists are also two-line dense, not cards.
+- **Approaches tried**: single line + tooltip for meta — rejected, because
+  meta is the basis for filtering decisions and must stay visible; tooltips
+  can't be scanned or compared.
+- **Why they failed**: none (deliberate trade-off).
+- **Temporary approach**: REQ-011 keeps the "dense, not cards" essence with an
+  added refinement paragraph pointing to this entry; event rows stay
+  single-line `--row-sm` (28px), not relaxed.
+- **Suggested next step**: after human confirmation, sync the wording of
+  `gotchas.md` G7.3 — "compact single line" → "compact dense, not cards" — to
+  remove the literal ambiguity.
+
+---
+
+## D-006 Tension between REQ-001's file-level gate and REQ-022's per-session
+lazy loading
+
+- **Problem**: REQ-001 requires "before any detail read, MUST pass the
+  shouldRescan file-level gate; when unchanged, MUST return directly";
+  REQ-022 / T-11 requires SQLite multi-session to locate a single session by
+  "db path + in-row session id". Enforcing the file-level gate strictly
+  produces a deadlock: "db unchanged but a session never loaded → return
+  directly → that session can never be opened" (same class of problem as
+  P1-2).
+- **Approaches tried**: approach A "first open parses the whole DB and writes
+  everything" (the T-03 status quo) — satisfies REQ-001 but violates T-11's
+  "locate the specific session" and does useless work on first open; approach
+  B "locate per session + skip the file-level gate" (adopted) — lazy loading
+  parses only the target session, `detail_loaded` acts as the session-level
+  gate, and the file-level gate stays for full scans (POST /api/scan).
+- **Why they failed**: none (deliberate trade-off). scan_state is keyed by
+  source_path, and without a schema change there is no session-level
+  scan_state (the change declared "no schema changes").
+- **Temporary approach**: `scanSqliteSessionDetail` bypasses the file-level
+  gate, code carries a `TODO(D-006)` marker; the full-scan path
+  `scanSqliteFile` still uses the file-level gate.
+- **Suggested next step**: after human confirmation, add to
+  `specs/session-scanning/spec.md` REQ-001: "SQLite multi-session lazy detail
+  uses sessions.detail_loaded as the session-level gate; the file-level gate
+  applies to full scans", removing the literal conflict.
+
+---
+
+## D-007 Tension between Trae index title "set to null" and
+SessionIndexEntry.title: string
+
+- **Problem**: REQ-021 writes for Trae (SQLCipher): "null + `pending` before
+  decryption is ready, backfill after", but `contracts/data-model.md`'s
+  `SessionIndexEntry.title` is a non-null `string`, and the list API has no
+  null channel (the change declared "no BREAKING, no response-structure
+  changes").
+- **Approaches tried**: making title `string | null` — requires changing the
+  data-model contract + API types + frontend four states, beyond this change's
+  scope; keeping string and using the D5 placeholder title
+  (`<trae> session · <time>`) — adopted, more honest than the old file-name
+  stand-in.
+- **Why they failed**: none (deliberate trade-off). Trae cannot be verified on
+  macOS (P-3 trim) and this doesn't affect the other 8 providers.
+- **Temporary approach**: Trae index entries use buildIndexEntry's D5
+  fallback title; after decryption the detail phase overwrites with the real
+  title.
+- **Suggested next step**: after human confirmation, decide whether a later
+  change should widen `SessionIndexEntry.title` to `string | null` and render
+  a pending placeholder in the frontend.
+
+---
+
+## D-008 design-tokens.md §2.4 and §2.7 self-conflict: light
+attention-emphasis contrast fails
+
+- **Problem**: the contract §2.4 table gives light theme
+  `--attention-emphasis: #bf8700`, but §2.7 hard-requires
+  "`--fg-on-emphasis` on any `*-emphasis` >= 4.5:1" — measured white on
+  #bf8700 is only 3.14:1, an internal contradiction in the same document.
+- **Approaches tried**: measured candidates — #9e6a03 (4.65 ✅), #9a6700
+  (4.87 ✅), #a86c00 (4.37 ❌), #b87d00 (3.52 ❌).
+- **Why they failed**: none (the contract's own numeric conflict; §9
+  assertions are the contract's executable form, assertions win).
+- **Temporary approach**: light `--attention-emphasis` changed to `#9e6a03`
+  (same hue family as dark, white text 4.65:1 passes); all other values
+  adopted verbatim. T4 assertion unchanged.
+- **Suggested next step**: after human confirmation, sync the §2.4 light
+  attention-emphasis value in `contracts/design-tokens.md` to `#9e6a03`,
+  removing the self-conflict.
+
+---
+
+## D-009 Frontend REQ-020 "clear requests" has no backend endpoint
+
+- **Problem**: `specs/frontend/spec.md` REQ-020 requires the proxy control
+  strip to include "request count and clear", but neither `contracts/api.md`
+  §4 nor `server/server.ts` has an endpoint to clear proxy_requests (only
+  GET list/single, POST start/stop). This change's Non-Goals explicitly say
+  "no backend API changes".
+- **Approaches tried**: the frontend button calls
+  `DELETE /api/proxy/requests` (api client already added) — the backend
+  returns 404 ROUTE_NOT_FOUND; the failure genuinely surfaces in the error
+  state with console.error; the button stays in the UI (with confirmation),
+  and the failure shows "backend does not support clear yet (D-009)".
+- **Why they failed**: none (backend contract gap, not fixable frontend-side).
+- **Temporary approach**: button kept + confirmation + honest failure
+  presentation; TODO(D-009) marker.
+- **Suggested next step**: in a later change, add `DELETE /api/proxy/requests`
+  to `contracts/api.md` §4 (with 409/404 semantics) and wire it up.
+
+---
+
+## D-010 定价表数据来源与更新责任人（add-mission-control §3.6 / design R3）
+
+- **Problem**: 成本类 widget 的准确性完全取决于模型定价表；内置表只收录了
+  有权威出处的 Anthropic 模型（`src/core/pricing.ts` DEFAULT_MODEL_PRICES，
+  source = anthropic claude-api skill models 表，cached 2026-06-24），
+  glm / deepseek / qwen 等故意留空走 `costSource='unknown'` 显示 `—`。
+  无人值守环境下无法联网逐厂商核对实时价格，且编错价格比留空更糟
+  （错得极难发现，会让 B 区成本系统性偏差）。
+- **Approaches tried**: 只落地加载器与三层覆盖（`loadModelPricingOverrides`，
+  G2.3：内置 → `config/model-pricing.json` → 用户级），未自行补任何价格；
+  用户可通过覆盖层按官方定价页补充并必填 `source`（URL + 抓取日期）。
+- **Why they failed**: 无失败 —— 这是刻意的范围边界（tasks.md「已做的决策」#1
+  与七条红线 #4 都禁止凭记忆写价格）。
+- **Temporary approach**: 未知模型 `{ costUsd: 0, costSource: 'unknown' }`，
+  UI 渲染 `—`；成本类 widget 从分子分母同时剔除 unknown 会话并公示剔除数。
+- **Suggested next step**: 人工（或未来接官方定价 API 的 change）逐厂商核对
+  当前价格并写入覆盖层；建议由「负责成本口径的维护者」持有更新职责，每次抓取
+  记录 URL + 日期，并在 `config/model-pricing.example.json` 保持模板同步。

@@ -151,6 +151,11 @@ export function normalizeWorkBuddySample(
     sourcePath,
     totalDurationMs: wallClockDurationMs(classified),
     isSubagent: false,
+    // workbuddy.ts:69 已按相邻时间戳算 durationMs
+    durationSource: 'derived' as const,
+    // P0-C：workbuddy 的成本来自厂商直接下发的 credit（rawUsage.credit），
+    // 有 credit 时标 reported（厂商直接给金额）；无 credit 时为 unknown。
+    costSource: costUsd > 0 ? ('reported' as const) : ('unknown' as const),
   };
   return { session, events: classified, tokenSemantics: semantics };
 }

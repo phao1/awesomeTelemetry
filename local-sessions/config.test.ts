@@ -9,6 +9,7 @@ import {
   DEFAULT_LOCAL_SESSION_CONFIG,
   expandLocalSessionPath,
   loadLocalSessionConfig,
+  loadModelPricingOverrides,
   mergeLocalSessionConfig,
   saveUserConfig,
 } from './config.js';
@@ -113,5 +114,24 @@ describe('REQ-004 原子写', () => {
     const parsed = JSON.parse(readFileSync(target, 'utf8')) as LocalSessionConfig;
     expect(parsed.prewarmRecent).toBe(3);
     expect(readFileSync(target, 'utf8')).toContain('providers');
+  });
+});
+
+describe('loadModelPricingOverrides（add-mission-control §3 G2.3）', () => {
+  it('读取 config/model-pricing.json，过滤 _comment 与缺 source 条目', () => {
+    const dir = tempDir();
+    mkdirSync(join(dir, 'config'), { recursive: true });
+    writeJson(join(dir, 'config', 'model-pricing.json'), {
+      _comment: ['模板注释，不应进入覆盖表'],
+      'glm-4-plus': { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.25, contextWindow: 128000, source: 'https://example.com/pricing 2026-08-05' },
+      'bad-entry': { input: 0, output: 0 },
+    });
+    const table = loadModelPricingOverrides(dir);
+    expect(Object.keys(table)).toEqual(['glm-4-plus']);
+    expect(table['glm-4-plus']!.source).toContain('2026-08-05');
+  });
+
+  it('无配置文件时返回空表', () => {
+    expect(loadModelPricingOverrides(tempDir())).toEqual({});
   });
 });

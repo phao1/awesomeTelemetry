@@ -11,9 +11,15 @@ import { checkpointWal } from './storage/db.js';
 import { INDEX_SQL, SCHEMA_VERSION, initSchema } from './storage/schema.js';
 import { cachedStmt } from './storage/stmt-cache.js';
 import { enforceProxyRetention } from './storage/retention.js';
-import { loadLocalSessionConfig, type LoadConfigOptions } from '../local-sessions/config.js';
+import {
+  loadLocalSessionConfig,
+  loadModelPricingOverrides,
+  type LoadConfigOptions,
+} from '../local-sessions/config.js';
+import { setModelPriceOverrides } from '../src/core/pricing.js';
 import { cleanupDuplicateSessionRows } from '../local-sessions/scanner-utils.js';
 import { queueSessionChange } from './realtime/coalescer.js';
+import { loadSessionGroups, primaryKeyFor } from './storage/session-merge.js';
 import { eventBus } from './realtime/event-bus.js';
 import { initialScanAndStore } from './watch/scan-scheduler.js';
 import type { Database } from 'better-sqlite3';
@@ -47,8 +53,8 @@ export function prewarmWarning(prewarmRecent: number): string | null {
     return null;
   }
   return (
-    `警告: --prewarm-recent ${prewarmRecent} 会显著拖慢启动后前几分钟的响应` +
-    `（参考 v4 实测劣化 200–1240 倍）`
+    `WARNING: --prewarm-recent ${prewarmRecent} significantly slows responses for the first minutes after startup` +
+    ` (v4 measurements showed 200-1240x degradation)`
   );
 }
 
@@ -148,17 +154,17 @@ function parseNonNegativeInt(raw: string, flag: string): number {
 function printHelp(): void {
   console.log(`agent-observe [options]
 
-  --host <host>                绑定地址（默认 127.0.0.1，G3.1）
-  --port <port>                HTTP 端口（默认 4173）
-  --no-open                    不自动打开浏览器
-  --config-root <path>         config 目录（默认 process.cwd()）
-  --db-path <path>             SQLite 路径（默认 <config-root>/agent-observe-data/observe.sqlite）
-  --proxy-port <port>          MITM 端口（默认 7779）
-  --enable-proxy               启动即开 MITM
-  --prewarm-recent <n>         预热最近 N 个会话（默认 0 = 完全按需）
-  --proxy-retention-days <n>   proxy_requests 保留天数（默认 30，0 = 不清理）
-  --no-gzip                    关闭响应压缩（仅调试用）
-  --help                      显示帮助`);
+  --host <host>                bind address (default 127.0.0.1)
+  --port <port>                HTTP port (default 4173)
+  --no-open                    do not auto-open the browser
+  --config-root <path>         config directory (default process.cwd())
+  --db-path <path>             SQLite path (default <config-root>/agent-observe-data/observe.sqlite)
+  --proxy-port <port>          MITM port (default 7779)
+  --enable-proxy               start MITM proxy on launch
+  --prewarm-recent <n>         prewarm the most recent N sessions (default 0 = fully on demand)
+  --proxy-retention-days <n>   proxy_requests retention days (default 30, 0 = never purge)
+  --no-gzip                    disable response compression (debug only)
+  --help                       show this help`);
 }
 
 /** REQ-004：启动自检 5 步。 */
@@ -183,26 +189,26 @@ export function runStartupSelfCheck(
     return row === undefined;
   });
   if (missingIndexes.length > 0) {
-    throw new Error(`关键索引缺失且补建失败: ${missingIndexes.join(', ')}`);
+    throw new Error(`Key indexes missing and rebuild failed: ${missingIndexes.join(', ')}`);
   }
   // 3. checkpointWal
   checkpointWal(db);
   // 3.5. T-02：清理旧版「索引/详情 key 不一致」产生的孤儿重复行
   const orphans = cleanupDuplicateSessionRows(db);
   if (orphans > 0) {
-    console.log(`重复行清理: 删除 ${orphans} 条 detail_loaded=0 孤儿行`);
+    console.log(`Duplicate row cleanup: removed ${orphans} detail_loaded=0 orphan rows`);
   }
   // 4. proxy 保留清理
   const deleted = enforceProxyRetention(db, options.proxyRetentionDays);
   if (deleted > 0) {
-    console.log(`proxy 保留清理: 删除 ${deleted} 条过期记录`);
+    console.log(`Proxy retention cleanup: removed ${deleted} expired records`);
   }
   // 5. 启动摘要
   const sessionCount = (cachedStmt(db, 'SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c;
   const dbSizeBytes = existsSync(options.dbPath) ? statSync(options.dbPath).size : 0;
   const walSizeBytes = existsSync(`${options.dbPath}-wal`) ? statSync(`${options.dbPath}-wal`).size : 0;
   console.log(
-    `启动自检完成: schemaVersion=${SCHEMA_VERSION} sessions=${sessionCount} ` +
+    `Startup self-check passed: schemaVersion=${SCHEMA_VERSION} sessions=${sessionCount} ` +
       `db=${(dbSizeBytes / 1024 / 1024).toFixed(2)}MB wal=${(walSizeBytes / 1024 / 1024).toFixed(2)}MB ` +
       `http://${options.host}:${options.port}/`,
   );
@@ -226,6 +232,9 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   const options = parseCliArgs(argv);
   const db = openWritable(options.dbPath);
   const config = loadLocalSessionConfig(configLoadOptions(options.configRoot));
+  // G2.3：定价覆盖层（config/model-pricing.json + 用户级）在扫描前生效，
+  // adapter 的 computeCostUsd 才能命中扩展价格。
+  setModelPriceOverrides(loadModelPricingOverrides(options.configRoot));
   const enriched = { ...config, prewarmRecent: options.prewarmRecent };
 
   const warning = prewarmWarning(options.prewarmRecent);
@@ -235,11 +244,17 @@ export async function runCli(argv: readonly string[]): Promise<void> {
 
   runStartupSelfCheck(db, options);
 
+  // #17（REQ-009）：组内成员变更时上报 primaryKey。
+  const sessionGroups = loadSessionGroups(join(options.configRoot, 'config'));
+  const notifyMerged = (key: string): void => {
+    queueSessionChange(primaryKeyFor(key, sessionGroups));
+  };
+
   // REQ-013/REQ-002：索引阶段同步完成，预热不 await；listen 不被预热阻塞
   initialScanAndStore({
     db,
     config: enriched,
-    notify: queueSessionChange,
+    notify: notifyMerged,
     emit: (event) => {
       eventBus.emit(event.type, event);
     },
@@ -257,7 +272,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   const url = `http://${options.host}:${options.port}/`;
   console.log(`Agent Observability is running at ${url}`);
   if (options.enableProxy) {
-    console.log(`--enable-proxy 已设置；MITM 接线见 server/proxy/mitm-proxy.ts（P-3）`);
+    console.log(`--enable-proxy set; MITM wiring in server/proxy/mitm-proxy.ts (P-3)`);
   }
 
   if (options.open) {
