@@ -12,6 +12,7 @@ const scripts = [
   '05-overview-perf.mjs',
   '06-diff-write.mjs',
   '07-event-loop.mjs',
+  '08-mission.mjs',
 ];
 
 async function runScript(script) {

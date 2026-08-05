@@ -21,13 +21,13 @@ export function createSyntheticDb() {
     `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, status, cwd,
        message_count, event_count, token_input, token_output, token_reasoning, token_cache_read,
        token_cache_write, token_total, cost_usd, system_prompt, source_path, data_source,
-       total_duration_ms, is_subagent, detail_loaded)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       total_duration_ms, is_subagent, detail_loaded, primary_model, cost_source, duration_source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertEvent = db.prepare(
     `INSERT INTO events (session_id, id, sequence, kind, phase, title, started_at, duration_ms,
-       status, actor, tool, input_summary, output_summary, tokens_json, error)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       status, actor, tool, input_summary, output_summary, tokens_json, error, model, input_len, output_len)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertProxy = db.prepare(
     `INSERT INTO proxy_requests (request_id, method, url, hostname, response_status, content_type,
@@ -46,7 +46,7 @@ export function createSyntheticDb() {
       'codex-worst', 'codex', 'Codex', 'worst session', '2026-08-01T00:00:00.000Z',
       '2026-08-01T00:10:00.000Z', 'success', '/tmp/worst', 300, worstSessionEvents,
       100000, 80000, 20000, 15000, 5000, 200000, 1.25, 'system prompt',
-      '/tmp/worst.jsonl', 'scan', 600000, 0, 1,
+      '/tmp/worst.jsonl', 'scan', 600000, 0, 1, 'claude-opus-4-8', 'estimated', 'derived',
     );
 
     const base = Date.parse('2026-08-01T00:00:00.000Z');
@@ -60,6 +60,7 @@ export function createSyntheticDb() {
         kind === 'tool' || kind === 'bash' || kind === 'test' ? 'Bash' : null,
         null, null, JSON.stringify({ input: 10, output: 8, reasoning: 2, cacheRead: 1, cacheWrite: 0, total: 21 }),
         i % 100 === 0 ? 'boom' : null,
+        kind === 'llm' ? 'claude-opus-4-8' : null, 10, 8,
       );
     }
     // 其余 523 会话（合计 63,998 events）
@@ -77,6 +78,9 @@ export function createSyntheticDb() {
         `session ${s}`, started, updated, 'success', `/tmp/${id}`,
         Math.floor(events / 3), events, 1000, 800, 200, 150, 50, 2000, 0.05,
         null, `/tmp/${id}.jsonl`, 'scan', events * 60, 0, 0,
+        s % 5 === 0 ? 'claude-sonnet-4-6' : s % 3 === 0 ? 'gpt-4o' : null,
+        s % 5 === 0 || s % 3 === 0 ? 'estimated' : 'unknown',
+        'derived',
       );
       for (let i = 1; i <= events; i += 1) {
         const kind = KINDS[i % KINDS.length];
@@ -87,6 +91,8 @@ export function createSyntheticDb() {
           kind === 'tool' || kind === 'bash' ? 'Bash' : null,
           null, null, JSON.stringify({ input: 5, output: 4, reasoning: 1, cacheRead: 0, cacheWrite: 0, total: 10 }),
           null,
+          kind === 'llm' ? (s % 5 === 0 ? 'claude-sonnet-4-6' : s % 3 === 0 ? 'gpt-4o' : null) : null,
+          5, 4,
         );
       }
     }

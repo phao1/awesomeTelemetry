@@ -30,6 +30,12 @@ import {
   listProxyRequests,
   listSessions,
 } from './storage/query-engine.js';
+import { getMission } from './storage/mission.js';
+import {
+  loadSessionGroups,
+  mergeSessionDetail,
+  primaryKeyFor,
+} from './storage/session-merge.js';
 import { deleteSession } from './storage/writers.js';
 import { SCHEMA_VERSION } from './storage/schema.js';
 import { cachedStmt } from './storage/stmt-cache.js';
@@ -134,7 +140,7 @@ async function readJsonBody(
       ? (parsed as Record<string, unknown>)
       : {};
   } catch {
-    throw new HttpError(400, 'BAD_REQUEST', '请求体不是合法 JSON');
+    throw new HttpError(400, 'BAD_REQUEST', 'Request body is not valid JSON');
   }
 }
 
@@ -162,6 +168,15 @@ export function createAgentObservabilityServer(
     (opts.userConfigPath !== undefined
       ? join(dirname(opts.userConfigPath), 'desensitization-rules.json')
       : 'desensitization-rules.json');
+  // #17（REQ-003）：合并组配置（config/session-groups.json），缺省不合并。
+  const sessionGroups =
+    opts.projectConfigPath !== undefined
+      ? loadSessionGroups(dirname(opts.projectConfigPath))
+      : [];
+  /** REQ-009：组内成员变更时上报 primaryKey，否则前端刷新一个列表里不存在的 key。 */
+  const notifyMerged = (key: string): void => {
+    queueSessionChange(primaryKeyFor(key, sessionGroups));
+  };
   const detailCache = opts.detailCache ?? new DetailCache();
   const startedAt = Date.now();
   let scanInProgress = false;
@@ -185,9 +200,20 @@ export function createAgentObservabilityServer(
       return null;
     }
     if (meta.detail_loaded === 0) {
-      await scanAndStoreDetail(db, key, { config, notify: queueSessionChange });
+      await scanAndStoreDetail(db, key, { config, notify: notifyMerged });
     }
-    return getSessionDetail(db, key, { mode });
+    let detail = getSessionDetail(db, key, { mode });
+    if (detail !== null && sessionGroups.length > 0) {
+      const merged = await mergeSessionDetail(
+        key,
+        async (memberKey) => getSessionDetail(db, memberKey, { mode }),
+        sessionGroups,
+      );
+      if (merged !== null) {
+        detail = merged;
+      }
+    }
+    return detail;
   };
 
   const router = new Router();
@@ -211,18 +237,18 @@ export function createAgentObservabilityServer(
     const query = parseQuery(req);
     const dataSource = query.get('dataSource') ?? 'scan';
     if (dataSource !== 'scan' && dataSource !== 'proxy') {
-      throw new HttpError(400, 'INVALID_ENUM', `dataSource 必须是 scan 或 proxy，收到 ${dataSource}`);
+      throw new HttpError(400, 'INVALID_ENUM', `dataSource must be "scan" or "proxy", got ${dataSource}`);
     }
     const providerRaw = query.get('provider');
     if (providerRaw !== null && !(PROVIDER_KEYS as readonly string[]).includes(providerRaw)) {
-      throw new HttpError(400, 'INVALID_ENUM', `未知 provider: ${providerRaw}`);
+        throw new HttpError(400, 'INVALID_ENUM', `Unknown provider: ${providerRaw}`);
     }
     const keysRaw = query.get('keys');
     let keys: string[] | undefined;
     if (keysRaw !== null && keysRaw !== '') {
       keys = keysRaw.split(',');
       if (keys.length > 200) {
-        throw new HttpError(400, 'BAD_REQUEST', 'keys 上限 200 个');
+        throw new HttpError(400, 'BAD_REQUEST', 'keys limit is 200');
       }
     }
     const result = listSessions(db, {
@@ -231,6 +257,7 @@ export function createAgentObservabilityServer(
       limit: intParam(query.get('limit'), 50, 500),
       cursor: query.get('cursor') ?? undefined,
       keys,
+      groups: sessionGroups,
     });
     sendJson(res, 200, result, req);
   });
@@ -240,7 +267,7 @@ export function createAgentObservabilityServer(
     const query = parseQuery(req);
     const mode = query.get('mode') ?? 'slim';
     if (mode !== 'slim' && mode !== 'full') {
-      throw new HttpError(400, 'INVALID_ENUM', `mode 必须是 slim 或 full，收到 ${mode}`);
+      throw new HttpError(400, 'INVALID_ENUM', `mode must be "slim" or "full", got ${mode}`);
     }
     const cacheKey = `${key}:${mode}`;
     const cached = detailCache.get(cacheKey);
@@ -256,13 +283,22 @@ export function createAgentObservabilityServer(
       throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
     }
 
-    let detail = getSessionDetail(db, key, {
-      mode,
-      offset: intParam(query.get('offset'), 0, Number.MAX_SAFE_INTEGER),
-      limit: intParam(query.get('limit'), 2000, 5000),
-    });
+    const offset = intParam(query.get('offset'), 0, Number.MAX_SAFE_INTEGER);
+    const limit = intParam(query.get('limit'), 2000, 5000);
+    let detail = getSessionDetail(db, key, { mode, offset, limit });
     if (detail === null) {
       throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
+    }
+    if (sessionGroups.length > 0) {
+      const merged = await mergeSessionDetail(
+        key,
+        async (memberKey) => getSessionDetail(db, memberKey, { mode, offset: 0, limit: 5000 }),
+        sessionGroups,
+        { offset, limit },
+      );
+      if (merged !== null) {
+        detail = merged;
+      }
     }
 
     if (meta.detail_loaded === 0) {
@@ -274,13 +310,20 @@ export function createAgentObservabilityServer(
       }
       await scanAndStoreDetail(db, key, {
         config,
-        notify: queueSessionChange,
+        notify: notifyMerged,
       });
-      detail = getSessionDetail(db, key, {
-        mode,
-        offset: intParam(query.get('offset'), 0, Number.MAX_SAFE_INTEGER),
-        limit: intParam(query.get('limit'), 2000, 5000),
-      });
+      detail = getSessionDetail(db, key, { mode, offset, limit });
+      if (sessionGroups.length > 0) {
+        const merged = await mergeSessionDetail(
+          key,
+          async (memberKey) => getSessionDetail(db, memberKey, { mode, offset: 0, limit: 5000 }),
+          sessionGroups,
+          { offset, limit },
+        );
+        if (merged !== null) {
+          detail = merged;
+        }
+      }
       if (detail === null) {
         throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
       }
@@ -313,7 +356,7 @@ export function createAgentObservabilityServer(
     deleteSession(db, key);
     detailCache.invalidate(`${key}:slim`);
     detailCache.invalidate(`${key}:full`);
-    queueSessionChange(key);
+    notifyMerged(key);
     sendJson(res, 200, { deleted: true, key }, req);
   });
 
@@ -321,9 +364,33 @@ export function createAgentObservabilityServer(
     const query = parseQuery(req);
     const dataSource = query.get('dataSource') ?? 'scan';
     if (dataSource !== 'scan' && dataSource !== 'proxy') {
-      throw new HttpError(400, 'INVALID_ENUM', `dataSource 必须是 scan 或 proxy，收到 ${dataSource}`);
+      throw new HttpError(400, 'INVALID_ENUM', `dataSource must be "scan" or "proxy", got ${dataSource}`);
     }
     sendJson(res, 200, getAgentOverview(db, dataSource), req);
+  });
+
+  // api.md §2.4：Mission 聚合，1 请求返回全部 A/B/C 三区 widget（G11.9）。
+  router.register('GET', '/api/mission', async (req, res) => {
+    const query = parseQuery(req);
+    const range = query.get('range') ?? '7d';
+    if (range !== '7d' && range !== '30d' && range !== 'all') {
+      throw new HttpError(400, 'INVALID_ENUM', `range must be "7d", "30d" or "all", got ${range}`);
+    }
+    const dataSource = query.get('dataSource') ?? 'scan';
+    if (dataSource !== 'scan' && dataSource !== 'proxy') {
+      throw new HttpError(400, 'INVALID_ENUM', `dataSource must be "scan" or "proxy", got ${dataSource}`);
+    }
+    const tzRaw = query.get('tz') ?? '0';
+    const tz = Number(tzRaw);
+    if (!Number.isFinite(tz)) {
+      throw new HttpError(400, 'BAD_REQUEST', `tz must be a number, got ${tzRaw}`);
+    }
+    const result = await getMission(db, {
+      range: range as '7d' | '30d' | 'all',
+      dataSource: dataSource as 'scan' | 'proxy',
+      tz,
+    });
+    sendJson(res, 200, result, req);
   });
 
   router.register('GET', '/api/providers/status', (_req, res) => {
@@ -397,7 +464,7 @@ export function createAgentObservabilityServer(
     let port: number | undefined;
     if (rawPort !== undefined) {
       if (typeof rawPort !== 'number' || !Number.isInteger(rawPort) || rawPort < 1 || rawPort > 65535) {
-        throw new HttpError(400, 'BAD_REQUEST', 'port 必须是 1-65535 的整数');
+        throw new HttpError(400, 'BAD_REQUEST', 'port must be an integer between 1 and 65535');
       }
       port = rawPort;
     }
@@ -419,7 +486,7 @@ export function createAgentObservabilityServer(
     let pid: number | undefined;
     if (rawPid !== undefined) {
       if (typeof rawPid !== 'number' || !Number.isInteger(rawPid) || rawPid <= 0) {
-        throw new HttpError(400, 'BAD_REQUEST', 'pid 必须是正整数');
+        throw new HttpError(400, 'BAD_REQUEST', 'pid must be a positive integer');
       }
       pid = rawPid;
     }
@@ -487,7 +554,7 @@ export function createAgentObservabilityServer(
   router.register('PUT', '/api/config/providers', async (req, res) => {
     const body = await readJsonBody(req);
     if (typeof body.providers !== 'object' || body.providers === null) {
-      throw new HttpError(400, 'BAD_REQUEST', 'body 必须含 providers 对象');
+      throw new HttpError(400, 'BAD_REQUEST', 'body must contain a providers object');
     }
     const project = loadProjectConfig(opts.projectConfigPath);
     const merged = mergeLocalSessionConfig(
@@ -501,12 +568,12 @@ export function createAgentObservabilityServer(
 
   router.register('POST', '/api/scan', async (req, res) => {
     if (scanInProgress) {
-      throw new HttpError(429, 'SCAN_IN_PROGRESS', '已有扫描在执行');
+      throw new HttpError(429, 'SCAN_IN_PROGRESS', 'A scan is already in progress');
     }
     const body = await readJsonBody(req);
     const provider = body.provider as string | undefined;
     if (provider !== undefined && !(PROVIDER_KEYS as readonly string[]).includes(provider)) {
-      throw new HttpError(400, 'INVALID_ENUM', `未知 provider: ${provider}`);
+      throw new HttpError(400, 'INVALID_ENUM', `Unknown provider: ${provider}`);
     }
     scanInProgress = true;
     try {
@@ -515,7 +582,7 @@ export function createAgentObservabilityServer(
         config,
         force: body.force === true,
         providers: provider === undefined ? undefined : [provider as ProviderKey],
-        notify: queueSessionChange,
+        notify: notifyMerged,
         emit: (event) => {
           eventBus.emit(event.type, event);
         },
@@ -531,7 +598,7 @@ export function createAgentObservabilityServer(
     const leftKey = body.leftKey;
     const rightKey = body.rightKey;
     if (typeof leftKey !== 'string' || typeof rightKey !== 'string') {
-      throw new HttpError(400, 'BAD_REQUEST', 'leftKey 与 rightKey 必填');
+      throw new HttpError(400, 'BAD_REQUEST', 'leftKey and rightKey are required');
     }
     const left = await ensureDetail(leftKey, 'slim');
     if (left === null) {
@@ -590,7 +657,7 @@ export function createAgentObservabilityServer(
     };
     const report = buildTraceReportHtml(record);
     if (report.externalDataJs === undefined) {
-      throw new HttpError(404, 'ROUTE_NOT_FOUND', '该会话报告无需外部数据文件');
+      throw new HttpError(404, 'ROUTE_NOT_FOUND', 'This session report has no external data file');
     }
     res.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8' });
     res.end(report.externalDataJs);
@@ -601,12 +668,12 @@ export function createAgentObservabilityServer(
     const leftKey = query.get('left');
     const rightKey = query.get('right');
     if (leftKey === null || rightKey === null) {
-      throw new HttpError(400, 'BAD_REQUEST', 'left 与 right 必填');
+      throw new HttpError(400, 'BAD_REQUEST', 'left and right are required');
     }
     const left = await ensureDetail(leftKey, 'full');
     const right = await ensureDetail(rightKey, 'full');
     if (left === null || right === null) {
-      throw new HttpError(404, 'SESSION_NOT_FOUND', '对比会话不存在');
+      throw new HttpError(404, 'SESSION_NOT_FOUND', 'Compare session not found');
     }
     const toRecord = (detail: SessionDetailResponse): TraceRecord => ({
       session: detail.session,
@@ -614,7 +681,8 @@ export function createAgentObservabilityServer(
       tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
     });
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end(buildCompareReportHtml(toRecord(left), toRecord(right)));
+    const locale = query.get('locale') === 'en' ? 'en' : 'zh';
+    res.end(buildCompareReportHtml(toRecord(left), toRecord(right), locale));
   });
 
   router.register('GET', '/api/events', (req, res) => {

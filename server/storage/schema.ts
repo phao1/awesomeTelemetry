@@ -2,7 +2,11 @@ import type { Database } from 'better-sqlite3';
 
 import { cachedStmt } from './stmt-cache.js';
 
-export const SCHEMA_VERSION = 1;
+/**
+ * v2（add-mission-control）：新增 model / 长度冗余列 / 成本与时长来源 / ttft·e2e。
+ * 迁移见 §migrateSchema —— 全部是 ADD COLUMN，非破坏性，新列随下一轮扫描回填。
+ */
+export const SCHEMA_VERSION = 2;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -34,7 +38,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   data_source       TEXT    NOT NULL DEFAULT 'scan',
   total_duration_ms INTEGER NOT NULL DEFAULT 0,
   is_subagent       INTEGER NOT NULL DEFAULT 0,
-  detail_loaded     INTEGER NOT NULL DEFAULT 0
+  detail_loaded     INTEGER NOT NULL DEFAULT 0,
+  primary_model     TEXT,
+  cost_source       TEXT    NOT NULL DEFAULT 'unknown',
+  duration_source   TEXT    NOT NULL DEFAULT 'unknown'
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS events (
@@ -53,6 +60,9 @@ CREATE TABLE IF NOT EXISTS events (
   output_summary TEXT,
   tokens_json    TEXT,
   error          TEXT,
+  model          TEXT,
+  input_len      INTEGER NOT NULL DEFAULT 0,
+  output_len     INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (session_id, id)
 ) WITHOUT ROWID;
 
@@ -75,7 +85,9 @@ CREATE TABLE IF NOT EXISTS metrics (
   entered_debug         INTEGER NOT NULL DEFAULT 0,
   tokens_per_step       REAL    NOT NULL DEFAULT 0,
   cost_usd              REAL    NOT NULL DEFAULT 0,
-  calc_version          INTEGER NOT NULL DEFAULT 0
+  calc_version          INTEGER NOT NULL DEFAULT 0,
+  ttft_ms               REAL,
+  e2e_ms                REAL
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS scan_state (
@@ -139,11 +151,17 @@ CREATE INDEX IF NOT EXISTS idx_events_session_seq    ON events(session_id, seque
 CREATE INDEX IF NOT EXISTS idx_events_session_phase  ON events(session_id, phase);
 CREATE INDEX IF NOT EXISTS idx_events_kind           ON events(kind);
 CREATE INDEX IF NOT EXISTS idx_events_phase          ON events(phase);
+-- v2：Mission A1/B4/B15 按 tool 聚合；idx_events_kind 不是 (tool) 的前缀，不重复
+CREATE INDEX IF NOT EXISTS idx_events_tool           ON events(tool);
+-- v2：Mission 按 (session, kind) 过滤（A1/A7/B1 等）；不是 idx_events_session_seq 的前缀
+CREATE INDEX IF NOT EXISTS idx_events_session_kind   ON events(session_id, kind);
 
 CREATE INDEX IF NOT EXISTS idx_sessions_ds_started   ON sessions(data_source, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_started_at   ON sessions(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_provider     ON sessions(provider);
 CREATE INDEX IF NOT EXISTS idx_sessions_source_agent ON sessions(source_agent);
+-- v2：Mission 按 provider 过滤 + started_at 排序的复合索引
+CREATE INDEX IF NOT EXISTS idx_sessions_started_prov ON sessions(started_at DESC, provider);
 
 CREATE INDEX IF NOT EXISTS idx_scan_state_provider   ON scan_state(provider);
 CREATE INDEX IF NOT EXISTS idx_scan_state_session    ON scan_state(session_id);
@@ -161,8 +179,65 @@ const SET_SCHEMA_VERSION_SQL =
   "INSERT INTO _meta(key, value) VALUES('schema_version', ?) " +
   'ON CONFLICT(key) DO UPDATE SET value = excluded.value';
 
+/**
+ * v1 → v2 迁移（add-mission-control）。
+ *
+ * 全部是 `ALTER TABLE ADD COLUMN`：非破坏性，不重写既有行，新列取默认值后
+ * **随下一轮扫描自然回填**，无需全量重建库。
+ *
+ * 已经是 v2 的新库由 SCHEMA_SQL 直接建出这些列，此处 ADD COLUMN 会报
+ * "duplicate column name" —— 逐条捕获跳过即可（幂等）。
+ *
+ * 迁移失败的处置（决策：DB 是本地会话文件的派生缓存，可重建）：
+ * 不静默吞掉，抛给调用方，由启动自检打印"请删除 <db> 后重新扫描"。
+ * 半迁移状态比重扫一次危险得多。
+ */
+const V2_ADD_COLUMNS = [
+  "ALTER TABLE sessions ADD COLUMN primary_model TEXT",
+  "ALTER TABLE sessions ADD COLUMN cost_source TEXT NOT NULL DEFAULT 'unknown'",
+  "ALTER TABLE sessions ADD COLUMN duration_source TEXT NOT NULL DEFAULT 'unknown'",
+  'ALTER TABLE events ADD COLUMN model TEXT',
+  'ALTER TABLE events ADD COLUMN input_len INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE events ADD COLUMN output_len INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE metrics ADD COLUMN ttft_ms REAL',
+  'ALTER TABLE metrics ADD COLUMN e2e_ms REAL',
+];
+
+function isDuplicateColumn(error: unknown): boolean {
+  return error instanceof Error && /duplicate column name/i.test(error.message);
+}
+
+export function migrateSchema(db: Database, fromVersion: number): void {
+  if (fromVersion >= SCHEMA_VERSION) {
+    return;
+  }
+  for (const sql of V2_ADD_COLUMNS) {
+    try {
+      db.exec(sql);
+    } catch (error) {
+      if (!isDuplicateColumn(error)) {
+        throw new Error(
+          `schema v${fromVersion}→v${SCHEMA_VERSION} migration failed on "${sql}": ` +
+            `${error instanceof Error ? error.message : String(error)}. ` +
+            'The database is a rebuildable cache — delete it and rescan.',
+          { cause: error },
+        );
+      }
+    }
+  }
+  cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
+}
+
 export function initSchema(db: Database): void {
   db.exec(SCHEMA_SQL); // §3 全部 CREATE TABLE IF NOT EXISTS
+  // 既有 v1 库：表已存在，CREATE TABLE IF NOT EXISTS 不会补列，必须走迁移
+  const existing = db
+    .prepare("SELECT value FROM _meta WHERE key = 'schema_version'")
+    .get() as { value?: string } | undefined;
+  const current = Number(existing?.value ?? SCHEMA_VERSION);
+  if (Number.isFinite(current) && current < SCHEMA_VERSION) {
+    migrateSchema(db, current);
+  }
   db.exec(INDEX_SQL); // §4 全部 CREATE INDEX IF NOT EXISTS
   cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
   db.exec('ANALYZE');

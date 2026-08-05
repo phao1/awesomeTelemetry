@@ -411,6 +411,48 @@ describe('API 契约（contracts/api.md §8）', () => {
     expect(typeof body.stamp).toBe('string');
   });
 
+  it('mission 单请求返回全部区块，每个 widget 有非空 criteria；available=false 时 data 为 null 且 reason 非空', async () => {
+    const { port } = await boot((db) => {
+      seedSession(db, 'codex-s1', 'codex');
+      seedSession(db, 'claude-s1', 'claude');
+    });
+    const r = await request(port, 'GET', '/api/mission?range=all');
+    expect(r.status).toBe(200);
+    const body = JSON.parse(r.text) as {
+      meta: { widgetCount: number; stamp: string; range: string; durationMs: number };
+      usage: Record<string, unknown>;
+      quality: Record<string, unknown>;
+      health: Record<string, unknown>;
+    };
+    expect(body.meta.widgetCount).toBeGreaterThan(0);
+    expect(typeof body.meta.stamp).toBe('string');
+    expect(body.meta.range).toBe('all');
+    expect(typeof body.meta.durationMs).toBe('number');
+    const widgets = [
+      ...Object.values(body.usage),
+      ...Object.values(body.quality),
+      ...Object.values(body.health),
+    ] as Array<{ criteria: string; available: boolean; unavailableReason: string | null; data: unknown }>;
+    for (const w of widgets) {
+      expect(typeof w.criteria).toBe('string');
+      expect(w.criteria.length).toBeGreaterThan(0);
+      if (w.available === false) {
+        expect(w.data).toBeNull();
+        expect(w.unavailableReason).not.toBeNull();
+      }
+    }
+  });
+
+  it('mission 校验 range 与 tz 参数', async () => {
+    const { port } = await boot();
+    const badRange = await request(port, 'GET', '/api/mission?range=99d');
+    expect(badRange.status).toBe(400);
+    expect((JSON.parse(badRange.text) as { error: { code: string } }).error.code).toBe('INVALID_ENUM');
+    const badTz = await request(port, 'GET', '/api/mission?tz=abc');
+    expect(badTz.status).toBe(400);
+    expect((JSON.parse(badTz.text) as { error: { code: string } }).error.code).toBe('BAD_REQUEST');
+  });
+
   it('生产实例不暴露 dev-only 路由', async () => {
     const { port } = await boot();
     const r = await request(port, 'GET', '/api/cdp/status');

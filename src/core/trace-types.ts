@@ -86,14 +86,20 @@ export interface TokenUsage {
   reasoning: number;
   /**
    * 缓存读取 token。
-   * ⚠️ OpenCode / CodeArts / CodeAgent2 系为 session 级**累积值**，
-   * 跨 event 聚合必须用 Math.max()，不得 sum（G4.4，最易踩坑）。
+   * ⚠️ OpenCode / CodeArts / CodeAgent2 系为**每步增量值**（2026-08-03 实测校准：
+   * DeepSeek 计费 input = SUM(input) + SUM(cache.read)，三步 6016/4000/2000 应得 12016）。
+   * 跨 event 聚合必须用 sum，不得 Math.max()（旧 G4.4 的 cumulative 假设已被推翻）。
    * 其余 provider 为增量，用 sum。语义由 adapter 的 tokenSemantics 声明。
    */
   cacheRead: number;
   /** 缓存写入 token。增量语义。 */
   cacheWrite: number;
-  /** total = input + output + reasoning + cacheRead（G4.5，不要漏 reasoning）。 */
+  /**
+   * total = input + output + reasoning + cacheRead + cacheWrite。
+   * ⚠️ reasoning 是否计入 total 由 adapter 的 `reasoningInTotal` 声明：
+   * 真实数据（2026-08-04）OpenCode 的 total 含 reasoning（output 不含）；
+   * CodeArts/DeepSeek 的 total 不含 reasoning（reasoning 是 output 子集）。
+   */
   total: number;
 }
 
@@ -105,7 +111,31 @@ export const EMPTY_TOKEN_USAGE: TokenUsage = {
 export interface TokenSemantics {
   cacheRead: 'cumulative' | 'incremental';
   reasoning: 'cumulative' | 'incremental';
+  /**
+   * #6（2026-08-04 真实数据校准）：
+   * - OpenCode：tokens.total = input+output+reasoning+cache，output 不含 reasoning → true
+   * - CodeArts/CodeAgent2（DeepSeek）：tokens.total = input+output+cache，reasoning 是 output 子集 → false
+   * 缺省 true（其余 provider reasoning 通常为 0 或未验证）。
+   */
+  reasoningInTotal?: boolean;
 }
+
+/**
+ * 成本来源。add-mission-control §1 P0-C：
+ * - reported：厂商直接给出金额（workbuddy credit）
+ * - estimated：由 pricing.ts 按 model 定价表估算
+ * - unknown：模型未知或定价表无此模型 → UI 必须渲染 `—`，**禁止显示 $0.0000**
+ */
+export type CostSource = 'reported' | 'estimated' | 'unknown';
+
+/**
+ * 事件时长来源。add-mission-control §1 P0-A：
+ * - measured：源数据自带真实起止（opencode OTel span / trae / workbuddy）
+ * - derived：由相邻时间戳推导，**含调度间隙**，消费方必须在口径行标注
+ * - unknown：既无测量也无推导
+ * ⚠️ 与 G4.1 同类风险：把推导值当测量值用会系统性高估。
+ */
+export type DurationSource = 'measured' | 'derived' | 'unknown';
 
 // ── §3 会话 ────────────────────────────────────────────────
 
@@ -160,6 +190,12 @@ export interface TraceSession {
   totalDurationMs: number;
   /** OpenCode 系子 agent 会话标记，标题匹配 /\(@.*\bsubagent\)/i（G9.3）。 */
   isSubagent: boolean;
+  /** 该会话 token 占比最高的模型；源数据无 model 时为 null。 */
+  primaryModel?: string | null;
+  /** costUsd 的可信度，见 CostSource。 */
+  costSource?: CostSource;
+  /** 逐事件 durationMs 的来源，见 DurationSource。 */
+  durationSource?: DurationSource;
 }
 
 // ── §4 事件 ────────────────────────────────────────────────
@@ -188,6 +224,8 @@ export interface TraceEventSlim {
   hasInput: boolean;
   hasOutput: boolean;
   hasRaw: boolean;
+  /** llm 事件的模型标识；非 llm 事件或源数据无 model 时为 null。 */
+  model?: string | null;
 }
 
 /** full 档：slim + 正文。仅导出、报告生成、单 event 下钻使用。 */
@@ -271,6 +309,12 @@ export interface SpeedMetrics {
    * Kernel-Inference 的 duration 包含 Tool 执行时间（G4.1）。
    */
   pureInferenceMs: number | null;
+  /**
+   * 模型响应延迟均值 (ms)：每个 user_prompt 到时间序中下一个 llm 事件 startedAt
+   * 差值的均值（与主项目 turnGap 语义对齐）。turnGapMedianMs 保留为「用户两次输入
+   * 间隔」中位数（用户行为分析），两者测量不同的事物。
+   */
+  avgLlmResponseLatencyMs: number | null;
 }
 
 /** Agent Overview 聚合行，由服务端 SQL 直接产出，见 specs/storage REQ-009。 */
@@ -418,4 +462,207 @@ export interface BusEvents {
   proxy_stream_chunk: { requestId: string; chunk: string };
   frida_capture: { id: number; model?: string; sessionId?: string };
   frida_status: { running: boolean; pid?: number };
+}
+
+// ── §11 Mission Control（add-mission-control） ─────────────
+
+/**
+ * widget 统一信封。**这是本设计的核心机制**：一个算不出来的 widget
+ * 必须说出它为什么算不出来，而不是渲染 0。
+ * 落实 specs/frontend REQ-017/018「null 显示 —，禁止用 0 冒充」。
+ */
+export interface MissionWidget<T> {
+  id: string;
+  /**
+   * 数据口径：表名 / 字段 / 计算方式 / 覆盖范围。
+   * **服务端下发，前端不得自撰** —— 只有服务端下发才能保证 SQL 改了口径行跟着改。
+   */
+  criteria: string;
+  /** false 时 data 为 null，前端渲染 EmptyState + reason。 */
+  available: boolean;
+  /** available=false 时必填，如 'NO_PRICING_TABLE' / 'DURATION_NOT_MEASURED'。 */
+  unavailableReason: string | null;
+  data: T | null;
+}
+
+export type MissionRange = '7d' | '30d' | 'all';
+
+export interface NamedCount {
+  name: string;
+  count: number;
+  /** 该项中失败的次数（工具榜用）。 */
+  errorCount?: number;
+}
+
+export interface MissionToolRow {
+  tool: string;
+  calls: number;
+  errors: number;
+  /** MCP 工具（名字以 mcp__ 开头）。 */
+  isMcp: boolean;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  inBytes: number;
+  outBytes: number;
+}
+
+export interface MissionModelRow {
+  model: string;
+  calls: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  costUsd: number;
+  costSource: CostSource;
+}
+
+export interface MissionDayPoint {
+  day: string;
+  sessions: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  costUsd: number;
+  errorEvents: number;
+  successRate: number | null;
+}
+
+export interface MissionHourPoint {
+  /** 本地时区（按 tz 偏移后）的小时桶，ISO 到小时。 */
+  hour: string;
+  sessions: number;
+  messages: number;
+}
+
+export interface MissionUsage {
+  toolTop: MissionWidget<MissionToolRow[]>;
+  skillTop: MissionWidget<NamedCount[]>;
+  subagent: MissionWidget<{ rows: NamedCount[]; avgPerSession: number; sessionsWithSubagent: number }>;
+  /** 7×24 网格，heat[weekday][hour]，weekday 0=周一。 */
+  heatmap: MissionWidget<{ grid: number[][]; peak: number }>;
+  promptHabits: MissionWidget<{ n: number; p50: number; p95: number; max: number }>;
+  activity: MissionWidget<MissionHourPoint[]>;
+}
+
+export interface MissionQuality {
+  closure: MissionWidget<{
+    successRate: number | null;
+    sessions: number;
+    ok: number;
+    err: number;
+    e2eP50Ms: number | null;
+    e2eP90Ms: number | null;
+    e2eP99Ms: number | null;
+    turnsP50: number;
+    repairSessions: number;
+  }>;
+  costEfficiency: MissionWidget<{
+    totalUsd: number;
+    perTurnUsd: number | null;
+    perOkToolUsd: number | null;
+    perSessionUsd: number | null;
+    turns: number;
+    tools: number;
+    pricedSessions: number;
+    unpricedSessions: number;
+  }>;
+  toolFailure: MissionWidget<Array<{ tool: string; rate: number; errors: number; attempts: number }>>;
+  tokenTrend: MissionWidget<MissionDayPoint[]>;
+  apiQuality: MissionWidget<{
+    cacheHitRate: number | null;
+    totalIn: number;
+    totalCacheRead: number;
+    totalCacheWrite: number;
+    ttftP50Ms: number | null;
+    ttftP95Ms: number | null;
+    proxyCalls: number;
+    proxyErrorRate: number | null;
+  }>;
+  errorReasons: MissionWidget<NamedCount[]>;
+  riskyCommands: MissionWidget<Array<{ pattern: string; hits: number; sessionId: string; preview: string }>>;
+  drift: MissionWidget<MissionDayPoint[]>;
+  contextPressure: MissionWidget<{
+    windowSource: string;
+    peakPct: number | null;
+    p50Pct: number | null;
+    p95Pct: number | null;
+    over80Pct: number;
+    over95Pct: number;
+    samples: number;
+    histogram: NamedCount[];
+    compactions: number;
+    savedTokens: number;
+  }>;
+  models: MissionWidget<MissionModelRow[]>;
+  depth: MissionWidget<NamedCount[]>;
+  /** B15 工具生态：耗时/IO 维度（P0-A 时长 + input_len/output_len 冗余列）。 */
+  toolEcology: MissionWidget<MissionToolRow[]>;
+  /** B7 场景分布：只返回 {scene,count,tokenSum}，正文绝不出服务端。 */
+  scenes: MissionWidget<{
+    total: number;
+    rows: Array<{ scene: string; count: number; tokenSum: number }>;
+  }>;
+  /** B8 重任务场景分布：B7 + token 阈值切换。 */
+  heavyScenes: MissionWidget<{
+    threshold: number;
+    rows: Array<{ scene: string; count: number; tokenSum: number }>;
+  }>;
+  parallelism: MissionWidget<{
+    sessions: number;
+    avgRatio: number | null;
+    maxRatio: number | null;
+    parallelSessions: number;
+  }>;
+}
+
+export interface MissionHealth {
+  collectors: MissionWidget<{
+    scanStateRows: number;
+    providers: Array<{
+      key: ProviderKey;
+      enabled: boolean;
+      sessionCount: number;
+      lastScanAt: string | null;
+      ready: boolean;
+      blockedBy: string | null;
+    }>;
+    dbSizeBytes: number;
+    walSizeBytes: number;
+    schemaVersion: number;
+    uptimeMs: number;
+  }>;
+  dualChannel: MissionWidget<{
+    scanSessions: number;
+    proxyRequests: number;
+    linkedSessions: number;
+    scanOnly: number;
+    proxyOnly: number;
+    hints: string[];
+  }>;
+  calendar: MissionWidget<Array<{ day: string; sessions: number; hasError: boolean }>>;
+  hotSessions: MissionWidget<Array<{
+    id: string;
+    title: string;
+    provider: ProviderKey;
+    tokenTotal: number;
+    costUsd: number;
+    costSource: CostSource;
+  }>>;
+}
+
+export interface MissionResponse {
+  meta: {
+    range: MissionRange;
+    generatedAt: string;
+    tz: number;
+    widgetCount: number;
+    durationMs: number;
+    stamp: string;
+    cached: boolean;
+  };
+  usage: MissionUsage;
+  quality: MissionQuality;
+  health: MissionHealth;
 }

@@ -128,16 +128,16 @@ widget 读到的都是空值。
 
 ## 4. P0-D 聚合端点骨架
 
-- [ ] 4.1 `server/storage/mission.ts`：`getMission(db, {range, dataSource, tz})`
-- [ ] 4.2 `MissionWidget<T>` 信封：每个 widget 必带 `criteria` /
+- [x] 4.1 `server/storage/mission.ts`：`getMission(db, {range, dataSource, tz})`
+- [x] 4.2 `MissionWidget<T>` 信封：每个 widget 必带 `criteria` /
       `available` / `unavailableReason`（design.md §7.2）
-- [ ] 4.3 stamp 缓存：复用 `server/storage/overview.ts` 的 `cacheByDb`
+- [x] 4.3 stamp 缓存：复用 `server/storage/overview.ts` 的 `cacheByDb`
       WeakMap 模式（**不要新造一套**）
-- [ ] 4.4 ⚠️ 三区之间 `await setTimeout(0)` 让出事件循环（design.md §7.3 R1）
-- [ ] 4.5 `GET /api/mission` 路由；入口调 `markForegroundRequest()`（api §0.6）
-- [ ] 4.6 schema v2 迁移：`server/storage/migrations/001-v1-to-v2.ts`；
+- [x] 4.4 ⚠️ 三区之间 `await setTimeout(0)` 让出事件循环（design.md §7.3 R1）
+- [x] 4.5 `GET /api/mission` 路由；入口调 `markForegroundRequest()`（api §0.6）
+- [x] 4.6 schema v2 迁移：`server/storage/migrations/001-v1-to-v2.ts`；
       迁移失败时回退"重建 DB + 提示需重新扫描"，不得让库处于半迁移状态
-- [ ] 4.7 `perf-diag/08-mission.mjs` + 纳入 `npm run perf:check`
+- [x] 4.7 `perf-diag/08-mission.mjs` + 纳入 `npm run perf:check`
 
 ## 5. P1 零新数据 widget（**可与 §1-§4 并行，建议先做完这批**）
 
@@ -199,7 +199,7 @@ widget 读到的都是空值。
 
 ## 8. 前端
 
-- [ ] 8.1 7 个手写 SVG 图表原子：`HBarChart` / `DonutChart` / `HeatmapGrid` /
+- [x] 8.1 7 个手写 SVG 图表原子：`HBarChart` / `DonutChart` / `HeatmapGrid` /
       `StackedAreaChart` / `Histogram` / `CalendarGrid` / `ComboBarLine`
       （⚠️ **0 新增依赖**，AGENTS.md 硬约束；这是前端侧主要工作量）
 - [ ] 8.2 `MissionControl.tsx` 单列主区 + A/B/C 三区 chip 导航

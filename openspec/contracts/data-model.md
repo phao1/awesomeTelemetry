@@ -471,6 +471,18 @@ export interface MissionQuality {
   }>;
   models: MissionWidget<MissionModelRow[]>;
   depth: MissionWidget<NamedCount[]>;
+  /** B15 工具生态：耗时/IO 维度（P0-A 时长 + input_len/output_len 冗余列）。 */
+  toolEcology: MissionWidget<MissionToolRow[]>;
+  /** B7 场景分布：只返回 {scene,count,tokenSum}，正文绝不出服务端。 */
+  scenes: MissionWidget<{
+    total: number;
+    rows: Array<{ scene: string; count: number; tokenSum: number }>;
+  }>;
+  /** B8 重任务场景分布：B7 + token 阈值切换。 */
+  heavyScenes: MissionWidget<{
+    threshold: number;
+    rows: Array<{ scene: string; count: number; tokenSum: number }>;
+  }>;
   parallelism: MissionWidget<{
     sessions: number;
     avgRatio: number | null;

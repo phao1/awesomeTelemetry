@@ -1,7 +1,8 @@
 // 镜像 server/storage/schema.ts 的 SCHEMA_SQL / INDEX_SQL（Node 原生 TS 无法解析 .js 相对导入）。
 // 若 schema.ts 变更，这里必须同步；M12 的 perf 校验脚本可对比两份 DDL。
 
-export const SCHEMA_VERSION = 1;
+// v2（add-mission-control）：与 server/storage/schema.ts 对齐。
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS _meta (
@@ -32,7 +33,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   data_source       TEXT    NOT NULL DEFAULT 'scan',
   total_duration_ms INTEGER NOT NULL DEFAULT 0,
   is_subagent       INTEGER NOT NULL DEFAULT 0,
-  detail_loaded     INTEGER NOT NULL DEFAULT 0
+  detail_loaded     INTEGER NOT NULL DEFAULT 0,
+  primary_model     TEXT,
+  cost_source       TEXT    NOT NULL DEFAULT 'unknown',
+  duration_source   TEXT    NOT NULL DEFAULT 'unknown'
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS events (
@@ -51,6 +55,9 @@ CREATE TABLE IF NOT EXISTS events (
   output_summary TEXT,
   tokens_json    TEXT,
   error          TEXT,
+  model          TEXT,
+  input_len      INTEGER NOT NULL DEFAULT 0,
+  output_len     INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (session_id, id)
 ) WITHOUT ROWID;
 
@@ -73,7 +80,9 @@ CREATE TABLE IF NOT EXISTS metrics (
   entered_debug         INTEGER NOT NULL DEFAULT 0,
   tokens_per_step       REAL    NOT NULL DEFAULT 0,
   cost_usd              REAL    NOT NULL DEFAULT 0,
-  calc_version          INTEGER NOT NULL DEFAULT 0
+  calc_version          INTEGER NOT NULL DEFAULT 0,
+  ttft_ms               REAL,
+  e2e_ms                REAL
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS scan_state (
@@ -135,11 +144,14 @@ CREATE INDEX IF NOT EXISTS idx_events_session_seq    ON events(session_id, seque
 CREATE INDEX IF NOT EXISTS idx_events_session_phase  ON events(session_id, phase);
 CREATE INDEX IF NOT EXISTS idx_events_kind           ON events(kind);
 CREATE INDEX IF NOT EXISTS idx_events_phase          ON events(phase);
+CREATE INDEX IF NOT EXISTS idx_events_tool           ON events(tool);
+CREATE INDEX IF NOT EXISTS idx_events_session_kind   ON events(session_id, kind);
 
 CREATE INDEX IF NOT EXISTS idx_sessions_ds_started   ON sessions(data_source, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_started_at   ON sessions(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_provider     ON sessions(provider);
 CREATE INDEX IF NOT EXISTS idx_sessions_source_agent ON sessions(source_agent);
+CREATE INDEX IF NOT EXISTS idx_sessions_started_prov ON sessions(started_at DESC, provider);
 
 CREATE INDEX IF NOT EXISTS idx_scan_state_provider   ON scan_state(provider);
 CREATE INDEX IF NOT EXISTS idx_scan_state_session    ON scan_state(session_id);
