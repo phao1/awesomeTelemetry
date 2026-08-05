@@ -5,7 +5,7 @@ import { t } from '../i18n.js';
 import { IconCommand } from './icons/index.js';
 import { Tabs } from './ui/Tabs.js';
 
-export type AppView = 'session' | 'agent' | 'compare' | 'proxy' | 'frida';
+export type AppView = 'session' | 'agent' | 'compare' | 'proxy' | 'frida' | 'mission';
 
 export interface AppHeaderProps {
   locale: Locale;
@@ -43,7 +43,7 @@ export function ViewTabs({ active, onChange, locale }: ViewTabsProps): React.JSX
         variant="underline"
         activeId={active}
         onChange={(id) => onChange(id as AppView)}
-        items={(['session', 'agent', 'compare', 'proxy', 'frida'] as const).map((view) => ({
+        items={(['session', 'agent', 'compare', 'proxy', 'frida', 'mission'] as const).map((view) => ({
           id: view,
           label: t(`view.${view}`, locale),
         }))}

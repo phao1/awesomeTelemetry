@@ -18,8 +18,8 @@ import type {
   TraceStatus,
 } from './core/trace-types.js';
 import { TRACE_PHASES } from './core/trace-types.js';
-import { getStoredLocale, storeLocale, t, type Locale } from './i18n.js';
-import { api } from './api/client.js';
+import { errorMessage, getStoredLocale, storeLocale, t, type Locale } from './i18n.js';
+import { api, ApiError } from './api/client.js';
 import { invalidateSessionDetail, recordCache } from './cache/caches.js';
 import { mergeSessionsPatch } from './core/list-utils.js';
 import { localSamples } from './generated/local-samples.js';
@@ -38,7 +38,17 @@ import { AgentOverview } from './components/AgentOverview.js';
 import { CompareBoard } from './components/CompareBoard.js';
 import { ProxyView } from './components/ProxyView.js';
 import { FridaView } from './components/FridaView.js';
+import { MissionControl, type MissionRange } from './components/MissionControl.js';
 import { SettingsModal } from './components/SettingsModal.js';
+
+/** 错误展示本地化：已知错误码按当前语言翻译，未知码回退原始 message。 */
+function formatError(err: unknown, locale: Locale): string {
+  if (err instanceof ApiError) {
+    const localized = errorMessage(err.code, locale);
+    return localized === err.code ? err.message : localized;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
 import { TranscriptModal } from './components/TranscriptModal.js';
 import { TokenTextModal } from './components/TokenTextModal.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
@@ -77,6 +87,7 @@ interface PaletteModule {
 export default function App() {
   const [view, setView] = useState<AppView>(() => INITIAL_HASH?.view ?? 'session');
   const [locale, setLocaleState] = useState<Locale>(() => getStoredLocale());
+  const localeRef = useRef<Locale>(locale);
   const theme = useTheme();
   const [live, setLive] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -142,9 +153,12 @@ export default function App() {
   );
   const [compareLeft, setCompareLeft] = useState(() => INITIAL_HASH?.left ?? '');
   const [compareRight, setCompareRight] = useState(() => INITIAL_HASH?.right ?? '');
+  const [missionRange, setMissionRange] = useState<MissionRange>(() => INITIAL_HASH?.range ?? '7d');
   const [paletteHintSeen, setPaletteHintSeen] = useState(() =>
     loadBool(LAYOUT_KEYS.paletteHintSeen, false),
   );
+  /** Mission 视图的 SSE 失效计数：sessions_changed 时 +1（REQ-027，只标失效不轮询）。 */
+  const [missionInvalidateKey, setMissionInvalidateKey] = useState(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectedKeyRef = useRef<string | null>(null);
 
@@ -152,6 +166,11 @@ export default function App() {
     setLocaleState(next);
     storeLocale(next);
   }, []);
+
+  useEffect(() => {
+    localeRef.current = locale;
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   const switchView = useCallback((next: AppView) => {
     startTransition(() => setView(next)); // REQ-002：视图切换用 startTransition
@@ -202,7 +221,7 @@ export default function App() {
         setOfflineSamples(false);
       } catch (err) {
         console.error('[sessions] 列表加载失败:', err);
-        setSessionsError(err instanceof Error ? err.message : String(err));
+        setSessionsError(formatError(err, localeRef.current));
         // REQ-014：API 不可用时用本地样本兜底，状态栏显示「离线样本」
         startTransition(() => {
           setSessions((prev) => (prev.length === 0 ? [...localSamples] : prev));
@@ -240,6 +259,7 @@ export default function App() {
     });
     es.addEventListener('sessions_changed', (event) => {
       const data = JSON.parse((event as MessageEvent).data) as { keys: string[] };
+      setMissionInvalidateKey((k) => k + 1);
       for (const key of data.keys) {
         invalidateSessionDetail(key);
       }
@@ -296,7 +316,7 @@ export default function App() {
         .catch((err: unknown) => {
           // REQ-022：失败必须可见 —— 错误码 + 重试（禁止空 catch）
           console.error('[detail] 会话详情加载失败:', err);
-          setDetailError(err instanceof Error ? err.message : String(err));
+          setDetailError(formatError(err, localeRef.current));
         });
     },
     [],
@@ -467,6 +487,7 @@ export default function App() {
     add({ key: '3' }, () => switchView('compare'));
     add({ key: '4' }, () => switchView('proxy'));
     add({ key: '5' }, () => switchView('frida'));
+    add({ key: '6' }, () => switchView('mission'));
     add({ key: '/' }, () => searchInputRef.current?.focus());
     add({ key: 'j' }, () => {
       setCursorIndex((prev) => Math.min(sessions.length - 1, prev + 1));
@@ -511,9 +532,10 @@ export default function App() {
       ...(statusFilter.length > 0 ? { status: statusFilter } : {}),
       ...(compareLeft !== '' ? { left: compareLeft } : {}),
       ...(compareRight !== '' ? { right: compareRight } : {}),
+      ...(view === 'mission' ? { range: missionRange } : {}),
     };
     history.replaceState(null, '', serializeHash(state));
-  }, [view, selectedKey, phaseFilter, providerFilter, statusFilter, compareLeft, compareRight]);
+  }, [view, selectedKey, phaseFilter, providerFilter, statusFilter, compareLeft, compareRight, missionRange]);
 
   // REQ-024：hashchange → 解析并应用（脏 hash 回落默认视图，不抛错）
   useEffect(() => {
@@ -544,6 +566,9 @@ export default function App() {
       }
       if (state.right !== undefined) {
         setCompareRight(state.right);
+      }
+      if (state.range !== undefined && state.view === 'mission') {
+        setMissionRange(state.range);
       }
     };
     window.addEventListener('hashchange', onHashChange);
@@ -865,6 +890,15 @@ export default function App() {
           <main className="main">
             <FridaView locale={locale} />
           </main>
+        </div>
+      )}
+      {view === 'mission' && (
+        <div className="view-body">
+          <MissionControl
+            locale={locale}
+            initialRange={missionRange}
+            invalidateKey={missionInvalidateKey}
+          />
         </div>
       )}
 

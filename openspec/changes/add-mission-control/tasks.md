@@ -143,17 +143,17 @@ widget 读到的都是空值。
 
 > 这 8 个不改 schema、不动 adapter，纯 SQL + 前端。先立骨架，也提前暴露性能风险。
 
-- [ ] 5.1 A1 工具调用 TOP 榜（含 error-only 全失败标红）
-- [ ] 5.2 A3 Subagent 分布 + `extractSubagentType(inputSummary)`
-- [ ] 5.3 A4 活跃热力图（⚠️ `tz` 偏移在 SQL 里做，分桶后无法再转换）
-- [ ] 5.4 A7 会话活跃曲线（柱 + 折线双轴）
-- [ ] 5.5 B4 工具失败率榜（口径行注明：分子只含 error，不含 permission reject）
-- [ ] 5.6 B14 任务纵深直方图（`metrics.tool_call_count` 分桶）
-- [ ] 5.7 **C1 采集健康**（design.md §5：汇总 providers/proxy/frida/health 四个
+- [x] 5.1 A1 工具调用 TOP 榜（含 error-only 全失败标红）
+- [x] 5.2 A3 Subagent 分布 + `extractSubagentType(inputSummary)`
+- [x] 5.3 A4 活跃热力图（⚠️ `tz` 偏移在 SQL 里做，分桶后无法再转换）
+- [x] 5.4 A7 会话活跃曲线（柱 + 折线双轴）
+- [x] 5.5 B4 工具失败率榜（口径行注明：分子只含 error，不含 permission reject）
+- [x] 5.6 B14 任务纵深直方图（`metrics.tool_call_count` 分桶）
+- [x] 5.7 **C1 采集健康**（design.md §5：汇总 providers/proxy/frida/health 四个
       已有端点 + **`SELECT COUNT(*) FROM scan_state` 为 0 时红色告警** —— 这是
       G11.5 那条教训的正向断言，是本区最有价值的一格）
-- [ ] 5.8 C3 任务日历
-- [ ] 5.9 逐 widget 口径断言测试（给定 fixture 断言具体数值，design.md §10 R8：
+- [x] 5.8 C3 任务日历
+- [x] 5.9 逐 widget 口径断言测试（给定 fixture 断言具体数值，design.md §10 R8：
       这是唯一能防止口径随 SQL 改写漂移的手段）
 
 ## 6. P2 依赖 P0 的 widget
@@ -202,16 +202,16 @@ widget 读到的都是空值。
 - [x] 8.1 7 个手写 SVG 图表原子：`HBarChart` / `DonutChart` / `HeatmapGrid` /
       `StackedAreaChart` / `Histogram` / `CalendarGrid` / `ComboBarLine`
       （⚠️ **0 新增依赖**，AGENTS.md 硬约束；这是前端侧主要工作量）
-- [ ] 8.2 `MissionControl.tsx` 单列主区 + A/B/C 三区 chip 导航
-- [ ] 8.3 顶部控制条：`range` 7d/30d/all + 手动刷新 + meta 行
+- [x] 8.2 `MissionControl.tsx` 单列主区 + A/B/C 三区 chip 导航
+- [x] 8.3 顶部控制条：`range` 7d/30d/all + 手动刷新 + meta 行
       （`generated / widgets N / xxxms` —— Tengu 这行值得抄，它把耗时暴露给用户，
       正好配合 nfr 预算）
 - [ ] 8.4 ⚠️ **显式否决 Tengu 的 60s 自动刷新**：改为 SSE `sessions_changed`
       驱动的 stamp 失效 + 手动刷新（REQ-023 禁止轮询 / nfr「30s 窗口 < 15 请求」）
-- [ ] 8.5 每个 widget 渲染服务端下发的 `criteria` 口径行；
+- [x] 8.5 每个 widget 渲染服务端下发的 `criteria` 口径行；
       `available=false` 时渲染 `EmptyState` + `unavailableReason`，
       **禁止渲染 0**（REQ-022 四态 + REQ-017「null 显示 —，不许用 0 冒充」）
-- [ ] 8.6 第 6 个视图接入：`AppShell` tab、快捷键 `6`、hash `#/mission?range=`
+- [x] 8.6 第 6 个视图接入：`AppShell` tab、快捷键 `6`、hash `#/mission?range=`
 - [ ] 8.7 i18n：所有新增字符串 zh + en 双份（REQ-010），含 `criteria` 口径文案
       和 `unavailableReason` 的人话映射
 

@@ -1,5 +1,6 @@
 import type {
   AgentOverviewRow,
+  MissionResponse,
   ProxyRequest,
   ProxyRequestListItem,
   SessionDetailResponse,
@@ -128,6 +129,20 @@ export const api = {
   },
   agentOverview(dataSource: 'scan' | 'proxy' = 'scan'): Promise<AgentOverviewResponse> {
     return fetchJson<AgentOverviewResponse>(`/agent-overview${qs({ dataSource })}`);
+  },
+  /** api.md §2.4：Mission 聚合，1 请求返回全部 A/B/C 三区 widget（G11.9）。 */
+  mission(params: {
+    range?: '7d' | '30d' | 'all';
+    dataSource?: 'scan' | 'proxy';
+    tz?: number;
+  } = {}): Promise<MissionResponse> {
+    return fetchJson<MissionResponse>(
+      `/mission${qs({
+        range: params.range ?? '7d',
+        dataSource: params.dataSource ?? 'scan',
+        tz: params.tz,
+      })}`,
+    );
   },
   proxyRequests(params: { limit?: number; cursor?: string } = {}): Promise<{
     items: ProxyRequestListItem[];

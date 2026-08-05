@@ -2610,3 +2610,140 @@ button.finding-row:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Mission 视图（add-mission-control §8.2/8.3/8.5）── */
+.mission-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--row-md);
+  min-width: 0;
+}
+
+.mission-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.mission-range {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.mission-meta {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  margin-left: auto;
+}
+
+.mission-chips {
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--canvas-subtle);
+  padding-bottom: var(--space-2);
+}
+
+.chip {
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  font: inherit;
+}
+
+.chip-active {
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.mission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 30rem), 1fr));
+  gap: var(--space-4);
+}
+
+.mission-widget {
+  background: var(--canvas-raised);
+  border: 1px solid var(--canvas-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  min-width: 0;
+}
+
+.mission-widget-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.mission-criteria {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  margin-bottom: var(--space-2);
+  line-height: 1.5;
+}
+
+.mission-widget-body {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.mission-kv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.mission-kv-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.mission-kv-key {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.mission-kv-value {
+  font-size: var(--text-xs);
+}
+
+.mission-alert {
+  background: var(--danger-subtle);
+  color: var(--danger-fg);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.mission-collectors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mission-provider-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.mission-provider {
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+  background: var(--canvas-subtle);
+}
+
+.mission-provider.ok {
+  color: var(--success-fg);
+}
+
+.mission-provider.bad {
+  color: var(--danger-fg);
+}

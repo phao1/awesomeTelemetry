@@ -628,6 +628,8 @@ export interface MissionHealth {
       ready: boolean;
       blockedBy: string | null;
     }>;
+    proxy: { running: boolean; starting: boolean; port: number | null };
+    frida: { running: boolean; pid: number | null };
     dbSizeBytes: number;
     walSizeBytes: number;
     schemaVersion: number;

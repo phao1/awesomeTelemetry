@@ -494,6 +494,7 @@ export interface MissionQuality {
 export interface MissionHealth {
   collectors: MissionWidget<{
     scanStateRows: number;
+    /** 0 行 = 增量扫描可能失效，前端红色告警（G11.5 正向断言）。 */
     providers: Array<{
       key: ProviderKey;
       enabled: boolean;
@@ -502,6 +503,8 @@ export interface MissionHealth {
       ready: boolean;
       blockedBy: string | null;
     }>;
+    proxy: { running: boolean; starting: boolean; port: number | null };
+    frida: { running: boolean; pid: number | null };
     dbSizeBytes: number;
     walSizeBytes: number;
     schemaVersion: number;

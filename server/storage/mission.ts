@@ -1,3 +1,5 @@
+import { existsSync, statSync } from 'node:fs';
+
 import type { Database } from 'better-sqlite3';
 
 import type {
@@ -9,6 +11,8 @@ import type {
   MissionUsage,
   MissionWidget,
 } from '../../src/core/trace-types.js';
+import { extractSubagentType } from '../../src/core/subagent-type.js';
+import { SCHEMA_VERSION } from './schema.js';
 import { cachedStmt } from './stmt-cache.js';
 
 /**
@@ -31,6 +35,16 @@ export interface MissionOptions {
   dataSource: DataSource;
   /** 本地时区偏移分钟数，A4/A7/C3 分桶前在 SQL 里偏移。 */
   tz: number;
+  /** C1 采集健康的外部状态（providers/proxy/frida/health），由路由层注入。 */
+  ctx?: MissionHealthContext;
+}
+
+export interface MissionHealthContext {
+  providers: NonNullable<MissionHealth['collectors']['data']>['providers'];
+  proxy: { running: boolean; starting: boolean; port: number | null };
+  frida: { running: boolean; pid: number | null };
+  dbPath?: string;
+  startedAt: number;
 }
 
 const EMPTY_STAMP = '1970-01-01T00:00:00.000Z';
@@ -114,14 +128,43 @@ function widgetCount(response: MissionResponse): number {
 
 // ── A 区：使用行为 ──────────────────────────────────────────
 
-/** A1 工具调用 TOP 榜（P1，B3 填数据）。 */
+const TOOL_TOP_SQL =
+  `SELECT e.tool AS tool, COUNT(*) AS calls, ` +
+  `SUM(CASE WHEN e.status = 'error' THEN 1 ELSE 0 END) AS errors ` +
+  `FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `WHERE s.data_source = ? AND e.tool IS NOT NULL AND e.tool != ''{{RANGE}} ` +
+  `GROUP BY e.tool ORDER BY calls DESC LIMIT 10`;
+
+const TOOL_FAILURE_SQL =
+  `SELECT e.tool AS tool, COUNT(*) AS attempts, ` +
+  `SUM(CASE WHEN e.status = 'error' THEN 1 ELSE 0 END) AS errors ` +
+  `FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `WHERE s.data_source = ? AND e.tool IS NOT NULL AND e.tool != ''{{RANGE}} ` +
+  `GROUP BY e.tool ORDER BY errors * 1.0 / attempts DESC, attempts DESC LIMIT 10`;
+
+function toolSql(sqlTemplate: string, db: Database, opts: MissionOptions): Array<Record<string, unknown>> {
+  const { sql, params } = sessionWhere(opts);
+  const rendered = sqlTemplate.replace('{{RANGE}}', sql.replace('data_source = ?', ''));
+  const allParams: unknown[] = [opts.dataSource, ...params.slice(1)];
+  return cachedStmt(db, rendered).all(...allParams) as Array<Record<string, unknown>>;
+}
+
+/** A1 工具调用 TOP 榜：全部失败（errors === calls）由前端标红。 */
 function widgetToolTop(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['toolTop']['data']>> {
-  void db;
-  void opts;
-  return unavailableWidget(
+  const rows = toolSql(TOOL_TOP_SQL, db, opts);
+  return availableWidget(
     'toolTop',
     'events.tool 按调用数聚合 TOP 10；errors = status=\'error\' 计数，全部失败标红；覆盖当前 dataSource 与 range 内会话',
-    'NOT_IMPLEMENTED_YET',
+    rows.map((row) => ({
+      tool: row.tool as string,
+      calls: row.calls as number,
+      errors: row.errors as number,
+      isMcp: (row.tool as string).startsWith('mcp__'),
+      p50Ms: null,
+      p95Ms: null,
+      inBytes: 0,
+      outBytes: 0,
+    })),
   );
 }
 
@@ -134,21 +177,70 @@ function widgetSkillTop(_db: Database, _opts: MissionOptions): MissionWidget<Non
   );
 }
 
-/** A3 Subagent 分布（P1，B3 填数据）。 */
-function widgetSubagent(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['subagent']['data']>> {
-  return unavailableWidget(
+const SUBAGENT_SQL =
+  `SELECT e.session_id AS session_id, e.input_summary AS input_summary ` +
+  `FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `WHERE s.data_source = ? AND e.kind = 'agent'{{RANGE}}`;
+
+/** A3 Subagent 分布：kind='agent' 事件按 extractSubagentType(input_summary) 聚合。 */
+function widgetSubagent(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['subagent']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rendered = SUBAGENT_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', ''));
+  const rows = cachedStmt(db, rendered).all(opts.dataSource, ...params.slice(1)) as Array<{
+    session_id: string;
+    input_summary: string | null;
+  }>;
+  const counts = new Map<string, number>();
+  const sessions = new Set<string>();
+  for (const row of rows) {
+    const type = extractSubagentType(row.input_summary);
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+    sessions.add(row.session_id);
+  }
+  const totalSessions =
+    (cachedStmt(db, `SELECT COUNT(*) AS c FROM sessions WHERE ${sql}`).get(...params) as { c: number }).c;
+  return availableWidget(
     'subagent',
-    'events.kind=\'agent\' 按 subagent_type 聚合（input_summary JSON 提取）+ avg subagent/session',
-    'NOT_IMPLEMENTED_YET',
+    'events.kind=\'agent\' 按 extractSubagentType(input_summary) 聚合（启发式提取，未逐厂商核验）；avg subagent/session 覆盖 range 内全部会话',
+    {
+      rows: [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+      avgPerSession: totalSessions > 0 ? sessions.size / totalSessions : 0,
+      sessionsWithSubagent: sessions.size,
+    },
   );
 }
 
-/** A4 活跃热力图（P1，B3 填数据；tz 偏移在 SQL 里做）。 */
-function widgetHeatmap(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['heatmap']['data']>> {
-  return unavailableWidget(
+const HEATMAP_SQL =
+  // julianday 从正午起算且 1970-01-01T00:00Z = 2440587.5：
+  // minutesSinceEpoch = (JD - 2440587.5) * 1440 + tz；
+  // weekday = (floor(minutes/1440) + 3) % 7（1970-01-01 周四 → days=0 → 3=周一基准）
+  `SELECT (((CAST((julianday(started_at) - 2440587.5) * 1440 + ? AS INTEGER) / 1440) % 7 + 3) % 7) AS weekday, ` +
+  `(CAST((julianday(started_at) - 2440587.5) * 1440 + ? AS INTEGER) / 60) % 24 AS hour, COUNT(*) AS n ` +
+  `FROM sessions WHERE data_source = ?{{RANGE}} GROUP BY weekday, hour`;
+
+/** A4 活跃热力图：⚠️ tz 偏移在 SQL 里做（分桶后无法再转换）。weekday 0=周一。 */
+function widgetHeatmap(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['heatmap']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rendered = HEATMAP_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', ''));
+  const rows = cachedStmt(db, rendered).all(opts.tz, opts.tz, opts.dataSource, ...params.slice(1)) as Array<{
+    weekday: number;
+    hour: number;
+    n: number;
+  }>;
+  const grid: number[][] = Array.from({ length: 7 }, () => new Array<number>(24).fill(0));
+  let peak = 0;
+  for (const row of rows) {
+    const weekday = ((row.weekday % 7) + 7) % 7;
+    const hour = ((row.hour % 24) + 24) % 24;
+    grid[weekday]![hour] = row.n;
+    if (row.n > peak) {
+      peak = row.n;
+    }
+  }
+  return availableWidget(
     'heatmap',
-    'sessions.started_at 按 tz 偏移后分桶到 7×24 网格（分桶前在 SQL 里偏移），格子 = 会话数',
-    'NOT_IMPLEMENTED_YET',
+    'sessions.started_at 按 tz 偏移后分桶到 7×24 网格（分桶前在 SQL 里偏移），格子 = 会话数；weekday 0=周一',
+    { grid, peak },
   );
 }
 
@@ -161,12 +253,28 @@ function widgetPromptHabits(_db: Database, _opts: MissionOptions): MissionWidget
   );
 }
 
-/** A7 会话活跃曲线（P1，B3 填数据）。 */
-function widgetActivity(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['activity']['data']>> {
-  return unavailableWidget(
+const ACTIVITY_SQL =
+  `SELECT substr(datetime(s.started_at, ?), 1, 13) AS hour, ` +
+  `COUNT(DISTINCT s.id) AS sessions, SUM(s.message_count) AS messages ` +
+  `FROM sessions s WHERE s.data_source = ?{{RANGE}} GROUP BY hour ORDER BY hour`;
+
+/** A7 会话活跃曲线：柱 = 会话数，折线 = 消息数；tz 偏移在 SQL 里做。 */
+function widgetActivity(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['activity']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rendered = ACTIVITY_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', ''));
+  const rows = cachedStmt(db, rendered).all(`+${opts.tz} minutes`, opts.dataSource, ...params.slice(1)) as Array<{
+    hour: string;
+    sessions: number;
+    messages: number;
+  }>;
+  return availableWidget(
     'activity',
     '每小时 COUNT(DISTINCT session_id) 柱 + SUM(message_count) 折线；tz 偏移在 SQL 里做',
-    'NOT_IMPLEMENTED_YET',
+    rows.map((row) => ({
+      hour: `${row.hour.replace(' ', 'T')}:00:00`,
+      sessions: row.sessions,
+      messages: row.messages,
+    })),
   );
 }
 
@@ -201,12 +309,22 @@ function widgetCostEfficiency(_db: Database, _opts: MissionOptions): MissionWidg
   );
 }
 
-/** B4 工具失败率榜（P1，B3 填数据）。 */
-function widgetToolFailure(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['toolFailure']['data']>> {
-  return unavailableWidget(
+/** B4 工具失败率榜：分子只含 error，不含 permission reject。 */
+function widgetToolFailure(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['toolFailure']['data']>> {
+  const rows = toolSql(TOOL_FAILURE_SQL, db, opts);
+  return availableWidget(
     'toolFailure',
     'events.tool 分组，分母 = 总尝试，分子 = status=\'error\'（不含 permission reject）；与 Tengu 分子含 reject 的口径差异在 UI 注明',
-    'NOT_IMPLEMENTED_YET',
+    rows.map((row) => {
+      const attempts = row.attempts as number;
+      const errors = row.errors as number;
+      return {
+        tool: row.tool as string,
+        rate: attempts > 0 ? errors / attempts : 0,
+        errors,
+        attempts,
+      };
+    }),
   );
 }
 
@@ -273,12 +391,27 @@ function widgetModels(_db: Database, _opts: MissionOptions): MissionWidget<NonNu
   );
 }
 
-/** B14 任务纵深直方图（P1，B3 填数据）。 */
-function widgetDepth(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['depth']['data']>> {
-  return unavailableWidget(
+const DEPTH_SQL =
+  `SELECT CASE WHEN m.tool_call_count = 0 THEN '0' ` +
+  `WHEN m.tool_call_count <= 5 THEN '1-5' ` +
+  `WHEN m.tool_call_count <= 15 THEN '6-15' ` +
+  `WHEN m.tool_call_count <= 40 THEN '16-40' ` +
+  `ELSE '41+' END AS bucket, COUNT(*) AS n, MIN(m.tool_call_count) AS sort_key ` +
+  `FROM metrics m JOIN sessions s ON s.id = m.session_id ` +
+  `WHERE s.data_source = ?{{RANGE}} GROUP BY bucket ORDER BY sort_key`;
+
+/** B14 任务纵深直方图：metrics.tool_call_count 分桶。 */
+function widgetDepth(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['depth']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rendered = DEPTH_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', ''));
+  const rows = cachedStmt(db, rendered).all(opts.dataSource, ...params.slice(1)) as Array<{
+    bucket: string;
+    n: number;
+  }>;
+  return availableWidget(
     'depth',
     'metrics.tool_call_count 直方图，分桶 0 / 1-5 / 6-15 / 16-40 / 41+（G5.3 持久化指标的受益方）',
-    'NOT_IMPLEMENTED_YET',
+    rows.map((row) => ({ name: row.bucket, count: row.n })),
   );
 }
 
@@ -340,12 +473,34 @@ async function computeQuality(db: Database, opts: MissionOptions): Promise<Missi
 
 // ── C 区：采集健康 ──────────────────────────────────────────
 
-/** C1 采集健康（P1，B3 填数据；scan_state 0 行红色告警 = G11.5 正向断言）。 */
-function widgetCollectors(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionHealth['collectors']['data']>> {
-  return unavailableWidget(
+const SCAN_STATE_COUNT_SQL = 'SELECT COUNT(*) AS c FROM scan_state';
+
+/** C1 采集健康：providers/proxy/frida/health + scan_state 正向断言（0 行红色告警，G11.5）。 */
+function widgetCollectors(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionHealth['collectors']['data']>> {
+  const scanStateRows = (cachedStmt(db, SCAN_STATE_COUNT_SQL).get() as { c: number }).c;
+  const ctx = opts.ctx;
+  if (ctx === undefined) {
+    return unavailableWidget(
+      'collectors',
+      '汇总 providers/proxy/frida/health 四个已有端点 + SELECT COUNT(*) FROM scan_state（0 行红色告警）+ watcher 最近扫描时间',
+      'HEALTH_CONTEXT_MISSING',
+    );
+  }
+  const dbPath = ctx.dbPath ?? '';
+  return availableWidget(
     'collectors',
     '汇总 providers/proxy/frida/health 四个已有端点 + SELECT COUNT(*) FROM scan_state（0 行红色告警）+ watcher 最近扫描时间',
-    'NOT_IMPLEMENTED_YET',
+    {
+      scanStateRows,
+      providers: ctx.providers,
+      proxy: ctx.proxy,
+      frida: ctx.frida,
+      dbSizeBytes: dbPath !== '' && existsSync(dbPath) ? statSync(dbPath).size : 0,
+      walSizeBytes:
+        dbPath !== '' && existsSync(`${dbPath}-wal`) ? statSync(`${dbPath}-wal`).size : 0,
+      schemaVersion: SCHEMA_VERSION,
+      uptimeMs: Date.now() - ctx.startedAt,
+    },
   );
 }
 
@@ -358,12 +513,29 @@ function widgetDualChannel(_db: Database, _opts: MissionOptions): MissionWidget<
   );
 }
 
-/** C3 任务日历（P1，B3 填数据）。 */
-function widgetCalendar(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionHealth['calendar']['data']>> {
-  return unavailableWidget(
+const CALENDAR_SQL =
+  `SELECT substr(datetime(s.started_at, ?), 1, 10) AS day, ` +
+  `COUNT(DISTINCT s.id) AS sessions, ` +
+  `MAX(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END) AS has_error ` +
+  `FROM sessions s WHERE s.data_source = ?{{RANGE}} GROUP BY day ORDER BY day`;
+
+/** C3 任务日历：按日会话数 + 有错标红；tz 偏移在 SQL 里做。 */
+function widgetCalendar(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionHealth['calendar']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rendered = CALENDAR_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', ''));
+  const rows = cachedStmt(db, rendered).all(`+${opts.tz} minutes`, opts.dataSource, ...params.slice(1)) as Array<{
+    day: string;
+    sessions: number;
+    has_error: number;
+  }>;
+  return availableWidget(
     'calendar',
     '按日 COUNT(DISTINCT session_id) + MAX(status=\'error\') 标红；tz 偏移在 SQL 里做',
-    'NOT_IMPLEMENTED_YET',
+    rows.map((row) => ({
+      day: row.day,
+      sessions: row.sessions,
+      hasError: row.has_error === 1,
+    })),
   );
 }
 

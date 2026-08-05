@@ -32,10 +32,11 @@ try {
     ],
     // A4 活跃热力图（tz 偏移在 SQL 里做）
     [
-      `SELECT (CAST((julianday(s.started_at) * 1440 + ?) AS INTEGER) / 60) % 24 AS hour,
+      `SELECT (((CAST((julianday(s.started_at) - 2440587.5) * 1440 + ? AS INTEGER) / 1440) % 7 + 3) % 7) AS weekday,
+              (CAST((julianday(s.started_at) - 2440587.5) * 1440 + ? AS INTEGER) / 60) % 24 AS hour,
               COUNT(*) AS n FROM sessions s
-       WHERE s.data_source = ? AND s.started_at >= ? GROUP BY hour`,
-      [TZ, 'scan', rangeParam],
+       WHERE s.data_source = ? AND s.started_at >= ? GROUP BY weekday, hour`,
+      [TZ, TZ, 'scan', rangeParam],
     ],
     // A7 会话活跃曲线
     [

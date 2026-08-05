@@ -60,6 +60,7 @@ export function CommandPalette({
       { id: 'view-compare', label: t('view.compare', locale), hint: 'view', action: { type: 'view', view: 'compare' } },
       { id: 'view-proxy', label: t('view.proxy', locale), hint: 'view', action: { type: 'view', view: 'proxy' } },
       { id: 'view-frida', label: t('view.frida', locale), hint: 'view', action: { type: 'view', view: 'frida' } },
+      { id: 'view-mission', label: t('view.mission', locale), hint: 'view', action: { type: 'view', view: 'mission' } },
       { id: 'theme', label: t('palette.theme', locale), hint: '⌘\\', action: { type: 'theme' } },
       { id: 'language', label: t('palette.language', locale), hint: 'zh/en', action: { type: 'language' } },
       { id: 'scan', label: t('palette.scan', locale), hint: 'scan', action: { type: 'scan' } },

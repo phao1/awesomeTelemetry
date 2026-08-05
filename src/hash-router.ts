@@ -3,7 +3,7 @@
  * D3：hash 是状态的唯一表示，状态变 → 写 hash，hashchange → 解析并应用。
  */
 
-export const HASH_VIEWS = ['session', 'agent', 'compare', 'proxy', 'frida'] as const;
+export const HASH_VIEWS = ['session', 'agent', 'compare', 'proxy', 'frida', 'mission'] as const;
 
 export interface HashState {
   view: (typeof HASH_VIEWS)[number];
@@ -13,6 +13,8 @@ export interface HashState {
   status?: string[];
   left?: string;
   right?: string;
+  /** Mission 视图时间窗（REQ-027：#/mission?range=7d）。 */
+  range?: '7d' | '30d' | 'all';
 }
 
 export function parseHash(hash: string): HashState | null {
@@ -36,6 +38,9 @@ export function parseHash(hash: string): HashState | null {
     const status = list('status');
     const left = params.get('left');
     const right = params.get('right');
+    const rangeRaw = params.get('range');
+    const range =
+      rangeRaw === '7d' || rangeRaw === '30d' || rangeRaw === 'all' ? rangeRaw : undefined;
     return {
       view: view as HashState['view'],
       ...(key !== null ? { key } : {}),
@@ -44,6 +49,7 @@ export function parseHash(hash: string): HashState | null {
       ...(status !== undefined ? { status } : {}),
       ...(left !== null ? { left } : {}),
       ...(right !== null ? { right } : {}),
+      ...(range !== undefined ? { range } : {}),
     };
   } catch {
     return null;
@@ -69,6 +75,9 @@ export function serializeHash(state: HashState): string {
   }
   if (state.right !== undefined) {
     params.set('right', state.right);
+  }
+  if (state.range !== undefined) {
+    params.set('range', state.range);
   }
   const query = params.toString();
   return `#/${state.view}${query === '' ? '' : `?${query}`}`;

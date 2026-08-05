@@ -370,6 +370,44 @@ export function createAgentObservabilityServer(
   });
 
   // api.md §2.4：Mission 聚合，1 请求返回全部 A/B/C 三区 widget（G11.9）。
+  const providerStatus = (): Array<{
+    key: ProviderKey;
+    enabled: boolean;
+    sessionCount: number;
+    lastScanAt: string | null;
+    ready: boolean;
+    blockedBy: string | null;
+  }> => {
+    const rows = cachedStmt(
+      db,
+      'SELECT provider, COUNT(*) AS session_count FROM sessions GROUP BY provider',
+    ).all() as Array<{ provider: string; session_count: number }>;
+    const sessionCounts = new Map(rows.map((r) => [r.provider, r.session_count]));
+    const lastScans = cachedStmt(
+      db,
+      'SELECT provider, MAX(last_scan_at) AS last_scan_at FROM scan_state GROUP BY provider',
+    ).all() as Array<{ provider: string; last_scan_at: string }>;
+    const lastScanMap = new Map(lastScans.map((r) => [r.provider, r.last_scan_at]));
+    return PROVIDER_KEYS.map((key) => {
+      const cfg = config.providers[key]!;
+      const ready = key === 'trae' ? (config.traeKeyPath !== null && config.traeKeyPath !== '') : cfg.enabled;
+      const blockedBy =
+        !ready
+          ? key === 'trae'
+            ? 'TRAE_KEY_MISSING'
+            : 'PROVIDER_DISABLED'
+          : null;
+      return {
+        key,
+        enabled: cfg.enabled,
+        sessionCount: sessionCounts.get(key) ?? 0,
+        lastScanAt: lastScanMap.get(key) ?? null,
+        ready,
+        blockedBy,
+      };
+    });
+  };
+
   router.register('GET', '/api/mission', async (req, res) => {
     const query = parseQuery(req);
     const range = query.get('range') ?? '7d';
@@ -389,41 +427,19 @@ export function createAgentObservabilityServer(
       range: range as '7d' | '30d' | 'all',
       dataSource: dataSource as 'scan' | 'proxy',
       tz,
+      ctx: {
+        providers: providerStatus(),
+        proxy: proxyRuntime.status(),
+        frida: fridaRuntime.status(),
+        dbPath,
+        startedAt,
+      },
     });
     sendJson(res, 200, result, req);
   });
 
   router.register('GET', '/api/providers/status', (_req, res) => {
-    const rows = cachedStmt(
-      db,
-      'SELECT provider, COUNT(*) AS session_count FROM sessions GROUP BY provider',
-    ).all() as Array<{ provider: string; session_count: number }>;
-    const sessionCounts = new Map(rows.map((r) => [r.provider, r.session_count]));
-    const lastScans = cachedStmt(
-      db,
-      'SELECT provider, MAX(last_scan_at) AS last_scan_at FROM scan_state GROUP BY provider',
-    ).all() as Array<{ provider: string; last_scan_at: string }>;
-    const lastScanMap = new Map(lastScans.map((r) => [r.provider, r.last_scan_at]));
-
-    const providers = PROVIDER_KEYS.map((key) => {
-      const cfg = config.providers[key]!;
-      const ready = key === 'trae' ? (config.traeKeyPath !== null && config.traeKeyPath !== '') : cfg.enabled;
-      const blockedBy =
-        !ready
-          ? key === 'trae'
-            ? 'TRAE_KEY_MISSING'
-            : 'PROVIDER_DISABLED'
-          : null;
-      return {
-        key,
-        enabled: cfg.enabled,
-        sessionCount: sessionCounts.get(key) ?? 0,
-        lastScanAt: lastScanMap.get(key) ?? null,
-        ready,
-        blockedBy,
-      };
-    });
-    sendJson(res, 200, { providers }, _req);
+    sendJson(res, 200, { providers: providerStatus() }, _req);
   });
 
   router.register('GET', '/api/proxy/requests', (req, res) => {
