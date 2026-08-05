@@ -88,3 +88,26 @@ runs):
 
 > 注：repair 检测因 tier B 全表窗口扫描 40ms 超预算，按 design §7.3 R1
 > 升级为扫描时预计算（metrics.repair_loop，schema v3），见 D-012。
+
+## calibrate-tokens-and-compare-report perf:check（2026-08-05，B9 收口）
+
+| 指标 | 实测 | 预算 | 结论 |
+|------|------|------|------|
+| listSessions(500) | 0.375-0.388ms | < 1ms | ✅ |
+| worst detail slim (9,590 events) | 9.263-9.309ms | < 15ms | ✅ |
+| eventDetail drill-down | 0.005ms | < 20ms | ✅ |
+| getSystemPromptForSession | 0.011ms | < 1ms | ✅ |
+| proxyList(50) | 0.794-0.803ms | — | — |
+| Overview 冷路径（2 SQL） | 23.33-23.76ms | < 400ms | ✅ |
+| Overview 缓存命中（1 SQL） | 0.289-0.305ms | < 20ms | ✅ |
+| 差分写入 append 1 | 2 语句 / 0.30-0.32ms | 仅 1 INSERT、< 20ms | ✅ |
+| 事件循环 p99（200-request hammer） | < 0.01ms | < 50ms | ✅ |
+| 三条核心查询 EXPLAIN | 无 USE TEMP B-TREE | 无临时 B 树 | ✅ |
+| Mission 冷启（stamp + 16 widget SQL） | 52.85-52.95ms | < 500ms | ✅ |
+| Mission 缓存命中 | 0.050-0.054ms | < 20ms | ✅ |
+| Mission 单 widget SQL 最差 | 12.23-12.32ms | < 30ms @ tier B | ✅ |
+| Mission 响应 gzip | 316-317B | < 120KB | ✅ |
+
+> schema 已升 v4（metrics 五新列）；本 change 未触碰扫描热路径的 SQL 形状，
+> 指标与上一条基线持平。metrics 表在 perf 合成库中仍为 0 行（D-014：扫描路径
+> metrics 生产者缺失，与性能无关）。

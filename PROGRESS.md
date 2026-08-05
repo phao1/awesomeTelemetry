@@ -314,3 +314,24 @@
 ## Pending decisions index
 
 See DECISIONS-PENDING.md.
+
+## calibrate-tokens-and-compare-report（2026-08-05，B1-B9 全部完成）
+
+- [x] B1 token 归因纯函数 + 反双计回归护栏（不写回 event.tokens）
+- [x] B2 SpeedMetrics/TokenUsage 新字段（avgLlmDurationMs/cacheHitRate/
+      avgTokensPerCall/netInput + systemPrompt 估算）
+- [x] B3 TraceMetrics 五新字段 + schema v4（SCHEMA_VERSION/METRICS_CALC_VERSION
+      3→4，老库实测升级新列有值）
+- [x] B4 Trae adapter 增强（toolName 二级映射 / startTime 继承 / 同时间戳时长
+      分摊 / toolResult 状态兜底）
+- [x] B5 对比报告 4→3 维（stability 并入 quality，质维度 8 项指标 + 代码精炼度
+      口径 totalSteps/fileWriteCount）
+- [x] B6 品牌改名 AwesomeTelemetry + teal + favicon（数据目录/localStorage 兼容
+      回退）
+- [x] B7 服务端端口占用预探测 + Trae systemPrompt 调查（无数据源，D-015）
+- [x] B8 Trae 子代理关联（isSubagent 赋值 + llmIndex 错位修复；无真机数据，
+      D-016）
+- [x] B9 openspec validate --strict 通过；typecheck/test/lint 全绿（471 tests）；
+      perf:check 追加到 PERF-BASELINE.md；真机 build+start 验证
+      GET /api/sessions/:key 与 /api/compare 新字段真实值；对比页三维卡片
+      渲染验证
