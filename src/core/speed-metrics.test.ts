@@ -18,7 +18,7 @@ function makeRecord(): TraceRecord {
       cwd: null,
       messageCount: 3,
       eventCount: 4,
-      tokenUsage: { input: 100, output: 50, reasoning: 10, cacheRead: 5, cacheWrite: 2, total: 165 },
+      tokenUsage: { input: 100, output: 50, reasoning: 10, cacheRead: 5, cacheWrite: 2, netInput: 95, total: 165 },
       costUsd: 0.01,
       systemPrompt: null,
       dataSource: 'scan',
@@ -37,7 +37,7 @@ function makeRecord(): TraceRecord {
         id: 'e2', sessionId: 's1', sequence: 2, kind: 'llm', phase: 'implement',
         title: 'a1', startedAt: '2026-08-01T00:00:01.000Z', durationMs: 200,
         status: 'success', actor: 'assistant', tool: null,
-        tokens: { input: 50, output: 30, reasoning: 5, cacheRead: 0, cacheWrite: 0, total: 85 },
+        tokens: { input: 50, output: 30, reasoning: 5, cacheRead: 0, cacheWrite: 0, netInput: 50, total: 85 },
         error: null, hasInput: false, hasOutput: true, hasRaw: false, inputSummary: null, outputSummary: 'a1',
       },
       {
@@ -50,7 +50,7 @@ function makeRecord(): TraceRecord {
         id: 'e4', sessionId: 's1', sequence: 4, kind: 'llm', phase: 'implement',
         title: 'a2', startedAt: '2026-08-01T00:00:12.000Z', durationMs: 300,
         status: 'success', actor: 'assistant', tool: null,
-        tokens: { input: 50, output: 20, reasoning: 5, cacheRead: 0, cacheWrite: 0, total: 75 },
+        tokens: { input: 50, output: 20, reasoning: 5, cacheRead: 0, cacheWrite: 0, netInput: 50, total: 75 },
         error: null, hasInput: false, hasOutput: true, hasRaw: false, inputSummary: null, outputSummary: 'a2',
       },
     ],
@@ -91,7 +91,7 @@ describe('REQ-006 speed metrics', () => {
       id: 'e5', sessionId: 's1', sequence: 5, kind: 'llm', phase: 'implement',
       title: 'empty', startedAt: '2026-08-01T00:00:13.000Z', durationMs: 0,
       status: 'error', actor: 'assistant', tool: null,
-      tokens: { input: 10, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 10 },
+      tokens: { input: 10, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 10, total: 10 },
       error: 'empty response', hasInput: false, hasOutput: false, hasRaw: false,
       inputSummary: null, outputSummary: null,
     });
@@ -101,6 +101,58 @@ describe('REQ-006 speed metrics', () => {
     expect(s.tpotMs).toBeCloseTo(500 / 50);
     // pureInferenceMs 累计全部 llm duration（500 + 0 = 500）
     expect(s.pureInferenceMs).toBe(500);
+  });
+
+  it('§3 avgLlmDurationMs / avgTokensPerCall 正常用例', () => {
+    const s = computeSpeedMetrics(makeRecord());
+    // pureInferenceMs = 200 + 300 = 500，llmCallCount = 2
+    expect(s.avgLlmDurationMs).toBe(250);
+    // llm total = 85 + 75 = 160，每次调用平均 80
+    expect(s.avgTokensPerCall).toBe(80);
+  });
+
+  it('§3 avgLlmDurationMs / avgTokensPerCall 分母为 0 → null（禁止用 0 冒充）', () => {
+    const record = makeRecord();
+    record.events = record.events.filter((e) => e.kind !== 'llm');
+    const s = computeSpeedMetrics(record);
+    expect(s.avgLlmDurationMs).toBeNull();
+    expect(s.avgTokensPerCall).toBeNull();
+  });
+
+  it('§3 cacheHitRate = cacheRead / (input + cacheRead)；无 token 时 null，真实 0 时是 0', () => {
+    const record = makeRecord();
+    // 归因后 llm token 聚合：input 100 / cacheRead 50 → 50/150
+    record.events = record.events.map((e) =>
+      e.kind === 'llm'
+        ? {
+            ...e,
+            tokens: {
+              input: 50, output: 30, reasoning: 5, cacheRead: 25, cacheWrite: 0,
+              netInput: 25, total: 110,
+            },
+          }
+        : e,
+    );
+    expect(computeSpeedMetrics(record).cacheHitRate).toBeCloseTo(50 / 150);
+
+    const noLlm = makeRecord();
+    noLlm.events = noLlm.events.filter((e) => e.kind !== 'llm');
+    expect(computeSpeedMetrics(noLlm).cacheHitRate).toBeNull();
+
+    const zeroCache = makeRecord();
+    expect(computeSpeedMetrics(zeroCache).cacheHitRate).toBe(0); // input 100, cacheRead 0 → 真实 0
+  });
+
+  it('§3 Trae systemPrompt 估算 = length / 4；null 保持 null，不进 TokenUsage.input', () => {
+    const record = makeRecord();
+    record.session.systemPrompt = 'x'.repeat(40);
+    const s = computeSpeedMetrics(record);
+    expect(s.systemPromptTokensEstimate).toBe(10);
+    // 估算值不得污染计费口径
+    expect(record.session.tokenUsage.input).toBe(100);
+
+    record.session.systemPrompt = null;
+    expect(computeSpeedMetrics(record).systemPromptTokensEstimate).toBeNull();
   });
 });
 
@@ -173,7 +225,7 @@ describe('§2 token 归因（calibrate-tokens-and-compare-report）', () => {
         kind: 'agent',
         startedAt: '2026-08-01T00:00:02.000Z',
         durationMs: 0,
-        tokens: { input: 20, output: 9, reasoning: 1, cacheRead: 3, cacheWrite: 0, total: 33 },
+        tokens: { input: 20, output: 9, reasoning: 1, cacheRead: 3, cacheWrite: 0, netInput: 17, total: 33 },
       }),
       // 消息 m2：无 token llm —— carrier 在 m1，禁止跨消息归因
       carrierEvent({
@@ -200,7 +252,7 @@ describe('§2 token 归因（calibrate-tokens-and-compare-report）', () => {
         kind: 'agent',
         startedAt: '2026-08-01T00:00:01.000Z',
         durationMs: 0,
-        tokens: { input: 20, output: 9, reasoning: 1, cacheRead: 3, cacheWrite: 0, total: 33 },
+        tokens: { input: 20, output: 9, reasoning: 1, cacheRead: 3, cacheWrite: 0, netInput: 17, total: 33 },
       }),
       carrierEvent({
         id: 'm1-1',

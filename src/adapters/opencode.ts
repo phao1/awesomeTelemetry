@@ -97,6 +97,7 @@ function toEventTokens(
     reasoning,
     cacheRead,
     cacheWrite,
+    netInput: Math.max(0, input - cacheRead),
     total:
       input +
       output +

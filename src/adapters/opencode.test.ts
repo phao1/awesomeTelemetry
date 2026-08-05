@@ -40,7 +40,7 @@ describe('OpenCode adapter（REQ-005）', () => {
     expect(r.session.totalDurationMs).toBe(40000); // wall-clock
     // #4：cacheRead 100 + 150 = 250（增量求和）；#8：total 含 cacheWrite
     expect(r.session.tokenUsage).toEqual({
-      input: 25, output: 13, reasoning: 2, cacheRead: 250, cacheWrite: 5, total: 295,
+      input: 25, output: 13, reasoning: 2, cacheRead: 250, cacheWrite: 5, netInput: 0, total: 295,
     });
     expect(r.events.map((e) => e.kind)).toEqual(['user_prompt', 'bash', 'llm']);
     expect(r.events[1]?.phase).toBe('verify'); // Bash npm test
@@ -84,6 +84,8 @@ describe('OpenCode adapter（REQ-005）', () => {
     expect(r.session.tokenUsage.input).toBe(10);
     expect(r.session.tokenUsage.output).toBe(5);
     expect(r.session.tokenUsage.cacheRead).toBe(7);
+    // §3：netInput = max(0, input − cacheRead)
+    expect(r.session.tokenUsage.netInput).toBe(3);
     expect(r.session.tokenUsage.total).toBe(10 + 5 + 2 + 7 + 1);
   });
 

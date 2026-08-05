@@ -71,13 +71,14 @@ describe('REQ-002 三档事件形状', () => {
 });
 
 describe('REQ-004 EMPTY_TOKEN_USAGE', () => {
-  it('REQ-004 EMPTY_TOKEN_USAGE 六个字段全为 0（total 符合公式，cacheWrite 不计入）', () => {
+  it('REQ-004 EMPTY_TOKEN_USAGE 七个字段全为 0（total 符合公式，cacheWrite 不计入）', () => {
     expect(EMPTY_TOKEN_USAGE).toEqual({
       input: 0,
       output: 0,
       reasoning: 0,
       cacheRead: 0,
       cacheWrite: 0,
+      netInput: 0,
       total: 0,
     });
     expect(EMPTY_TOKEN_USAGE.input).toBe(0);
@@ -85,6 +86,7 @@ describe('REQ-004 EMPTY_TOKEN_USAGE', () => {
     expect(EMPTY_TOKEN_USAGE.reasoning).toBe(0);
     expect(EMPTY_TOKEN_USAGE.cacheRead).toBe(0);
     expect(EMPTY_TOKEN_USAGE.cacheWrite).toBe(0);
+    expect(EMPTY_TOKEN_USAGE.netInput).toBe(0);
     expect(EMPTY_TOKEN_USAGE.total).toBe(0);
   });
 });

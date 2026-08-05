@@ -52,7 +52,11 @@ function usageToTokens(usage: CodexRawPayload['usage']): TokenUsage | null {
   const reasoning = usage.reasoning_tokens ?? 0;
   const cacheRead = usage.cache_read_input_tokens ?? 0;
   const cacheWrite = usage.cache_creation_input_tokens ?? 0;
-  return { input, output, reasoning, cacheRead, cacheWrite, total: input + output + reasoning + cacheRead };
+  return {
+    input, output, reasoning, cacheRead, cacheWrite,
+    netInput: Math.max(0, input - cacheRead),
+    total: input + output + reasoning + cacheRead,
+  };
 }
 
 function contentText(payload: CodexRawPayload): string {

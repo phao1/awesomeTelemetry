@@ -29,7 +29,7 @@ describe('CodeAgent adapter（REQ-004/G9.2）', () => {
       SRC,
     );
     expect(r.session.tokenUsage).toEqual({
-      input: 12, output: 6, reasoning: 0, cacheRead: 7, cacheWrite: 0, total: 25,
+      input: 12, output: 6, reasoning: 0, cacheRead: 7, cacheWrite: 0, netInput: 5, total: 25,
     });
   });
 

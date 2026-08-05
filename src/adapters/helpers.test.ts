@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TraceEvent } from '../core/trace-types.js';
-import { deriveDurations, pickPrimaryModel, DERIVED_DURATION_CAP_MS } from './helpers.js';
+import {
+  aggregateTokenUsage,
+  deriveDurations,
+  pickPrimaryModel,
+  DERIVED_DURATION_CAP_MS,
+} from './helpers.js';
 
 function ev(
   id: string,
@@ -78,12 +83,30 @@ describe('deriveDurations（add-mission-control §1 P0-A）', () => {
   });
 });
 
+describe('aggregateTokenUsage（calibrate-tokens-and-compare-report §3）', () => {
+  it('netInput = max(0, input − cacheRead)，下限 0', () => {
+    const events = [
+      ev('a', '2026-08-01T00:00:00.000Z', {
+        tokens: { input: 100, output: 10, reasoning: 0, cacheRead: 30, cacheWrite: 5, netInput: 70, total: 145 },
+      }),
+      ev('b', '2026-08-01T00:00:01.000Z', {
+        tokens: { input: 20, output: 10, reasoning: 0, cacheRead: 60, cacheWrite: 0, netInput: 0, total: 90 },
+      }),
+    ];
+    const agg = aggregateTokenUsage(events, { cacheRead: 'incremental', reasoning: 'incremental' });
+    // input 120 − cacheRead 90 = 30；若只按单事件看 b 是 0，聚合口径用聚合后的 input/cacheRead
+    expect(agg.netInput).toBe(30);
+    expect(agg.cacheRead).toBe(90);
+    expect(agg.total).toBe(120 + 20 + 90 + 5);
+  });
+});
+
 describe('pickPrimaryModel（add-mission-control §1 P0-B）', () => {
   it('按 token 占比选主模型', () => {
     const events = [
-      ev('a', '2026-08-01T00:00:00.000Z', { model: 'm1', tokens: { input: 100, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 100 } }),
-      ev('b', '2026-08-01T00:00:01.000Z', { model: 'm2', tokens: { input: 30, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 30 } }),
-      ev('c', '2026-08-01T00:00:02.000Z', { model: 'm1', tokens: { input: 50, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 50 } }),
+      ev('a', '2026-08-01T00:00:00.000Z', { model: 'm1', tokens: { input: 100, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 100, total: 100 } }),
+      ev('b', '2026-08-01T00:00:01.000Z', { model: 'm2', tokens: { input: 30, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 30, total: 30 } }),
+      ev('c', '2026-08-01T00:00:02.000Z', { model: 'm1', tokens: { input: 50, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 50, total: 50 } }),
     ];
     expect(pickPrimaryModel(events)).toBe('m1');
   });

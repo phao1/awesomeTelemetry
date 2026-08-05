@@ -83,7 +83,7 @@ function session(id: string, over: Partial<TraceSession> = {}): TraceSession {
     cwd: null,
     messageCount: 1,
     eventCount: 1,
-    tokenUsage: { input: 5, output: 5, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 10 },
+    tokenUsage: { input: 5, output: 5, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 5, total: 10 },
     costUsd: 0.01,
     systemPrompt: null,
     dataSource: 'scan',

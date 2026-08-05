@@ -123,6 +123,8 @@ export function aggregateTokenUsage(
     reasoning,
     cacheRead,
     cacheWrite,
+    // §3（calibrate-tokens-and-compare-report）：净输入 = input - cacheRead，下限 0。
+    netInput: Math.max(0, input - cacheRead),
     total:
       input +
       output +

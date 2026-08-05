@@ -117,6 +117,8 @@ export function normalizeTraeSample(
         reasoning: 0,
         cacheRead: 0,
         cacheWrite: 0,
+        // §3（calibrate-tokens-and-compare-report）：Trae 无 cacheRead，netInput = input。
+        netInput: input,
         total: input + output,
       };
     }

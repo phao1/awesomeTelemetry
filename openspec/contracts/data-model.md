@@ -147,6 +147,13 @@ export interface TokenUsage {
   /** Cache write tokens. Incremental semantics. */
   cacheWrite: number;
   /**
+   * Net input = max(0, input − cacheRead). cacheRead tokens hit the prompt
+   * cache and are not billed as input; the 0 floor is real semantics (no cache
+   * hit), never a stand-in for "unknown". Produced only by the session-level
+   * aggregation (aggregateTokenUsage); never enters a billing formula.
+   */
+  netInput: number;
+  /**
    * total = input + output + reasoning + cacheRead + cacheWrite.
    * ⚠️ Whether reasoning counts is declared by the adapter's
    * `reasoningInTotal` (#6, calibrated with real data 2026-08-04):
@@ -158,7 +165,8 @@ export interface TokenUsage {
 }
 
 export const EMPTY_TOKEN_USAGE: TokenUsage = {
-  input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 0,
+  input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0,
+  netInput: 0, total: 0,
 };
 
 /** Adapters must declare their provider's token aggregation semantics so the
@@ -618,6 +626,28 @@ export interface SpeedMetrics {
    * turnGapMedianMs stays as the median "gap between two user inputs".
    */
   avgLlmResponseLatencyMs: number | null;
+  /**
+   * Avg single-inference duration (ms) = pureInferenceMs / llmCallCount.
+   * null when llmCallCount is 0 (never 0 as a stand-in).
+   */
+  avgLlmDurationMs: number | null;
+  /**
+   * Cache hit rate = cacheRead / (input + cacheRead), aggregated over
+   * attributed llm-event tokens. null when the denominator is 0 (no tokens);
+   * 0 is real when input > 0 and cacheRead = 0.
+   */
+  cacheHitRate: number | null;
+  /**
+   * Avg tokens per LLM call = sum of attributed llm token totals / llmCallCount.
+   * null when llmCallCount is 0.
+   */
+  avgTokensPerCall: number | null;
+  /**
+   * Trae systemPrompt token estimate (chars ÷ 4). Display-only; MUST NOT enter
+   * TokenUsage.input (billing semantics). null when session.systemPrompt is
+   * null.
+   */
+  systemPromptTokensEstimate: number | null;
 }
 
 /** Agent Overview aggregation row, produced directly by server SQL,

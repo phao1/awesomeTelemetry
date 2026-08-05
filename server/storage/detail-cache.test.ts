@@ -16,7 +16,7 @@ function fakeDetail(key: string): SessionDetailResponse {
       cwd: null,
       messageCount: 0,
       eventCount: 0,
-      tokenUsage: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      tokenUsage: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 0, total: 0 },
       costUsd: 0,
       systemPrompt: null,
       dataSource: 'scan',

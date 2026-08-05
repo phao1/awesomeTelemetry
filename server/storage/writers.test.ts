@@ -81,7 +81,7 @@ function makeSession(id: string): TraceSession {
     cwd: '/tmp',
     messageCount: 1,
     eventCount: 0,
-    tokenUsage: { input: 10, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 2, total: 38 },
+    tokenUsage: { input: 10, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 2, netInput: 7, total: 38 },
     costUsd: 0.01,
     systemPrompt: null,
     dataSource: 'scan',
@@ -126,7 +126,7 @@ function makeEvent(id: string, sequence: number): TraceEvent {
     status: 'success',
     actor: 'assistant',
     tool: null,
-    tokens: { input: 1, output: 1, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 2 },
+    tokens: { input: 1, output: 1, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 1, total: 2 },
     error: null,
     hasInput: false,
     hasOutput: false,
@@ -212,7 +212,7 @@ describe('REQ-010 会话写入 upsert', () => {
       cwd: '/tmp',
       messageCount: 1,
       eventCount: 1,
-      tokenUsage: { input: 10, output: 5, reasoning: 0, cacheRead: 1, cacheWrite: 0, total: 16 },
+      tokenUsage: { input: 10, output: 5, reasoning: 0, cacheRead: 1, cacheWrite: 0, netInput: 9, total: 16 },
       costUsd: 0.001,
       systemPrompt: null,
       dataSource: 'scan',
@@ -348,7 +348,7 @@ describe('REQ-012 undefined 写库前转 null', () => {
     expect(row.input_summary).toBeNull();
     expect(row.output_summary).toBeNull();
     expect(row.tokens_json).toBe(
-      JSON.stringify({ input: 1, output: 1, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 2 }),
+      JSON.stringify({ input: 1, output: 1, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 1, total: 2 }),
     );
     db.close();
   });
@@ -368,7 +368,7 @@ describe('add-mission-control §2：events 新列落库', () => {
       cwd: '/tmp',
       messageCount: 1,
       eventCount: 1,
-      tokenUsage: { input: 10, output: 5, reasoning: 0, cacheRead: 1, cacheWrite: 0, total: 16 },
+      tokenUsage: { input: 10, output: 5, reasoning: 0, cacheRead: 1, cacheWrite: 0, netInput: 9, total: 16 },
       costUsd: 0,
       systemPrompt: null,
       dataSource: 'scan',
@@ -421,7 +421,7 @@ describe('add-mission-control §2：events 新列落库', () => {
       cwd: '/tmp',
       messageCount: 1,
       eventCount: 1,
-      tokenUsage: { input: 1, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 1 },
+      tokenUsage: { input: 1, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 1, total: 1 },
       costUsd: 0,
       systemPrompt: null,
       dataSource: 'scan',

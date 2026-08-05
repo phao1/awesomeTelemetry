@@ -20,7 +20,7 @@ describe('Codex adapter（REQ-007）', () => {
     expect(r.events.map((e) => e.kind)).toEqual(['user_prompt', 'tool', 'tool', 'llm']);
     expect(r.events[1]?.tool).toBe('shell');
     expect(r.session.tokenUsage).toEqual({
-      input: 15, output: 8, reasoning: 3, cacheRead: 3, cacheWrite: 0, total: 29,
+      input: 15, output: 8, reasoning: 3, cacheRead: 3, cacheWrite: 0, netInput: 12, total: 29,
     });
   });
 

@@ -235,13 +235,14 @@ function mergeSessions(
   group: SessionMergeGroup,
 ): TraceSession {
   const first = sessions[0]!;
-  const tokens = sessions.reduce(
+    const tokens = sessions.reduce(
     (acc, s) => {
       acc.input += s.tokenUsage.input;
       acc.output += s.tokenUsage.output;
       acc.reasoning += s.tokenUsage.reasoning;
       acc.cacheRead += s.tokenUsage.cacheRead;
       acc.cacheWrite += s.tokenUsage.cacheWrite;
+      acc.netInput += s.tokenUsage.netInput;
       acc.total += s.tokenUsage.total;
       return acc;
     },
@@ -251,6 +252,7 @@ function mergeSessions(
       reasoning: 0,
       cacheRead: 0,
       cacheWrite: 0,
+      netInput: 0,
       total: 0,
     },
   );

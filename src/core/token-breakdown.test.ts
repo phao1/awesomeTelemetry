@@ -12,7 +12,7 @@ function ev(id: string, cacheRead: number, cacheWrite = 0): TraceEvent {
     id, sessionId: 's1', sequence: 1, kind: 'llm', phase: 'implement', title: '',
     startedAt: '2026-08-01T00:00:00.000Z', durationMs: 0, status: 'success',
     actor: 'assistant', tool: null,
-    tokens: { input: 1, output: 2, reasoning: 1, cacheRead, cacheWrite, total: 1 + 2 + 1 + cacheRead + cacheWrite },
+    tokens: { input: 1, output: 2, reasoning: 1, cacheRead, cacheWrite, netInput: Math.max(0, 1 - cacheRead), total: 1 + 2 + 1 + cacheRead + cacheWrite },
     error: null, hasInput: false, hasOutput: false, hasRaw: false,
     inputSummary: null, outputSummary: null,
   };
@@ -22,7 +22,7 @@ const base: Omit<TraceRecord, 'events'> = {
   session: {
     id: 's1', provider: 'opencode', sourceAgent: 'OpenCode', title: '', startedAt: 'x',
     updatedAt: 'x', status: 'success', cwd: null, messageCount: 0, eventCount: 2,
-    tokenUsage: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    tokenUsage: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 0, total: 0 },
     costUsd: 0, systemPrompt: null, dataSource: 'scan', sourcePath: '/tmp/x', totalDurationMs: 0,
     isSubagent: false,
   },
@@ -54,7 +54,7 @@ describe('REQ-007 token 分解', () => {
   });
 
   it('extractTokenText 可读文本', () => {
-    expect(extractTokenText({ input: 1, output: 2, reasoning: 3, cacheRead: 4, cacheWrite: 5, total: 10 })).toContain('total 10');
+    expect(extractTokenText({ input: 1, output: 2, reasoning: 3, cacheRead: 4, cacheWrite: 5, netInput: 0, total: 10 })).toContain('total 10');
     expect(extractTokenText(null)).toBe('tokens: n/a');
   });
 

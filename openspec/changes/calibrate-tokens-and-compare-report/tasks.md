@@ -54,17 +54,17 @@
 
 ## §2 SpeedMetrics / TokenUsage 新字段（B2）
 
-- [ ] 2.1 `trace-types.ts`：`SpeedMetrics` 加 `avgLlmDurationMs` / `cacheHitRate` /
+- [x] 2.1 `trace-types.ts`：`SpeedMetrics` 加 `avgLlmDurationMs` / `cacheHitRate` /
       `avgTokensPerCall`（均为 `number | null`）
-- [ ] 2.2 `trace-types.ts`：`TokenUsage` 加 `netInput: number`（`input - cacheRead`，下限 0）
-- [ ] 2.3 `helpers.ts` 的 `aggregateTokenUsage` 返回值补 `netInput`
+- [x] 2.2 `trace-types.ts`：`TokenUsage` 加 `netInput: number`（`input - cacheRead`，下限 0）
+- [x] 2.3 `helpers.ts` 的 `aggregateTokenUsage` 返回值补 `netInput`
       （**只加这一个字段，其余逻辑不动**）
-- [ ] 2.4 `speed-metrics.ts` 实现三个新指标；分母为 0 一律返回 `null`，**禁止用 0 冒充**
-- [ ] 2.5 Trae systemPrompt token 估算：`session.systemPrompt !== null` 时按
+- [x] 2.4 `speed-metrics.ts` 实现三个新指标；分母为 0 一律返回 `null`，**禁止用 0 冒充**
+- [x] 2.5 Trae systemPrompt token 估算：`session.systemPrompt !== null` 时按
       `length / 4` 估算，`null` 时保持 `null`；**不得进入 `TokenUsage.input`**
-- [ ] 2.6 同步 `openspec/contracts/data-model.md` 的 `SpeedMetrics` / `TokenUsage` 定义
-- [ ] 2.7 测试：三个新指标各一条正常用例 + 一条"分母为 0 返回 null"用例
-- [ ] 2.8 确认**没有**新增 `TokenBreakdown.totalTokens`（design.md §3）
+- [x] 2.6 同步 `openspec/contracts/data-model.md` 的 `SpeedMetrics` / `TokenUsage` 定义
+- [x] 2.7 测试：三个新指标各一条正常用例 + 一条"分母为 0 返回 null"用例
+- [x] 2.8 确认**没有**新增 `TokenBreakdown.totalTokens`（design.md §3）
 
 ## §3 TraceMetrics 新字段 + schema v4（B3）
 

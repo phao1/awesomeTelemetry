@@ -8,7 +8,7 @@ import {
   setModelPriceOverrides,
 } from './pricing.js';
 
-const TOKENS = { input: 1_000_000, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 1_000_000 };
+const TOKENS = { input: 1_000_000, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 1_000_000, total: 1_000_000 };
 
 describe('pricing（add-mission-control §1 P0-C / REQ-013）', () => {
   it('归一化：去厂商前缀 / 日期后缀 / 窗口标注', () => {

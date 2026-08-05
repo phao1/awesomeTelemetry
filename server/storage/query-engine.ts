@@ -139,6 +139,8 @@ function mapSession(row: Record<string, unknown>): TraceSession {
       reasoning: row.token_reasoning as number,
       cacheRead: row.token_cache_read as number,
       cacheWrite: row.token_cache_write as number,
+      // netInput 不入库，按 §3 口径由 input/cacheRead 现算（下限 0）。
+      netInput: Math.max(0, (row.token_input as number) - (row.token_cache_read as number)),
       total: row.token_total as number,
     },
     costUsd: row.cost_usd as number,

@@ -14,7 +14,7 @@ const SESSION: TraceSession = {
   cwd: '/tmp',
   messageCount: 1,
   eventCount: 0,
-  tokenUsage: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  tokenUsage: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 0, total: 0 },
   costUsd: 0,
   systemPrompt: null,
   dataSource: 'scan',
@@ -154,9 +154,9 @@ describe('computeFindings 十条规则', () => {
 
   it('规则 7：系统提示词重复占比', () => {
     const events = [
-      ev({ kind: 'llm', tokens: { input: 1000, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 1010 } }),
-      ev({ kind: 'llm', tokens: { input: 500, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 510 } }),
-      ev({ kind: 'llm', tokens: { input: 500, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 510 } }),
+      ev({ kind: 'llm', tokens: { input: 1000, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 1000, total: 1010 } }),
+      ev({ kind: 'llm', tokens: { input: 500, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 500, total: 510 } }),
+      ev({ kind: 'llm', tokens: { input: 500, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 500, total: 510 } }),
     ];
     const result = computeFindings(SESSION, events);
     expect(kinds(result)).toContain('sysPromptRepeat');

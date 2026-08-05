@@ -72,6 +72,7 @@ function usageToTokens(usage: ClaudeRawMessage['usage']): TokenUsage | null {
     reasoning: 0,
     cacheRead,
     cacheWrite,
+    netInput: Math.max(0, input - cacheRead),
     total: input + output + cacheRead + cacheWrite,
   };
 }

@@ -47,7 +47,11 @@ function tokensOf(row: QoderRawRow): TokenUsage | null {
   const reasoning = t.reasoning ?? 0;
   const cacheRead = t.cache_read ?? 0;
   const cacheWrite = t.cache_write ?? 0;
-  return { input, output, reasoning, cacheRead, cacheWrite, total: input + output + reasoning + cacheRead };
+  return {
+    input, output, reasoning, cacheRead, cacheWrite,
+    netInput: Math.max(0, input - cacheRead),
+    total: input + output + reasoning + cacheRead,
+  };
 }
 
 export function normalizeQoderSample(

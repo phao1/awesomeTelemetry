@@ -19,7 +19,7 @@ describe('Qoder adapter（REQ-008）', () => {
     expect(r.events.map((e) => e.durationMs)).toEqual([2000, 3000, 0]); // 相邻时间戳，末条 0
     expect(r.events[1]?.phase).toBe('verify'); // bash npm test
     expect(r.session.tokenUsage).toEqual({
-      input: 15, output: 10, reasoning: 1, cacheRead: 0, cacheWrite: 0, total: 26,
+      input: 15, output: 10, reasoning: 1, cacheRead: 0, cacheWrite: 0, netInput: 15, total: 26,
     });
   });
 

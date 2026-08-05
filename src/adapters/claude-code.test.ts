@@ -22,7 +22,7 @@ describe('Claude Code adapter（REQ-004）', () => {
     expect(r.session.primaryModel).toBeNull();
     expect(r.events.every((e) => e.model === null || e.model === undefined)).toBe(true);
     expect(r.session.tokenUsage).toEqual({
-      input: 150, output: 50, reasoning: 0, cacheRead: 15, cacheWrite: 2, total: 217, // #8：total 含 cacheWrite
+      input: 150, output: 50, reasoning: 0, cacheRead: 15, cacheWrite: 2, netInput: 135, total: 217, // #8：total 含 cacheWrite
     });
     expect(r.events.map((e) => e.kind)).toEqual(['user_prompt', 'llm', 'tool', 'llm']);
     expect(r.tokenSemantics).toEqual({ cacheRead: 'incremental', reasoning: 'incremental' });

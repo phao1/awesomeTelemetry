@@ -272,7 +272,7 @@ describe('REQ-006/007 会话详情', () => {
 
     const r = getSessionDetail(db, 's1');
     expect(r?.session.tokenUsage).toEqual({
-      input: 10, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 2, total: 38,
+      input: 10, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 2, netInput: 7, total: 38,
     });
     expect(r?.session.systemPrompt).toBe('sys');
     expect(r?.session.totalDurationMs).toBe(900);

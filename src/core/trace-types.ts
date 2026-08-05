@@ -95,6 +95,12 @@ export interface TokenUsage {
   /** 缓存写入 token。增量语义。 */
   cacheWrite: number;
   /**
+   * 净输入 = max(0, input - cacheRead)。cacheRead 是提示词命中缓存的 token，
+   * 不产生计费输入；「说不清口径的 0」禁止出现，下限 0 是真实语义（真的没缓存）。
+   * 仅在会话级聚合（aggregateTokenUsage）产出，不进入任何计费公式。
+   */
+  netInput: number;
+  /**
    * total = input + output + reasoning + cacheRead + cacheWrite。
    * ⚠️ reasoning 是否计入 total 由 adapter 的 `reasoningInTotal` 声明：
    * 真实数据（2026-08-04）OpenCode 的 total 含 reasoning（output 不含）；
@@ -104,7 +110,8 @@ export interface TokenUsage {
 }
 
 export const EMPTY_TOKEN_USAGE: TokenUsage = {
-  input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 0,
+  input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0,
+  netInput: 0, total: 0,
 };
 
 /** adapter 必须声明其 provider 的 token 聚合语义，供 storage 层正确汇总。 */
@@ -326,6 +333,24 @@ export interface SpeedMetrics {
    * 间隔」中位数（用户行为分析），两者测量不同的事物。
    */
   avgLlmResponseLatencyMs: number | null;
+  /**
+   * 单次推理平均耗时 = pureInferenceMs / llmCallCount（分母为 0 时 null，禁止用 0 冒充）。
+   */
+  avgLlmDurationMs: number | null;
+  /**
+   * 缓存命中率 = cacheRead / (input + cacheRead)（对 llm 事件归因后的 token 聚合）。
+   * 分母为 0（无任何 token）时 null；input > 0 且 cacheRead = 0 时 0 是真实值。
+   */
+  cacheHitRate: number | null;
+  /**
+   * 每次调用平均 token = 归因后 llm token total 总和 / llmCallCount（分母为 0 时 null）。
+   */
+  avgTokensPerCall: number | null;
+  /**
+   * Trae systemPrompt 的估算 token（按字符数 ÷ 4）。只作展示，**禁止进入
+   * TokenUsage.input**（那是计费口径）。session.systemPrompt 为 null 时保持 null。
+   */
+  systemPromptTokensEstimate: number | null;
 }
 
 /** Agent Overview 聚合行，由服务端 SQL 直接产出，见 specs/storage REQ-009。 */

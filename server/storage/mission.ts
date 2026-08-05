@@ -787,7 +787,7 @@ function widgetModels(db: Database, opts: MissionOptions): MissionWidget<NonNull
   }
   const out = [...byModel.entries()].map(([model, agg]) => {
     const cost = computeCostUsd(
-      { input: agg.input, output: agg.output, reasoning: 0, cacheRead: agg.cacheRead, cacheWrite: agg.cacheWrite, total: 0 },
+      { input: agg.input, output: agg.output, reasoning: 0, cacheRead: agg.cacheRead, cacheWrite: agg.cacheWrite, netInput: Math.max(0, agg.input - agg.cacheRead), total: 0 },
       model,
     );
     return {

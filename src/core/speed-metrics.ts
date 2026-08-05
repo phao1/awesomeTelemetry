@@ -126,6 +126,31 @@ export function computeSpeedMetrics(record: TraceRecord): SpeedMetrics {
   const tpotMs =
     validOutputTokens > 0 && validLlmMs > 0 ? validLlmMs / validOutputTokens : null;
 
+  // §3（calibrate-tokens-and-compare-report）：三个新指标按归因后的 llm token 聚合。
+  let llmInput = 0;
+  let llmCacheRead = 0;
+  let llmTokenTotal = 0;
+  for (const e of allLlmEvents) {
+    const tokens = tokensOf(e);
+    if (tokens === null) {
+      continue;
+    }
+    llmInput += tokens.input;
+    llmCacheRead += tokens.cacheRead;
+    llmTokenTotal += tokens.total;
+  }
+  const llmCallCount = allLlmEvents.length;
+  const avgLlmDurationMs =
+    llmCallCount === 0 ? null : totalLlmMs / llmCallCount;
+  const cacheHitRate =
+    llmInput + llmCacheRead === 0 ? null : llmCacheRead / (llmInput + llmCacheRead);
+  const avgTokensPerCall = llmCallCount === 0 ? null : llmTokenTotal / llmCallCount;
+  const systemPrompt = record.session.systemPrompt;
+  const systemPromptTokensEstimate =
+    systemPrompt === null || systemPrompt === undefined
+      ? null
+      : Math.round(systemPrompt.length / 4);
+
   const turnGaps: number[] = [];
   for (let i = 1; i < userEvents.length; i += 1) {
     turnGaps.push(
@@ -152,5 +177,9 @@ export function computeSpeedMetrics(record: TraceRecord): SpeedMetrics {
     turnGapMedianMs: median(turnGaps),
     pureInferenceMs: totalLlmMs,
     avgLlmResponseLatencyMs: mean(responseLatencies),
+    avgLlmDurationMs,
+    cacheHitRate,
+    avgTokensPerCall,
+    systemPromptTokensEstimate,
   };
 }
