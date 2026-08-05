@@ -111,6 +111,33 @@ describe('getMission 信封', () => {
     const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
     expect(r.meta.cached).toBe(false);
   });
+
+  it('range=7d/30d 过滤 join 查询不抛 ambiguous column（回归：真机 range=7d 500）', async () => {
+    const now = Date.now();
+    const recent = new Date(now - 2 * 86_400_000).toISOString();
+    const old = new Date(now - 40 * 86_400_000).toISOString();
+    db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, status,
+         message_count, event_count, token_total, cost_usd, data_source, source_path,
+         total_duration_ms, is_subagent, detail_loaded)
+       VALUES ('recent', 'claude', 'Claude', 'r', ?, ?, 'success', 1, 1, 10, 0.01, 'scan', '/tmp/r', 1000, 0, 1),
+              ('old', 'claude', 'Claude', 'o', ?, ?, 'success', 1, 1, 10, 0.01, 'scan', '/tmp/o', 1000, 0, 1)`,
+    ).run(recent, recent, old, old);
+    db.prepare(
+      `INSERT INTO events (session_id, id, sequence, kind, phase, title, started_at, duration_ms,
+         status, actor, tool, input_len, output_len)
+       VALUES ('recent', 'e1', 1, 'tool', 'implement', 't', ?, 100, 'success', 'assistant', 'Bash', 1, 1),
+              ('old', 'e1', 1, 'tool', 'implement', 't', ?, 100, 'success', 'assistant', 'Bash', 1, 1)`,
+    ).run(recent, old);
+    const r7 = await getMission(db, { range: '7d', dataSource: 'scan', tz: 0 });
+    expect(r7.meta.range).toBe('7d');
+    expect(r7.usage.toolTop.data!.find((row) => row.tool === 'Bash')?.calls).toBe(1);
+    expect(r7.health.calendar.data!.length).toBe(1); // 只有 recent 一天
+    const r30 = await getMission(db, { range: '30d', dataSource: 'scan', tz: 0 });
+    expect(r30.usage.toolTop.data!.find((row) => row.tool === 'Bash')?.calls).toBe(1);
+    const rAll = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
+    expect(rAll.usage.toolTop.data!.find((row) => row.tool === 'Bash')?.calls).toBe(2);
+  });
 });
 
 describe('逐 widget 口径断言（design.md §10 R8：防 SQL 改写悄悄漂移）', () => {

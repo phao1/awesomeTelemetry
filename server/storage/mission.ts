@@ -108,7 +108,9 @@ function rangeClause(range: MissionRange): { sql: string; cutoff: string | null 
   }
   const days = range === '7d' ? 7 : 30;
   return {
-    sql: ' AND started_at >= ?',
+    // ⚠️ 必须限定别名 s：join 查询里 events/sessions 都有 started_at，
+    // 未限定的 started_at 在 range=7d/30d 时会抛 ambiguous column（真机复现）。
+    sql: ' AND s.started_at >= ?',
     cutoff: new Date(Date.now() - days * 86_400_000).toISOString(),
   };
 }
@@ -127,7 +129,7 @@ function missionStamp(db: Database, opts: MissionOptions): string {
   const where = sessionWhere(opts);
   const row = cachedStmt(
     db,
-    `SELECT MAX(updated_at) AS stamp FROM sessions WHERE ${where.sql}`,
+    `SELECT MAX(updated_at) AS stamp FROM sessions s WHERE ${where.sql}`,
   ).get(...where.params) as { stamp: string | null };
   return row.stamp ?? EMPTY_STAMP;
 }
@@ -250,7 +252,7 @@ function widgetSubagent(db: Database, opts: MissionOptions): MissionWidget<NonNu
     sessions.add(row.session_id);
   }
   const totalSessions =
-    (cachedStmt(db, `SELECT COUNT(*) AS c FROM sessions WHERE ${sql}`).get(...params) as { c: number }).c;
+    (cachedStmt(db, `SELECT COUNT(*) AS c FROM sessions s WHERE ${sql}`).get(...params) as { c: number }).c;
   return availableWidget(
     'subagent',
     'mission.criteria.subagent',
@@ -268,7 +270,7 @@ const HEATMAP_SQL =
   // weekday = (floor(minutes/1440) + 3) % 7（1970-01-01 周四 → days=0 → 3=周一基准）
   `SELECT (((CAST((julianday(started_at) - 2440587.5) * 1440 + ? AS INTEGER) / 1440) % 7 + 3) % 7) AS weekday, ` +
   `(CAST((julianday(started_at) - 2440587.5) * 1440 + ? AS INTEGER) / 60) % 24 AS hour, COUNT(*) AS n ` +
-  `FROM sessions WHERE data_source = ?{{RANGE}} GROUP BY weekday, hour`;
+  `FROM sessions s WHERE s.data_source = ?{{RANGE}} GROUP BY weekday, hour`;
 
 /** A4 活跃热力图：⚠️ tz 偏移在 SQL 里做（分桶后无法再转换）。weekday 0=周一。 */
 function widgetHeatmap(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['heatmap']['data']>> {
@@ -367,7 +369,7 @@ async function computeUsage(db: Database, opts: MissionOptions): Promise<Mission
 
 const CLOSURE_SESSIONS_SQL =
   `SELECT total_duration_ms AS dur, message_count AS turns, status AS status ` +
-  `FROM sessions WHERE data_source = ?{{RANGE}}`;
+  `FROM sessions s WHERE s.data_source = ?{{RANGE}}`;
 
 // repair_loop 已由扫描时预计算落库（metrics.repair_loop，schema v3）——
 // 逐请求全表窗口扫描实测 40ms 超 §7.3 R1 预算，升级为 rollup 读取。
@@ -473,7 +475,7 @@ const TOKEN_TREND_SQL =
   `SUM(CASE WHEN cost_source != 'unknown' THEN cost_usd ELSE 0 END) AS cost, ` +
   `SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS error_events, ` +
   `SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS success_rate ` +
-  `FROM sessions WHERE data_source = ?{{RANGE}} GROUP BY day ORDER BY day`;
+  `FROM sessions s WHERE s.data_source = ?{{RANGE}} GROUP BY day ORDER BY day`;
 
 /** B5 Token 日趋势：按日 token 汇总（堆叠面积）。 */
 function widgetTokenTrend(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['tokenTrend']['data']>> {
@@ -499,7 +501,7 @@ function widgetTokenTrend(db: Database, opts: MissionOptions): MissionWidget<Non
 
 const API_CACHE_SQL =
   `SELECT SUM(token_input) AS input, SUM(token_cache_read) AS cache_read, ` +
-  `SUM(token_cache_write) AS cache_write FROM sessions WHERE data_source = ?{{RANGE}}`;
+  `SUM(token_cache_write) AS cache_write FROM sessions s WHERE s.data_source = ?{{RANGE}}`;
 
 const API_TTFT_SQL =
   `SELECT m.ttft_ms AS ttft_ms FROM metrics m JOIN sessions s ON s.id = m.session_id ` +
@@ -1109,7 +1111,7 @@ function widgetCalendar(db: Database, opts: MissionOptions): MissionWidget<NonNu
 /** C4 热会话（P2，B6 填数据）。 */
 const HOT_SESSIONS_SQL =
   `SELECT id, title, provider, token_total, cost_usd, cost_source ` +
-  `FROM sessions WHERE data_source = ?{{RANGE}} ` +
+  `FROM sessions s WHERE s.data_source = ?{{RANGE}} ` +
   `ORDER BY cost_usd DESC, token_total DESC LIMIT 10`;
 
 /** C4 热会话：按 $ 排序 TOP 10（P0-C 后按 $；下钻复用 #/sessions?key=）。 */
