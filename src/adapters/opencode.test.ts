@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { normalizeOpenCode, type OpenCodeMessage, type OpenCodeOtelSpan } from './opencode.js';
-import { opencodeFixture } from './__fixtures__/opencode.js';
+import { opencodeCarrierFixture, opencodeFixture } from './__fixtures__/opencode.js';
+import { computeTokenBreakdown } from '../core/token-breakdown.js';
+import { attributeTokensToLlmEvents } from '../core/speed-metrics.js';
 
 const SRC = '/tmp/oc.sqlite';
 
@@ -83,6 +85,23 @@ describe('OpenCode adapter（REQ-005）', () => {
     expect(r.session.tokenUsage.output).toBe(5);
     expect(r.session.tokenUsage.cacheRead).toBe(7);
     expect(r.session.tokenUsage.total).toBe(10 + 5 + 2 + 7 + 1);
+  });
+
+  it('§4.1 回归护栏：computeTokenBreakdown 在归因前后完全相等（归因禁止写回 event.tokens）', () => {
+    const r = normalizeOpenCode(
+      {
+        sourceAgent: 'OpenCode',
+        session: opencodeCarrierFixture.session,
+        events: opencodeCarrierFixture.events,
+      },
+      SRC,
+    );
+    const before = computeTokenBreakdown(r).total;
+    const attributed = attributeTokensToLlmEvents(r);
+    expect(attributed.size).toBeGreaterThan(0);
+    const after = computeTokenBreakdown(r).total;
+    // 一旦有人把归因结果写回 event.tokens，这里就会红（双计 bug 的锁死测试）
+    expect(after).toBe(before);
   });
 
   it('状态归一化四类映射', () => {

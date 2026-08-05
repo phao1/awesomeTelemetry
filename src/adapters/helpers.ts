@@ -88,6 +88,11 @@ export function wallClockDurationMs(events: TraceEvent[]): number {
  * - total = input + output + reasoning + cacheRead + cacheWrite
  *   （#6：reasoningInTotal === false 时排除 reasoning——CodeArts/DeepSeek 的
  *   reasoning 是 output 子集，真实 total 不含它）
+ *
+ * ⚠️ 归因结果禁止写回 `event.tokens`（change calibrate-tokens-and-compare-report
+ * design §2）：本函数对所有 `event.tokens !== null` 的事件无差别求和，写回会让
+ * carrier 与归因事件各算一遍，精确复现外部变更说明 §4.1 的双计 bug。
+ * 归因必须走 speed-metrics 的只读纯函数 attributeTokensToLlmEvents。
  */
 export function aggregateTokenUsage(
   events: TraceEvent[],

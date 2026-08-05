@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { TraceRecord } from './trace-types.js';
-import { computeSpeedMetrics } from './speed-metrics.js';
+import type { TraceEvent, TraceRecord } from './trace-types.js';
+import { opencodeCarrierFixture } from '../adapters/__fixtures__/opencode.js';
+import { normalizeOpenCode } from '../adapters/opencode.js';
+import { attributeTokensToLlmEvents, computeSpeedMetrics } from './speed-metrics.js';
 
 function makeRecord(): TraceRecord {
   return {
@@ -99,5 +101,130 @@ describe('REQ-006 speed metrics', () => {
     expect(s.tpotMs).toBeCloseTo(500 / 50);
     // pureInferenceMs 累计全部 llm duration（500 + 0 = 500）
     expect(s.pureInferenceMs).toBe(500);
+  });
+});
+
+function carrierEvent(
+  over: Partial<TraceEvent> & { id: string; kind: TraceEvent['kind'] },
+): TraceEvent {
+  return {
+    sessionId: 's1',
+    sequence: 1,
+    phase: 'implement',
+    title: '',
+    startedAt: '2026-08-01T00:00:00.000Z',
+    durationMs: 0,
+    status: 'success',
+    actor: 'assistant',
+    tool: null,
+    tokens: null,
+    error: null,
+    hasInput: false,
+    hasOutput: false,
+    hasRaw: false,
+    inputSummary: null,
+    outputSummary: null,
+    ...over,
+  };
+}
+
+describe('§2 token 归因（calibrate-tokens-and-compare-report）', () => {
+  it('OpenCode carrier fixture 归因后 tps/tpotMs 非 null，且归因 output 总和 == carrier output 总和', () => {
+    const record = normalizeOpenCode(
+      {
+        sourceAgent: 'OpenCode',
+        session: opencodeCarrierFixture.session,
+        events: opencodeCarrierFixture.events,
+      },
+      '/tmp/oc-carrier.db',
+    );
+    const attributed = attributeTokensToLlmEvents(record);
+    const llmWithoutTokens = record.events.filter((e) => e.kind === 'llm' && e.tokens === null);
+    // 两个 text part（m-a-1 / m-b-1）都是无 token 的 llm 事件，各归因一个 carrier
+    expect(llmWithoutTokens.length).toBe(2);
+    expect(attributed.size).toBe(2);
+    const attributedSum = [...attributed.values()].reduce((sum, t) => sum + t.output, 0);
+    const carrierSum = record.events
+      .filter((e) => e.tokens !== null)
+      .reduce((sum, e) => sum + e.tokens!.output, 0);
+    // 1:1 的直接断言：归因 output 总和 == carrier output 总和（无重复计算）
+    expect(attributedSum).toBe(carrierSum);
+
+    const speed = computeSpeedMetrics(record);
+    expect(speed.tps).not.toBeNull();
+    expect(speed.tpotMs).not.toBeNull();
+  });
+
+  it('方向按实测：carrier 在 llm 之后时归给紧邻其前的 llm；跨消息不归因', () => {
+    const record = makeRecord();
+    record.events = [
+      // 消息 m1（真实数据形状：text 在 step-finish 之前）
+      carrierEvent({
+        id: 'm1-0',
+        kind: 'llm',
+        startedAt: '2026-08-01T00:00:01.000Z',
+        durationMs: 100,
+        title: 'answer',
+        hasOutput: true,
+        outputSummary: 'answer',
+      }),
+      carrierEvent({
+        id: 'm1-1',
+        kind: 'agent',
+        startedAt: '2026-08-01T00:00:02.000Z',
+        durationMs: 0,
+        tokens: { input: 20, output: 9, reasoning: 1, cacheRead: 3, cacheWrite: 0, total: 33 },
+      }),
+      // 消息 m2：无 token llm —— carrier 在 m1，禁止跨消息归因
+      carrierEvent({
+        id: 'm2-0',
+        kind: 'llm',
+        startedAt: '2026-08-01T00:00:03.000Z',
+        durationMs: 50,
+        title: 'next',
+        hasOutput: true,
+        outputSummary: 'next',
+      }),
+    ];
+    const attributed = attributeTokensToLlmEvents(record);
+    expect(attributed.size).toBe(1);
+    expect(attributed.get('m1-0')?.output).toBe(9);
+    expect(attributed.has('m2-0')).toBe(false);
+  });
+
+  it('1:1：carrier 在 llm 之前（旧形状 step 开头）时归给之后最近的 llm，且只归一个', () => {
+    const record = makeRecord();
+    record.events = [
+      carrierEvent({
+        id: 'm1-0',
+        kind: 'agent',
+        startedAt: '2026-08-01T00:00:01.000Z',
+        durationMs: 0,
+        tokens: { input: 20, output: 9, reasoning: 1, cacheRead: 3, cacheWrite: 0, total: 33 },
+      }),
+      carrierEvent({
+        id: 'm1-1',
+        kind: 'llm',
+        startedAt: '2026-08-01T00:00:02.000Z',
+        durationMs: 100,
+        title: 'answer A',
+        hasOutput: true,
+        outputSummary: 'answer A',
+      }),
+      carrierEvent({
+        id: 'm1-2',
+        kind: 'llm',
+        startedAt: '2026-08-01T00:00:02.100Z',
+        durationMs: 50,
+        title: 'answer B',
+        hasOutput: true,
+        outputSummary: 'answer B',
+      }),
+    ];
+    const attributed = attributeTokensToLlmEvents(record);
+    // 同消息两个 llm 候选：只归给 carrier 之后最近的一个（1:1），绝不 1:N
+    expect(attributed.size).toBe(1);
+    expect(attributed.has('m1-1')).toBe(true);
+    expect(attributed.has('m1-2')).toBe(false);
   });
 });
