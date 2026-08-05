@@ -170,13 +170,13 @@
 
 ## §9 收口验收（B9）
 
-- [ ] 9.1 `openspec validate calibrate-tokens-and-compare-report --strict` 通过
-- [ ] 9.2 `npm run typecheck && npm run test && npm run lint` 全绿
-- [ ] 9.3 `npm run perf:check`，结果追加到 `PERF-BASELINE.md`
-- [ ] 9.4 **真机验证**（不要用"测试全绿"冒充"产品能用"）：
+- [x] 9.1 `openspec validate calibrate-tokens-and-compare-report --strict` 通过
+- [x] 9.2 `npm run typecheck && npm run test && npm run lint` 全绿
+- [x] 9.3 `npm run perf:check`，结果追加到 `PERF-BASELINE.md`
+- [x] 9.4 **真机验证**（不要用"测试全绿"冒充"产品能用"）：
       `npm run build && npm start`，贴出一个真实会话的 `GET /api/sessions/:key`
       响应片段，含新增指标字段的**真实值**
-- [ ] 9.5 贴出对比页三维卡片的实际渲染截图或 DOM 片段
-- [ ] 9.6 `PROGRESS.md` 追加一行；新增的 `D-###` 汇总进 `DECISIONS-PENDING.md`
-- [ ] 9.7 **诚实报告**：哪些结论未经真机验证（尤其 B4 工具名清单、B8 子代理），
+- [x] 9.5 贴出对比页三维卡片的实际渲染截图或 DOM 片段
+- [x] 9.6 `PROGRESS.md` 追加一行；新增的 `D-###` 汇总进 `DECISIONS-PENDING.md`
+- [x] 9.7 **诚实报告**：哪些结论未经真机验证（尤其 B4 工具名清单、B8 子代理），
       明确写出来，不要含糊
