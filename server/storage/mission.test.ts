@@ -300,6 +300,17 @@ describe('P2 逐 widget 口径断言（B1/B3/B5/B6/B11/B12/B13/B15/F1-3+/C2/C4�
     expect(r2.quality.closure.data!.repairSessions).toBe(1);
   });
 
+  it('B1 closure：status=unknown 的索引阶段会话不计入成功率（禁止 0 冒充）', async () => {
+    seedP2Fixture();
+    db.prepare("UPDATE sessions SET status = 'unknown' WHERE id = 's3'").run();
+    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
+    const c = r.quality.closure.data!;
+    expect(c.sessions).toBe(3);
+    expect(c.successRate).toBeCloseTo(0.5); // 只算 success+error（s3 unknown 不计入）
+    expect(c.ok).toBe(1);
+    expect(c.err).toBe(1);
+  });
+
   it('B3 costEfficiency：unknown 从分子分母剔除并公示', async () => {
     seedP2Fixture();
     const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });

@@ -167,4 +167,67 @@ describe('REQ-003 建库幂等', () => {
     expect(() => initSchema(db)).not.toThrow();
     db.close();
   });
+
+  it('v1 → v3 全链迁移：8 个 v2 列 + repair_loop 全部补上（9.7）', () => {
+    const db = createDb(join(tempDir(), 'migrate-v1.sqlite'));
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY, provider TEXT NOT NULL, source_agent TEXT NOT NULL,
+        title TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'unknown', cwd TEXT, message_count INTEGER NOT NULL DEFAULT 0,
+        event_count INTEGER NOT NULL DEFAULT 0, token_input INTEGER NOT NULL DEFAULT 0,
+        token_output INTEGER NOT NULL DEFAULT 0, token_reasoning INTEGER NOT NULL DEFAULT 0,
+        token_cache_read INTEGER NOT NULL DEFAULT 0, token_cache_write INTEGER NOT NULL DEFAULT 0,
+        token_total INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
+        system_prompt TEXT, source_path TEXT NOT NULL, data_source TEXT NOT NULL DEFAULT 'scan',
+        total_duration_ms INTEGER NOT NULL DEFAULT 0, is_subagent INTEGER NOT NULL DEFAULT 0,
+        detail_loaded INTEGER NOT NULL DEFAULT 0
+      ) WITHOUT ROWID;
+      CREATE TABLE events (
+        session_id TEXT NOT NULL, id TEXT NOT NULL, sequence INTEGER NOT NULL,
+        kind TEXT NOT NULL, phase TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
+        started_at TEXT NOT NULL, duration_ms INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'unknown', actor TEXT NOT NULL DEFAULT '',
+        tool TEXT, input_summary TEXT, output_summary TEXT, tokens_json TEXT, error TEXT,
+        PRIMARY KEY (session_id, id)
+      ) WITHOUT ROWID;
+      CREATE TABLE metrics (
+        session_id TEXT PRIMARY KEY, total_steps INTEGER NOT NULL DEFAULT 0,
+        duration_by_phase TEXT NOT NULL DEFAULT '{}', tool_call_count INTEGER NOT NULL DEFAULT 0,
+        verification_present INTEGER NOT NULL DEFAULT 0, avg_tool_duration_ms REAL NOT NULL DEFAULT 0,
+        verification_coverage REAL NOT NULL DEFAULT 0, error_rate REAL NOT NULL DEFAULT 0,
+        entered_debug INTEGER NOT NULL DEFAULT 0, tokens_per_step REAL NOT NULL DEFAULT 0,
+        cost_usd REAL NOT NULL DEFAULT 0, calc_version INTEGER NOT NULL DEFAULT 0
+      ) WITHOUT ROWID;
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
+      INSERT INTO _meta VALUES ('schema_version', '1');
+    `);
+    initSchema(db);
+    const sessions = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+    const events = db.prepare('PRAGMA table_info(events)').all() as Array<{ name: string }>;
+    const metrics = db.prepare('PRAGMA table_info(metrics)').all() as Array<{ name: string }>;
+    for (const col of ['primary_model', 'cost_source', 'duration_source']) {
+      expect(sessions.some((c) => c.name === col), `sessions.${col}`).toBe(true);
+    }
+    for (const col of ['model', 'input_len', 'output_len']) {
+      expect(events.some((c) => c.name === col), `events.${col}`).toBe(true);
+    }
+    for (const col of ['ttft_ms', 'e2e_ms', 'repair_loop']) {
+      expect(metrics.some((c) => c.name === col), `metrics.${col}`).toBe(true);
+    }
+    const meta = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as { value: string };
+    expect(meta.value).toBe(String(SCHEMA_VERSION));
+    // 原 v1 数据行保留（ADD COLUMN 非破坏性）
+    db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
+       VALUES ('s1', 'claude', 'Claude', 't', '2026-08-01T00:00:00.000Z', '2026-08-01T00:01:00.000Z', '/tmp/x')`,
+    ).run();
+    const row = db.prepare('SELECT id, cost_source, duration_source FROM sessions WHERE id = ?').get('s1') as {
+      id: string;
+      cost_source: string;
+      duration_source: string;
+    };
+    expect(row).toEqual({ id: 's1', cost_source: 'unknown', duration_source: 'unknown' });
+    db.close();
+  });
 });

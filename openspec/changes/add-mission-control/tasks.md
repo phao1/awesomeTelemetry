@@ -206,42 +206,42 @@ widget 读到的都是空值。
 - [x] 8.3 顶部控制条：`range` 7d/30d/all + 手动刷新 + meta 行
       （`generated / widgets N / xxxms` —— Tengu 这行值得抄，它把耗时暴露给用户，
       正好配合 nfr 预算）
-- [ ] 8.4 ⚠️ **显式否决 Tengu 的 60s 自动刷新**：改为 SSE `sessions_changed`
+- [x] 8.4 ⚠️ **显式否决 Tengu 的 60s 自动刷新**：改为 SSE `sessions_changed`
       驱动的 stamp 失效 + 手动刷新（REQ-023 禁止轮询 / nfr「30s 窗口 < 15 请求」）
 - [x] 8.5 每个 widget 渲染服务端下发的 `criteria` 口径行；
       `available=false` 时渲染 `EmptyState` + `unavailableReason`，
       **禁止渲染 0**（REQ-022 四态 + REQ-017「null 显示 —，不许用 0 冒充」）
 - [x] 8.6 第 6 个视图接入：`AppShell` tab、快捷键 `6`、hash `#/mission?range=`
-- [ ] 8.7 i18n：所有新增字符串 zh + en 双份（REQ-010），含 `criteria` 口径文案
+- [x] 8.7 i18n：所有新增字符串 zh + en 双份（REQ-010），含 `criteria` 口径文案
       和 `unavailableReason` 的人话映射
 
 ## 9. 验收
 
-- [ ] 9.1 `GET /api/mission` 契约测试：1 请求返回全部区块；每个 widget 都有
+- [x] 9.1 `GET /api/mission` 契约测试：1 请求返回全部区块；每个 widget 都有
       非空 `criteria`；`available=false` 时 `data === null` 且
       `unavailableReason !== null`
-- [ ] 9.2 性能：冷启 < 500ms / 缓存 < 20ms / < 120KB gzip / 单 widget SQL < 30ms；
+- [x] 9.2 性能：冷启 < 500ms / 缓存 < 20ms / < 120KB gzip / 单 widget SQL < 30ms；
       mission 请求期间事件循环 p99 < 50ms
-- [ ] 9.3 前端网络面板实测：进入 mission 视图**请求数 = 1**（G11.9 红线）
-- [ ] 9.4 定价缺失路径：未知模型的会话在成本类 widget 里显示 `—`，
+- [x] 9.3 前端网络面板实测：进入 mission 视图**请求数 = 1**（G11.9 红线）
+- [x] 9.4 定价缺失路径：未知模型的会话在成本类 widget 里显示 `—`，
       且从 `$/turn` 的分子分母同时剔除
-- [ ] 9.5 口径漂移守门：§5.9 的逐 widget 数值断言全绿
-- [ ] 9.6 脱敏：B10 命令预览、B7 场景分布的响应体断言不含未脱敏正文
-- [ ] 9.7 schema 迁移：v1 库升 v2 后原有会话可正常打开；新列在下一轮扫描后回填
-- [ ] 9.8 `PROGRESS.md` 追加一行；`PERF-BASELINE.md` 追加 perf:check 结果
-- [ ] 9.9 `openspec validate add-mission-control --strict` 通过
+- [x] 9.5 口径漂移守门：§5.9 的逐 widget 数值断言全绿
+- [x] 9.6 脱敏：B10 命令预览、B7 场景分布的响应体断言不含未脱敏正文
+- [x] 9.7 schema 迁移：v1 库升 v2 后原有会话可正常打开；新列在下一轮扫描后回填
+- [x] 9.8 `PROGRESS.md` 追加一行；`PERF-BASELINE.md` 追加 perf:check 结果
+- [x] 9.9 `openspec validate add-mission-control --strict` 通过
 
 ---
 
 ## 10. 明确不做（改口径前先回头读 design.md §3-§5 的理由）
 
-- [ ] 10.1 A5 Permission Mode 分布 —— 遥测专有字段，且只对 Claude 一家成立
-- [ ] 10.2 B16 权限门禁 Allowed —— 同上，且退化后等于 A1，做了只会让人怀疑
+- [x] 10.1 A5 Permission Mode 分布 —— 遥测专有字段，且只对 Claude 一家成立
+- [x] 10.2 B16 权限门禁 Allowed —— 同上，且退化后等于 A1，做了只会让人怀疑
       两个面板哪个是错的
-- [ ] 10.3 B17 独立面板 —— errors 已被 B4 覆盖，rejected 是启发式，合并进 B4
-- [ ] 10.4 B2 handoff rate —— Tengu 的三条件并集本项目三缺二，凑出来会误导
-- [ ] 10.5 F1-1d 「有建议」/「目录规则」—— Claude Code 专有埋点概念
-- [ ] 10.6 D 区知识资产 / E 区趣味洞察 —— 源文档截图未覆盖，无内容可复刻；
+- [x] 10.3 B17 独立面板 —— errors 已被 B4 覆盖，rejected 是启发式，合并进 B4
+- [x] 10.4 B2 handoff rate —— Tengu 的三条件并集本项目三缺二，凑出来会误导
+- [x] 10.5 F1-1d 「有建议」/「目录规则」—— Claude Code 专有埋点概念
+- [x] 10.6 D 区知识资产 / E 区趣味洞察 —— 源文档截图未覆盖，无内容可复刻；
       且 D 区数据在会话文件之外
 
 > 这 6 项若后续要翻案，**必须先补齐 design.md §0 表格里对应的那行数据底座**，

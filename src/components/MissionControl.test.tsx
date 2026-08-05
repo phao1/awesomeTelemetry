@@ -8,7 +8,7 @@ import { MissionControl, type MissionRange } from './MissionControl.js';
 function makeResponse(): MissionResponse {
   const widget = (id: string, available: boolean): unknown => ({
     id,
-    criteria: `${id} criteria`,
+    criteria: `custom-criteria-${id}`,
     available,
     unavailableReason: available ? null : 'NOT_IMPLEMENTED_YET',
     data: available
@@ -79,7 +79,7 @@ describe('MissionControl（REQ-027）', () => {
       expect(load).toHaveBeenCalledTimes(1);
       const text = host.textContent ?? '';
       expect(text).toContain('25'); // widgetCount
-      expect(text).toContain('toolTop criteria'); // 服务端 criteria 行
+      expect(text).toContain('events.tool 按调用数聚合 TOP 10'); // 8.7：criteria 经 i18n 字典渲染
       expect(text).toContain('该指标当前不可用'); // unavailable EmptyState
       expect(host.querySelectorAll('.mission-widget').length).toBe(6); // A 区
     } finally {
@@ -108,6 +108,61 @@ describe('MissionControl（REQ-027）', () => {
       });
       expect(load).toHaveBeenCalledTimes(2);
       expect(load).toHaveBeenLastCalledWith('30d');
+    } finally {
+      act(() => root?.unmount());
+      host.remove();
+    }
+  });
+
+  it('9.4 定价缺失路径：unknown 成本的模型显示 —，不渲染 $0.0000', async () => {
+    const base = makeResponse();
+    const withModels: MissionResponse = {
+      ...base,
+      usage: {
+        ...base.usage,
+        toolTop: {
+          id: 'toolTop',
+          criteria: 'mission.criteria.toolTop',
+          available: true,
+          unavailableReason: null,
+          data: [],
+        },
+      },
+      quality: {
+        ...base.quality,
+        models: {
+          id: 'models',
+          criteria: 'mission.criteria.models',
+          available: true,
+          unavailableReason: null,
+          data: [
+            { model: 'glm-4-plus', calls: 3, input: 100, output: 50, cacheRead: 0, cacheWrite: 0, costUsd: 0, costSource: 'unknown' },
+            { model: 'claude-opus-4-8', calls: 1, input: 100, output: 50, cacheRead: 0, cacheWrite: 0, costUsd: 0.5, costSource: 'estimated' },
+          ],
+        },
+      },
+    };
+    const load = vi.fn(async (_range: MissionRange) => withModels);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let root: ReturnType<typeof createRoot> | undefined;
+    try {
+      act(() => {
+        root = createRoot(host);
+        root.render(<MissionControl locale="zh" load={load} />);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const bChip = host.querySelector<HTMLButtonElement>('.mission-chips .chip:nth-child(2)');
+      act(() => bChip?.click());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const text = host.textContent ?? '';
+      expect(text).toContain('glm-4-plus');
+      expect(text).toContain('—');
+      expect(text).not.toContain('$0.0000');
     } finally {
       act(() => root?.unmount());
       host.remove();

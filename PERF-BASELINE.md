@@ -1,63 +1,90 @@
-# PERF-BASELINE.md — 性能回归基线
+# PERF-BASELINE.md — performance regression baseline
 
-> 按 `contracts/nfr.md` §6 维护：M3 起每个里程碑合入后跑一次 `npm run perf:check`，追加一行。
-> 任何一列相对上一行劣化超过 20% 的提交不得合入，除非在提交说明中写清取舍。
-> 测量方法：`perf-diag/lib/synthetic-db.mjs` 合成参考规模数据（524 会话 / 73,588 event /
-> 最差单会话 9,590 event / 1,820 proxy 行）。P-4：机器差异按本机基线记录，不做跨机对比。
+> Maintained per `contracts/nfr.md` §6: from M3 on, run `npm run perf:check`
+> after every milestone merge and append a row.
+> Any column degrading more than 20% vs the previous row blocks the commit
+> unless the trade-off is documented in the commit message.
+> Method: `perf-diag/lib/synthetic-db.mjs` builds synthetic reference-scale
+> data (524 sessions / 73,588 events / worst single session 9,590 events /
+> 1,820 proxy rows). P-4: machine differences are recorded as local baselines;
+> no cross-machine comparison.
 
-| 日期 | 里程碑 | 首屏@10s | 最差详情 | Overview | 30s请求数 | DB+WAL |
-|------|--------|---------|---------|----------|----------|--------|
-| — | 参考实现（反面基线） | 5,884ms | 625ms/32.3MB | 4,732ms/524req | 508 | 471.6MB |
-| 2026-08-04 | M3 storage | 未建前端 | 8.489ms（slim 9,590 events） | 21.89ms 冷 / 0.264ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
-| 2026-08-04 | M4 watch 门禁 | 未建前端 | 8.510ms（slim 9,590 events） | 22.08ms 冷 / 0.256ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
-| 2026-08-04 | M5 adapters | 未建前端 | 8.662ms（slim 9,590 events） | 22.24ms 冷 / 0.271ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
-| 2026-08-04 | M6 scanners | 未建前端 | 8.551ms（slim 9,590 events） | 22.17ms 冷 / 0.257ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
-| 2026-08-04 | M7 realtime | 未建前端 | 8.616ms（slim 9,590 events） | 22.49ms 冷 / 0.257ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
-| 2026-08-04 | M8 HTTP server | 未建前端 | 8.502ms（slim 9,590 events） | 21.80ms 冷 / 0.255ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
-| 2026-08-04 | M9 core 分析 | 未建前端 | 8.618ms（slim 9,590 events） | 21.82ms 冷 / 0.261ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
-| 2026-08-04 | M10 前端 | 前端已建 | 8.538ms（slim 9,590 events） | 22.27ms 冷 / 0.259ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
-| 2026-08-04 | M11 proxy/脱敏 | 前端已建 | 8.551ms（slim 9,590 events） | 21.99ms 冷 / 0.256ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
-| 2026-08-04 | T-03 SQLite 多会话索引 | 前端已建 | 8.722ms（slim 9,590 events） | 22.40ms 冷 / 0.361ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
-| 2026-08-04 | fix-session-data-integrity（T-10~T-12 完成） | 前端已建 | 8.519ms（slim 9,590 events） | 22.42ms 冷 / 0.274ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
-| 2026-08-04 | add-design-system + redesign-frontend-views + add-palette-and-a11y | 前端已建 | 9.215ms（slim 9,590 events） | 24.37ms 冷 / 0.372ms 命中 | 未建前端 | 24.70MB（合成库，无 raw） |
+| Date | Milestone | First screen @10s | Worst detail | Overview | Requests in 30s | DB+WAL |
+|------|-----------|-------------------|--------------|----------|-----------------|--------|
+| — | reference (negative baseline) | 5,884ms | 625ms/32.3MB | 4,732ms/524req | 508 | 471.6MB |
+| 2026-08-04 | M3 storage | no frontend yet | 8.489ms (slim 9,590 events) | 21.89ms cold / 0.264ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-04 | M4 watch gate | no frontend yet | 8.510ms (slim 9,590 events) | 22.08ms cold / 0.256ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-04 | M5 adapters | no frontend yet | 8.662ms (slim 9,590 events) | 22.24ms cold / 0.271ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-04 | M6 scanners | no frontend yet | 8.551ms (slim 9,590 events) | 22.17ms cold / 0.257ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-04 | M7 realtime | no frontend yet | 8.616ms (slim 9,590 events) | 22.49ms cold / 0.257ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-04 | M8 HTTP server | no frontend yet | 8.502ms (slim 9,590 events) | 21.80ms cold / 0.255ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-04 | M9 core analysis | no frontend yet | 8.618ms (slim 9,590 events) | 21.82ms cold / 0.261ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-04 | M10 frontend | frontend built | 8.538ms (slim 9,590 events) | 22.27ms cold / 0.259ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-04 | M11 proxy/desensitization | frontend built | 8.551ms (slim 9,590 events) | 21.99ms cold / 0.256ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-04 | T-03 SQLite multi-session index | frontend built | 8.722ms (slim 9,590 events) | 22.40ms cold / 0.361ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-04 | fix-session-data-integrity (T-10~T-12 done) | frontend built | 8.519ms (slim 9,590 events) | 22.42ms cold / 0.274ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-04 | add-design-system + redesign-frontend-views + add-palette-and-a11y | frontend built | 9.215ms (slim 9,590 events) | 24.37ms cold / 0.372ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
+| 2026-08-05 | add-mission-control (B1~B8, schema v3) | frontend built | 8.9ms (slim 9,590 events) | 23.5ms cold / 0.3ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
 
-> M4/M5 与 M3 数字基本持平（只新增 watch/adapter 层，不触碰被测量的查询路径），
-> 差异在 P-4 机器波动范围内（< 1%）。
-> T-03 的索引阶段新增 SQLite 轻量读取，不触碰被测量的查询路径，差异在机器波动内（< 5%）。
-> T-10 的索引阶段新增 JSONL 流式标题提取（硬上限 1MB，同步 readSync，仅启动路径）：
-> 实测单 JSONL 最差 2.735ms（3.4MB 文件读满 1MB 未命中回落）、单 SQLite 库 0.281ms，
-> 均低于预算（5ms / 50ms）；被测量的查询路径无劣化 > 20%（最差详情 +2%）。
-> 三个前端 change 后被测量的查询路径仍无劣化 > 20%（最差详情 +8%）。
+> M4/M5 numbers are essentially flat vs M3 (only new watch/adapter layers, not
+> touching the measured query paths); differences are within P-4 machine
+> fluctuation (< 1%).
+> T-03's index phase adds lightweight SQLite reads that don't touch the
+> measured query paths; difference within machine fluctuation (< 5%).
+> T-10's index phase adds JSONL streaming title extraction (1MB hard cap,
+> sync readSync, startup path only): worst single JSONL measured 2.735ms
+> (3.4MB file read 1MB without a hit, fallback), single SQLite DB 0.281ms —
+> both under budget (5ms / 50ms); no measured query path degraded > 20%
+> (worst detail +2%).
+> After the three frontend changes, measured query paths still show no
+> degradation > 20% (worst detail +8%).
 
-## 首屏性能实测（T-07 遗留项，2026-08-04 收口）
+## First-screen performance measurement (T-07 leftover, closed 2026-08-04)
 
-> 本机无浏览器自动化工具，浏览器级「首绘」无法实测；以下为可测部分（本地回环）：
+> No browser automation tooling on this machine, so browser-level "first
+> paint" cannot be measured; the measurable parts below use local loopback:
 
-| 项 | 实测 | 说明 |
-|----|------|------|
-| GET /（index.html） | 中位 ~0.6ms | 本地回环 |
-| GET /api/sessions?limit=50 | 中位 ~0.6ms | 首屏数据（服务端 < 5ms 预算内） |
-| /api/health | ~0.3ms | 状态栏单次拉取 |
-| 前端资源 gzip 合计 | 93.1KB | JS 86.6KB + CSS 6.4KB + HTML 0.8KB |
-| CommandPalette chunk | 2.5KB（gzip 1.1KB） | 懒加载独立 chunk，不进首屏 bundle |
-| 服务端首屏预算 | < 100ms | 实测数据链路 < 1ms ✅ |
+| Item | Measured | Note |
+|------|----------|------|
+| GET / (index.html) | median ~0.6ms | local loopback |
+| GET /api/sessions?limit=50 | median ~0.6ms | first-screen data (within the < 5ms server budget) |
+| /api/health | ~0.3ms | single status-bar fetch |
+| Frontend assets gzip total | 93.1KB | JS 86.6KB + CSS 6.4KB + HTML 0.8KB |
+| CommandPalette chunk | 2.5KB (gzip 1.1KB) | lazy-loaded separate chunk, not in the first-screen bundle |
+| Server first-screen budget | < 100ms | measured data path < 1ms ✅ |
 
-**未实测**：浏览器首绘（Performance 面板）。本地回环传输 93KB gzip 可忽略，
-主要成本是 287KB 主 JS 的解析；该数字需在浏览器实测后补记，**不得用后端预算冒充**。
+**Not measured**: browser first paint (Performance panel). Local-loopback
+transfer of 93KB gzip is negligible; the main cost is parsing the 287KB main
+JS. That number must be recorded after a real browser measurement;
+**must not be faked with the backend budget**.
 
-## M3 明细（2026-08-04，本机：macOS，Node v26.5.1）
+## M3 details (2026-08-04, machine: macOS, Node v26.5.1)
 
-来自 `npm run perf:check`（合成参考规模 fixture，中位耗时，7 次）：
+From `npm run perf:check` (synthetic reference-scale fixture, median timing, 7
+runs):
 
-| 项 | 实测 | 预算 | 判定 |
-|----|------|------|------|
+| Item | Measured | Budget | Verdict |
+|------|----------|--------|---------|
 | listSessions(500) | 0.359ms | < 1ms | ✅ |
-| 最差详情 slim（9,590 events） | 8.489ms | < 15ms（服务端） | ✅ |
-| eventDetail 下钻 | 0.005ms | < 20ms | ✅ |
+| worst detail slim (9,590 events) | 8.489ms | < 15ms (server) | ✅ |
+| eventDetail drill-down | 0.005ms | < 20ms | ✅ |
 | getSystemPromptForSession | 0.011ms | < 1ms | ✅ |
 | proxyList(50) | 0.748ms | — | — |
-| Overview 冷路径（2 SQL） | 21.89ms | < 400ms | ✅ |
-| Overview 缓存命中（1 SQL） | 0.264ms | < 20ms | ✅ |
-| 差分写入（347→348，append 1） | 2 语句 / 0.29ms | 只 1 INSERT，< 20ms | ✅（对照反面基线 348 语句 / 181.91ms） |
-| 事件循环 p99（200 次压测） | < 0.01ms | < 50ms | ✅ |
-| 三条核心查询 EXPLAIN | 均无 USE TEMP B-TREE | 无临时 B 树 | ✅ |
+| Overview cold path (2 SQL) | 21.89ms | < 400ms | ✅ |
+| Overview cache hit (1 SQL) | 0.264ms | < 20ms | ✅ |
+| differential write (347→348, append 1) | 2 statements / 0.29ms | only 1 INSERT, < 20ms | ✅ (vs negative baseline 348 statements / 181.91ms) |
+| event-loop p99 (200-request hammer) | < 0.01ms | < 50ms | ✅ |
+| EXPLAIN for the three core queries | all without USE TEMP B-TREE | no temp B-tree | ✅ |
+
+## add-mission-control perf:check（2026-08-05，本地基线）
+
+| 指标 | 实测 | 预算 | 结论 |
+|------|------|------|------|
+| Mission 冷启（stamp + 16 条 widget SQL） | 53.14ms | < 500ms | ✅ |
+| Mission 缓存命中（仅 stamp 判定） | 0.053ms | < 20ms | ✅ |
+| Mission 单 widget SQL 最差 | 12.37ms | < 30ms @ tier B | ✅ |
+| Mission 响应 gzip（代表性信封） | 317B | < 120KB | ✅ |
+| 事件循环 p99（200-request hammer） | < 0.01ms | < 50ms | ✅ |
+
+> 注：repair 检测因 tier B 全表窗口扫描 40ms 超预算，按 design §7.3 R1
+> 升级为扫描时预计算（metrics.repair_loop，schema v3），见 D-012。

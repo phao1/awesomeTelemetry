@@ -422,10 +422,15 @@ function WidgetPanel({
       ? t(reasonKey, locale)
       : (widget.unavailableReason ?? '');
   const titleKey = `mission.widget.${id}` as I18nKey;
+  // 8.7：criteria 口径文案走共享 i18n 字典（服务端下发 key，前端渲染 zh/en）；
+  // 未知 key 回退到服务端原文（REQ-010：前端不自行编写口径）。
+  const criteriaKey = `mission.criteria.${id}` as I18nKey;
+  const criteriaText =
+    criteriaKey in ZH ? t(criteriaKey, locale) : widget.criteria;
   return (
     <section className="mission-widget">
       <h3 className="mission-widget-title">{titleKey in ZH ? t(titleKey, locale) : id}</h3>
-      <div className="mission-criteria">{widget.criteria}</div>
+      <div className="mission-criteria">{criteriaText}</div>
       {widget.available && widget.data !== null ? (
         <div className="mission-widget-body">
           <WidgetData id={id} data={widget.data} locale={locale} onOpenSession={onOpenSession} />

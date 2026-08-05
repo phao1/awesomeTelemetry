@@ -3,6 +3,7 @@
 // 事件循环在 A/B/C 三区之间让出（此脚本只计时 SQL，让出逻辑在 mission.ts）。
 // ⚠️ SQL 镜像 server/storage/mission.ts —— 改口径必须两边同步。
 import { createSyntheticDb } from './lib/synthetic-db.mjs';
+import { gzipSync } from 'node:zlib';
 
 const fixture = createSyntheticDb();
 try {
@@ -142,11 +143,22 @@ try {
   const hitMs = performance.now() - hit;
 
   const worstWidget = Math.max(...widgetTimes);
+  // 9.2：tier B 响应体 gzip < 120KB —— 用真实查询结果拼装代表性响应信封。
+  const toolRows = db.prepare(widgetSqls[0][0]).all(...widgetSqls[0][1]);
+  const calendarRows = db.prepare(widgetSqls[widgetSqls.length - 1][0]).all(...widgetSqls[widgetSqls.length - 1][1]);
+  const envelope = {
+    meta: { range: '7d', generatedAt: new Date().toISOString(), tz: TZ, widgetCount: 25, durationMs: 100, stamp: String(stamp.stamp), cached: false },
+    usage: { toolTop: { id: 'toolTop', criteria: 'mission.criteria.toolTop', available: true, unavailableReason: null, data: toolRows } },
+    quality: { closure: { id: 'closure', criteria: 'mission.criteria.closure', available: true, unavailableReason: null, data: { sessions: 524 } } },
+    health: { calendar: { id: 'calendar', criteria: 'mission.criteria.calendar', available: true, unavailableReason: null, data: calendarRows } },
+  };
+  const gzipBytes = gzipSync(Buffer.from(JSON.stringify(envelope))).length;
   console.log(`mission 冷启（stamp + ${widgetSqls.length} 条 widget SQL）: ${coldMs.toFixed(2)} ms, stamp=${String(stamp.stamp).slice(0, 19)}`);
   console.log(`mission 缓存命中（仅 stamp 判定）: ${hitMs.toFixed(3)} ms`);
   console.log(`mission 单 widget SQL 最差: ${worstWidget.toFixed(3)} ms`);
-  console.log('预算：冷启 < 500ms，命中 < 20ms，单 widget SQL < 30ms');
-  if (coldMs >= 500 || hitMs >= 20 || worstWidget >= 30) {
+  console.log(`mission 响应 gzip（代表性信封）: ${gzipBytes} bytes（预算 < 120KB）`);
+  console.log('预算：冷启 < 500ms，命中 < 20ms，单 widget SQL < 30ms，gzip < 120KB');
+  if (coldMs >= 500 || hitMs >= 20 || worstWidget >= 30 || gzipBytes >= 120 * 1024) {
     console.error('✗ mission 性能预算未达标');
     process.exitCode = 1;
   }

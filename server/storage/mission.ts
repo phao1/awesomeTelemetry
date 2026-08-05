@@ -168,7 +168,7 @@ function widgetToolTop(db: Database, opts: MissionOptions): MissionWidget<NonNul
   const rows = toolSql(TOOL_TOP_SQL, db, opts);
   return availableWidget(
     'toolTop',
-    'events.tool 按调用数聚合 TOP 10；errors = status=\'error\' 计数，全部失败标红；覆盖当前 dataSource 与 range 内会话',
+    'mission.criteria.toolTop',
     rows.map((row) => ({
       tool: row.tool as string,
       calls: row.calls as number,
@@ -199,7 +199,7 @@ function widgetSkillTop(db: Database, opts: MissionOptions): MissionWidget<NonNu
   }
   return availableWidget(
     'skillTop',
-    'events.tool IN (\'Skill\',\'SlashCommand\') 的调用计数 + input_summary 取 skill 名；砍掉 loaded 分支（REQ-006 数据边界）与「近 7 天新见」标记',
+    'mission.criteria.skillTop',
     [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
   );
 }
@@ -253,7 +253,7 @@ function widgetSubagent(db: Database, opts: MissionOptions): MissionWidget<NonNu
     (cachedStmt(db, `SELECT COUNT(*) AS c FROM sessions WHERE ${sql}`).get(...params) as { c: number }).c;
   return availableWidget(
     'subagent',
-    'events.kind=\'agent\' 按 extractSubagentType(input_summary) 聚合（启发式提取，未逐厂商核验）；avg subagent/session 覆盖 range 内全部会话',
+    'mission.criteria.subagent',
     {
       rows: [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
       avgPerSession: totalSessions > 0 ? sessions.size / totalSessions : 0,
@@ -291,7 +291,7 @@ function widgetHeatmap(db: Database, opts: MissionOptions): MissionWidget<NonNul
   }
   return availableWidget(
     'heatmap',
-    'sessions.started_at 按 tz 偏移后分桶到 7×24 网格（分桶前在 SQL 里偏移），格子 = 会话数；weekday 0=周一',
+    'mission.criteria.heatmap',
     { grid, peak },
   );
 }
@@ -317,7 +317,7 @@ function widgetPromptHabits(db: Database, opts: MissionOptions): MissionWidget<N
   const sorted = lengths.slice().sort((a, b) => a - b);
   return availableWidget(
     'promptHabits',
-    'user_prompt 的 input_summary 长度 p50/p95/max；必须先过 isGenuineUserPrompt 过滤注入（否则统计的是 <system-reminder> 的长度）；keep_going/negative 为关键词启发式；effort/source 维度删除',
+    'mission.criteria.promptHabits',
     {
       n: sorted.length,
       p50: percentile(sorted, 50) ?? 0,
@@ -343,7 +343,7 @@ function widgetActivity(db: Database, opts: MissionOptions): MissionWidget<NonNu
   }>;
   return availableWidget(
     'activity',
-    '每小时 COUNT(DISTINCT session_id) 柱 + SUM(message_count) 折线；tz 偏移在 SQL 里做',
+    'mission.criteria.activity',
     rows.map((row) => ({
       hour: `${row.hour.replace(' ', 'T')}:00:00`,
       sessions: row.sessions,
@@ -384,13 +384,16 @@ function widgetClosure(db: Database, opts: MissionOptions): MissionWidget<NonNul
     .get(opts.dataSource, ...params.slice(1)) as { n: number };
   const ok = rows.filter((r) => r.status === 'success').length;
   const err = rows.filter((r) => r.status === 'error').length;
-  const durs = rows.map((r) => r.dur).sort((a, b) => a - b);
+  const known = ok + err;
+  // 索引阶段 total_duration_ms 为 0（详情未加载）：全 0 时 E2E 分位数返回 null，
+  // 不把「未测量」冒充成 0（红线 #3）。
+  const durs = rows.map((r) => r.dur).filter((d) => d > 0).sort((a, b) => a - b);
   const turns = rows.map((r) => r.turns).sort((a, b) => a - b);
   return availableWidget(
     'closure',
-    'status=\'success\' 会话占比（adapter 已归一化 completed→success）；E2E p50/p90/p99 = total_duration_ms 分位数（wall-clock，G4.6）；repair sess 读 metrics.repair_loop（扫描时预计算，W-F-W-F-W 口径同 session-findings repairLoop）；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙；⚠️ 与 Tengu tengu_sdk_result 口径不同',
+    'mission.criteria.closure',
     {
-      successRate: rows.length > 0 ? ok / rows.length : null,
+      successRate: known > 0 ? ok / known : null,
       sessions: rows.length,
       ok,
       err,
@@ -427,7 +430,7 @@ function widgetCostEfficiency(db: Database, opts: MissionOptions): MissionWidget
   const tools = priced.reduce((sum, r) => sum + r.ok_tools, 0);
   return availableWidget(
     'costEfficiency',
-    'costUsd / message_count（$/turn）、costUsd / 成功 tool 数、costUsd / 会话数；cost_source=\'unknown\' 的会话从分子分母同时剔除并公示剔除数',
+    'mission.criteria.costEfficiency',
     {
       totalUsd,
       perTurnUsd: turns > 0 ? totalUsd / turns : null,
@@ -446,7 +449,7 @@ function widgetToolFailure(db: Database, opts: MissionOptions): MissionWidget<No
   const rows = toolSql(TOOL_FAILURE_SQL, db, opts);
   return availableWidget(
     'toolFailure',
-    'events.tool 分组，分母 = 总尝试，分子 = status=\'error\'（不含 permission reject）；与 Tengu 分子含 reject 的口径差异在 UI 注明',
+    'mission.criteria.toolFailure',
     rows.map((row) => {
       const attempts = row.attempts as number;
       const errors = row.errors as number;
@@ -479,7 +482,7 @@ function widgetTokenTrend(db: Database, opts: MissionOptions): MissionWidget<Non
     .all(opts.dataSource, ...params.slice(1)) as Array<Record<string, unknown>>;
   return availableWidget(
     'tokenTrend',
-    '按日 SUM(token_input/output/cache_read/cache_write)；cacheRead 增量语义用 SUM 不用 MAX（G4.4）；total 含 cacheWrite；reasoning 按 adapter 的 reasoningInTotal（G4.5）',
+    'mission.criteria.tokenTrend',
     rows.map((row) => ({
       day: row.day as string,
       sessions: row.sessions as number,
@@ -519,7 +522,7 @@ function widgetApiQuality(db: Database, opts: MissionOptions): MissionWidget<Non
   const denominator = cacheRow.input + cacheRow.cache_read + cacheRow.cache_write;
   return availableWidget(
     'apiQuality',
-    'cacheHit = SUM(cache_read)/SUM(input+cache_read+cache_write)；TTFT p50/p95 来自 metrics.ttft_ms（持久化，非运行时重算，G11.11）；proxyCalls/errorRate 仅 MITM 抓包通道（scan 通道无 API 调用概念）',
+    'mission.criteria.apiQuality',
     {
       cacheHitRate: denominator > 0 ? cacheRow.cache_read / denominator : null,
       totalIn: cacheRow.input,
@@ -549,7 +552,7 @@ function widgetErrorReasons(db: Database, opts: MissionOptions): MissionWidget<N
   }
   return availableWidget(
     'errorReasons',
-    'classifyErrorText(error) 归一到有限类（network/timeout/permission/shell/parse/notfound/other）；派生分类，非厂商原始错误码',
+    'mission.criteria.errorReasons',
     [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
   );
 }
@@ -604,7 +607,7 @@ function widgetRiskyCommands(db: Database, opts: MissionOptions): MissionWidget<
   }
   return availableWidget(
     'riskyCommands',
-    'kind=\'bash\' 或 shell 类工具，正则扫 input_summary；预览走脱敏引擎 + 限长 200 字符；正则禁嵌套量词（G11.13）；只返回聚合 + 脱敏限长预览，不出未脱敏命令原文',
+    'mission.criteria.riskyCommands',
     [...byPattern.values()].sort((a, b) => b.hits - a.hits).slice(0, 20),
   );
 }
@@ -658,7 +661,7 @@ function widgetDrift(db: Database, opts: MissionOptions): MissionWidget<NonNulla
     });
   return availableWidget(
     'drift',
-    '按日聚合成功率 / E2E p95 / tool fail / $ per turn（unknown 成本剔除）；依赖 P0-A + P0-C + ttft/e2e 持久化；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙',
+    'mission.criteria.drift',
     points,
   );
 }
@@ -736,7 +739,7 @@ function widgetContextPressure(db: Database, opts: MissionOptions): MissionWidge
   const sorted = ratios.slice().sort((a, b) => a - b);
   return availableWidget(
     'contextPressure',
-    'context ≈ input+cacheRead+cacheWrite，窗口取 pricing 表 contextWindow（禁止硬编码 200k）；压缩检测用上下文骤降 >50% 启发式（manual/auto 维度删除）；未知窗口的样本不计入',
+    'mission.criteria.contextPressure',
     {
       windowSource: 'pricing table (contextWindow)',
       peakPct: sorted.length > 0 ? sorted.at(-1)! * 100 : null,
@@ -798,7 +801,7 @@ function widgetModels(db: Database, opts: MissionOptions): MissionWidget<NonNull
   }).sort((a, b) => b.calls - a.calls);
   return availableWidget(
     'models',
-    'events.model 分组聚合调用数/token/成本；cost 来自 pricing 表，未知模型 costSource=\'unknown\' 显示 —',
+    'mission.criteria.models',
     out,
   );
 }
@@ -822,7 +825,7 @@ function widgetDepth(db: Database, opts: MissionOptions): MissionWidget<NonNulla
   }>;
   return availableWidget(
     'depth',
-    'metrics.tool_call_count 直方图，分桶 0 / 1-5 / 6-15 / 16-40 / 41+（G5.3 持久化指标的受益方）',
+    'mission.criteria.depth',
     rows.map((row) => ({ name: row.bucket, count: row.n })),
   );
 }
@@ -843,7 +846,7 @@ function widgetParallelism(db: Database, opts: MissionOptions): MissionWidget<No
   const parallel = ratios.filter((r) => r > 1.2).length;
   return availableWidget(
     'parallelism',
-    'parallelismRatio = Σevents.duration_ms / total_duration_ms（wall-clock，分开存分开算）；>1.2 判定存在并行执行；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙',
+    'mission.criteria.parallelism',
     {
       sessions: rows.length,
       avgRatio: ratios.length > 0 ? ratios.reduce((a, b) => a + b, 0) / ratios.length : null,
@@ -897,7 +900,7 @@ function widgetToolEcology(db: Database, opts: MissionOptions): MissionWidget<No
     .slice(0, 20);
   return availableWidget(
     'toolEcology',
-    'events.tool 分组：duration p50/p95（P0-A 后）；bytes in/out 用 input_len/output_len 冗余列（禁 LENGTH() 全表扫描）；mcp__ 前缀判 MCP；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙',
+    'mission.criteria.toolEcology',
     out,
   );
 }
@@ -945,7 +948,7 @@ function widgetScenes(db: Database, opts: MissionOptions): MissionWidget<NonNull
   }
   return availableWidget(
     'scenes',
-    'scene-classifier 对每个会话第一条 genuine user prompt 分类；端点只返回 {scene,count,tokenSum}，正文绝不出服务端；保留 unclassified/其它逃生舱',
+    'mission.criteria.scenes',
     {
       total: perSession.size,
       rows: [...agg.entries()]
@@ -971,7 +974,7 @@ function widgetHeavyScenes(db: Database, opts: MissionOptions): MissionWidget<No
   }
   return availableWidget(
     'heavyScenes',
-    'B7 场景分类 + token 阈值（≥10万/20万/50万 切换，默认 10 万）',
+    'mission.criteria.heavyScenes',
     {
       threshold,
       rows: [...agg.entries()]
@@ -1012,14 +1015,14 @@ function widgetCollectors(db: Database, opts: MissionOptions): MissionWidget<Non
   if (ctx === undefined) {
     return unavailableWidget(
       'collectors',
-      '汇总 providers/proxy/frida/health 四个已有端点 + SELECT COUNT(*) FROM scan_state（0 行红色告警）+ watcher 最近扫描时间',
+      'mission.criteria.collectors',
       'HEALTH_CONTEXT_MISSING',
     );
   }
   const dbPath = ctx.dbPath ?? '';
   return availableWidget(
     'collectors',
-    '汇总 providers/proxy/frida/health 四个已有端点 + SELECT COUNT(*) FROM scan_state（0 行红色告警）+ watcher 最近扫描时间',
+    'mission.criteria.collectors',
     {
       scanStateRows,
       providers: ctx.providers,
@@ -1063,7 +1066,7 @@ function widgetDualChannel(db: Database, _opts: MissionOptions): MissionWidget<N
   }
   return availableWidget(
     'dualChannel',
-    'scan ∩ proxy 计数（proxy_requests.parsed_session_id + 会话匹配关联，G5.4 时间窗简化为 id 匹配）；只对比计数不混列会话行（不违反 G7.4，D-011）',
+    'mission.criteria.dualChannel',
     {
       scanSessions: row.scan_sessions,
       proxyRequests: row.proxy_requests,
@@ -1092,7 +1095,7 @@ function widgetCalendar(db: Database, opts: MissionOptions): MissionWidget<NonNu
   }>;
   return availableWidget(
     'calendar',
-    '按日 COUNT(DISTINCT session_id) + MAX(status=\'error\') 标红；tz 偏移在 SQL 里做',
+    'mission.criteria.calendar',
     rows.map((row) => ({
       day: row.day,
       sessions: row.sessions,
@@ -1121,7 +1124,7 @@ function widgetHotSessions(db: Database, opts: MissionOptions): MissionWidget<No
   }>;
   return availableWidget(
     'hotSessions',
-    'sessions 按 costUsd 排序 TOP 10（P0-C 后按 $；此前按 token_total）；下钻复用 #/sessions?key= hash 路由',
+    'mission.criteria.hotSessions',
     rows.map((row) => ({
       id: row.id,
       title: row.title,
