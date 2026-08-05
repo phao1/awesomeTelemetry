@@ -8,6 +8,9 @@ import type { CostSource, TokenUsage } from './trace-types.js';
  * 比编一个错价格好：错价格会让 B 区所有成本数字系统性偏差且极难发现。
  *
  * 用户可通过 config/model-pricing.json 覆盖/扩展（三层覆盖，同 G2.3）。
+ * // TODO(D-010): 定价表数据来源与更新责任人待人工确认 —— 内置表仅收录
+ * claude-api skill（cached 2026-06-24）的 Anthropic 模型，其他厂商留空走
+ * costSource='unknown' 显示 —。
  */
 export interface ModelPrice {
   /** USD / 1M tokens */

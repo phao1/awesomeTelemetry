@@ -1050,6 +1050,8 @@ const DUAL_CHANNEL_SQL =
 
 /** C2 双通道覆盖：scan ∩ proxy 计数 + 成因提示 tag；只对比计数，不混列会话行（D-011）。 */
 function widgetDualChannel(db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionHealth['dualChannel']['data']>> {
+  // TODO(D-011): 本面板只对比计数、不混列会话行，不构成违反 G7.4 ——
+  // 待人工确认后可将结论写入 gotchas.md G7.4 条目。
   const row = cachedStmt(db, DUAL_CHANNEL_SQL).get() as {
     scan_sessions: number;
     proxy_requests: number;

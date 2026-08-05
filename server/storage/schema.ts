@@ -208,6 +208,8 @@ const V2_ADD_COLUMNS = [
 ];
 
 const V3_ADD_COLUMNS = [
+  // TODO(D-012): repair 检测按 design §7.3 R1 升级为扫描时预计算（metrics.repair_loop），
+  // schema v2→v3 —— 逐请求全表窗口扫描 40ms 超预算，待人工确认升级符合预期。
   'ALTER TABLE metrics ADD COLUMN repair_loop INTEGER NOT NULL DEFAULT 0',
 ];
 
