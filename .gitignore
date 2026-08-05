@@ -7,13 +7,11 @@ server-dist/
 coverage/
 
 # ===== 本机真实数据（扫描库 / 会话轨迹，含个人内容，严禁上传）=====
+# *.sqlite* 同时覆盖 .sqlite / .sqlite3 / -shm / -wal / -journal
+# *.db*     同时覆盖 .db / -wal / -shm / -journal
 agent-observe-data/
-*.sqlite
-*.sqlite-shm
-*.sqlite-wal
-*.db
-*.db-wal
-*.db-shm
+*.sqlite*
+*.db*
 
 # ===== 本地配置（真实配置 gitignored，只允许 *.example.json 入库）=====
 config/local-sessions.json
