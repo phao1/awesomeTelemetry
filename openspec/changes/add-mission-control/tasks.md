@@ -184,17 +184,17 @@ widget 读到的都是空值。
 
 ## 7. P3 新能力
 
-- [ ] 7.1 B9 `classifyErrorText()` 错误归类（口径行标「派生分类，非厂商原始错误码」）
-- [ ] 7.2 B10 高风险命令审计（⚠️ 三条红线：走脱敏引擎 / 预览限长 200 字符 /
+- [x] 7.1 B9 `classifyErrorText()` 错误归类（口径行标「派生分类，非厂商原始错误码」）
+- [x] 7.2 B10 高风险命令审计（⚠️ 三条红线：走脱敏引擎 / 预览限长 200 字符 /
       正则禁嵌套量词 G11.13）
-- [ ] 7.3 B7 场景分类器（⚠️ **端点只返回 `{scene, count, tokenSum}`，正文绝不
+- [x] 7.3 B7 场景分类器（⚠️ **端点只返回 `{scene, count, tokenSum}`，正文绝不
       出服务端**；保留"未分类"/"其它"逃生舱；加契约测试断言响应体不含 prompt 文本）
-- [ ] 7.4 B8 重任务场景分布（B7 + token 阈值切换）
-- [ ] 7.5 A2 Skill 调用频率（**砍掉 loaded 分支与"近 7 天新见"标记** ——
+- [x] 7.4 B8 重任务场景分布（B7 + token 阈值切换）
+- [x] 7.5 A2 Skill 调用频率（**砍掉 loaded 分支与"近 7 天新见"标记** ——
       需扫 `~/.claude/skills`，超出 REQ-006 数据边界）
-- [ ] 7.6 A6 Prompt 长度分布（⚠️ 先过 `isGenuineUserPrompt` 过滤注入，
+- [x] 7.6 A6 Prompt 长度分布（⚠️ 先过 `isGenuineUserPrompt` 过滤注入，
       否则统计的是 `<system-reminder>` 的长度；**砍掉 effort/source 维度**）
-- [ ] 7.7 F1-4 subagent 自动 trace 归属（按 Task/Agent 工具调用时间窗 +
+- [x] 7.7 F1-4 subagent 自动 trace 归属（按 Task/Agent 工具调用时间窗 +
       `isSubagent` 匹配，补充现有手工 `config/session-groups.json`）
 
 ## 8. 前端

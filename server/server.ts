@@ -32,9 +32,11 @@ import {
 } from './storage/query-engine.js';
 import { getMission } from './storage/mission.js';
 import {
+  buildSubagentMergeGroups,
   loadSessionGroups,
   mergeSessionDetail,
   primaryKeyFor,
+  type SessionMergeGroup,
 } from './storage/session-merge.js';
 import { deleteSession } from './storage/writers.js';
 import { SCHEMA_VERSION } from './storage/schema.js';
@@ -169,13 +171,52 @@ export function createAgentObservabilityServer(
       ? join(dirname(opts.userConfigPath), 'desensitization-rules.json')
       : 'desensitization-rules.json');
   // #17（REQ-003）：合并组配置（config/session-groups.json），缺省不合并。
-  const sessionGroups =
+  const manualGroups =
     opts.projectConfigPath !== undefined
       ? loadSessionGroups(dirname(opts.projectConfigPath))
       : [];
+  // F1-4（add-mission-control §7.7）：自动 subagent 归属补充手工配置，
+  // 按 MAX(updated_at) stamp 缓存。
+  let autoGroupsCache: { stamp: string; groups: SessionMergeGroup[] } | null = null;
+  const sessionGroups = (): SessionMergeGroup[] => {
+    const stampRow = cachedStmt(db, 'SELECT MAX(updated_at) AS stamp FROM sessions').get() as {
+      stamp: string | null;
+    };
+    const stamp = stampRow.stamp ?? '1970-01-01T00:00:00.000Z';
+    if (autoGroupsCache === null || autoGroupsCache.stamp !== stamp) {
+      const rows = cachedStmt(
+        db,
+        `SELECT id, provider, source_agent, title, started_at, updated_at, is_subagent
+         FROM sessions WHERE data_source = 'scan'`,
+      ).all() as Array<{
+        id: string;
+        provider: string;
+        source_agent: string;
+        title: string;
+        started_at: string;
+        updated_at: string;
+        is_subagent: number;
+      }>;
+      autoGroupsCache = {
+        stamp,
+        groups: buildSubagentMergeGroups(
+          rows.map((row) => ({
+            id: row.id,
+            provider: row.provider,
+            title: row.title,
+            sourceAgent: row.source_agent,
+            startedAt: row.started_at,
+            updatedAt: row.updated_at,
+            isSubagent: row.is_subagent === 1,
+          })),
+        ),
+      };
+    }
+    return [...manualGroups, ...autoGroupsCache.groups];
+  };
   /** REQ-009：组内成员变更时上报 primaryKey，否则前端刷新一个列表里不存在的 key。 */
   const notifyMerged = (key: string): void => {
-    queueSessionChange(primaryKeyFor(key, sessionGroups));
+    queueSessionChange(primaryKeyFor(key, sessionGroups()));
   };
   const detailCache = opts.detailCache ?? new DetailCache();
   const startedAt = Date.now();
@@ -203,11 +244,12 @@ export function createAgentObservabilityServer(
       await scanAndStoreDetail(db, key, { config, notify: notifyMerged });
     }
     let detail = getSessionDetail(db, key, { mode });
-    if (detail !== null && sessionGroups.length > 0) {
+    const groups = sessionGroups();
+    if (detail !== null && groups.length > 0) {
       const merged = await mergeSessionDetail(
         key,
         async (memberKey) => getSessionDetail(db, memberKey, { mode }),
-        sessionGroups,
+        groups,
       );
       if (merged !== null) {
         detail = merged;
@@ -257,7 +299,7 @@ export function createAgentObservabilityServer(
       limit: intParam(query.get('limit'), 50, 500),
       cursor: query.get('cursor') ?? undefined,
       keys,
-      groups: sessionGroups,
+      groups: sessionGroups(),
     });
     sendJson(res, 200, result, req);
   });
@@ -289,11 +331,12 @@ export function createAgentObservabilityServer(
     if (detail === null) {
       throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
     }
-    if (sessionGroups.length > 0) {
+    const groups = sessionGroups();
+    if (groups.length > 0) {
       const merged = await mergeSessionDetail(
         key,
         async (memberKey) => getSessionDetail(db, memberKey, { mode, offset: 0, limit: 5000 }),
-        sessionGroups,
+        groups,
         { offset, limit },
       );
       if (merged !== null) {
@@ -313,11 +356,12 @@ export function createAgentObservabilityServer(
         notify: notifyMerged,
       });
       detail = getSessionDetail(db, key, { mode, offset, limit });
-      if (sessionGroups.length > 0) {
+      const groups = sessionGroups();
+      if (groups.length > 0) {
         const merged = await mergeSessionDetail(
           key,
           async (memberKey) => getSessionDetail(db, memberKey, { mode, offset: 0, limit: 5000 }),
-          sessionGroups,
+          groups,
           { offset, limit },
         );
         if (merged !== null) {

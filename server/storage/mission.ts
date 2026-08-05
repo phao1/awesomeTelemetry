@@ -13,6 +13,10 @@ import type {
 } from '../../src/core/trace-types.js';
 import { extractSubagentType } from '../../src/core/subagent-type.js';
 import { computeCostUsd, lookupContextWindow } from '../../src/core/pricing.js';
+import { classifyErrorText } from '../../src/core/error-classifier.js';
+import { classifyScene } from '../../src/core/scene-classifier.js';
+import { isGenuineUserPrompt } from '../../src/core/metrics.js';
+import { desensitize } from '../desensitization/engine.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { cachedStmt } from './stmt-cache.js';
 
@@ -178,13 +182,51 @@ function widgetToolTop(db: Database, opts: MissionOptions): MissionWidget<NonNul
   );
 }
 
-/** A2 Skill 调用频率（P3，B7 填数据）。 */
-function widgetSkillTop(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['skillTop']['data']>> {
-  return unavailableWidget(
+const SKILL_TOP_SQL =
+  `SELECT e.input_summary AS input_summary ` +
+  `FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `WHERE s.data_source = ?{{RANGE}} AND e.tool IN ('Skill','SlashCommand')`;
+
+/** A2 Skill 调用频率：只统计调用（砍掉 loaded 分支与「近 7 天新见」标记）。 */
+function widgetSkillTop(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['skillTop']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, SKILL_TOP_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{ input_summary: string | null }>;
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const name = skillNameFromSummary(row.input_summary);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return availableWidget(
     'skillTop',
-    'events.tool IN (\'Skill\',\'SlashCommand\') 的调用计数 + input_summary 取 skill 名；砍掉 loaded 分支（REQ-006 数据边界）',
-    'NOT_IMPLEMENTED_YET',
+    'events.tool IN (\'Skill\',\'SlashCommand\') 的调用计数 + input_summary 取 skill 名；砍掉 loaded 分支（REQ-006 数据边界）与「近 7 天新见」标记',
+    [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
   );
+}
+
+function skillNameFromSummary(inputSummary: string | null): string {
+  const text = (inputSummary ?? '').trim();
+  if (text === '') {
+    return 'unknown';
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    const firstLine = text.split('\n')[0]?.trim() ?? '';
+    return firstLine === '' ? 'unknown' : firstLine.slice(0, 80);
+  }
+  if (parsed !== null && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>;
+    for (const key of ['skill', 'name', 'title', 'tool'] as const) {
+      const value = obj[key];
+      if (typeof value === 'string' && value !== '') {
+        return value;
+      }
+    }
+  }
+  const firstLine = text.split('\n')[0]?.trim() ?? '';
+  return firstLine === '' ? 'unknown' : firstLine.slice(0, 80);
 }
 
 const SUBAGENT_SQL =
@@ -254,12 +296,34 @@ function widgetHeatmap(db: Database, opts: MissionOptions): MissionWidget<NonNul
   );
 }
 
-/** A6 Prompt 长度分布（P3，B7 填数据）。 */
-function widgetPromptHabits(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['promptHabits']['data']>> {
-  return unavailableWidget(
+const PROMPT_LENGTH_SQL =
+  `SELECT e.input_summary AS input_summary ` +
+  `FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `WHERE s.data_source = ?{{RANGE}} AND e.kind = 'user_prompt'`;
+
+/** A6 Prompt 长度分布：先过 isGenuineUserPrompt 过滤注入；砍掉 effort/source 维度。 */
+function widgetPromptHabits(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['promptHabits']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, PROMPT_LENGTH_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{ input_summary: string | null }>;
+  const lengths: number[] = [];
+  for (const row of rows) {
+    const text = row.input_summary ?? '';
+    if (!isGenuineUserPrompt(text)) {
+      continue; // 过滤 <system-reminder> 等注入
+    }
+    lengths.push(text.length);
+  }
+  const sorted = lengths.slice().sort((a, b) => a - b);
+  return availableWidget(
     'promptHabits',
-    'user_prompt 的 input_summary 长度 p50/p95/max；必须先过 isGenuineUserPrompt 过滤注入；keep_going/negative 为关键词启发式',
-    'NOT_IMPLEMENTED_YET',
+    'user_prompt 的 input_summary 长度 p50/p95/max；必须先过 isGenuineUserPrompt 过滤注入（否则统计的是 <system-reminder> 的长度）；keep_going/negative 为关键词启发式；effort/source 维度删除',
+    {
+      n: sorted.length,
+      p50: percentile(sorted, 50) ?? 0,
+      p95: percentile(sorted, 95) ?? 0,
+      max: sorted.length > 0 ? sorted.at(-1)! : 0,
+    },
   );
 }
 
@@ -469,21 +533,79 @@ function widgetApiQuality(db: Database, opts: MissionOptions): MissionWidget<Non
   );
 }
 
-/** B9 错误归类（P3，B7 填数据）。 */
-function widgetErrorReasons(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['errorReasons']['data']>> {
-  return unavailableWidget(
+const ERROR_TEXT_SQL =
+  `SELECT e.error AS error FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `WHERE s.data_source = ?{{RANGE}} AND e.error IS NOT NULL AND e.error != ''`;
+
+/** B9 错误归类：classifyErrorText 归一到有限类。 */
+function widgetErrorReasons(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['errorReasons']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, ERROR_TEXT_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{ error: string }>;
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const cls = classifyErrorText(row.error);
+    counts.set(cls, (counts.get(cls) ?? 0) + 1);
+  }
+  return availableWidget(
     'errorReasons',
     'classifyErrorText(error) 归一到有限类（network/timeout/permission/shell/parse/notfound/other）；派生分类，非厂商原始错误码',
-    'NOT_IMPLEMENTED_YET',
+    [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
   );
 }
 
-/** B10 高风险命令审计（P3，B7 填数据）。 */
-function widgetRiskyCommands(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['riskyCommands']['data']>> {
-  return unavailableWidget(
+const RISKY_CMD_SQL =
+  `SELECT e.session_id AS session_id, e.input_summary AS input_summary ` +
+  `FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `WHERE s.data_source = ?{{RANGE}} AND e.kind = 'bash' AND e.input_summary IS NOT NULL`;
+
+// ⚠️ 正则禁嵌套量词（G11.13）：全部为简单字面量/单层模式。
+const RISKY_PATTERNS: Array<{ pattern: string; re: RegExp }> = [
+  { pattern: 'rm -rf', re: /rm\s+-rf/i },
+  { pattern: 'curl|sh', re: /curl[^\n]*\|\s*(ba)?sh/i },
+  { pattern: 'chmod 777', re: /chmod\s+777/i },
+  { pattern: 'sudo', re: /\bsudo\b/i },
+  { pattern: 'git push --force', re: /git\s+push\s+(-f|--force)/i },
+  { pattern: 'drop database', re: /drop\s+database/i },
+  { pattern: 'format/wipe', re: /\bformat\b|\bwipe\b|\bmkfs/i },
+  { pattern: 'send keys/env leak', re: /export\s+\w*key|sendkeys/i },
+];
+
+/** B10 高风险命令审计：脱敏预览限长 200 字符；只返回聚合 + 预览，不出未脱敏正文。 */
+function widgetRiskyCommands(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['riskyCommands']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, RISKY_CMD_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{ session_id: string; input_summary: string }>;
+  const hits: Array<{ pattern: string; hits: number; sessionId: string; preview: string }> = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const cmd = row.input_summary;
+    for (const rule of RISKY_PATTERNS) {
+      if (!rule.re.test(cmd)) {
+        continue;
+      }
+      const key = `${rule.pattern}:${row.session_id}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      const preview = desensitize(cmd).replace(/\s+/g, ' ').slice(0, 200);
+      hits.push({ pattern: rule.pattern, hits: 1, sessionId: row.session_id, preview });
+    }
+  }
+  // 按 pattern 聚合，保留最新一条脱敏预览（上限 20 条，控响应预算）
+  const byPattern = new Map<string, { pattern: string; hits: number; sessionId: string; preview: string }>();
+  for (const hit of hits) {
+    const agg = byPattern.get(hit.pattern) ?? { pattern: hit.pattern, hits: 0, sessionId: hit.sessionId, preview: hit.preview };
+    agg.hits += 1;
+    agg.sessionId = hit.sessionId;
+    agg.preview = hit.preview;
+    byPattern.set(hit.pattern, agg);
+  }
+  return availableWidget(
     'riskyCommands',
-    'kind=\'bash\' 或 shell 类工具，正则扫 input_summary；预览走脱敏引擎 + 限长 200 字符；正则禁嵌套量词（G11.13）',
-    'NOT_IMPLEMENTED_YET',
+    'kind=\'bash\' 或 shell 类工具，正则扫 input_summary；预览走脱敏引擎 + 限长 200 字符；正则禁嵌套量词（G11.13）；只返回聚合 + 脱敏限长预览，不出未脱敏命令原文',
+    [...byPattern.values()].sort((a, b) => b.hits - a.hits).slice(0, 20),
   );
 }
 
@@ -780,21 +902,82 @@ function widgetToolEcology(db: Database, opts: MissionOptions): MissionWidget<No
   );
 }
 
-/** B7 场景分类（P3，B7 填数据）。 */
-function widgetScenes(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['scenes']['data']>> {
-  return unavailableWidget(
+const SCENE_SQL =
+  `SELECT s.id AS session_id, s.token_total AS token_total, e.input_summary AS input_summary, e.sequence AS sequence ` +
+  `FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `WHERE s.data_source = ?{{RANGE}} AND e.kind = 'user_prompt' AND e.input_summary IS NOT NULL ` +
+  `ORDER BY s.id, e.sequence`;
+
+interface SceneRow {
+  session_id: string;
+  token_total: number;
+  input_summary: string;
+}
+
+function sceneRows(db: Database, opts: MissionOptions): Map<string, { scene: string; tokenTotal: number }> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, SCENE_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as SceneRow[];
+  const perSession = new Map<string, { scene: string; tokenTotal: number }>();
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.session_id)) {
+      continue; // 每个会话取第一条 genuine prompt
+    }
+    if (!isGenuineUserPrompt(row.input_summary)) {
+      continue;
+    }
+    seen.add(row.session_id);
+    perSession.set(row.session_id, { scene: classifyScene(row.input_summary), tokenTotal: row.token_total });
+  }
+  return perSession;
+}
+
+/** B7 场景分布：端点只返回 {scene,count,tokenSum}，正文绝不出服务端。 */
+function widgetScenes(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['scenes']['data']>> {
+  const perSession = sceneRows(db, opts);
+  const agg = new Map<string, { count: number; tokenSum: number }>();
+  for (const { scene, tokenTotal } of perSession.values()) {
+    const entry = agg.get(scene) ?? { count: 0, tokenSum: 0 };
+    entry.count += 1;
+    entry.tokenSum += tokenTotal;
+    agg.set(scene, entry);
+  }
+  return availableWidget(
     'scenes',
-    'scene-classifier 对 genuine user prompt 分类；端点只返回 {scene,count,tokenSum}，正文绝不出服务端；保留未分类/其它逃生舱',
-    'NOT_IMPLEMENTED_YET',
+    'scene-classifier 对每个会话第一条 genuine user prompt 分类；端点只返回 {scene,count,tokenSum}，正文绝不出服务端；保留 unclassified/其它逃生舱',
+    {
+      total: perSession.size,
+      rows: [...agg.entries()]
+        .map(([scene, entry]) => ({ scene, count: entry.count, tokenSum: entry.tokenSum }))
+        .sort((a, b) => b.count - a.count),
+    },
   );
 }
 
-/** B8 重任务场景分布（P3，B7 填数据）。 */
-function widgetHeavyScenes(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['heavyScenes']['data']>> {
-  return unavailableWidget(
+/** B8 重任务场景分布：B7 + token 阈值（默认 ≥10 万）。 */
+function widgetHeavyScenes(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['heavyScenes']['data']>> {
+  const threshold = 100_000;
+  const perSession = sceneRows(db, opts);
+  const agg = new Map<string, { count: number; tokenSum: number }>();
+  for (const { scene, tokenTotal } of perSession.values()) {
+    if (tokenTotal < threshold) {
+      continue;
+    }
+    const entry = agg.get(scene) ?? { count: 0, tokenSum: 0 };
+    entry.count += 1;
+    entry.tokenSum += tokenTotal;
+    agg.set(scene, entry);
+  }
+  return availableWidget(
     'heavyScenes',
-    'B7 场景分类 + token 阈值（≥10万/20万/50万）切换',
-    'NOT_IMPLEMENTED_YET',
+    'B7 场景分类 + token 阈值（≥10万/20万/50万 切换，默认 10 万）',
+    {
+      threshold,
+      rows: [...agg.entries()]
+        .map(([scene, entry]) => ({ scene, count: entry.count, tokenSum: entry.tokenSum }))
+        .sort((a, b) => b.count - a.count),
+    },
   );
 }
 

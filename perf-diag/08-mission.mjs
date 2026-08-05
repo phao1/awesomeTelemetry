@@ -98,6 +98,20 @@ try {
        ORDER BY e.session_id, e.sequence`,
       ['scan', rangeParam],
     ],
+    // B9 errorReasons（分类在 JS，SQL 为 error 扫描）
+    [
+      `SELECT e.error AS error FROM events e JOIN sessions s ON s.id = e.session_id
+       WHERE s.data_source = ? AND s.started_at >= ? AND e.error IS NOT NULL`,
+      ['scan', rangeParam],
+    ],
+    // B7 scenes（user_prompt 扫描，分类在 JS）
+    [
+      `SELECT s.id AS session_id, s.token_total AS token_total, e.input_summary AS input_summary, e.sequence AS sequence
+       FROM events e JOIN sessions s ON s.id = e.session_id
+       WHERE s.data_source = ? AND s.started_at >= ? AND e.kind = 'user_prompt'
+       ORDER BY s.id, e.sequence`,
+      ['scan', rangeParam],
+    ],
     // C1 采集健康：scan_state 正向断言 + provider 计数
     [`SELECT COUNT(*) AS c FROM scan_state`, []],
     [`SELECT provider, COUNT(*) AS n FROM sessions WHERE data_source = ? GROUP BY provider`, ['scan']],

@@ -353,6 +353,44 @@ function WidgetData({
         </div>
       );
     }
+    case 'scenes':
+    case 'heavyScenes': {
+      const s = data as { rows: Array<{ scene: string; count: number; tokenSum: number }> };
+      return (
+        <HBarChart
+          rows={s.rows.map((row) => ({
+            label: `${row.scene} (${fmtNum(row.tokenSum)} tok)`,
+            value: row.count,
+          }))}
+        />
+      );
+    }
+    case 'riskyCommands': {
+      const rows = data as NonNullable<MissionQuality['riskyCommands']['data']>;
+      return (
+        <div className="mission-kv">
+          {rows.map((row) => (
+            <div className="mission-kv-row" key={`${row.pattern}-${row.sessionId}`}>
+              <span className="mission-kv-key">{row.pattern} × {row.hits}</span>
+              <span className="mission-kv-value mono">{row.preview}</span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    case 'promptHabits': {
+      const p = data as NonNullable<MissionUsage['promptHabits']['data']>;
+      return (
+        <KeyValueTable
+          data={{
+            n: p.n,
+            p50: p.p50,
+            p95: p.p95,
+            max: p.max,
+          }}
+        />
+      );
+    }
     default:
       if (data === null) {
         return <EmptyState icon="—" title={t('state.empty', locale)} description="" />;
