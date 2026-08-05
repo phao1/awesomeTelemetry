@@ -27,9 +27,12 @@
   --fg-on-emphasis: #ffffff;
 
   /* §2.4 语义色（-fg / -emphasis / -subtle） */
-  --accent-fg: #4493f8;
-  --accent-emphasis: #1f6feb;
-  --accent-subtle: rgba(56, 139, 253, 0.15);
+  /* B6（calibrate-tokens §9）：品牌色 teal，取值直接来自契约表（WCAG 实测
+     --accent-fg dark #2dd4bf 对比 10.17、light #0f766e 对比 5.47；
+     --accent-emphasis 白字其上 5.47；--phase-implement / --seg-model 不动） */
+  --accent-fg: #2dd4bf;
+  --accent-emphasis: #0f766e;
+  --accent-subtle: rgba(45, 212, 191, 0.15);
   --success-fg: #3fb950;
   --success-emphasis: #238636;
   --success-subtle: rgba(46, 160, 67, 0.15);
@@ -212,9 +215,9 @@
   --fg-on-emphasis: #ffffff;
 
   /* §2.4 */
-  --accent-fg: #0969da;
-  --accent-emphasis: #0969da;
-  --accent-subtle: rgba(9, 105, 218, 0.1);
+  --accent-fg: #0f766e;
+  --accent-emphasis: #0f766e;
+  --accent-subtle: rgba(15, 118, 110, 0.1);
   --success-fg: #1a7f37;
   --success-emphasis: #1f883d;
   --success-subtle: rgba(26, 127, 55, 0.1);
