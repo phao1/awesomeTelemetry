@@ -156,6 +156,11 @@ function makeMetrics(): TraceMetrics {
     enteredDebug: false,
     tokensPerStep: 20,
     costUsd: 0.01,
+    totalToolDurationMs: 450,
+    llmCallCount: 4,
+    userInteractionRounds: 2,
+    hasUnitTests: true,
+    failedCommandCount: 1,
   };
 }
 
@@ -485,6 +490,31 @@ describe('REQ-013 metrics 持久化', () => {
     expect(row.entered_debug).toBe(0);
     expect(row.tokens_per_step).toBe(20);
     expect(row.cost_usd).toBe(0.01);
+    db.close();
+  });
+
+  it('REQ-013 v4：upsertMetrics 写入 TraceMetrics 五个新列（calibrate-tokens §4）', () => {
+    const db = newDb();
+    upsertSessionFromTrace(db, makeSession('s1'));
+    upsertMetrics(db, 's1', makeMetrics());
+    const row = db
+      .prepare(
+        'SELECT total_tool_duration_ms, llm_call_count, user_interaction_rounds, has_unit_tests, failed_command_count FROM metrics WHERE session_id = ?',
+      )
+      .get('s1') as {
+      total_tool_duration_ms: number;
+      llm_call_count: number;
+      user_interaction_rounds: number;
+      has_unit_tests: number;
+      failed_command_count: number;
+    };
+    expect(row).toEqual({
+      total_tool_duration_ms: 450,
+      llm_call_count: 4,
+      user_interaction_rounds: 2,
+      has_unit_tests: 1,
+      failed_command_count: 1,
+    });
     db.close();
   });
 });

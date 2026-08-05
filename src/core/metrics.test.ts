@@ -81,8 +81,63 @@ describe('REQ-004 computeMetrics', () => {
     expect(m.avgToolDurationMs).toBeCloseTo(350 / 3);
     expect(m.tokensPerStep).toBeCloseTo(16);
     expect(m.costUsd).toBe(0.5);
-    expect(m.calcVersion).toBe(3); // v3（add-mission-control）：ttft/e2e 持久化
+    expect(m.calcVersion).toBe(4); // v4（calibrate-tokens §4）：TraceMetrics 五新字段
     expect(m.e2eMs).toBe(10_000);
+  });
+
+  it('v4 五个新字段：工具总耗时 / llm 调用数 / 用户轮次 / 单元测试 / 失败命令数', () => {
+    const record = makeRecord('v4', { phases: ['implement'], eventStatuses: ['error'] });
+    const evt = (
+      id: string,
+      sequence: number,
+      kind: TraceEvent['kind'],
+      status: TraceEvent['status'],
+      over: Partial<TraceEvent> = {},
+    ): TraceEvent => ({
+      id,
+      sessionId: 'v4',
+      sequence,
+      kind,
+      phase: kind === 'user_prompt' ? 'understand' : 'implement',
+      title: 't',
+      startedAt: `2026-08-01T00:00:0${sequence}.000Z`,
+      durationMs: 0,
+      status,
+      actor: kind === 'user_prompt' ? 'user' : 'assistant',
+      tool: null,
+      tokens: null,
+      error: null,
+      hasInput: false,
+      hasOutput: false,
+      hasRaw: false,
+      inputSummary: null,
+      outputSummary: null,
+      ...over,
+    });
+    record.events = [
+      evt('u1', 1, 'user_prompt', 'success', { title: 'run tests' }),
+      evt('t1', 2, 'tool', 'success', { durationMs: 100, tool: 'Read' }),
+      evt('t2', 3, 'file_read', 'success', { durationMs: 50, tool: 'Grep' }),
+      evt('b1', 4, 'bash', 'success', {
+        title: 'npm test',
+        phase: 'verify',
+        durationMs: 30,
+        tool: 'Bash',
+      }),
+      evt('b2', 5, 'bash', 'error', { tool: 'Bash', error: 'exit 1' }),
+      evt('e1', 6, 'llm', 'error', { error: 'model error' }), // llm 失败不计入 failedCommandCount
+      evt('u2', 7, 'user_prompt', 'success', { title: 'again' }),
+    ];
+    const m = computeMetrics(record);
+    expect(m.totalToolDurationMs).toBe(180); // 100 + 50 + 30（tool 事件）
+    expect(m.llmCallCount).toBe(1);
+    expect(m.userInteractionRounds).toBe(2);
+    expect(m.hasUnitTests).toBe(true); // verify + npm test
+    expect(m.failedCommandCount).toBe(1); // 只有 b2；llm error 不计
+
+    const noTests = makeRecord('v4b', { phases: ['implement'] });
+    noTests.events = [evt('b1', 1, 'bash', 'success', { title: 'npm test', phase: 'implement' })];
+    expect(computeMetrics(noTests).hasUnitTests).toBe(false); // 非 verify 不算
   });
 
   it('#15 verificationCoverage 是 verify 事件数 / 步骤数比例', () => {

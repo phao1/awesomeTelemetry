@@ -14,8 +14,11 @@ import { isWriteEventLike } from './event-groups.js';
  * verify 事件数 / totalSteps 比例（不再是 0|1 二值）。
  * v3（add-mission-control）：metrics 持久化 ttft_ms / e2e_ms（§4 B6，G11.11）
  * 与 repair_loop（§7.3 R1：repair 检测升级为扫描时预计算）。
+ * v4（calibrate-tokens-and-compare-report §4）：TraceMetrics 新增
+ * totalToolDurationMs / llmCallCount / userInteractionRounds / hasUnitTests /
+ * failedCommandCount —— 必须 bump，否则老行 calc_version=3 永不重算。
  */
-export const METRICS_CALC_VERSION = 3;
+export const METRICS_CALC_VERSION = 4;
 
 /** repair_loop 判定：连续 W F W F W（write, fail, write, fail, write），≥2 轮。
  * 与 event-groups detectRepairLoop 的 isWriteEventLike + (bash|test)+error 同口径。 */
@@ -49,6 +52,22 @@ const STEP_KINDS = new Set([
   'agent',
 ]);
 
+/**
+ * v4 hasUnitTests：命中测试命令正则。与 trae.ts 的 TEST_CMD 同口径
+ * （npm test / vitest / jest / pytest / cargo test / go test / tsc / eslint）。
+ */
+const TEST_CMD = /(npm test|vitest|jest|pytest|cargo test|go test|tsc|eslint)/;
+
+/** v4 failedCommandCount：命令失败计数的事件种类（有意不含 llm）。 */
+const FAILED_COMMAND_KINDS = new Set([
+  'bash',
+  'test',
+  'tool',
+  'file_write',
+  'file_read',
+  'agent',
+]);
+
 function mean(values: number[]): number {
   return values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length;
 }
@@ -73,6 +92,18 @@ export function computeMetrics(record: TraceRecord): TraceMetrics {
   const verificationPresent = events.some((e) => e.phase === 'verify');
   const enteredDebug = events.some((e) => e.phase === 'debug');
   const speed = computeSpeedMetrics(record);
+  // §4（calibrate-tokens-and-compare-report）：五个新字段。
+  const totalToolDurationMs = events
+    .filter((e) => e.tool !== null)
+    .reduce((sum, e) => sum + e.durationMs, 0);
+  const llmCallCount = events.filter((e) => e.kind === 'llm').length;
+  const userInteractionRounds = events.filter((e) => e.kind === 'user_prompt').length;
+  const hasUnitTests = events.some(
+    (e) => e.phase === 'verify' && TEST_CMD.test(e.title),
+  );
+  const failedCommandCount = events.filter(
+    (e) => e.status === 'error' && FAILED_COMMAND_KINDS.has(e.kind),
+  ).length;
   return {
     totalSteps,
     durationByPhase,
@@ -90,6 +121,11 @@ export function computeMetrics(record: TraceRecord): TraceMetrics {
     ttftMs: speed.ttftMs,
     e2eMs: speed.e2eMs,
     repairLoop: detectRepairLoop(events),
+    totalToolDurationMs,
+    llmCallCount,
+    userInteractionRounds,
+    hasUnitTests,
+    failedCommandCount,
   };
 }
 

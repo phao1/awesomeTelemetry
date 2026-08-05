@@ -601,6 +601,26 @@ export interface TraceMetrics extends TraceMetricsBase, TraceDimensionMetrics {
   /** 修复循环命中（W-F-W-F-W ≥2 轮，与 session-findings repairLoop 同口径）。
    * v3：扫描时预计算（design.md §7.3 R1），Mission closure 直接读 rollup。 */
   repairLoop?: boolean;
+  /**
+   * v4 (calibrate-tokens-and-compare-report §4): sum of durationMs over
+   * events where tool !== null.
+   */
+  totalToolDurationMs: number;
+  /** v4: number of events with kind === 'llm'. */
+  llmCallCount: number;
+  /** v4: number of events with kind === 'user_prompt'. */
+  userInteractionRounds: number;
+  /** v4: true when an event has phase === 'verify' and its command/title
+   * matches the TEST_CMD regex (npm test|vitest|jest|pytest|cargo test|go
+   * test|tsc|eslint). */
+  hasUnitTests: boolean;
+  /**
+   * v4: count of events with status === 'error' and kind in
+   * {bash, test, tool, file_write, file_read, agent}. Intentionally excludes
+   * llm (a model error is not a command failure) — different denominator from
+   * errorRate on purpose.
+   */
+  failedCommandCount: number;
 }
 
 /** Speed metrics, computed at runtime, not persisted. */

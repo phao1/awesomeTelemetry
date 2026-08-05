@@ -168,6 +168,56 @@ describe('REQ-003 建库幂等', () => {
     db.close();
   });
 
+  it('v3 → v4 迁移：metrics 五新列补上 + 旧行保留（calibrate-tokens §4）', () => {
+    const db = createDb(join(tempDir(), 'migrate-v3.sqlite'));
+    // 构造一个 v3 库（无五个新列），并写入一行旧 metrics
+    db.exec(`
+      CREATE TABLE metrics (
+        session_id TEXT PRIMARY KEY,
+        total_steps INTEGER NOT NULL DEFAULT 0,
+        duration_by_phase TEXT NOT NULL DEFAULT '{}',
+        tool_call_count INTEGER NOT NULL DEFAULT 0,
+        verification_present INTEGER NOT NULL DEFAULT 0,
+        avg_tool_duration_ms REAL NOT NULL DEFAULT 0,
+        verification_coverage REAL NOT NULL DEFAULT 0,
+        error_rate REAL NOT NULL DEFAULT 0,
+        entered_debug INTEGER NOT NULL DEFAULT 0,
+        tokens_per_step REAL NOT NULL DEFAULT 0,
+        cost_usd REAL NOT NULL DEFAULT 0,
+        calc_version INTEGER NOT NULL DEFAULT 0,
+        ttft_ms REAL,
+        e2e_ms REAL,
+        repair_loop INTEGER NOT NULL DEFAULT 0
+      ) WITHOUT ROWID;
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
+      INSERT INTO _meta VALUES ('schema_version', '3');
+    `);
+    db.prepare(
+      `INSERT INTO metrics (session_id, total_steps, calc_version) VALUES ('s1', 10, 3)`,
+    ).run();
+    initSchema(db);
+    const cols = db.prepare('PRAGMA table_info(metrics)').all() as Array<{ name: string }>;
+    for (const col of [
+      'total_tool_duration_ms',
+      'llm_call_count',
+      'user_interaction_rounds',
+      'has_unit_tests',
+      'failed_command_count',
+    ]) {
+      expect(cols.some((c) => c.name === col), `metrics.${col}`).toBe(true);
+    }
+    const meta = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as { value: string };
+    expect(meta.value).toBe(String(SCHEMA_VERSION));
+    // 非破坏性：旧行仍在，calc_version 保持 3（由读取侧触发重算回填）
+    const row = db
+      .prepare('SELECT session_id, total_steps, calc_version, llm_call_count FROM metrics WHERE session_id = ?')
+      .get('s1') as { session_id: string; total_steps: number; calc_version: number; llm_call_count: number };
+    expect(row).toEqual({ session_id: 's1', total_steps: 10, calc_version: 3, llm_call_count: 0 });
+    // 幂等：重复 initSchema 不报错
+    expect(() => initSchema(db)).not.toThrow();
+    db.close();
+  });
+
   it('v1 → v3 全链迁移：8 个 v2 列 + repair_loop 全部补上（9.7）', () => {
     const db = createDb(join(tempDir(), 'migrate-v1.sqlite'));
     db.exec(`

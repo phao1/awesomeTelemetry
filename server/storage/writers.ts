@@ -57,6 +57,8 @@ const METRICS_COLS = [
   'verification_present', 'avg_tool_duration_ms', 'verification_coverage',
   'error_rate', 'entered_debug', 'tokens_per_step', 'cost_usd', 'calc_version',
   'ttft_ms', 'e2e_ms', 'repair_loop',
+  'total_tool_duration_ms', 'llm_call_count', 'user_interaction_rounds',
+  'has_unit_tests', 'failed_command_count',
 ];
 
 // #9（审查 P1）：Trae 索引阶段无法解密读事件，event_count/message_count 报 0；
@@ -216,6 +218,11 @@ export function upsertMetrics(
     metrics.ttftMs ?? null,
     metrics.e2eMs ?? null,
     metrics.repairLoop === true ? 1 : 0,
+    metrics.totalToolDurationMs,
+    metrics.llmCallCount,
+    metrics.userInteractionRounds,
+    metrics.hasUnitTests ? 1 : 0,
+    metrics.failedCommandCount,
   );
 }
 

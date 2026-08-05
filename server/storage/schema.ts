@@ -7,9 +7,12 @@ import { cachedStmt } from './stmt-cache.js';
  * v3（add-mission-control 性能升级）：metrics.repair_loop —— Mission closure 的
  * repair 检测改为扫描时预计算（design.md §7.3 R1：逐请求全表扫描 40ms 超预算，
  * 升级为扫描后写 rollup，不要靠加索引硬撑）。
+ * v4（calibrate-tokens-and-compare-report §4）：metrics 新增
+ * total_tool_duration_ms / llm_call_count / user_interaction_rounds /
+ * has_unit_tests / failed_command_count（TraceMetrics 五新字段）。
  * 迁移见 §migrateSchema —— 全部是 ADD COLUMN，非破坏性，新列随下一轮扫描回填。
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -91,7 +94,12 @@ CREATE TABLE IF NOT EXISTS metrics (
   calc_version          INTEGER NOT NULL DEFAULT 0,
   ttft_ms               REAL,
   e2e_ms                REAL,
-  repair_loop           INTEGER NOT NULL DEFAULT 0
+  repair_loop           INTEGER NOT NULL DEFAULT 0,
+  total_tool_duration_ms INTEGER NOT NULL DEFAULT 0,
+  llm_call_count         INTEGER NOT NULL DEFAULT 0,
+  user_interaction_rounds INTEGER NOT NULL DEFAULT 0,
+  has_unit_tests         INTEGER NOT NULL DEFAULT 0,
+  failed_command_count   INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS scan_state (
@@ -213,6 +221,15 @@ const V3_ADD_COLUMNS = [
   'ALTER TABLE metrics ADD COLUMN repair_loop INTEGER NOT NULL DEFAULT 0',
 ];
 
+const V4_ADD_COLUMNS = [
+  // calibrate-tokens-and-compare-report §4：TraceMetrics 五新字段
+  'ALTER TABLE metrics ADD COLUMN total_tool_duration_ms INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE metrics ADD COLUMN llm_call_count INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE metrics ADD COLUMN user_interaction_rounds INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE metrics ADD COLUMN has_unit_tests INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE metrics ADD COLUMN failed_command_count INTEGER NOT NULL DEFAULT 0',
+];
+
 function isDuplicateColumn(error: unknown): boolean {
   return error instanceof Error && /duplicate column name/i.test(error.message);
 }
@@ -221,6 +238,7 @@ export function migrateSchema(db: Database, fromVersion: number): void {
   const steps: Array<{ from: number; sql: string[] }> = [
     { from: 1, sql: V2_ADD_COLUMNS },
     { from: 2, sql: V3_ADD_COLUMNS },
+    { from: 3, sql: V4_ADD_COLUMNS },
   ];
   for (const step of steps) {
     if (fromVersion >= step.from + 1) {

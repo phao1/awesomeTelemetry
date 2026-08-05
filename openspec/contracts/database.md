@@ -1,8 +1,9 @@
 # Contract: Database
 
 > **Authoritative source.** This is a fresh build; the schema starts at **v1**
-> and is currently at **v3** (add-mission-control: model attribution + cost /
-> duration sources + ttft/e2e persistence + scan-time repair rollup). All DDL
+> and is currently at **v4** (add-mission-control: model attribution + cost /
+> duration sources + ttft/e2e persistence + scan-time repair rollup;
+> calibrate-tokens-and-compare-report: TraceMetrics five new fields). All DDL
 > must be adopted verbatim — no column renames, no added or removed columns
 > beyond this contract.
 > Corresponding source file: `server/storage/schema.ts`
@@ -199,7 +200,12 @@ CREATE TABLE IF NOT EXISTS metrics (
   calc_version          INTEGER NOT NULL DEFAULT 0,
   ttft_ms               REAL,
   e2e_ms                REAL,
-  repair_loop           INTEGER NOT NULL DEFAULT 0
+  repair_loop           INTEGER NOT NULL DEFAULT 0,
+  total_tool_duration_ms INTEGER NOT NULL DEFAULT 0,
+  llm_call_count         INTEGER NOT NULL DEFAULT 0,
+  user_interaction_rounds INTEGER NOT NULL DEFAULT 0,
+  has_unit_tests         INTEGER NOT NULL DEFAULT 0,
+  failed_command_count   INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
 ```
 
@@ -221,6 +227,11 @@ CREATE TABLE IF NOT EXISTS metrics (
 > - `metrics.repair_loop`（v3）— 修复循环命中（W-F-W-F-W ≥2 轮，与
 >   session-findings repairLoop 同口径），扫描时预计算（design.md §7.3 R1：
 >   逐请求窗口扫描 40ms 超预算 → rollup 化）。
+> - `metrics.total_tool_duration_ms` / `metrics.llm_call_count` /
+>   `metrics.user_interaction_rounds` / `metrics.has_unit_tests` /
+>   `metrics.failed_command_count`（v4，calibrate-tokens-and-compare-report
+>   §4）— TraceMetrics 五新字段；v3 → v4 迁移同为幂等 ADD COLUMN，
+>   新列默认 0/false，随下一轮扫描回填。
 
 > `calc_version` defaults to 0, unequal to the code constant
 > `METRICS_CALC_VERSION` (initially 1), so the first read always triggers

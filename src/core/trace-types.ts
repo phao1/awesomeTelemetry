@@ -308,6 +308,23 @@ export interface TraceMetrics extends TraceMetricsBase, TraceDimensionMetrics {
   /** 修复循环命中（W-F-W-F-W ≥2 轮，与 session-findings repairLoop 同口径）。
    * v3：扫描时预计算，Mission closure 直接读，避免逐请求全表窗口扫描。 */
   repairLoop?: boolean;
+  /**
+   * v4（calibrate-tokens-and-compare-report §4）：工具事件（tool !== null）的
+   * durationMs 求和。
+   */
+  totalToolDurationMs: number;
+  /** v4：kind === 'llm' 的事件数。 */
+  llmCallCount: number;
+  /** v4：kind === 'user_prompt' 的事件数（用户交互轮次）。 */
+  userInteractionRounds: number;
+  /** v4：存在 phase === 'verify' 且命令/标题命中 TEST_CMD 正则的事件。 */
+  hasUnitTests: boolean;
+  /**
+   * v4：status === 'error' 且 kind ∈ {bash, test, tool, file_write, file_read,
+   * agent} 的事件数。**不含 llm**（llm 的 error 是模型报错不是命令失败），
+   * 与 errorRate（分母含 llm 的 STEP_KINDS）口径不同是有意的。
+   */
+  failedCommandCount: number;
 }
 
 /** 速度指标，运行时计算，不持久化。 */

@@ -68,20 +68,22 @@
 
 ## §3 TraceMetrics 新字段 + schema v4（B3）
 
-- [ ] 3.1 `trace-types.ts`：`TraceMetrics` 加 `totalToolDurationMs` / `llmCallCount` /
+- [x] 3.1 `trace-types.ts`：`TraceMetrics` 加 `totalToolDurationMs` / `llmCallCount` /
       `userInteractionRounds` / `hasUnitTests` / `failedCommandCount`
-- [ ] 3.2 `src/core/metrics.ts` 实现五个字段（口径见 design.md §4 表格）
-- [ ] 3.3 **`METRICS_CALC_VERSION 3 → 4`**（metrics.ts:18）+ 更新其上方的版本注释
-- [ ] 3.4 **`SCHEMA_VERSION 3 → 4`**（`server/storage/schema.ts:12`）
-- [ ] 3.5 `metrics` 表加 5 列 + 迁移数组追加 5 条 `ALTER TABLE`
+- [x] 3.2 `src/core/metrics.ts` 实现五个字段（口径见 design.md §4 表格）
+- [x] 3.3 **`METRICS_CALC_VERSION 3 → 4`**（metrics.ts:18）+ 更新其上方的版本注释
+- [x] 3.4 **`SCHEMA_VERSION 3 → 4`**（`server/storage/schema.ts:12`）
+- [x] 3.5 `metrics` 表加 5 列 + 迁移数组追加 5 条 `ALTER TABLE`
       （照 schema.ts:206-213 的既有格式）
-- [ ] 3.6 `server/storage/writers.ts` 写入 5 个新列
-- [ ] 3.7 `server/storage/query-engine.ts` 读取 5 个新列（**禁止 `SELECT *`**，
-      按 AGENTS.md 禁令 1 显式列出列名）
-- [ ] 3.8 同步 `openspec/contracts/database.md`（metrics 表 + SCHEMA_VERSION）
+- [x] 3.6 `server/storage/writers.ts` 写入 5 个新列
+- [x] 3.7 存储读侧确认：本仓库 `query-engine.ts` 无 per-session metrics 读路径
+      （`rg "FROM metrics"` 仅 mission.ts 三处 SQL），5 新列的消费方是运行时
+      `computeMetrics`（compare/report）与持久化写路径；列经迁移/写入可读，
+      说明见最终报告
+- [x] 3.8 同步 `openspec/contracts/database.md`（metrics 表 + SCHEMA_VERSION）
       与 `contracts/data-model.md`（TraceMetrics）
-- [ ] 3.9 测试：五个字段各一条断言 + 一条 v3→v4 迁移测试
-- [ ] 3.10 **实测**：拿现有 `agent-observe-data/observe.sqlite` 的副本跑一次升级，
+- [x] 3.9 测试：五个字段各一条断言 + 一条 v3→v4 迁移测试
+- [x] 3.10 **实测**：拿现有 `agent-observe-data/observe.sqlite` 的副本跑一次升级，
       确认新列**真的有值**（不是全默认值）—— 见 design.md R7
 
 ## §4 Trae adapter 增强（B4）
