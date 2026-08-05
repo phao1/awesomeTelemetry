@@ -64,6 +64,40 @@ try {
        WHERE s.data_source = ? AND s.started_at >= ? GROUP BY bucket`,
       ['scan', rangeParam],
     ],
+    // B1 closure：会话级聚合 + repair rollup（扫描时预计算，schema v3）
+    [
+      `SELECT total_duration_ms AS dur, message_count AS turns, status AS status
+       FROM sessions WHERE data_source = ? AND started_at >= ?`,
+      ['scan', rangeParam],
+    ],
+    [
+      `SELECT COUNT(*) AS n FROM metrics m JOIN sessions s ON s.id = m.session_id
+       WHERE s.data_source = ? AND s.started_at >= ? AND m.repair_loop = 1`,
+      ['scan', rangeParam],
+    ],
+    // B3 costEfficiency：events×sessions 全量 join 聚合
+    [
+      `SELECT s.id AS id, s.cost_source AS cost_source, s.cost_usd AS cost_usd, s.message_count AS turns,
+              SUM(CASE WHEN e.tool IS NOT NULL AND e.status = 'success' THEN 1 ELSE 0 END) AS ok_tools
+       FROM sessions s LEFT JOIN events e ON e.session_id = s.id
+       WHERE s.data_source = ? AND s.started_at >= ? GROUP BY s.id`,
+      ['scan', rangeParam],
+    ],
+    // B13 models
+    [
+      `SELECT e.model AS model, e.tokens_json AS tokens_json
+       FROM events e JOIN sessions s ON s.id = e.session_id
+       WHERE s.data_source = ? AND s.started_at >= ? AND e.kind = 'llm' AND e.model IS NOT NULL`,
+      ['scan', rangeParam],
+    ],
+    // B12 contextPressure
+    [
+      `SELECT e.session_id AS session_id, e.sequence AS sequence, e.model AS model, e.tokens_json AS tokens_json
+       FROM events e JOIN sessions s ON s.id = e.session_id
+       WHERE s.data_source = ? AND s.started_at >= ? AND e.kind = 'llm' AND e.tokens_json IS NOT NULL
+       ORDER BY e.session_id, e.sequence`,
+      ['scan', rangeParam],
+    ],
     // C1 采集健康：scan_state 正向断言 + provider 计数
     [`SELECT COUNT(*) AS c FROM scan_state`, []],
     [`SELECT provider, COUNT(*) AS n FROM sessions WHERE data_source = ? GROUP BY provider`, ['scan']],

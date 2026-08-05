@@ -4,9 +4,12 @@ import { cachedStmt } from './stmt-cache.js';
 
 /**
  * v2（add-mission-control）：新增 model / 长度冗余列 / 成本与时长来源 / ttft·e2e。
+ * v3（add-mission-control 性能升级）：metrics.repair_loop —— Mission closure 的
+ * repair 检测改为扫描时预计算（design.md §7.3 R1：逐请求全表扫描 40ms 超预算，
+ * 升级为扫描后写 rollup，不要靠加索引硬撑）。
  * 迁移见 §migrateSchema —— 全部是 ADD COLUMN，非破坏性，新列随下一轮扫描回填。
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -87,7 +90,8 @@ CREATE TABLE IF NOT EXISTS metrics (
   cost_usd              REAL    NOT NULL DEFAULT 0,
   calc_version          INTEGER NOT NULL DEFAULT 0,
   ttft_ms               REAL,
-  e2e_ms                REAL
+  e2e_ms                REAL,
+  repair_loop           INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS scan_state (
@@ -203,25 +207,35 @@ const V2_ADD_COLUMNS = [
   'ALTER TABLE metrics ADD COLUMN e2e_ms REAL',
 ];
 
+const V3_ADD_COLUMNS = [
+  'ALTER TABLE metrics ADD COLUMN repair_loop INTEGER NOT NULL DEFAULT 0',
+];
+
 function isDuplicateColumn(error: unknown): boolean {
   return error instanceof Error && /duplicate column name/i.test(error.message);
 }
 
 export function migrateSchema(db: Database, fromVersion: number): void {
-  if (fromVersion >= SCHEMA_VERSION) {
-    return;
-  }
-  for (const sql of V2_ADD_COLUMNS) {
-    try {
-      db.exec(sql);
-    } catch (error) {
-      if (!isDuplicateColumn(error)) {
-        throw new Error(
-          `schema v${fromVersion}→v${SCHEMA_VERSION} migration failed on "${sql}": ` +
-            `${error instanceof Error ? error.message : String(error)}. ` +
-            'The database is a rebuildable cache — delete it and rescan.',
-          { cause: error },
-        );
+  const steps: Array<{ from: number; sql: string[] }> = [
+    { from: 1, sql: V2_ADD_COLUMNS },
+    { from: 2, sql: V3_ADD_COLUMNS },
+  ];
+  for (const step of steps) {
+    if (fromVersion >= step.from + 1) {
+      continue;
+    }
+    for (const sql of step.sql) {
+      try {
+        db.exec(sql);
+      } catch (error) {
+        if (!isDuplicateColumn(error)) {
+          throw new Error(
+            `schema v${fromVersion}→v${SCHEMA_VERSION} migration failed on "${sql}": ` +
+              `${error instanceof Error ? error.message : String(error)}. ` +
+              'The database is a rebuildable cache — delete it and rescan.',
+            { cause: error },
+          );
+        }
       }
     }
   }

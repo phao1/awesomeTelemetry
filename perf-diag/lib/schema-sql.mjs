@@ -1,8 +1,8 @@
 // 镜像 server/storage/schema.ts 的 SCHEMA_SQL / INDEX_SQL（Node 原生 TS 无法解析 .js 相对导入）。
 // 若 schema.ts 变更，这里必须同步；M12 的 perf 校验脚本可对比两份 DDL。
 
-// v2（add-mission-control）：与 server/storage/schema.ts 对齐。
-export const SCHEMA_VERSION = 2;
+// v3（add-mission-control）：与 server/storage/schema.ts 对齐。
+export const SCHEMA_VERSION = 3;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS _meta (
@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS metrics (
   cost_usd              REAL    NOT NULL DEFAULT 0,
   calc_version          INTEGER NOT NULL DEFAULT 0,
   ttft_ms               REAL,
-  e2e_ms                REAL
+  e2e_ms                REAL,
+  repair_loop           INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS scan_state (

@@ -158,29 +158,29 @@ widget 读到的都是空值。
 
 ## 6. P2 依赖 P0 的 widget
 
-- [ ] 6.1 F1-3 阶段耗时四段（沿用本项目 model/tool/idle/userWait 命名，
+- [x] 6.1 F1-3 阶段耗时四段（沿用本项目 model/tool/idle/userWait 命名，
       **不要改成 Tengu 的 LLM/Tool/Blocked/Other**）
-- [ ] 6.2 ⭐ **F1-3+ 并行度**：`parallelismRatio = Σdurations / wallMs`，
+- [x] 6.2 ⭐ **F1-3+ 并行度**：`parallelismRatio = Σdurations / wallMs`，
       两个数分开存分开算，> 1.2 判定存在并行执行（design.md §2：这是整份
       Tengu spec 最有价值的一条口径）
-- [ ] 6.3 B1 会话完成度（⚠️ **口径与 Tengu 的 `tengu_sdk_result` 完全不同**，
+- [x] 6.3 B1 会话完成度（⚠️ **口径与 Tengu 的 `tengu_sdk_result` 完全不同**，
       脚注必须写死；`repair sess` 复用 `session-findings.ts` 的 `repairLoop`）
-- [ ] 6.4 B3 成本效率（unknown 成本的会话从分子分母同时剔除并公示剔除数）
-- [ ] 6.5 B5 Token 日趋势（⚠️ SQL 注释里写死 G4.4/G4.5：cacheRead 增量用 SUM
+- [x] 6.4 B3 成本效率（unknown 成本的会话从分子分母同时剔除并公示剔除数）
+- [x] 6.5 B5 Token 日趋势（⚠️ SQL 注释里写死 G4.4/G4.5：cacheRead 增量用 SUM
       不用 MAX；total 含 cacheWrite；reasoning 看 `reasoningInTotal` #6）
-- [ ] 6.6 B6-a **Cache hit 命中率**（零新数据、纯 SQL、本区性价比最高）
-- [ ] 6.7 B6-b TTFT/E2E 持久化：`metrics.ttft_ms` / `e2e_ms` +
+- [x] 6.6 B6-a **Cache hit 命中率**（零新数据、纯 SQL、本区性价比最高）
+- [x] 6.7 B6-b TTFT/E2E 持久化：`metrics.ttft_ms` / `e2e_ms` +
       `METRICS_CALC_VERSION` 2→3（G11.11：不 bump 版本 = 脏数据无声留库）
-- [ ] 6.8 B11 性能漂移日序列
-- [ ] 6.9 B12 上下文压力（窗口取定价表的 `contextWindow`，
+- [x] 6.8 B11 性能漂移日序列
+- [x] 6.9 B12 上下文压力（窗口取定价表的 `contextWindow`，
       ⚠️ **禁止硬编码 200k**）+ 压缩检测：先实地验证 Claude JSONL 是否有 compact
       标记，无则用"上下文骤降 > 50%"启发式；**manual/auto 维度直接删掉**
-- [ ] 6.10 B13 模型分布 · 成本（⭐ 跨厂商工具的核心表）
-- [ ] 6.11 B15 工具生态耗时/IO（bytes 用 §2.3 的冗余列，不用 `length()`）
-- [ ] 6.12 C2 双通道覆盖（scan ∩ proxy）+ 两个成因提示 tag；
+- [x] 6.10 B13 模型分布 · 成本（⭐ 跨厂商工具的核心表）
+- [x] 6.11 B15 工具生态耗时/IO（bytes 用 §2.3 的冗余列，不用 `length()`）
+- [x] 6.12 C2 双通道覆盖（scan ∩ proxy）+ 两个成因提示 tag；
       在 `DECISIONS-PENDING.md` 登记 **D-011**：本面板只对比计数、不混列会话行，
       不构成违反 G7.4
-- [ ] 6.13 C4 热会话（按 `$` 排序，下钻复用 `#/sessions?key=` hash 路由）
+- [x] 6.13 C4 热会话（按 `$` 排序，下钻复用 `#/sessions?key=` hash 路由）
 
 ## 7. P3 新能力
 

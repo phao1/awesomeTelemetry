@@ -1,9 +1,10 @@
 # Contract: Database
 
 > **Authoritative source.** This is a fresh build; the schema starts at **v1**
-> and is currently at **v2** (add-mission-control: model attribution + cost /
-> duration sources + ttft/e2e persistence). All DDL must be adopted verbatim —
-> no column renames, no added or removed columns beyond this contract.
+> and is currently at **v3** (add-mission-control: model attribution + cost /
+> duration sources + ttft/e2e persistence + scan-time repair rollup). All DDL
+> must be adopted verbatim — no column renames, no added or removed columns
+> beyond this contract.
 > Corresponding source file: `server/storage/schema.ts`
 >
 > Numbers marked "reference-implementation measured" come from the recreated
@@ -62,7 +63,7 @@ export function initSchema(db: Database): void {
   db.prepare(
     "INSERT INTO _meta(key, value) VALUES('schema_version', ?) " +
     "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-  ).run(String(SCHEMA_VERSION));  // SCHEMA_VERSION = 2
+  ).run(String(SCHEMA_VERSION));  // SCHEMA_VERSION = 3
   db.exec('ANALYZE');
 }
 ```
@@ -73,9 +74,13 @@ run the migration chain implemented in `server/storage/schema.ts`
 (`migrateSchema`):
 
 - **v1 → v2** (the first landed migration): eight `ALTER TABLE ADD COLUMN`
-  statements (see §3) plus three `CREATE INDEX IF NOT EXISTS` (see §4). All
-  `ADD COLUMN` are non-destructive — existing rows keep their values and the
-  new columns are backfilled naturally on the next scan round.
+  statements (see §3) plus three `CREATE INDEX IF NOT EXISTS` (see §4).
+- **v2 → v3** (performance escalation, design.md §7.3 R1): `metrics.repair_loop`
+  — the Mission closure widget's repair detection moved from a per-request
+  full-table window scan (measured 40ms at tier B, over the 30ms budget) to a
+  scan-time precompute; the per-request read is now a rollup `COUNT`.
+  All `ADD COLUMN` are non-destructive — existing rows keep their values and
+  the new columns are backfilled naturally on the next scan round.
 - Migration failure MUST throw with a "delete the DB and rescan" hint; the
   database is a rebuildable cache of local session files, and a half-migrated
   state is more dangerous than a rescan (decision: tasks.md "已做的决策" #3).
@@ -193,7 +198,8 @@ CREATE TABLE IF NOT EXISTS metrics (
   cost_usd              REAL    NOT NULL DEFAULT 0,
   calc_version          INTEGER NOT NULL DEFAULT 0,
   ttft_ms               REAL,
-  e2e_ms                REAL
+  e2e_ms                REAL,
+  repair_loop           INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
 ```
 
@@ -212,6 +218,9 @@ CREATE TABLE IF NOT EXISTS metrics (
 > - `metrics.ttft_ms` / `metrics.e2e_ms` — 持久化的速度指标，避免跨会话聚合
 >   触发 N+1（design.md §4 B6；G11.11：改算法必须 bump
 >   `METRICS_CALC_VERSION`）。
+> - `metrics.repair_loop`（v3）— 修复循环命中（W-F-W-F-W ≥2 轮，与
+>   session-findings repairLoop 同口径），扫描时预计算（design.md §7.3 R1：
+>   逐请求窗口扫描 40ms 超预算 → rollup 化）。
 
 > `calc_version` defaults to 0, unequal to the code constant
 > `METRICS_CALC_VERSION` (initially 1), so the first read always triggers

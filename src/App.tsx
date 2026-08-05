@@ -898,6 +898,10 @@ export default function App() {
             locale={locale}
             initialRange={missionRange}
             invalidateKey={missionInvalidateKey}
+            onOpenSession={(key) => {
+              switchView('session');
+              selectSession(key);
+            }}
           />
         </div>
       )}

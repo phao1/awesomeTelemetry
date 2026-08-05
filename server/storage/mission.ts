@@ -12,6 +12,7 @@ import type {
   MissionWidget,
 } from '../../src/core/trace-types.js';
 import { extractSubagentType } from '../../src/core/subagent-type.js';
+import { computeCostUsd, lookupContextWindow } from '../../src/core/pricing.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { cachedStmt } from './stmt-cache.js';
 
@@ -85,6 +86,15 @@ function unavailableWidget<T>(
 
 export function availableWidget<T>(id: string, criteria: string, data: T): MissionWidget<T> {
   return { id, criteria, available: true, unavailableReason: null, data };
+}
+
+/** p 分位数（0-100）；输入需已升序。 */
+function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) {
+    return null;
+  }
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
+  return sorted[index]!;
 }
 
 /** range → started_at 过滤。cutoff 在 JS 侧算（ISO 字符串，字典序即时间序）。 */
@@ -291,21 +301,79 @@ async function computeUsage(db: Database, opts: MissionOptions): Promise<Mission
 
 // ── B 区：效能质量 ──────────────────────────────────────────
 
-/** B1 会话完成度（P2，B6 填数据）。 */
-function widgetClosure(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['closure']['data']>> {
-  return unavailableWidget(
+const CLOSURE_SESSIONS_SQL =
+  `SELECT total_duration_ms AS dur, message_count AS turns, status AS status ` +
+  `FROM sessions WHERE data_source = ?{{RANGE}}`;
+
+// repair_loop 已由扫描时预计算落库（metrics.repair_loop，schema v3）——
+// 逐请求全表窗口扫描实测 40ms 超 §7.3 R1 预算，升级为 rollup 读取。
+const CLOSURE_REPAIR_SQL =
+  `SELECT COUNT(*) AS n FROM metrics m JOIN sessions s ON s.id = m.session_id ` +
+  `WHERE s.data_source = ?{{RANGE}} AND m.repair_loop = 1`;
+
+/** B1 会话完成度：success 占比 + E2E 分位数 + turns p50 + repair 命中数。 */
+function widgetClosure(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['closure']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, CLOSURE_SESSIONS_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{ dur: number; turns: number; status: string }>;
+  const repairRow = cachedStmt(db, CLOSURE_REPAIR_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .get(opts.dataSource, ...params.slice(1)) as { n: number };
+  const ok = rows.filter((r) => r.status === 'success').length;
+  const err = rows.filter((r) => r.status === 'error').length;
+  const durs = rows.map((r) => r.dur).sort((a, b) => a - b);
+  const turns = rows.map((r) => r.turns).sort((a, b) => a - b);
+  return availableWidget(
     'closure',
-    'status=\'success\' 会话占比（adapter 已归一化 completed→success）；E2E p50/p90/p99 = total_duration_ms 分位数（wall-clock，G4.6）；repair sess 复用 session-findings repairLoop 口径；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙；⚠️ 与 Tengu tengu_sdk_result 口径不同',
-    'NOT_IMPLEMENTED_YET',
+    'status=\'success\' 会话占比（adapter 已归一化 completed→success）；E2E p50/p90/p99 = total_duration_ms 分位数（wall-clock，G4.6）；repair sess 读 metrics.repair_loop（扫描时预计算，W-F-W-F-W 口径同 session-findings repairLoop）；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙；⚠️ 与 Tengu tengu_sdk_result 口径不同',
+    {
+      successRate: rows.length > 0 ? ok / rows.length : null,
+      sessions: rows.length,
+      ok,
+      err,
+      e2eP50Ms: percentile(durs, 50),
+      e2eP90Ms: percentile(durs, 90),
+      e2eP99Ms: percentile(durs, 99),
+      turnsP50: percentile(turns, 50) ?? 0,
+      repairSessions: repairRow.n,
+    },
   );
 }
 
-/** B3 成本效率（P2，B6 填数据）。 */
-function widgetCostEfficiency(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['costEfficiency']['data']>> {
-  return unavailableWidget(
+const COST_EFF_SQL =
+  `SELECT s.id AS id, s.cost_source AS cost_source, s.cost_usd AS cost_usd, ` +
+  `  s.message_count AS turns, ` +
+  `  SUM(CASE WHEN e.tool IS NOT NULL AND e.status = 'success' THEN 1 ELSE 0 END) AS ok_tools ` +
+  `FROM sessions s LEFT JOIN events e ON e.session_id = s.id ` +
+  `WHERE s.data_source = ?{{RANGE}} GROUP BY s.id`;
+
+/** B3 成本效率：unknown 成本的会话从分子分母同时剔除并公示剔除数。 */
+function widgetCostEfficiency(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['costEfficiency']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, COST_EFF_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{
+    id: string;
+    cost_source: string;
+    cost_usd: number;
+    turns: number;
+    ok_tools: number;
+  }>;
+  const priced = rows.filter((r) => r.cost_source !== 'unknown');
+  const totalUsd = priced.reduce((sum, r) => sum + r.cost_usd, 0);
+  const turns = priced.reduce((sum, r) => sum + r.turns, 0);
+  const tools = priced.reduce((sum, r) => sum + r.ok_tools, 0);
+  return availableWidget(
     'costEfficiency',
     'costUsd / message_count（$/turn）、costUsd / 成功 tool 数、costUsd / 会话数；cost_source=\'unknown\' 的会话从分子分母同时剔除并公示剔除数',
-    'NOT_IMPLEMENTED_YET',
+    {
+      totalUsd,
+      perTurnUsd: turns > 0 ? totalUsd / turns : null,
+      perOkToolUsd: tools > 0 ? totalUsd / tools : null,
+      perSessionUsd: priced.length > 0 ? totalUsd / priced.length : null,
+      turns,
+      tools,
+      pricedSessions: priced.length,
+      unpricedSessions: rows.length - priced.length,
+    },
   );
 }
 
@@ -328,21 +396,76 @@ function widgetToolFailure(db: Database, opts: MissionOptions): MissionWidget<No
   );
 }
 
-/** B5 Token 日趋势（P2，B6 填数据）。 */
-function widgetTokenTrend(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['tokenTrend']['data']>> {
-  return unavailableWidget(
+const TOKEN_TREND_SQL =
+  // G4.4：cacheRead 是增量语义，用 SUM 不用 MAX（2026-08-03 实测推翻旧假设）
+  // G4.5：total 含 cacheWrite；reasoning 是否入 total 由 adapter 的 reasoningInTotal 决定（sessions.token_total 已含）
+  `SELECT substr(started_at, 1, 10) AS day, COUNT(*) AS sessions, ` +
+  `SUM(token_input) AS input, SUM(token_output) AS output, ` +
+  `SUM(token_cache_read) AS cache_read, SUM(token_cache_write) AS cache_write, ` +
+  `SUM(token_total) AS total, ` +
+  `SUM(CASE WHEN cost_source != 'unknown' THEN cost_usd ELSE 0 END) AS cost, ` +
+  `SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS error_events, ` +
+  `SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS success_rate ` +
+  `FROM sessions WHERE data_source = ?{{RANGE}} GROUP BY day ORDER BY day`;
+
+/** B5 Token 日趋势：按日 token 汇总（堆叠面积）。 */
+function widgetTokenTrend(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['tokenTrend']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, TOKEN_TREND_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<Record<string, unknown>>;
+  return availableWidget(
     'tokenTrend',
     '按日 SUM(token_input/output/cache_read/cache_write)；cacheRead 增量语义用 SUM 不用 MAX（G4.4）；total 含 cacheWrite；reasoning 按 adapter 的 reasoningInTotal（G4.5）',
-    'NOT_IMPLEMENTED_YET',
+    rows.map((row) => ({
+      day: row.day as string,
+      sessions: row.sessions as number,
+      input: row.input as number,
+      output: row.output as number,
+      cacheRead: row.cache_read as number,
+      cacheWrite: row.cache_write as number,
+      costUsd: row.cost as number,
+      errorEvents: row.error_events as number,
+      successRate: row.success_rate as number | null,
+    })),
   );
 }
 
-/** B6 API 质量（P2，B6 填数据）。 */
-function widgetApiQuality(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['apiQuality']['data']>> {
-  return unavailableWidget(
+const API_CACHE_SQL =
+  `SELECT SUM(token_input) AS input, SUM(token_cache_read) AS cache_read, ` +
+  `SUM(token_cache_write) AS cache_write FROM sessions WHERE data_source = ?{{RANGE}}`;
+
+const API_TTFT_SQL =
+  `SELECT m.ttft_ms AS ttft_ms FROM metrics m JOIN sessions s ON s.id = m.session_id ` +
+  `WHERE s.data_source = ?{{RANGE}} AND m.ttft_ms IS NOT NULL ORDER BY m.ttft_ms`;
+
+const API_PROXY_SQL =
+  `SELECT COUNT(*) AS calls, ` +
+  `SUM(CASE WHEN response_status >= 500 OR response_status = 429 THEN 1 ELSE 0 END) AS errors ` +
+  `FROM proxy_requests`;
+
+/** B6 API 质量：cache hit（纯 SQL）+ TTFT（metrics 持久化）+ proxy 通道计数。 */
+function widgetApiQuality(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['apiQuality']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const cacheRow = cachedStmt(db, API_CACHE_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .get(opts.dataSource, ...params.slice(1)) as { input: number; cache_read: number; cache_write: number };
+  const ttftRows = cachedStmt(db, API_TTFT_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{ ttft_ms: number }>;
+  const proxyRow = cachedStmt(db, API_PROXY_SQL).get() as { calls: number; errors: number };
+  const ttfts = ttftRows.map((r) => r.ttft_ms);
+  const denominator = cacheRow.input + cacheRow.cache_read + cacheRow.cache_write;
+  return availableWidget(
     'apiQuality',
-    'cacheHit = SUM(cache_read)/SUM(input+cache_read+cache_write)；TTFT p50/p95 来自 metrics.ttft_ms（持久化，非运行时重算）；proxyCalls/errorRate 仅 MITM 通道',
-    'NOT_IMPLEMENTED_YET',
+    'cacheHit = SUM(cache_read)/SUM(input+cache_read+cache_write)；TTFT p50/p95 来自 metrics.ttft_ms（持久化，非运行时重算，G11.11）；proxyCalls/errorRate 仅 MITM 抓包通道（scan 通道无 API 调用概念）',
+    {
+      cacheHitRate: denominator > 0 ? cacheRow.cache_read / denominator : null,
+      totalIn: cacheRow.input,
+      totalCacheRead: cacheRow.cache_read,
+      totalCacheWrite: cacheRow.cache_write,
+      ttftP50Ms: percentile(ttfts, 50),
+      ttftP95Ms: percentile(ttfts, 95),
+      proxyCalls: proxyRow.calls,
+      proxyErrorRate: proxyRow.calls > 0 ? proxyRow.errors / proxyRow.calls : null,
+    },
   );
 }
 
@@ -364,30 +487,197 @@ function widgetRiskyCommands(_db: Database, _opts: MissionOptions): MissionWidge
   );
 }
 
-/** B11 性能漂移日序列（P2，B6 填数据）。 */
-function widgetDrift(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['drift']['data']>> {
-  return unavailableWidget(
+const DRIFT_SQL =
+  `SELECT substr(s.started_at, 1, 10) AS day, s.total_duration_ms AS dur, ` +
+  `s.status AS status, s.cost_usd AS cost, s.message_count AS turns, s.cost_source AS cost_source, ` +
+  `SUM(CASE WHEN e.tool IS NOT NULL AND e.status = 'error' THEN 1 ELSE 0 END) AS tool_fails ` +
+  `FROM sessions s LEFT JOIN events e ON e.session_id = s.id ` +
+  `WHERE s.data_source = ?{{RANGE}} GROUP BY s.id ORDER BY day`;
+
+/** B11 性能漂移日序列：按日成功率 / E2E p95 / tool fail / $ per turn。 */
+function widgetDrift(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['drift']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, DRIFT_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{
+    day: string;
+    dur: number;
+    status: string;
+    cost: number;
+    turns: number;
+    cost_source: string;
+    tool_fails: number;
+  }>;
+  const byDay = new Map<string, Array<typeof rows[number]>>();
+  for (const row of rows) {
+    const list = byDay.get(row.day) ?? [];
+    list.push(row);
+    byDay.set(row.day, list);
+  }
+  const points = [...byDay.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([day, list]) => {
+      const ok = list.filter((r) => r.status === 'success').length;
+      const durs = list.map((r) => r.dur).sort((a, b) => a - b);
+      const priced = list.filter((r) => r.cost_source !== 'unknown');
+      const cost = priced.reduce((sum, r) => sum + r.cost, 0);
+      return {
+        day,
+        sessions: list.length,
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        costUsd: cost,
+        errorEvents: list.filter((r) => r.status === 'error').length,
+        successRate: list.length > 0 ? ok / list.length : null,
+        e2eP95Ms: percentile(durs, 95),
+        toolFails: list.reduce((sum, r) => sum + r.tool_fails, 0),
+      };
+    });
+  return availableWidget(
     'drift',
-    '按日聚合成功率 / E2E p95 / tool fail / $ per turn；依赖 P0-A + P0-C + ttft/e2e 持久化；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙',
-    'NOT_IMPLEMENTED_YET',
+    '按日聚合成功率 / E2E p95 / tool fail / $ per turn（unknown 成本剔除）；依赖 P0-A + P0-C + ttft/e2e 持久化；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙',
+    points,
   );
 }
 
-/** B12 上下文压力（P2，B6 填数据）。 */
-function widgetContextPressure(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['contextPressure']['data']>> {
-  return unavailableWidget(
+const CONTEXT_SQL =
+  `SELECT e.session_id AS session_id, e.sequence AS sequence, e.model AS model, e.tokens_json AS tokens_json ` +
+  `FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `WHERE s.data_source = ?{{RANGE}} AND e.kind = 'llm' AND e.model IS NOT NULL AND e.tokens_json IS NOT NULL ` +
+  `ORDER BY e.session_id, e.sequence`;
+
+function contextTokens(tokensJson: string): { input: number; output: number; cacheRead: number; cacheWrite: number } | null {
+  try {
+    const t = JSON.parse(tokensJson) as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+    if (typeof t.input !== 'number' && typeof t.cacheRead !== 'number' && typeof t.cacheWrite !== 'number') {
+      return null;
+    }
+    return {
+      input: t.input ?? 0,
+      output: t.output ?? 0,
+      cacheRead: t.cacheRead ?? 0,
+      cacheWrite: t.cacheWrite ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** B12 上下文压力：窗口取 pricing 表 contextWindow；压缩 = 相邻 LLM 请求上下文骤降 >50%。 */
+function widgetContextPressure(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['contextPressure']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, CONTEXT_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{
+    session_id: string;
+    sequence: number;
+    model: string;
+    tokens_json: string;
+  }>;
+  const ratios: number[] = [];
+  const histogram = new Map<string, number>();
+  const bySession = new Map<string, number[]>();
+  let samples = 0;
+  for (const row of rows) {
+    const tokens = contextTokens(row.tokens_json);
+    if (tokens === null) {
+      continue;
+    }
+    const context = tokens.input + tokens.cacheRead + tokens.cacheWrite;
+    const window = lookupContextWindow(row.model);
+    if (window === null || window <= 0) {
+      continue;
+    }
+    samples += 1;
+    const ratio = context / window;
+    ratios.push(ratio);
+    const bucket =
+      ratio >= 1 ? '100%+' : ratio >= 0.9 ? '90-100%' : ratio >= 0.75 ? '75-90%' : ratio >= 0.5 ? '50-75%' : ratio >= 0.25 ? '25-50%' : '0-25%';
+    histogram.set(bucket, (histogram.get(bucket) ?? 0) + 1);
+    const list = bySession.get(row.session_id) ?? [];
+    list.push(context);
+    bySession.set(row.session_id, list);
+  }
+  // 压缩启发式：同一会话相邻两次 LLM 请求 context 从 X 掉到 Y 且 Y < X*0.5
+  let compactions = 0;
+  let savedTokens = 0;
+  for (const list of bySession.values()) {
+    for (let i = 1; i < list.length; i += 1) {
+      const prev = list[i - 1]!;
+      const curr = list[i]!;
+      if (curr < prev * 0.5) {
+        compactions += 1;
+        savedTokens += prev - curr;
+      }
+    }
+  }
+  const sorted = ratios.slice().sort((a, b) => a - b);
+  return availableWidget(
     'contextPressure',
-    'context ≈ input+cacheRead+cacheWrite，窗口取 pricing 表 contextWindow（禁止硬编码 200k）；压缩检测用上下文骤降 >50% 启发式；manual/auto 维度删除',
-    'NOT_IMPLEMENTED_YET',
+    'context ≈ input+cacheRead+cacheWrite，窗口取 pricing 表 contextWindow（禁止硬编码 200k）；压缩检测用上下文骤降 >50% 启发式（manual/auto 维度删除）；未知窗口的样本不计入',
+    {
+      windowSource: 'pricing table (contextWindow)',
+      peakPct: sorted.length > 0 ? sorted.at(-1)! * 100 : null,
+      p50Pct: percentile(sorted, 50) === null ? null : percentile(sorted, 50)! * 100,
+      p95Pct: percentile(sorted, 95) === null ? null : percentile(sorted, 95)! * 100,
+      over80Pct: sorted.filter((r) => r >= 0.8).length,
+      over95Pct: sorted.filter((r) => r >= 0.95).length,
+      samples,
+      histogram: [...histogram.entries()].map(([name, count]) => ({ name, count })),
+      compactions,
+      savedTokens,
+    },
   );
 }
 
-/** B13 模型分布 · 成本（P2，B6 填数据）。 */
-function widgetModels(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['models']['data']>> {
-  return unavailableWidget(
+const MODELS_SQL =
+  `SELECT e.model AS model, e.tokens_json AS tokens_json ` +
+  `FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `WHERE s.data_source = ?{{RANGE}} AND e.kind = 'llm' AND e.model IS NOT NULL AND e.model != ''`;
+
+/** B13 模型分布 · 成本：跨厂商核心表。 */
+function widgetModels(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['models']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, MODELS_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{ model: string; tokens_json: string | null }>;
+  const byModel = new Map<
+    string,
+    { calls: number; input: number; output: number; cacheRead: number; cacheWrite: number }
+  >();
+  for (const row of rows) {
+    const agg = byModel.get(row.model) ?? { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    agg.calls += 1;
+    if (row.tokens_json !== null) {
+      const tokens = contextTokens(row.tokens_json);
+      if (tokens !== null) {
+        agg.input += tokens.input;
+        agg.output += tokens.output;
+        agg.cacheRead += tokens.cacheRead;
+        agg.cacheWrite += tokens.cacheWrite;
+      }
+    }
+    byModel.set(row.model, agg);
+  }
+  const out = [...byModel.entries()].map(([model, agg]) => {
+    const cost = computeCostUsd(
+      { input: agg.input, output: agg.output, reasoning: 0, cacheRead: agg.cacheRead, cacheWrite: agg.cacheWrite, total: 0 },
+      model,
+    );
+    return {
+      model,
+      calls: agg.calls,
+      input: agg.input,
+      output: agg.output,
+      cacheRead: agg.cacheRead,
+      cacheWrite: agg.cacheWrite,
+      costUsd: cost.costUsd,
+      costSource: cost.costSource,
+    };
+  }).sort((a, b) => b.calls - a.calls);
+  return availableWidget(
     'models',
     'events.model 分组聚合调用数/token/成本；cost 来自 pricing 表，未知模型 costSource=\'unknown\' 显示 —',
-    'NOT_IMPLEMENTED_YET',
+    out,
   );
 }
 
@@ -415,21 +705,78 @@ function widgetDepth(db: Database, opts: MissionOptions): MissionWidget<NonNulla
   );
 }
 
-/** F1-3+ 并行度（P2，B6 填数据）。 */
-function widgetParallelism(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['parallelism']['data']>> {
-  return unavailableWidget(
+const PARALLELISM_SQL =
+  `SELECT s.id AS id, s.total_duration_ms AS wall, ` +
+  `SUM(e.duration_ms) AS sum_dur ` +
+  `FROM sessions s JOIN events e ON e.session_id = s.id ` +
+  `WHERE s.data_source = ?{{RANGE}} AND s.total_duration_ms > 0 ` +
+  `GROUP BY s.id`;
+
+/** F1-3+ 并行度：Σdurations / wallMs，>1.2 判定并行（两个数分开存分开算）。 */
+function widgetParallelism(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['parallelism']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, PARALLELISM_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{ id: string; wall: number; sum_dur: number }>;
+  const ratios = rows.map((r) => r.sum_dur / r.wall).filter((v) => Number.isFinite(v));
+  const parallel = ratios.filter((r) => r > 1.2).length;
+  return availableWidget(
     'parallelism',
     'parallelismRatio = Σevents.duration_ms / total_duration_ms（wall-clock，分开存分开算）；>1.2 判定存在并行执行；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙',
-    'NOT_IMPLEMENTED_YET',
+    {
+      sessions: rows.length,
+      avgRatio: ratios.length > 0 ? ratios.reduce((a, b) => a + b, 0) / ratios.length : null,
+      maxRatio: ratios.length > 0 ? Math.max(...ratios) : null,
+      parallelSessions: parallel,
+    },
   );
 }
 
-/** B15 工具生态耗时/IO（P2，B6 填数据）。 */
-function widgetToolEcology(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['toolEcology']['data']>> {
-  return unavailableWidget(
+const TOOL_ECOLOGY_SQL =
+  `SELECT e.tool AS tool, e.duration_ms AS duration_ms, e.input_len AS input_len, e.output_len AS output_len, ` +
+  `CASE WHEN e.status = 'error' THEN 1 ELSE 0 END AS is_error ` +
+  `FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  `WHERE s.data_source = ?{{RANGE}} AND e.tool IS NOT NULL AND e.tool != '' AND e.duration_ms > 0`;
+
+/** B15 工具生态耗时/IO：p50/p95 + bytes 冗余列 + MCP 前缀。 */
+function widgetToolEcology(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['toolEcology']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, TOOL_ECOLOGY_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{
+    tool: string;
+    duration_ms: number;
+    input_len: number;
+    output_len: number;
+    is_error: number;
+  }>;
+  const byTool = new Map<string, { durs: number[]; errors: number; inBytes: number; outBytes: number }>();
+  for (const row of rows) {
+    const agg = byTool.get(row.tool) ?? { durs: [], errors: 0, inBytes: 0, outBytes: 0 };
+    agg.durs.push(row.duration_ms);
+    agg.errors += row.is_error;
+    agg.inBytes += row.input_len;
+    agg.outBytes += row.output_len;
+    byTool.set(row.tool, agg);
+  }
+  const out = [...byTool.entries()]
+    .map(([tool, agg]) => {
+      const sorted = agg.durs.slice().sort((a, b) => a - b);
+      return {
+        tool,
+        calls: agg.durs.length,
+        errors: agg.errors,
+        isMcp: tool.startsWith('mcp__'),
+        p50Ms: percentile(sorted, 50),
+        p95Ms: percentile(sorted, 95),
+        inBytes: agg.inBytes,
+        outBytes: agg.outBytes,
+      };
+    })
+    .sort((a, b) => b.calls - a.calls)
+    .slice(0, 20);
+  return availableWidget(
     'toolEcology',
     'events.tool 分组：duration p50/p95（P0-A 后）；bytes in/out 用 input_len/output_len 冗余列（禁 LENGTH() 全表扫描）；mcp__ 前缀判 MCP；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙',
-    'NOT_IMPLEMENTED_YET',
+    out,
   );
 }
 
@@ -505,11 +852,43 @@ function widgetCollectors(db: Database, opts: MissionOptions): MissionWidget<Non
 }
 
 /** C2 双通道覆盖（P2，B6 填数据）。 */
-function widgetDualChannel(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionHealth['dualChannel']['data']>> {
-  return unavailableWidget(
+const DUAL_CHANNEL_SQL =
+  `SELECT ` +
+  `(SELECT COUNT(*) FROM sessions WHERE data_source = 'scan') AS scan_sessions, ` +
+  `(SELECT COUNT(*) FROM proxy_requests) AS proxy_requests, ` +
+  `(SELECT COUNT(*) FROM sessions s WHERE s.data_source = 'scan' AND EXISTS ` +
+  `  (SELECT 1 FROM proxy_requests p WHERE p.parsed_session_id = s.id)) AS linked_sessions, ` +
+  `(SELECT COUNT(DISTINCT p.parsed_session_id) FROM proxy_requests p ` +
+  `  WHERE p.parsed_session_id IS NOT NULL AND NOT EXISTS ` +
+  `  (SELECT 1 FROM sessions s WHERE s.id = p.parsed_session_id)) AS proxy_only`;
+
+/** C2 双通道覆盖：scan ∩ proxy 计数 + 成因提示 tag；只对比计数，不混列会话行（D-011）。 */
+function widgetDualChannel(db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionHealth['dualChannel']['data']>> {
+  const row = cachedStmt(db, DUAL_CHANNEL_SQL).get() as {
+    scan_sessions: number;
+    proxy_requests: number;
+    linked_sessions: number;
+    proxy_only: number;
+  };
+  const scanOnly = row.scan_sessions - row.linked_sessions;
+  const hints: string[] = [];
+  if (scanOnly > 0) {
+    hints.push('仅 scan × N —— 检查 MITM 是否在跑 / CA 证书是否已信任');
+  }
+  if (row.proxy_only > 0) {
+    hints.push('仅 proxy × N —— 检查该 provider 是否 enabled / 路径是否配对');
+  }
+  return availableWidget(
     'dualChannel',
-    'scan ∩ proxy 计数（proxy_requests.parsed_session_id + 时间窗关联）；只对比计数不混列会话行（不违反 G7.4，D-011）',
-    'NOT_IMPLEMENTED_YET',
+    'scan ∩ proxy 计数（proxy_requests.parsed_session_id + 会话匹配关联，G5.4 时间窗简化为 id 匹配）；只对比计数不混列会话行（不违反 G7.4，D-011）',
+    {
+      scanSessions: row.scan_sessions,
+      proxyRequests: row.proxy_requests,
+      linkedSessions: row.linked_sessions,
+      scanOnly,
+      proxyOnly: row.proxy_only,
+      hints,
+    },
   );
 }
 
@@ -540,11 +919,34 @@ function widgetCalendar(db: Database, opts: MissionOptions): MissionWidget<NonNu
 }
 
 /** C4 热会话（P2，B6 填数据）。 */
-function widgetHotSessions(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionHealth['hotSessions']['data']>> {
-  return unavailableWidget(
+const HOT_SESSIONS_SQL =
+  `SELECT id, title, provider, token_total, cost_usd, cost_source ` +
+  `FROM sessions WHERE data_source = ?{{RANGE}} ` +
+  `ORDER BY cost_usd DESC, token_total DESC LIMIT 10`;
+
+/** C4 热会话：按 $ 排序 TOP 10（P0-C 后按 $；下钻复用 #/sessions?key=）。 */
+function widgetHotSessions(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionHealth['hotSessions']['data']>> {
+  const { sql, params } = sessionWhere(opts);
+  const rows = cachedStmt(db, HOT_SESSIONS_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
+    .all(opts.dataSource, ...params.slice(1)) as Array<{
+    id: string;
+    title: string;
+    provider: string;
+    token_total: number;
+    cost_usd: number;
+    cost_source: string;
+  }>;
+  return availableWidget(
     'hotSessions',
-    'sessions 按 costUsd 排序 TOP（P0-C 后按 $；此前按 token_total）；下钻复用 #/sessions?key= hash 路由',
-    'NOT_IMPLEMENTED_YET',
+    'sessions 按 costUsd 排序 TOP 10（P0-C 后按 $；此前按 token_total）；下钻复用 #/sessions?key= hash 路由',
+    rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      provider: row.provider as NonNullable<MissionHealth['hotSessions']['data']>[number]['provider'],
+      tokenTotal: row.token_total,
+      costUsd: row.cost_usd,
+      costSource: row.cost_source as NonNullable<MissionHealth['hotSessions']['data']>[number]['costSource'],
+    })),
   );
 }
 

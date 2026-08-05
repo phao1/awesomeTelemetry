@@ -2747,3 +2747,21 @@ button.finding-row:hover {
 .mission-provider.bad {
   color: var(--danger-fg);
 }
+
+.mission-hot-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.mission-hot-row:hover {
+  background: var(--canvas-subtle);
+}

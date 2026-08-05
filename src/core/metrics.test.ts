@@ -73,18 +73,80 @@ describe('REQ-004 computeMetrics', () => {
     expect(m.durationByPhase.verify).toBe(50);
     expect(m.toolCallCount).toBe(3);
     expect(m.verificationPresent).toBe(true);
-    expect(m.verificationCoverage).toBe(1);
+    // #15：coverage = verify 事件数 / 步骤数 = 1/3
+    expect(m.verificationCoverage).toBeCloseTo(1 / 3);
     expect(m.enteredDebug).toBe(false);
+    // #14：errorRate 分母为步骤事件数（3 个都是步骤）＝ 1/3
     expect(m.errorRate).toBeCloseTo(1 / 3);
     expect(m.avgToolDurationMs).toBeCloseTo(350 / 3);
     expect(m.tokensPerStep).toBeCloseTo(16);
     expect(m.costUsd).toBe(0.5);
-    expect(m.calcVersion).toBe(1);
+    expect(m.calcVersion).toBe(3); // v3（add-mission-control）：ttft/e2e 持久化
+    expect(m.e2eMs).toBe(10_000);
   });
 
-  it('verificationCoverage 单会话为 0 或 1', () => {
+  it('#15 verificationCoverage 是 verify 事件数 / 步骤数比例', () => {
     expect(computeMetrics(makeRecord('a', { phases: ['implement'] })).verificationCoverage).toBe(0);
-    expect(computeMetrics(makeRecord('b', { phases: ['implement', 'verify'] })).verificationCoverage).toBe(1);
+    expect(computeMetrics(makeRecord('b', { phases: ['implement', 'verify'] })).verificationCoverage).toBeCloseTo(0.5);
+    expect(computeMetrics(makeRecord('c', { phases: ['verify', 'verify'] })).verificationCoverage).toBe(1);
+  });
+
+  it('v3 repairLoop：W-F-W-F-W 命中，W-F-W 不命中', () => {
+    const evt = (
+      id: string,
+      sequence: number,
+      kind: TraceEvent['kind'],
+      status: TraceEvent['status'],
+      tool: string | null,
+    ): TraceEvent => ({
+      id,
+      sessionId: 'repair',
+      sequence,
+      kind,
+      phase: 'implement',
+      title: 't',
+      startedAt: `2026-08-01T00:00:0${sequence}.000Z`,
+      durationMs: 100,
+      status,
+      actor: 'assistant',
+      tool,
+      tokens: null,
+      error: null,
+      hasInput: false,
+      hasOutput: false,
+      hasRaw: false,
+      inputSummary: null,
+      outputSummary: null,
+    });
+    const hit = makeRecord('repair-hit', {});
+    hit.events = [
+      evt('w1', 1, 'file_write', 'success', 'Write'),
+      evt('f2', 2, 'bash', 'error', 'Bash'),
+      evt('w3', 3, 'file_write', 'success', 'Write'),
+      evt('f4', 4, 'test', 'error', 'Test'),
+      evt('w5', 5, 'file_write', 'success', 'Write'),
+    ];
+    expect(computeMetrics(hit).repairLoop).toBe(true);
+    const miss = makeRecord('repair-miss', {});
+    miss.events = [
+      evt('w1', 1, 'file_write', 'success', 'Write'),
+      evt('f2', 2, 'bash', 'error', 'Bash'),
+      evt('w3', 3, 'file_write', 'success', 'Write'),
+    ];
+    expect(computeMetrics(miss).repairLoop).toBe(false);
+  });
+
+  it('#14 errorRate 分母只算步骤事件，用户/消息事件不计入', () => {
+    const record = makeRecord('s2', { phases: ['implement'], eventStatuses: ['error'] });
+    record.events.push({
+      id: 'user-err', sessionId: 's2', sequence: 2, kind: 'user_prompt', phase: 'understand',
+      title: 'q', startedAt: '2026-08-01T00:00:02.000Z', durationMs: 0,
+      status: 'error', actor: 'user', tool: null, tokens: null, error: 'x',
+      hasInput: true, hasOutput: false, hasRaw: false, inputSummary: 'q', outputSummary: null,
+    });
+    const m = computeMetrics(record);
+    expect(m.totalSteps).toBe(1);
+    expect(m.errorRate).toBe(1); // 只有步骤错误计入分子分母
   });
 });
 

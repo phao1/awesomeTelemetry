@@ -14,7 +14,6 @@ import type {
 import { api } from '../api/client.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 import { HBarChart } from './charts/HBarChart.js';
-import { DonutChart } from './charts/DonutChart.js';
 import { HeatmapGrid } from './charts/HeatmapGrid.js';
 import { Histogram } from './charts/Histogram.js';
 import { CalendarGrid } from './charts/CalendarGrid.js';
@@ -31,6 +30,8 @@ export interface MissionControlProps {
   /** SSE sessions_changed 外部失效计数（REQ-027：stamp 失效 + 手动刷新，不轮询）。 */
   invalidateKey?: number;
   initialRange?: MissionRange;
+  /** 热会话下钻：复用 #/sessions?key= hash 路由（REQ-027）。 */
+  onOpenSession?: (key: string) => void;
 }
 
 function entries(
@@ -103,10 +104,12 @@ function WidgetData({
   id,
   data,
   locale,
+  onOpenSession,
 }: {
   id: string;
   data: unknown;
   locale: Locale;
+  onOpenSession?: (key: string) => void;
 }): React.JSX.Element {
   switch (id) {
     case 'toolTop': {
@@ -211,7 +214,6 @@ function WidgetData({
         />
       );
     }
-    case 'models':
     case 'errorReasons':
     case 'skillTop': {
       const rows = (data as Array<{ name: string; count: number }>) ?? [];
@@ -219,11 +221,138 @@ function WidgetData({
     }
     case 'contextPressure': {
       const cp = data as NonNullable<MissionQuality['contextPressure']['data']>;
-      return <KeyValueTable data={{ peak: fmtPct(cp.peakPct), p50: fmtPct(cp.p50Pct), p95: fmtPct(cp.p95Pct), over80: cp.over80Pct, over95: cp.over95Pct, compactions: cp.compactions, window: cp.windowSource }} />;
+      return (
+        <>
+          <KeyValueTable data={{ peak: fmtPct(cp.peakPct), p50: fmtPct(cp.p50Pct), p95: fmtPct(cp.p95Pct), over80: cp.over80Pct, over95: cp.over95Pct, compactions: cp.compactions, saved: cp.savedTokens, window: cp.windowSource }} />
+          <Histogram buckets={cp.histogram.map((h) => ({ label: h.name, value: h.count }))} />
+        </>
+      );
     }
-    case 'donut':
-      // 保留位：占比类 widget 的环形图（B13 模型分布等）
-      return <DonutChart slices={[]} />;
+    case 'closure': {
+      const c = data as NonNullable<MissionQuality['closure']['data']>;
+      return (
+        <KeyValueTable
+          data={{
+            success: fmtPct(c.successRate),
+            ok: c.ok,
+            err: c.err,
+            e2eP50: c.e2eP50Ms === null ? '—' : `${fmtNum(c.e2eP50Ms)}ms`,
+            e2eP90: c.e2eP90Ms === null ? '—' : `${fmtNum(c.e2eP90Ms)}ms`,
+            e2eP99: c.e2eP99Ms === null ? '—' : `${fmtNum(c.e2eP99Ms)}ms`,
+            turnsP50: c.turnsP50,
+            repair: c.repairSessions,
+          }}
+        />
+      );
+    }
+    case 'costEfficiency': {
+      const c = data as NonNullable<MissionQuality['costEfficiency']['data']>;
+      return (
+        <KeyValueTable
+          data={{
+            total: `$${c.totalUsd.toFixed(4)}`,
+            perTurn: c.perTurnUsd === null ? '—' : `$${c.perTurnUsd.toFixed(4)}`,
+            perOkTool: c.perOkToolUsd === null ? '—' : `$${c.perOkToolUsd.toFixed(4)}`,
+            perSession: c.perSessionUsd === null ? '—' : `$${c.perSessionUsd.toFixed(4)}`,
+            priced: c.pricedSessions,
+            unpriced: c.unpricedSessions,
+          }}
+        />
+      );
+    }
+    case 'apiQuality': {
+      const a = data as NonNullable<MissionQuality['apiQuality']['data']>;
+      return (
+        <KeyValueTable
+          data={{
+            cacheHit: fmtPct(a.cacheHitRate),
+            ttftP50: a.ttftP50Ms === null ? '—' : `${fmtNum(a.ttftP50Ms)}ms`,
+            ttftP95: a.ttftP95Ms === null ? '—' : `${fmtNum(a.ttftP95Ms)}ms`,
+            proxyCalls: a.proxyCalls,
+            proxyErr: fmtPct(a.proxyErrorRate),
+          }}
+        />
+      );
+    }
+    case 'parallelism': {
+      const p = data as NonNullable<MissionQuality['parallelism']['data']>;
+      return (
+        <KeyValueTable
+          data={{
+            sessions: p.sessions,
+            avgRatio: p.avgRatio === null ? '—' : p.avgRatio.toFixed(2),
+            maxRatio: p.maxRatio === null ? '—' : p.maxRatio.toFixed(2),
+            parallel: p.parallelSessions,
+          }}
+        />
+      );
+    }
+    case 'dualChannel': {
+      const d = data as NonNullable<MissionHealth['dualChannel']['data']>;
+      return (
+        <>
+          <KeyValueTable
+            data={{
+              scan: d.scanSessions,
+              proxy: d.proxyRequests,
+              both: d.linkedSessions,
+              scanOnly: d.scanOnly,
+              proxyOnly: d.proxyOnly,
+            }}
+          />
+          {d.hints.map((hint) => (
+            <div key={hint} className="mission-alert">{hint}</div>
+          ))}
+        </>
+      );
+    }
+    case 'models': {
+      const rows = data as NonNullable<MissionQuality['models']['data']>;
+      return (
+        <div className="mission-kv">
+          {rows.map((row) => (
+            <div className="mission-kv-row" key={row.model}>
+              <span className="mission-kv-key">{row.model} · {fmtNum(row.calls)}</span>
+              <span className="mission-kv-value mono">
+                {row.costSource === 'unknown' ? '—' : `$${row.costUsd.toFixed(4)}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    case 'toolEcology': {
+      const rows = data as NonNullable<MissionQuality['toolEcology']['data']>;
+      return (
+        <HBarChart
+          rows={rows.map((row) => ({
+            label: `${row.tool} (${fmtNum(row.inBytes)}B↓/${fmtNum(row.outBytes)}B↑)`,
+            value: row.calls,
+          }))}
+        />
+      );
+    }
+    case 'hotSessions': {
+      const rows = data as NonNullable<MissionHealth['hotSessions']['data']>;
+      return (
+        <div className="mission-kv">
+          {rows.map((row) => (
+            <button
+              key={row.id}
+              type="button"
+              className="mission-hot-row"
+              onClick={() => onOpenSession?.(row.id)}
+              title={row.id}
+            >
+              <span className="mission-kv-key">{row.title || row.id}</span>
+              <span className="mission-kv-value mono">
+                {row.costSource === 'unknown' ? '—' : `$${row.costUsd.toFixed(4)}`} · {fmtNum(row.tokenTotal)}
+              </span>
+            </button>
+          ))}
+        </div>
+      );
+    }
     default:
       if (data === null) {
         return <EmptyState icon="—" title={t('state.empty', locale)} description="" />;
@@ -242,10 +371,12 @@ function WidgetPanel({
   id,
   widget,
   locale,
+  onOpenSession,
 }: {
   id: string;
   widget: MissionWidget<unknown>;
   locale: Locale;
+  onOpenSession?: (key: string) => void;
 }): React.JSX.Element {
   const reasonKey = `mission.unavailable.${widget.unavailableReason ?? ''}` as I18nKey;
   const reason =
@@ -259,7 +390,7 @@ function WidgetPanel({
       <div className="mission-criteria">{widget.criteria}</div>
       {widget.available && widget.data !== null ? (
         <div className="mission-widget-body">
-          <WidgetData id={id} data={widget.data} locale={locale} />
+          <WidgetData id={id} data={widget.data} locale={locale} onOpenSession={onOpenSession} />
         </div>
       ) : (
         <EmptyState
@@ -281,6 +412,7 @@ export function MissionControl({
   load,
   invalidateKey = 0,
   initialRange = '7d',
+  onOpenSession,
 }: MissionControlProps): React.JSX.Element {
   const defaultLoad = useCallback((range: MissionRange) => api.mission({ range }), []);
   const loader = load ?? defaultLoad;
@@ -375,7 +507,7 @@ export function MissionControl({
       {response !== null && (
         <div className="mission-grid">
           {visible.map(({ id, widget }) => (
-            <WidgetPanel key={id} id={id} widget={widget} locale={locale} />
+            <WidgetPanel key={id} id={id} widget={widget} locale={locale} onOpenSession={onOpenSession} />
           ))}
         </div>
       )}

@@ -219,3 +219,39 @@ attention-emphasis contrast fails
 - **Suggested next step**: 人工（或未来接官方定价 API 的 change）逐厂商核对
   当前价格并写入覆盖层；建议由「负责成本口径的维护者」持有更新职责，每次抓取
   记录 URL + 日期，并在 `config/model-pricing.example.json` 保持模板同步。
+
+---
+
+## D-011 C2 双通道覆盖与 G7.4 的关系（add-mission-control §6.12 / design §5）
+
+- **Problem**: C2 面板按「scan ∩ proxy」对比计数，容易被误判为违反 G7.4
+  「scan/proxy 分开展示，不混」。
+- **Approaches tried**: 复核 G7.4 原文与 frontend REQ-013 —— G7.4 禁止的是
+  **混列会话行**（一个列表里同时出现 scan 会话与 proxy 捕获）；C2 只对比
+  计数（双通道 N / 仅 scan N / 仅 proxy N），不并列任何会话条目。
+- **Why they failed**: 无失败 —— 这是口径澄清，不是绕过规则。
+- **Temporary approach**: C2 按 design §5 落地（`widgetDualChannel`），只返回
+  计数 + 两个成因提示 tag，并在 criteria 行写明「只对比计数不混列会话行
+  （不违反 G7.4，D-011）」。
+- **Suggested next step**: 人工确认该声明后，可将 D-011 的结论写进
+  `openspec/gotchas.md` G7.4 条目作为官方解释，避免后续 change 反复误判。
+
+---
+
+## D-012 repair 检测触发 design §7.3 R1 升级：schema v2 → v3（metrics.repair_loop）
+
+- **Problem**: Mission closure 的 repairSessions 若逐请求做全表 repair 检测，
+  在 tier B（524 会话 / 73,588 事件）实测 40ms，超过「单 widget SQL < 30ms」
+  预算。design.md §7.3 R1 明令超标 → 升级为扫描后写 rollup，不要靠加索引硬撑。
+- **Approaches tried**: ① window 函数方案（LAG over 全表）= 40ms；
+  ② sequence 偏移自连接 = 43ms；③ 逐会话循环 = 40ms；④ 单条全量流 SQL + JS
+  滚动扫描 = SQL 46-63ms。全部超过预算。
+- **Why they failed**: repair 模式要求按 sequence 连续的完整事件流，
+  tier B 的全表扫描无论如何都 ≥40ms；预过滤会破坏 sequence 连续性。
+- **Temporary approach**: schema v2 → v3 —— `metrics.repair_loop`（W-F-W-F-W
+  ≥2 轮，与 session-findings repairLoop 同口径）在扫描时由 computeMetrics
+  预计算落库；Mission closure 改为 rollup `COUNT(... WHERE repair_loop=1)`，
+  单条 SQL 12ms。migrateSchema 增加 v2→v3 迁移（幂等 ADD COLUMN）。
+- **Suggested next step**: 人工确认 v3 升级符合预期；schema 版本现在为 3，
+  `contracts/database.md` 已同步。若未来有其他全表聚合 widget 超预算，沿用
+  同一条 rollup 路径（design §7.3 R1 / nfr §7）。

@@ -27,10 +27,13 @@ const EXPECTED_INDEXES = [
   'idx_events_session_phase',
   'idx_events_kind',
   'idx_events_phase',
+  'idx_events_tool',
+  'idx_events_session_kind',
   'idx_sessions_ds_started',
   'idx_sessions_started_at',
   'idx_sessions_provider',
   'idx_sessions_source_agent',
+  'idx_sessions_started_prov',
   'idx_scan_state_provider',
   'idx_scan_state_session',
   'idx_proxy_started_len',
@@ -129,6 +132,39 @@ describe('REQ-003 建库幂等', () => {
     expect(plans[1]).toContain('idx_events_session_seq');
     expect(plans[2]).toContain('idx_proxy_started_len');
 
+    db.close();
+  });
+
+  it('v2 → v3 迁移：metrics.repair_loop 补列 + schema_version 升到 3（幂等）', () => {
+    const db = createDb(join(tempDir(), 'migrate.sqlite'));
+    // 构造一个 v2 库（无 repair_loop）
+    db.exec(`
+      CREATE TABLE metrics (
+        session_id TEXT PRIMARY KEY,
+        total_steps INTEGER NOT NULL DEFAULT 0,
+        duration_by_phase TEXT NOT NULL DEFAULT '{}',
+        tool_call_count INTEGER NOT NULL DEFAULT 0,
+        verification_present INTEGER NOT NULL DEFAULT 0,
+        avg_tool_duration_ms REAL NOT NULL DEFAULT 0,
+        verification_coverage REAL NOT NULL DEFAULT 0,
+        error_rate REAL NOT NULL DEFAULT 0,
+        entered_debug INTEGER NOT NULL DEFAULT 0,
+        tokens_per_step REAL NOT NULL DEFAULT 0,
+        cost_usd REAL NOT NULL DEFAULT 0,
+        calc_version INTEGER NOT NULL DEFAULT 0,
+        ttft_ms REAL,
+        e2e_ms REAL
+      ) WITHOUT ROWID;
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
+      INSERT INTO _meta VALUES ('schema_version', '2');
+    `);
+    initSchema(db);
+    const cols = db.prepare('PRAGMA table_info(metrics)').all() as Array<{ name: string }>;
+    expect(cols.some((c) => c.name === 'repair_loop')).toBe(true);
+    const meta = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as { value: string };
+    expect(meta.value).toBe(String(SCHEMA_VERSION));
+    // 幂等：重复 initSchema 不报错
+    expect(() => initSchema(db)).not.toThrow();
     db.close();
   });
 });

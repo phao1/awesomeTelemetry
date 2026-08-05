@@ -401,6 +401,10 @@ export interface MissionDayPoint {
   costUsd: number;
   errorEvents: number;
   successRate: number | null;
+  /** B11 漂移专用：当日 E2E p95（wall-clock 分位数）。 */
+  e2eP95Ms?: number | null;
+  /** B11 漂移专用：当日工具失败数。 */
+  toolFails?: number;
 }
 
 export interface MissionHourPoint {
@@ -581,7 +585,15 @@ export interface TraceDimensionMetrics {
   costUsd: number;
 }
 
-export interface TraceMetrics extends TraceMetricsBase, TraceDimensionMetrics {}
+export interface TraceMetrics extends TraceMetricsBase, TraceDimensionMetrics {
+  /** 持久化的速度指标（add-mission-control §4 B6，G11.11）：不持久化 →
+   * 跨会话聚合触发 N+1（G11.9）。改算法必须 bump METRICS_CALC_VERSION（当前 3）。 */
+  ttftMs?: number | null;
+  e2eMs?: number;
+  /** 修复循环命中（W-F-W-F-W ≥2 轮，与 session-findings repairLoop 同口径）。
+   * v3：扫描时预计算（design.md §7.3 R1），Mission closure 直接读 rollup。 */
+  repairLoop?: boolean;
+}
 
 /** Speed metrics, computed at runtime, not persisted. */
 export interface SpeedMetrics {

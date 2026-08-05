@@ -222,7 +222,7 @@ describe('逐 widget 口径断言（design.md §10 R8：防 SQL 改写悄悄漂�
     expect(data.scanStateRows).toBe(1);
     expect(data.providers[0]).toMatchObject({ key: 'claude', sessionCount: 2, ready: true });
     expect(data.proxy).toEqual({ running: true, starting: false, port: 8080 });
-    expect(data.schemaVersion).toBe(2);
+    expect(data.schemaVersion).toBe(3); // SCHEMA_VERSION v3（repair rollup）
   });
 
   it('A4 热力图与 A7 活跃曲线：tz=0 时按 UTC 分桶', async () => {
@@ -236,5 +236,141 @@ describe('逐 widget 口径断言（design.md §10 R8：防 SQL 改写悄悄漂�
     const activity = r.usage.activity.data!;
     expect(activity.find((p) => p.hour === '2026-08-01T02:00:00')).toMatchObject({ sessions: 1, messages: 3 });
     expect(activity.find((p) => p.hour === '2026-08-01T03:00:00')).toMatchObject({ sessions: 1, messages: 5 });
+  });
+});
+
+describe('P2 逐 widget 口径断言（B1/B3/B5/B6/B11/B12/B13/B15/F1-3+/C2/C4）', () => {
+  function seedP2Fixture(): void {
+    const insertSession = db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, status,
+         message_count, event_count, token_input, token_output, token_cache_read, token_cache_write,
+         token_total, cost_usd, cost_source, duration_source, data_source, source_path,
+         total_duration_ms, is_subagent, detail_loaded)
+       VALUES (?, 'claude', 'Claude', 't', ?, ?, ?, ?, 4, 100, 50, 10, 2, 162, ?, ?, 'derived', 'scan', '/tmp/x', ?, 0, 1)`,
+    );
+    insertSession.run('s1', '2026-08-01T00:00:00.000Z', '2026-08-01T00:10:00.000Z', 'success', 3, 0.01, 'estimated', 600_000);
+    insertSession.run('s2', '2026-08-01T01:00:00.000Z', '2026-08-01T01:05:00.000Z', 'error', 5, 0.02, 'estimated', 300_000);
+    insertSession.run('s3', '2026-08-02T00:00:00.000Z', '2026-08-02T00:01:00.000Z', 'success', 1, 0, 'unknown', 60_000);
+    const insertEvent = db.prepare(
+      `INSERT INTO events (session_id, id, sequence, kind, phase, title, started_at, duration_ms,
+         status, actor, tool, model, input_len, output_len, tokens_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const ev = (
+      sid: string,
+      id: string,
+      seq: number,
+      kind: string,
+      title: string,
+      status: string,
+      tool: string | null,
+      model: string | null,
+      dur: number,
+      inputLen: number,
+      outputLen: number,
+      tokensJson: string | null,
+    ): void => {
+      insertEvent.run(sid, id, seq, kind, 'implement', title, '2026-08-01T00:00:00.000Z', dur, status, 'assistant', tool, model, inputLen, outputLen, tokensJson);
+    };
+    ev('s1', 'e1', 1, 'llm', 't', 'success', null, 'claude-opus-4-8', 1000, 100, 50, JSON.stringify({ input: 1000, output: 500, cacheRead: 100, cacheWrite: 0 }));
+    ev('s1', 'e2', 2, 'tool', 't', 'success', 'Bash', null, 2000, 200, 100, null);
+    ev('s1', 'e3', 3, 'llm', 't', 'success', null, 'claude-opus-4-8', 3000, 300, 150, JSON.stringify({ input: 4000, output: 300, cacheRead: 200, cacheWrite: 0 }));
+    ev('s2', 'e1', 1, 'llm', 't', 'success', null, 'glm-4-plus', 500, 50, 25, JSON.stringify({ input: 2000, output: 100, cacheRead: 0, cacheWrite: 0 }));
+    // s3 无 llm 事件
+    db.prepare(
+      `INSERT INTO metrics (session_id, total_steps, duration_by_phase, tool_call_count, calc_version, ttft_ms, e2e_ms)
+       VALUES ('s1', 3, '{}', 1, 3, 120, 600000), ('s2', 1, '{}', 0, 3, 3000, 300000)`,
+    ).run();
+  }
+
+  it('B1 closure：success 占比 / E2E 分位数 / repair 命中（W-F-W-F-W）', async () => {
+    seedP2Fixture();
+    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
+    const c = r.quality.closure.data!;
+    expect(c.sessions).toBe(3);
+    expect(c.ok).toBe(2);
+    expect(c.successRate).toBeCloseTo(2 / 3);
+    expect(c.e2eP90Ms).toBe(600000);
+    expect(c.repairSessions).toBe(0);
+
+    // repair 为扫描时预计算（schema v3 rollup）：直接写 metrics.repair_loop
+    db.prepare("UPDATE metrics SET repair_loop = 1 WHERE session_id = 's2'").run();
+    db.prepare("UPDATE sessions SET updated_at = '2026-08-02T00:02:00.000Z' WHERE id = 's2'").run();
+    const r2 = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
+    expect(r2.quality.closure.data!.repairSessions).toBe(1);
+  });
+
+  it('B3 costEfficiency：unknown 从分子分母剔除并公示', async () => {
+    seedP2Fixture();
+    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
+    const c = r.quality.costEfficiency.data!;
+    expect(c.pricedSessions).toBe(2);
+    expect(c.unpricedSessions).toBe(1);
+    expect(c.totalUsd).toBeCloseTo(0.03);
+    expect(c.turns).toBe(8); // 3 + 5
+    expect(c.perTurnUsd).toBeCloseTo(0.03 / 8);
+  });
+
+  it('B6 apiQuality：cacheHit + ttft 分位数来自 metrics 持久化', async () => {
+    seedP2Fixture();
+    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
+    const a = r.quality.apiQuality.data!;
+    expect(a.totalIn).toBe(300);
+    expect(a.totalCacheRead).toBe(30);
+    expect(a.cacheHitRate).toBeCloseTo(30 / (300 + 30 + 6));
+    expect(a.ttftP50Ms).toBe(120);
+    expect(a.ttftP95Ms).toBe(3000);
+  });
+
+  it('F1-3+ parallelism：Σdurations/wall > 1.2 判定并行', async () => {
+    seedP2Fixture();
+    // s1: Σdur = 6000, wall = 600000 → 0.01；补一个高并行会话
+    db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, status,
+         message_count, event_count, token_total, cost_usd, cost_source, data_source, source_path, total_duration_ms, is_subagent, detail_loaded)
+       VALUES ('p1', 'codex', 'Codex', 't', '2026-08-01T00:00:00.000Z', '2026-08-01T00:01:00.000Z', 'success',
+         1, 3, 100, 0, 'unknown', 'scan', '/tmp/p', 10_000, 0, 1)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO events (session_id, id, sequence, kind, phase, title, started_at, duration_ms, status, actor, tool, input_len, output_len)
+       VALUES ('p1','x1',1,'tool','implement','t','2026-08-01T00:00:00.000Z',6000,'success','assistant','A',1,1),
+              ('p1','x2',2,'tool','implement','t','2026-08-01T00:00:01.000Z',6000,'success','assistant','B',1,1),
+              ('p1','x3',3,'tool','implement','t','2026-08-01T00:00:02.000Z',6000,'success','assistant','C',1,1)`,
+    ).run();
+    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
+    const p = r.quality.parallelism.data!;
+    expect(p.parallelSessions).toBe(1);
+    expect(p.maxRatio).toBeCloseTo(1.8);
+  });
+
+  it('B13 models：未知模型 costSource unknown 且成本不进入 estimated 合计', async () => {
+    seedP2Fixture();
+    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
+    const rows = r.quality.models.data!;
+    const claude = rows.find((row) => row.model === 'claude-opus-4-8')!;
+    expect(claude.calls).toBe(2);
+    expect(claude.costSource).toBe('estimated');
+    const glm = rows.find((row) => row.model === 'glm-4-plus')!;
+    expect(glm.costSource).toBe('unknown');
+    expect(glm.costUsd).toBe(0);
+  });
+
+  it('B12 contextPressure：窗口来自定价表 + 骤降 >50% 判定压缩', async () => {
+    seedP2Fixture();
+    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
+    const cp = r.quality.contextPressure.data!;
+    expect(cp.samples).toBe(2); // glm-4-plus 无定价窗口 → 不计入
+    expect(cp.windowSource).toContain('pricing');
+    expect(cp.peakPct).toBeCloseTo(((4000 + 200) / 1_000_000) * 100);
+    expect(cp.compactions).toBe(0); // 1000→4000 是上升
+  });
+
+  it('C4 hotSessions：按 costUsd 排序且 unknown 显示 —', async () => {
+    seedP2Fixture();
+    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
+    const rows = r.health.hotSessions.data!;
+    expect(rows[0]!.id).toBe('s2');
+    expect(rows.map((row) => row.id)).toEqual(['s2', 's1', 's3']);
+    expect(rows.find((row) => row.id === 's3')!.costSource).toBe('unknown');
   });
 });
