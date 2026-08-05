@@ -1,117 +1,166 @@
 # Spec: Storage
 
-> SQLite 存储层：schema、写入、查询。schema 版本 **v1**（全新构建，无历史迁移）。
-> **DDL / 索引 / PRAGMA 的权威来源是 `contracts/database.md`，本文件只定义行为需求。**
-> 源文件：`server/storage/`
+> SQLite storage layer: schema, writers, queries. Schema version **v1** (fresh
+> build, no historical migration).
+> **The authoritative source for DDL / indexes / PRAGMAs is
+> `contracts/database.md`; this file only defines behavior requirements.**
+> Source files: `server/storage/`
 
 ## Purpose
 
-持久化 scan 会话、proxy 请求、Frida 捕获、metrics。WAL 模式，单进程写。
+Persist scan sessions, proxy requests, Frida captures, and metrics. WAL mode,
+single-process writes.
 
 ## Requirements
 
-### REQ-001: 连接初始化
-`openWritable()` MUST 按 `contracts/database.md` §1 的顺序设置全部 8 项 PRAGMA，并创建父目录。
-`openReadonly()` MUST 用 `{ readonly: true, fileMustExist: true }`。
+### REQ-001: Connection initialization
+`openWritable()` MUST set all 8 PRAGMAs in the order of `contracts/database.md`
+§1 and create the parent dir. `openReadonly()` MUST use
+`{ readonly: true, fileMustExist: true }`.
 
-#### Scenario: WAL 未受控增长
-- **GIVEN** 未设置 `wal_autocheckpoint`
-- **WHEN** 系统运行数日
-- **THEN** WAL 文件涨到 151.82MB（v4 实测）
-- **THEREFORE** MUST 显式设 `wal_autocheckpoint = 2000`，且每轮扫描结束调用一次 `checkpointWal()`
+#### Scenario: uncontrolled WAL growth
+- **GIVEN** `wal_autocheckpoint` is not set
+- **WHEN** the system runs for days
+- **THEN** the WAL file grows to 151.82MB (measured in v4)
+- **THEREFORE** MUST explicitly set `wal_autocheckpoint = 2000` and call
+  `checkpointWal()` once after every scan round
 
-### REQ-002: checkpoint 不得阻塞
-`checkpointWal()` MUST 用 `wal_checkpoint(TRUNCATE)`，遇 busy MUST 静默跳过并等下一轮。MUST NOT 重试或阻塞等待。
+### REQ-002: checkpoint must not block
+`checkpointWal()` MUST use `wal_checkpoint(TRUNCATE)`; on busy, MUST silently
+skip and wait for the next round. MUST NOT retry or block-wait.
 
-### REQ-003: 建库幂等
-`initSchema(db)` SHALL 执行 `contracts/database.md` §3 全部建表、§4 全部建索引、写入 `_meta.schema_version = SCHEMA_VERSION`（常量为 1）、执行 `ANALYZE`。全过程 MUST 幂等，重复调用无副作用。
+### REQ-003: Idempotent DB creation
+`initSchema(db)` SHALL execute all `contracts/database.md` §3 table creations,
+§4 index creations, write `_meta.schema_version = SCHEMA_VERSION` (constant 1),
+and run `ANALYZE`. The whole flow MUST be idempotent; repeated calls have no
+side effects.
 
-本项目为全新构建，**无历史迁移**。`migrations/` 目录预留但当前为空。
+This is a fresh build, **no historical migration**. The `migrations/` dir is
+reserved but currently empty.
 
-#### Scenario: 数据库版本高于代码
-- **GIVEN** 读到的 `schema_version` 大于代码常量
-- **THEN** MUST 中止启动并提示"数据库由更新版本创建"
-- **AND** MUST NOT 尝试降级或改写
+#### Scenario: DB version newer than code
+- **GIVEN** the read `schema_version` is greater than the code constant
+- **THEN** MUST abort startup with "Database was created by a newer version"
+- **AND** MUST NOT attempt to downgrade or rewrite
 
-### REQ-004: 显式列查询
-所有查询 MUST 显式列出返回列。MUST NOT 使用 `SELECT *`。列常量定义见 `contracts/database.md` §5.2。
+### REQ-004: Explicit column queries
+All queries MUST list return columns explicitly. MUST NOT use `SELECT *`.
+Column constants defined in `contracts/database.md` §5.2.
 
-### REQ-005: prepared statement 复用
-所有语句 MUST 通过模块级缓存的 `db.prepare()` 复用。MUST NOT 在循环体内 prepare。
+### REQ-005: Prepared statement reuse
+All statements MUST reuse module-level cached `db.prepare()`. MUST NOT prepare
+inside loop bodies.
 
-### REQ-006: 会话查询
-- `listSessions(opts)` — 支持 `dataSource` / `provider` / `keys` 过滤，keyset 分页（`cursor` = 上页末条 `startedAt`），`ORDER BY started_at DESC`。返回 `SessionIndexEntry[]`，**MUST NOT 含 `systemPrompt` 正文**，用 `hasSystemPrompt` 布尔量代替。
-- `getSessionDetail(key, opts)` — `opts.mode` 默认 `'slim'`，支持 `offset` / `limit`。
+### REQ-006: Session queries
+- `listSessions(opts)` — supports `dataSource` / `provider` / `keys` filters,
+  keyset pagination (`cursor` = last item's `startedAt` of the previous page),
+  `ORDER BY started_at DESC`. Returns `SessionIndexEntry[]`, **MUST NOT contain
+  the `systemPrompt` body**; replaced by the `hasSystemPrompt` boolean.
+- `getSessionDetail(key, opts)` — `opts.mode` defaults to `'slim'`, supports
+  `offset` / `limit`.
 
-#### Scenario: 详情默认不返回正文
-- **GIVEN** `GET /api/sessions/:key` 未指定 mode
-- **THEN** 返回的每个 event MUST NOT 含 `inputSummary` / `outputSummary` / `raw`
-- **AND** 9,590 events 的最差会话响应体 MUST < 1.5MB
+#### Scenario: detail does not return body by default
+- **GIVEN** `GET /api/sessions/:key` without mode
+- **THEN** every returned event MUST NOT contain
+  `inputSummary` / `outputSummary` / `raw`
+- **AND** the worst-session (9,590 events) response body MUST be < 1.5MB
 
-### REQ-007: 大会话分页
-event 数 > 2000 时 `getSessionDetail` SHALL 分页返回，响应含 `eventTotal` / `eventOffset` / `eventLimit` / `hasMore`。event 分页用 offset 而非 cursor（`sequence` 连续且稳定，且前端虚拟滚动需要随机跳转）。
+### REQ-007: Large-session pagination
+When event count > 2000, `getSessionDetail` SHALL paginate, with the response
+containing `eventTotal` / `eventOffset` / `eventLimit` / `hasMore`. Event
+pagination uses offset, not cursor (`sequence` is continuous and stable, and
+frontend virtual scroll needs random jumps).
 
-### REQ-008: 单 event 下钻
-`getEventDetail(sessionId, eventId, includeRaw)` SHALL 返回单条 `TraceEvent`；`includeRaw` 为真时从 `event_raw` 表补 `raw` 字段。
+### REQ-008: Single-event drill-down
+`getEventDetail(sessionId, eventId, includeRaw)` SHALL return a single
+`TraceEvent`; when `includeRaw` is true, fill `raw` from the `event_raw` table.
 
-### REQ-009: Agent Overview 服务端聚合
-`getAgentOverview(dataSource)` MUST 用两条 SQL（会话级 + event 级）在服务端完成聚合，返回 `AgentOverviewRow[]`。
+### REQ-009: Agent Overview server-side aggregation
+`getAgentOverview(dataSource)` MUST aggregate server-side with two SQL queries
+(session-level + event-level) and return `AgentOverviewRow[]`.
 
-#### Scenario: 禁止前端 N+1
-- **GIVEN** 用户切到 Agent 视图
-- **THEN** 前端 MUST 只发起 1 个请求
-- **AND** MUST NOT 逐会话拉详情
+#### Scenario: no frontend N+1
+- **GIVEN** the user switches to the Agent view
+- **THEN** the frontend MUST issue exactly 1 request
+- **AND** MUST NOT fetch per-session details
 
-> 依据：v4 该视图产生 524 请求 / 299.6MB / 4,732ms。
+> Basis: v4's view produced 524 requests / 299.6MB / 4,732ms.
 
-#### Scenario: 聚合结果缓存
-- **GIVEN** `MAX(sessions.updated_at)` 未变化
-- **WHEN** 再次请求 overview
-- **THEN** 直接返回缓存结果，响应 < 20ms，`cached: true`
+#### Scenario: aggregation result caching
+- **GIVEN** `MAX(sessions.updated_at)` unchanged
+- **WHEN** overview is requested again
+- **THEN** return the cached result directly; response < 20ms, `cached: true`
 
-### REQ-010: 会话写入 upsert
-`upsertSessionFromIndex()` / `upsertSessionFromTrace()` MUST 用 `INSERT ... ON CONFLICT(id) DO UPDATE`。
+### REQ-010: Session write upsert
+`upsertSessionFromIndex()` / `upsertSessionFromTrace()` MUST use
+`INSERT ... ON CONFLICT(id) DO UPDATE`.
 
-### REQ-011: 事件差分写入
-`upsertEvents()` MUST 用差分策略：
-1. 读现有 `(id, sequence)` 集合
-2. 对新数据逐条 `INSERT ... ON CONFLICT(session_id, id) DO UPDATE`
-3. 删除新数据中不存在的 stale id（同时删 `event_raw` 对应行）
-4. 全部包在单个 `db.transaction()` 内
+#### Scenario: index-phase counts must not overwrite detail values (#9)
+- **GIVEN** the Trae SQLCipher index phase cannot decrypt, so
+  `event_count`/`message_count` report 0
+- **WHEN** the detail scan writes 12 events, then the file mtime changes and
+  triggers another index scan
+- **THEN** `upsertSessionFromIndex` MUST use
+  `CASE WHEN excluded.event_count > 0 THEN excluded.event_count ELSE sessions.event_count END`
+  to preserve existing non-zero counts instead of overwriting with 0
 
-MUST NOT 使用「先 DELETE 全部再 INSERT」。
+### REQ-011: Differential event writes
+`upsertEvents()` MUST use a differential strategy:
+1. read the existing `(id, sequence)` set
+2. `INSERT ... ON CONFLICT(session_id, id) DO UPDATE` per new row
+3. delete stale ids absent from the new data (also deleting matching
+   `event_raw` rows)
+4. wrap everything in a single `db.transaction()`
 
-#### Scenario: append 一个 event
-- **GIVEN** 某会话已有 347 个 event，源文件新增 1 条
-- **WHEN** `upsertEvents` 执行
-- **THEN** 只产生 1 条 INSERT，耗时 < 20ms
-- **AND** v4 的行为是 1 DELETE + 347 INSERT / 181.91ms，是回归防线
+MUST NOT use "DELETE all, then INSERT".
 
-### REQ-012: event id 去重
-同 session 内重复 event id MUST 在 adapter 层追加 `:{sequence}` 后缀，写库前保证唯一。`undefined` MUST 转 `null`。
+#### Scenario: appending one event
+- **GIVEN** a session with 347 existing events and 1 new source row
+- **WHEN** `upsertEvents` runs
+- **THEN** only 1 INSERT is produced, < 20ms
+- **AND** v4's behavior was 1 DELETE + 347 INSERT / 181.91ms; this is the
+  regression guard
 
-### REQ-013: metrics 持久化
-`upsertMetrics()` MUST 写入基础指标**与四维指标**，并写 `calc_version`。
-`getMetrics()` MUST 在 `calc_version` 不等于代码常量 `METRICS_CALC_VERSION` 时重算并回写。
+### REQ-012: Event id dedupe
+Duplicate event ids within a session MUST get a `:{sequence}` suffix at the
+adapter layer, unique before hitting the DB. `undefined` MUST become `null`.
 
-> v4 的 G5.3「四维指标不持久化是设计选择」在 v5 被**推翻**。理由：不持久化导致 Agent Overview 必须逐会话重算，是 524 次 N+1 的直接成因。
+### REQ-013: Metrics persistence
+`upsertMetrics()` MUST write base metrics **and the four-dimension metrics**,
+plus `calc_version`. `getMetrics()` MUST recompute and write back when
+`calc_version` differs from the code constant `METRICS_CALC_VERSION`.
 
-### REQ-014: 系统提示词关联
-`getSystemPromptForSession(startedAt, endedAt)` SHALL 用 `system_prompt_len` 冗余列排序，MUST NOT 使用 `ORDER BY LENGTH(system_prompt)`。
+> v4's G5.3 "four-dimension metrics not persisted is a design choice" is
+> **overturned** in v5. Reason: not persisting forces Agent Overview to
+> recompute per session — the direct cause of 524 N+1 requests.
 
-### REQ-015: proxy 查询
-`listProxyRequests(opts)` MUST 排除 `request_body` / `response_body` / `raw_request_body` / `raw_response_body` / `system_prompt` 五列，返回 `ProxyRequestListItem[]`。
+### REQ-014: System prompt association
+`getSystemPromptForSession(startedAt, endedAt)` SHALL sort by the
+`system_prompt_len` redundant column, MUST NOT use
+`ORDER BY LENGTH(system_prompt)`.
 
-### REQ-016: 删除会话
-`deleteSession(key)` MUST 级联删除 `events` + `event_raw` + `metrics` + `sessions` + 该会话对应的 `scan_state` 行。
+### REQ-015: Proxy queries
+`listProxyRequests(opts)` MUST exclude
+`request_body` / `response_body` / `raw_request_body` / `raw_response_body` /
+`system_prompt` (five columns) and return `ProxyRequestListItem[]`.
 
-### REQ-017: 数据保留
-启动时 SHALL 按 `--proxy-retention-days`（默认 30，0 表示不清理）清理过期 `proxy_requests`。删除行数 > 1000 时触发一次 `checkpointWal()`。
+### REQ-016: Session deletion
+`deleteSession(key)` MUST cascade-delete `events` + `event_raw` + `metrics` +
+`sessions` + the session's matching `scan_state` row.
+
+### REQ-017: Data retention
+On startup SHALL purge expired `proxy_requests` per `--proxy-retention-days`
+(default 30, 0 disables). When more than 1000 rows are deleted, trigger one
+`checkpointWal()`.
 
 ## Gotchas
-- G5.1：WAL 模式导致文件监视不可靠（见 session-scanning）
-- G5.2：db 类 provider 必须轮询，且指纹要覆盖 `-wal` 文件
-- G4.8：event id 去重必须保留
-- G11.2（新）：`events.raw` 必须独立成表，留在主表会让详情查询无法避开 147MB
-- G11.3（新）：`ORDER BY LENGTH(col)` 无法走索引，必须用冗余长度列
-- G11.4（新）：v4 的四条查询全部产生 `USE TEMP B-TREE`，因为索引是单列而非复合。补索引前务必用 `EXPLAIN QUERY PLAN` 确认
+- G5.1: WAL mode makes file watching unreliable (see session-scanning)
+- G5.2: db providers must poll, and fingerprints must cover the `-wal` file
+- G4.8: event id dedupe must be kept
+- G11.2 (new): `events.raw` must be a separate table; kept in the main table,
+  detail queries cannot avoid 147MB
+- G11.3 (new): `ORDER BY LENGTH(col)` cannot use an index; use a redundant
+  length column
+- G11.4 (new): v4's four queries all produced `USE TEMP B-TREE` because the
+  indexes were single-column instead of composite. Confirm with
+  `EXPLAIN QUERY PLAN` before adding indexes

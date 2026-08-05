@@ -39,7 +39,7 @@ export function openWritable(path: string): Db {
   }
   if (existingVersion !== null && existingVersion > SCHEMA_VERSION) {
     db.close();
-    throw new Error('数据库由更新版本创建');
+    throw new Error('Database was created by a newer version');
   }
 
   initSchema(db);

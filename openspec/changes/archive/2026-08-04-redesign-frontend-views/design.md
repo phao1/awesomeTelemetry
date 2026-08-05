@@ -1,57 +1,69 @@
 ## Context
 
-前置两个 change 完成后，数据是真的、token 与组件就位。本 change 是把它们拼成页面。
+With the two prerequisite changes done, the data is real and the tokens and
+components are in place. This change assembles them into pages.
 
-约束仍然是 `specs/frontend/spec.md` 的既有性能条款：agent 视图 1 个请求（REQ-003）、
-9,590 event 会话 DOM < 500（REQ-006）、详情默认 slim（G11.1）。
-设计不能以牺牲这些为代价——v4 正是在「界面好看了」之后掉到首屏 5.9–12.4 秒。
+The constraints remain the existing performance clauses of
+`specs/frontend/spec.md`: agent view 1 request (REQ-003), 9,590-event session
+DOM < 500 (REQ-006), detail defaults to slim (G11.1). Design cannot sacrifice
+these — v4 fell to a 5.9-12.4s first screen precisely after "the UI looked
+nicer".
 
 ## Goals / Non-Goals
 
 **Goals:**
-- 五个视图全部可用（当前 compare 完全不可用、proxy/frida 无入口）
-- 任何失败都有可见、可诊断、可重试的呈现
-- 首屏列表可扫视，详情能一眼看出「时间花在哪」
+- all five views usable (currently compare is completely unusable, and
+  proxy/frida have no entry points)
+- every failure has a visible, diagnosable, retryable presentation
+- first-screen list is scannable; detail shows "where the time went" at a
+  glance
 
 **Non-Goals:**
-- 不做命令面板与快捷键（在 `add-palette-and-a11y`）
-- 不做 URL 状态同步（同上）
-- 不改任何后端 API（数据层由 `fix-session-data-integrity` 负责）
+- no command palette or shortcuts (in `add-palette-and-a11y`)
+- no URL state sync (same)
+- no backend API changes (the data layer is `fix-session-data-integrity`'s job)
 
 ## Decisions
 
-**D1 · 会话 store 提到 `App.tsx`，`SessionList` 变纯受控组件。**
-备选是 Context / 状态库——被否，Context 会让整棵树在列表更新时重渲，
-状态库违反零依赖。单一 `useState` + props 下传最简单且够用，
-配合既有的 `startTransition` 已能满足调度需求。
+**D1 · The session store moves up to `App.tsx`; `SessionList` becomes a pure
+controlled component.**
+The alternatives — Context / state library — were rejected: Context
+re-renders the whole tree on list updates, and a state library violates
+zero-dependencies. A single `useState` + props down is the simplest sufficient
+approach, and with the existing `startTransition` already covers scheduling
+needs.
 
-**D2 · 四态是组件级契约，不是「加个 if」。**
-统一 `Skeleton` / `EmptyState` / `ErrorState` 三个组件 + 一个 `useAsyncState` 约定，
-让「忘了写空态」变成显式缺失而不是隐式空白。
-配 lint/测试断言禁止空 `catch` 回潮。
+**D2 · Four states are a component-level contract, not "just add an if".**
+Unified `Skeleton` / `EmptyState` / `ErrorState` components + a
+`useAsyncState` convention, making "forgot the empty state" an explicit
+missing piece rather than an implicit blank. Plus lint/test assertions
+forbidding empty-`catch` regression.
 
-**D3 · PhaseRibbon 是产品 signature，优先级高于甘特细节。**
-「一眼看出这次会话把时间花在哪」是本产品相对纯日志查看器的核心差异。
-按时间占比铺满宽度的色带，成本低、信息密度高。
+**D3 · PhaseRibbon is the product signature, prioritized over Gantt details.**
+"See at a glance where this session spent its time" is this product's core
+difference from a plain log viewer. A color band spanning full width by time
+share is low cost and high information density.
 
-**D4 · 甘特按真实时间比例定位，不用等宽行。**
-等宽行等于把时间信息丢掉——那就只是一个列表。
-零时长事件渲染为最小 2px 竖线，保证不隐身。
+**D4 · The Gantt positions by real time proportion, not equal-width rows.**
+Equal-width rows throw away the time information — that's just a list.
+Zero-duration events render as a minimum 2px vertical line so they never
+vanish.
 
-**D5 · 对比视图先给「结论条」再给图表。**
-开发者要的是「谁快多少」，不是两列数字自己去比。
-结论用一句话，图表作为佐证。
+**D5 · Compare view gives a "verdict strip" before charts.**
+Developers want "who is faster by how much", not two columns of numbers to
+compare themselves. One sentence as the verdict, charts as evidence.
 
-**D6 · 每个视图一个 commit。**
-本 change 改动面最大，细粒度提交才能在出问题时精确回退（AUTOPILOT §三）。
+**D6 · One commit per view.**
+This change has the largest surface; fine-grained commits enable precise
+rollback when something breaks (AUTOPILOT §3).
 
 ## Risks / Trade-offs
 
-| 风险 | 缓解 |
-|------|------|
-| 改动面大，容易在中途留下半成品 | 每视图一个 commit；AUTOPILOT §七 要求停在完整提交上 |
-| 组件改名破坏既有测试 | 改名与测试同步；测试断言本身不放宽（禁令 A） |
-| 甘特时间比例计算在极端数据下失真（单事件占 99%） | 设最小/最大宽度钳制；零时长最小 2px |
-| 新增视觉元素拖慢渲染 | 行内禁 `box-shadow`/`filter`；虚拟滚动容器内禁过渡（G-DS-4） |
-| Agent 概览展开行诱使逐会话 fetch | 展开行复用共享 store；G11.9 是禁令，评审重点看这条 |
-| 四态改造漏掉某处 | 按 `specs/frontend/spec.md` REQ-022 的 7 行表格逐条核对，表格即清单 |
+| Risk | Mitigation |
+|------|------------|
+| large surface, easy to leave half-finished pieces | one commit per view; AUTOPILOT §7 requires stopping on a complete commit |
+| component renames break existing tests | rename and tests in sync; assertions themselves never loosened (prohibition A) |
+| Gantt time-proportion math distorts on extreme data (one event = 99%) | min/max width clamps; zero-duration minimum 2px |
+| new visual elements slow rendering | no `box-shadow`/`filter` in rows; no transitions inside virtual-scroll containers (G-DS-4) |
+| Agent overview expanded rows tempt per-session fetches | expanded rows reuse the shared store; G11.9 is a prohibition — review focuses on this |
+| four-state refactor misses a spot | check one by one against the 7-row table in `specs/frontend/spec.md` REQ-022; the table is the checklist |

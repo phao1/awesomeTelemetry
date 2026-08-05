@@ -1,169 +1,208 @@
-# CODEX-RUN.md — 长跑启动提示词
+# CODEX-RUN.md — long-run startup prompt
 
-> 用法：`codex exec -s workspace-write -a never "$(cat CODEX-RUN.md)"`
-> 或交互式：`codex -s workspace-write -a never` 然后粘贴下面 `---` 之间的全文。
+> Usage: `codex exec -s workspace-write -a never "$(cat CODEX-RUN.md)"`
+> or interactively: `codex -s workspace-write -a never`, then paste the full
+> text between the `---` markers below.
 
 ---
 
-你现在开始一次**无人值守长跑**，基于 OpenSpec 做 SDD 开发。目标是把 Agent Observability
-从「能启动但点了没反应、界面很糙」做到「开发者最愿意打开的 Agent 可观测工具」。
+You are starting an **unattended long run** doing SDD development on OpenSpec.
+The goal is to take Agent Observability from "starts but clicking does nothing
+and the UI is rough" to "the agent observability tool developers most want to
+open".
 
-## 0. 冲突裁决（先读这条，否则你会在第一个歧义处停住）
+## 0. Conflict resolution (read this first, or you'll stop at the first
+ambiguity)
 
-有**两处**规则会让你停下来等人。本次是**无人值守长跑**，没有人在旁边回答你，
-所以两处都要按下面的裁决处理：
+There are **two** rule sets that would make you stop and wait for a human.
+This is an **unattended long run**; nobody is around to answer, so both are
+resolved as follows:
 
-**① `AGENTS.md` 的「遇到歧义怎么办 → 停下来问，不要猜」**
+**① `AGENTS.md`'s "when in doubt → stop and ask, don't guess"**
 
-> 本次运行中，`AUTOPILOT.md` §四 **覆盖** `AGENTS.md` 的「停下来问」。
+> During this run, `AUTOPILOT.md` §4 **overrides** AGENTS.md's "stop and ask".
 
-**② `openspec-apply-change` skill 的 Guardrails**
+**② The `openspec-apply-change` skill's guardrails**
 
-该 skill 写着「Pause if: task is unclear / on errors, blockers, or unclear
-requirements - don't guess」「pause and ask before implementing」。
-那是为**交互式**设计的。本次运行中：
+That skill says "Pause if: task is unclear / on errors, blockers, or unclear
+requirements - don't guess" and "pause and ask before implementing". That is
+designed for **interactive** use. During this run:
 
-> **不要 pause and ask。** skill 的工作流（`openspec status` → `openspec instructions
-> apply` → 读 contextFiles → 逐任务实现 → 勾选 → 继续）**全部照用**，
-> 唯独把「pause and ask」替换为下面的处置。
+> **Do not pause and ask.** Use the skill's workflow in full (`openspec
+> status` → `openspec instructions apply` → read contextFiles → implement task
+> by task → check off → continue), replacing "pause and ask" with the
+> disposition below.
 
-**两处统一的处置方式**：遇到需要人决策的问题 →
-记入 `DECISIONS-PENDING.md`（D-### 五项格式：编号 / 问题描述 / 尝试过的方案 /
-失败原因 / 建议的下一步）→ 用临时方案继续 → 代码里加 `// TODO(D-<编号>):` 标记
-→ **不要停下等待**。
+**The unified disposition for both**: when a human decision is needed → record
+it in `DECISIONS-PENDING.md` (D-### five-item format: id / problem
+description / approaches tried / why they failed / suggested next step) →
+continue with a temporary approach → mark the code with
+`// TODO(D-<id>):` → **do not stop and wait**.
 
-唯一允许真正停下的情况：`AUTOPILOT.md` §三 的「同一问题修 3 次仍失败**且阻塞后续**」。
+The only case truly allowed to stop: AUTOPILOT.md §3's "the same issue still
+fails after 3 fixes **and blocks follow-up work**".
 
-`AGENTS.md` 的其余全部内容（权威文档优先级、十条禁令、五条必做）**继续完全有效**。
+Everything else in `AGENTS.md` (documentation priority, ten prohibitions, five
+must-dos) **remains fully in effect**.
 
-## 0.5 用 OpenSpec skill 驱动
+## 0.5 Drive with the OpenSpec skills
 
-本仓库已装好 6 个 OpenSpec skill（`.codex/skills/`）。**优先用它们**，
-它们比手写流程可靠——`openspec instructions apply --change <id> --json` 会直接返回
-contextFiles、进度、以及随状态变化的动态指令。
+This repo has 6 OpenSpec skills installed (`.codex/skills/`). **Use them
+first** — they are more reliable than hand-rolled flows:
+`openspec instructions apply --change <id> --json` directly returns
+contextFiles, progress, and state-dependent dynamic instructions.
 
-| skill | 用途 |
-|-------|------|
-| `openspec-apply-change` | **本次主力**：实现某个 change 的任务 |
-| `openspec-archive-change` | 一个 change 全部完成后归档 |
-| `openspec-explore` | 查看现有 specs / changes |
-| `openspec-propose` | 下一轮新需求时用（本次用不到，四个 change 已就绪） |
+| skill | Use |
+|-------|-----|
+| `openspec-apply-change` | **the main driver this run**: implement a change's tasks |
+| `openspec-archive-change` | archive a change when all its tasks are done |
+| `openspec-explore` | inspect existing specs / changes |
+| `openspec-propose` | for next-round requirements (unused this run; the four changes are ready) |
 
-**注意**：`openspec update` / `openspec init` **不要加 `--force`** ——
-它会把 `openspec/project.md` 当 legacy 清理掉，而那是 `AGENTS.md` 权威列表第 7 项。
+**Note**: do **not** add `--force` to `openspec update` / `openspec init` —
+it would delete `openspec/project.md` as "legacy", and that file is item 7 in
+AGENTS.md's authoritative list.
 
-## 1. 先读这些（按顺序，别跳）
+## 1. Read these first (in order, don't skip)
 
-1. `AGENTS.md` —— 权威文档优先级、十条禁令、五条必做
-2. `AUTOPILOT.md` —— 三条绝对禁令、卡住怎么办、终止报告格式
-3. `UI-TASKS.md` §1–§2 —— 本轮要修的 6 个缺陷的**实机证据与精确定位**
-4. `openspec/contracts/design-tokens.md` —— 视觉数值契约（新增，权威）
-5. `openspec/specs/design-system/spec.md` —— 图标/组件/四态/快捷键（新增）
-6. `openspec/specs/frontend/spec.md` —— 已重写，REQ-015 起为新增页面设计
-7. `openspec/specs/session-scanning/spec.md` REQ-021 / REQ-022 —— 后端两条新需求
+1. `AGENTS.md` — documentation priority, ten prohibitions, five must-dos
+2. `AUTOPILOT.md` — three absolute prohibitions, what to do when stuck,
+   termination report format
+3. `UI-TASKS.md` §1-§2 — **real-machine evidence and precise locations** for
+   the 6 defects this round fixes
+4. `openspec/contracts/design-tokens.md` — visual numeric contract (new,
+   authoritative)
+5. `openspec/specs/design-system/spec.md` — icons/components/four states/
+   shortcuts (new)
+6. `openspec/specs/frontend/spec.md` — rewritten; REQ-015 onward are the new
+   page design
+7. `openspec/specs/session-scanning/spec.md` REQ-021 / REQ-022 — the two new
+   backend requirements
 
-**任何时候都不要凭记忆写字段名、表名、路由、颜色值。去契约里查。**
+**Never write field names, table names, routes, or color values from memory.
+Look them up in the contracts.**
 
-## 2. 执行什么
+## 2. What to execute
 
-四个 OpenSpec change，**严格按顺序**，前一个 archive 后才开始下一个：
+Four OpenSpec changes, **strictly in order**; only start the next after the
+previous is archived:
 
 ```
-1. fix-session-data-integrity    24 tasks   后端：真实标题 / SQLite 详情 / proxy·frida 路由
-2. add-design-system             31 tasks   token 层 / 47 图标 / 25 基础组件
-3. redesign-frontend-views       50 tasks   共享 store / 四态 / AppShell / 五视图重做
-4. add-palette-and-a11y          30 tasks   ⌘K / 快捷键 / URL 状态 / a11y / 契约断言收口
+1. fix-session-data-integrity    24 tasks   backend: real titles / SQLite detail / proxy·frida routes
+2. add-design-system             31 tasks   token layer / 47 icons / 25 base components
+3. redesign-frontend-views       50 tasks   shared store / four states / AppShell / five views redone
+4. add-palette-and-a11y          30 tasks   ⌘K / shortcuts / URL state / a11y / contract assertions close-out
 ```
 
-顺序不可颠倒：数据是空的时候做 UI 等于给空壳刷漆；没有 token 层就加不上暗色模式。
+Order cannot change: doing UI while data is empty is painting over a shell;
+without a token layer, dark mode cannot be added.
 
-## 3. 工作循环（每个 change 内部）
+## 3. Work loop (inside each change)
 
-优先走 `openspec-apply-change` skill（§0.5）；它的内部步骤等价于下面这个循环：
+Prefer the `openspec-apply-change` skill (§0.5); its internal steps are
+equivalent to this loop:
 
 ```
-openspec status --change <id> --json           # 看还剩哪些 artifact / 任务
-openspec instructions apply --change <id> --json  # 拿 contextFiles + 动态指令
-读 proposal.md → design.md → tasks.md   # design.md 里有关键决策的理由，别绕过
-挑下一个未勾选任务组
-  → 先写测试（与源码同目录 foo.test.ts，测试即契约的可执行形式）
-  → 再写实现，逐条对照 spec REQ
-  → npm run typecheck && npm run test && npm run lint  全绿
-  → 在 tasks.md 里把对应 [ ] 改成 [x]
-  → git commit（信息格式见 AGENTS.md）
-重复直到该 change 全部任务勾完
+openspec status --change <id> --json           # see which artifacts / tasks remain
+openspec instructions apply --change <id> --json  # get contextFiles + dynamic instructions
+read proposal.md → design.md → tasks.md   # design.md holds the key decision rationales; don't skip it
+pick the next unchecked task group
+  → write tests first (colocated foo.test.ts; tests are the executable form of the contract)
+  → then implement, checking each spec REQ
+  → npm run typecheck && npm run test && npm run lint   all green
+  → flip the corresponding [ ] to [x] in tasks.md
+  → git commit (message format per AGENTS.md)
+repeat until all tasks of the change are checked
   → openspec validate <id> --strict
-  → 输出该阶段的实机验证报告（见 §5）
+  → output the phase's real-machine verification report (see §5)
   → openspec archive <id>
-  → 进入下一个 change
+  → move to the next change
 ```
 
-**一个任务组一个 commit。** 不要攒一大堆再提交——出问题时无法精确回退。
+**One commit per task group.** Don't pile up a big batch before committing —
+you can't roll back precisely when something breaks.
 
-## 4. 硬规则（违反则本次产出作废）
+## 4. Hard rules (violating any invalidates this run's output)
 
-来自 `AUTOPILOT.md` §一 与 `AGENTS.md`：
+From `AUTOPILOT.md` §1 and `AGENTS.md`:
 
-1. **不修改已通过的测试。** 测试变绿后就是契约。放宽断言、删用例、加 `.skip` 都算违反。
-   唯一例外：能引 `openspec/` 契约原文证明该断言与契约矛盾，
-   且必须先在 `DECISIONS-PENDING.md` 记一条 D-### 再改。
-2. **不 mock `fs` / `child_process` / `better-sqlite3`。** 只有靠 mock 才能过的测试，
-   说明现在验证不了，记入待决清单并跳过。
-3. **不引入新依赖**（`@types/*` 除外）。图标、tooltip、虚拟滚动、拖拽、路由、快捷键
-   **全部手写**。这是硬约束，不是建议。
-4. `AGENTS.md` 的十条禁令逐条有效，尤其：
-   - 禁止前端 `sessions.map(s => fetch(...))`（G11.9）
-   - 禁止 `spawnSync` / 大文件 `readFileSync` 出现在 HTTP 请求路径上
-   - 禁止 `SELECT *`
-5. **新增的第 11 条**：禁止空 `catch {}` 或只含注释的 catch。
-   本轮已确认 7 处，它们正是「点了没反应」的根源。
+1. **Do not modify tests that already pass.** Once green, a test is a
+   contract. Loosening assertions, deleting cases, or adding `.skip` all
+   count as violations. Only exception: you can cite the `openspec/` contract
+   text proving the assertion contradicts the contract, and you must first
+   record a D-### entry in `DECISIONS-PENDING.md`.
+2. **Do not mock `fs` / `child_process` / `better-sqlite3`.** A test that can
+   only pass via mocks means this stage can't verify it; record it in the
+   pending list and skip.
+3. **Do not introduce new dependencies** (except `@types/*`). Icons, tooltips,
+   virtual scrolling, drag, routing, and shortcuts are **all hand-written**.
+   This is a hard constraint, not a suggestion.
+4. The ten AGENTS.md prohibitions apply one by one, especially:
+   - no frontend `sessions.map(s => fetch(...))` (G11.9)
+   - no `spawnSync` / large-file `readFileSync` on HTTP request paths
+   - no `SELECT *`
+5. **New rule 11**: no empty `catch {}` or comment-only catch. Seven confirmed
+   locations this round; they are exactly the root of "clicked but nothing
+   happened".
 
-## 5. 每个 change 结束时输出实机验证报告
+## 5. Output a real-machine verification report at the end of every change
 
-不要用「测试全绿」冒充「产品可用」——上一轮 246 个测试全绿但浏览器打开是 404。
-每个 change archive 前，**真的启动一次**（`npm run build && npm start`）并贴出真实输出：
+Don't let "tests all green" masquerade as "the product works" — last round
+had 246 green tests but the browser opened a 404. Before archiving each
+change, **really start it once** (`npm run build && npm start`) and paste real
+output:
 
-- **change 1**：`GET /api/sessions?limit=10` 的真实 title 列表（证明不再是文件名）、
-  opencode/codearts 会话的 events 数量、`POST /api/proxy/start` 的真实响应
-- **change 2**：`npm run test` 中 T1–T7 七条断言的结果、CSS gzip 体积、图标集体积
-- **change 3**：五个视图逐一走查结论、kill 后端后点击会话的表现、9,590 event 会话的 DOM 节点数
-- **change 4**：键盘全流程走查结论、200% 缩放结论、首屏性能实测数字
+- **change 1**: the real title list from `GET /api/sessions?limit=10`
+  (proving titles are no longer file names), opencode/codearts session event
+  counts, and the real `POST /api/proxy/start` response
+- **change 2**: the T1-T7 assertion results from `npm run test`, CSS gzip
+  size, icon set size
+- **change 3**: walkthrough conclusions for the five views, behavior when
+  clicking a session after killing the backend, DOM node count for a 9,590-
+  event session
+- **change 4**: keyboard full-flow walkthrough, 200% zoom conclusion,
+  first-screen performance numbers
 
-## 6. 卡住时
+## 6. When stuck
 
-同一问题第 3 次修复仍失败：
+If the 3rd fix for the same issue still fails:
 
-- 回退到最后可编译状态
-- 按 D-### 五项格式记入 `DECISIONS-PENDING.md`（编号 / 问题描述 / 尝试过的方案 / 失败原因 / 建议的下一步）
-- 不阻塞后续 → 跳过继续
-- 阻塞后续 → 停止长跑，提交已完成部分，输出终止报告
+- roll back to the last compilable state
+- record a D-### entry in `DECISIONS-PENDING.md` (five-item format: id /
+  problem description / approaches tried / why they failed / suggested next
+  step)
+- doesn't block follow-up → skip and continue
+- blocks follow-up → stop the run, commit what is complete, output a
+  termination report
 
-## 7. 结束时
+## 7. At the end
 
-停在最近一个**完整提交**上，不留半成品到主线，按 `AUTOPILOT.md` §八 输出终止报告：
+Stop on the most recent **complete commit**; never leave a half-finished piece
+on the mainline. Per AUTOPILOT.md §8, output a termination report:
 
 ```
-## 长跑终止报告（<日期时间>）
+## Long-run termination report (<date time>)
 
-### 完成情况
-- 逐 change：完成 / 部分完成（列出具体产出与验收结果）
+### Completed
+- per change: complete / partial (list concrete output and acceptance results)
 
-### 提交清单
-- <commit hash> <一句话>
+### Commits
+- <commit hash> <one-liner>
 
-### 待决清单
-- D-###：一句话 + 状态
+### Pending list
+- D-###: one line + status
 
-### 我不确定的地方
-- 诚实写满；写"无"需要有底气
+### Things I am not sure about
+- be honest and complete; writing "none" requires confidence
 
-### 下一步建议
-- 从哪个 change 哪个任务组继续
+### Suggested next steps
+- which change, which task group to continue from
 ```
 
-## 8. 质量优先于进度
+## 8. Quality over progress
 
-宁可少做，不可做假。**做完 1 个扎实的 change，远好于 4 个测试被改绿的 change。**
+Better to do less than to fake it. **One solid change beats four changes whose
+tests were turned green by editing them.**
 
-现在开始：先 `openspec list` 确认四个 change 都在，然后
-`openspec status --change fix-session-data-integrity`，开始第 1 个任务组。
+Start now: first `openspec list` to confirm all four changes exist, then
+`openspec status --change fix-session-data-integrity`, and begin task group 1.

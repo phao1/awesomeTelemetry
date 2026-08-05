@@ -28,6 +28,6 @@ describe('REQ-001/011 sample-loader 分发', () => {
   it('未知 sourceAgent 抛错', () => {
     expect(() =>
       normalizeRawSample({ sourceAgent: 'Nope', session: {}, events: [] }, '/tmp/x'),
-    ).toThrow(/未知 sourceAgent/);
+    ).toThrow(/Unknown sourceAgent/);
   });
 });

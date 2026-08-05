@@ -185,7 +185,7 @@ describe('REQ-022 SQLite 类详情解析（T-11）', () => {
     db.close();
   });
 
-  it('2.5 G4.4：cache.read 累积值用 max、reasoning 用 sum', async () => {
+  it('2.5 G4.4（2026-08-03 校准）：cache.read 增量用 sum、reasoning 用 sum', async () => {
     const dir = tempDir();
     const dbPath = createMultiSessionDb(dir);
     const db = newDb();
@@ -199,7 +199,7 @@ describe('REQ-022 SQLite 类详情解析（T-11）', () => {
       .all() as Array<{ token_cache_read: number; token_reasoning: number }>;
     // 每个会话 2 条 assistant 消息各带 cache.read=100 / reasoning=3
     for (const row of rows) {
-      expect(row.token_cache_read).toBe(100); // max(100,100)，不是 200
+      expect(row.token_cache_read).toBe(200); // sum(100,100)，不是 max
       expect(row.token_reasoning).toBe(6); // sum(3,3)，不是 3
     }
     db.close();

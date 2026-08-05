@@ -18,9 +18,24 @@ describe('Trae adapter（REQ-006）', () => {
     expect(r.session.eventCount).toBe(4);
     expect(r.events.map((e) => e.status)).toEqual(['success', 'success', 'success', 'running']);
     expect(r.events.map((e) => e.phase)).toEqual(['understand', 'understand', 'implement', 'verify']);
-    expect(r.events[2]?.tokens?.output).toBe(100); // token_usage 200 / 2
-    expect(r.session.tokenUsage.output).toBe(100);
+    // #2/#3：token_usage 200 是真实总 token，item_token_usage 120 是 output，
+    // input = 200 - 120 = 80（不再 /2）
+    expect(r.events[2]?.tokens?.output).toBe(120);
+    expect(r.events[2]?.tokens?.input).toBe(80);
+    expect(r.session.tokenUsage.output).toBe(120);
+    expect(r.session.tokenUsage.input).toBe(80);
+    expect(r.session.tokenUsage.total).toBe(200);
     expect(r.events[2]?.startedAt).toBe(new Date(1754000030 * 1000).toISOString());
+  });
+
+  it('#2/#3 itemTokenUsage 缺失时退化为 output = tokenUsage（不再 /2）', () => {
+    const turns: TraeTurn[] = [
+      { id: 't1', type: 'llm', contentSource: 'llm_default', tokenUsage: 200, startTime: 1754000000 },
+    ];
+    const r = normalizeTraeSample(sample(turns), SRC);
+    expect(r.events[0]?.tokens?.output).toBe(200);
+    expect(r.events[0]?.tokens?.input).toBe(0);
+    expect(r.session.tokenUsage.total).toBe(200);
   });
 
   it('非 llm_default 行的 token_usage 是 message size，跳过', () => {

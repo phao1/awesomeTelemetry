@@ -131,6 +131,8 @@ export function normalizeQoderSample(
     sourcePath,
     totalDurationMs: wallClockDurationMs(classified),
     isSubagent: false,
+    // qoder.ts:65 已按相邻时间戳算 durationMs（REQ-008）
+    durationSource: 'derived' as const,
   };
   return { session, events: classified, tokenSemantics: semantics };
 }

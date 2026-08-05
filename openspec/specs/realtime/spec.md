@@ -1,57 +1,77 @@
 # Spec: Realtime
 
-> 实时事件总线 + SSE 广播 + 事件合并。源文件：`server/realtime/`
+> Real-time event bus + SSE broadcast + event coalescing. Source files:
+> `server/realtime/`
 
 ## Purpose
 
-后端事件实时推送到前端，驱动 live 指示器和列表增量刷新。
-**核心约束：事件是给前端做局部 patch 的信号，不是让前端重新拉全量的触发器。**
+Push backend events to the frontend in real time, driving the live indicator
+and incremental list refresh.
+**Core constraint: events are signals for the frontend to do local patches,
+not triggers for the frontend to refetch everything.**
 
 ## Requirements
 
 ### REQ-001: TypedEventBus
-系统 SHALL 提供 `TypedEventBus`，事件与载荷严格对应 `contracts/data-model.md` §10 的 `BusEvents`。MUST NOT 定义该契约之外的事件。
+The system SHALL provide a `TypedEventBus` whose events and payloads map
+exactly to `BusEvents` in `contracts/data-model.md` §10. MUST NOT define events
+outside that contract.
 
-### REQ-002: 单例 bus
-`eventBus` SHALL 是模块级单例，全应用共享。
+### REQ-002: Singleton bus
+`eventBus` SHALL be a module-level singleton shared by the whole app.
 
-### REQ-003: 会话变更合并（v5 核心）
-`queueSessionChange(key)` SHALL 把 key 累积到 pending 集合，按 **200ms 窗口**合并后发一条 `sessions_changed { keys, count }`。
+### REQ-003: Session-change coalescing (v5 core)
+`queueSessionChange(key)` SHALL accumulate keys into a pending set and emit one
+`sessions_changed { keys, count }` after a **200ms window**.
 
-MUST NOT 存在逐 session 发射的 `session_updated` 事件。
+Per-session `session_updated` emission MUST NOT exist.
 
-#### Scenario: 一轮完整扫描
-- **GIVEN** 524 个会话在一轮扫描中被更新
-- **WHEN** 事件合并生效
-- **THEN** 发出的 `sessions_changed` 事件数 ≤ 10
-- **AND** v4 逐条发射导致浏览器 30s 内产生 508 请求 / 151.2MB
+#### Scenario: one full scan round
+- **GIVEN** 524 sessions updated in one scan round
+- **WHEN** event coalescing applies
+- **THEN** the number of emitted `sessions_changed` events <= 10
+- **AND** v4's per-event emission caused 508 requests / 151.2MB in a 30s
+  browser window
 
-#### Scenario: 定时器不阻止进程退出
-- **GIVEN** 合并窗口定时器已排程
-- **THEN** MUST 调用 `timer.unref()`，避免 CLI 无法正常退出
+#### Scenario: timer must not prevent process exit
+- **GIVEN** a coalescing-window timer is scheduled
+- **THEN** MUST call `timer.unref()`, otherwise the CLI cannot exit normally
 
-### REQ-004: 流式 chunk 服务端节流
-MITM 捕获 SSE 流时，同一 `requestId` 的 chunk MUST 在服务端按 **100ms 窗口**拼接后再发 `proxy_stream_chunk`。前端 MUST NOT 再做二次节流。
+### REQ-004: Server-side throttling of streaming chunks
+When MITM captures SSE streams, chunks of the same `requestId` MUST be
+concatenated server-side on a **100ms window** before emitting
+`proxy_stream_chunk`. The frontend MUST NOT throttle again.
 
-> v4 的 spec 只写了「频率高，前端要做节流」但未定义机制，属于把责任推给下游的规格缺陷。
+> v4's spec only said "high frequency, frontend should throttle" without
+> defining the mechanism — a spec flaw that pushes responsibility downstream.
 
-### REQ-005: SSE 广播器
-`addSseClient(res)` SHALL：
-- 写 200 + `text/event-stream` + `cache-control: no-cache` + `connection: keep-alive`
-- 发初始 `connected` 事件，载荷含 `serverTime` 与 `schemaVersion`
-- 每 30s 发一条注释行心跳 `: ping\n\n`，防止代理层超时断连
-- 返回 cleanup 函数
+### REQ-005: SSE broadcaster
+`addSseClient(res)` SHALL:
+- write 200 + `text/event-stream` + `cache-control: no-cache` +
+  `connection: keep-alive`
+- send an initial `connected` event whose payload contains `serverTime` and
+  `schemaVersion`
+- send a comment-line heartbeat every 30s (`: ping\n\n`) to prevent
+  proxy-layer timeouts
+- return a cleanup function
 
-### REQ-006: 事件转发
-SSE 广播器 SHALL 订阅 `BusEvents` 全部事件并转发给所有客户端。客户端断开时 MUST 执行 cleanup 解除全部订阅。
+### REQ-006: Event forwarding
+The SSE broadcaster SHALL subscribe to all `BusEvents` and forward them to all
+clients. On client disconnect, MUST run cleanup to unsubscribe everything.
 
-### REQ-007: 前台请求标记
-每个 `/api/*` 请求进入时 MUST 调用 `markForegroundRequest()`。`isForegroundBusy()` 在 750ms 内有请求时返回 true，供后台预热让路。
+### REQ-007: Foreground request marking
+Every `/api/*` request MUST call `markForegroundRequest()` on entry.
+`isForegroundBusy()` returns true when a request was seen within 750ms, so
+background prewarm yields.
 
-### REQ-008: 清理
-`closeSseBroadcaster()` SHALL 取消所有订阅、清空合并器 pending 集合、关闭所有客户端连接。
+### REQ-008: Cleanup
+`closeSseBroadcaster()` SHALL cancel all subscriptions, clear the coalescer's
+pending set, and close all client connections.
 
 ## Gotchas
-- SSE 连接要处理客户端断开
-- G11.7（新）：SSE 事件的正确心智模型是「哪些 key 变了」，不是「有变化了快去重新拉」。前者是 O(变更数)，后者是 O(总数 × 变更数)
-- G11.8（新）：合并窗口的定时器必须 `unref()`，否则 CLI 挂住不退出
+- SSE connections must handle client disconnect
+- G11.7 (new): the correct mental model for SSE events is "which keys
+  changed", not "something changed, go refetch". The former is O(changes), the
+  latter O(total × changes)
+- G11.8 (new): the coalescing-window timer must `unref()`, otherwise the CLI
+  hangs and won't exit

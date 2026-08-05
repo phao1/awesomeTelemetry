@@ -1,48 +1,58 @@
 ## Why
 
-实机验证确认三个**前端**确定性缺陷（`UI-TASKS.md` §2 的 P1-4 / P1-5 / P1-6）：
+Real-machine verification confirmed three **frontend** deterministic defects
+(`UI-TASKS.md` §2 P1-4 / P1-5 / P1-6):
 
-1. **对比视图 100% 不可用**——`App.tsx` 与 `SampleRail` 各持一份会话数组，
-   `CompareBoard` 永远收到 `[]`，两个下拉框永远为空。
-2. **7 处空 `catch` 静默吞错**——任何失败的用户可见表现都是「点了纹丝不动」，
-   没有错误码、没有提示、没有重试。`SettingsModal` 失败会永久停在「加载中」。
-3. **Transcript 无条件拉 `mode=full`**——648 event 会话即数十 MB，违反 G11.1。
+1. **Compare view is 100% unusable** — `App.tsx` and `SampleRail` each hold
+   their own session array, so `CompareBoard` always receives `[]` and both
+   dropdowns are always empty.
+2. **7 empty `catch` blocks silently swallow errors** — every failure looks
+   like "clicked but nothing moved": no error code, no message, no retry.
+   `SettingsModal` failures stick at "loading" forever.
+3. **Transcript unconditionally fetches `mode=full`** — tens of MB for a
+   648-event session, violating G11.1.
 
-同时五个视图的呈现停留在「能跑」级别：列表是三个 span，甘特是等宽行，
-Agent 概览是一张裸表，Proxy / Frida 没有任何控制入口。
+Meanwhile all five views still render at "it runs" level: the list is three
+spans, the Gantt is equal-width rows, Agent overview is a bare table, and
+Proxy / Frida have no control entry points.
 
 ## What Changes
 
-- **共享会话 store**：会话索引由 `App.tsx` 单一持有，`SessionList` 改受控组件——修复对比视图。
-- **四态渲染**：所有异步区域实现 loading / empty / error+重试 / ready，
-  消灭全部空 `catch`，并加 CI 断言禁止回潮。
-- **AppShell**：全局头 + underline tabs + 三栏 + 状态栏，左右栏可拖可折叠且持久化。
-- **五视图重做**：会话列表双行密排；详情主区新增 **PhaseRibbon** 与时间比例甘特；
-  Agent 概览 KPI 卡 + 内联条形图；对比视图搜索式选择器 + 结论条；
-  Proxy / Frida 补齐控制条与详情抽屉。
-- Transcript 改为分页拉取 + 弹层内虚拟滚动。
+- **Shared session store**: the session index is owned solely by `App.tsx`;
+  `SessionList` becomes a controlled component — fixing the compare view.
+- **Four-state rendering**: all async regions implement loading / empty /
+  error+retry / ready; every empty `catch` eliminated, with a CI assertion
+  forbidding regression.
+- **AppShell**: global header + underline tabs + three columns + status bar;
+  left/right rails draggable, collapsible, and persisted.
+- **Five views redone**: session list two-line dense; detail main area gains a
+  **PhaseRibbon** and time-proportional Gantt; Agent overview KPI cards +
+  inline bars; compare view search pickers + verdict strip; Proxy / Frida get
+  control strips and detail drawers.
+- Transcript switches to paginated fetch + virtual scroll inside the modal.
 
-**BREAKING**（仅内部）：`SampleRail` → `SessionList`、`TraceGanttTree` → `TraceTimeline`，
-测试文件同步改名。无对外 API 变更。
+**BREAKING** (internal only): `SampleRail` → `SessionList`,
+`TraceGanttTree` → `TraceTimeline`, test files renamed in sync. No external
+API changes.
 
 ## Capabilities
 
 ### New Capabilities
 
-无。
+None.
 
 ### Modified Capabilities
 
-无 delta。本 change 实现 `specs/frontend/spec.md` REQ-015~023 与 REQ-026、
-`specs/design-system/spec.md` REQ-006/007，规格已于 2026-08-04 先行落地，
-故 `.openspec.yaml` 设 `skip_specs: true`。
+No deltas. This change implements `specs/frontend/spec.md` REQ-015~023 and
+REQ-026 plus `specs/design-system/spec.md` REQ-006/007; the specs landed on
+2026-08-04, so `.openspec.yaml` sets `skip_specs: true`.
 
 ## Impact
 
-| 面 | 影响 |
-|----|------|
-| 代码 | `src/App.tsx` 重构；`src/components/` 全部视图组件重做；两个组件改名 |
-| 依赖 | 前置 `add-design-system`（token + 图标 + 基础组件）与 `fix-session-data-integrity`（数据非空） |
-| 测试 | 现有 `AgentOverview.test.tsx` / `TraceGanttTree.test.tsx` 需随改名与结构调整同步更新 |
-| 性能 | 仍受 REQ-003（agent 视图 1 个请求）、REQ-006（9,590 event DOM < 500）约束 |
-| 风险 | 改动面最大的一个 change；建议每个视图一个 commit |
+| Area | Impact |
+|------|--------|
+| Code | `src/App.tsx` refactored; all view components in `src/components/` redone; two component renames |
+| Dependencies | depends on `add-design-system` (tokens + icons + base components) and `fix-session-data-integrity` (non-empty data) |
+| Tests | existing `AgentOverview.test.tsx` / `TraceGanttTree.test.tsx` updated in sync with renames and structure |
+| Performance | still bound by REQ-003 (agent view 1 request) and REQ-006 (9,590-event DOM < 500) |
+| Risk | the largest change surface; one commit per view recommended |

@@ -41,7 +41,7 @@ register(workbuddyAdapter);
 export function normalizeRawSample(sample: RawSample, sourcePath: string): TraceRecord {
   const adapter = registry.get(sample.sourceAgent);
   if (adapter === undefined) {
-    throw new Error(`未知 sourceAgent: ${sample.sourceAgent}（先注册 adapter）`);
+    throw new Error(`Unknown sourceAgent: ${sample.sourceAgent} (register the adapter first)`);
   }
   return adapter.normalize(sample, sourcePath);
 }

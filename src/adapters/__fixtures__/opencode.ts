@@ -1,6 +1,6 @@
 import type { OpenCodeRawSample } from '../opencode.js';
 
-/** 最小 OpenCode fixture：user + tool + llm，覆盖累积 cacheRead 与 subagent 标题。 */
+/** 最小 OpenCode fixture：user + tool + llm，覆盖增量 cacheRead（#4）与 subagent 标题。 */
 export const opencodeFixture: {
   sourceAgent: string;
   session: OpenCodeRawSample['session'];

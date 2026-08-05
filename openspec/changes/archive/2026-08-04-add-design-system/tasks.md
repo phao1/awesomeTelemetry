@@ -1,45 +1,68 @@
-> 详细验收标准见 `UI-TASKS.md` T-13 / T-14。数值一律以 `contracts/design-tokens.md` 为准。
-> 严格串行：token → 图标 → 组件（design.md D5）。
+> Detailed acceptance criteria: `UI-TASKS.md` T-13 / T-14. Values always per
+> `contracts/design-tokens.md`. Strictly sequential: token → icons →
+> components (design.md D5).
 
-## 1. Token 层与主题机制（T-13，spec REQ-001/002/003）
+## 1. Token layer and theme mechanism (T-13, spec REQ-001/002/003)
 
-- [x] 1.1 新建 `src/styles/tokens.css`，落地契约 §2–§7 两套主题全部变量（键集合必须完全一致）
-- [x] 1.2 拆分 `src/styles.css` → `base.css` / `layout.css` / `components.css`，`main.tsx` 按 tokens→base→layout→components 顺序引入
-- [x] 1.3 `index.html` 加**内联同步**主题脚本，首帧 CSS 前设置 `data-theme`（D2 / G-DS-2）
-- [x] 1.4 实现主题三态切换 + localStorage `agent-observability.theme` + `matchMedia` change 监听
-- [x] 1.5 全量替换现有硬编码 hex 为 `var(--*)`
-- [x] 1.6 写 `src/styles/tokens.test.ts`：契约 §9 的 **T1**（键集合相等）、**T2**（无字面量颜色）、**T3**（无字面量间距）
-- [x] 1.7 写对比度断言 **T4**（WCAG 相对亮度，自己算不引库）与 **T5**（6 phase 色两两 ΔE > 15）
-- [x] 1.8 验收：切主题不重载、不闪白；刷新后主题保持；CSS gzip < 16KB
+- [x] 1.1 create `src/styles/tokens.css` landing all contract §2-§7 variables
+  for both themes (key sets must be exactly equal)
+- [x] 1.2 split `src/styles.css` → `base.css` / `layout.css` /
+  `components.css`; `main.tsx` imports in tokens→base→layout→components order
+- [x] 1.3 add the **inline sync** theme script to `index.html`, setting
+  `data-theme` before first-paint CSS (D2 / G-DS-2)
+- [x] 1.4 implement three-state theme toggle + localStorage
+  `agent-observability.theme` + `matchMedia` change listener
+- [x] 1.5 replace all existing hardcoded hex with `var(--*)`
+- [x] 1.6 write `src/styles/tokens.test.ts`: contract §9 **T1** (key sets
+  equal), **T2** (no literal colors), **T3** (no literal spacing)
+- [x] 1.7 write contrast assertions **T4** (WCAG relative luminance, computed
+  by hand, no library) and **T5** (6 phase colors pairwise ΔE > 15)
+- [x] 1.8 acceptance: theme switch without reload or flash; theme persists
+  after refresh; CSS gzip < 16KB
 
-## 2. 图标集（T-14，spec REQ-004）
+## 2. Icon set (T-14, spec REQ-004)
 
-- [x] 2.1 建 `src/components/icons/index.tsx` 与共享 `<Icon>` 壳（`size` / `className` / `label`）
-- [x] 2.2 实现导航/视图 8 个：Sessions / Agents / Compare / Proxy / Frida / Sidebar / Panel / Command
-- [x] 2.3 实现 phase 6 个：Understand / Plan / Implement / Debug / Verify / Report
-- [x] 2.4 实现状态 6 个：Success / Error / Running / Pending / Cancelled / Warning
-- [x] 2.5 实现事件类型 6 个：Message / Tool / File / Terminal / Thought / System
-- [x] 2.6 实现指标 4 个：Speed / Accuracy / Stability / Cost
-- [x] 2.7 实现操作 12 个：Search / Filter / Refresh / Copy / Download / ExternalLink / Trash / Close / ChevronRight / ChevronDown / Kebab / Plus
-- [x] 2.8 实现其它 5 个：Gear / Globe / Sun / Moon / DeviceDesktop（三个主题图标各自独立，不复用路径）
-- [x] 2.9 写断言 **T6**（导出名集合与清单严格相等，无多无少 = 47）与 **T7**（含 `viewBox="0 0 16 16"`、无 `fill="#"`/`stroke="#"`）
-- [x] 2.10 验收：全套未压缩 < 12KB
+- [x] 2.1 create `src/components/icons/index.tsx` with a shared `<Icon>` shell
+  (`size` / `className` / `label`)
+- [x] 2.2 implement 8 nav/view icons: Sessions / Agents / Compare / Proxy /
+  Frida / Sidebar / Panel / Command
+- [x] 2.3 implement 6 phase icons: Understand / Plan / Implement / Debug /
+  Verify / Report
+- [x] 2.4 implement 6 status icons: Success / Error / Running / Pending /
+  Cancelled / Warning
+- [x] 2.5 implement 6 event-kind icons: Message / Tool / File / Terminal /
+  Thought / System
+- [x] 2.6 implement 4 metric icons: Speed / Accuracy / Stability / Cost
+- [x] 2.7 implement 12 action icons: Search / Filter / Refresh / Copy /
+  Download / ExternalLink / Trash / Close / ChevronRight / ChevronDown /
+  Kebab / Plus
+- [x] 2.8 implement 5 other icons: Gear / Globe / Sun / Moon / DeviceDesktop
+  (the three theme icons independent, no path reuse)
+- [x] 2.9 write assertions **T6** (export name set exactly equals the list,
+  no more no less = 47) and **T7** (contains `viewBox="0 0 16 16"`, no
+  `fill="#"`/`stroke="#"`)
+- [x] 2.10 acceptance: full set uncompressed < 12KB
 
-## 3. 基础组件库（spec REQ-005）
+## 3. Base component library (spec REQ-005)
 
-- [x] 3.1 Button / IconButton（variant × size，命中区 ≥ 24×24）
-- [x] 3.2 Badge / StatusBadge / PhaseBadge / ProviderBadge（字母章，色见契约 §2.6）
-- [x] 3.3 Field / Input / Select / SearchInput（与 Button 等高，`/` 聚焦）
-- [x] 3.4 Tabs（underline / pill）/ Table（compact 密度、sticky 表头、可排序）
-- [x] 3.5 Tooltip / Popover / DropdownMenu（Esc 关闭、点外关闭、焦点回归，手写不引库）
-- [x] 3.6 Modal / Drawer（焦点陷阱）
-- [x] 3.7 Kbd / MetricCard / BarMeter / Sparkline（内联 SVG）
-- [x] 3.8 SplitPane（拖拽 + 宽度持久化）
-- [x] 3.9 验收：所有可交互元素有 `:focus-visible` 焦点环；`prefers-reduced-motion` 下动画归零
+- [x] 3.1 Button / IconButton (variant × size, hit target >= 24×24)
+- [x] 3.2 Badge / StatusBadge / PhaseBadge / ProviderBadge (monogram, colors
+  per contract §2.6)
+- [x] 3.3 Field / Input / Select / SearchInput (same height as Button, `/`
+  focus)
+- [x] 3.4 Tabs (underline / pill) / Table (compact density, sticky header,
+  sortable)
+- [x] 3.5 Tooltip / Popover / DropdownMenu (Esc close, outside click close,
+  focus return; hand-written, no library)
+- [x] 3.6 Modal / Drawer (focus trap)
+- [x] 3.7 Kbd / MetricCard / BarMeter / Sparkline (inline SVG)
+- [x] 3.8 SplitPane (drag + width persistence)
+- [x] 3.9 acceptance: every interactive element has a `:focus-visible` focus
+  ring; animations go to zero under `prefers-reduced-motion`
 
-## 4. 阶段收口
+## 4. Wrap-up
 
-- [x] 4.1 `npm run typecheck && npm run test && npm run lint` 全绿
-- [x] 4.2 契约 §9 的 T1–T7 七条断言全部在 CI 中执行且通过
-- [x] 4.3 更新 `PROGRESS.md`
+- [x] 4.1 `npm run typecheck && npm run test && npm run lint` all green
+- [x] 4.2 all seven contract §9 assertions T1-T7 run in CI and pass
+- [x] 4.3 update `PROGRESS.md`
 - [x] 4.4 `openspec archive add-design-system`

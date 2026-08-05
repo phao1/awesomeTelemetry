@@ -1,302 +1,345 @@
-# PROMPTS.md — codex + DeepSeek 开发提示词
+# PROMPTS.md — codex + DeepSeek development prompts
 
-> 直接复制粘贴。`<尖括号>` 是需要你替换的占位符。
+> Copy-paste directly. `<angle brackets>` are placeholders you replace.
 
-## 0. 模型分工建议
+## 0. Suggested model division of labor
 
-| 任务类型 | 用哪个 | 为什么 |
-|---------|-------|-------|
-| 里程碑规划、跨文件重构、review | **Codex**（强模型） | 需要全局一致性判断 |
-| 单文件实现（给定紧规格） | **DeepSeek v4 Flash** | 规格够紧时它足够，且快、便宜 |
-| 写测试用例 | **Codex** | 测试是契约的可执行形式，写松了就没用 |
-| 修 bug、查 typecheck 报错 | DeepSeek 先试，卡住换 Codex | |
-| 涉及 gotchas 的模块（adapters / trae / watch） | **Codex** | 这些地方"看起来对但实际错"的陷阱最多 |
+| Task type | Which model | Why |
+|-----------|-------------|-----|
+| milestone planning, cross-file refactors, review | **Codex** (strong model) | needs global consistency judgment |
+| single-file implementation (given a tight spec) | **DeepSeek v4 Flash** | good enough with a tight spec, fast and cheap |
+| writing test cases | **Codex** | tests are the executable form of the contract; loose tests are useless |
+| fixing bugs, triaging typecheck errors | DeepSeek first; switch to Codex when stuck | |
+| modules involving gotchas (adapters / trae / watch) | **Codex** | these are where "looks right but is actually wrong" traps cluster |
 
-**关键原则：让 Codex 写测试，让 DeepSeek 写实现。** 测试写对了，DeepSeek 的实现就有了收敛目标；反过来则会双双跑偏。
+**Key principle: let Codex write tests and DeepSeek write implementations.**
+With correct tests, DeepSeek's implementation has a convergence target; the
+other way around, both drift.
 
-## 1. 上下文加载策略
+## 1. Context loading strategy
 
-3200 行规格无法每次全塞。分三层：
+3,200 lines of specs can't be stuffed in every time. Three layers:
 
-| 层 | 内容 | 何时加载 |
-|----|------|---------|
-| **常驻** | `AGENTS.md`（约 150 行） | 每次。Codex 会自动读仓库根的 AGENTS.md |
-| **契约** | 当前任务需要的 1–2 份 `contracts/*.md` | 每个任务开始时 |
-| **模块** | 当前模块的 `specs/<m>/spec.md` + gotchas 相关章节 | 每个任务开始时 |
+| Layer | Content | When to load |
+|-------|---------|--------------|
+| **Resident** | `AGENTS.md` (~150 lines) | every time. Codex auto-reads the root AGENTS.md |
+| **Contracts** | the 1-2 `contracts/*.md` files the task needs | at the start of every task |
+| **Module** | the module's `specs/<m>/spec.md` + relevant gotchas chapters | at the start of every task |
 
-单次任务的上下文控制在 **AGENTS.md + 1 份契约 + 1 份模块 spec ≈ 600–900 行**，这是 DeepSeek 也能稳定处理的量。
+Keep a single task's context at **AGENTS.md + 1 contract + 1 module spec ≈
+600-900 lines** — an amount DeepSeek also handles reliably.
 
-**不要**把全部 12 份 spec 一次性喂进去——注意力被稀释后，它会开始"综合各处印象"编字段名。
+**Do not** feed all 12 specs at once — attention gets diluted and it starts
+"synthesizing impressions from everywhere" and inventing field names.
 
 ---
 
-## 2. 项目启动提示词（只用一次）
+## 2. Project startup prompt (use once)
 
 ```
-这是一个 0-1 的 TypeScript 项目。仓库里已有完整规格，位于 openspec/ 目录。
+This is a 0-1 TypeScript project. The repo already has complete specs under
+openspec/.
 
-先做三件事，不要写任何业务代码：
+Do three things first; write no business code:
 
-1. 完整读取并复述以下文件的要点（每份 5 行以内）：
+1. Read in full and restate the key points of these files (5 lines or fewer
+   each):
    - AGENTS.md
    - BOOTSTRAP.md
    - openspec/README.md
    - openspec/project.md
 
-2. 列出 M0 脚手架需要产出的全部文件清单，逐个说明用途。
+2. List the complete file inventory the M0 scaffold must produce, with each
+   file's purpose.
 
-3. 指出你在这些文档中发现的任何矛盾、歧义、或信息缺失。
-   如果没有，明确说"无"。不要为了显得认真而编造问题。
+3. Point out any contradictions, ambiguities, or missing information you find
+   in these documents. If there are none, say "none" explicitly. Don't invent
+   problems to look diligent.
 
-做完这三件事就停下，等我确认后再开始 M0。
+Stop after these three; wait for my confirmation before starting M0.
 ```
 
-> 第 3 步是关键。让它先暴露理解偏差，比等它写完 12 个文件再发现便宜得多。
+> Step 3 is the key. Exposing understanding gaps up front is far cheaper than
+> discovering them after it writes 12 files.
 
 ---
 
-## 3. 里程碑实现提示词（主力模板）
+## 3. Milestone implementation prompt (main template)
 
-每个里程碑用一次。**先让 Codex 跑一遍"测试先行"，再让 DeepSeek 补实现。**
+Use once per milestone. **Run Codex's "tests first" pass, then let DeepSeek
+fill in the implementation.**
 
-### 3.1 阶段 A — 让 Codex 写测试
+### 3.1 Phase A — have Codex write tests
 
 ```
-任务：<M4 watch 增量门禁> 的测试先行。
+Task: tests-first for <M4 watch incremental gate>.
 
-必读（完整读取，不要跳读）：
+Must read (in full, no skimming):
 - AGENTS.md
-- openspec/specs/session-scanning/spec.md 的 REQ-001 / REQ-002 / REQ-003 / REQ-008
-- openspec/contracts/data-model.md 的 §8 扫描状态
-- openspec/gotchas.md 的 G11.5 / G11.15 / G11.18
+- openspec/specs/session-scanning/spec.md REQ-001 / REQ-002 / REQ-003 / REQ-008
+- openspec/contracts/data-model.md §8 scan state
+- openspec/gotchas.md G11.5 / G11.15 / G11.18
 
-这一步**只写测试，不写实现**。产出：
+This step writes **tests only, no implementation**. Output:
 - server/watch/fingerprint.test.ts
 - server/watch/scan-gate.test.ts
 - server/watch/jsonl-reader.test.ts
 
-要求：
-1. 每个 REQ 至少一个用例，用例名里带上 REQ 编号，例如
-   it('REQ-001 无变更重扫时零 SQL 写入', ...)
-2. BOOTSTRAP.md 里 M4 的「验收」每一条都要有对应用例
-3. 测试必须能真实失败——不要写 expect(true).toBe(true) 这类占位
-4. 需要 fixture 就在 __fixtures__/ 下创建真实的小文件，不要 mock fs
-5. 现在跑测试应该全部失败（因为实现还不存在），这是预期的
+Requirements:
+1. at least one case per REQ, with the REQ number in the case name, e.g.
+   it('REQ-001 no-change rescan produces zero SQL writes', ...)
+2. every "Acceptance" line of M4 in BOOTSTRAP.md has a matching case
+3. tests must genuinely fail — no expect(true).toBe(true) placeholders
+4. where fixtures are needed, create real small files under __fixtures__/;
+   don't mock fs
+5. running tests now should all fail (the implementation doesn't exist yet);
+   that's expected
 
-写完后列出：每个测试文件有几个用例、分别对应哪个 REQ。
+When done, list: how many cases per test file and which REQ each maps to.
 ```
 
-### 3.2 阶段 B — 让 DeepSeek 写实现
+### 3.2 Phase B — have DeepSeek write the implementation
 
 ```
-任务：实现 <M4 watch 增量门禁>，让已有测试全部通过。
+Task: implement <M4 watch incremental gate> so all existing tests pass.
 
-必读：
-- AGENTS.md（尤其"十条禁令"）
-- openspec/specs/session-scanning/spec.md 的 REQ-001 / REQ-002 / REQ-003 / REQ-008
-- openspec/contracts/data-model.md 的 §8
-- 已存在的测试文件：server/watch/*.test.ts
+Must read:
+- AGENTS.md (especially the "ten prohibitions")
+- openspec/specs/session-scanning/spec.md REQ-001 / REQ-002 / REQ-003 / REQ-008
+- openspec/contracts/data-model.md §8
+- the existing test files: server/watch/*.test.ts
 
-产出（只创建这些文件，不碰其他任何文件）：
+Output (create only these files; touch nothing else):
 - server/watch/fingerprint.ts
 - server/watch/scan-gate.ts
 - server/watch/jsonl-reader.ts
 
-硬性约束：
-1. 类型逐字采用 contracts/data-model.md §8 的 ScanState 与 FileFingerprint
-2. 不改动任何 .test.ts 文件。测试跑不过就修实现
-3. 不引入新的 npm 依赖
-4. scan_state 写入失败必须 throw，不许静默 catch
-5. WAL 型数据源的指纹必须同时覆盖主文件与 -wal 文件
+Hard constraints:
+1. adopt types verbatim from contracts/data-model.md §8's ScanState and
+   FileFingerprint
+2. do not modify any .test.ts file. Tests failing → fix the implementation
+3. no new npm dependencies
+4. scan_state write failures must throw; no silent catch
+5. WAL-source fingerprints must cover both the main file and the -wal file
 
-完成后按 AGENTS.md 的输出格式收尾，并贴出 npm test 的结果。
+When done, wrap up per AGENTS.md's output format and paste the npm test
+results.
 ```
 
-> 换里程碑时，替换掉方括号里的模块名、必读清单、产出文件清单三处即可。
-> 每个里程碑的这三项，`BOOTSTRAP.md` 里都写好了。
+> When switching milestones, replace the three spots in the brackets: module
+> name, must-read list, output file list. BOOTSTRAP.md already has all three
+> per milestone.
 
 ---
 
-## 4. Adapters 专用提示词（M5 最容易出错）
+## 4. Adapter-specific prompt (M5 is most error-prone)
 
-adapters 是全项目 gotchas 密度最高的地方，值得单独一套。**一次只做一个 provider。**
+Adapters have the highest gotcha density in the whole project; they deserve
+their own template. **One provider at a time.**
 
 ```
-任务：实现 src/adapters/<opencode>.ts 一个文件。
+Task: implement one file: src/adapters/<opencode>.ts.
 
-必读：
+Must read:
 - AGENTS.md
-- openspec/specs/adapters/spec.md 全文
-- openspec/contracts/data-model.md 的 §1 §2 §4 §5
-- openspec/gotchas.md 的第 4 章（Token 计算）与第 9 章（Provider 特定）
+- openspec/specs/adapters/spec.md in full
+- openspec/contracts/data-model.md §1 §2 §4 §5
+- openspec/gotchas.md chapter 4 (token calculation) and chapter 9
+  (provider-specific)
 
-这个 provider 的特殊规则（逐条确认你理解了再动手）：
-- cacheRead 语义是 <cumulative>，会话级聚合用 <Math.max()>
-- reasoning 语义是 incremental，用 sum
-- total = input + output + reasoning + cacheRead，不含 cacheWrite
-- <其他 provider 特定规则，从 specs/adapters REQ-00X 抄过来>
+This provider's special rules (confirm you understand each before acting):
+- cacheRead semantics are <cumulative>, session-level aggregation uses
+  <Math.max()>
+- reasoning semantics are incremental, use sum
+- total = input + output + reasoning + cacheRead, no cacheWrite
+- <other provider-specific rules, copied from specs/adapters REQ-00X>
 
-产出：
+Output:
 - src/adapters/opencode.ts
 - src/adapters/opencode.test.ts
 - src/adapters/__fixtures__/opencode-minimal.json
 
-测试必须覆盖这 6 条：
-1. 最小 fixture 的完整 TraceRecord 快照
-2. cacheRead 用 max 而非 sum（构造 3 个 event，cacheRead 分别为 100/200/150，
-   断言会话级为 200 而不是 450）
-3. total 公式包含 reasoning
-4. 状态归一化：completed→success / paused→running / canceled→cancelled / 未知→unknown
-5. 同 session 重复 event id 加 :{sequence} 后缀
-6. title 截断到 200 字符，raw 与 inputSummary/outputSummary 分离返回
+Tests must cover these 6:
+1. full TraceRecord snapshot of a minimal fixture
+2. cacheRead uses max, not sum (build 3 events with cacheRead 100/200/150;
+   assert the session level is 200, not 450)
+3. the total formula includes reasoning
+4. status normalization: completed→success / paused→running /
+   canceled→cancelled / unknown→unknown
+5. duplicate event ids within a session get a :{sequence} suffix
+6. title truncated to 200 chars; raw returned separately from
+   inputSummary/outputSummary
 
-写完自查：把第 2 条的断言念一遍，确认它测的是 max 不是 sum。
-这一条在参考实现里错了很久，是本项目最容易踩的坑。
+Self-check when done: read assertion 2 aloud and confirm it tests max, not
+sum. This one was wrong for a long time in the reference implementation and
+is this project's most easily-tripped pitfall.
 ```
+
+> ⚠️ Translation note: the "<cumulative> / Math.max()" wording above is
+> **stale**. Per the 2026-08-03 calibration (contracts/data-model.md §2,
+> openspec/gotchas.md G4.4, specs/adapters/spec.md REQ-002), OpenCode-family
+> `cacheRead` is **incremental per step and aggregates with sum**. Contract
+> wins per AGENTS.md priority; update this template when the spec is revised.
 
 ---
 
-## 5. 前端提示词（M10，按子任务拆）
+## 5. Frontend prompt (M10, split by subtask)
 
 ```
-任务：实现 <M10c 详情与聚合>。
+Task: implement <M10c detail & aggregation>.
 
-必读：
+Must read:
 - AGENTS.md
-- openspec/specs/frontend/spec.md 的 REQ-003 / REQ-004 / REQ-005 / REQ-008 / REQ-009
-- openspec/contracts/api.md 的 §1 §2
-- openspec/gotchas.md 的第 7 章 + G11.9
+- openspec/specs/frontend/spec.md REQ-003 / REQ-004 / REQ-005 / REQ-008 /
+  REQ-009
+- openspec/contracts/api.md §1 §2
+- openspec/gotchas.md chapter 7 + G11.9
 
-产出：
+Output:
 - src/components/EventInspector.tsx
 - src/components/AgentOverview.tsx
-- 对应测试
+- matching tests
 
-两条红线，违反直接返工：
-1. AgentOverview 只能发起 1 个请求（GET /api/agent-overview）。
-   代码里出现任何形如 sessions.map(s => fetch(...)) 的写法都是错的。
-2. EventInspector 点击 event 时才拉正文（GET /api/sessions/:key/events/:id，
-   200ms 防抖），不能随详情一起拉。
+Two red lines; violating either means rework:
+1. AgentOverview may issue only 1 request (GET /api/agent-overview).
+   Any occurrence of sessions.map(s => fetch(...)) is wrong.
+2. EventInspector fetches the event body only on click
+   (GET /api/sessions/:key/events/:id, 200ms debounce), not with the detail.
 
-写完后回答一个问题：如果用户的库里有 5000 个会话，
-你写的 AgentOverview 会发出几个请求？答案必须是 1。
+When done, answer one question: if the user's DB has 5,000 sessions, how many
+requests does your AgentOverview issue? The answer must be 1.
 ```
 
 ---
 
-## 6. Review 提示词（每个里程碑合入前，用 Codex）
+## 6. Review prompt (before every milestone merge, with Codex)
 
 ```
-对刚完成的 <M4> 做一次严格 review。你现在的角色是挑刺的人，不是完成任务的人。
+Do a strict review of the just-completed <M4>. Your role now is the nitpicker,
+not the finisher.
 
-逐条检查 AGENTS.md 的「十条禁令」，对每一条给出：
-- 结论（通过 / 违反 / 不适用）
-- 如果违反，给出 file:line 与修复建议
+Check each of AGENTS.md's "ten prohibitions" one by one, and for each give:
+- verdict (pass / violated / not applicable)
+- if violated, file:line and a fix suggestion
 
-然后检查这四项：
-1. 是否有测试断言被改松或被删掉？对比 git diff 确认
-2. 是否有被 mock 掉的真实逻辑？特别注意 fs、child_process、better-sqlite3
-3. 是否引入了 AGENTS.md 允许清单之外的依赖？检查 package.json diff
-4. openspec/specs/<module>/spec.md 里的 REQ 有没有漏实现的？逐个编号对照
+Then check these four:
+1. were any test assertions loosened or cases deleted? Confirm via git diff
+2. was any real logic mocked? Especially fs, child_process, better-sqlite3
+3. were dependencies outside AGENTS.md's allowed list introduced? Check the
+   package.json diff
+4. are there REQs in openspec/specs/<module>/spec.md left unimplemented?
+   Check each number
 
-最后跑一遍 npm run typecheck && npm run test && npm run lint，贴出结果。
+Finally run npm run typecheck && npm run test && npm run lint and paste the
+results.
 
-不要为了让 review 通过而修改代码——先只报告问题。
-```
-
----
-
-## 7. 性能验收提示词（M3 之后每个里程碑）
-
-```
-跑一次性能基线检查。
-
-1. 执行 perf-diag/ 下的 Step 1（EXPLAIN QUERY PLAN）与 Step 2（服务端分段耗时）
-2. 对照 openspec/contracts/nfr.md §2 的预算表，逐行填写实测值
-3. 任何超预算的项，给出：实测值 / 预算值 / 超出倍数 / 定位到的原因
-4. 把结果追加到 PERF-BASELINE.md
-
-约束：
-- 只测量，不优化。发现问题先报告，我决定要不要现在修
-- 每个结论必须有数字。没有数字的判断标记为「未验证猜测」，单独列一节
-- 不要说「可能」「建议」，只报告「实测 X 为 Yms，预算 Zms，超出 N 倍」
+Do not modify code to make the review pass — report problems only first.
 ```
 
 ---
 
-## 8. 卡住时的提示词
+## 7. Performance acceptance prompt (every milestone after M3)
 
 ```
-你在 <描述卡点> 上卡住了。停止尝试新方案。
+Run a performance baseline check.
 
-按这个顺序回答：
-1. 你到底在解决什么问题？用一句话说清，不要复述代码
-2. 你已经试过哪些方案？每个失败的原因是什么？
-3. 你当前对系统行为的假设是什么？这些假设里哪个最没被验证过？
-4. 要验证那个假设，最小的实验是什么？
+1. run Step 1 (EXPLAIN QUERY PLAN) and Step 2 (server-side segment timing)
+   under perf-diag/
+2. fill in measured values row by row against the budget table in
+   openspec/contracts/nfr.md §2
+3. for anything over budget, give: measured / budget / overage multiple /
+   located cause
+4. append the results to PERF-BASELINE.md
 
-先做第 4 步的实验，把结果告诉我。不要在没验证假设的情况下继续改代码。
+Constraints:
+- measure only, don't optimize. Report problems first; I decide whether to
+  fix now
+- every conclusion must have a number. Judgments without numbers are marked
+  "unverified guess" in a separate section
+- don't say "maybe" or "suggest"; report only "measured X is Yms, budget Zms,
+  overage Nx"
 ```
-
-> 这套提问的价值在参考实现的性能诊断中被验证过：一个关掉后台预热的 A/B 对照实验，
-> 直接把问题从"感觉哪都慢"锁定到 1240 倍的单点。**对照实验的信息量远高于继续读代码。**
 
 ---
 
-## 9. 反漂移检查清单
-
-每 2–3 个里程碑跑一次，防止累积偏移：
+## 8. Stuck prompt
 
 ```
-做一次跨模块一致性审查，不写代码。
+You're stuck on <describe the sticking point>. Stop trying new approaches.
 
-1. 把 openspec/contracts/data-model.md 里定义的所有类型名列出来，
-   然后 grep 代码库，找出：
-   - 定义了但没被任何地方使用的类型
-   - 代码里存在但契约里没有的类型
-   - 同一概念用了两个不同名字的地方
+Answer in this order:
+1. What exactly are you solving? One sentence; don't restate code
+2. What have you tried, and why did each fail?
+3. What assumptions do you currently hold about the system's behavior? Which
+   is the least verified?
+4. What is the smallest experiment that verifies that assumption?
 
-2. 把 openspec/contracts/api.md 里的所有端点列出来，对照 server/server.ts，
-   找出：漏实现的、多出来的、路径或参数不一致的
+Run the step-4 experiment first and tell me the result. Don't keep changing
+code before the assumption is verified.
+```
 
-3. grep 全库检查这四个模式，列出所有命中位置：
+> This questioning was validated during the reference implementation's
+> performance diagnosis: one A/B experiment with background prewarm disabled
+> pinned the problem from "everything feels slow" to a single 1240x point.
+> **A controlled experiment yields far more information than continuing to
+> read code.**
+
+---
+
+## 9. Anti-drift check list
+
+Run every 2-3 milestones to prevent accumulated drift:
+
+```
+Do a cross-module consistency review; write no code.
+
+1. List every type name defined in openspec/contracts/data-model.md, then grep
+   the codebase for:
+   - types defined but never used anywhere
+   - types in the code but absent from the contract
+   - the same concept under two different names
+
+2. List every endpoint in openspec/contracts/api.md and compare against
+   server/server.ts, finding: unimplemented, extra, or path/param mismatches
+
+3. Grep the whole repo for these four patterns and list every hit:
    - "SELECT \*"
    - "spawnSync" / "execFileSync"
-   - ".map(" 后面跟 "fetch(" 的
-   - "catch" 块里是空的或只有 console 的
+   - ".map(" followed by "fetch("
+   - "catch" blocks that are empty or console-only
 
-输出一张表：问题 | 位置 | 严重度 | 建议。不要自动修复。
+Output a table: problem | location | severity | suggestion. Don't auto-fix.
 ```
 
 ---
 
-## 10. 常见失败模式与对策
+## 10. Common failure modes and countermeasures
 
-| 失败模式 | 表现 | 对策 |
-|---------|------|------|
-| 编字段名 | 用了 `sessionKey` 而契约是 `sessionId` | 每个任务重贴对应契约章节；review 时 grep 类型名 |
-| 偷偷改测试 | 测试全绿但断言被改松 | Review 提示词第 1 项；每次看 `git diff *.test.ts` |
-| mock 掉真实逻辑 | 集成测试绿，手跑不通 | 明确禁止 mock fs / child_process / sqlite |
-| 悄悄加依赖 | package.json 多出 lodash / express | AGENTS.md 写死 4 个依赖；review 检查 diff |
-| 一次做太多 | 一个 prompt 让它做 3 个模块，全部半成品 | 严格按里程碑，一次一个；adapters 一次一个 provider |
-| 优化掉 gotcha | "我把这个奇怪的 /2 去掉了，更清晰" | AGENTS.md 明确：gotcha 照做不要优化 |
-| 上下文过载 | 后半程开始前后矛盾 | 单任务控制在 900 行内；长会话及时开新的 |
-| 忽略性能 | 功能全对但首屏 5 秒 | nfr.md 断言进 CI；每里程碑跑性能检查 |
+| Failure mode | Symptom | Countermeasure |
+|--------------|---------|----------------|
+| inventing field names | used `sessionKey` while the contract says `sessionId` | re-paste the relevant contract section per task; grep type names during review |
+| quietly editing tests | tests all green but assertions loosened | Review prompt item 1; inspect `git diff *.test.ts` every time |
+| mocking real logic | integration tests green, manual run fails | explicitly ban mocking fs / child_process / sqlite |
+| sneaking in dependencies | package.json gains lodash / express | AGENTS.md pins 4 deps; review checks the diff |
+| doing too much at once | one prompt asks for 3 modules, all half-finished | strictly per milestone, one at a time; adapters one provider at a time |
+| "optimizing away" gotchas | "I removed that weird /2, it's cleaner" | AGENTS.md makes clear: follow gotchas, don't optimize them |
+| context overload | contradictions appear in the back half | keep single tasks within 900 lines; start fresh sessions for long ones |
+| ignoring performance | features all correct but 5s first screen | nfr.md assertions in CI; run the performance check per milestone |
 
 ---
 
-## 11. 一页速查
+## 11. One-page cheat sheet
 
 ```
-开新里程碑：
-  1. 看 BOOTSTRAP.md 找到该 M 的「读」「产出」「验收」三栏
-  2. Codex 跑 §3.1 写测试
-  3. DeepSeek 跑 §3.2 写实现
-  4. Codex 跑 §6 review
-  5. M3 之后加跑 §7 性能检查
-  6. 全绿才提交，提交信息 `M<n>: <模块> — <一句话>`
+Starting a milestone:
+  1. look up that M's "read / output / accept" in BOOTSTRAP.md
+  2. Codex runs §3.1 to write tests
+  3. DeepSeek runs §3.2 to write the implementation
+  4. Codex runs §6 review
+  5. after M3, also run §7 performance check
+  6. commit only when all green; message `M<n>: <module> — <one-liner>`
 
-每 3 个里程碑：跑一次 §9 反漂移检查
+Every 3 milestones: run the §9 anti-drift check
 
-卡住：用 §8，先做实验再改代码
+Stuck: use §8; run the experiment before changing code
 ```

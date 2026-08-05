@@ -1,125 +1,164 @@
-# OpenSpec — Agent Observability 复刻规格 v5
+# OpenSpec — Agent Observability spec v5
 
-本目录是用 [OpenSpec](https://github.com/Fission-AI/OpenSpec) 格式编写的项目规格。
+This directory is the project spec written in the
+[OpenSpec](https://github.com/Fission-AI/OpenSpec) format.
 
-**本次为 0-1 全新构建**：不迁移任何历史数据，schema 从 v1 起，无兼容负担。
-目标是复刻参考实现的全部能力，同时从第一行代码就避开它踩过的坑。
+**This is a fresh 0-1 build**: no historical data migration, schema starts at
+v1, no compatibility baggage. The goal is to recreate the full capability of
+the reference implementation while avoiding every pitfall it hit from the first
+line of code.
 
-> 文中「参考实现」指被复刻的那个项目。标注了实测数字的地方，是**不这么做会长成的样子**，
-> 不是本项目的现状。
+> Every "reference implementation" mentioned below is the pre-existing project
+> this one was rebuilt from. Numbers quoted as measured describe what the
+> project would grow into **without these constraints** — not the current state
+> of this project.
 
-## 相对参考实现规格的三个变化
+## Three changes vs the reference spec
 
-1. **新增 `contracts/` 目录** —— 类型、DDL、API、性能预算四份契约。这是 v4 最大的缺口：v4 的 REQ 只说"MUST 包含 id、kind、phase"，没给类型、可空性、枚举全集，导致 codegen 时 9 个 adapter 各编各的字段。
-2. **性能成为硬需求** —— v4 整份 spec 没有一条性能需求，结果复刻出的系统首屏 5.9–12.4 秒。v5 的 `contracts/nfr.md` 把预算写成可验证断言，进 CI。
-3. **gotchas 增加第 11 章** —— 19 条性能类踩坑，全部有实测数字支撑。两条 v4 的原结论（G5.3 指标不持久化、G10.1 预热非阻塞）被实测推翻，已在原位标注。
+1. **New `contracts/` directory** — four contracts for types, DDL, API, and
+   performance budget. This was the biggest gap in v4: v4 REQs only said "MUST
+   contain id, kind, phase" without types, nullability, or the full enum set,
+   so 9 adapters each invented their own fields during codegen.
+2. **Performance is a hard requirement** — v4 had zero performance
+   requirements, and the resulting system took 5.9-12.4s for first screen. v5's
+   `contracts/nfr.md` writes the budget as verifiable assertions that run in CI.
+3. **Gotchas gain a chapter 11** — 19 performance gotchas, all backed by
+   measured numbers. Two v4 conclusions (G5.3 metrics not persisted, G10.1
+   prewarm non-blocking) were overturned by measurements and annotated in place.
 
-## 目录结构
+## Directory layout
 
 ```
 openspec/
-├── README.md                    ← 你在这里
-├── project.md                   ← 项目总览、技术栈、架构、约定
-├── gotchas.md                   ← ⚠️ 全部踩坑汇总（第 11 章为性能类，必读）
-├── contracts/                   ← ⚠️ codegen 的权威输入，冲突时以此为准
-│   ├── data-model.md            ← 完整 TypeScript 类型 + 枚举全集
-│   ├── database.md              ← 完整 SQL DDL v1 + 索引 + PRAGMA
-│   ├── api.md                   ← 完整 HTTP API 契约 + 错误信封 + 契约测试
-│   ├── nfr.md                   ← 性能预算 + CI 断言 + 跳级信号
-│   └── design-tokens.md         ← 色板/字号/间距/图标规范 + 对比度断言
+├── README.md                    ← you are here
+├── project.md                   ← project overview, tech stack, architecture, conventions
+├── gotchas.md                   ← ⚠️ full gotcha list (chapter 11 = performance, must read)
+├── contracts/                   ← ⚠️ authoritative codegen input; wins on conflict
+│   ├── data-model.md            ← complete TypeScript types + full enum set
+│   ├── database.md              ← complete SQL DDL v1 + indexes + PRAGMAs
+│   ├── api.md                   ← complete HTTP API contract + error envelope + contract tests
+│   ├── nfr.md                   ← performance budget + CI assertions + scale-up signals
+│   └── design-tokens.md         ← palette / type scale / spacing / icon spec + contrast assertions
 └── specs/
-    ├── trace-model/             ← 数据模型行为需求
-    ├── storage/                 ← SQLite 存储行为需求
-    ├── session-scanning/        ← 扫描器 + 增量门禁 + 预热策略
-    ├── adapters/                ← 9 provider 适配器
-    ├── realtime/                ← EventBus + 事件合并 + SSE
-    ├── design-system/           ← 视觉原子层（token/图标/组件/四态/快捷键）
-    ├── frontend/                ← React SPA（5 视图 + 虚拟滚动 + 页面布局）
-    ├── desensitization/         ← PII 脱敏引擎
-    ├── metrics-analysis/        ← phase 分类 + 四维指标 + 报告
+    ├── trace-model/             ← data model behavior requirements
+    ├── storage/                 ← SQLite storage behavior requirements
+    ├── session-scanning/        ← scanners + incremental gate + prewarm strategy
+    ├── adapters/                ← 9 provider adapters
+    ├── realtime/                ← EventBus + event coalescing + SSE
+    ├── design-system/           ← visual atoms (tokens / icons / components / states / shortcuts)
+    ├── frontend/                ← React SPA (5 views + virtual scrolling + layout)
+    ├── desensitization/         ← PII desensitization engine
+    ├── metrics-analysis/        ← phase classification + four-dimension metrics + reports
     ├── proxy-capture/           ← MITM + CDP + Frida
-    ├── trae-decryption/         ← ⚠️ Trae CN 三层解密（最耗时的逆向成果）
-    ├── session-merge/           ← 会话合并
-    └── cli-build/               ← CLI + 三阶段构建 + 脚本
+    ├── trae-decryption/         ← ⚠️ Trae CN three-layer decryption (most time-consuming reverse engineering)
+    ├── session-merge/           ← session merging
+    └── cli-build/               ← CLI + three-stage build + scripts
 ```
 
-## 如何用这份 spec 复刻
+## How to use this spec to rebuild
 
-### 第 0 步：读四份文件
-按顺序读 `contracts/data-model.md` → `contracts/database.md` → `contracts/nfr.md` → `gotchas.md` 第 11 章。
-前两份决定你写出来的代码能不能拼起来，后两份决定它跑起来快不快。
+### Step 0: read the four files
+In order: `contracts/data-model.md` → `contracts/database.md` → `contracts/nfr.md`
+→ `gotchas.md` chapter 11. The first two decide whether the code you write
+composes; the last two decide whether it runs fast enough.
 
-**开发流程与提示词见仓库根的 `BOOTSTRAP.md` 与 `PROMPTS.md`。**
+**Development flow and prompts live in `BOOTSTRAP.md` and `PROMPTS.md` at the
+repo root.**
 
-### 第 1 步：按依赖顺序实现
+### Step 1: implement in dependency order
 
-| 阶段 | 模块 | 依赖 | 关键契约 |
-|------|------|------|---------|
-| 1 | trace-model | 无 | `contracts/data-model.md` 全文 |
-| 2 | storage | 1 | `contracts/database.md` 全文 |
-| 3 | session-scanning | 2 | nfr §3 启动行为 |
-| 4 | adapters | 1 | data-model §2 token 语义 |
+| Stage | Module | Depends on | Key contracts |
+|-------|--------|-----------|---------------|
+| 1 | trace-model | none | `contracts/data-model.md` in full |
+| 2 | storage | 1 | `contracts/database.md` in full |
+| 3 | session-scanning | 2 | nfr §3 startup behavior |
+| 4 | adapters | 1 | data-model §2 token semantics |
 | 5 | realtime | 2 | data-model §10 BusEvents |
-| 6 | design-system | — | `contracts/design-tokens.md` 全文 |
-| 6 | frontend shell | 1,5,6 | `contracts/api.md` §1–3 + `contracts/design-tokens.md` |
-| 7 | desensitization | 无 | — |
+| 6 | design-system | — | `contracts/design-tokens.md` in full |
+| 6 | frontend shell | 1,5,6 | `contracts/api.md` §1-3 + `contracts/design-tokens.md` |
+| 7 | desensitization | none | — |
 | 8 | proxy-capture | 2,5,7 | api §4 |
 | 9 | metrics-analysis | 1 | data-model §6 |
 | 10 | session-merge | 2 | — |
-| 11 | trae-decryption | 3,8 | specs/trae-decryption 全文 |
-| 12 | cli-build | 全部 | api §0 + nfr §5 |
+| 11 | trae-decryption | 3,8 | specs/trae-decryption in full |
+| 12 | cli-build | all | api §0 + nfr §5 |
 
-逐里程碑的文件清单与验收标准见 `BOOTSTRAP.md`。
+Per-milestone file lists and acceptance criteria are in `BOOTSTRAP.md`.
 
-### 第 2 步：每个模块合入后跑性能断言
-`contracts/nfr.md` §5 的断言必须在 CI 中执行。它们锁住的是最容易被无意破坏的点。
+### Step 2: run performance assertions after every module merge
+The `contracts/nfr.md` §5 assertions must run in CI. They lock down the points
+most easily broken unintentionally.
 
-### 每个 spec 的结构
-- **Purpose** — 这个模块干什么
-- **Requirements** — `REQ-XXX` 编号的行为需求 + `Scenario`（GIVEN/WHEN/THEN 可验证示例）
-- **Gotchas** — 该模块专属踩坑，指向 `gotchas.md` 对应条目
+### Structure of every spec
+- **Purpose** — what this module does
+- **Requirements** — numbered `REQ-XXX` behavior requirements + `Scenario`
+  (GIVEN/WHEN/THEN verifiable examples)
+- **Gotchas** — module-specific pitfalls, pointing to the matching entry in
+  `gotchas.md`
 
-## 最容易踩的 8 个坑（复刻前必看）
+## The 8 most common pitfalls (read before rebuilding)
 
-| # | 条目 | 一句话 |
-|---|------|--------|
-| 1 | **G11.5** | `scan_state` 写入必须抛错不能静默失败，否则增量扫描形同虚设且完全无声 |
-| 2 | **G11.9** | 前端任何 `sessions.map(s => fetch(...))` 都是设计错误，改服务端聚合端点 |
-| 3 | **G11.1** | 详情接口默认 slim，不带 raw 与正文，否则最差会话响应 32MB |
-| 4 | **G11.6** | `spawnSync` 是单线程 Node 的绝对禁区，一次调用吃掉 1.5–2.3 秒 |
-| 5 | **G4.4** | OpenCode/CodeArts 的 cache.read 是累积值用 max，reasoning 用 sum |
-| 6 | **G11.15** | WAL 型数据源的变更指纹必须覆盖 `-wal` 文件，只看主 DB 永远判定未变更 |
-| 7 | **G11.4** | `WHERE x=? ORDER BY y` 需要 `(x,y)` 复合索引，单列索引会产生临时排序 |
-| 8 | **G3.1** | dev URL 必须 `127.0.0.1` 不是 `localhost`（华为代理 ProxyOverride） |
+| # | Entry | One-liner |
+|---|-------|-----------|
+| 1 | **G11.5** | `scan_state` writes must throw, not fail silently, otherwise incremental scanning is fake and completely silent |
+| 2 | **G11.9** | any frontend `sessions.map(s => fetch(...))` is a design error; add a server-side aggregation endpoint |
+| 3 | **G11.1** | detail endpoint defaults to slim, no raw or body, otherwise the worst session response is 32MB |
+| 4 | **G11.6** | `spawnSync` is forbidden in single-threaded Node; one call eats 1.5-2.3s of the event loop |
+| 5 | **G4.4** | OpenCode/CodeArts cache.read is per-step incremental, use sum (calibrated 2026-08-03), reasoning uses sum |
+| 6 | **G11.15** | WAL-source change fingerprints must cover the `-wal` file; watching only the main DB never detects changes |
+| 7 | **G11.4** | `WHERE x=? ORDER BY y` needs a `(x,y)` composite index; a single-column index forces a temp sort |
+| 8 | **G3.1** | dev URLs must be `127.0.0.1`, not `localhost` (Huawei proxy ProxyOverride) |
 
-## 性能定位方法论
+## Performance triage methodology
 
-如果复刻出的系统还是慢，**不要凭直觉优化**。按 `PERF-DIAGNOSIS.md` 的 7 步流程实测：
+If the rebuilt system is still slow, **do not optimize by intuition**. Follow
+the 7-step process in `PERF-DIAGNOSIS.md`:
 
-1. 数据规模基线 → 2. 索引与查询计划 → 3. 服务端分段耗时 → 4. **A/B 对照实验** → 5. CPU profile → 6. 前端瀑布 → 7. 写入放大
+1. data-size baseline → 2. index & query plan → 3. server-side segment timing →
+4. **A/B experiments** → 5. CPU profile → 6. frontend waterfall → 7. write
+amplification
 
-第 4 步信息量最大成本最低：关掉某个可疑组件，对比前后。本项目正是靠它一步锁定根因（比值 1240 倍），而如果一上来就去优化 SQL，会在只占 4.2% CPU 的地方花掉全部时间。
+Step 4 gives the most information per unit cost: disable a suspect component
+and compare before/after. This project found its root cause that way in one
+step (ratio 1240x); jumping straight to SQL optimization would have spent all
+time on the 4.2% CPU slice.
 
-## Trae 解密专题
+## Trae decryption deep-dive
 
-Trae CN 三层加密（SQLCipher DB + TTNet 网络 + 客户端组装 prompt）是本项目最耗时的逆向工程。完整链路见 `specs/trae-decryption/spec.md`，含无效方案清单（**已验证 0 事件的方案不要重试**）。
-v5 只改变了它的**调用方式**（异步 spawn + 结果缓存 + 移出请求路径），解密逻辑本身完全保留。
+Trae CN's three-layer encryption (SQLCipher DB + TTNet network + client-
+assembled prompt) is the most time-consuming reverse-engineering in this
+project. The full chain is in `specs/trae-decryption/spec.md`, including the
+list of proven-dead approaches (**do not retry anything already verified to
+produce 0 events**). v5 only changed how it is **invoked** (async spawn +
+result cache + moved off the request path); the decryption logic itself is
+unchanged.
 
-## 与 OpenSpec 工具的关系
+## Relationship to the OpenSpec tooling
 
-本目录遵循 `specs/<domain>/spec.md` 约定（Requirements + Scenarios）。`project.md`、`gotchas.md`、`contracts/` 是复刻导向 spec 额外加的三类文档，也是它区别于普通 OpenSpec 的核心。
+This directory follows the `specs/<domain>/spec.md` convention (Requirements +
+Scenarios). `project.md`, `gotchas.md`, and `contracts/` are three extra
+replica-oriented document types and the core of how this differs from a plain
+OpenSpec spec.
 
-**关于 `changes/` 目录**：M0–M12 的复刻阶段未使用（目标是"复刻已有项目"而非"变更管理"，规格直接写进 `specs/`）。
-**自 2026-08-04 的 UI 设计刷新起启用**，用于执行追踪：`openspec list` 看进度、`openspec status --change <id>` 看单个 change 的 artifact 完成度。
+**About `changes/`**: the M0-M12 rebuild phase did not use it (the goal was
+"replicate an existing project" rather than "manage changes"; specs were
+written directly into `specs/`). It has been active since the 2026-08-04 UI
+design refresh for execution tracking: `openspec list` for progress,
+`openspec status --change <id>` for a single change's artifact completion.
 
-当前四个 change 的规格已先行落入主 `specs/`（`design-system`、`frontend` REQ-015+、`session-scanning` REQ-021/022、`contracts/design-tokens.md`），因此它们的 `.openspec.yaml` 均设 `skip_specs: true`，只承担 proposal / design / tasks 三份 artifact。
-**下一个新需求起走完整流程**：`openspec new change` → proposal → spec delta → design → tasks → 实现 → `openspec archive`。
+The four current changes already landed their specs into the main `specs/`
+(`design-system`, `frontend` REQ-015+, `session-scanning` REQ-021/022,
+`contracts/design-tokens.md`), so their `.openspec.yaml` set `skip_specs: true`
+and only carry proposal / design / tasks artifacts.
+**New requirements start the full flow**: `openspec new change` → proposal →
+spec delta → design → tasks → implement → `openspec archive`.
 
 ```bash
-openspec list                              # 看所有 change 与任务进度
-openspec status --change <id>              # 看单个 change 的 artifact 完成度
-openspec validate <id> --strict            # 提交前校验
-openspec archive <id>                      # 完成后归档（有 delta 时会并入主 specs）
+openspec list                              # view all changes and task progress
+openspec status --change <id>              # view one change's artifact completion
+openspec validate <id> --strict            # validate before commit
+openspec archive <id>                      # archive when done (merges deltas into main specs)
 ```
 
-如需用 OpenSpec CLI 管理：`npm install -g @fission-ai/openspec` → `openspec list`。
+To manage with the OpenSpec CLI: `npm install -g @fission-ai/openspec` →
+`openspec list`.

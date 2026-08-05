@@ -82,8 +82,8 @@ describe('REQ-001 parseCliArgs', () => {
   it('prewarm-recent > 100 返回 stderr 告警，默认 0 无告警', () => {
     expect(prewarmWarning(0)).toBeNull();
     expect(prewarmWarning(100)).toBeNull();
-    expect(prewarmWarning(101)).toContain('警告');
-    expect(prewarmWarning(500)).toContain('200–1240');
+    expect(prewarmWarning(101)).toContain('WARNING');
+    expect(prewarmWarning(500)).toContain('200-1240x');
   });
 });
 

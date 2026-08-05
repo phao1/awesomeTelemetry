@@ -1,40 +1,48 @@
 ## Why
 
-现状 `src/styles.css` 只有 72 行、30+ 处硬编码 hex、零 CSS 变量、零图标。
-这不是审美问题而是结构问题：**没有 token 层，就加不上暗色模式**；
-没有基础组件，每个视图各写各的按钮和表格。
+The current `src/styles.css` is only 72 lines with 30+ hardcoded hex values,
+zero CSS variables, and zero icons. This is not an aesthetic issue but a
+structural one: **without a token layer, dark mode cannot be added**; without
+base components, every view writes its own buttons and tables.
 
-产品定位是「开发者最愿意打开的 Agent 可观测工具」，参照 GitHub / Linear / Grafana。
-在画任何页面之前，必须先有可被主题覆盖的 token 层和一套统一的原子组件。
+The product positioning is "the agent observability tool developers most want
+to open", modeled on GitHub / Linear / Grafana. Before drawing any page, there
+must be a themeable token layer and a unified set of atomic components.
 
 ## What Changes
 
-- 拆 `src/styles.css` → `src/styles/{tokens,base,layout,components}.css`，
-  落地 `contracts/design-tokens.md` 的全部双主题变量。
-- 主题三态（system / dark / light）+ localStorage 持久化 + `index.html` 内联同步脚本防首帧闪白。
-- 全量替换硬编码 hex 为 `var(--*)`，并用 CI 断言禁止回潮。
-- 新增 47 个手写内联 SVG 图标（16×16 网格、`currentColor`、**零依赖**）。
-- 新增 `src/components/ui/` 基础组件库（Button / Badge / Table / Modal / Tooltip 等 25 项）。
+- Split `src/styles.css` → `src/styles/{tokens,base,layout,components}.css`,
+  landing all dual-theme variables from `contracts/design-tokens.md`.
+- Three-state theme (system / dark / light) + localStorage persistence +
+  inline sync script in `index.html` to prevent first-frame flash.
+- Replace all hardcoded hex values with `var(--*)`, with CI assertions
+  forbidding regression.
+- Add 47 hand-written inline SVG icons (16×16 grid, `currentColor`,
+  **zero dependencies**).
+- Add the `src/components/ui/` base component library (Button / Badge / Table
+  / Modal / Tooltip etc., 25 items).
 
-无 BREAKING：纯新增与样式重构，不改任何 API 与数据结构。
+No BREAKING: pure additions and style refactor; no API or data structure
+changes.
 
 ## Capabilities
 
 ### New Capabilities
 
-无需新建 spec 文件——`specs/design-system/spec.md` 已于 2026-08-04 落地。
+No new spec file needed — `specs/design-system/spec.md` landed on 2026-08-04.
 
 ### Modified Capabilities
 
-无 delta。本 change 实现的是 `specs/design-system/spec.md` REQ-001~005、REQ-010
-与 `contracts/design-tokens.md` 全文，规格已先行就位，故 `.openspec.yaml` 设 `skip_specs: true`。
+No deltas. This change implements `specs/design-system/spec.md` REQ-001~005,
+REQ-010 and the full `contracts/design-tokens.md`; the specs were already in
+place, so `.openspec.yaml` sets `skip_specs: true`.
 
 ## Impact
 
-| 面 | 影响 |
-|----|------|
-| 代码 | `src/styles.css` 删除并拆分；`index.html` 加内联主题脚本；新增 `src/components/icons/`、`src/components/ui/` |
-| 现有组件 | 全部组件的 className 与内联 style 需改为引用 token；不改其逻辑与 props |
-| 测试 | 新增 `src/styles/tokens.test.ts`（契约 §9 的 T1–T7 断言） |
-| 依赖 | **0 新增**。图标、tooltip、拖拽全部手写（AUTOPILOT 禁令 C） |
-| 性能 | CSS gzip < 16KB、图标集 < 12KB、主题切换 < 16ms |
+| Area | Impact |
+|------|--------|
+| Code | `src/styles.css` deleted and split; `index.html` gains an inline theme script; new `src/components/icons/`, `src/components/ui/` |
+| Existing components | all components' classNames and inline styles switch to token references; logic and props unchanged |
+| Tests | new `src/styles/tokens.test.ts` (contract §9 T1-T7 assertions) |
+| Dependencies | **0 new**. Icons, tooltip, and drag all hand-written (AUTOPILOT prohibition C) |
+| Performance | CSS gzip < 16KB, icon set < 12KB, theme switch < 16ms |

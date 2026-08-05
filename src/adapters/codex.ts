@@ -3,13 +3,16 @@ import { classifyEvents } from '../core/phase-classifier.js';
 import {
   aggregateTokenUsage,
   dedupeEventIds,
+  deriveDurations,
   type EventWithRaw,
   minMaxIso,
   normalizeStatus,
   orderEventsByTime,
+  pickPrimaryModel,
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
+import { computeCostUsd } from '../core/pricing.js';
 import { extractTitleFromUserText } from '../core/title-utils.js';
 import type { Adapter, RawSample } from './sample-loader.js';
 
@@ -171,9 +174,14 @@ export function normalizeCodexSample(
 
   const ordered = orderEventsByTime(events);
   const deduped = dedupeEventIds(ordered);
-  const classified = classifyEvents(deduped);
+  // P0-A：Codex JSONL 不记录事件耗时，按相邻时间戳推导
+  const timed = deriveDurations(deduped);
+  const classified = classifyEvents(timed);
   const times = minMaxIso(classified);
   const semantics = { cacheRead: 'incremental' as const, reasoning: 'incremental' as const };
+  const tokenUsage = aggregateTokenUsage(classified, semantics);
+  const primaryModel = pickPrimaryModel(classified);
+  const cost = computeCostUsd(tokenUsage, primaryModel);
   const session: TraceSession = {
     id: sessionId,
     provider: 'codex',
@@ -193,13 +201,16 @@ export function normalizeCodexSample(
     cwd,
     messageCount: rows.length,
     eventCount: classified.length,
-    tokenUsage: aggregateTokenUsage(classified, semantics),
-    costUsd: 0,
+    tokenUsage,
+    costUsd: cost.costUsd,
     systemPrompt: null,
     dataSource: 'scan',
     sourcePath,
     totalDurationMs: wallClockDurationMs(classified),
     isSubagent: false,
+    primaryModel,
+    costSource: cost.costSource,
+    durationSource: 'derived',
   };
   return { session, events: classified, tokenSemantics: semantics };
 }

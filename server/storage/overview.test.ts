@@ -212,7 +212,8 @@ describe('REQ-009 Agent Overview 服务端聚合', () => {
     expect(codex?.avgWallClockMs).toBeCloseTo(3000);
     expect(codex?.avgToolDurationMs).toBeCloseTo(100);
     expect(codex?.errorRate).toBeCloseTo(1 / 3);
-    expect(codex?.verificationCoverage).toBe(1); // 单会话 0|1
+    // #15：3 个步骤事件中 1 个 verify → 1/3（不再恒为 1）
+    expect(codex?.verificationCoverage).toBeCloseTo(1 / 3);
     expect(codex?.debugEntryRate).toBe(0);
 
     const claude = rows.get('claude/Claude');

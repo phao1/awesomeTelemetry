@@ -1,100 +1,126 @@
 # Agent Observability
 
-本地 Web UI：读取并分析 9 种 AI 编码助手（Claude Code / Codex / OpenCode / CodeArts /
-CodeAgent / Trae CN / Qoder / WorkBuddy）的会话轨迹，按「快 · 准 · 稳 · 省」四维度衡量。
-数据来自本地文件扫描（scan）与可选的 MITM/CDP/Frida 实时捕获（proxy）。
+**English** | [简体中文](README.zh-CN.md)
 
-## 快速开始
+Local web UI that reads and analyzes session traces from 9 AI coding assistants
+(Claude Code / Codex / OpenCode / CodeArts / CodeAgent / CodeMate / Trae CN /
+Qoder / WorkBuddy), scored across four dimensions: **Speed · Accuracy ·
+Stability · Cost**. Data comes from local file scanning (`scan`) plus optional
+live capture via MITM / CDP / Frida (`proxy`).
 
-```bash
-npm install        # 需要 Node ≥ 20；Windows 需 MSVC 工具链（better-sqlite3）
-npm run build      # 三阶段构建：tsc -b → vite build → server-dist
-npm start          # 生产启动：node bin/agent-observe.js
-```
-
-生产模式下 `npm start` 同时提供 API 与前端静态资源，浏览器访问
-`http://127.0.0.1:4173/`（G3.1：不要用 localhost，企业代理可能拦截）。
-
-开发模式（前后端分离，前端热更新）：
+## Quick start
 
 ```bash
-终端 1：npm start          # 后端 API 于 http://127.0.0.1:4173/
-终端 2：npm run dev        # Vite 于 http://127.0.0.1:5173/，/api 代理到 4173
+npm install        # requires Node >= 20; Windows needs the MSVC toolchain (better-sqlite3)
+npm run build      # three-stage build: tsc -b → vite build → server-dist
+npm start          # production: node bin/agent-observe.js
 ```
 
-`npm run dev` 只起 Vite 前端（端口 5173），后端必须另开 `npm start`，
-否则 `/api/*` 请求会代理失败。
+In production, `npm start` serves both the API and the built frontend. Open
+`http://127.0.0.1:4173/` in your browser (G3.1: use 127.0.0.1, not localhost —
+corporate proxies may intercept it).
 
-## CLI 参数
-
-| Flag | 默认 | 说明 |
-|------|------|------|
-| `--host <host>` | `127.0.0.1` | 绑定地址 |
-| `--port <port>` | `4173` | HTTP 端口 |
-| `--no-open` | 开 | 不自动打开浏览器 |
-| `--config-root <path>` | cwd | config 目录 |
-| `--db-path <path>` | `<config-root>/agent-observe-data/observe.sqlite` | SQLite 路径 |
-| `--proxy-port <port>` | `7779` | MITM 端口 |
-| `--enable-proxy` | false | 启动即开 MITM（P-3：macOS 未端到端验证） |
-| `--prewarm-recent <n>` | `0` | 预热最近 N 个会话；0 = 完全按需（>100 会 stderr 告警） |
-| `--proxy-retention-days <n>` | `30` | proxy_requests 保留天数；0 = 不清理 |
-| `--no-gzip` | 关 | 关闭响应压缩（仅调试用） |
-
-启动时执行 5 步自检：建库/版本校验 → 关键索引校验补建 → WAL checkpoint → proxy 保留清理 →
-启动摘要（schemaVersion / 会话数 / DB+WAL 体积）。
-
-## 目录
-
-```
-server/          后端（http / storage / realtime / watch / proxy / desensitization）
-local-sessions/  config + 9 个 scanner + trae-bridge
-src/             React 前端 + core 分析 + adapters + generated（机器生成）
-openspec/        规格与契约（真相来源）
-perf-diag/       7 个性能诊断脚本
-```
-
-## 性能基线（perf-diag）
-
-从 M3 起，每个里程碑合入后跑一次基线并把数字追加到 `PERF-BASELINE.md`：
+Development mode (separate frontend/backend with HMR):
 
 ```bash
-npm run perf:check     # 顺序执行 perf-diag/ 的 7 个脚本（合成参考规模数据）
+Terminal 1: npm start          # backend API at http://127.0.0.1:4173/
+Terminal 2: npm run dev        # Vite at http://127.0.0.1:5173/, /api proxied to 4173
 ```
 
-脚本说明（对应参考诊断报告的 Step 编号）：
+`npm run dev` only starts the Vite frontend (port 5173); the backend must be
+started separately with `npm start`, otherwise `/api/*` requests will fail to
+proxy.
 
-| 脚本 | 内容 |
-|------|------|
-| `01-db-stats.mjs` | DB 规模（Step 0） |
-| `02-source-stats.mjs` | 源文件统计（Step 0b，M6 接线后启用） |
-| `03-explain-plan.mjs` | 三条核心查询 EXPLAIN QUERY PLAN（Step 1） |
-| `04-query-timing.mjs` | 服务端分段耗时（Step 2） |
-| `05-overview-perf.mjs` | Overview 聚合 + 缓存命中 |
-| `06-diff-write.mjs` | 差分写入语句计数（Step 6） |
-| `07-event-loop.mjs` | 事件循环延迟压测 |
+## CLI options
 
-任何一列相对上一行劣化超过 20% 的提交不得合入，除非在提交说明中写清取舍。
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--host <host>` | `127.0.0.1` | bind address |
+| `--port <port>` | `4173` | HTTP port |
+| `--no-open` | open | do not auto-open the browser |
+| `--config-root <path>` | cwd | config directory |
+| `--db-path <path>` | `<config-root>/agent-observe-data/observe.sqlite` | SQLite path |
+| `--proxy-port <port>` | `7779` | MITM port |
+| `--enable-proxy` | false | start MITM on launch (P-3: not E2E-verified on macOS) |
+| `--prewarm-recent <n>` | `0` | prewarm the most recent N sessions; 0 = fully on demand (>100 warns on stderr) |
+| `--proxy-retention-days <n>` | `30` | proxy_requests retention days; 0 = never purge |
+| `--no-gzip` | off | disable response compression (debug only) |
 
-## 构建与打包
+Startup runs a 5-step self check: schema init/version → key index rebuild →
+WAL checkpoint → proxy retention cleanup → startup summary
+(schemaVersion / session count / DB+WAL size).
+
+## Trae CN SQLCipher decryption
+
+Trae CN encrypts its local database with SQLCipher. `scripts/trae-extract-key.py`
+handles both halves:
+
+- **Key extraction** (Windows): scans the memory of the running `Trae CN.exe`
+  process (`OpenProcess` + `VirtualQueryEx` + `ReadProcessMemory`) for the
+  `PRAGMA key = x'...'` pattern and saves the 64-character hex key with
+  `--save`.
+- **Decryption** (cross-platform): `--decrypt <db> --key <key-file> --out
+  <plain.db>` copies `db` + `-wal` + `-shm`, opens the copy with `sqlcipher3`,
+  runs `PRAGMA wal_checkpoint(FULL)`, then exports a plaintext SQLite file via
+  `sqlcipher_export`. Requires the `sqlcipher3` Python package.
+
+The scanner runs decryption through an async `spawn` bridge with a 30s
+fingerprint cache (`local-sessions/trae-bridge.ts`) and never blocks the HTTP
+event loop. Configure the key file via `traeKeyPath` in the local session
+config; if the key is missing the provider reports `TRAE_KEY_MISSING`.
+Trae default paths: `%APPDATA%\Trae CN\ModularData\ai-agent` on Windows,
+`~/Library/Application Support/Trae CN/ModularData/ai-agent` on macOS.
+
+Real SQLCipher end-to-end coverage is available locally with:
 
 ```bash
-npm run build          # 三阶段：tsc -b → vite build → vite build（server-dist/cli.js）
+TRAE_TEST_PYTHON=/path/to/python-with-sqlcipher3 npm run test -- local-sessions/trae-bridge.test.ts
+```
+
+## Directory layout
+
+```
+server/           backend (http / storage / realtime / watch / proxy / desensitization)
+local-sessions/   config + 9 scanners + trae-bridge
+src/              React frontend + core analysis + adapters + generated (machine-generated)
+openspec/         specs and contracts (source of truth)
+perf-diag/        7 performance diagnostic scripts
+```
+
+## Performance baseline
+
+Starting at M3, every milestone merge runs the baseline and appends the numbers
+to `PERF-BASELINE.md`:
+
+```bash
+npm run perf:check     # runs the 7 perf-diag scripts sequentially (synthetic reference data)
+```
+
+Any column degrading more than 20% vs the previous row blocks the commit unless
+the trade-off is documented in the commit message.
+
+## Build & packaging
+
+```bash
+npm run build          # three stages: tsc -b → vite build → server-dist (cli.js)
 npm run pack:binary    # scripts/pack-binary.mjs → dist-binary/
 ```
 
-`pack-binary` 复制 `server-dist/` + `dist/` + `bin/` + node_modules + package.json，
-并生成平台启动器：Windows 用 `agent-observe.ps1`（UTF-8，不用 .bat），Unix 用
-`agent-observe.sh`。
+`pack-binary` copies `server-dist/` + `dist/` + `bin/` + node_modules +
+package.json and generates platform launchers: `agent-observe.ps1` (UTF-8) on
+Windows, `agent-observe.sh` on Unix.
 
-## 脚本
+## Scripts
 
-- `npm run gen:samples` — 生成 `src/generated/local-samples.ts`（fallback 样本；支持
-  `--claude-source=` / `--opencode-db=` 或同名 env）
-- `scripts/trae-extract-key.py` — Trae SQLCipher 密钥提取（Windows + sqlcipher3，P-3 未端到端验证）
-- `scripts/frida-*.js` — Frida monitor / 模块探测（Windows + Trae，P-3）
+- `npm run gen:samples` — generates `src/generated/local-samples.ts`
+  (offline fallback samples; supports `--claude-source=` / `--opencode-db=` or
+  the same env vars)
+- `scripts/trae-extract-key.py` — Trae SQLCipher key extraction (Windows) and
+  decryption (cross-platform, sqlcipher3)
+- `scripts/frida-*.js` — Frida monitor / module probe (Windows + Trae, P-3)
 
-## 文档与验收
+## Docs & acceptance
 
-- 规格与契约：`openspec/`（类型/DDL/API/性能预算的权威来源）
-- 里程碑进度：`PROGRESS.md`；待决决策：`DECISIONS-PENDING.md`
-- 测试：`npm run typecheck && npm run test && npm run lint` 全绿后再提交
+- Specs and contracts: `openspec/` (authoritative for types / DDL / API / perf budget)
+- Milestone progress: `PROGRESS.md`; pending decisions: `DECISIONS-PENDING.md`
+- Gate before every commit: `npm run typecheck && npm run test && npm run lint`

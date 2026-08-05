@@ -113,7 +113,7 @@ export function serveStatic(
       200,
       '<!doctype html><html lang="zh"><head><meta charset="utf-8">' +
         '<title>Agent Observability</title></head><body>' +
-        '<p>dist/ 目录不存在：请先运行 <code>npm run build</code>，再执行 <code>npm start</code>。</p>' +
+        '<p>dist/ is missing: run <code>npm run build</code> first, then <code>npm start</code>.</p>' +
         '</body></html>',
       req,
       HTML_CONTENT_TYPE,

@@ -7,13 +7,16 @@ import { classifyEvents } from '../core/phase-classifier.js';
 import {
   aggregateTokenUsage,
   dedupeEventIds,
+  deriveDurations,
   type EventWithRaw,
   minMaxIso,
   normalizeStatus,
   orderEventsByTime,
+  pickPrimaryModel,
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
+import { computeCostUsd } from '../core/pricing.js';
 import { extractTitleFromUserText } from '../core/title-utils.js';
 import type { Adapter, RawSample } from './sample-loader.js';
 
@@ -62,7 +65,15 @@ function usageToTokens(usage: ClaudeRawMessage['usage']): TokenUsage | null {
   const output = usage.output_tokens ?? 0;
   const cacheRead = usage.cache_read_input_tokens ?? 0;
   const cacheWrite = usage.cache_creation_input_tokens ?? 0;
-  return { input, output, reasoning: 0, cacheRead, cacheWrite, total: input + output + cacheRead };
+  // #8：total 与 aggregateTokenUsage 一致，含 cacheWrite。
+  return {
+    input,
+    output,
+    reasoning: 0,
+    cacheRead,
+    cacheWrite,
+    total: input + output + cacheRead + cacheWrite,
+  };
 }
 
 function partsOf(message: ClaudeRawMessage): ClaudeContentPart[] {
@@ -160,6 +171,8 @@ export function normalizeClaudeSample(
           status,
           actor: 'assistant',
           tool: null,
+          // P0-B：源数据一直带 model，此前从未被读取
+          model: message?.model ?? null,
           tokens: partIndex === 1 ? tokens : null,
           error: null,
           hasInput: false,
@@ -202,7 +215,9 @@ export function normalizeClaudeSample(
 
   const ordered = orderEventsByTime(events);
   const deduped = dedupeEventIds(ordered);
-  const classified = classifyEvents(deduped);
+  // P0-A：Claude JSONL 不记录事件耗时，按相邻时间戳推导（durationSource='derived'）
+  const timed = deriveDurations(deduped);
+  const classified = classifyEvents(timed);
   const times = minMaxIso(classified);
   const firstUser = classified.find((e) => e.kind === 'user_prompt');
   const firstRealUser = classified.find(
@@ -212,6 +227,9 @@ export function normalizeClaudeSample(
       extractTitleFromUserText(e.inputSummary) !== null,
   );
   const semantics = { cacheRead: 'incremental' as const, reasoning: 'incremental' as const };
+  const tokenUsage = aggregateTokenUsage(classified, semantics);
+  const primaryModel = pickPrimaryModel(classified);
+  const cost = computeCostUsd(tokenUsage, primaryModel);
   const session: TraceSession = {
     id: sessionId,
     provider: 'claude',
@@ -223,13 +241,16 @@ export function normalizeClaudeSample(
     cwd: null,
     messageCount,
     eventCount: classified.length,
-    tokenUsage: aggregateTokenUsage(classified, semantics),
-    costUsd: 0,
+    tokenUsage,
+    costUsd: cost.costUsd,
     systemPrompt: null,
     dataSource: 'scan',
     sourcePath,
     totalDurationMs: wallClockDurationMs(classified),
     isSubagent: false,
+    primaryModel,
+    costSource: cost.costSource,
+    durationSource: 'derived',
   };
   return { session, events: classified, tokenSemantics: semantics };
 }

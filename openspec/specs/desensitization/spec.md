@@ -1,48 +1,60 @@
 # Spec: Desensitization
 
-> PII 脱敏引擎。源文件：`server/desensitization/`
+> PII desensitization engine. Source files: `server/desensitization/`
 
 ## Purpose
 
-对 scan 与 proxy 捕获的请求体、响应体、文件内容做正则脱敏，避免敏感数据入库或展示。
+Regex-desensitize request bodies, response bodies, and file contents from scan
+and proxy captures so sensitive data never lands in the DB or the UI.
 
 ## Requirements
 
-### REQ-001: 10 条内置规则
-| # | id | 模式 | 替换 | 默认 |
-|---|-----|------|------|------|
+### REQ-001: 10 built-in rules
+| # | id | Pattern | Replacement | Default |
+|---|-----|---------|-------------|---------|
 | 1 | api_key | `sk-[a-zA-Z0-9]{20,}` | `sk-***` | enabled |
 | 2 | api_key_generic | `key-[a-zA-Z0-9]{20,}` | `key-***` | enabled |
 | 3 | bearer_token | `Bearer\s+\S+` | `Bearer ***` | enabled |
-| 4 | email | 邮箱 | `u***@e***.c***` | enabled |
+| 4 | email | email | `u***@e***.c***` | enabled |
 | 5 | ip_address | IPv4 | `***.***.***.***` | enabled |
 | 6 | file_path_win | `C:\...` | `C:\***` | enabled |
 | 7 | file_path_unix | `/home\|/Users\|/root/...` | `/home/***` | enabled |
 | 8 | aws_access_key | `AKIA[A-Z0-9]{16}` | `AKIA***` | enabled |
-| 9 | aws_secret_key | 40 字符 base64 | `***` | **disabled**（误报多） |
-| 10 | private_key | PEM 块 | `***PRIVATE KEY REDACTED***` | enabled |
+| 9 | aws_secret_key | 40-char base64 | `***` | **disabled** (too many false positives) |
+| 10 | private_key | PEM blocks | `***PRIVATE KEY REDACTED***` | enabled |
 
-### REQ-002: 顺序应用与 lastIndex 重置
-`desensitize(text, opts)` SHALL 按顺序应用所有 enabled 规则。每个 global regex 在每次 replace 前 MUST 重置 `lastIndex`，否则会间歇性漏匹配。
+### REQ-002: Sequential application and lastIndex reset
+`desensitize(text, opts)` SHALL apply all enabled rules in order. Every global
+regex MUST reset `lastIndex` before each replace, otherwise matches are
+intermittently missed.
 
-### REQ-003: 对象脱敏
-`desensitizeObject<T>(obj, opts, fields?)` SHALL 对指定字符串字段脱敏。
+### REQ-003: Object desensitization
+`desensitizeObject<T>(obj, opts, fields?)` SHALL desensitize the specified
+string fields.
 
-### REQ-004: 规则合并
-`resolveRules(opts)` SHALL 合并内置默认与用户覆盖，返回完整规则集。
+### REQ-004: Rule merging
+`resolveRules(opts)` SHALL merge built-in defaults with user overrides and
+return the full rule set.
 
-### REQ-005: 配置端点
-`GET` / `PUT /api/desensitization/rules`，PUT MUST 原子写。
+### REQ-005: Config endpoints
+`GET` / `PUT /api/desensitization/rules`; PUT MUST write atomically.
 
-### REQ-006: raw 保留默认关闭
-配置项 `keepRawBodies` 默认 `false`。为 true 时才写 `raw_request_body` / `raw_response_body`。
+### REQ-006: raw retention off by default
+The `keepRawBodies` config defaults to `false`. `raw_request_body` /
+`raw_response_body` are only written when it is `true`.
 
-> v4 默认双存导致存储翻倍且明文入库，与脱敏目的相悖。v5 改为显式 opt-in，且 UI 上必须有明确提示。
+> v4 defaulted to double-storing, doubling storage and putting plaintext in the
+> DB, contradicting the purpose of desensitization. v5 makes it an explicit
+> opt-in and the UI must show a clear warning.
 
-### REQ-007: 性能约束
-脱敏在 MITM 写库前的同步路径上执行，单次调用 MUST < 5ms @ 100KB 文本。超过时 MUST 跳过并记录，MUST NOT 阻塞请求转发。
+### REQ-007: Performance constraint
+Desensitization runs on the synchronous path before MITM writes to the DB.
+Single call MUST be < 5ms @ 100KB text. Over budget, MUST skip and record;
+MUST NOT block request forwarding.
 
 ## Gotchas
-- G8.2：aws_secret_key 默认禁用
-- global regex 必须每次 reset lastIndex
-- G11.13（新）：脱敏在请求同步路径上，正则回溯爆炸会直接卡住代理。所有规则必须避免嵌套量词
+- G8.2: aws_secret_key disabled by default
+- global regexes must reset lastIndex every time
+- G11.13 (new): desensitization runs on the request sync path; regex
+  backtracking explosions stall the proxy directly. Every rule must avoid
+  nested quantifiers

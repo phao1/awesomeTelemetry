@@ -17,7 +17,7 @@ describe('CodeArts adapter（REQ-005/G9.1 thin wrapper）', () => {
     expect(r.events.map((e) => e.kind)).toEqual(['user_prompt', 'file_write']);
   });
 
-  it('cacheRead 用 max（cumulative）', () => {
+  it('#4 cacheRead 增量用 sum', () => {
     const events = [
       { id: 'm1', role: 'assistant' as const, sessionID: 'ca2-s1', time: { created: 1754000000000 }, tokens: { cache: { read: 10 } }, content: [{ type: 'text', text: 'a' }] },
       { id: 'm2', role: 'assistant' as const, sessionID: 'ca2-s1', time: { created: 1754000010000 }, tokens: { cache: { read: 40 } }, content: [{ type: 'text', text: 'b' }] },
@@ -26,7 +26,20 @@ describe('CodeArts adapter（REQ-005/G9.1 thin wrapper）', () => {
       { sourceAgent: 'CodeArts', session: codeartsFixture.session, events },
       SRC,
     );
-    expect(r.session.tokenUsage.cacheRead).toBe(40);
+    expect(r.session.tokenUsage.cacheRead).toBe(50); // 10 + 40
+  });
+
+  it('#6 CodeArts/DeepSeek：reasoning 是 output 子集，total 不含 reasoning', () => {
+    const events = [
+      { id: 'm1', role: 'assistant' as const, sessionID: 'ca2-s1', time: { created: 1754000000000 }, tokens: { input: 100, output: 50, reasoning: 30, cache: { read: 10 } }, content: [{ type: 'text', text: 'a' }] },
+    ];
+    const r = codeartsAdapter.normalize(
+      { sourceAgent: 'CodeArts', session: codeartsFixture.session, events },
+      SRC,
+    );
+    expect(r.tokenSemantics.reasoningInTotal).toBe(false);
+    expect(r.session.tokenUsage.reasoning).toBe(30);
+    expect(r.session.tokenUsage.total).toBe(100 + 50 + 10); // 不含 reasoning
   });
 
   it('状态归一化四类映射', () => {

@@ -56,7 +56,7 @@ export function SessionHeaderCard({
   }, [session, events]);
 
   const pct = (v: number | null): string => (v === null ? '—' : `${(v * 100).toFixed(0)}%`);
-  const na = metrics.hasData ? '' : ' — 会话数据不足以计算';
+  const na = metrics.hasData ? '' : ` — ${t('session.insufficientData', locale)}`;
 
   return (
     <div className="session-header">

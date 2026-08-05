@@ -82,10 +82,12 @@ export function wallClockDurationMs(events: TraceEvent[]): number {
 }
 
 /**
- * G4.4/G4.5：会话级 token 聚合。
- * - cacheRead：cumulative → Math.max，incremental → sum
+ * G4.4/G4.5（2026-08-03 校准后）：会话级 token 聚合。
+ * - cacheRead：cumulative → Math.max，incremental → sum（OpenCode 系实测为增量，用 sum）
  * - reasoning：恒 sum
- * - total = input + output + reasoning + cacheRead（不含 cacheWrite）
+ * - total = input + output + reasoning + cacheRead + cacheWrite
+ *   （#6：reasoningInTotal === false 时排除 reasoning——CodeArts/DeepSeek 的
+ *   reasoning 是 output 子集，真实 total 不含它）
  */
 export function aggregateTokenUsage(
   events: TraceEvent[],
@@ -110,7 +112,19 @@ export function aggregateTokenUsage(
       cacheRead += event.tokens.cacheRead;
     }
   }
-  return { input, output, reasoning, cacheRead, cacheWrite, total: input + output + reasoning + cacheRead };
+  return {
+    input,
+    output,
+    reasoning,
+    cacheRead,
+    cacheWrite,
+    total:
+      input +
+      output +
+      (semantics.reasoningInTotal === false ? 0 : reasoning) +
+      cacheRead +
+      cacheWrite,
+  };
 }
 
 /** G4.8 / REQ-012：同 session 内重复 event id 追加 :{sequence} 后缀。 */
@@ -136,6 +150,74 @@ export function orderEventsByTime(events: TraceEvent[]): TraceEvent[] {
 /** OpenCode 系 subagent 标题检测（G9.3）。 */
 export function isSubagentTitle(title: string): boolean {
   return /\(@.*\bsubagent\)/i.test(title);
+}
+
+/**
+ * add-mission-control §1 P0-A：相邻时间戳推导事件时长。
+ *
+ * 背景：claude / codex / opencode-db 的 durationMs 此前恒为 0，
+ * 导致 avgToolDurationMs、TimeComposition、所有耗时类面板在主力 provider 上全是 0。
+ * qoder.ts:65 已有同样的推导先例，此处统一。
+ *
+ * 四条规则（缺一条推导值就会比 0 更有害）：
+ * 1. 按时间排序后 durationMs = next.startedAt − this.startedAt，末事件为 0
+ * 2. **user_prompt 不参与推导** —— 其后的间隔是"用户在思考"，不是模型/工具耗时，
+ *    该段由 computeTimeComposition 归入 userWait
+ * 3. 单事件上限 5 分钟，超出说明中间隔了一次人类离开，截断（归入 idle）
+ * 4. 调用方必须把 session.durationSource 标为 'derived'，UI 口径行据此标注
+ */
+export const DERIVED_DURATION_CAP_MS = 300_000;
+
+export function deriveDurations<T extends TraceEvent>(events: T[]): T[] {
+  if (events.length === 0) {
+    return events;
+  }
+  const sorted = events
+    .slice()
+    .sort((a, b) => (a.startedAt === b.startedAt ? a.sequence - b.sequence : a.startedAt < b.startedAt ? -1 : 1));
+  const durationById = new Map<string, number>();
+  for (let i = 0; i < sorted.length - 1; i += 1) {
+    const current = sorted[i]!;
+    if (current.kind === 'user_prompt') {
+      continue; // 规则 2
+    }
+    const gap = Date.parse(sorted[i + 1]!.startedAt) - Date.parse(current.startedAt);
+    if (!Number.isFinite(gap) || gap <= 0) {
+      continue;
+    }
+    durationById.set(current.id, Math.min(gap, DERIVED_DURATION_CAP_MS)); // 规则 3
+  }
+  return events.map((event) =>
+    event.durationMs > 0 || !durationById.has(event.id)
+      ? event
+      : { ...event, durationMs: durationById.get(event.id)! },
+  );
+}
+
+/**
+ * add-mission-control §1 P0-B：选出会话主模型 —— token 占比最高者。
+ * 无 model 的事件不参与；全部无 model 时返回 null。
+ */
+export function pickPrimaryModel(events: TraceEvent[]): string | null {
+  const weight = new Map<string, number>();
+  for (const event of events) {
+    const model = event.model;
+    if (model === null || model === undefined || model === '') {
+      continue;
+    }
+    const tokens = event.tokens?.total ?? 0;
+    // 无 token 的事件也算一票，避免"有 model 但 token 全为 0"时退化成 null
+    weight.set(model, (weight.get(model) ?? 0) + tokens + 1);
+  }
+  let best: string | null = null;
+  let bestWeight = -1;
+  for (const [model, w] of weight) {
+    if (w > bestWeight) {
+      best = model;
+      bestWeight = w;
+    }
+  }
+  return best;
 }
 
 /** 从文本取单行标题并截断。 */

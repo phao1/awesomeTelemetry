@@ -1,62 +1,76 @@
-# Agent Observability 性能修复方案
+# Agent Observability performance fix plan
 
-> 依据：`PERF-DIAGNOSIS.md`（2026-08-03 实测）
-> 规模定档：**B 档**（524 会话 / 73,588 event / 源文件 800MB / 单会话最大 9,590 event）
-> 每条修复包含：证据 → 改法 → 代码 → 验收标准
-
----
-
-## 0. 总览
-
-### 0.1 核心判断
-
-Group B（关闭预热）首屏 **10–20ms**。系统本身没有性能问题，全部延迟来自三类自造的无用功：
-
-1. **重复劳动** —— `scan_state` 为空导致每轮扫描重处理 800MB 源文件
-2. **过量传输** —— 详情接口把 `events.raw`（147.82MB 总量）和全文 summary 一起返回
-3. **广播风暴** —— 逐 session 发 SSE 触发前端全量重拉
-
-因此修复主线是**停止做无用功**，而不是把慢操作优化快。
-
-### 0.2 修复优先级
-
-| 优先级 | 编号 | 修复项 | 依据瓶颈 | 预期收益 |
-|--------|------|--------|---------|---------|
-| P0 | F1 | 修复 `scan_state` 增量状态（隐藏根因） | #1 #6 | 无变更扫描 18,235 SQL → 0 |
-| P0 | F2 | 预热改按需 + LRU（默认关闭全量预热） | #1 | 首屏 5,884ms → <100ms |
-| P0 | F3 | 详情接口瘦身：slim events + 单 event 下钻 | #2 #5 | 最差详情 32.3MB → ~1.2MB |
-| P0 | F4 | 补两条复合索引 | #4 | events 排序 210ms → <15ms |
-| P1 | F5 | Agent Overview 服务端聚合 | #2 | 524 请求 299.6MB → 1 请求 <80KB |
-| P1 | F6 | SSE 事件合并 + 前端局部 patch | #3 | 30s 内 508 请求 → <15 |
-| P1 | F7 | Trae `spawnSync` 改异步 + 解密结果缓存 | #7 | 主线程阻塞 6,074ms → 0 |
-| P1 | F8 | `events.raw` 拆表 + WAL checkpoint + PRAGMA | #5 #8 | DB 471.6MB → ~175MB |
-| P2 | F9 | gzip 响应压缩 | 全局 | 传输体积再降 8–10x |
-| P2 | F10 | `upsertEvents` 差分写入 | #6 | 有变更时写入 182ms → <20ms |
-| P2 | F11 | JSONL byte-offset 尾部增量读 | #1 | codeagent 739MB 重读 → 仅读增量 |
-| P2 | F12 | 前端虚拟滚动 | #2 | 9,590 event DOM → 视口内 ~40 |
-
-### 0.3 不做的事（数据已证伪）
-
-| 曾怀疑 | 实测 | 结论 |
-|--------|------|------|
-| `listSessions` 无分页字段过大 | 5.33ms / 447.8KB | 当前规模不是瓶颈，暂不改 |
-| `getSystemPromptForSession` 的 `LENGTH()` 排序 | 0.79ms（1,820 行，仅 5 行有值） | 不是瓶颈，暂不改 |
-| SQL 执行本身慢 | CPU profile 仅占 4.2% | 不需要换存储引擎 |
-
-> 注：这两条在**千级 proxy_requests 以上**会变成真瓶颈。做 F8 迁移时顺手加复合索引 `(started_at, system_prompt_len)` 即可，但不作为本轮目标。
+> Basis: `PERF-DIAGNOSIS.md` (measured 2026-08-03)
+> Scale tier: **B** (524 sessions / 73,588 events / 800MB source files /
+> 9,590 events in the largest session)
+> Each fix includes: evidence → approach → code → acceptance criteria
 
 ---
 
-## F1 · 修复 `scan_state` 增量状态
+## 0. Overview
 
-**证据**：`scan_state` 行数 = 0（Step 0）。索引 `idx_scan_state_provider` 存在但表为空 → 写入路径从未生效。源文件 1,514 个 / 800.21MB 每轮全量重处理。
+### 0.1 Core judgment
 
-**改法**：三件事。(a) 定位并修复写入断点；(b) 把粒度从 mtime 升级为内容指纹；(c) 扫描前先比对，未变更直接跳过整条链路。
+Group B (prewarm off) first screen is **10-20ms**. The system itself has no
+performance problem; all latency comes from three kinds of self-inflicted
+useless work:
 
-### F1.1 表结构升级（migration v5 的一部分）
+1. **Repeated labor** — `scan_state` being empty makes every scan round
+   reprocess 800MB of source files
+2. **Excessive transfer** — the detail endpoint returns `events.raw`
+   (147.82MB total) and full summaries together
+3. **Broadcast storm** — per-session SSE events trigger full frontend
+   refetches
+
+So the fix mainline is **stopping useless work**, not making slow operations
+fast.
+
+### 0.2 Fix priority
+
+| Priority | ID | Fix | Bottleneck basis | Expected gain |
+|----------|----|-----|------------------|---------------|
+| P0 | F1 | fix `scan_state` incremental state (hidden root cause) | #1 #6 | no-change scan 18,235 SQL → 0 |
+| P0 | F2 | prewarm → on-demand + LRU (full prewarm off by default) | #1 | first screen 5,884ms → <100ms |
+| P0 | F3 | slim the detail endpoint: slim events + single-event drill-down | #2 #5 | worst detail 32.3MB → ~1.2MB |
+| P0 | F4 | add two composite indexes | #4 | events sort 210ms → <15ms |
+| P1 | F5 | Agent Overview server-side aggregation | #2 | 524 requests 299.6MB → 1 request <80KB |
+| P1 | F6 | SSE event coalescing + frontend local patches | #3 | 508 requests in 30s → <15 |
+| P1 | F7 | Trae `spawnSync` → async + decrypt result cache | #7 | main-thread blocking 6,074ms → 0 |
+| P1 | F8 | split `events.raw` table + WAL checkpoint + PRAGMAs | #5 #8 | DB 471.6MB → ~175MB |
+| P2 | F9 | gzip response compression | global | transfer volume down another 8-10x |
+| P2 | F10 | `upsertEvents` differential writes | #6 | writes on change 182ms → <20ms |
+| P2 | F11 | JSONL byte-offset tail incremental reads | #1 | codeagent 739MB reread → tail only |
+| P2 | F12 | frontend virtual scrolling | #2 | 9,590-event DOM → ~40 in viewport |
+
+### 0.3 Things we are NOT doing (data disproved them)
+
+| Suspected | Measured | Conclusion |
+|-----------|----------|------------|
+| `listSessions` without pagination fields too large | 5.33ms / 447.8KB | not a bottleneck at current scale; leave for now |
+| `getSystemPromptForSession`'s `LENGTH()` sort | 0.79ms (1,820 rows, only 5 with values) | not a bottleneck; leave for now |
+| SQL execution itself slow | CPU profile only 4.2% | no need to switch storage engines |
+
+> Note: these two become real bottlenecks above thousands of proxy_requests
+> rows. When doing the F8 migration, add the `(started_at, system_prompt_len)`
+> composite index as a side effect, but it is not a goal this round.
+
+---
+
+## F1 · Fix `scan_state` incremental state
+
+**Evidence**: `scan_state` row count = 0 (Step 0). The
+`idx_scan_state_provider` index exists but the table is empty → the write path
+never took effect. 1,514 source files / 800.21MB reprocessed in full every
+round.
+
+**Approach**: three things. (a) locate and fix the write break; (b) upgrade
+the granularity from mtime to content fingerprint; (c) compare before
+scanning and skip the whole chain when unchanged.
+
+### F1.1 Table structure upgrade (part of migration v5)
 
 ```sql
--- 若已有 scan_state 表，补列；否则新建
+-- if a scan_state table already exists, add columns; otherwise create
 CREATE TABLE IF NOT EXISTS scan_state (
   source_path   TEXT PRIMARY KEY,
   provider      TEXT NOT NULL,
@@ -73,7 +87,7 @@ CREATE INDEX IF NOT EXISTS idx_scan_state_provider ON scan_state(provider);
 CREATE INDEX IF NOT EXISTS idx_scan_state_session  ON scan_state(session_id);
 ```
 
-### F1.2 指纹计算（不读全文件）
+### F1.2 Fingerprint computation (does not read the whole file)
 
 ```ts
 // server/watch/fingerprint.ts
@@ -88,7 +102,7 @@ export interface FileFingerprint {
   hash: string;
 }
 
-/** 只读首尾各 4KB + size + mtime，恒定成本，与文件大小无关 */
+/** Reads only the first/last 4KB + size + mtime; constant cost, independent of file size */
 export function fingerprintFile(path: string): FileFingerprint {
   const st = statSync(path);
   const fd = openSync(path, 'r');
@@ -111,7 +125,7 @@ export function fingerprintFile(path: string): FileFingerprint {
 }
 ```
 
-### F1.3 扫描前置门禁
+### F1.3 Pre-scan gate
 
 ```ts
 // server/watch/scan-gate.ts
@@ -183,17 +197,17 @@ export function commitScanState(
 }
 ```
 
-### F1.4 接入 `scanAndStoreDetail`
+### F1.4 Wire into `scanAndStoreDetail`
 
 ```ts
-// server/watch/scan-scheduler.ts —— 关键：门禁在最外层，跳过时不做任何 IO 与 DB 写入
+// server/watch/scan-scheduler.ts —— key: the gate is outermost; on skip, no IO and no DB writes
 export function scanAndStoreDetail(db: Database, key: string, opts?: { force?: boolean }) {
-  const entry = resolveSourcePath(db, key);        // 从 sessions.source_path 取
+  const entry = resolveSourcePath(db, key);        // from sessions.source_path
   if (!entry) return null;
 
   const gate = shouldRescan(db, entry.sourcePath);
   if (!gate.changed && !opts?.force) {
-    return { skipped: true as const, key };        // ← 零 IO 零 SQL
+    return { skipped: true as const, key };        // ← zero IO zero SQL
   }
 
   const detail = readLocalSessionDetail(key);
@@ -212,20 +226,26 @@ export function scanAndStoreDetail(db: Database, key: string, opts?: { force?: b
 }
 ```
 
-**验收标准**
-- 首次全量扫描后，`SELECT COUNT(*) FROM scan_state` ≥ 1,514
-- 立刻重跑一轮扫描：SQL 写语句数 = 0，耗时 < 2s（仅 stat + 8KB 读 × 1,514）
-- 修改任意一个 JSONL 文件后重扫：仅该文件对应 session 被重写
+**Acceptance**
+- after the first full scan, `SELECT COUNT(*) FROM scan_state` >= 1,514
+- immediately rerun a scan round: SQL write count = 0, time < 2s (stat + 8KB
+  reads × 1,514 only)
+- modify any JSONL file then rescan: only that file's session is rewritten
 
 ---
 
-## F2 · 预热改按需 + LRU
+## F2 · Prewarm → on-demand + LRU
 
-**证据**：A/B 实验 10s/60s/180s = 5,884 / 3,896 / 12,399ms，对照组 20 / 19 / 10ms，比值 200–1240x（Step 4）。中位 session 详情按需读取仅 1.57ms，P95 仅 12.94ms（Step 2）——**按需完全够用，全量预热是纯负担**。
+**Evidence**: A/B experiment 10s/60s/180s = 5,884 / 3,896 / 12,399ms vs
+control 20 / 19 / 10ms, a 200-1240x ratio (Step 4). Median on-demand session
+detail read is only 1.57ms, P95 12.94ms (Step 2) — **on-demand is fully
+sufficient; full prewarm is pure burden**.
 
-**改法**：默认关闭全量预热，改为「首次请求时读取 + LRU 缓存」。保留一个受控的可选预热，仅覆盖最近 N 个会话，且对前台请求让路。
+**Approach**: full prewarm off by default; replace with "read on first request
++ LRU cache". Keep a controlled optional prewarm covering only the most recent
+N sessions, yielding to foreground requests.
 
-### F2.1 LRU 详情缓存
+### F2.1 LRU detail cache
 
 ```ts
 // server/storage/detail-cache.ts
@@ -236,7 +256,7 @@ const cache = new Map<string, TraceRecord>();
 
 export function getCachedDetail(key: string): TraceRecord | undefined {
   const hit = cache.get(key);
-  if (hit) { cache.delete(key); cache.set(key, hit); }   // 触碰即提升
+  if (hit) { cache.delete(key); cache.set(key, hit); }   // touch promotes
   return hit;
 }
 
@@ -253,7 +273,7 @@ export function invalidateDetail(key: string): void { cache.delete(key); }
 export function invalidateAllDetails(): void { cache.clear(); }
 ```
 
-### F2.2 前台优先信号量
+### F2.2 Foreground-first semaphore
 
 ```ts
 // server/realtime/frontline.ts
@@ -266,45 +286,45 @@ export const yieldTick = () => new Promise<void>(r => setTimeout(r, 0));
 export const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 ```
 
-在 HTTP server 的最外层中间件调用 `markForegroundRequest()`。
+Call `markForegroundRequest()` in the HTTP server's outermost middleware.
 
-### F2.3 启动流程改造
+### F2.3 Startup flow changes
 
 ```ts
 // server/watch/scan-scheduler.ts
 export interface InitialScanOptions {
   db: Database;
-  /** 预热最近 N 个会话；0 = 完全按需（默认，推荐） */
+  /** prewarm the most recent N sessions; 0 = fully on demand (default, recommended) */
   prewarmRecent?: number;
 }
 
 export async function initialScanAndStore(opts: InitialScanOptions): Promise<void> {
-  // 阶段 1：只建索引，必须快。不读详情，不解密。
-  const entries = scanLocalSessions();          // 仅目录遍历 + 轻量元数据
+  // phase 1: index only; must be fast. No detail reads, no decryption.
+  const entries = scanLocalSessions();          // directory traversal + lightweight metadata only
   const tx = opts.db.transaction((list: SessionIndexEntry[]) => {
     for (const e of list) upsertSessionFromIndex(opts.db, e);
   });
   tx(entries);
   eventBus.emit('scan_completed', { provider: 'all', count: entries.length });
 
-  // 阶段 2：可选预热，默认不做
+  // phase 2: optional prewarm, off by default
   const n = opts.prewarmRecent ?? 0;
   if (n <= 0) return;
 
   const keys = listSessions(opts.db, { dataSource: 'scan', limit: n }).map(s => s.id);
-  void backgroundPrewarm(opts.db, keys);        // 不 await，不阻塞 listen
+  void backgroundPrewarm(opts.db, keys);        // not awaited, does not block listen
 }
 
 async function backgroundPrewarm(db: Database, keys: string[]): Promise<void> {
   for (const key of keys) {
-    while (isForegroundBusy()) await sleep(250);   // 有人在用 → 完全退让
-    try { scanAndStoreDetail(db, key); } catch { /* 预热失败不影响服务 */ }
-    await yieldTick();                              // 每个会话之间让出整轮事件循环
+    while (isForegroundBusy()) await sleep(250);   // someone is using it → yield fully
+    try { scanAndStoreDetail(db, key); } catch { /* prewarm failure must not affect service */ }
+    await yieldTick();                              // yield a full event-loop round between sessions
   }
 }
 ```
 
-### F2.4 详情端点走缓存
+### F2.4 Detail endpoint goes through the cache
 
 ```ts
 // server/server.ts —— GET /api/sessions/:key
@@ -313,35 +333,43 @@ if (cached) return sendJson(res, shapeDetail(cached, mode));
 
 const stored = getSessionDetail(db, key);
 if (!stored || stored.events.length === 0) {
-  scanAndStoreDetail(db, key);                    // 惰性补齐
+  scanAndStoreDetail(db, key);                    // lazy fill
 }
 const record = getSessionDetail(db, key);
 if (record) putCachedDetail(key, record);
 sendJson(res, shapeDetail(record, mode));
 ```
 
-**CLI 参数**：新增 `--prewarm-recent <n>`，默认 `0`。文档明确说明：设为非 0 会牺牲启动后前几分钟的响应速度。
+**CLI flag**: new `--prewarm-recent <n>`, default `0`. Docs state clearly:
+setting a non-zero value sacrifices response speed for the first minutes
+after startup.
 
-**验收标准**
-- 启动后 10s / 60s / 180s 三个时间点首屏均 < 100ms（对齐 Group B 的 10–20ms 量级）
-- 冷会话首次打开 < 50ms（中位）/ < 700ms（9,590 event 的最差会话，F3 后应降到 < 60ms）
-- 二次打开同一会话 < 5ms（命中 LRU）
+**Acceptance**
+- first screen at 10s / 60s / 180s after startup all < 100ms (aligned with
+  Group B's 10-20ms order)
+- cold session first open < 50ms (median) / < 700ms (worst 9,590-event
+  session; should drop to < 60ms after F3)
+- reopening the same session < 5ms (LRU hit)
 
 ---
 
-## F3 · 详情接口瘦身
+## F3 · Slim the detail endpoint
 
-**证据**：最差 session 响应 32,332.3KB / 625.29ms（Step 2）；`events.raw` 全表 147.82MB 占 64.2%，`input_summary` + `output_summary` 另占 82.28MB（Step 0）。Agent Overview 单次拉取 299.6MB。
+**Evidence**: worst-session response 32,332.3KB / 625.29ms (Step 2);
+`events.raw` totals 147.82MB / 64.2%, `input_summary` + `output_summary`
+another 82.28MB (Step 0). Agent Overview pulls 299.6MB in one view.
 
-**改法**：详情列表只返回**渲染 Gantt 树所需的字段**，正文一律不带。EventInspector 是逐个 event 的面板，天然适配「点开才拉」。
+**Approach**: detail lists return only **the fields needed to render the Gantt
+tree**; bodies never included. EventInspector is a per-event panel, naturally
+suited to "fetch on open".
 
-### F3.1 三档响应模式
+### F3.1 Three-tier response modes
 
-| mode | 用途 | 每 event 字段 | 预估体积（9,590 events） |
-|------|------|--------------|------------------------|
-| `slim`（默认） | Gantt 树渲染 | id, kind, phase, title, startedAt, durationMs, status, actor, tool, tokens | ~1.2MB → gzip ~150KB |
-| `full` | 导出 / 报告生成 | slim + input_summary + output_summary | ~11MB |
-| `raw` | 调试 | full + raw | ~32MB |
+| mode | Use | Fields per event | Estimated size (9,590 events) |
+|------|-----|------------------|-------------------------------|
+| `slim` (default) | Gantt tree rendering | id, kind, phase, title, startedAt, durationMs, status, actor, tool, tokens | ~1.2MB → gzip ~150KB |
+| `full` | export / report generation | slim + input_summary + output_summary | ~11MB |
+| `raw` | debugging | full + raw | ~32MB |
 
 ```ts
 // server/storage/query-engine.ts
@@ -352,14 +380,14 @@ const SLIM_COLS =
 const FULL_COLS = `${SLIM_COLS}, input_summary, output_summary`;
 
 export function getSessionEvents(db: Database, sessionId: string, mode: EventMode = 'slim') {
-  const cols = mode === 'slim' ? SLIM_COLS : FULL_COLS;   // raw 从 event_raw 表单独取，见 F8
+  const cols = mode === 'slim' ? SLIM_COLS : FULL_COLS;   // raw fetched separately from event_raw, see F8
   return db
     .prepare(`SELECT ${cols} FROM events WHERE session_id = ? ORDER BY sequence`)
     .all(sessionId);
 }
 ```
 
-### F3.2 单 event 下钻端点
+### F3.2 Single-event drill-down endpoint
 
 ```
 GET /api/sessions/:key/events/:eventId?include=raw
@@ -379,75 +407,87 @@ export function getEventDetail(db: Database, sessionId: string, eventId: string,
 }
 ```
 
-### F3.3 超大会话分页
+### F3.3 Large-session pagination
 
-单会话 event 数 p99 = 3,332，max = 9,590。对 `> 2000` 的会话启用分页：
+Events per session: p99 = 3,332, max = 9,590. Enable pagination for sessions
+with `> 2000` events:
 
 ```
 GET /api/sessions/:key?events=slim&offset=0&limit=2000
 ```
 
-响应体带 `{ eventTotal, eventOffset, eventLimit, hasMore }`。前端 Gantt 虚拟滚动到底部时追加下一页（配合 F12）。
+The response carries `{ eventTotal, eventOffset, eventLimit, hasMore }`. The
+frontend Gantt appends the next page when scrolling to the bottom (with F12).
 
-### F3.4 前端改造要点
+### F3.4 Frontend change points
 
-- `TraceGanttTree` 消费 slim 数据即可，它本来只画 phase/kind/duration 条
-- `EventInspector` 选中 event 时发起 `GET /api/sessions/:key/events/:eventId`，加 200ms 防抖
-- `TranscriptModal` / `TokenTextModal` / 报告生成走 `mode=full`
-- `recordCache` 分两层：`indexCache`（slim）与 `eventDetailCache`（单 event，Map 上限 100 条）
+- `TraceGanttTree` consumes slim data only; it only draws phase/kind/duration
+  bars anyway
+- `EventInspector` issues `GET /api/sessions/:key/events/:eventId` on event
+  selection, with 200ms debounce
+- `TranscriptModal` / `TokenTextModal` / report generation use `mode=full`
+- `recordCache` splits into two layers: `indexCache` (slim) and
+  `eventDetailCache` (single events, Map capped at 100)
 
-**验收标准**
-- 最差 session（9,590 events）详情响应 < 1.5MB、服务端 < 60ms
-- P95 session（401 events）响应 < 80KB
-- EventInspector 点开任意 event < 20ms
+**Acceptance**
+- worst session (9,590 events) detail response < 1.5MB, server < 60ms
+- P95 session (401 events) response < 80KB
+- EventInspector opening any event < 20ms
 
 ---
 
-## F4 · 补复合索引
+## F4 · Add composite indexes
 
-**证据**：4 条查询计划全部出现 `USE TEMP B-TREE FOR ORDER BY`（Step 1）。最差 session events 排序 210.48ms。
+**Evidence**: all 4 query plans show `USE TEMP B-TREE FOR ORDER BY` (Step 1).
+Worst-session events sort 210.48ms.
 
 ```sql
 -- migration v5
 
--- 1) events：覆盖 WHERE session_id = ? ORDER BY sequence
+-- 1) events: covers WHERE session_id = ? ORDER BY sequence
 CREATE INDEX IF NOT EXISTS idx_events_session_seq ON events(session_id, sequence);
-DROP INDEX IF EXISTS idx_events_session_id;          -- 已被上面的复合索引前缀覆盖
+DROP INDEX IF EXISTS idx_events_session_id;          -- covered by the composite index prefix above
 
--- 2) sessions：覆盖 WHERE data_source = ? ORDER BY started_at DESC
+-- 2) sessions: covers WHERE data_source = ? ORDER BY started_at DESC
 CREATE INDEX IF NOT EXISTS idx_sessions_ds_started ON sessions(data_source, started_at DESC);
-DROP INDEX IF EXISTS idx_sessions_data_source;       -- COUNT(*) 由复合索引接管 covering
+DROP INDEX IF EXISTS idx_sessions_data_source;       -- COUNT(*) taken over by the composite covering index
 
--- 3) Agent Overview 聚合用（见 F5）
+-- 3) Agent Overview aggregation (see F5)
 CREATE INDEX IF NOT EXISTS idx_events_session_phase ON events(session_id, phase);
 
 ANALYZE;
 ```
 
-**保留不动**：`idx_events_kind`、`idx_events_phase`、`idx_sessions_provider`、`idx_sessions_started_at`、`idx_sessions_source_agent`、`idx_proxy_requests_*`。
+**Kept unchanged**: `idx_events_kind`, `idx_events_phase`,
+`idx_sessions_provider`, `idx_sessions_started_at`,
+`idx_sessions_source_agent`, `idx_proxy_requests_*`.
 
-> SQLite 可反向扫描升序索引，`DESC` 关键字非必须，但显式写出可读性更好。
+> SQLite can reverse-scan ascending indexes, so `DESC` is not strictly
+> required, but writing it explicitly reads better.
 
-**验收标准**
-- 上述四条查询的 `EXPLAIN QUERY PLAN` 输出中**不再出现** `USE TEMP B-TREE`
-- 最差 session events 查询 < 15ms（原 210.48ms）
-- `listSessions` < 1ms（原 2.48ms）
+**Acceptance**
+- `EXPLAIN QUERY PLAN` for the four queries above **no longer contains**
+  `USE TEMP B-TREE`
+- worst-session events query < 15ms (was 210.48ms)
+- `listSessions` < 1ms (was 2.48ms)
 
 ---
 
-## F5 · Agent Overview 服务端聚合
+## F5 · Agent Overview server-side aggregation
 
-**证据**：524 次详情请求 / 4,732ms / 299.6MB（Step 2 §4.2）；浏览器侧 30s 窗口 508 请求 / 151.2MB（Step 3）。
+**Evidence**: 524 detail requests / 4,732ms / 299.6MB (Step 2 §4.2); browser
+side 508 requests / 151.2MB in a 30s window (Step 3).
 
-**改法**：新增聚合端点，两条 SQL 出全部数据，前端零详情请求。
+**Approach**: add an aggregation endpoint; two SQL statements produce all the
+data; the frontend issues zero detail requests.
 
-### F5.1 端点
+### F5.1 Endpoint
 
 ```
 GET /api/agent-overview?dataSource=scan
 ```
 
-### F5.2 查询实现
+### F5.2 Query implementation
 
 ```ts
 // server/storage/overview.ts
@@ -483,11 +523,14 @@ WHERE s.data_source = ?
 GROUP BY s.provider`;
 ```
 
-映射到「快准稳省」：`avgToolDurationMs` → 快；`verificationCoverage` → 准；`errorRate` + `debugEntryRate` → 稳；`tokenTotal` / `costUsd` → 省。
+Maps to Speed·Accuracy·Stability·Cost: `avgToolDurationMs` → Speed;
+`verificationCoverage` → Accuracy; `errorRate` + `debugEntryRate` →
+Stability; `tokenTotal` / `costUsd` → Cost.
 
-### F5.3 结果缓存
+### F5.3 Result cache
 
-`EVENT_AGG` 要扫 73,588 行，预估 200–400ms。用 `MAX(sessions.updated_at)` 作失效键：
+`EVENT_AGG` scans 73,588 rows, estimated 200-400ms. Use
+`MAX(sessions.updated_at)` as the invalidation key:
 
 ```ts
 let cached: { stamp: string; payload: unknown } | null = null;
@@ -509,19 +552,23 @@ export function getAgentOverview(db: Database, dataSource: string) {
 }
 ```
 
-**前端**：`AgentOverview.tsx` 删掉遍历拉详情的 `setTimeout` 循环（报告 §9 第 4 条提到的 `App.tsx:246-254`），改为单次 `fetch('/api/agent-overview')`。
+**Frontend**: `AgentOverview.tsx` removes the `setTimeout` loop that fetches
+details per session (report §9 item 4 mentions `App.tsx:246-254`) and issues a
+single `fetch('/api/agent-overview')` instead.
 
-**验收标准**
-- Agent 视图请求数 = 1，响应 < 80KB，端到端 < 400ms（缓存命中 < 20ms）
-- 30s 窗口总传输 < 2MB（原 151.2MB）
+**Acceptance**
+- Agent view request count = 1, response < 80KB, end-to-end < 400ms (cache hit
+  < 20ms)
+- 30s window total transfer < 2MB (was 151.2MB)
 
 ---
 
-## F6 · SSE 事件合并
+## F6 · SSE event coalescing
 
-**证据**：`scanAndStore` 对每个 session 发 `session_updated`，前端 `reloadSessionIndex` 被重复触发（Step 3）。
+**Evidence**: `scanAndStore` emits `session_updated` per session, repeatedly
+triggering the frontend's `reloadSessionIndex` (Step 3).
 
-### F6.1 后端合并器
+### F6.1 Backend coalescer
 
 ```ts
 // server/realtime/coalescer.ts
@@ -547,17 +594,20 @@ function flush(): void {
 }
 ```
 
-把 `scan-scheduler` 里所有 `eventBus.emit('session_updated', …)` 换成 `queueSessionChange(key)`。保留 `session_created` / `session_deleted` 原样（低频）。
+Replace every `eventBus.emit('session_updated', …)` in scan-scheduler with
+`queueSessionChange(key)`. Keep `session_created` / `session_deleted` as-is
+(low frequency).
 
-在 `TypedEventBus` 事件定义中新增：`sessions_changed { keys: string[]; count: number }`。
+Add to the `TypedEventBus` event definitions:
+`sessions_changed { keys: string[]; count: number }`.
 
-### F6.2 前端局部 patch
+### F6.2 Frontend local patches
 
 ```ts
 // src/App.tsx
 es.addEventListener('sessions_changed', (ev) => {
   const { keys } = JSON.parse((ev as MessageEvent).data) as { keys: string[] };
-  keys.forEach(k => recordCache.delete(k));                 // 详情缓存失效
+  keys.forEach(k => recordCache.delete(k));                 // invalidate detail cache
   startTransition(() => {
     fetch(`/api/sessions?keys=${encodeURIComponent(keys.join(','))}`)
       .then(r => r.json())
@@ -574,24 +624,29 @@ es.addEventListener('sessions_changed', (ev) => {
 });
 ```
 
-后端 `GET /api/sessions` 支持 `keys` 参数（`WHERE id IN (…)`，上限 200 个，超过则回退全量）。
+The backend `GET /api/sessions` supports a `keys` param
+(`WHERE id IN (…)`, max 200; above that, fall back to full).
 
-### F6.3 proxy_stream_chunk 节流
+### F6.3 proxy_stream_chunk throttling
 
-`realtime/spec.md` 自己标注了「频率高，前端要做节流」但没定义机制。补上：同一 `requestId` 的 chunk 在服务端按 100ms 窗口拼接后再发，前端不做逐 chunk 渲染。
+`realtime/spec.md` itself noted "high frequency, frontend should throttle"
+without defining a mechanism. Complete it: chunks of the same `requestId` are
+concatenated server-side on a 100ms window before emission; the frontend does
+no per-chunk rendering.
 
-**验收标准**
-- 一轮完整扫描（524 会话）产生的 SSE 事件数 ≤ 10（原 524）
-- Playwright 30s 窗口总请求数 < 15
-- LiveIndicator 仍能正常反映连接状态
+**Acceptance**
+- one full scan round (524 sessions) emits <= 10 SSE events (was 524)
+- Playwright 30s window total requests < 15
+- LiveIndicator still reflects connection state correctly
 
 ---
 
-## F7 · Trae 解密去阻塞
+## F7 · Trae decryption without blocking
 
-**证据**：CPU profile 中 4 次 `spawnSync` 合计 6,074ms，占 37.5% CPU（Step 5）。`readFileSync` + `readFileUtf8` 另占 3,601ms（22.2%）。
+**Evidence**: CPU profile shows 4 `spawnSync` calls totaling 6,074ms, 37.5%
+of CPU (Step 5). `readFileSync` + `readFileUtf8` another 3,601ms (22.2%).
 
-**改法**：三层。
+**Approach**: three layers.
 
 ### F7.1 `spawnSync` → `spawn` + Promise
 
@@ -602,7 +657,7 @@ import { spawn } from 'node:child_process';
 export function runPythonBridge(script: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn('python', [script, ...args], {
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },   // G7 编码坑，保留
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },   // G7 encoding pitfall, keep
       windowsHide: true,
     });
     let out = '', err = '';
@@ -617,16 +672,18 @@ export function runPythonBridge(script: string, args: string[]): Promise<string>
 }
 ```
 
-调用链 `trae.ts` scanner → `readLocalSessionDetail` → `scanAndStoreDetail` 全部改 `async`。
+The call chain `trae.ts` scanner → `readLocalSessionDetail` →
+`scanAndStoreDetail` all become `async`.
 
-### F7.2 解密结果缓存
+### F7.2 Decrypt result cache
 
-Trae 源文件 19 个 / 30.61MB，但每次都要复制整个 DB + `wal_checkpoint(FULL)` + 全表 join。加一层文件级缓存：
+Trae source: 19 files / 30.61MB, but every decrypt copies the whole DB +
+`wal_checkpoint(FULL)` + full-table joins. Add a file-level cache:
 
 ```ts
 interface TraeCacheEntry { fp: string; decryptedAt: number; payload: TraeRecord[] }
 const traeCache = new Map<string, TraeCacheEntry>();
-const TRAE_TTL_MS = 30_000;   // 与 30s 轮询对齐（G5.2）
+const TRAE_TTL_MS = 30_000;   // aligned with the 30s poll (G5.2)
 
 export async function readTraeSessions(dbPath: string): Promise<TraeRecord[]> {
   const fp = fingerprintFile(dbPath) .hash + ':' + fingerprintFile(dbPath + '-wal').hash;
@@ -639,24 +696,31 @@ export async function readTraeSessions(dbPath: string): Promise<TraeRecord[]> {
 }
 ```
 
-> 关键：指纹必须**同时看 `-wal` 文件**。这正是 G5.2 那条坑的正解——主 DB 的 mtime 在 WAL 模式下不变，但 `-wal` 会变。
+> Key: the fingerprint must **also look at the `-wal` file**. This is exactly
+> the correct solution to the G5.2 pitfall — the main DB's mtime never changes
+> in WAL mode, but `-wal` does.
 
-### F7.3 Trae 移出请求路径
+### F7.3 Trae off the request path
 
-Trae 解密只在 30 秒轮询里做，绝不在 `GET /api/sessions/:key` 的同步路径上触发。请求路径若发现 Trae 详情缺失，返回已有索引数据 + `{ pending: true }`，由 SSE 在解密完成后推送。
+Trae decryption runs only in the 30s polling, never on the synchronous
+`GET /api/sessions/:key` path. When the request path finds the Trae detail
+missing, return the existing index data + `{ pending: true }`; SSE pushes
+after decryption completes.
 
-**验收标准**
-- CPU profile 中 `spawnSync` self time = 0
-- 请求处理期间事件循环延迟（`perf_hooks.monitorEventLoopDelay`）p99 < 50ms
-- Trae 会话在源文件未变时不触发任何 Python 进程
+**Acceptance**
+- `spawnSync` self time in the CPU profile = 0
+- event-loop delay (`perf_hooks.monitorEventLoopDelay`) p99 < 50ms during
+  request handling
+- Trae sessions trigger no Python process when source files are unchanged
 
 ---
 
-## F8 · `events.raw` 拆表 + WAL 治理
+## F8 · Split `events.raw` + WAL management
 
-**证据**：`events.raw` 147.82MB / 64.2%（Step 0）；WAL 151.82MB 未 checkpoint（Step 0，报告 §9 第 1 条列为未验证猜测）。
+**Evidence**: `events.raw` 147.82MB / 64.2% (Step 0); WAL 151.82MB
+uncheckpointed (Step 0; report §9 item 1 listed as unverified guess).
 
-### F8.1 migration v5：raw 拆表
+### F8.1 migration v5: raw split
 
 ```sql
 BEGIN;
@@ -673,48 +737,51 @@ INSERT OR REPLACE INTO event_raw(session_id, event_id, raw)
   FROM events
   WHERE raw IS NOT NULL AND raw != '';
 
-ALTER TABLE events DROP COLUMN raw;    -- SQLite ≥ 3.35，better-sqlite3 自带版本满足
+ALTER TABLE events DROP COLUMN raw;    -- SQLite >= 3.35; the version bundled with better-sqlite3 qualifies
 
 UPDATE _meta SET schema_version = 5 WHERE key = 'schema_version';
 
 COMMIT;
 
-VACUUM;                                -- 回收 147MB，必须在事务外执行
+VACUUM;                                -- reclaim 147MB; must run outside the transaction
 ```
 
-> 迁移前务必备份 `agent-observe.db`。`VACUUM` 需要约等于当前 DB 大小的临时空间（~320MB）。
+> Back up `agent-observe.db` before migrating. `VACUUM` needs temp space about
+> equal to the current DB size (~320MB).
 
-### F8.2 WAL 治理
+### F8.2 WAL management
 
 ```ts
 // server/storage/db.ts —— openWritable()
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
-db.pragma('synchronous = NORMAL');        // WAL 下安全，写入快数倍
-db.pragma('wal_autocheckpoint = 2000');   // 默认 1000 页；显式设置
+db.pragma('synchronous = NORMAL');        // safe under WAL, much faster writes
+db.pragma('wal_autocheckpoint = 2000');   // default 1000 pages; set explicitly
 db.pragma('cache_size = -65536');         // 64MB page cache
 db.pragma('mmap_size = 268435456');       // 256MB
 db.pragma('temp_store = MEMORY');
 db.pragma('busy_timeout = 5000');
 
-// 每轮扫描结束后主动 checkpoint（此时无活跃读事务）
+// after every scan round, checkpoint proactively (no active read transactions then)
 export function checkpointWal(db: Database): void {
-  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* 有读者时跳过，下轮再来 */ }
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* readers present; skip, next round */ }
 }
 ```
 
-> `TRUNCATE` 模式会把 WAL 文件截到 0 字节。如果有并发读事务会失败并返回 busy，捕获后跳过即可，不要重试阻塞。
+> `TRUNCATE` mode truncates the WAL to 0 bytes. With concurrent read
+> transactions it fails and returns busy; catch and skip, never retry
+> blocking.
 
-**验收标准**
-- `agent-observe.db` < 180MB，`-wal` 稳态 < 20MB
-- 详情查询不再触碰 `event_raw` 表（除非 `include=raw`）
-- 所有既有测试通过，raw 数据可通过 F3.2 端点完整取回
+**Acceptance**
+- `agent-observe.db` < 180MB, `-wal` steady state < 20MB
+- detail queries never touch the `event_raw` table (unless `include=raw`)
+- all existing tests pass; raw data fully retrievable via the F3.2 endpoint
 
 ---
 
-## F9 · gzip 响应压缩
+## F9 · gzip response compression
 
-纯 Node HTTP server，用原生 `zlib`，不引入 Express：
+Plain Node HTTP server, native `zlib`, no Express:
 
 ```ts
 // server/http/send-json.ts
@@ -747,15 +814,16 @@ export function sendJson(req: IncomingMessage, res: ServerResponse, body: unknow
 }
 ```
 
-**验收标准**：`GET /api/sessions` 传输体积 447.8KB → < 60KB。
+**Acceptance**: `GET /api/sessions` transfer size 447.8KB → < 60KB.
 
 ---
 
-## F10 · `upsertEvents` 差分写入
+## F10 · `upsertEvents` differential writes
 
-**证据**：1 DELETE + 347 INSERT = 348 语句 / 181.91ms（Step 6）；全量预热 18,235 语句。
+**Evidence**: 1 DELETE + 347 INSERT = 348 statements / 181.91ms (Step 6); full
+prewarm 18,235 statements.
 
-F1 已经让「无变更时」的写入归零。本条处理「有变更时」：
+F1 already zeroes "no-change" writes. This one handles "on change":
 
 ```ts
 export function upsertEvents(db: Database, record: TraceRecord): void {
@@ -784,11 +852,11 @@ export function upsertEvents(db: Database, record: TraceRecord): void {
 
   const seen = new Set<string>();
   const rows = record.events.map((e, i) => {
-    // G4.8：同 session 内重复 event id 追加 :sequence 后缀，防御性措施保留
+    // G4.8: duplicate event ids within a session get a :sequence suffix; keep the defensive measure
     let id = e.id;
     if (seen.has(id)) id = `${e.id}:${i + 1}`;
     seen.add(id);
-    return toRow(sessionId, id, i + 1, e);   // undefined 一律转 null
+    return toRow(sessionId, id, i + 1, e);   // undefined → null
   });
 
   const staleIds = [...existingIds].filter(id => !rows.some(r => r.id === id));
@@ -805,15 +873,18 @@ export function upsertEvents(db: Database, record: TraceRecord): void {
 }
 ```
 
-前提：`events` 需要 `UNIQUE(session_id, id)` 约束（报告显示已有 `sqlite_autoindex_events_1`，确认其为该复合唯一键；若不是，migration v5 补建）。
+Prerequisite: `events` needs a `UNIQUE(session_id, id)` constraint (the report
+shows `sqlite_autoindex_events_1` exists; confirm it is that composite unique
+key; if not, migration v5 creates it).
 
-**验收标准**：append 1 个 event 的重扫 → 1 条 INSERT，耗时 < 20ms。
+**Acceptance**: rescan appending 1 event → 1 INSERT, < 20ms.
 
 ---
 
-## F11 · JSONL byte-offset 尾部增量读
+## F11 · JSONL byte-offset tail incremental reads
 
-**证据**：codeagent 单 provider 948 文件 / 739.21MB（Step 0b），占源文件总量 92.4%。JSONL 是 append-only。
+**Evidence**: codeagent alone is 948 files / 739.21MB (Step 0b), 92.4% of
+total source size. JSONL is append-only.
 
 ```ts
 import { createReadStream } from 'node:fs';
@@ -832,101 +903,115 @@ export async function readJsonlFrom(
   for await (const line of rl) {
     const bytes = Buffer.byteLength(line, 'utf-8') + 1;   // +1 for \n
     if (!line.trim()) { consumed += bytes; continue; }
-    try { rows.push(JSON.parse(line)); } catch { /* 截断的尾行：停在此处 */ break; }
+    try { rows.push(JSON.parse(line)); } catch { /* truncated tail line: stop here */ break; }
     consumed += bytes;
   }
   return { rows, endOffset: consumed };
 }
 ```
 
-安全前提（必须同时满足才走增量路径，否则退回全量）：
-1. `scan_state.file_size >= prevOffset`（文件没被截断或重写）
-2. 文件首 4KB 的 hash 未变（不是新文件复用了同一路径）
-3. CRLF 环境下 `+1` 改为按实际换行符长度计算——Windows 上建议直接用 `Buffer.byteLength` 逐块统计而非按行加 1
+Safety prerequisites (all must hold to take the incremental path; otherwise
+fall back to full):
+1. `scan_state.file_size >= prevOffset` (the file wasn't truncated or
+   rewritten)
+2. the first-4KB hash is unchanged (not a new file reusing the same path)
+3. under CRLF, `+1` must use the actual newline length — on Windows prefer
+   per-chunk `Buffer.byteLength` accounting instead of +1 per line
 
-> 注意 CPU profile 里 `RegExp: \r?\n` 自耗时 459.8ms —— 现有实现用正则 split 整个文件字符串，改流式后这一项也会归零。
+> Note: the CPU profile shows `RegExp: \r?\n` self time 459.8ms — the current
+> implementation regex-splits the whole file string; this item goes to zero
+> after switching to streaming.
 
-**验收标准**：codeagent provider 一轮无变更扫描读取字节数 < 10MB（原 739MB）。
-
----
-
-## F12 · 前端虚拟滚动
-
-**证据**：单会话最大 9,590 event；p99 = 3,332。`useDeferredValue` 是调度优化，不减少 DOM 节点。
-
-- `TraceGanttTree`：窗口化渲染，仅挂载视口内 ±10 行
-- `SampleRail`：524 条会话列表同样窗口化
-- 依赖洁癖考虑：项目刻意只有 4 个 runtime 依赖。可用 ~80 行手写 windowing（固定行高场景足够），或接受引入 `@tanstack/react-virtual`（纯前端依赖，不进 server bundle 的 external 列表，不影响 G1.2 的三阶段构建）
-
-**验收标准**：打开 9,590 event 的会话，DOM 节点数 < 500，首次绘制 < 200ms。
+**Acceptance**: one no-change scan round for the codeagent provider reads
+< 10MB (was 739MB).
 
 ---
 
-## 1. 预期效果汇总
+## F12 · Frontend virtual scrolling
 
-| 指标 | 现状（实测） | 修复后目标 |
-|------|------------|-----------|
-| 首屏（启动 10s 内） | 5,884ms | < 100ms |
-| 首屏（启动 180s） | 12,399ms | < 100ms |
-| 最差 session 详情 | 625ms / 32,332KB | < 60ms / < 1,500KB |
-| P95 session 详情 | 12.94ms / 1,621KB | < 8ms / < 80KB |
-| Agent Overview | 4,732ms / 524 请求 / 299.6MB | < 400ms / 1 请求 / < 80KB |
-| 30s 窗口请求数 | 508 / 151.2MB | < 15 / < 2MB |
-| events 排序查询（最差） | 210.48ms | < 15ms |
-| 无变更增量扫描 | 18,235 SQL / 800MB 重读 | 0 SQL / < 20MB 读 |
-| CPU：spawnSync 阻塞 | 6,074ms (37.5%) | 0 |
-| DB 体积（含 WAL） | 471.64MB | < 200MB |
+**Evidence**: max events per session 9,590; p99 = 3,332. `useDeferredValue` is
+a scheduling optimization; it doesn't reduce DOM nodes.
+
+- `TraceGanttTree`: window rendering, mounting only ±10 rows around the
+  viewport
+- `SampleRail`: the 524-session list also windowed
+- dependency hygiene: the project deliberately has only 4 runtime deps. An
+  ~80-line hand-written windowing implementation suffices (fixed row height),
+  or accept `@tanstack/react-virtual` (pure frontend dep, not in server
+  bundle externals, doesn't affect G1.2's three-stage build)
+
+**Acceptance**: opening a 9,590-event session: DOM node count < 500, first
+paint < 200ms.
 
 ---
 
-## 2. 实施顺序与依赖
+## 1. Expected results summary
+
+| Metric | Current (measured) | Target after fixes |
+|--------|--------------------|--------------------|
+| first screen (within 10s of startup) | 5,884ms | < 100ms |
+| first screen (within 180s) | 12,399ms | < 100ms |
+| worst-session detail | 625ms / 32,332KB | < 60ms / < 1,500KB |
+| P95 session detail | 12.94ms / 1,621KB | < 8ms / < 80KB |
+| Agent Overview | 4,732ms / 524 requests / 299.6MB | < 400ms / 1 request / < 80KB |
+| requests in a 30s window | 508 / 151.2MB | < 15 / < 2MB |
+| events sort query (worst) | 210.48ms | < 15ms |
+| no-change incremental scan | 18,235 SQL / 800MB reread | 0 SQL / < 20MB read |
+| CPU: spawnSync blocking | 6,074ms (37.5%) | 0 |
+| DB size (incl. WAL) | 471.64MB | < 200MB |
+
+---
+
+## 2. Implementation order and dependencies
 
 ```
-migration v5 ──┬── F4 复合索引        （独立，最先做，风险最低）
-               ├── F8 raw 拆表 + WAL  （需备份 DB）
-               └── F1 scan_state 表结构
+migration v5 ──┬── F4 composite indexes        (independent; do first, lowest risk)
+               ├── F8 raw split + WAL          (needs DB backup)
+               └── F1 scan_state table structure
                         │
-F1 增量门禁 ────────────┴──→ F10 差分写入 ──→ F11 byte-offset 增量读
+F1 incremental gate ────┴──→ F10 differential writes ──→ F11 byte-offset incremental reads
                         │
-F2 按需 + LRU ──────────┘
+F2 on-demand + LRU ──────┘
         │
-        ├──→ F3 详情瘦身 ──→ F12 虚拟滚动
-        ├──→ F5 Overview 聚合
-        ├──→ F6 SSE 合并
-        └──→ F7 Trae 异步化（涉及 async 传染，单独一个 PR）
+        ├──→ F3 detail slimming ──→ F12 virtual scrolling
+        ├──→ F5 Overview aggregation
+        ├──→ F6 SSE coalescing
+        └──→ F7 Trae async (async contagion; separate PR)
 
-F9 gzip：任意时点独立接入
+F9 gzip: independent, wire at any time
 ```
 
-**建议切成 4 个 PR**：
-1. `migration v5 + F4 + F8`（纯存储层，可独立验证）
-2. `F1 + F2 + F10`（扫描与预热，收益最大）
-3. `F3 + F5 + F6 + F9`（API 契约变更，前后端同步改）
-4. `F7 + F11 + F12`（async 传染 + 前端渲染）
+**Suggested 4 PRs**:
+1. `migration v5 + F4 + F8` (pure storage layer, independently verifiable)
+2. `F1 + F2 + F10` (scanning and prewarm; biggest gain)
+3. `F3 + F5 + F6 + F9` (API contract changes; frontend and backend in sync)
+4. `F7 + F11 + F12` (async contagion + frontend rendering)
 
-每个 PR 合入后重跑一遍 `PERF-DIAGNOSIS.md` 的 Step 4（A/B）与 Step 2（分段耗时），把新数字追加进报告，形成回归基线。
+After each PR merge, rerun Step 4 (A/B) and Step 2 (segment timing) of
+`PERF-DIAGNOSIS.md`, append the new numbers to the report, and form a
+regression baseline.
 
 ---
 
-## 3. 回归防护
+## 3. Regression protection
 
-把性能预算写成断言，进 CI：
+Turn the performance budgets into assertions in CI:
 
 ```ts
 // server/storage/perf.test.ts
-it('详情查询不产生 TEMP B-TREE', () => {
+it('detail queries do not produce TEMP B-TREE', () => {
   const plan = db.prepare(
     'EXPLAIN QUERY PLAN SELECT id FROM events WHERE session_id = ? ORDER BY sequence'
   ).all('x');
   expect(JSON.stringify(plan)).not.toContain('TEMP B-TREE');
 });
 
-it('slim 模式详情响应控制在预算内', () => {
+it('slim detail responses stay within budget', () => {
   const rec = getSessionDetail(db, worstKey, 'slim');
   expect(Buffer.byteLength(JSON.stringify(rec))).toBeLessThan(1_500_000);
 });
 
-it('无变更重扫不产生写入', () => {
+it('no-change rescan produces no writes', () => {
   scanAndStoreDetail(db, key);
   const before = countWrites(db);
   const r = scanAndStoreDetail(db, key);
@@ -935,4 +1020,5 @@ it('无变更重扫不产生写入', () => {
 });
 ```
 
-这三条断言分别锁住 F4、F3、F1，是最容易在后续迭代中被无意破坏的三个点。
+These three assertions lock down F4, F3, and F1 respectively — the three
+points most easily broken unintentionally in later iterations.

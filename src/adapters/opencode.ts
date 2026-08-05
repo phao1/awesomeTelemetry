@@ -8,21 +8,26 @@ import { classifyEvents } from '../core/phase-classifier.js';
 import {
   aggregateTokenUsage,
   dedupeEventIds,
+  deriveDurations,
   type EventWithRaw,
   isSubagentTitle,
   minMaxIso,
   normalizeStatus,
   orderEventsByTime,
+  pickPrimaryModel,
   titleFromText,
   toIsoFromMs,
   wallClockDurationMs,
 } from './helpers.js';
+import { computeCostUsd } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
 
 /** G9.1：CodeArts / CodeAgent2 复用 opencode，用 dialect 区分。 */
 export interface OpenCodeDialect {
   provider: 'opencode' | 'codearts' | 'codeagent2';
   sourceAgent: string;
+  /** #6：true = total 含 reasoning（OpenCode 实测）；false = reasoning 是 output 子集（CodeArts/DeepSeek 实测）。 */
+  reasoningInTotal: boolean;
 }
 
 export interface OpenCodeTokenData {
@@ -74,7 +79,10 @@ export interface OpenCodeRawSample {
 /** adapter 的 TEvent：SQLite/JSONL 的 message 行 或 OTel span（REQ-005 三源）。 */
 export type OpenCodeAdapterEvent = OpenCodeMessage | OpenCodeOtelSpan;
 
-function toEventTokens(tokens: OpenCodeTokenData | null | undefined): TokenUsage | null {
+function toEventTokens(
+  tokens: OpenCodeTokenData | null | undefined,
+  reasoningInTotal: boolean,
+): TokenUsage | null {
   if (tokens === undefined || tokens === null) {
     return null;
   }
@@ -83,13 +91,39 @@ function toEventTokens(tokens: OpenCodeTokenData | null | undefined): TokenUsage
   const reasoning = tokens.reasoning ?? 0;
   const cacheRead = tokens.cache?.read ?? 0;
   const cacheWrite = tokens.cache?.write ?? 0;
-  return { input, output, reasoning, cacheRead, cacheWrite, total: input + output + reasoning + cacheRead };
+  return {
+    input,
+    output,
+    reasoning,
+    cacheRead,
+    cacheWrite,
+    total:
+      input +
+      output +
+      (reasoningInTotal ? reasoning : 0) +
+      cacheRead +
+      cacheWrite,
+  };
+}
+
+/**
+ * #5（审查 P0）：一条消息的多个 part 共享同一份 message.tokens，若每个 part 都挂
+ * tokens，会话级聚合会把 token 膨胀 N 倍（N = part 数）。只把 tokens 挂在代表事件上：
+ * 优先第一条 step part（step-finish 携带真实计量），无 step 时挂最后一个 part。
+ */
+function isTokenCarrier(message: OpenCodeMessage, partIndex: number): boolean {
+  const parts = message.content ?? [];
+  if (parts[partIndex]?.type === 'step') {
+    return true;
+  }
+  return !parts.some((part) => part.type === 'step') && partIndex === parts.length - 1;
 }
 
 function partToEvent(
   message: OpenCodeMessage,
   part: OpenCodePart,
   partIndex: number,
+  reasoningInTotal: boolean,
 ): EventWithRaw {
   const startedAt = toIsoFromMs(message.time?.created ?? 0);
   const status = normalizeStatus(message.error ?? part.state?.status ?? 'completed');
@@ -104,7 +138,11 @@ function partToEvent(
     status,
     actor: message.role,
     tool: null,
-    tokens: toEventTokens(message.tokens),
+    // P0-B：模型归因，源 message 自带
+    model: message.model ?? null,
+    tokens: isTokenCarrier(message, partIndex)
+      ? toEventTokens(message.tokens, reasoningInTotal)
+      : null,
     error: message.error ?? null,
     hasInput: false,
     hasOutput: false,
@@ -222,7 +260,7 @@ export function createOpencodeAdapter(
           continue;
         }
         for (let partIndex = 0; partIndex < parts.length; partIndex += 1) {
-          events.push(partToEvent(message, parts[partIndex]!, partIndex));
+          events.push(partToEvent(message, parts[partIndex]!, partIndex, dialect.reasoningInTotal));
         }
       }
       for (const span of otelSpans) {
@@ -233,9 +271,23 @@ export function createOpencodeAdapter(
       const times = minMaxIso(events);
       const ordered = orderEventsByTime(events);
       const deduped = dedupeEventIds(ordered);
-      const classified = classifyEvents(deduped);
-      const semantics = { cacheRead: 'cumulative' as const, reasoning: 'incremental' as const };
+      // P0-A：OTel span 自带真实起止（measured）；db/jsonl 源无耗时，按相邻时间戳推导。
+      // ⚠️ durationSource 按实际解析路径取值，禁止按 provider 硬编码 —— 同一个
+      // opencode provider 走 otel 源时是 measured，走 db 源时是 derived。
+      const hasMeasured = otelSpans.length > 0;
+      const timed = hasMeasured ? deduped : deriveDurations(deduped);
+      const classified = classifyEvents(timed);
+      // #4（审查 P0）：OpenCode/CodeArts/CodeAgent2 的 cache.read 实测为每步增量值，
+      // 必须 sum；旧 gotcha G4.4 的 cumulative/max 假设已由校准数据推翻。
+      const semantics = {
+        cacheRead: 'incremental' as const,
+        reasoning: 'incremental' as const,
+        reasoningInTotal: dialect.reasoningInTotal,
+      };
       const sessionId = raw.id ?? messages[0]?.sessionID ?? `opencode-${sourcePath}`;
+      const tokenUsage = aggregateTokenUsage(classified, semantics);
+      const primaryModel = pickPrimaryModel(classified);
+      const cost = computeCostUsd(tokenUsage, primaryModel);
       const session: TraceSession = {
         id: sessionId,
         provider: dialect.provider as ProviderKey,
@@ -247,13 +299,16 @@ export function createOpencodeAdapter(
         cwd: raw.directory ?? null,
         messageCount: messages.length,
         eventCount: classified.length,
-        tokenUsage: aggregateTokenUsage(classified, semantics),
-        costUsd: 0,
+        tokenUsage,
+        costUsd: cost.costUsd,
         systemPrompt: null,
         dataSource: 'scan',
         sourcePath,
         totalDurationMs: wallClockDurationMs(classified),
         isSubagent: isSubagentTitle(title),
+        primaryModel,
+        costSource: cost.costSource,
+        durationSource: hasMeasured ? 'measured' : 'derived',
       };
       return { session, events: classified, tokenSemantics: semantics };
     },
@@ -263,6 +318,7 @@ export function createOpencodeAdapter(
 export const opencodeAdapter = createOpencodeAdapter({
   provider: 'opencode',
   sourceAgent: 'OpenCode',
+  reasoningInTotal: true,
 });
 
 /** 供 thin wrapper（codearts / codeagent2）与测试使用。 */

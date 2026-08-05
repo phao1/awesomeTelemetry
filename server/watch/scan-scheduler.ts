@@ -67,7 +67,7 @@ function enabledProviders(deps: ScanSchedulerDeps): ProviderConfig[] {
 function withTimeout<T>(promise: Promise<T>, ms: number, provider: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
-      () => reject(new Error(`${provider} 扫描超时（>${ms}ms），已跳过`)),
+      () => reject(new Error(`${provider} scan timed out (>${ms}ms), skipped`)),
       ms,
     );
     promise.then(
@@ -168,7 +168,7 @@ export async function scanAndStoreDetail(
       throw err;
     }
     throw new SessionParseError(
-      `会话 ${key} 详情解析失败（${row.provider} @ ${row.source_path}）: ${
+      `Session ${key} detail parse failed (${row.provider} @ ${row.source_path}): ${
         err instanceof Error ? err.message : String(err)
       }`,
     );

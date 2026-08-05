@@ -127,7 +127,7 @@ describe('REQ-011 provider 并行扫描', () => {
     });
     const claude = results.find((r) => r.provider === 'claude');
     const codex = results.find((r) => r.provider === 'codex');
-    expect(claude?.error).toContain('超时');
+    expect(claude?.error).toContain('timed out');
     expect(codex?.error).toBeUndefined();
     expect(codex?.scanned).toBe(1);
     db.close();

@@ -1,136 +1,151 @@
 # Project: Agent Observability
 
-> 项目级约定与总览。各模块行为规格见 `specs/<domain>/spec.md`。
-> **类型、DDL、API、性能预算四份契约见 `contracts/`，它们是 codegen 的权威输入。**
-> 避坑核心见 `gotchas.md`。
+> Project-level conventions and overview. Per-module behavior specs live in
+> `specs/<domain>/spec.md`. **The four contracts for types, DDL, API, and
+> performance budget live in `contracts/` — they are the authoritative codegen
+> input.** Core pitfalls are in `gotchas.md`.
 
-## 1. 项目定位
+## 1. Positioning
 
-本地 Web UI，用于查看、分析、对比 AI 编码助手（Claude Code / Codex / OpenCode / CodeArts / CodeAgent / Trae CN / Qoder / WorkBuddy）的会话轨迹。
+A local web UI for viewing, analyzing, and comparing session traces of AI
+coding assistants (Claude Code / Codex / OpenCode / CodeArts / CodeAgent /
+Trae CN / Qoder / WorkBuddy).
 
-核心价值主张：**快 · 准 · 稳 · 省** 四维度衡量 Agent 质量。
+Core value proposition: measure agent quality on four dimensions —
+**Speed · Accuracy · Stability · Cost**.
 
-| 维度 | 指标 |
-|------|------|
-| 快 | TTFT / TPS / TPOT / 端到端时延 / avgToolDurationMs |
-| 准 | verificationCoverage（是否有 test 运行） |
-| 稳 | errorRate / enteredDebug |
-| 省 | tokensPerStep / costUsd |
+| Dimension | Metrics |
+|-----------|---------|
+| Speed | TTFT / TPS / TPOT / end-to-end latency / avgToolDurationMs |
+| Accuracy | verificationCoverage (whether tests ran) |
+| Stability | errorRate / enteredDebug |
+| Cost | tokensPerStep / costUsd |
 
-两种数据来源：**Scan**（读本地会话文件）与 **Proxy**（MITM + CDP + Frida 实时捕获），二者在 UI 上分开展示。
+Two data sources: **Scan** (reads local session files) and **Proxy**
+(MITM + CDP + Frida live capture), shown separately in the UI.
 
-## 2. 技术栈
+## 2. Tech stack
 
-| 层 | 选型 | 说明 |
-|----|------|------|
-| 运行时 | Node.js ≥ 20 | 硬性要求 |
-| 语言 | TypeScript ~6.0.2 | `verbatimModuleSyntax`、`erasableSyntaxOnly`、strict |
-| 前端 | React 19.2 + Vite 8 | SPA，无路由库 |
-| 后端 | 纯 Node HTTP server | 不用 Express/Fastify |
-| 存储 | better-sqlite3（WAL，schema v1） | 原生模块，Windows 需 MSVC；全新库，无迁移 |
-| 文件监视 | chokidar 5 | 300ms debounce；db 类 provider 走 30s 轮询 |
-| MITM | http-mitm-proxy 1.1 | HTTPS CONNECT + per-domain 证书 |
-| 加密 | node-forge 1.4 | CA 生成（OpenSSL 不可用时兜底） |
-| 压缩 | node:zlib | 响应 gzip，不引第三方 |
-| 测试 | Vitest 3 | jsdom env、globals、colocated `*.test.ts` |
+| Layer | Choice | Notes |
+|-------|--------|-------|
+| Runtime | Node.js >= 20 | hard requirement |
+| Language | TypeScript ~6.0.2 | `verbatimModuleSyntax`, `erasableSyntaxOnly`, strict |
+| Frontend | React 19.2 + Vite 8 | SPA, no router lib |
+| Backend | plain Node HTTP server | no Express/Fastify |
+| Storage | better-sqlite3 (WAL, schema v1) | native module, needs MSVC on Windows; fresh DB, no migration |
+| File watching | chokidar 5 | 300ms debounce; db providers use 30s polling |
+| MITM | http-mitm-proxy 1.1 | HTTPS CONNECT + per-domain certs |
+| Crypto | node-forge 1.4 | CA generation (fallback when OpenSSL unavailable) |
+| Compression | node:zlib | response gzip, no third-party |
+| Tests | Vitest 3 | jsdom env, globals, colocated `*.test.ts` |
 | Lint | ESLint 10 flat config | |
 
-依赖极少（4 个 runtime 依赖 + 可选的前端虚拟滚动库），刻意保持轻量。
+Deliberately light: 4 runtime dependencies + an optional frontend virtual
+scrolling lib.
 
-## 3. 架构总览
+## 3. Architecture overview
 
-### 3.1 单向数据流
+### 3.1 One-way data flow
 
 ```
 Raw vendor JSONL / SQLite / SQLCipher
-  → 增量门禁 (scan_state 指纹)   ← 未变更即在此终止，零 IO 零 SQL
-  → Scanner (local-sessions/)     产出 SessionIndexEntry
-  → Adapter (src/adapters/)       原始数据 → TraceRecord（slim / 正文 / raw 三部分分离）
-  → Storage (server/storage/)     sessions + events + event_raw + metrics
-  → Core (src/core/)              phase 分类 / 指标 / 报告
-  → UI (src/components/)          Gantt 树 / 详情面板 / 对比板
+  → incremental gate (scan_state fingerprint)   ← unchanged input stops here, zero IO zero SQL
+  → Scanner (local-sessions/)                   produces SessionIndexEntry
+  → Adapter (src/adapters/)                     raw data → TraceRecord (slim / body / raw split)
+  → Storage (server/storage/)                   sessions + events + event_raw + metrics
+  → Core (src/core/)                            phase classification / metrics / reports
+  → UI (src/components/)                        Gantt tree / detail panel / compare board
 ```
 
-### 3.2 双数据源
+### 3.2 Dual data sources
 
 ```
-scan  ：chokidar 或 30s 轮询 → 增量门禁 → scan-scheduler → SQLite → SSE(合并) → UI
-proxy ：MITM / CDP / Frida  → 脱敏 → proxy-writer → SQLite → SSE(节流) → UI
+scan  : chokidar or 30s poll → incremental gate → scan-scheduler → SQLite → SSE (coalesced) → UI
+proxy : MITM / CDP / Frida  → desensitize → proxy-writer → SQLite → SSE (throttled) → UI
 ```
 
-### 3.3 三条不可违背的架构原则
+### 3.3 Three non-negotiable architecture principles
 
-这三条是 v4 全部性能问题的根源，v5 把它们提升为架构约束：
+These three are the root cause of all v4 performance problems; v5 promotes them
+to architecture constraints:
 
-1. **不做无用功** —— 任何读取、解析、写入前，先问「上次之后变了吗」。答案是「没变」时的正确行为是**立即返回**，不是「快速地重做一遍」。
-2. **不在请求路径上做重活** —— 同步文件 IO、子进程 spawn、全表聚合都不得出现在 HTTP handler 里。未就绪就返回 `pending: true`，让后台补齐 + SSE 通知。
-3. **传输量按需分级** —— 列表不带正文，详情不带 raw，正文点开才拉。数据的默认可见性是「不返回」，需要哪一档显式声明。
+1. **Do no useless work** — before any read, parse, or write, ask "has this
+   changed since last time?". If the answer is "no", the correct behavior is to
+   **return immediately**, not "quickly redo it".
+2. **No heavy work on the request path** — synchronous file IO, child process
+   spawns, and full-table aggregations must never appear in HTTP handlers.
+   Return `pending: true` when not ready and let the background fill it in +
+   SSE notify.
+3. **Transfer size by tier** — lists carry no bodies, details carry no raw,
+   bodies load on demand. Data is by default "not returned"; request the tier
+   you need explicitly.
 
-## 4. 目录结构
+## 4. Directory layout
 
 ```
 agent-observability-main/
 ├── server/
-│   ├── server.ts              # createAgentObservabilityServer() + 全部 API 路由
-│   ├── cli.ts                 # CLI 入口
-│   ├── http/                  # send-json（含 gzip）+ error-envelope + 路由匹配
+│   ├── server.ts              # createAgentObservabilityServer() + all API routes
+│   ├── cli.ts                 # CLI entry
+│   ├── http/                  # send-json (incl. gzip) + error-envelope + route matching
 │   ├── proxy/                 # MITM + CDP + Frida + CA + parsers
 │   ├── storage/               # schema + writers + query-engine
-│   │                          #   + detail-cache（LRU）+ overview（聚合）+ session-merge
-│   ├── realtime/              # TypedEventBus + coalescer（200ms 合并）+ SSE + frontline
+│   │                          #   + detail-cache (LRU) + overview (aggregation) + session-merge
+│   ├── realtime/              # TypedEventBus + coalescer (200ms merge) + SSE + frontline
 │   ├── watch/                 # fingerprint + scan-gate + chokidar + poll + scan-scheduler
-│   └── desensitization/       # PII 脱敏引擎
-├── local-sessions/            # 9 个扫描器 + config + trae-bridge + vite-plugin(dev)
+│   └── desensitization/       # PII desensitization engine
+├── local-sessions/            # 9 scanners + config + trae-bridge + vite-plugin(dev)
 ├── src/
-│   ├── App.tsx                # 单 stateful shell，5 视图
-│   ├── adapters/              # 9 个 provider 适配器 + sample-loader
+│   ├── App.tsx                # single stateful shell, 5 views
+│   ├── adapters/              # 9 provider adapters + sample-loader
 │   ├── core/                  # trace-types + phase-classifier + metrics + speed + report
-│   ├── components/            # ~20 个 React 组件（列表与 Gantt 均虚拟滚动）
-│   ├── i18n/                  # zh/en 双语（含错误码文案）
-│   └── generated/             # 机器生成，勿手改
+│   ├── components/            # ~20 React components (list and Gantt both virtualized)
+│   ├── i18n/                  # zh/en bilingual (incl. error-code copy)
+│   └── generated/             # machine-generated, do not hand-edit
 ├── config/                    # session-groups.json (gitignored) + *.example.json
 ├── scripts/                   # generate-local-samples + pack-binary + trae-* + frida-*
-├── perf-diag/                 # 7 个性能诊断脚本（回归基线工具，随仓库保留）
+├── perf-diag/                 # 7 performance diagnostic scripts (regression baseline tooling, kept in repo)
 ├── bin/agent-observe.js
-└── openspec/                  # 本规格
-    ├── contracts/             # ← codegen 权威输入
+└── openspec/                  # this spec
+    ├── contracts/             # ← authoritative codegen input
     └── specs/
 ```
 
-## 5. 构建三阶段
+## 5. Three-stage build
 
 ```
 npm run build = tsc -b && vite build && vite build --config vite.cli.config.ts
 ```
 
-顺序不可颠倒；server-dist 的外部依赖不打包。
+Order cannot change; server-dist does not bundle external dependencies.
 
-## 6. 约定
+## 6. Conventions
 
-- 测试与源码同目录（`*.test.ts`），不放 `__tests__/`
-- i18n 新增字符串必须同时加 `en` 和 `zh`
-- `src/generated/` 机器生成，改 generator 不改输出
-- config 三层覆盖：内置默认 → `config/local-sessions.local.json`（gitignored）→ 用户配置
-- 路径展开支持 `~`、`~\`、`%VAR%`
-- 不上传 `captured-prompts/`、`captures/`、`compare/`、`*.log` 到 git
-- 所有对外时间戳为 ISO 8601 UTC 字符串
-- 所有非 2xx 响应用统一 `ApiError` 信封
+- Tests live next to source (`*.test.ts`), never in `__tests__/`
+- New i18n strings must be added to both `en` and `zh`
+- `src/generated/` is machine-generated; change the generator, not the output
+- Config is a three-layer override: built-in defaults → `config/local-sessions.local.json` (gitignored) → user config
+- Path expansion supports `~`, `~\`, `%VAR%`
+- Do not commit `captured-prompts/`, `captures/`, `compare/`, `*.log` to git
+- All external timestamps are ISO 8601 UTC strings
+- All non-2xx responses use the unified `ApiError` envelope
 
-## 7. Provider 适配矩阵
+## 7. Provider adapter matrix
 
-| Provider | 输入源 | sourceKind | 监视 | Scanner | Adapter | cacheRead 语义 | 特殊处理 |
-|----------|--------|-----------|------|---------|---------|---------------|---------|
+| Provider | Input source | sourceKind | Watch | Scanner | Adapter | cacheRead semantics | Special handling |
+|----------|-------------|-----------|-------|---------|---------|--------------------|------------------|
 | Claude Code | JSONL | jsonl | chokidar | claude.ts | claude-code.ts | incremental | — |
-| Codex | JSONL | jsonl | chokidar | codex.ts | codex.ts | incremental | 读 session_index.jsonl + state_5.sqlite 取 title |
-| OpenCode | SQLite+JSONL+OTel | sqlite | poll | opencode.ts | opencode.ts | **cumulative** | dialect 参数，被复用 |
-| CodeArts | SQLite | sqlite | poll | codearts.ts | 复用 opencode | **cumulative** | thin wrapper |
-| CodeAgent 2.0 | SQLite | sqlite | poll | codeagent2.ts | 复用 opencode | **cumulative** | thin wrapper |
-| CodeAgent 3.0 | JSONL | jsonl | chokidar | codeagent.ts | codeagent.ts | incremental | 包装 claude-code，drop file-history-snapshot |
-| Trae CN | SQLCipher | sqlcipher | poll | trae.ts | trae.ts | incremental | 需 python key；token_usage /2；异步解密 |
-| Qoder | JSONL | jsonl | chokidar | (config only) | qoder.ts | incremental | 默认禁用 |
-| WorkBuddy | JSONL+SQLite | jsonl | chokidar | workbuddy.ts | workbuddy.ts | incremental | function_call≠tool_use |
+| Codex | JSONL | jsonl | chokidar | codex.ts | codex.ts | incremental | reads session_index.jsonl + state_5.sqlite for title |
+| OpenCode | SQLite+JSONL+OTel | sqlite | poll | opencode.ts | opencode.ts | **incremental** | dialect param, reused; reasoning counts into total (#6) |
+| CodeArts | SQLite | sqlite | poll | codearts.ts | reuses opencode | **incremental** | thin wrapper; reasoning is subset of output, not in total (#6) |
+| CodeAgent 2.0 | SQLite | sqlite | poll | codeagent2.ts | reuses opencode | **incremental** | thin wrapper; reasoning not in total (#6) |
+| CodeAgent 3.0 | JSONL | jsonl | chokidar | codeagent.ts | codeagent.ts | incremental | wraps claude-code, drops file-history-snapshot |
+| Trae CN | SQLCipher | sqlcipher | poll | trae.ts | trae.ts | incremental | needs python key; input = token_usage - item_token_usage; async decryption |
+| Qoder | JSONL | jsonl | chokidar | (config only) | qoder.ts | incremental | disabled by default |
+| WorkBuddy | JSONL+SQLite | jsonl | chokidar | workbuddy.ts | workbuddy.ts | incremental | function_call ≠ tool_use |
 
-## 8. 规模定档
+## 8. Scale tier
 
-按 **B 档**设计（实测基线：524 会话 / 73,588 event / 源文件 800MB / 单会话最大 9,590 event）。
-设计上界与跳级信号见 `contracts/nfr.md` §1 与 §7。
+Designed for **tier B** (measured baseline: 524 sessions / 73,588 events /
+800MB source files / 9,590 events in the largest session).
+Design ceiling and scale-up signals are in `contracts/nfr.md` §1 and §7.

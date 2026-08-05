@@ -33,6 +33,7 @@ export const traeFixture: {
       endTime: 1754000050,
       contentSource: 'llm_default',
       tokenUsage: 200,
+      itemTokenUsage: 120,
       content: 'found the bug',
     },
     {

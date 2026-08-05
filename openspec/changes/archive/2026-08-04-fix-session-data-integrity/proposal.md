@@ -1,47 +1,57 @@
 ## Why
 
-前端在 T-01 后能打开了，但实机验证（2026-08-04，`6eb5f1a`，38 个真实会话）发现
-**数据层是空的**：38 条会话里 34 条 `eventCount: 0` 且 title 是源文件名；
-OpenCode / CodeArts 点开必返回 200 + `events: []` + `title: ""`；
-`POST /api/proxy/start` 返回 404（`contracts/api.md` §4 早已定义，`server.ts` 从未注册）。
+The frontend opens after T-01, but real-machine verification (2026-08-04,
+`6eb5f1a`, 38 real sessions) found the **data layer is empty**: 34 of 38
+sessions had `eventCount: 0` and file-name titles; OpenCode / CodeArts always
+returned 200 + `events: []` + `title: ""` when opened;
+`POST /api/proxy/start` returned 404 (defined in `contracts/api.md` §4 but
+never registered in `server.ts`).
 
-用户可见的表现统一是「点了没反应」。在数据层修好之前，任何 UI 改进都是在空壳上刷漆。
+The user-visible symptom is uniformly "clicked but nothing happened". Until
+the data layer is fixed, any UI improvement is just painting over a shell.
 
-证据与精确定位见 `UI-TASKS.md` §1–§2（P1-1 / P1-2 / P1-3）。
+Evidence and precise locations: `UI-TASKS.md` §1-§2 (P1-1 / P1-2 / P1-3).
 
 ## What Changes
 
-- 索引阶段流式提取**真实会话标题与事件数**，跳过 `# AGENTS.md` / `<environment_context>` /
-  `<system-reminder>` 等注入内容，不再用源文件名冒充标题。
-- SQLite 类 provider（opencode / codearts / codeagent2）的**详情阶段按会话解析出事件**；
-  解析失败返回 `SESSION_PARSE_FAILED` 错误码，**不再返回 200 + 空数组**。
-- 注册 `POST /api/proxy/start|stop`、`POST /api/frida/start|stop` 四条路由，
-  按 `contracts/api.md` §4/§5 的既有定义实现（含 409 冲突码）。
+- The index phase streams to extract **real session titles and event counts**,
+  skipping injected content like `# AGENTS.md` / `<environment_context>` /
+  `<system-reminder>`, no longer faking titles with source file names.
+- SQLite-class providers (opencode / codearts / codeagent2) **parse events per
+  session in the detail phase**; parse failure returns the
+  `SESSION_PARSE_FAILED` error code, **no longer 200 + empty array**.
+- Register the four routes `POST /api/proxy/start|stop`,
+  `POST /api/frida/start|stop` per the existing `contracts/api.md` §4/§5
+  definitions (including the 409 conflict codes).
 
-无 BREAKING：三项都是补齐既有契约未实现的部分，不改变已有响应结构。
+No BREAKING: all three complete parts of existing contracts that were never
+implemented; no existing response shapes change.
 
 ## Capabilities
 
 ### New Capabilities
 
-无。
+None.
 
 ### Modified Capabilities
 
-无需 delta 文件——本 change 要实现的需求已于 2026-08-04 直接落入主 specs
-（`specs/session-scanning/spec.md` REQ-021 / REQ-022，`contracts/api.md` §4/§5 为既有定义）。
-故 `.openspec.yaml` 设 `skip_specs: true`，本 change 只承担**实现与执行追踪**。
+No delta files needed — the requirements this change implements were already
+landed directly into the main specs on 2026-08-04
+(`specs/session-scanning/spec.md` REQ-021 / REQ-022; `contracts/api.md` §4/§5
+were existing definitions). Hence `.openspec.yaml` sets `skip_specs: true`;
+this change only carries **implementation and execution tracking**.
 
-> 说明：本仓库此前为 spec-only 模式（见 `openspec/README.md`），规格先行落地、
-> 不走 delta。自本轮起启用 `changes/` 做执行追踪；**下一个新需求起**走完整
-> proposal → spec delta → design → tasks → archive 流程。
+> Note: this repo was previously spec-only (see `openspec/README.md`), with
+> specs landing first and no deltas. Starting this round `changes/` is used
+> for execution tracking; **new requirements from now on** follow the full
+> proposal → spec delta → design → tasks → archive flow.
 
 ## Impact
 
-| 面 | 影响 |
-|----|------|
-| 代码 | `local-sessions/scanner-utils.ts`、`local-sessions/opencode.ts` 及其 dialect 复用方、`server/server.ts` 路由表、`server/proxy/` 接线 |
-| API | `GET /api/sessions` 的 `title`/`eventCount` 由占位变真值；新增 4 条 POST 路由；新增错误码 `SESSION_PARSE_FAILED` |
-| 数据 | 无 schema 变更。用户本地已脏的库由 T-02 的启动自愈清理覆盖 |
-| 性能 | 索引阶段新增流式读取，预算：单 JSONL < 5ms、单 SQLite 库 < 50ms；`perf:check` 无劣化 > 20% |
-| 依赖 | 无新增（AUTOPILOT 禁令 C） |
+| Area | Impact |
+|------|--------|
+| Code | `local-sessions/scanner-utils.ts`, `local-sessions/opencode.ts` and its dialect reuse, `server/server.ts` route table, `server/proxy/` wiring |
+| API | `GET /api/sessions` `title`/`eventCount` change from placeholders to real values; 4 new POST routes; new error code `SESSION_PARSE_FAILED` |
+| Data | no schema change. Local dirty DBs are covered by T-02's startup self-healing cleanup |
+| Performance | index phase gains streaming reads; budget: single JSONL < 5ms, single SQLite DB < 50ms; `perf:check` no degradation > 20% |
+| Dependencies | none new (AUTOPILOT prohibition C) |

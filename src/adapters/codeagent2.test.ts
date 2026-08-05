@@ -18,7 +18,7 @@ describe('CodeAgent2 adapter（REQ-005/G9.1 thin wrapper）', () => {
     expect(r.events[1]?.phase).toBe('understand'); // Grep → understand
   });
 
-  it('cacheRead 用 max（cumulative）', () => {
+  it('#4 cacheRead 增量用 sum', () => {
     const events = [
       { id: 'm1', role: 'assistant' as const, sessionID: 'cm-s1', time: { created: 1754000000000 }, tokens: { cache: { read: 10 } }, content: [{ type: 'text', text: 'a' }] },
       { id: 'm2', role: 'assistant' as const, sessionID: 'cm-s1', time: { created: 1754000010000 }, tokens: { cache: { read: 25 } }, content: [{ type: 'text', text: 'b' }] },
@@ -27,7 +27,7 @@ describe('CodeAgent2 adapter（REQ-005/G9.1 thin wrapper）', () => {
       { sourceAgent: 'CodeMate', session: codeagent2Fixture.session, events },
       SRC,
     );
-    expect(r.session.tokenUsage.cacheRead).toBe(25);
+    expect(r.session.tokenUsage.cacheRead).toBe(35); // 10 + 25
   });
 
   it('状态归一化四类映射', () => {

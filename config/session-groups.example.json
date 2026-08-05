@@ -3,10 +3,10 @@
     {
       "id": "example-sdd-group",
       "primaryKey": "codearts-0000000000000",
-      "title": "示例：CodeArts SDD 主会话 + 子 agent",
+      "title": "Example: CodeArts SDD main session + subagents",
       "sourceAgent": "codearts",
       "mergedKeys": ["codearts-1111111111111", "codearts-2222222222222"],
-      "reason": "spec-requirement-agent / spec-design-agent 是同一任务的子会话"
+      "reason": "spec-requirement-agent / spec-design-agent are subagent sessions of the same task"
     }
   ]
 }

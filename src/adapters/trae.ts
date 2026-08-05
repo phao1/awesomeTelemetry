@@ -24,13 +24,29 @@ export interface TraeTurn {
   command?: string;
   /** 只有 content_source === 'llm_default' 时计入 outputTokens（G4.3）。 */
   contentSource?: string;
-  /** 双向累计 token，需 /2 校准（G4.2）。 */
+  /** server_history_info.token_usage = 真实总 token（input+output），不做 /2（2026-08-03 校准）。 */
   tokenUsage?: number;
+  /** server_history_info.item_token_usage = output/completion token。input = tokenUsage - itemTokenUsage。 */
+  itemTokenUsage?: number;
   outputTokens?: number;
+  /** #7：history_v2.messages[].reasoning_content（llm_default 行）。 */
+  reasoningContent?: string;
+  /** #7：chat_message_task 工具调用（名称/参数/结果）。 */
+  toolName?: string;
+  toolParams?: string;
+  toolResult?: string;
 }
 
 export interface TraeRecordShape {
-  session: { id?: string; title?: string; startTime?: number; endTime?: number };
+  session: {
+    id?: string;
+    title?: string;
+    startTime?: number;
+    endTime?: number;
+    /** #7：chat_session.agent_type / agent_name（agent 元数据）。 */
+    agentType?: string;
+    agentName?: string;
+  };
   turns: TraeTurn[];
 }
 
@@ -88,9 +104,21 @@ export function normalizeTraeSample(
 
     let tokens: EventWithRaw['tokens'] = null;
     if (turn.contentSource === 'llm_default') {
-      // G4.2：token_usage / 2 校准；G4.3：仅 llm_default 计入 outputTokens
-      const output = Math.round((turn.tokenUsage ?? turn.outputTokens ?? 0) / 2);
-      tokens = { input: 0, output, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: output };
+      // #2/#3（审查 P0，2026-08-03 校准）：token_usage 是真实总 token，不再 /2。
+      // output = item_token_usage，input = token_usage - item_token_usage。
+      // item_token_usage 缺失时（旧库）退化为 output = token_usage、input = 0。
+      const item = turn.itemTokenUsage ?? 0;
+      const total = turn.tokenUsage ?? turn.outputTokens ?? item;
+      const output = item > 0 ? item : Math.round(total);
+      const input = item > 0 && total > item ? total - item : 0;
+      tokens = {
+        input,
+        output,
+        reasoning: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: input + output,
+      };
     }
 
     events.push({
@@ -104,14 +132,20 @@ export function normalizeTraeSample(
       durationMs,
       status,
       actor: type === 'user' ? 'user' : 'assistant',
-      tool: ['read_file', 'write_file', 'bash'].includes(type) ? type : null,
+      tool: turn.toolName ?? (['read_file', 'write_file', 'bash'].includes(type) ? type : null),
       tokens,
       error: status === 'error' ? titleFromText(turn.content ?? 'error', 500) : null,
-      hasInput: turn.content !== undefined && turn.content !== undefined,
-      hasOutput: turn.content !== undefined,
+      hasInput: turn.content != null,
+      hasOutput: turn.content != null || turn.reasoningContent != null,
       hasRaw: true,
       inputSummary: null,
-      outputSummary: turn.content !== undefined ? titleFromText(turn.content, 5000) : null,
+      // #7：llm 行无正文但 history_v2 提供 reasoning_content 时回退展示。
+      outputSummary:
+        turn.content != null
+          ? titleFromText(turn.content, 5000)
+          : turn.reasoningContent != null
+            ? titleFromText(turn.reasoningContent, 5000)
+            : null,
       raw: JSON.stringify(turn),
     } as EventWithRaw);
   }
@@ -119,11 +153,13 @@ export function normalizeTraeSample(
   const ordered = orderEventsByTime(events);
   const deduped = dedupeEventIds(ordered);
   const times = minMaxIso(deduped);
+  // #16（审查 P3）：Trae server_history_info 不含 cache.read 字段，
+  // cacheRead 恒为 0；声明 incremental 仅是形式，不产生真实累加。
   const semantics = { cacheRead: 'incremental' as const, reasoning: 'incremental' as const };
   const session: TraceSession = {
     id: record.id ?? `trae-${sourcePath}`,
     provider: 'trae',
-    sourceAgent: 'Trae',
+    sourceAgent: record.agentName ?? 'Trae',
     title: titleFromText(record.title ?? ''),
     startedAt: times.startedAt,
     updatedAt: times.updatedAt,
@@ -138,6 +174,8 @@ export function normalizeTraeSample(
     sourcePath,
     totalDurationMs: wallClockDurationMs(deduped),
     isSubagent: false,
+    // trae.ts:100 已按相邻时间戳算 durationMs，语义同 deriveDurations
+    durationSource: 'derived' as const,
   };
   return { session, events: deduped, tokenSemantics: semantics };
 }

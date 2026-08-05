@@ -1,74 +1,88 @@
-# AUTOPILOT.md — 无人值守连续开发规则
+# AUTOPILOT.md — unattended continuous development rules
 
-> 本文件在 2026-08-04 长跑开始时缺失，由代理按当日目标指令中内嵌的规则重建。
-> 若用户日后提供原始版本，以原始版本为准（冲突时按 AGENTS.md 文档优先级处理）。
+> This file was missing when the long unattended run started on 2026-08-04 and
+> was rebuilt by the agent from the rules embedded in that day's goal
+> instructions. If the user later provides an original version, it takes
+> precedence (on conflict, follow the AGENTS.md documentation priority).
 
-## 一、三条绝对禁令（违反则整晚产出作废）
+## 1. Three absolute prohibitions (violating any invalidates the whole run)
 
-A. 不得修改已通过的测试。测试变绿后就是契约，后续改动导致它变红，只能改实现不能改测试。
-   放宽断言、删用例、加 .skip 都算违反。
-B. 不得 mock fs / child_process / better-sqlite3 来让测试通过。
-   只有靠 mock 才能过的测试，说明现阶段验证不了，记入待决清单并跳过。
-C. 不得引入新依赖（@types/* 除外）。
+A. Do not modify tests that already pass. Once a test is green it is a contract;
+   if a later change makes it red, fix the implementation, not the test.
+   Loosening assertions, deleting cases, or adding `.skip` all count as
+   violations.
+B. Do not mock fs / child_process / better-sqlite3 to make tests pass. A test
+   that can only pass with mocks means the current stage cannot verify it;
+   record it in the pending list and skip it.
+C. Do not introduce new dependencies (except `@types/*`).
 
-## 二、时间盒
+## 2. Time boxing
 
-- 每个里程碑按 BOOTSTRAP.md 的预估控制节奏；M2–M8 是后端主线，优先保底。
-- 单个问题修复尝试上限 3 次（见 §三），不在一个问题上耗掉整晚。
-- 时间过半时若已到 M8 属正常进度；结束前停在最近一个完整提交，不留半成品到主线。
+- Keep the pace per milestone estimate in BOOTSTRAP.md; M2-M8 are the backend
+  mainline, protect them first.
+- Maximum 3 fix attempts per issue (see §3); do not burn the whole night on one
+  problem.
+- At the halfway point, reaching M8 is normal progress; before stopping, land on
+  the most recent complete commit — never leave a half-finished milestone on the
+  mainline.
 
-## 三、卡住时
+## 3. When stuck
 
-同一问题第 3 次修复仍失败：
+If the 3rd fix attempt for the same issue still fails:
 
-- 回退到该里程碑最后可编译状态
-- 按下列五项格式记入 DECISIONS-PENDING.md：
-  1. 编号（D-###）
-  2. 问题描述
-  3. 尝试过的方案
-  4. 失败原因
-  5. 建议的下一步
-- 不阻塞后续 → 跳过该项继续
-- 阻塞后续 → 停止长跑，提交已完成部分，输出终止报告
+- Roll back to the last compilable state of that milestone
+- Record it in DECISIONS-PENDING.md in the five-item format:
+  1. ID (D-###)
+  2. problem description
+  3. approaches tried
+  4. why they failed
+  5. suggested next step
+- If it does not block follow-up work → skip it and continue
+- If it blocks follow-up work → stop the run, commit what is complete, and
+  output a termination report
 
-## 四、遇到需要人决策的问题
+## 4. When a human decision is needed
 
-不要停下等待。记入 DECISIONS-PENDING.md 后用临时方案继续，并在代码里加
-`// TODO(D-<编号>):` 标记。
+Do not stop and wait. Record it in DECISIONS-PENDING.md, continue with a
+temporary approach, and mark the code with `// TODO(D-<id>):`.
 
-## 五、预授权决策（直接执行，不用记录）
+## 5. Pre-authorized decisions (execute directly, no need to record)
 
-- P-1：@types/better-sqlite3 版本错配的处理顺序（按 AGENTS.md「已知偏差」排查）
-- P-2：缺真实厂商数据 → 构造合成 fixture
-- P-3：Frida/Trae 在 macOS 无法验证 → M11 裁剪，只做脱敏与 proxy 纯逻辑
-- P-4：性能预算的机器差异（记录本机基线即可）
-- P-5：前端样式用最朴素实现
+- P-1: handling order for the @types/better-sqlite3 version mismatch (per
+  AGENTS.md "Known deviations")
+- P-2: missing real vendor data → build synthetic fixtures
+- P-3: Frida/Trae cannot be verified on macOS → trim in M11, keep only
+  desensitization and proxy pure logic
+- P-4: machine differences in performance budgets (record the local baseline)
+- P-5: frontend styling uses the most plain implementation
 
-## 六、质量优先于进度
+## 6. Quality over progress
 
-宁可少做，不可做假。做完 3 个扎实的里程碑，远好于 8 个测试被改绿的里程碑。
+Better to do less than to fake it. Three solid milestones beat eight milestones
+whose tests were turned green by editing them.
 
-## 七、结束时
+## 7. At the end
 
-停在最近一个完整提交上，输出终止报告；未完成的里程碑如实标注进度。
+Stop on the most recent complete commit and output a termination report; mark
+unfinished milestones honestly.
 
-## 八、终止报告格式
+## 8. Termination report format
 
 ```
-## 长跑终止报告（<日期时间>）
+## Long-run termination report (<date time>)
 
-### 完成情况
-- 里程碑逐项：M<n> 完成 / 部分完成（列出具体产出与验收结果）
+### Completed
+- milestone by milestone: M<n> complete / partial (list concrete output and acceptance results)
 
-### 提交清单
+### Commits
 - <commit hash> M<n>: ...
 
-### 待决清单
-- D-###：一句话 + 状态
+### Pending list
+- D-###: one line + status
 
-### 我不确定的地方
-- 诚实写满；写"无"需要有底气
+### Things I am not sure about
+- Be honest and complete; writing "none" requires confidence
 
-### 下一步建议
-- 从哪个里程碑哪一步继续
+### Suggested next steps
+- which milestone, which step to continue from
 ```

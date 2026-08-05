@@ -1,50 +1,62 @@
 ## Context
 
-零依赖约束意味着命令面板、快捷键分发、hash 路由三样都要手写。
-好消息是三者都不复杂：面板复用已有的 `Modal` + `VirtualList` + 搜索匹配；
-快捷键是一个 `keydown` 监听 + 一张映射表；hash 路由是 `URLSearchParams` 的薄封装。
+The zero-dependency constraint means the command palette, shortcut dispatch,
+and hash routing are all hand-written. The good news: none of the three is
+complex — the palette reuses existing `Modal` + `VirtualList` + search
+matching; shortcuts are one `keydown` listener + a mapping table; hash routing
+is a thin `URLSearchParams` wrapper.
 
-难点在**冲突处理**：输入框聚焦时不能被 `j`/`k` 劫持，浮层打开时 `Esc` 要按层级关闭。
+The hard part is **conflict handling**: focused inputs must not be hijacked by
+`j`/`k`, and `Esc` must close overlays by layer.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- 键盘可完成「打开会话 → 选事件 → 看 Raw → 关闭」全流程
-- URL 可分享、刷新保持
-- 契约七条断言与 a11y 要求全部在 CI 中把关
+- keyboard completes the whole "open session → select event → view Raw →
+  close" flow
+- URLs shareable and refresh-persistent
+- all seven contract assertions and a11y requirements gated in CI
 
 **Non-Goals:**
-- 不做全文搜索（面板只按标题/id 模糊匹配已加载的会话）
-- 不做浏览器前进/后退的完整历史栈（hash 变更即状态，不额外压栈）
-- 不做多语言扩展（仍只有 zh/en）
+- no full-text search (the palette only fuzzy-matches loaded sessions by
+  title/id)
+- no full browser back/forward history stack (hash change is the state; no
+  extra stack entries)
+- no multi-language expansion (still zh/en only)
 
 ## Decisions
 
-**D1 · 快捷键用单一全局 `keydown` 监听 + 映射表，不给每个组件挂监听。**
-分散监听会产生不可预测的冲突与内存泄漏。单一入口便于实现「输入框聚焦时只有 Esc 生效」
-这类全局规则。
+**D1 · Shortcuts use one global `keydown` listener + mapping table; no
+per-component listeners.**
+Scattered listeners produce unpredictable conflicts and memory leaks. A
+single entry point makes global rules like "only Esc works when an input is
+focused" easy.
 
-**D2 · `Esc` 按浮层层级出栈关闭，不一次全关。**
-维护一个浮层栈（palette > modal > drawer > popover），Esc 只关栈顶。
-这是用户对浮层的既有预期。
+**D2 · `Esc` closes one overlay layer at a time, not all at once.**
+Maintain an overlay stack (palette > modal > drawer > popover); Esc closes
+only the top. This matches users' existing expectations for overlays.
 
-**D3 · hash 是状态的唯一表示，不做双向 diff。**
-状态变 → 写 hash；`hashchange` → 解析并应用。
-不做「谁先变」的仲裁，避免循环触发；写 hash 时用 `replaceState` 语义避免污染历史。
+**D3 · Hash is the single representation of state; no two-way diff.**
+State change → write hash; `hashchange` → parse and apply. No "who changed
+first" arbitration, avoiding trigger loops; hash writes use `replaceState`
+semantics to avoid polluting history.
 
-**D4 · 命令面板懒加载，首次 ⌘K 才 `import()`。**
-面板依赖虚拟滚动与匹配逻辑，打进首屏 chunk 不值得（REQ-025 明确要求）。
+**D4 · The command palette lazy-loads; `import()` only on the first ⌘K.**
+The palette depends on virtual scrolling and matching logic; putting it in the
+first-screen chunk isn't worth it (REQ-025 requires this explicitly).
 
-**D5 · a11y 与契约断言留到最后统一做。**
-在前三个 change 里边做边改会反复返工——布局还在变时调焦点顺序是浪费。
-功能定型后一次性收口，成本最低。
+**D5 · a11y and the contract assertions are done last, all at once.**
+Doing them incrementally inside the previous three changes would cause
+repeated rework — adjusting focus order while layout is still changing is
+wasted effort. Once features are stable, close out in one pass at the lowest
+cost.
 
 ## Risks / Trade-offs
 
-| 风险 | 缓解 |
-|------|------|
-| 快捷键与浏览器/输入法冲突（如 `/` 在中文输入下） | 聚焦输入框或 `isComposing` 时全部放行，只留 Esc |
-| hash 解析遇到脏值崩溃 | 解析失败回落默认视图，不抛错（同 REQ-026 的范围校验思路） |
-| a11y 收口时发现布局需要改 | 这是 D5 的已知代价；若确需改布局，按 AUTOPILOT §三 记 D-### |
-| 200% 缩放暴露固定宽度问题 | 三栏宽度已是可拖拽的，折叠断点作为兜底 |
-| 端到端冒烟需要真实端口监听 | 沿用 T-06 的结论：CI 需放行 127.0.0.1，或给这类测试打 tag 单独跑（记入 RUNBOOK） |
+| Risk | Mitigation |
+|------|------------|
+| shortcuts conflict with browser/IME (e.g. `/` under Chinese input) | when an input is focused or `isComposing`, pass everything through except Esc |
+| dirty hash values crash parsing | parse failure falls back to the default view without throwing (same range-check idea as REQ-026) |
+| the a11y close-out reveals layout changes are needed | this is D5's known cost; if layout must change, record D-### per AUTOPILOT §3 |
+| 200% zoom exposes fixed-width problems | the three rails are already draggable; collapse breakpoints as fallback |
+| end-to-end smoke needs a real port listener | follow T-06's conclusion: CI must allow 127.0.0.1, or tag these tests to run separately (record in RUNBOOK) |

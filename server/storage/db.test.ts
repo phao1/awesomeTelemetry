@@ -97,7 +97,7 @@ describe('REQ-003 数据库版本高于代码', () => {
       .run('schema_version', '99');
     seed.close();
 
-    expect(() => openWritable(path)).toThrow('数据库由更新版本创建');
+    expect(() => openWritable(path)).toThrow('Database was created by a newer version');
 
     const check = new Database(path, { readonly: true });
     const row = check

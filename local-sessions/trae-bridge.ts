@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,7 +34,9 @@ export async function decryptTraeDb(
   const cacheDir = opts.cacheDir ?? join(tmpdir(), 'agent-observe-trae');
   mkdirSync(cacheDir, { recursive: true });
   const fp = fingerprintSqliteWithWal(dbPath);
-  const cachePath = join(cacheDir, `${fp.hash}.db`);
+  // 缓存键 = 源库指纹 + keyPath 摘要：密钥轮换后不得复用旧解密结果
+  const keyDigest = createHash('sha1').update(opts.keyPath ?? '').digest('hex').slice(0, 12);
+  const cachePath = join(cacheDir, `${fp.hash}.${keyDigest}.db`);
 
   if (existsSync(cachePath)) {
     const age = Date.now() - statSync(cachePath).mtimeMs;
@@ -43,14 +46,20 @@ export async function decryptTraeDb(
   }
 
   const scriptPath = opts.scriptPath ?? join(process.cwd(), 'scripts', 'trae-extract-key.py');
-  const pythonBin = opts.pythonBin ?? 'python3';
+  // Windows 惯例是 python / py，macOS/Linux 是 python3；可被配置覆盖
+  const pythonBin = opts.pythonBin ?? (process.platform === 'win32' ? 'python' : 'python3');
   const timeoutMs = opts.timeoutMs ?? 30_000;
 
   return new Promise<TraeDecryptResult>((resolve) => {
     const child = spawn(
       pythonBin,
       [scriptPath, '--decrypt', dbPath, '--key', opts.keyPath!, '--out', cachePath],
-      { stdio: ['ignore', 'ignore', 'pipe'] },
+      {
+        stdio: ['ignore', 'ignore', 'pipe'],
+        // REQ-007：Windows 默认 cp936/gbk，强制 UTF-8 输出
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        windowsHide: true,
+      },
     );
     let stderr = '';
     child.stderr.on('data', (chunk: Buffer) => {
@@ -58,7 +67,7 @@ export async function decryptTraeDb(
     });
     const timer = setTimeout(() => {
       child.kill();
-      resolve({ ok: false, code: 'DECRYPT_FAILED', message: `解密超时（>${timeoutMs}ms）` });
+      resolve({ ok: false, code: 'DECRYPT_FAILED', message: `Decrypt timed out (>${timeoutMs}ms)` });
     }, timeoutMs);
 
     child.on('error', (err) => {
@@ -73,7 +82,7 @@ export async function decryptTraeDb(
         resolve({
           ok: false,
           code: 'DECRYPT_FAILED',
-          message: stderr.trim() !== '' ? stderr.trim() : `python 退出码 ${String(code)}`,
+          message: stderr.trim() !== '' ? stderr.trim() : `python exited with code ${String(code)}`,
         });
       }
     });

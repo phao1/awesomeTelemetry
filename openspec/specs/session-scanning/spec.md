@@ -1,239 +1,311 @@
 # Spec: Session Scanning
 
-> 本地会话文件扫描：config、scanners、增量门禁、file-watcher、scan-scheduler。
-> 源文件：`local-sessions/` + `server/watch/`
+> Local session file scanning: config, scanners, incremental gate,
+> file-watcher, scan-scheduler. Source files: `local-sessions/` +
+> `server/watch/`
 
 ## Purpose
 
-读取各 Agent 在本地磁盘留下的会话文件，产出 `SessionIndexEntry`，写入 SQLite，实时推送到 UI。
-**核心约束：不做无用功。** v4 因 `scan_state` 失效，每轮重处理 1,514 个文件 / 800.21MB。
+Read the session files each agent leaves on local disk, produce
+`SessionIndexEntry`, write to SQLite, and push to the UI in real time.
+**Core constraint: do no useless work.** In v4, because `scan_state` was dead,
+every round reprocessed 1,514 files / 800.21MB.
 
 ## Requirements
 
-### REQ-001: 增量门禁（v5 核心）
-任何详情读取前 MUST 先经过 `shouldRescan(db, sourcePath)` 门禁。门禁判定未变更时 MUST 直接返回，**零文件读取、零 JSON 解析、零 SQL 写入**。
+### REQ-001: Incremental gate (v5 core)
+Before any detail read, MUST first pass through the `shouldRescan(db,
+sourcePath)` gate. When the gate decides nothing changed, MUST return directly
+— **zero file reads, zero JSON parsing, zero SQL writes**.
 
-#### Scenario: 无变更重扫
-- **GIVEN** 全部源文件自上次扫描以来未变更
-- **WHEN** 执行一轮完整扫描
-- **THEN** SQL 写语句数 = 0
-- **AND** 读取字节数 < 20MB（仅 stat + 每文件 8KB 指纹探测）
-- **AND** 耗时 < 2s
+#### Scenario: rescan with no changes
+- **GIVEN** no source file changed since the last scan
+- **WHEN** a full scan round runs
+- **THEN** SQL write statement count = 0
+- **AND** bytes read < 20MB (stat + 8KB fingerprint probe per file only)
+- **AND** time < 2s
 
-> v4 实测：18,235 条 SQL / 重读 800MB。
+> v4 measured: 18,235 SQL statements / rereading 800MB.
 
-### REQ-002: 文件指纹
-`fingerprintFile(path)` SHALL 返回 `{ size, mtimeMs, hash }`，其中 hash = SHA1(size + 首 4KB + 尾 4KB)。成本恒定，与文件大小无关。
+### REQ-002: File fingerprints
+`fingerprintFile(path)` SHALL return `{ size, mtimeMs, hash }` where hash =
+SHA1(size + first 4KB + last 4KB). Constant cost, independent of file size.
 
-#### Scenario: WAL 型数据库的指纹
-- **GIVEN** provider 的 `sourceKind` 为 `sqlite` 或 `sqlcipher`
-- **WHEN** 计算指纹
-- **THEN** MUST 同时计算主 DB 文件与 `-wal` 文件的指纹并拼接
-- **AND** 仅看主文件会永远判定为未变更（WAL 模式下主文件 mtime 不变）
+#### Scenario: fingerprinting WAL-type databases
+- **GIVEN** a provider's `sourceKind` is `sqlite` or `sqlcipher`
+- **WHEN** computing the fingerprint
+- **THEN** MUST also fingerprint the `-wal` file and concatenate both
+- **AND** watching only the main file always reports "unchanged" (the main
+  file's mtime never changes in WAL mode)
 
-> 这是 G5.2 那条坑的正解。v4 只能被迫改 30s 轮询，是因为没意识到要看 `-wal`。
+> This is the correct solution to the G5.2 pitfall. v4 was forced into 30s
+> polling only because it never realized it had to look at `-wal`.
 
-### REQ-003: scan_state 强制写入
-每次成功的详情扫描后 MUST 调用 `commitScanState()`。写入失败 MUST 抛错，MUST NOT 静默 catch。
+### REQ-003: scan_state writes are mandatory
+After every successful detail scan, MUST call `commitScanState()`. Write
+failures MUST throw; MUST NOT silently catch.
 
-#### Scenario: scan_state 为空
-- **GIVEN** 首轮全量扫描完成
-- **THEN** `SELECT COUNT(*) FROM scan_state` MUST ≥ 源文件数
-- **AND** v4 实测该值为 0，是必须守住的回归防线
+#### Scenario: empty scan_state
+- **GIVEN** the first full scan completes
+- **THEN** `SELECT COUNT(*) FROM scan_state` MUST be >= source file count
+- **AND** v4 measured 0; this is the regression line that must be held
 
-### REQ-004: 配置三层覆盖
-`loadLocalSessionConfig()` SHALL 按顺序合并：内置默认 → `config/local-sessions.local.json`（项目级，gitignored）→ 用户配置（`%APPDATA%/agent-observe/agent-observe.json` 或 `~/.config/agent-observe/agent-observe.json`）。后者覆盖前者。写入用户配置 MUST 原子写（tmp + rename）。
+### REQ-004: Three-layer config override
+`loadLocalSessionConfig()` SHALL merge in order: built-in defaults →
+`config/local-sessions.local.json` (project-level, gitignored) → user config
+(`%APPDATA%/agent-observe/agent-observe.json` or
+`~/.config/agent-observe/agent-observe.json`). Later wins. User-config writes
+MUST be atomic (tmp + rename).
 
-### REQ-005: 路径展开
-`expandLocalSessionPath()` SHALL 支持 `~`、`~\`、`%VAR%` 三种语法。
+### REQ-005: Path expansion
+`expandLocalSessionPath()` SHALL support `~`, `~\`, `%VAR%`.
 
-### REQ-006: 默认路径（env 优先）
-| Provider | 默认路径 | sourceKind | watchStrategy |
-|----------|----------|-----------|---------------|
+### REQ-006: Default paths (env preferred)
+| Provider | Default path | sourceKind | watchStrategy |
+|----------|--------------|------------|---------------|
 | claude | `$CLAUDE_CONFIG_DIR/projects` → `~/.claude/projects` | jsonl | chokidar |
 | codex | `$CODEX_HOME/sessions` → `~/.codex/sessions` | jsonl | chokidar |
-| opencode | `~/.local/share/opencode`（Win: `%APPDATA%/opencode`） | sqlite | poll |
+| opencode | `~/.local/share/opencode` (Win: `%APPDATA%/opencode`) | sqlite | poll |
 | codearts | `$CODEARTS_HOME` → `~/.codeartsdoer/codearts-data` | sqlite | poll |
 | codeagent | `$CAC_HOME/projects` → `~/.cac/projects` | jsonl | chokidar |
 | codeagent2 | `~/.local/share/codemate` | sqlite | poll |
 | trae | `%APPDATA%\Trae CN\ModularData\ai-agent` | sqlcipher | poll |
-| qoder | `~/.qoder`（默认禁用） | jsonl | chokidar |
+| qoder | `~/.qoder` (disabled by default) | jsonl | chokidar |
 | workbuddy | `$WORKBUDDY_HOME/projects` → `~/.workbuddy/projects` | jsonl | chokidar |
 
-### REQ-007: 会话 key 生成
-`sessionKey(provider, id, sourcePath)` SHALL 等于 `provider-` 加 SHA1(`provider:id:sourcePath`) 的前 14 位。MUST 包含 sourcePath 防撞 key。
+### REQ-007: Session key generation
+`sessionKey(provider, id, sourcePath)` SHALL equal `provider-` plus the first
+14 chars of SHA1(`provider:id:sourcePath`). MUST include sourcePath to avoid
+key collisions.
 
-**索引阶段与详情阶段 MUST 使用同一个派生函数 `deriveSessionKey(provider, sourcePath, innerId?)`，禁止两处各算各的**（T-02：P0-2 的根因）：
+**The index phase and the detail phase MUST use the same derived function
+`deriveSessionKey(provider, sourcePath, innerId?)` — the two places must never
+derive independently** (T-02: the root cause of P0-2):
 
-- JSONL 类（每文件一会话，`innerId` 缺省）：稳定来源标识 = 文件名，
-  `deriveSessionKey(p, path) == sessionKey(p, basename(path), path)`
-- SQLite 类（一库多会话，`innerId` = db 行内 session id）：稳定来源标识 = db 路径 + 行内 id，
+- JSONL class (one session per file, `innerId` defaulted): stable source id =
+  file name; `deriveSessionKey(p, path) == sessionKey(p, basename(path), path)`
+- SQLite class (one DB, many sessions, `innerId` = the DB row's session id):
+  stable source id = db path + row id;
   `deriveSessionKey(p, path, id) == sessionKey(p, id, path)`
 
-关键约束：**索引阶段拿得到、详情阶段算得出同一个值**。adapter 解析出的 session id
-只在 SQLite 多会话场景参与 key 派生；JSONL 场景一律以文件路径为准。
+Key constraint: **the index phase can compute it and the detail phase can
+compute the same value.** The session id parsed by the adapter only
+participates in key derivation in the SQLite multi-session case; JSONL always
+uses the file path.
 
-### REQ-008: JSONL 尾部增量读
-`sourceKind` 为 `jsonl` 时，`readJsonlFrom(path, startOffset)` SHALL 用 `createReadStream({ start })` 流式逐行解析，返回 `{ rows, endOffset }`。
+### REQ-008: JSONL tail incremental reads
+For `sourceKind` = `jsonl`, `readJsonlFrom(path, startOffset)` SHALL use
+`createReadStream({ start })` to stream line by line, returning
+`{ rows, endOffset }`.
 
-MUST NOT 用正则 split 整个文件字符串。
+MUST NOT regex-split the whole file string.
 
-#### Scenario: 回退全量的条件
-- **GIVEN** 以下任一条件成立：`file_size < prevOffset`（文件被截断）、首 4KB hash 变化（文件被重写）
-- **THEN** MUST 回退到 offset=0 的全量解析
+#### Scenario: conditions for falling back to full read
+- **GIVEN** any of: `file_size < prevOffset` (file truncated), first-4KB hash
+  changed (file rewritten)
+- **THEN** MUST fall back to a full parse from offset 0
 
-> 依据：codeagent 单 provider 948 文件 / 739.21MB，占源文件总量 92.4%，且 JSONL 是 append-only。
-> CPU profile 中 `RegExp: \r?\n` self time 459.8ms，即 v4 的整串 split 实现。
+> Basis: codeagent alone is 948 files / 739.21MB, 92.4% of total source size,
+> and JSONL is append-only. In the CPU profile, `RegExp: \r?\n` self time was
+> 459.8ms — that was v4's whole-string split implementation.
 
-### REQ-009: SQLite 只读打开
-`openReadonly(dbPath)` SHALL 用 better-sqlite3 readonly + `fileMustExist: true`。
+### REQ-009: SQLite readonly open
+`openReadonly(dbPath)` SHALL use better-sqlite3 readonly +
+`fileMustExist: true`.
 
-### REQ-010: 各 scanner 行为
-- **claude.ts** — 扫 `.jsonl`，首行取 sessionId，首条 user message 取 title
-- **codex.ts** — 扫 `.jsonl` + 读 `session_index.jsonl` + `state_5.sqlite`（threads 表）取 title
-- **opencode.ts** — 支持 db / logs / otel 三源，用 `OpenCodeDialect` 参数定制。
-  db 源 MUST 按 `session` 行展开为 N 个会话（T-03，1 个 .db 文件 ≠ 1 个会话），
-  详情读取同样按 session 分组后逐个 normalize。
-- **codearts.ts / codeagent2.ts** — thin wrapper 调 opencode.ts，传不同 dialect，
-  继承多会话展开行为
-- **codeagent.ts** — 扫 `.jsonl`，过滤 `file-history-snapshot` 行
-- **trae.ts** — 见 REQ-012
-- **workbuddy.ts** — 扫 `.jsonl` + 读 `workbuddy.db` 取 title，过滤 `file-history-snapshot`，从 `<user_query>` 提取用户问题
+### REQ-010: Scanner behaviors
+- **claude.ts** — scans `.jsonl`; sessionId from the first line; title from the
+  first user message
+- **codex.ts** — scans `.jsonl` + reads `session_index.jsonl` +
+  `state_5.sqlite` (threads table) for titles
+- **opencode.ts** — supports db / logs / otel sources, customized via the
+  `OpenCodeDialect` param. The db source MUST expand by `session` row into N
+  sessions (T-03: 1 .db file ≠ 1 session); detail reads also group by session
+  and normalize one by one.
+- **codearts.ts / codeagent2.ts** — thin wrappers calling opencode.ts with
+  different dialects, inheriting the multi-session expansion
+- **codeagent.ts** — scans `.jsonl`, filters `file-history-snapshot` rows
+- **trae.ts** — see REQ-012
+- **workbuddy.ts** — scans `.jsonl` + reads `workbuddy.db` for titles, filters
+  `file-history-snapshot`, extracts the user question from `<user_query>`
 
-### REQ-011: provider 并行 + 熔断
-`scanLocalSessions()` SHALL 并行扫描所有 enabled provider，每个 provider 设独立超时（默认 30s）。超时的 provider MUST 被跳过并记录，MUST NOT 阻塞其他 provider。
+### REQ-011: Provider parallelism + circuit breaker
+`scanLocalSessions()` SHALL scan all enabled providers in parallel, with an
+independent timeout per provider (default 30s). Timed-out providers MUST be
+skipped and recorded, MUST NOT block others.
 
-### REQ-012: Trae 解密异步化
-Trae 的 Python bridge MUST 用 `spawn` + Promise，MUST NOT 用 `spawnSync`。
+### REQ-012: Trae decryption is async
+Trae's Python bridge MUST use `spawn` + Promise, MUST NOT use `spawnSync`.
 
-#### Scenario: 解密不在请求路径
-- **GIVEN** 用户请求某个 Trae 会话详情，但解密尚未完成
-- **THEN** MUST 立即返回已有索引数据 + `pending: true`
-- **AND** MUST NOT 在请求处理中触发解密
-- **AND** 解密完成后由 SSE `sessions_changed` 通知前端
+#### Scenario: decryption not on the request path
+- **GIVEN** a user requests a Trae session detail but decryption is not done
+- **THEN** MUST immediately return existing index data + `pending: true`
+- **AND** MUST NOT trigger decryption while handling the request
+- **AND** after decryption completes, SSE `sessions_changed` notifies the
+  frontend
 
-#### Scenario: 解密结果缓存
-- **GIVEN** Trae 的 DB 与 `-wal` 指纹未变化且距上次解密 < 30s
-- **THEN** 直接返回缓存结果，MUST NOT spawn Python 进程
+#### Scenario: decryption result caching
+- **GIVEN** the Trae DB and `-wal` fingerprints are unchanged and less than 30s
+  since the last decryption
+- **THEN** return the cached result directly; MUST NOT spawn the Python
+  process
 
-> 依据：CPU profile 中 4 次 `spawnSync` 合计 6,074ms，占 37.5% CPU。
+> Basis: in the CPU profile, 4 `spawnSync` calls totaled 6,074ms, 37.5% of CPU.
 
-### REQ-013: 启动流程
-`initialScanAndStore(opts)` SHALL 分两阶段：
-1. **索引阶段（同步，必须快）** — 仅目录遍历 + 轻量元数据，upsert 索引，emit `scan_completed`。
-   MUST NOT 读详情、解密、spawn 子进程。耗时 < 3s @ 1,514 文件。
-   SQLite 类（opencode / codearts / codeagent2）MUST 按 db 内 session 行展开为 N 条，
-   轻量 SQL 只取 id / title / 时间戳（不读 message/part 正文），单库 < 50ms；
-   无法读取的 .db（损坏 / 非本 provider 格式）在索引阶段跳过该文件，
-   不阻塞整体启动（详情阶段由 provider 级错误记录暴露）。Trae 因 SQLCipher
-   需解密才能读行，索引粒度保持「1 文件 = 1 条目」（REQ-013 禁止索引阶段解密）。
-2. **预热阶段（可选，默认关闭）** — `opts.prewarmRecent` 默认 `0`。非 0 时 `void backgroundPrewarm(...)`，MUST NOT `await`。
+### REQ-013: Startup flow
+`initialScanAndStore(opts)` SHALL run in two phases:
+1. **Index phase (synchronous, must be fast)** — directory traversal + light
+   metadata only; upsert index; emit `scan_completed`. MUST NOT read details,
+   decrypt, or spawn child processes. Time < 3s @ 1,514 files.
+   SQLite-class providers (opencode / codearts / codeagent2) MUST expand by
+   in-DB session row into N entries with lightweight SQL reading only
+   id / title / timestamps (no message/part bodies), < 50ms per DB;
+   unreadable .db files (corrupt / wrong provider format) are skipped during
+   the index phase without blocking startup (detail phase exposes them via
+   provider-level error records). Trae stays at "1 file = 1 entry" granularity
+   because SQLCipher needs decryption to read rows (REQ-013 forbids
+   decryption in the index phase).
+2. **Prewarm phase (optional, off by default)** — `opts.prewarmRecent` defaults
+   to `0`. Non-zero runs `void backgroundPrewarm(...)`, MUST NOT `await`.
 
-#### Scenario: 默认不预热
-- **GIVEN** 未指定 `--prewarm-recent`
-- **WHEN** 服务启动
-- **THEN** 启动后 10s / 60s / 180s 三个时间点首屏均 < 100ms
+#### Scenario: no prewarm by default
+- **GIVEN** `--prewarm-recent` not specified
+- **WHEN** the server starts
+- **THEN** first screen at 10s / 60s / 180s after startup is all < 100ms
 
-> 依据：A/B 实验中关闭预热组为 20 / 19 / 10ms，开启组为 5,884 / 3,896 / 12,399ms，比值 200–1240 倍。
-> 按需读取实测中位 1.57ms、P95 12.94ms，预热的收益远小于其代价。
+> Basis: in the A/B experiment the prewarm-off group measured 20 / 19 / 10ms,
+> the prewarm-on group 5,884 / 3,896 / 12,399ms — a 200-1240x ratio.
+> On-demand reads measured median 1.57ms, P95 12.94ms; prewarm's benefit is
+> far smaller than its cost.
 
-### REQ-014: 预热让路
-`backgroundPrewarm()` MUST 在每个会话前检查 `isForegroundBusy()`（750ms 内有前台请求），为真时 `await sleep(250)` 循环等待。每个会话之间 MUST `await setTimeout(0)` 让出整轮事件循环。
+### REQ-014: Prewarm yields
+`backgroundPrewarm()` MUST check `isForegroundBusy()` (a request within 750ms)
+before each session; when busy, loop `await sleep(250)`. Between sessions MUST
+`await setTimeout(0)` to yield a full event-loop round.
 
-### REQ-015: 惰性详情加载
-`GET /api/sessions/:key` 在 `sessions.detail_loaded = 0` 时 SHALL 触发一次同步 `scanAndStoreDetail`，成功后置 `detail_loaded = 1` 并写入 LRU 缓存。
+### REQ-015: Lazy detail loading
+`GET /api/sessions/:key` SHALL trigger one synchronous `scanAndStoreDetail`
+when `sessions.detail_loaded = 0`, then set `detail_loaded = 1` and write into
+the LRU cache.
 
-### REQ-020: 启动自愈清理（T-02）
-启动自检 MUST 调用 `cleanupDuplicateSessionRows()`（仅 `data_source = 'scan'`），
-三类残留逐条删除并连同其 events / event_raw / metrics / scan_state 行：
+### REQ-020: Startup self-healing cleanup (T-02)
+The startup self-check MUST call `cleanupDuplicateSessionRows()` (only
+`data_source = 'scan'`), deleting the three residue classes one by one along
+with their events / event_raw / metrics / scan_state rows:
 
-1. 旧版 key 不一致残留：`detail_loaded = 0` 且同 `source_path`、同 provider 存在
-   `detail_loaded = 1` 兄弟行的**孤儿行**；
-2. JSONL 类：`id ≠ deriveSessionKey(provider, source_path)` 的行
-   （旧 adapter-id 派生的不可达残留；源文件仍在时由索引阶段重建）；
-3. 可读 SQLite 类（opencode / codearts / codeagent2）：
-   `id == deriveSessionKey(provider, source_path)` 的**文件级伪会话**
-   （T-03 后索引按 session 行展开，不再产生该 key）。
+1. old key-mismatch residue: **orphan rows** with `detail_loaded = 0` where a
+   `detail_loaded = 1` sibling with the same `source_path` and provider
+   exists;
+2. JSONL class: rows with `id ≠ deriveSessionKey(provider, source_path)`
+   (unreachable residue derived from old adapter ids; rebuilt by the index
+   phase while the source file still exists);
+3. readable SQLite class (opencode / codearts / codeagent2): **file-level
+   pseudo-sessions** with `id == deriveSessionKey(provider, source_path)`
+   (since T-03 the index expands by session row and no longer produces this
+   key).
 
-正常未打开的会话（key 规范且无 loaded 兄弟行）MUST NOT 被清理。
+Normal unopened sessions (canonical key and no loaded sibling) MUST NOT be
+cleaned.
 
-### REQ-016: LRU 详情缓存
-`detail-cache.ts` SHALL 提供上限 24 条的 LRU，命中即提升。`sessions_changed` 事件 MUST 使对应 key 的缓存失效。
+### REQ-016: LRU detail cache
+`detail-cache.ts` SHALL provide an LRU capped at 24 entries; hits promote.
+`sessions_changed` events MUST invalidate the matching keys' cache entries.
 
-### REQ-017: 文件监视器
-`file-watcher.ts` SHALL 对 `watchStrategy = chokidar` 的 provider 用 chokidar（300ms debounce、`awaitWriteFinish` 500ms 稳定阈值 / 100ms 轮询、忽略 dotfiles）；对 `watchStrategy = poll` 的 provider 用 30 秒轮询。
+### REQ-017: File watcher
+`file-watcher.ts` SHALL use chokidar for `watchStrategy = chokidar` providers
+(300ms debounce, `awaitWriteFinish` 500ms stability threshold / 100ms poll,
+ignore dotfiles) and 30s polling for `watchStrategy = poll` providers.
 
-### REQ-018: 变更事件合并
-监视器与调度器 MUST 通过 `queueSessionChange(key)` 上报变更，由合并器按 200ms 窗口发出 `sessions_changed`。MUST NOT 逐 session 发射事件。
+### REQ-018: Change event coalescing
+The watcher and scheduler MUST report changes through
+`queueSessionChange(key)`; the coalescer emits `sessions_changed` on a 200ms
+window. MUST NOT emit per-session events.
 
-### REQ-019: vite-plugin（dev 模式）
-`local-sessions/vite-plugin.ts` SHALL 在 dev 模式提供与生产 `server.ts` 相同的 API 路由，**额外**提供 CDP 捕获路由与 CA 证书管理路由。
+### REQ-019: vite-plugin (dev mode)
+`local-sessions/vite-plugin.ts` SHALL expose the same API routes as production
+`server.ts` in dev mode, **additionally** providing CDP capture routes and CA
+cert management routes.
 
-### REQ-021: 索引阶段的真实标题与事件数
+### REQ-021: Real titles and event counts in the index phase
 
-索引阶段产出的 `SessionIndexEntry` SHALL 携带**可读的真实标题**与**真实 `eventCount`**，
-MUST NOT 用源文件名冒充标题、MUST NOT 用 `0` 冒充未知事件数。
+`SessionIndexEntry` produced in the index phase SHALL carry a **readable real
+title** and the **real `eventCount`**; MUST NOT fake titles with source file
+names, MUST NOT fake unknown event counts with `0`.
 
-| 源类型 | 标题来源 | 事件数来源 |
-|--------|---------|-----------|
-| JSONL 类（claude / codex / codeagent / qoder / workbuddy） | 流式扫描首个 **user 角色**消息的前 120 字符 | 流式计数消息行数 |
-| SQLite 类（opencode / codearts / codeagent2） | 会话行自带的 title 列；为空则取该会话首条 user message | 轻量 `COUNT(*)` |
-| Trae（SQLCipher） | 解密就绪前置 `null` + `pending`，就绪后回填 | 同上 |
+| Source type | Title source | Event-count source |
+|-------------|--------------|--------------------|
+| JSONL class (claude / codex / codeagent / qoder / workbuddy) | first **user-role** message's first 120 chars from streaming scan | stream-count the message rows |
+| SQLite class (opencode / codearts / codeagent2) | the session row's own title column; if empty, that session's first user message | lightweight `COUNT(*)` |
+| Trae (SQLCipher) | `null` + `pending` until decryption is ready, then backfill | same |
 
-约束：
+Constraints:
 
-1. **MUST NOT 读取正文全文**。JSONL 类只允许**流式读取直到拿到首条 user 消息**即中断，
-   MUST NOT 把整个文件读进内存、MUST NOT 走完整 adapter 解析管线。
-2. 标题 MUST 跳过注入内容：system prompt、`<environment_context>`、`# AGENTS.md …`、
-   `<system-reminder>`、IDE 注入的上下文块。取的是**用户真正说的第一句话**。
-3. 预算：单个 JSONL 文件 < 5ms；单个 SQLite 库全部会话 < 50ms（沿用 T-03 预算）。
-4. 标题不可得时（空会话、纯系统消息）SHALL 回落为
-   `<provider> session · <本地化的起始时间>`，MUST NOT 回落为文件名。
+1. **MUST NOT read the full body.** JSONL-class only allows streaming until
+   the first user message, then stop; MUST NOT load the whole file into
+   memory, MUST NOT run the full adapter parse pipeline.
+2. Titles MUST skip injected content: system prompts, `<environment_context>`,
+   `# AGENTS.md …`, `<system-reminder>`, and IDE-injected context blocks. Take
+   the **first thing the user actually said**.
+3. Budget: a single JSONL file < 5ms; all sessions of one SQLite DB < 50ms
+   (inheriting the T-03 budget).
+4. When no title is obtainable (empty session, system-only messages) SHALL
+   fall back to `<provider> session · <localized start time>`, MUST NOT fall
+   back to the file name.
 
-#### Scenario: 首屏列表可辨认
-- **GIVEN** 一个从未打开过详情的干净库，含 claude / codex / opencode 三类源
-- **WHEN** 调用 `GET /api/sessions?limit=50`
-- **THEN** 每一条 `title` MUST NOT 以 `.jsonl` / `.db` 结尾
-- **AND** 每一条 `title` MUST NOT 以 `rollout-` 开头
-- **AND** `eventCount` MUST > 0（真实空会话除外）
+#### Scenario: first-screen list is recognizable
+- **GIVEN** a clean DB never opened, containing claude / codex / opencode
+  sources
+- **WHEN** calling `GET /api/sessions?limit=50`
+- **THEN** every `title` MUST NOT end with `.jsonl` / `.db`
+- **AND** every `title` MUST NOT start with `rollout-`
+- **AND** `eventCount` MUST > 0 (except genuinely empty sessions)
 
-> **现状实测（2026-08-04，38 条会话）**：34 条 title 为源文件名、`eventCount = 0`；
-> 已打开过的 codex 会话 title 取到了 `# AGENTS.md instructions for /Users/…`
-> 与 `<environment_context>`——都是注入内容而非用户意图。
+> **Current measured state (2026-08-04, 38 sessions)**: 34 titles were source
+> file names with `eventCount = 0`; opened codex sessions picked up
+> `# AGENTS.md instructions for /Users/…` and `<environment_context>` — all
+> injected content, not user intent.
 
-### REQ-022: SQLite 类 provider 的详情解析
+### REQ-022: SQLite-class provider detail parsing
 
-`opencode` / `codearts` / `codeagent2` 的详情阶段 SHALL 按 T-03 展开后的
-「db 路径 + 行内 session id」定位到具体会话并解析出事件，
-MUST NOT 返回 `events: []` + 空 title。
+The detail phase for `opencode` / `codearts` / `codeagent2` SHALL locate the
+specific session by "db path + in-row session id" (per the T-03 expansion) and
+parse its events; MUST NOT return `events: []` + empty title.
 
-无法解析时 SHALL 返回明确的错误码（`SESSION_PARSE_FAILED`），
-MUST NOT 返回 200 + 空结果——前端无从区分「空会话」与「解析失败」。
+On parse failure SHALL return an explicit error code (`SESSION_PARSE_FAILED`),
+MUST NOT return 200 + empty result — the frontend cannot tell "empty session"
+from "parse failure", and the correct UI differs completely.
 
-#### Scenario: OpenCode 会话可打开
-- **GIVEN** `~/.local/share/opencode/opencode.db` 中存在 N 个真实会话
-- **WHEN** 逐个请求 `GET /api/sessions/<key>`
-- **THEN** 每个响应的 `events.length` MUST > 0
-- **AND** `session.title` MUST 非空
+#### Scenario: an OpenCode session can be opened
+- **GIVEN** N real sessions exist in `~/.local/share/opencode/opencode.db`
+- **WHEN** requesting `GET /api/sessions/<key>` one by one
+- **THEN** every response's `events.length` MUST > 0
+- **AND** `session.title` MUST be non-empty
 
-> **现状实测**：`GET /api/sessions/opencode-7ff9bf5edb628d` 与
-> `GET /api/sessions/codearts-c79b25e584d002` 均返回
-> `events: 0` / `title: ""` / `pending: undefined`——200 但空。
-> T-03 展开了索引阶段，详情阶段未跟上。
+> **Current measured state**: `GET /api/sessions/opencode-7ff9bf5edb628d` and
+> `GET /api/sessions/codearts-c79b25e584d002` both returned
+> `events: 0` / `title: ""` / `pending: undefined` — 200 but empty.
+> T-03 expanded the index phase; the detail phase did not follow.
 
 ## Gotchas
-- G2.2：路径展开三种语法
-- G5.2：db 类 provider 必须轮询；**指纹必须覆盖 `-wal`**
-- G6.1：Trae SQLCipher 需 python 提取 key，scanner 要先检查 key 存在，缺失时返回 `TRAE_KEY_MISSING`
-- G10.1：启动预热必须非阻塞 —— v5 进一步改为**默认不预热**
-- G10.2：CDP 路由只在 dev 模式
-- G11.5（新）：`scan_state` 写入失败必须抛错。v4 静默失败导致该表为空，增量扫描形同虚设，且没有任何报警
-- G11.6（新）：`spawnSync` 在单线程 Node 里是绝对禁区，一次调用就能吃掉 1.5–2.3 秒事件循环
-- **G5.4（新）**：索引阶段「不解析正文」不等于「不产出标题」。二者被混为一谈的结果是
-  一屏文件名（REQ-021）。正确解法是**流式读到首条 user 消息即中断**，
-  既不违反预算也拿得到标题
-- **G5.5（新）**：会话标题必须跳过注入内容。Claude/Codex 的首条消息常是
-  `# AGENTS.md …`、`<environment_context>`、`<system-reminder>`——
-  取它们等于给每个会话起了同一个名字
-- **G5.6（新）**：解析失败 MUST 返回错误码，MUST NOT 返回 200 + 空数组。
-  前端无法区分「这个会话本来就空」与「后端没解析出来」，两者的正确 UI 完全不同（REQ-022）
+- G2.2: three path-expansion syntaxes
+- G5.2: db-class providers must poll; **fingerprints must cover `-wal`**
+- G6.1: Trae SQLCipher needs a Python-extracted key; the scanner must check
+  the key exists first and return `TRAE_KEY_MISSING` when missing
+- G10.1: startup prewarm must be non-blocking — v5 further defaults to **no
+  prewarm**
+- G10.2: CDP routes are dev-only
+- G11.5 (new): `scan_state` write failures must throw. v4's silent failures
+  left the table empty, making incremental scanning fake with zero alarms
+- G11.6 (new): `spawnSync` is absolutely forbidden in single-threaded Node;
+  one call eats 1.5-2.3s of the event loop
+- **G5.4 (new)**: "index phase must not parse bodies" ≠ "index phase produces
+  no titles". Confusing the two produced a screen full of file names
+  (REQ-021). The correct solution is to **stream until the first user message
+  and stop** — within budget and still getting a title
+- **G5.5 (new)**: session titles must skip injected content. Claude/Codex
+  first messages are often `# AGENTS.md …`, `<environment_context>`,
+  `<system-reminder>` — taking them names every session the same thing
+- **G5.6 (new)**: parse failures MUST return an error code, MUST NOT return
+  200 + empty array. The frontend cannot distinguish "this session is
+  genuinely empty" from "the backend failed to parse", and the correct UI for
+  the two differs completely (REQ-022)

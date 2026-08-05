@@ -1,126 +1,142 @@
 # AGENTS.md
 
-> 这个文件会被 Codex / Claude Code / Cursor 等 agent 自动读取。
-> **每次开始任何任务前，先完整读完本文件。**
+> This file is read automatically by Codex / Claude Code / Cursor and other
+> agents. **Read this file in full before starting any task.**
 
-## 项目一句话
+## Project in one sentence
 
-Agent Observability：本地 Web UI，读取并分析 9 种 AI 编码助手的会话轨迹，按「快·准·稳·省」四维度衡量。
-**0-1 全新构建**，不迁移任何历史数据。
+Agent Observability: a local web UI that reads and analyzes session traces from
+9 AI coding assistants, scored across four dimensions: Speed · Accuracy ·
+Stability · Cost. **Built from scratch (0-1)**, no historical data migration.
 
-## 权威文档优先级
+## Authoritative documentation priority
 
-冲突时，**上面的赢**：
+On conflict, **the higher entry wins**:
 
-1. `openspec/contracts/data-model.md` — 类型定义
-2. `openspec/contracts/database.md` — SQL DDL / 索引 / PRAGMA
-3. `openspec/contracts/api.md` — HTTP 契约
-4. `openspec/contracts/nfr.md` — 性能预算（硬需求，等同功能需求）
-5. `openspec/specs/<module>/spec.md` — 模块行为需求
-6. `openspec/gotchas.md` — 踩坑清单
-7. `openspec/project.md` — 总览
+1. `openspec/contracts/data-model.md` — type definitions
+2. `openspec/contracts/database.md` — SQL DDL / indexes / PRAGMAs
+3. `openspec/contracts/api.md` — HTTP contract
+4. `openspec/contracts/nfr.md` — performance budget (hard requirement, same weight as functional requirements)
+5. `openspec/specs/<module>/spec.md` — module behavior requirements
+6. `openspec/gotchas.md` — gotcha checklist
+7. `openspec/project.md` — overview
 
-**任何时候都不要凭记忆写字段名、表名、路由。去文档里查。**
+**Never write field names, table names, or routes from memory. Look them up in the docs.**
 
-## 开工前的四步检查
+## Four checks before starting work
 
-1. 读 `BOOTSTRAP.md`，确认当前处在哪个里程碑（M0–M12）
-2. 读本次任务对应模块的 `openspec/specs/<module>/spec.md` 全文
-3. 读该 spec 底部 Gotchas 指向的 `openspec/gotchas.md` 条目
-4. 确认你要产出的文件清单，**不碰清单外的任何文件**
+1. Read `BOOTSTRAP.md` and confirm which milestone (M0-M12) you are on
+2. Read the full `openspec/specs/<module>/spec.md` for the task's module
+3. Read the `openspec/gotchas.md` entries referenced at the bottom of that spec
+4. Confirm the file list you are expected to produce; **do not touch any file outside that list**
 
-## 十条禁令（违反即返工）
+## Ten prohibitions (violating any of these means rework)
 
-1. **禁止 `SELECT *`** —— 一律显式列出返回列，用 `contracts/database.md` §5.2 的列常量
-2. **禁止在详情列表返回 `raw` / `inputSummary` / `outputSummary`** —— 这三列占 DB 的 96%
-3. **禁止在循环内 `db.prepare()`** —— 用模块级缓存复用
-4. **禁止 `spawnSync` / `execFileSync` / 大文件 `readFileSync` 出现在 HTTP 请求处理路径上**
-5. **禁止逐 session 发射 SSE 事件** —— 必须 200ms 窗口合并成 `sessions_changed { keys }`
-6. **禁止前端 `sessions.map(s => fetch(...))`** —— 需要聚合就加服务端聚合端点
-7. **禁止全删全插式 `upsertEvents`** —— 必须差分 upsert
-8. **禁止静默 catch `scan_state` 写入失败** —— 必须抛错
-9. **禁止用正则 split 整个文件字符串解析 JSONL** —— 必须流式逐行
-10. **禁止 `ORDER BY LENGTH(col)`** —— 用冗余长度列 + 索引
+1. **No `SELECT *`** — always list return columns explicitly, using the column
+   constants from `contracts/database.md` §5.2
+2. **Never return `raw` / `inputSummary` / `outputSummary` in detail lists** —
+   these three columns account for 96% of DB size
+3. **No `db.prepare()` inside loops** — reuse via module-level statement cache
+4. **No `spawnSync` / `execFileSync` / large-file `readFileSync` on HTTP request
+   handling paths**
+5. **No per-session SSE events** — merge into `sessions_changed { keys }` in a
+   200ms window
+6. **No frontend `sessions.map(s => fetch(...))`** — add a server-side
+   aggregation endpoint when aggregation is needed
+7. **No delete-and-reinsert `upsertEvents`** — must use differential upsert
+8. **No silent catch of `scan_state` write failures** — must throw
+9. **No regex split of a whole file to parse JSONL** — must stream line by line
+10. **No `ORDER BY LENGTH(col)`** — use a redundant length column + index
 
-## 五条必做
+## Five must-dos
 
-1. **类型逐字采用契约。** 契约里没有的字段不要发明；契约里有的字段不要省略。
-2. **每个模块的测试与源码同目录**（`foo.ts` + `foo.test.ts`），不放 `__tests__/`。
-3. **`undefined` 写库前一律转 `null`。**
-4. **所有对外时间戳是 ISO 8601 UTC 字符串。**
-5. **所有非 2xx 响应用 `contracts/api.md` §0.3 的统一 `ApiError` 信封。**
+1. **Adopt contract types verbatim.** Do not invent fields the contract lacks;
+   do not omit fields the contract has.
+2. **Tests live next to source** (`foo.ts` + `foo.test.ts`), never in `__tests__/`.
+3. **Convert `undefined` to `null` before writing to the database.**
+4. **All external timestamps are ISO 8601 UTC strings.**
+5. **All non-2xx responses use the unified `ApiError` envelope from
+   `contracts/api.md` §0.3.**
 
-## 遇到歧义怎么办
+## When in doubt
 
-**停下来问，不要猜。** 具体地说：
+**Stop and ask, do not guess.** Specifically:
 
-- 契约里没定义的字段 → 停下来，列出你需要的字段和用途，等人回答
-- 两份文档冲突 → 按上面的优先级取高的那份，并在输出里明确指出这处冲突
-- 某个 gotcha 看不懂 → 照做，不要"优化"掉。那些都是真实调试出来的
-- 测试跑不过 → 修实现，不要改测试的断言。断言是契约的可执行形式
+- Field not defined in the contract → stop, list the fields you need and why,
+  and wait for an answer
+- Two documents conflict → take the higher-priority one per the list above and
+  explicitly flag the conflict in your output
+- A gotcha is unclear → follow it anyway; do not "optimize" it away. Those were
+  all discovered through real debugging
+- Tests fail → fix the implementation, never relax the test assertions.
+  Assertions are the executable form of the contract
 
-**绝对不要**为了让测试通过而 mock 掉被测逻辑，或把断言改松。
+**Never** mock the logic under test or loosen assertions just to make tests pass.
 
-## 技术栈约束
+## Tech stack constraints
 
-| 项 | 值 | 备注 |
-|----|----|----- |
-| Node | ≥ 20 | 硬性 |
+| Item | Value | Notes |
+|------|-------|-------|
+| Node | >= 20 | hard requirement |
 | TypeScript | ~6.0 | `verbatimModuleSyntax` / `erasableSyntaxOnly` / strict |
-| 前端 | React 19.2 + Vite 8 | 无路由库，`App.tsx` 是唯一 stateful shell |
-| 后端 | 纯 Node `http` | **不用 Express / Fastify / Koa** |
-| DB | better-sqlite3（WAL） | 同步 API，注意别阻塞事件循环 |
-| 压缩 | `node:zlib` | 不引第三方 |
-| 测试 | Vitest 3 | jsdom env、globals |
+| Frontend | React 19.2 + Vite 8 | no router lib; `App.tsx` is the only stateful shell |
+| Backend | plain Node `http` | **no Express / Fastify / Koa** |
+| DB | better-sqlite3 (WAL) | sync API; be careful not to block the event loop |
+| Compression | `node:zlib` | no third-party |
+| Tests | Vitest 3 | jsdom env, globals |
 
-**runtime 依赖只有 4 个**：`better-sqlite3`、`chokidar`、`http-mitm-proxy`、`node-forge`。
-前端可额外用 `@tanstack/react-virtual`（只进前端 bundle）。
-**不要引入其他任何 runtime 依赖。** 需要新依赖时先问。
+**Only 4 runtime dependencies**: `better-sqlite3`, `chokidar`,
+`http-mitm-proxy`, `node-forge`.
+Frontend may additionally use `@tanstack/react-virtual` (frontend bundle only).
+**Do not add any other runtime dependency.** Ask before adding new dependencies.
 
-**devDependency 例外（已批准）**：`globals` —— ESLint 官方配套包，零传递依赖，flat config 需要 Node/浏览器全局声明。
+**devDependency exception (approved)**: `globals` — official ESLint companion
+package, zero transitive deps, needed by flat config for Node/browser globals.
 
-## 已知偏差
+## Known deviations
 
-- `@types/better-sqlite3@9.6.0` 与 runtime `better-sqlite3@12.x` 大版本错配：v12 不自带 `.d.ts`，DefinitelyTyped 最高只发布到 9.6.0（无 12.x）。M2 起 typecheck 若遇到 v12 新增 API 的类型缺口，按此条目排查。
+- `@types/better-sqlite3@9.6.0` vs runtime `better-sqlite3@12.x` major version
+  mismatch: v12 ships no `.d.ts`, and DefinitelyTyped only publishes up to
+  9.6.0 (no 12.x). From M2 on, if typecheck hits a type gap for a v12-only API,
+  debug per this entry.
 
-## 目录约定
+## Directory conventions
 
 ```
-server/          后端。server.ts 是唯一 HTTP 入口
-  http/          send-json（含 gzip）+ error-envelope + 路由匹配
+server/          backend. server.ts is the only HTTP entry point
+  http/          send-json (incl. gzip) + error-envelope + route matching
   storage/       schema + writers + query-engine + detail-cache + overview
   realtime/      event-bus + coalescer + sse + frontline
   watch/         fingerprint + scan-gate + watcher + scan-scheduler
   proxy/         mitm + cdp + frida + ca-manager + parsers
   desensitization/
-local-sessions/  9 个扫描器 + config + trae-bridge + vite-plugin(dev)
-src/             前端 + adapters + core
-  generated/     机器生成，勿手改
-config/          *.example.json（真实配置 gitignored）
+local-sessions/  9 scanners + config + trae-bridge + vite-plugin(dev)
+src/             frontend + adapters + core
+  generated/     machine-generated, do not hand-edit
+config/          *.example.json (real configs are gitignored)
 scripts/         generate-local-samples / pack-binary / trae-* / frida-*
-perf-diag/       7 个性能诊断脚本
-openspec/        规格（本项目的真相来源）
+perf-diag/       7 performance diagnostic scripts
+openspec/        specs (source of truth for this project)
 ```
 
-## 提交约定
+## Commit conventions
 
-- 一个里程碑一个提交，提交信息格式：`M<n>: <模块名> — <一句话>`
-- 提交前必须：`npm run typecheck && npm run test && npm run lint` 全绿
-- 从 M3 起，提交前跑 `npm run perf:check`，结果追加到 `PERF-BASELINE.md`
+- One milestone per commit, message format: `M<n>: <module> — <one-liner>`
+- Before committing: `npm run typecheck && npm run test && npm run lint` all green
+- From M3 on: run `npm run perf:check` before committing and append the results
+  to `PERF-BASELINE.md`
 
-## 输出格式要求
-
-完成任务时，用这个格式收尾：
+## Output format when finishing a task
 
 ```
-## 已产出
-- path/to/file.ts — 一句话说明
-- path/to/file.test.ts — N 个用例
+## Delivered
+- path/to/file.ts — one-line description
+- path/to/file.test.ts — N test cases
 
-## 契约对照
-- 实现了 <module> 的 REQ-001 / REQ-002 / ...
-- 未实现：REQ-00X（原因）
+## Contract mapping
+- implements <module> REQ-001 / REQ-002 / ...
+- not implemented: REQ-00X (reason)
 
-## 需要确认
-- （没有就写"无"）
+## Needs confirmation
+- (write "none" if nothing)
 ```

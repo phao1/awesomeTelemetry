@@ -208,7 +208,7 @@ describe('REQ-010 OpenCode 系 scanner（sqlite）', () => {
       token_cache_read: number;
     };
     expect(row.provider).toBe('opencode');
-    expect(row.token_cache_read).toBe(100); // cumulative max
+    expect(row.token_cache_read).toBe(100); // 单条消息：sum == 100
     db.close();
   });
 

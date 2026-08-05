@@ -7,6 +7,10 @@ import type {
 } from '../../src/core/trace-types.js';
 import { cachedStmt } from './stmt-cache.js';
 
+/** #14/#15：与 src/core/metrics.ts STEP_KINDS 保持一致（errorRate 分母、verificationCoverage 分子/分母）。 */
+const STEP_KINDS_SQL =
+  `'llm','tool','file_read','file_write','bash','test','agent'`;
+
 const SESSION_AGG_SQL =
   `SELECT provider, source_agent, COUNT(*) AS session_count, SUM(event_count) AS event_count, ` +
   `SUM(token_input) AS token_input, SUM(token_output) AS token_output, SUM(token_total) AS token_total, ` +
@@ -16,7 +20,8 @@ const SESSION_AGG_SQL =
 
 const EVENT_AGG_SQL =
   // REQ-011 口径一致：先按会话算单会话指标（verificationCoverage / enteredDebug 为 0|1，
-  // errorRate 为会话内占比，avgToolDurationMs 为会话内均值），再对会话求平均。
+  // errorRate 为步骤失败占比，verificationCoverage 为 verify 事件/步骤数比例，
+  // avgToolDurationMs 为会话内均值），再对会话求平均。
   `SELECT provider, source_agent, ` +
   `AVG(error_rate) AS error_rate, AVG(verification_coverage) AS verification_coverage, ` +
   `AVG(debug_entry_rate) AS debug_entry_rate, AVG(avg_tool_duration_ms) AS avg_tool_duration_ms, ` +
@@ -24,11 +29,13 @@ const EVENT_AGG_SQL =
   `FROM ( ` +
   `  SELECT s.provider AS provider, s.source_agent AS source_agent, s.id AS session_id, ` +
   `    COUNT(*) AS event_count, ` +
-  `    SUM(CASE WHEN e.status = 'error' THEN 1 ELSE 0 END) AS error_count, ` +
-  `    MAX(CASE WHEN e.phase = 'verify' THEN 1 ELSE 0 END) AS verification_coverage, ` +
-  `    MAX(CASE WHEN e.phase = 'debug' THEN 1 ELSE 0 END) AS debug_entry_rate, ` +
-  `    SUM(CASE WHEN e.status = 'error' THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS error_rate, ` +
-  `    COALESCE(AVG(CASE WHEN e.tool IS NOT NULL THEN e.duration_ms END), 0) AS avg_tool_duration_ms ` +
+   `    SUM(CASE WHEN e.status = 'error' AND e.kind IN (${STEP_KINDS_SQL}) THEN 1 ELSE 0 END) AS error_count, ` +
+   `    SUM(CASE WHEN e.phase = 'verify' THEN 1 ELSE 0 END) * 1.0 / ` +
+   `      NULLIF(SUM(CASE WHEN e.kind IN (${STEP_KINDS_SQL}) THEN 1 ELSE 0 END), 0) AS verification_coverage, ` +
+   `    MAX(CASE WHEN e.phase = 'debug' THEN 1 ELSE 0 END) AS debug_entry_rate, ` +
+   `    SUM(CASE WHEN e.status = 'error' AND e.kind IN (${STEP_KINDS_SQL}) THEN 1 ELSE 0 END) * 1.0 / ` +
+   `      NULLIF(SUM(CASE WHEN e.kind IN (${STEP_KINDS_SQL}) THEN 1 ELSE 0 END), 0) AS error_rate, ` +
+   `    COALESCE(AVG(CASE WHEN e.tool IS NOT NULL THEN e.duration_ms END), 0) AS avg_tool_duration_ms ` +
   `  FROM events e JOIN sessions s ON s.id = e.session_id ` +
   `  WHERE s.data_source = ? ` +
   `  GROUP BY s.provider, s.source_agent, s.id ` +

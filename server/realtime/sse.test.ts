@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { eventBus } from './event-bus.js';
 import { addSseClient, closeSseBroadcaster } from './sse.js';
+import { SCHEMA_VERSION } from '../storage/schema.js';
 
 class FakeRes {
   statusCode = 0;
@@ -45,7 +46,8 @@ describe('REQ-005/006 SSE 广播器', () => {
     expect(fake.headers['content-type']).toBe('text/event-stream');
     expect(fake.headers['cache-control']).toBe('no-cache');
     expect(fake.chunks.join('')).toContain('event: connected');
-    expect(fake.chunks.join('')).toContain('"schemaVersion":1');
+    // 跟随 SCHEMA_VERSION 常量，避免每次 schema 升版都要改断言字面量
+    expect(fake.chunks.join('')).toContain(`"schemaVersion":${SCHEMA_VERSION}`);
   });
 
   it('转发全部 BusEvents 事件给客户端', () => {
