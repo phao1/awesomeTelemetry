@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -6,7 +7,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import Database from 'better-sqlite3';
 
-import { defaultDbPath, parseCliArgs, prewarmWarning, runStartupSelfCheck } from './cli.js';
+import {
+  defaultDbPath,
+  parseCliArgs,
+  prewarmWarning,
+  probePort,
+  runStartupSelfCheck,
+} from './cli.js';
 import { initSchema } from './storage/schema.js';
 
 const tempDirs: string[] = [];
@@ -87,6 +94,23 @@ describe('REQ-001 parseCliArgs', () => {
     expect(() => parseCliArgs(['--port', 'abc'])).toThrow();
     expect(() => parseCliArgs(['--prewarm-recent', '-1'])).toThrow();
     expect(() => parseCliArgs(['--nope'])).toThrow(/Unknown flag/);
+  });
+
+  it('§7.1 端口占用预探测：报错含端口号与建议；释放后探测通过', async () => {
+    const blocker = createNetServer();
+    await new Promise<void>((resolve) => {
+      blocker.listen(0, '127.0.0.1', () => resolve());
+    });
+    const addr = blocker.address() as { port: number };
+    try {
+      await expect(probePort(addr.port, '127.0.0.1')).rejects.toThrow(
+        new RegExp(`端口 ${addr.port} 已被占用`),
+      );
+      await expect(probePort(addr.port, '127.0.0.1')).rejects.toThrow(/--port/);
+    } finally {
+      await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
+    await expect(probePort(addr.port, '127.0.0.1')).resolves.toBeUndefined();
   });
 
   it('prewarm-recent > 100 返回 stderr 告警，默认 0 无告警', () => {

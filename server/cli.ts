@@ -1,6 +1,7 @@
 import { exec } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import type { Server } from 'node:http';
+import { createServer as createNetServer } from 'node:net';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -280,6 +281,9 @@ export async function runCli(argv: readonly string[]): Promise<void> {
     dbPath: options.dbPath,
     userConfigPath: configLoadOptions(options.configRoot).userConfigPath,
   });
+  // §7.1（calibrate-tokens-and-compare-report）：友好报错优先；
+  // TOCTOU 窗口由 listen 自身的 error 处理兜底。
+  await probePort(options.port, options.host);
   await listen(server, options.port, options.host);
 
   const url = `http://${options.host}:${options.port}/`;
@@ -300,6 +304,39 @@ function listen(server: Server, port: number, host: string): Promise<void> {
     server.listen(port, host, () => {
       server.off('error', onError);
       resolve();
+    });
+  });
+}
+
+/**
+ * §7.1：listen 前端口占用预探测。占用时给出可操作报错（端口号 + 换 --port /
+ * 停进程建议），而不是抛裸 EADDRINUSE。
+ * ⚠️ 探测与真正 listen 之间存在 TOCTOU 窗口 —— 调用方必须保留 listen 的
+ * error 处理，探测只是把错误信息变友好，不是替代品。
+ */
+export function probePort(port: number, host: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const probe = createNetServer();
+    probe.once('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
+        reject(
+          new Error(
+            `端口 ${port} 已被占用（${err.code}）。请换一个端口：--port <port>，` +
+              `或先停掉占用该端口的进程。`,
+          ),
+        );
+      } else {
+        reject(new Error(`端口 ${port} 探测失败：${err.message}`));
+      }
+    });
+    probe.listen(port, host, () => {
+      probe.close((closeErr) => {
+        if (closeErr !== null && closeErr !== undefined) {
+          reject(new Error(`端口 ${port} 探测后关闭失败：${closeErr.message}`));
+        } else {
+          resolve();
+        }
+      });
     });
   });
 }

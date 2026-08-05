@@ -142,13 +142,14 @@
 
 ## §7 服务端（B7）
 
-- [ ] 7.1 `server/cli.ts`：`listen` 前用 `net.createServer` 探测端口占用，
+- [x] 7.1 `server/cli.ts`：`listen` 前用 `net.createServer` 探测端口占用，
       给可操作的中文报错；**保留原 `listen` error 处理**（TOCTOU）
-- [ ] 7.2 测试：端口被占用时报错信息包含端口号与建议
-- [ ] 7.3 **调查**（不许跳过）：Trae 解密库 / MITM 抓包里到底有没有 system prompt？
+- [x] 7.2 测试：端口被占用时报错信息包含端口号与建议
+- [x] 7.3 **调查**（不许跳过）：Trae 解密库 / MITM 抓包里到底有没有 system prompt？
       结论写进最终报告
-- [ ] 7.4 有数据源 → 实现加载 + `GET /api/sessions/:key` 注入 `session.systemPrompt`
-- [ ] 7.5 无数据源 → **停手，记 `D-###`**，不要发明一个约定文件路径（design.md §7.2）
+- [x] 7.4 有数据源 → 实现加载 + `GET /api/sessions/:key` 注入 `session.systemPrompt`
+      （调查结论：无数据源，未走此分支，见 D-015）
+- [x] 7.5 无数据源 → **停手，记 `D-###`**，不要发明一个约定文件路径（design.md §7.2）
 
 ## §8 Trae 子代理会话关联（B8）
 

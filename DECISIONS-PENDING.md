@@ -302,3 +302,32 @@ attention-emphasis contrast fails
   `record.metrics === undefined` 时用 `computeMetrics(record)` 补齐并
   upsert（一行接线），然后重扫即可回填整个 metrics 表；mission 各 widget
   随即读到真实值。
+
+---
+
+## D-015 Trae systemPrompt 无任何捕获机制（B7.3 调查结论，design §7.2 分支 3）
+
+- **Problem**: 外部变更说明要求「从文件加载已捕获的 system prompt」，但本仓库
+  对 Trae 的 systemPrompt **没有捕获机制**，凭空约定文件路径只会产出永远没人
+  写入的死代码。design §7.2 明确：先调查数据源，没有就停手记 D-###。
+- **Approaches tried / 调查证据**：
+  1. **解密库**：`local-sessions/trae.ts` 只读 `server_history_info` /
+     `chat_session`（title/agent_type/agent_name）/ `history_v2`（reasoning）/
+     `chat_message_task`（tool calls），全仓没有任何代码读取 system prompt
+     字段；本机 `traeKeyPath=null`（Windows %APPDATA% 路径），无真实 Trae 库
+     可跑 `PRAGMA table_info` 验证是否存在该列。
+  2. **MITM 抓包**：`server/proxy/parsers/trae-tunnel.ts` 硬编码
+     `systemPrompt: null` —— Trae 请求带 `x-tt-encrypt-*` 头，TTNet body 在
+     应用层之前加密，MITM 无法解密（G6.2）。
+  3. **通用关联**：`getSystemPromptForSession`（query-engine.ts:396，G5.4）
+     只在 openai/anthropic 格式的 proxy_requests 上按时间窗关联，且当前
+     没有任何调用方接线到 `GET /api/sessions/:key`；它也不覆盖 Trae。
+- **Why they failed**: Trae 的 system prompt 在加密隧道内且解密库侧无读取实现，
+  当前架构不存在可注入的数据源。
+- **Temporary approach**: 按 design §7.2 分支 3 **停手**，不发明「约定路径下的
+  文件」。B2 的 systemPrompt 估算逻辑（length / 4，只作 SpeedMetrics 展示字段，
+  不进 TokenUsage.input）照常实现且有单测，只是线上 `session.systemPrompt`
+  恒为 null，估算值不会出现。
+- **Suggested next step**: 未来若 Trae 客户端提供明文导出（如 settings/
+  agent-config 文件）或解密库被证实含 system_prompt 列，再开独立 change 接线
+  到 `GET /api/sessions/:key`；在此之前 UI 保持不显示估算值（不伪造数据源）。
