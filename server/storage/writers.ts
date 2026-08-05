@@ -12,13 +12,20 @@ function upsertSql(
   table: string,
   conflictCols: string[],
   cols: string[],
+  /** #9：这些列在索引阶段可能因源不可读而报 0（如 Trae SQLCipher），
+   * 已存非零值时不得用 0 覆盖。仅当 excluded 值 > 0 才更新。 */
+  preserveOnZero: string[] = [],
 ): string {
   const placeholders = cols.map(() => '?').join(', ');
   const conflict = conflictCols.join(', ');
   const excluded = conflictCols.map((col) => `${col} = excluded.${col}`).join(', ');
   const updateSet = cols
     .filter((col) => !conflictCols.includes(col))
-    .map((col) => `${col} = excluded.${col}`)
+    .map((col) =>
+      preserveOnZero.includes(col)
+        ? `${col} = CASE WHEN excluded.${col} > 0 THEN excluded.${col} ELSE ${table}.${col} END`
+        : `${col} = excluded.${col}`,
+    )
     .join(', ');
   return `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) ` +
     `ON CONFLICT(${conflict}) DO UPDATE SET ${excluded}, ${updateSet}`;
@@ -36,12 +43,13 @@ const SESSION_TRACE_COLS = [
   'token_input', 'token_output', 'token_reasoning', 'token_cache_read',
   'token_cache_write', 'token_total', 'cost_usd', 'system_prompt',
   'source_path', 'data_source', 'total_duration_ms', 'is_subagent',
+  'primary_model', 'cost_source', 'duration_source',
 ];
 
 const EVENT_COLS = [
   'session_id', 'id', 'sequence', 'kind', 'phase', 'title', 'started_at',
   'duration_ms', 'status', 'actor', 'tool', 'input_summary', 'output_summary',
-  'tokens_json', 'error',
+  'tokens_json', 'error', 'model', 'input_len', 'output_len',
 ];
 
 const METRICS_COLS = [
@@ -50,7 +58,12 @@ const METRICS_COLS = [
   'error_rate', 'entered_debug', 'tokens_per_step', 'cost_usd', 'calc_version',
 ];
 
-const INDEX_UPSERT_SQL = upsertSql('sessions', ['id'], SESSION_INDEX_COLS);
+// #9（审查 P1）：Trae 索引阶段无法解密读事件，event_count/message_count 报 0；
+// 若详情扫描后再触发索引扫描，不得把已存非零计数覆盖为 0。
+const INDEX_UPSERT_SQL = upsertSql('sessions', ['id'], SESSION_INDEX_COLS, [
+  'event_count',
+  'message_count',
+]);
 const TRACE_UPSERT_SQL = upsertSql('sessions', ['id'], SESSION_TRACE_COLS);
 const EVENT_UPSERT_SQL = upsertSql('events', ['session_id', 'id'], EVENT_COLS);
 const METRICS_UPSERT_SQL = upsertSql('metrics', ['session_id'], METRICS_COLS);
@@ -115,6 +128,9 @@ export function upsertSessionFromTrace(db: Database, session: TraceSession): voi
     session.dataSource,
     session.totalDurationMs,
     session.isSubagent ? 1 : 0,
+    session.primaryModel ?? null,
+    session.costSource ?? 'unknown',
+    session.durationSource ?? 'unknown',
   );
 }
 
@@ -160,6 +176,10 @@ export function upsertEvents(
         event.outputSummary ?? null,
         event.tokens === null ? null : JSON.stringify(event.tokens),
         event.error ?? null,
+        // §2.3：input_len/output_len 冗余列（B15 bytes 用，禁 LENGTH() 全表扫描）
+        event.model ?? null,
+        Buffer.byteLength(event.inputSummary ?? '', 'utf8'),
+        Buffer.byteLength(event.outputSummary ?? '', 'utf8'),
       );
     }
 

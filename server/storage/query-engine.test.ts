@@ -279,6 +279,31 @@ describe('REQ-006/007 会话详情', () => {
     expect(r?.pending).toBe(false);
     db.close();
   });
+
+  it('add-mission-control：primaryModel / costSource / durationSource / event.model 回读', () => {
+    const db = newDb();
+    db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, status,
+         message_count, event_count, token_total, cost_usd, data_source, source_path,
+         total_duration_ms, is_subagent, detail_loaded, primary_model, cost_source, duration_source)
+       VALUES ('s1', 'claude', 'Claude', 't', '2026-08-01T00:00:00.000Z', '2026-08-01T00:01:00.000Z',
+         'success', 1, 1, 100, 0.01, 'scan', '/tmp/x.jsonl', 1000, 0, 1,
+         'claude-opus-4-8', 'estimated', 'derived')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO events (session_id, id, sequence, kind, phase, title, started_at, duration_ms,
+         status, actor, tool, model, input_len, output_len)
+       VALUES ('s1', 'e1', 1, 'llm', 'implement', 't', '2026-08-01T00:00:00.000Z', 100,
+         'success', 'assistant', NULL, 'claude-opus-4-8', 12, 8)`,
+    ).run();
+
+    const r = getSessionDetail(db, 's1');
+    expect(r?.session.primaryModel).toBe('claude-opus-4-8');
+    expect(r?.session.costSource).toBe('estimated');
+    expect(r?.session.durationSource).toBe('derived');
+    expect(r?.events[0]?.model).toBe('claude-opus-4-8');
+    db.close();
+  });
 });
 
 describe('REQ-008 单 event 下钻', () => {

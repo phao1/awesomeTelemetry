@@ -71,4 +71,19 @@ describe('computeTimeComposition', () => {
       segments: [],
     });
   });
+
+  it('回归（add-mission-control 1.6）：claude 推导时长后 userWait 归因与 totalMs 仍正确', () => {
+    // 模拟 deriveDurations 的输出：user_prompt 无时长，后续事件时长 = 相邻时间戳差
+    const events = [
+      ev({ startedAt: '2026-08-01T00:00:00.000Z', durationMs: 0, kind: 'user_prompt', actor: 'user' }),
+      ev({ startedAt: '2026-08-01T00:00:05.000Z', durationMs: 5000, kind: 'llm' }),
+      ev({ startedAt: '2026-08-01T00:00:11.000Z', durationMs: 4000, kind: 'bash', tool: 'bash' }),
+    ];
+    const comp = computeTimeComposition(events);
+    expect(comp.userWaitMs).toBe(5000); // user_prompt 后的空档（0→5s）算用户等待
+    expect(comp.idleMs).toBe(1000); // 5→11s 只有 5s 时长，剩余 1s 空转
+    expect(comp.totalMs).toBe(15000); // span = 11s + 4s
+    expect(comp.modelMs).toBe(5000);
+    expect(comp.toolMs).toBe(4000);
+  });
 });

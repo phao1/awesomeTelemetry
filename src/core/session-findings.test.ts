@@ -57,6 +57,23 @@ function kinds(result: { findings: Array<{ kind: string }> }): string[] {
 }
 
 describe('computeFindings 十条规则', () => {
+  it('回归（add-mission-control 1.6）：推导时长输入不产生 NaN，idleHigh/ttft 仍按规则触发', () => {
+    // claude/codex 推导时长后的典型输入：user_prompt 无时长，后续为相邻时间戳推导值
+    const events = [
+      ev({ startedAt: '2026-08-01T00:00:00.000Z', durationMs: 0, kind: 'user_prompt', actor: 'user' }),
+      ev({ startedAt: '2026-08-01T00:00:10.000Z', durationMs: 5000, kind: 'llm' }),
+      ev({ startedAt: '2026-08-01T00:00:20.000Z', durationMs: 2000, kind: 'bash', tool: 'Bash', status: 'error' }),
+      ev({ startedAt: '2026-08-01T00:00:23.000Z', durationMs: 1000, kind: 'llm' }),
+    ];
+    const result = computeFindings(SESSION, events);
+    expect(result.findings.length).toBeGreaterThan(0);
+    for (const f of result.findings) {
+      expect(Number.isFinite(f.evidence.metric?.value ?? 0)).toBe(true);
+    }
+    expect(kinds(result)).toContain('idleHigh'); // 大段空转仍被识别
+    expect(kinds(result)).toContain('ttft'); // 首个 user_prompt → llm 10s > 5s
+  });
+
   it('规则 1：单阶段 > 50% 时长', () => {
     const events = [
       ev({ phase: 'debug', durationMs: 6000 }),
@@ -146,7 +163,10 @@ describe('computeFindings 十条规则', () => {
   });
 
   it('规则 9：首 Token 慢', () => {
-    const events = [ev({ kind: 'llm', durationMs: 6000 })];
+    const events = [
+      ev({ kind: 'user_prompt', actor: 'user', startedAt: '2026-08-01T00:00:00.000Z' }),
+      ev({ kind: 'llm', durationMs: 6000, startedAt: '2026-08-01T00:00:06.000Z' }),
+    ];
     expect(kinds(computeFindings(SESSION, events))).toContain('ttft');
   });
 

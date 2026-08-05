@@ -17,7 +17,14 @@ import type {
   TraceSession,
   TraceStatus,
 } from '../../src/core/trace-types.js';
-import { EVENT_FULL_COLS, EVENT_SLIM_COLS, PROXY_LIST_COLS, SESSION_LIST_COLS } from './columns.js';
+import {
+  EVENT_FULL_COLS,
+  EVENT_SLIM_COLS,
+  PROXY_LIST_COLS,
+  SESSION_DETAIL_COLS,
+  SESSION_LIST_COLS,
+} from './columns.js';
+import { mergeSessionIndex, type SessionMergeGroup } from './session-merge.js';
 import { cachedStmt } from './stmt-cache.js';
 
 const DEFAULT_LIMIT = 50;
@@ -25,14 +32,6 @@ const MAX_LIMIT = 500;
 const EVENT_DEFAULT_LIMIT = 2000;
 const EVENT_MAX_LIMIT = 5000;
 const EVENT_PAGINATION_THRESHOLD = 2000;
-
-const SESSION_DETAIL_COLS = [
-  'id', 'provider', 'source_agent', 'title', 'started_at', 'updated_at', 'status',
-  'cwd', 'message_count', 'event_count', 'token_input', 'token_output',
-  'token_reasoning', 'token_cache_read', 'token_cache_write', 'token_total',
-  'cost_usd', 'system_prompt', 'source_path', 'data_source', 'total_duration_ms',
-  'is_subagent', 'detail_loaded',
-].join(', ');
 
 const SESSION_DETAIL_SQL = `SELECT ${SESSION_DETAIL_COLS} FROM sessions WHERE id = ?`;
 const SESSION_BY_ID_SQL = `SELECT ${SESSION_LIST_COLS} FROM sessions WHERE id = ?`;
@@ -148,6 +147,9 @@ function mapSession(row: Record<string, unknown>): TraceSession {
     sourcePath: row.source_path as string,
     totalDurationMs: row.total_duration_ms as number,
     isSubagent: Boolean(row.is_subagent),
+    primaryModel: row.primary_model as string | null | undefined,
+    costSource: row.cost_source as TraceSession['costSource'],
+    durationSource: row.duration_source as TraceSession['durationSource'],
   };
 }
 
@@ -173,6 +175,7 @@ function mapEvent(
     hasOutput: Boolean(row.has_output),
     // §5.2：slim 档统一置 hasRaw = true，由下钻接口返回 null 表示实际不存在。
     hasRaw: true,
+    model: row.model === undefined ? undefined : (row.model as string | null),
   };
   if (!full) {
     return slim;
@@ -248,6 +251,8 @@ export interface ListSessionsOptions {
   limit?: number;
   cursor?: string;
   keys?: string[];
+  /** #17：会话合并组配置（可选；缺省不合并）。 */
+  groups?: SessionMergeGroup[];
 }
 
 export interface SessionListResult {
@@ -268,7 +273,8 @@ export function listSessions(db: Database, opts: ListSessionsOptions): SessionLi
         items.push(mapSessionIndex(row));
       }
     }
-    return { items, nextCursor: null, hasMore: false, total: items.length };
+    const merged = mergeSessionIndex(items, opts.groups ?? []);
+    return { items: merged, nextCursor: null, hasMore: false, total: merged.length };
   }
 
   const limit = Math.min(Math.max(opts.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
@@ -288,7 +294,7 @@ export function listSessions(db: Database, opts: ListSessionsOptions): SessionLi
   >;
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit);
-  const items = page.map(mapSessionIndex);
+  const items = mergeSessionIndex(page.map(mapSessionIndex), opts.groups ?? []);
   const last = items.at(-1);
   const countParams: unknown[] = [opts.dataSource];
   if (hasProvider) {

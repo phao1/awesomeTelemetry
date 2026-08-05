@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { computeMetrics } from '../core/metrics.js';
 import { normalizeClaudeSample, type ClaudeRawRow } from './claude-code.js';
 import { claudeFixture } from './__fixtures__/claude.js';
 
@@ -17,8 +18,11 @@ describe('Claude Code adapter（REQ-004）', () => {
     expect(r.session.id).toBe('claude-s1');
     expect(r.session.eventCount).toBe(4);
     expect(r.session.messageCount).toBe(3);
+    // 源数据无 model → primaryModel 为 null，事件 model 为 null（不猜）
+    expect(r.session.primaryModel).toBeNull();
+    expect(r.events.every((e) => e.model === null || e.model === undefined)).toBe(true);
     expect(r.session.tokenUsage).toEqual({
-      input: 150, output: 50, reasoning: 0, cacheRead: 15, cacheWrite: 2, total: 215,
+      input: 150, output: 50, reasoning: 0, cacheRead: 15, cacheWrite: 2, total: 217, // #8：total 含 cacheWrite
     });
     expect(r.events.map((e) => e.kind)).toEqual(['user_prompt', 'llm', 'tool', 'llm']);
     expect(r.tokenSemantics).toEqual({ cacheRead: 'incremental', reasoning: 'incremental' });
@@ -32,6 +36,60 @@ describe('Claude Code adapter（REQ-004）', () => {
     const r = normalizeClaudeSample(sample(rows), SRC);
     expect(r.session.tokenUsage.cacheRead).toBe(15);
     expect(r.session.tokenUsage.total).toBe(15);
+  });
+
+  it('P0-A：fixture 推导时长后 avgToolDurationMs > 0', () => {
+    const r = normalizeClaudeSample(sample(claudeFixture.events), SRC);
+    // fixture 时间戳间隔 5s：非 user_prompt 事件全部被推导出时长
+    const tool = r.events.find((e) => e.kind === 'tool')!;
+    expect(tool.durationMs).toBeGreaterThan(0);
+    const metrics = computeMetrics(r);
+    expect(metrics.avgToolDurationMs).toBeGreaterThan(0);
+    expect(r.session.durationSource).toBe('derived');
+  });
+
+  it('P0-B：读取 message.model 写入 llm 事件，主模型按 token 占比选出', () => {
+    const rows: ClaudeRawRow[] = [
+      {
+        type: 'assistant',
+        message: {
+          id: 'a1',
+          model: 'claude-opus-4-8',
+          content: [{ type: 'text', text: 'x' }],
+          usage: { input_tokens: 100, output_tokens: 20 },
+        },
+      },
+      {
+        type: 'assistant',
+        message: {
+          id: 'a2',
+          model: 'claude-haiku-4-5',
+          content: [{ type: 'text', text: 'y' }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+        },
+      },
+    ];
+    const r = normalizeClaudeSample(sample(rows), SRC);
+    const models = r.events.filter((e) => e.kind === 'llm').map((e) => e.model);
+    expect(models).toEqual(['claude-opus-4-8', 'claude-haiku-4-5']);
+    expect(r.session.primaryModel).toBe('claude-opus-4-8');
+  });
+
+  it('P0-C：未知模型 costSource 为 unknown（不渲染 $0.0000）', () => {
+    const rows: ClaudeRawRow[] = [
+      {
+        type: 'assistant',
+        message: {
+          id: 'a1',
+          model: 'glm-4-plus',
+          content: [{ type: 'text', text: 'x' }],
+          usage: { input_tokens: 100, output_tokens: 20 },
+        },
+      },
+    ];
+    const r = normalizeClaudeSample(sample(rows), SRC);
+    expect(r.session.costSource).toBe('unknown');
+    expect(r.session.costUsd).toBe(0);
   });
 
   it('状态归一化四类映射', () => {

@@ -149,7 +149,7 @@ function makeMetrics(): TraceMetrics {
     },
     toolCallCount: 2,
     verificationPresent: true,
-    calcVersion: 1,
+    calcVersion: 2,
     avgToolDurationMs: 150,
     verificationCoverage: 1,
     errorRate: 0,
@@ -196,6 +196,66 @@ describe('REQ-010 会话写入 upsert', () => {
     expect(row.token_cache_read).toBe(3);
     expect(row.token_cache_write).toBe(2);
     expect(row.token_total).toBe(38);
+    db.close();
+  });
+
+  it('add-mission-control：primary_model / cost_source / duration_source 落库并可回读', () => {
+    const db = newDb();
+    const session: TraceSession = {
+      id: 'claude-m1',
+      provider: 'claude',
+      sourceAgent: 'Claude',
+      title: 't',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:01:00.000Z',
+      status: 'success',
+      cwd: '/tmp',
+      messageCount: 1,
+      eventCount: 1,
+      tokenUsage: { input: 10, output: 5, reasoning: 0, cacheRead: 1, cacheWrite: 0, total: 16 },
+      costUsd: 0.001,
+      systemPrompt: null,
+      dataSource: 'scan',
+      sourcePath: '/tmp/x.jsonl',
+      totalDurationMs: 60000,
+      isSubagent: false,
+      primaryModel: 'claude-opus-4-8',
+      costSource: 'estimated',
+      durationSource: 'derived',
+    };
+    upsertSessionFromTrace(db, session);
+    const row = db
+      .prepare('SELECT primary_model, cost_source, duration_source FROM sessions WHERE id = ?')
+      .get('claude-m1') as { primary_model: string; cost_source: string; duration_source: string };
+    expect(row.primary_model).toBe('claude-opus-4-8');
+    expect(row.cost_source).toBe('estimated');
+    expect(row.duration_source).toBe('derived');
+    db.close();
+  });
+
+  it('#9 索引 upsert 不得用 0 覆盖已存非零 event_count/message_count', () => {
+    const db = newDb();
+    upsertSessionFromTrace(db, {
+      ...makeSession('s1'),
+      eventCount: 12,
+      messageCount: 7,
+    });
+
+    // Trae 索引阶段源不可读，eventCount/messageCount 报 0 → 保留已存值
+    upsertSessionFromIndex(db, { ...makeIndexEntry('s1'), eventCount: 0, messageCount: 0 });
+    let row = db
+      .prepare('SELECT event_count, message_count FROM sessions WHERE id = ?')
+      .get('s1') as { event_count: number; message_count: number };
+    expect(row.event_count).toBe(12);
+    expect(row.message_count).toBe(7);
+
+    // 索引阶段拿到真实计数时正常更新
+    upsertSessionFromIndex(db, { ...makeIndexEntry('s1'), eventCount: 9, messageCount: 5 });
+    row = db
+      .prepare('SELECT event_count, message_count FROM sessions WHERE id = ?')
+      .get('s1') as { event_count: number; message_count: number };
+    expect(row.event_count).toBe(9);
+    expect(row.message_count).toBe(5);
     db.close();
   });
 });
@@ -294,6 +354,115 @@ describe('REQ-012 undefined 写库前转 null', () => {
   });
 });
 
+describe('add-mission-control §2：events 新列落库', () => {
+  it('model / input_len / output_len 写入，input_len 为 inputSummary 的 UTF-8 字节数', () => {
+    const db = newDb();
+    const session: TraceSession = {
+      id: 's-model',
+      provider: 'claude',
+      sourceAgent: 'Claude',
+      title: 't',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:01:00.000Z',
+      status: 'success',
+      cwd: '/tmp',
+      messageCount: 1,
+      eventCount: 1,
+      tokenUsage: { input: 10, output: 5, reasoning: 0, cacheRead: 1, cacheWrite: 0, total: 16 },
+      costUsd: 0,
+      systemPrompt: null,
+      dataSource: 'scan',
+      sourcePath: '/tmp/x.jsonl',
+      totalDurationMs: 1000,
+      isSubagent: false,
+    };
+    upsertSessionFromTrace(db, session);
+    const event: TraceEvent = {
+      id: 'e1',
+      sessionId: 's-model',
+      sequence: 1,
+      kind: 'llm',
+      phase: 'implement',
+      title: 't',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      durationMs: 100,
+      status: 'success',
+      actor: 'assistant',
+      tool: null,
+      tokens: null,
+      error: null,
+      hasInput: true,
+      hasOutput: true,
+      hasRaw: false,
+      model: 'claude-opus-4-8',
+      inputSummary: '你好 world',
+      outputSummary: 'ok',
+    };
+    upsertEvents(db, 's-model', [event]);
+    const row = db
+      .prepare('SELECT model, input_len, output_len FROM events WHERE session_id = ? AND id = ?')
+      .get('s-model', 'e1') as { model: string; input_len: number; output_len: number };
+    expect(row.model).toBe('claude-opus-4-8');
+    expect(row.input_len).toBe(Buffer.byteLength('你好 world', 'utf8'));
+    expect(row.output_len).toBe(2);
+    db.close();
+  });
+
+  it('无 model 事件写入 NULL 且不报错', () => {
+    const db = newDb();
+    const session: TraceSession = {
+      id: 's-nomodel',
+      provider: 'codex',
+      sourceAgent: 'Codex',
+      title: 't',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:01:00.000Z',
+      status: 'success',
+      cwd: '/tmp',
+      messageCount: 1,
+      eventCount: 1,
+      tokenUsage: { input: 1, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 1 },
+      costUsd: 0,
+      systemPrompt: null,
+      dataSource: 'scan',
+      sourcePath: '/tmp/y.jsonl',
+      totalDurationMs: 100,
+      isSubagent: false,
+    };
+    upsertSessionFromTrace(db, session);
+    upsertEvents(db, 's-nomodel', [
+      {
+        id: 'e1',
+        sessionId: 's-nomodel',
+        sequence: 1,
+        kind: 'llm',
+        phase: 'implement',
+        title: 't',
+        startedAt: '2026-08-01T00:00:00.000Z',
+        durationMs: 0,
+        status: 'success',
+        actor: 'assistant',
+        tool: null,
+        tokens: null,
+        error: null,
+        hasInput: false,
+        hasOutput: false,
+        hasRaw: false,
+        model: null,
+        inputSummary: null,
+        outputSummary: null,
+      },
+    ]);
+    const row = db
+      .prepare('SELECT model, input_len, output_len FROM events WHERE session_id = ?')
+      .get('s-nomodel') as { model: string | null; input_len: number; output_len: number };
+    expect(row.model).toBeNull();
+    expect(row.input_len).toBe(0);
+    expect(row.output_len).toBe(0);
+    db.close();
+  });
+});
+
 describe('REQ-013 metrics 持久化', () => {
   it('REQ-013 upsertMetrics 写入基础指标、四维指标与 calc_version', () => {
     const db = newDb();
@@ -309,7 +478,7 @@ describe('REQ-013 metrics 持久化', () => {
     expect(row.total_steps).toBe(3);
     expect(row.tool_call_count).toBe(2);
     expect(row.verification_present).toBe(1);
-    expect(row.calc_version).toBe(1);
+    expect(row.calc_version).toBe(2);
     expect(row.avg_tool_duration_ms).toBe(150);
     expect(row.verification_coverage).toBe(1);
     expect(row.error_rate).toBe(0);

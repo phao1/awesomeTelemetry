@@ -84,33 +84,33 @@ widget 读到的都是空值。
 
 ## 1. P0-A 事件时长推导（design.md §1 P0-A）
 
-- [ ] 1.1 `src/adapters/helpers.ts` 新增 `deriveDurations(events)`，严格实现
+- [x] 1.1 `src/adapters/helpers.ts` 新增 `deriveDurations(events)`，严格实现
       design.md §1 P0-A 的 4 条规则（`user_prompt` 不参与推导 / 上限 5 分钟截断 /
       末事件为 0 / 返回 `durationSource`）
-- [ ] 1.2 接入 `claude-code.ts`、`codex.ts`、`opencode.ts`(db+jsonl 源)；
+- [x] 1.2 接入 `claude-code.ts`、`codex.ts`、`opencode.ts`(db+jsonl 源)；
       `codeagent.ts` 经 claude-code 包装自动继承（G9.2）
-- [ ] 1.3 opencode 的 **otel 源保持 `measured`**（`opencode.ts:209` 已是真实
+- [x] 1.3 opencode 的 **otel 源保持 `measured`**（`opencode.ts:209` 已是真实
       span 时长），不要被 db 源的推导覆盖 —— `duration_source` 按实际解析路径取值，
       **禁止按 provider 硬编码**
-- [ ] 1.4 `sessions.duration_source` 落库；`AgentOverviewRow` / Mission 的所有
+- [x] 1.4 `sessions.duration_source` 落库；`AgentOverviewRow` / Mission 的所有
       耗时类 widget 的 `criteria` 行读该字段，为 `derived` 时标注
       「时长为相邻时间戳推导，含调度间隙」
-- [ ] 1.5 测试：claude fixture 推导后 `avgToolDurationMs > 0`；`user_prompt`
+- [x] 1.5 测试：claude fixture 推导后 `avgToolDurationMs > 0`；`user_prompt`
       后的间隔计入 `TimeComposition.userWait` 而非 `model`/`tool`；
       超 5 分钟的间隔被截断
-- [ ] 1.6 ⚠️ 回归确认：`computeTimeComposition` / `session-findings` 的
+- [x] 1.6 ⚠️ 回归确认：`computeTimeComposition` / `session-findings` 的
       `idleHigh`/`ttft` 规则在时长从 0 变为非 0 后行为仍正确（这两处此前是在
       "全 0" 的输入上跑的，可能有隐含假设）
 
 ## 2. P0-B 模型归因
 
-- [ ] 2.1 `claude-code.ts` 读取 `message.model`（类型已声明于 `:33`，从未被读）
+- [x] 2.1 `claude-code.ts` 读取 `message.model`（类型已声明于 `:33`，从未被读）
       写入 llm 事件；codex / opencode / trae / workbuddy 各自找到对应字段，
       **找不到就写 null，不要猜**
-- [ ] 2.2 `events.model` + `sessions.primary_model`（按 token 占比最高者）落库
-- [ ] 2.3 `events.input_len` / `output_len` 冗余列（design.md §4 B15：避免
+- [x] 2.2 `events.model` + `sessions.primary_model`（按 token 占比最高者）落库
+- [x] 2.3 `events.input_len` / `output_len` 冗余列（design.md §4 B15：避免
       `length()` 全表扫描，同 G11.3 `system_prompt_len` 套路）
-- [ ] 2.4 测试：claude fixture 的 model 正确落库；无 model 的 provider 为 null
+- [x] 2.4 测试：claude fixture 的 model 正确落库；无 model 的 provider 为 null
       且不报错
 
 ## 3. P0-C 定价与成本

@@ -295,7 +295,7 @@ async function computeUsage(db: Database, opts: MissionOptions): Promise<Mission
 function widgetClosure(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['closure']['data']>> {
   return unavailableWidget(
     'closure',
-    'status=\'success\' 会话占比（adapter 已归一化 completed→success）；E2E p50/p90/p99 = total_duration_ms 分位数（wall-clock，G4.6）；repair sess 复用 session-findings repairLoop 口径；⚠️ 与 Tengu tengu_sdk_result 口径不同',
+    'status=\'success\' 会话占比（adapter 已归一化 completed→success）；E2E p50/p90/p99 = total_duration_ms 分位数（wall-clock，G4.6）；repair sess 复用 session-findings repairLoop 口径；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙；⚠️ 与 Tengu tengu_sdk_result 口径不同',
     'NOT_IMPLEMENTED_YET',
   );
 }
@@ -368,7 +368,7 @@ function widgetRiskyCommands(_db: Database, _opts: MissionOptions): MissionWidge
 function widgetDrift(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['drift']['data']>> {
   return unavailableWidget(
     'drift',
-    '按日聚合成功率 / E2E p95 / tool fail / $ per turn；依赖 P0-A + P0-C + ttft/e2e 持久化',
+    '按日聚合成功率 / E2E p95 / tool fail / $ per turn；依赖 P0-A + P0-C + ttft/e2e 持久化；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙',
     'NOT_IMPLEMENTED_YET',
   );
 }
@@ -419,7 +419,7 @@ function widgetDepth(db: Database, opts: MissionOptions): MissionWidget<NonNulla
 function widgetParallelism(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['parallelism']['data']>> {
   return unavailableWidget(
     'parallelism',
-    'parallelismRatio = Σevents.duration_ms / total_duration_ms（wall-clock，分开存分开算）；>1.2 判定存在并行执行',
+    'parallelismRatio = Σevents.duration_ms / total_duration_ms（wall-clock，分开存分开算）；>1.2 判定存在并行执行；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙',
     'NOT_IMPLEMENTED_YET',
   );
 }
@@ -428,7 +428,7 @@ function widgetParallelism(_db: Database, _opts: MissionOptions): MissionWidget<
 function widgetToolEcology(_db: Database, _opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['toolEcology']['data']>> {
   return unavailableWidget(
     'toolEcology',
-    'events.tool 分组：duration p50/p95（P0-A 后）；bytes in/out 用 input_len/output_len 冗余列（禁 LENGTH() 全表扫描）；mcp__ 前缀判 MCP',
+    'events.tool 分组：duration p50/p95（P0-A 后）；bytes in/out 用 input_len/output_len 冗余列（禁 LENGTH() 全表扫描）；mcp__ 前缀判 MCP；duration_source=\'derived\' 时长为相邻时间戳推导，含调度间隙',
     'NOT_IMPLEMENTED_YET',
   );
 }
