@@ -19,7 +19,7 @@ export function AppHeader({ children }: AppHeaderProps): React.JSX.Element {
       className="app-header"
       style={{ height: 'var(--header-height)' }}
     >
-      <span className="app-title">Agent Observability</span>
+      <span className="app-title">AwesomeTelemetry</span>
       <span className="app-header-hint">
         <IconCommand size={12} />
       </span>

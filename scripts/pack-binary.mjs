@@ -29,7 +29,7 @@ export function packBinary({
   // Windows 启动器：.ps1，UTF-8 编码
   writeFileSync(
     join(outDir, 'agent-observe.ps1'),
-    `# Agent Observability 启动器（UTF-8）
+    `# AwesomeTelemetry 启动器（UTF-8）
 $ErrorActionPreference = 'Stop'
 node "$PSScriptRoot\\bin\\agent-observe.js" @args
 `,

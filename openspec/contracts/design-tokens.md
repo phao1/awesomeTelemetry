@@ -35,9 +35,13 @@ Grafana trade-offs:
 <html>                     ← no choice: follow prefers-color-scheme; dark when no preference
 ```
 
-- Persistence key: `agent-observability.theme`, values `dark` | `light` |
-  `system`, default `system`. (Same namespace as the existing
-  `agent-observability.locale`)
+- Persistence key: `awesome-telemetry.theme`, values `dark` | `light` |
+  `system`, default `system`. **B6 backward-compat fallback**: the inline theme
+  script and `useTheme()` read the new key first, fall back to the legacy
+  `agent-observability.theme` key, and write the new key on a successful
+  fallback read. This script runs synchronously before any CSS (G-DS-2) and
+  MUST NOT flash on first paint. (The locale key `agent-observability.locale`
+  is unchanged in this change.)
 - Theme switching MUST NOT trigger a full page reload and MUST NOT flash on
   first paint: tokens are defined on `:root`; switching only changes the
   `data-theme` attribute.
@@ -82,7 +86,7 @@ Each group has three tiers: `-fg` (text/icon), `-emphasis` (solid background),
 
 | Group | Token prefix | Dark fg / emphasis / subtle | Light fg / emphasis / subtle | Semantics |
 |-------|--------------|------------------------------|-------------------------------|-----------|
-| accent | `--accent-` | `#4493f8` / `#1f6feb` / `rgba(56,139,253,.15)` | `#0969da` / `#0969da` / `rgba(9,105,218,.1)` | selection, links, primary buttons |
+| accent | `--accent-` | `#2dd4bf` / `#0f766e` / `rgba(45,212,191,.15)` | `#0f766e` / `#0f766e` / `rgba(15,118,110,.1)` | selection, links, primary buttons (AwesomeTelemetry brand teal, calibrated in change calibrate-tokens-and-compare-report §9) |
 | success | `--success-` | `#3fb950` / `#238636` / `rgba(46,160,67,.15)` | `#1a7f37` / `#1f883d` / `rgba(26,127,55,.1)` | success, verification passed |
 | attention | `--attention-` | `#d29922` / `#9e6a03` / `rgba(187,128,9,.15)` | `#9a6700` / `#bf8700` / `rgba(154,103,0,.1)` | warning, in progress |
 | danger | `--danger-` | `#f85149` / `#da3633` / `rgba(248,81,73,.15)` | `#d1242f` / `#cf222e` / `rgba(209,36,47,.1)` | error, failure |

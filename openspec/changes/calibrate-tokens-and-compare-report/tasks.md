@@ -124,21 +124,21 @@
 
 ## §6 品牌改名 + teal + favicon（B6）
 
-- [ ] 6.1 显示层改名：`index.html` `<title>`、`server/cli.ts:273` 横幅、
+- [x] 6.1 显示层改名：`index.html` `<title>`、`server/cli.ts:273` 横幅、
       报告页脚、i18n 中的品牌串 → `AwesomeTelemetry`
-- [ ] 6.2 `package.json`：`name` → `awesome-telemetry`，`bin` 加 `awesome-telemetry`
-- [ ] 6.3 数据目录 `agent-observe-data` → `awesome-telemetry-data`，
+- [x] 6.2 `package.json`：`name` → `awesome-telemetry`，`bin` 加 `awesome-telemetry`
+- [x] 6.3 数据目录 `agent-observe-data` → `awesome-telemetry-data`，
       **带回退**：新目录不存在且老目录存在 → 用老目录 + 打提示，**不自动搬运**
-- [ ] 6.4 localStorage 键 → `awesome-telemetry.theme`，**带回退**：
+- [x] 6.4 localStorage 键 → `awesome-telemetry.theme`，**带回退**：
       读不到新键则读老键并回写新键（`index.html` 内联脚本）
-- [ ] 6.5 `bin/agent-observe.js` 保留为转发入口，README 注明
-- [ ] 6.6 `src/styles/tokens.css` accent 三件套改 teal，**取值直接抄 design.md §9 表格**
-- [ ] 6.7 同步 `openspec/contracts/design-tokens.md` §2.2 的 accent 行
-- [ ] 6.8 新建 `public/favicon.svg`（teal 圆角方块 + WiFi 波纹）+ `index.html`
+- [x] 6.5 `bin/agent-observe.js` 保留为转发入口，README 注明
+- [x] 6.6 `src/styles/tokens.css` accent 三件套改 teal，**取值直接抄 design.md §9 表格**
+- [x] 6.7 同步 `openspec/contracts/design-tokens.md` §2.2 的 accent 行
+- [x] 6.8 新建 `public/favicon.svg`（teal 圆角方块 + WiFi 波纹）+ `index.html`
       加 `<link rel="icon" type="image/svg+xml" href="/favicon.svg">`
-- [ ] 6.9 `npm run test` 确认 `src/styles/tokens.test.ts` 的 T1/T4/T5 **全绿**
-- [ ] 6.10 **实测**：`npm run dev` 打开页面，确认主题切换无闪白、老 localStorage 键能迁移
-- [ ] 6.11 确认 `--phase-implement` 与 `--seg-model` **零改动**（design.md §9）
+- [x] 6.9 `npm run test` 确认 `src/styles/tokens.test.ts` 的 T1/T4/T5 **全绿**
+- [x] 6.10 **实测**：`npm run dev` 打开页面，确认主题切换无闪白、老 localStorage 键能迁移
+- [x] 6.11 确认 `--phase-implement` 与 `--seg-model` **零改动**（design.md §9）
 
 ## §7 服务端（B7）
 

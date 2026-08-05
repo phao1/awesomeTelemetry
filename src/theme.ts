@@ -4,12 +4,25 @@ import { useCallback, useEffect, useState } from 'react';
 export type ThemePreference = 'system' | 'dark' | 'light';
 export type EffectiveTheme = 'dark' | 'light';
 
-export const THEME_STORAGE_KEY = 'agent-observability.theme';
+export const THEME_STORAGE_KEY = 'awesome-telemetry.theme';
+/** B6（§8）兼容回退：老版本品牌键，读新键失败时兜底，并顺手回写新键。 */
+const LEGACY_THEME_STORAGE_KEY = 'agent-observability.theme';
 
 const THEME_PREFERENCES: readonly ThemePreference[] = ['system', 'dark', 'light'];
 
 export function getStoredTheme(): ThemePreference {
-  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  let stored = localStorage.getItem(THEME_STORAGE_KEY);
+  if (stored === null) {
+    const legacy = localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+    if (legacy !== null) {
+      stored = legacy;
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, legacy);
+      } catch (err) {
+        void err;
+      }
+    }
+  }
   return stored === 'dark' || stored === 'light' || stored === 'system'
     ? stored
     : 'system';
@@ -44,7 +57,8 @@ function applyTheme(pref: ThemePreference): EffectiveTheme {
 
 /**
  * REQ-003：三态主题 hook。
- * - localStorage `agent-observability.theme` 持久化
+ * - localStorage `awesome-telemetry.theme` 持久化（旧键 agent-observability.theme
+ *   兜底回退，B6 §8）
  * - system 下监听 matchMedia change 实时跟随（G-DS-3：addEventListener）
  * - 切换只改 data-theme，不触发整页重载、不闪白
  */

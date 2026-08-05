@@ -69,6 +69,14 @@ beforeEach(() => {
 });
 
 describe('REQ-003 主题三态切换', () => {
+  it('B6 兼容回退：旧键 agent-observability.theme 读入并回写新键', () => {
+    localStorage.setItem('agent-observability.theme', 'light');
+    mountHarness();
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    // 读到旧键后顺手写一份新键（后续切换以新键为准）
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
+  });
+
   it('循环 system → dark → light → system，改 data-theme 且持久化 localStorage', () => {
     const { button, getEffective } = mountHarness();
     expect(getEffective()).toBe('dark'); // system + 系统偏好 dark

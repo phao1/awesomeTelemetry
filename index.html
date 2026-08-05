@@ -3,13 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Agent Observability</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>AwesomeTelemetry</title>
     <script>
       // G-DS-2 / REQ-001 Scenario：内联同步主题脚本，必须早于任何 CSS 应用。
-      // 持久化键 agent-observability.theme（dark | light | system，默认 system）。
+      // 持久化键 awesome-telemetry.theme（dark | light | system，默认 system）。
+      // 兼容回退（B6，§8）：读不到新键则读旧键 agent-observability.theme，
+      // 读到就顺手写一份新键 —— 老用户主题不丢，不闪白。
       (function () {
         try {
-          var stored = localStorage.getItem('agent-observability.theme');
+          var stored = localStorage.getItem('awesome-telemetry.theme');
+          if (stored === null) {
+            var legacy = localStorage.getItem('agent-observability.theme');
+            if (legacy !== null) {
+              stored = legacy;
+              try {
+                localStorage.setItem('awesome-telemetry.theme', legacy);
+              } catch (err) {
+                // 回写失败不影响本次渲染（隐私模式等）
+                void err;
+              }
+            }
+          }
           var effective;
           if (stored === 'dark' || stored === 'light') {
             effective = stored;

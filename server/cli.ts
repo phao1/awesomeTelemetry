@@ -29,6 +29,10 @@ const DEFAULT_PORT = 4173;
 const DEFAULT_PROXY_PORT = 7779;
 const DEFAULT_PROXY_RETENTION_DAYS = 30;
 
+/** B6（§8）兼容回退：旧数据目录名，仅在新目录不存在且旧目录存在时启用。 */
+const LEGACY_DATA_DIR = 'agent-observe-data';
+const DATA_DIR = 'awesome-telemetry-data';
+
 /** REQ-001：CLI 参数（完整表）。 */
 export interface CliOptions {
   host: string;
@@ -44,7 +48,16 @@ export interface CliOptions {
 }
 
 export function defaultDbPath(configRoot: string): string {
-  return join(configRoot, 'agent-observe-data', 'observe.sqlite');
+  const legacy = join(configRoot, LEGACY_DATA_DIR, 'observe.sqlite');
+  // 新目录不存在且老目录存在 → 继续用老目录并打提示，不自动搬运、不静默新建空库。
+  if (!existsSync(join(configRoot, DATA_DIR)) && existsSync(join(configRoot, LEGACY_DATA_DIR))) {
+    console.warn(
+      `[brand] 数据目录已改名 ${DATA_DIR}；检测到旧目录 ${LEGACY_DATA_DIR}，` +
+        `继续使用旧目录（不自动搬运）。新安装将使用 ${DATA_DIR}。`,
+    );
+    return legacy;
+  }
+  return join(configRoot, DATA_DIR, 'observe.sqlite');
 }
 
 /** REQ-001 Scenario：--prewarm-recent > 100 时的 stderr 告警文案。 */
@@ -270,7 +283,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   await listen(server, options.port, options.host);
 
   const url = `http://${options.host}:${options.port}/`;
-  console.log(`Agent Observability is running at ${url}`);
+  console.log(`AwesomeTelemetry is running at ${url}`);
   if (options.enableProxy) {
     console.log(`--enable-proxy set; MITM wiring in server/proxy/mitm-proxy.ts (P-3)`);
   }

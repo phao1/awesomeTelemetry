@@ -1,4 +1,4 @@
-# Agent Observability
+# AwesomeTelemetry
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -39,7 +39,7 @@ proxy.
 | `--port <port>` | `4173` | HTTP port |
 | `--no-open` | open | do not auto-open the browser |
 | `--config-root <path>` | cwd | config directory |
-| `--db-path <path>` | `<config-root>/agent-observe-data/observe.sqlite` | SQLite path |
+| `--db-path <path>` | `<config-root>/awesome-telemetry-data/observe.sqlite` | SQLite path（旧目录 `agent-observe-data` 存在且新目录不存在时自动沿用，见下） |
 | `--proxy-port <port>` | `7779` | MITM port |
 | `--enable-proxy` | false | start MITM on launch (P-3: not E2E-verified on macOS) |
 | `--prewarm-recent <n>` | `0` | prewarm the most recent N sessions; 0 = fully on demand (>100 warns on stderr) |
@@ -109,6 +109,17 @@ npm run pack:binary    # scripts/pack-binary.mjs → dist-binary/
 `pack-binary` copies `server-dist/` + `dist/` + `bin/` + node_modules +
 package.json and generates platform launchers: `agent-observe.ps1` (UTF-8) on
 Windows, `agent-observe.sh` on Unix.
+
+## 品牌改名与兼容（B6）
+
+- 品牌名从 `Agent Observability` 改为 **AwesomeTelemetry**（页面标题 / CLI 横幅 /
+  package 名 / bin 命令 `awesome-telemetry`）。
+- `bin/agent-observe.js` 保留为旧名转发入口一个版本周期；`agent-observe` 与
+  `awesome-telemetry` 两个 bin 都指向同一入口。
+- 数据目录改名为 `awesome-telemetry-data`，带回退：新目录不存在且旧目录
+  `agent-observe-data` 存在时继续用旧目录（不自动搬运、不静默新建空库）。
+- localStorage 主题键改名为 `awesome-telemetry.theme`，读不到时回退旧键
+  `agent-observability.theme` 并回写新键。
 
 ## Scripts
 

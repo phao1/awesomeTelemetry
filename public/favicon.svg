@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="AwesomeTelemetry">
+  <!-- teal 圆角方块 + WiFi 波纹（B6 §9：手写 SVG，无运行时依赖；
+       T2 只扫 src/styles/**/*.css，SVG 字面量 hex 允许） -->
+  <rect x="2" y="2" width="28" height="28" rx="7" fill="#0f766e"/>
+  <path d="M8 14a8 8 0 0 1 16 0" stroke="#ffffff" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <path d="M11 17.5a5 5 0 0 1 10 0" stroke="#ffffff" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <circle cx="16" cy="21.8" r="2.2" fill="#ffffff"/>
+</svg>

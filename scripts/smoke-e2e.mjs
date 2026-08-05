@@ -42,7 +42,7 @@ child.stderr.on('data', (chunk) => {
 });
 
 const deadline = Date.now() + 30_000;
-while (!stdout.includes('Agent Observability is running')) {
+while (!stdout.includes('AwesomeTelemetry is running')) {
   if (Date.now() > deadline) {
     console.error('启动超时');
     child.kill();

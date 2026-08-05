@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -71,6 +71,16 @@ describe('REQ-001 parseCliArgs', () => {
   it('db-path 缺省为 config-root 下默认路径', () => {
     const opts = parseCliArgs(['--config-root', '/tmp/root']);
     expect(opts.dbPath).toBe(defaultDbPath('/tmp/root'));
+  });
+
+  it('B6 数据目录兼容回退：新目录不存在且旧目录存在 → 沿用旧目录，不静默建空库', () => {
+    const root = tempDir();
+    mkdirSync(join(root, 'agent-observe-data'), { recursive: true });
+    expect(defaultDbPath(root)).toBe(join(root, 'agent-observe-data', 'observe.sqlite'));
+
+    // 新目录存在时走新路径
+    mkdirSync(join(root, 'awesome-telemetry-data'), { recursive: true });
+    expect(defaultDbPath(root)).toBe(join(root, 'awesome-telemetry-data', 'observe.sqlite'));
   });
 
   it('非法值与未知 flag 抛错', () => {

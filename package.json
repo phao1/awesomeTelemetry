@@ -1,5 +1,5 @@
 {
-  "name": "agent-observability",
+  "name": "awesome-telemetry",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,6 +7,7 @@
     "node": ">=20"
   },
   "bin": {
+    "awesome-telemetry": "./bin/agent-observe.js",
     "agent-observe": "./bin/agent-observe.js"
   },
   "scripts": {
