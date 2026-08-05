@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "模型定价覆盖层。复制为 config/model-pricing.json 后生效（gitignored）。",
+    "内置默认表见 src/core/pricing.ts DEFAULT_MODEL_PRICES，只收录了有权威出处的 Anthropic 模型。",
+    "其他厂商（glm / deepseek / qwen / doubao 等）故意留空 —— 未收录的模型走 costSource='unknown'，",
+    "UI 渲染 `—` 而不是 $0.0000。要启用它们的成本统计，在这里补上并填写 source。",
+    "",
+    "单位：USD / 1M tokens。contextWindow 供 B12 上下文压力面板使用（禁止硬编码 200k）。",
+    "source 必填：价格出处 URL + 抓取日期。没有出处的价格不要写 —— 编错比留空更糟。"
+  ],
+  "glm-4-plus": {
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "contextWindow": 128000,
+    "source": "TODO: 填写 https://open.bigmodel.cn/pricing 的当前价格与抓取日期"
+  }
+}
