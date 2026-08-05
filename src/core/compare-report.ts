@@ -53,6 +53,13 @@ function column(title: string, record: TraceRecord, locale: ReportLocale): strin
     .filter(([, ms]) => ms > 0)
     .map(([phase, ms]) => `<li>${escapeHtml(phase)}: ${ms} ms</li>`)
     .join('');
+  // §6.2/§6.3（calibrate-tokens-and-compare-report）：三维竞争力区块。
+  // 代码精炼度 = totalSteps / fileWriteCount；分母为 0 显示 n/a（禁止 0 冒充）。
+  const fileReads = record.events.filter((e) => e.kind === 'file_read').length;
+  const fileWrites = record.events.filter((e) => e.kind === 'file_write').length;
+  const readWriteRatio = fileWrites === 0 ? 'n/a' : (fileReads / fileWrites).toFixed(2);
+  const codeConciseness =
+    fileWrites === 0 ? 'n/a' : (metrics.totalSteps / fileWrites).toFixed(2);
   return `<section class="column">
     <h2>${escapeHtml(title)}</h2>
     <p>${escapeHtml(record.session.title || record.session.id)}</p>
@@ -79,11 +86,18 @@ function column(title: string, record: TraceRecord, locale: ReportLocale): strin
     <ul>${phases === '' ? `<li>${reportLabel('noPhases', locale)}</li>` : phases}</ul>
     <h3>${reportLabel('competitiveDims', locale)}</h3>
     <ul>
-      <li>errorRate: ${metrics.errorRate.toFixed(3)}</li>
-      <li>verificationCoverage: ${metrics.verificationCoverage.toFixed(3)}</li>
-      <li>enteredDebug: ${metrics.enteredDebug ? 'yes' : 'no'}</li>
-      <li>tokensPerStep: ${metrics.tokensPerStep.toFixed(2)}</li>
-      <li>costUsd: ${metrics.costUsd.toFixed(4)}</li>
+      <li>fast: e2e ${speed.e2eMs} ms, llmCalls ${metrics.llmCallCount},
+        totalToolDuration ${metrics.totalToolDurationMs} ms,
+        avgLlmDuration ${speed.avgLlmDurationMs === null ? 'n/a' : `${speed.avgLlmDurationMs.toFixed(1)} ms`}</li>
+      <li>frugal: total ${tokens.total}, netInput ${tokens.netInput},
+        cost ${metrics.costUsd.toFixed(4)}</li>
+      <li>quality: readWriteRatio ${readWriteRatio}, fileWrites ${fileWrites},
+        codeConciseness ${codeConciseness} (totalSteps / fileWriteCount),
+        verificationCoverage ${metrics.verificationCoverage.toFixed(3)},
+        hasUnitTests ${metrics.hasUnitTests ? 'yes' : 'no'},
+        failedCommands ${metrics.failedCommandCount},
+        repairLoops ${metrics.repairLoop === true ? 'yes' : 'no'},
+        userRounds ${metrics.userInteractionRounds}</li>
     </ul>
   </section>`;
 }

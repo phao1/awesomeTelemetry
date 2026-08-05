@@ -104,23 +104,23 @@
 
 ## §5 对比报告 4→3 维（B5）
 
-- [ ] 5.1 `CompareBoard.tsx`：`VerdictDim.key` 改为 `'fast' | 'frugal' | 'quality'`，
+- [x] 5.1 `CompareBoard.tsx`：`VerdictDim.key` 改为 `'fast' | 'frugal' | 'quality'`，
       同步 `DIM_ICON` / `DIM_LABEL_KEY` / `computeVerdict`（stability 判据并入 quality）
-- [ ] 5.2 质维度 8 项指标接线：边读边写比、文件写入数、代码精炼度、验证覆盖率、
+- [x] 5.2 质维度 8 项指标接线：边读边写比、文件写入数、代码精炼度、验证覆盖率、
       单元测试、失败数、修复循环数、用户交互轮次
-- [ ] 5.3 **代码精炼度口径写死为 `totalSteps / fileWriteCount`**，
+- [x] 5.3 **代码精炼度口径写死为 `totalSteps / fileWriteCount`**，
       写进 spec Scenario 与 UI criteria 行（design.md §6.3）
-- [ ] 5.4 `compare-report.ts` 的 `competitiveDims` 区块同步改三维 + 新增指标
-- [ ] 5.5 i18n（`src/i18n.ts`，**不是 `src/i18n/index.ts`**）中英文同步新增：
+- [x] 5.4 `compare-report.ts` 的 `competitiveDims` 区块同步改三维 + 新增指标
+- [x] 5.5 i18n（`src/i18n.ts`，**不是 `src/i18n/index.ts`**）中英文同步新增：
       `compare.dim.quality` / `qualityDesc`、`compare.kpi.{llmCalls,totalLlmDuration,
       avgLlmDuration,totalToolDuration,cacheHitRate,cacheRead,netInput,fileWrites,
       hasUnitTests,userRounds,codeConciseness,fixLoops}`、`compare.yes` / `compare.no`
-- [ ] 5.6 `compare.dimensions` 的值 `'四维对比'` → `'三维对比'`（en 同步）
-- [ ] 5.7 `compare.why.stability` / `compare.stabilityDetail` 保留 + 标 deprecated 注释
+- [x] 5.6 `compare.dimensions` 的值 `'四维对比'` → `'三维对比'`（en 同步）
+- [x] 5.7 `compare.why.stability` / `compare.stabilityDetail` 保留 + 标 deprecated 注释
       （**不要删**，design.md §6.2）
-- [ ] 5.8 `src/styles/components.css` 加 `.cmp-detail-table` 样式
+- [x] 5.8 `src/styles/components.css` 加 `.cmp-detail-table` 样式
       （**T2/T3 断言**：禁止字面量 hex，禁止非 `var()` 的 px）
-- [ ] 5.9 测试：`compare-report.test.ts` 断言输出含三维、不含四维残留
+- [x] 5.9 测试：`compare-report.test.ts` 断言输出含三维、不含四维残留
 
 ## §6 品牌改名 + teal + favicon（B6）
 

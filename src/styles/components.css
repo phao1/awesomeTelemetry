@@ -2387,6 +2387,38 @@ button.finding-row:hover {
   white-space: nowrap;
 }
 
+.cmp-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cmp-detail-table th {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-align: left;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.cmp-detail-table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-muted);
+  font-size: var(--text-sm);
+}
+
+.cmp-detail-table tbody tr:hover {
+  background: var(--canvas-raised);
+}
+
+.cmp-detail-table .mono {
+  color: var(--fg-default);
+}
+
 .compare-timepair {
   display: grid;
   grid-template-columns: 1fr 1fr;

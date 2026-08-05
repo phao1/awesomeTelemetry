@@ -27,7 +27,6 @@ import {
   IconChevronRight,
   IconCost,
   IconSpeed,
-  IconStability,
   type IconProps,
 } from './icons/index.js';
 import type { I18nKey } from '../i18n.js';
@@ -169,9 +168,73 @@ function fmtMs(ms: number | null): string {
 /* ===== ① 裁决摘要（L1） ===== */
 
 interface VerdictDim {
-  key: 'fast' | 'frugal' | 'quality' | 'stability';
+  key: 'fast' | 'frugal' | 'quality';
   winner: 'L' | 'R' | 'tie';
   detail: string;
+}
+
+/** §6.3（calibrate-tokens-and-compare-report）：代码精炼度 = totalSteps / fileWriteCount。
+ * 与 metrics-analysis delta spec 同口径；分母为 0 时 null，UI 渲染 —。 */
+const STEP_KINDS = new Set([
+  'llm', 'tool', 'file_read', 'file_write', 'bash', 'test', 'agent',
+]);
+const TEST_CMD = /(npm test|vitest|jest|pytest|cargo test|go test|tsc|eslint)/;
+const FAILED_COMMAND_KINDS = new Set([
+  'bash', 'test', 'tool', 'file_write', 'file_read', 'agent',
+]);
+
+interface CompareSideStats {
+  llmCalls: number;
+  totalLlmDuration: number;
+  avgLlmDuration: number | null;
+  totalToolDuration: number;
+  cacheHitRate: number | null;
+  cacheRead: number;
+  netInput: number;
+  fileWrites: number;
+  fileReads: number;
+  totalSteps: number;
+  hasUnitTests: boolean;
+  userRounds: number;
+  codeConciseness: number | null;
+  fixLoops: number;
+  failedCommands: number;
+}
+
+function compareSideStats(
+  events: TraceEventSlim[],
+  speed: SpeedMetrics,
+  session: SessionDetailResponse['session'],
+): CompareSideStats {
+  const llmEvents = events.filter((e) => e.kind === 'llm');
+  const toolEvents = events.filter((e) => e.tool !== null);
+  const fileWrites = events.filter((e) => e.kind === 'file_write').length;
+  const fileReads = events.filter((e) => e.kind === 'file_read').length;
+  const totalSteps = events.filter((e) => STEP_KINDS.has(e.kind)).length;
+  const verifyEvents = events.filter((e) => e.phase === 'verify');
+  const cacheRead = events.reduce((sum, e) => sum + (e.tokens?.cacheRead ?? 0), 0);
+  const fixLoops = groupEvents(events).filter(
+    (r) => r.kind === 'group' && r.group.type === 'repair_loop',
+  ).length;
+  return {
+    llmCalls: llmEvents.length,
+    totalLlmDuration: llmEvents.reduce((sum, e) => sum + e.durationMs, 0),
+    avgLlmDuration: speed.avgLlmDurationMs,
+    totalToolDuration: toolEvents.reduce((sum, e) => sum + e.durationMs, 0),
+    cacheHitRate: speed.cacheHitRate,
+    cacheRead,
+    netInput: session.tokenUsage.netInput,
+    fileWrites,
+    fileReads,
+    totalSteps,
+    hasUnitTests: verifyEvents.some((e) => TEST_CMD.test(e.title)),
+    userRounds: events.filter((e) => e.kind === 'user_prompt').length,
+    codeConciseness: fileWrites === 0 ? null : totalSteps / fileWrites,
+    fixLoops,
+    failedCommands: events.filter(
+      (e) => e.status === 'error' && FAILED_COMMAND_KINDS.has(e.kind),
+    ).length,
+  };
 }
 
 function computeVerdict(result: CompareResult, locale: Locale): { dims: VerdictDim[]; wins: number; losses: number; winner: 'L' | 'R' | 'tie' } {
@@ -184,6 +247,8 @@ function computeVerdict(result: CompareResult, locale: Locale): { dims: VerdictD
   const rightVerify = rightEvents.filter((e) => e.phase === 'verify').length;
   const leftLoops = groupEvents(leftEvents).filter((r) => r.kind === 'group' && r.group.type === 'repair_loop').length;
   const rightLoops = groupEvents(rightEvents).filter((r) => r.kind === 'group' && r.group.type === 'repair_loop').length;
+  const lErr = leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.status === 'error').length / leftEvents.length;
+  const rErr = rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.status === 'error').length / rightEvents.length;
 
   const dims: VerdictDim[] = [];
   const add = (key: VerdictDim['key'], lv: number, rv: number, lowerBetter: boolean, detail: string): void => {
@@ -220,16 +285,15 @@ function computeVerdict(result: CompareResult, locale: Locale): { dims: VerdictD
 
   const leftCoverage = leftEvents.length === 0 ? 0 : leftVerify / leftEvents.length;
   const rightCoverage = rightEvents.length === 0 ? 0 : rightVerify / rightEvents.length;
-  const qualityWinner =
-    leftCoverage === rightCoverage
-      ? leftLoops === rightLoops
-        ? 'tie'
-        : leftLoops < rightLoops
-          ? 'L'
-          : 'R'
-      : leftCoverage > rightCoverage
-        ? 'L'
-        : 'R';
+  // §6.2：stability 判据并入 quality —— 覆盖 → 修复循环 → 失败率 依次裁决。
+  let qualityWinner: 'L' | 'R' | 'tie';
+  if (leftCoverage !== rightCoverage) {
+    qualityWinner = leftCoverage > rightCoverage ? 'L' : 'R';
+  } else if (leftLoops !== rightLoops) {
+    qualityWinner = leftLoops < rightLoops ? 'L' : 'R';
+  } else {
+    qualityWinner = lErr === rErr ? 'tie' : lErr < rErr ? 'L' : 'R';
+  }
   dims.push({
     key: 'quality',
     winner: qualityWinner,
@@ -239,18 +303,6 @@ function computeVerdict(result: CompareResult, locale: Locale): { dims: VerdictD
       .replace('{x}', String(leftLoops))
       .replace('{y}', String(rightLoops)),
   });
-
-  const lErr = leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.status === 'error').length / leftEvents.length;
-  const rErr = rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.status === 'error').length / rightEvents.length;
-  add(
-    'stability',
-    lErr,
-    rErr,
-    true,
-    t('compare.stabilityDetail', locale)
-      .replace('{left}', `${(lErr * 100).toFixed(1)}%`)
-      .replace('{right}', `${(rErr * 100).toFixed(1)}%`),
-  );
 
   let wins = 0;
   let losses = 0;
@@ -329,18 +381,16 @@ function VerdictCard({ result, locale }: { result: CompareResult; locale: Locale
   );
 }
 
-const DIM_ICON: Record<'fast' | 'frugal' | 'quality' | 'stability', (props: IconProps) => React.JSX.Element> = {
+const DIM_ICON: Record<'fast' | 'frugal' | 'quality', (props: IconProps) => React.JSX.Element> = {
   fast: IconSpeed,
   frugal: IconCost,
   quality: IconAccuracy,
-  stability: IconStability,
 };
 
-const DIM_LABEL_KEY: Record<'fast' | 'frugal' | 'quality' | 'stability', I18nKey> = {
+const DIM_LABEL_KEY: Record<'fast' | 'frugal' | 'quality', I18nKey> = {
   fast: 'metric.speed',
   frugal: 'metric.cost',
   quality: 'metric.accuracy',
-  stability: 'metric.stability',
 };
 
 /* ===== ② 关键指标网格（L1） ===== */
@@ -350,12 +400,12 @@ function KpiGrid({ result, locale }: { result: CompareResult; locale: Locale }):
   const right = result.right.session;
   const leftEvents = result.left.events as TraceEventSlim[];
   const rightEvents = result.right.events as TraceEventSlim[];
-  const lErr = leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.status === 'error').length / leftEvents.length;
-  const rErr = rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.status === 'error').length / rightEvents.length;
-  const lVerify = leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.phase === 'verify').length / leftEvents.length;
-  const rVerify = rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.phase === 'verify').length / rightEvents.length;
-  const lTool = leftEvents.filter((e) => e.tool !== null).length;
-  const rTool = rightEvents.filter((e) => e.tool !== null).length;
+  const ls = compareSideStats(leftEvents, result.speed.left, left);
+  const rs = compareSideStats(rightEvents, result.speed.right, right);
+  const fmtPct = (v: number | null): string => (v === null ? '—' : `${(v * 100).toFixed(1)}%`);
+  const fmtNum = (v: number | null): string => (v === null ? '—' : v.toLocaleString());
+  const fmtConcise = (v: number | null): string => (v === null ? '—' : v.toFixed(2));
+  const fmtYesNo = (v: number): string => (v === 1 ? t('compare.yes', locale) : t('compare.no', locale));
 
   const items: Array<{
     key: string;
@@ -369,9 +419,18 @@ function KpiGrid({ result, locale }: { result: CompareResult; locale: Locale }):
     { key: 'e2e', label: t('metric.speed', locale), lv: fmtMs(result.speed.left.e2eMs ?? null), rv: fmtMs(result.speed.right.e2eMs ?? null), lnum: result.speed.left.e2eMs ?? 0, rnum: result.speed.right.e2eMs ?? 0, lowerBetter: true },
     { key: 'tokens', label: t('session.tokens', locale), lv: left.tokenUsage.total.toLocaleString(), rv: right.tokenUsage.total.toLocaleString(), lnum: left.tokenUsage.total, rnum: right.tokenUsage.total, lowerBetter: true },
     { key: 'cost', label: t('session.cost', locale), lv: `$${left.costUsd.toFixed(4)}`, rv: `$${right.costUsd.toFixed(4)}`, lnum: left.costUsd, rnum: right.costUsd, lowerBetter: true },
-    { key: 'error', label: t('metric.stability', locale), lv: `${(lErr * 100).toFixed(1)}%`, rv: `${(rErr * 100).toFixed(1)}%`, lnum: lErr, rnum: rErr, lowerBetter: true },
-    { key: 'verify', label: t('metric.accuracy', locale), lv: `${(lVerify * 100).toFixed(0)}%`, rv: `${(rVerify * 100).toFixed(0)}%`, lnum: lVerify, rnum: rVerify, lowerBetter: false },
-    { key: 'tools', label: t('compare.toolCall', locale), lv: String(lTool), rv: String(rTool), lnum: lTool, rnum: rTool, lowerBetter: true },
+    // §6.2 新增 KPI（design §6 / tasks 5.5）：速度与质量维度的新指标
+    { key: 'llmCalls', label: t('compare.kpi.llmCalls', locale), lv: String(ls.llmCalls), rv: String(rs.llmCalls), lnum: ls.llmCalls, rnum: rs.llmCalls, lowerBetter: false },
+    { key: 'avgLlmDuration', label: t('compare.kpi.avgLlmDuration', locale), lv: fmtMs(ls.avgLlmDuration), rv: fmtMs(rs.avgLlmDuration), lnum: ls.avgLlmDuration ?? 0, rnum: rs.avgLlmDuration ?? 0, lowerBetter: true },
+    { key: 'totalToolDuration', label: t('compare.kpi.totalToolDuration', locale), lv: fmtMs(ls.totalToolDuration), rv: fmtMs(rs.totalToolDuration), lnum: ls.totalToolDuration, rnum: rs.totalToolDuration, lowerBetter: true },
+    { key: 'cacheHitRate', label: t('compare.kpi.cacheHitRate', locale), lv: fmtPct(ls.cacheHitRate), rv: fmtPct(rs.cacheHitRate), lnum: ls.cacheHitRate ?? 0, rnum: rs.cacheHitRate ?? 0, lowerBetter: false },
+    { key: 'cacheRead', label: t('compare.kpi.cacheRead', locale), lv: fmtNum(ls.cacheRead), rv: fmtNum(rs.cacheRead), lnum: ls.cacheRead, rnum: rs.cacheRead, lowerBetter: true },
+    { key: 'netInput', label: t('compare.kpi.netInput', locale), lv: fmtNum(ls.netInput), rv: fmtNum(rs.netInput), lnum: ls.netInput, rnum: rs.netInput, lowerBetter: true },
+    { key: 'fileWrites', label: t('compare.kpi.fileWrites', locale), lv: String(ls.fileWrites), rv: String(rs.fileWrites), lnum: ls.fileWrites, rnum: rs.fileWrites, lowerBetter: false },
+    { key: 'codeConciseness', label: t('compare.kpi.codeConciseness', locale), lv: fmtConcise(ls.codeConciseness), rv: fmtConcise(rs.codeConciseness), lnum: ls.codeConciseness ?? 0, rnum: rs.codeConciseness ?? 0, lowerBetter: true },
+    { key: 'hasUnitTests', label: t('compare.kpi.hasUnitTests', locale), lv: fmtYesNo(ls.hasUnitTests ? 1 : 0), rv: fmtYesNo(rs.hasUnitTests ? 1 : 0), lnum: ls.hasUnitTests ? 1 : 0, rnum: rs.hasUnitTests ? 1 : 0, lowerBetter: false },
+    { key: 'userRounds', label: t('compare.kpi.userRounds', locale), lv: String(ls.userRounds), rv: String(rs.userRounds), lnum: ls.userRounds, rnum: rs.userRounds, lowerBetter: false },
+    { key: 'fixLoops', label: t('compare.kpi.fixLoops', locale), lv: String(ls.fixLoops), rv: String(rs.fixLoops), lnum: ls.fixLoops, rnum: rs.fixLoops, lowerBetter: true },
   ];
 
   return (
@@ -481,10 +540,11 @@ function PhaseRibbonPair({
 
 interface DimRow {
   label: string;
-  lv: number;
-  rv: number;
+  /** null = 口径上算不出来（分母为 0），UI 渲染 —，禁止用 0 冒充。 */
+  lv: number | null;
+  rv: number | null;
   lowerBetter: boolean;
-  fmt: (value: number) => string;
+  fmt: (value: number | null) => string;
 }
 
 function DimensionCard({
@@ -500,13 +560,15 @@ function DimensionCard({
   const ranked = useMemo(
     () =>
       [...rows].sort((a, b) => {
-        const da = diffPct(a.lv, a.rv);
-        const db = diffPct(b.lv, b.rv);
+        const da = a.lv === null || a.rv === null ? 0 : diffPct(a.lv, a.rv);
+        const db = b.lv === null || b.rv === null ? 0 : diffPct(b.lv, b.rv);
         return db - da;
       }),
     [rows],
   );
-  const significant = ranked.filter((row) => diffPct(row.lv, row.rv) >= SIGNIFICANT_DIFF);
+  const significant = ranked.filter(
+    (row) => row.lv !== null && row.rv !== null && diffPct(row.lv, row.rv) >= SIGNIFICANT_DIFF,
+  );
   const insignificantCount = ranked.length - significant.length;
   const shown = showAll ? ranked : significant;
 
@@ -522,8 +584,15 @@ function DimensionCard({
       ) : (
         <ul className="compare-dim-rows">
           {shown.map((row) => {
-            const leftBetter = row.lv === row.rv ? null : row.lowerBetter ? row.lv < row.rv : row.lv > row.rv;
-            const diff = diffPct(row.lv, row.rv);
+            const leftBetter =
+              row.lv === null || row.rv === null
+                ? null
+                : row.lv === row.rv
+                  ? null
+                  : row.lowerBetter
+                    ? row.lv < row.rv
+                    : row.lv > row.rv;
+            const diff = row.lv === null || row.rv === null ? 0 : diffPct(row.lv, row.rv);
             const barWidth = Math.min(diff, 100) / 2;
             return (
               <li key={row.label} className="compare-dim-row">
@@ -570,38 +639,81 @@ function DimsCompare({ result, locale }: { result: CompareResult; locale: Locale
   const leftEvents = result.left.events as TraceEventSlim[];
   const rightEvents = result.right.events as TraceEventSlim[];
   const speed = result.speed;
+  const ls = compareSideStats(leftEvents, speed.left, left);
+  const rs = compareSideStats(rightEvents, speed.right, right);
+  const fmtConcise = (v: number | null): string => (v === null ? '—' : v.toFixed(2));
+  const fmtYesNo = (v: number | null): string => (v === 1 ? t('compare.yes', locale) : t('compare.no', locale));
 
   const speedRows: DimRow[] = [
     { label: t('compare.speed', locale), lv: speed.left.e2eMs ?? 0, rv: speed.right.e2eMs ?? 0, lowerBetter: true, fmt: fmtMs },
     { label: 'TTFT', lv: speed.left.ttftMs ?? 0, rv: speed.right.ttftMs ?? 0, lowerBetter: true, fmt: fmtMs },
-    { label: 'TPS', lv: speed.left.tps ?? 0, rv: speed.right.tps ?? 0, lowerBetter: false, fmt: (v) => v.toFixed(1) },
-    { label: 'TPOT', lv: speed.left.tpotMs ?? 0, rv: speed.right.tpotMs ?? 0, lowerBetter: true, fmt: (v) => `${v.toFixed(1)}ms` },
+    { label: 'TPS', lv: speed.left.tps ?? 0, rv: speed.right.tps ?? 0, lowerBetter: false, fmt: (v) => v?.toFixed(1) ?? '—' },
+    { label: 'TPOT', lv: speed.left.tpotMs ?? 0, rv: speed.right.tpotMs ?? 0, lowerBetter: true, fmt: (v) => (v === null ? '—' : `${v.toFixed(1)}ms`) },
+    { label: t('compare.kpi.llmCalls', locale), lv: ls.llmCalls, rv: rs.llmCalls, lowerBetter: false, fmt: (v) => String(v ?? '—') },
+    { label: t('compare.kpi.totalToolDuration', locale), lv: ls.totalToolDuration, rv: rs.totalToolDuration, lowerBetter: true, fmt: fmtMs },
   ];
   const costRows: DimRow[] = [
-    { label: t('session.tokens', locale), lv: left.tokenUsage.total, rv: right.tokenUsage.total, lowerBetter: true, fmt: (v) => v.toLocaleString() },
-    { label: t('session.cost', locale), lv: left.costUsd, rv: right.costUsd, lowerBetter: true, fmt: (v) => `$${v.toFixed(4)}` },
+    { label: t('session.tokens', locale), lv: left.tokenUsage.total, rv: right.tokenUsage.total, lowerBetter: true, fmt: (v) => (v === null ? '—' : v.toLocaleString()) },
+    { label: t('session.cost', locale), lv: left.costUsd, rv: right.costUsd, lowerBetter: true, fmt: (v) => (v === null ? '—' : `$${v.toFixed(4)}`) },
   ];
   const qualityRows: DimRow[] = [
+    {
+      // 边读边写比 = file_read / file_write；无写入时 null（禁止 0 冒充）
+      label: t('compare.kpi.readWriteRatio', locale),
+      lv: ls.fileWrites === 0 ? null : ls.fileReads / ls.fileWrites,
+      rv: rs.fileWrites === 0 ? null : rs.fileReads / rs.fileWrites,
+      lowerBetter: false,
+      fmt: (v) => (v === null ? '—' : v.toFixed(2)),
+    },
+    {
+      label: t('compare.kpi.fileWrites', locale),
+      lv: ls.fileWrites,
+      rv: rs.fileWrites,
+      lowerBetter: false,
+      fmt: (v) => String(v ?? '—'),
+    },
+    {
+      // §6.3：代码精炼度 = totalSteps / fileWriteCount（分母为 0 → null）
+      label: t('compare.kpi.codeConciseness', locale),
+      lv: ls.codeConciseness,
+      rv: rs.codeConciseness,
+      lowerBetter: true,
+      fmt: fmtConcise,
+    },
     {
       label: t('agent.verification', locale),
       lv: leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.phase === 'verify').length / leftEvents.length,
       rv: rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.phase === 'verify').length / rightEvents.length,
       lowerBetter: false,
-      fmt: (v) => `${(v * 100).toFixed(0)}%`,
+      fmt: (v) => (v === null ? '—' : `${(v * 100).toFixed(0)}%`),
     },
     {
-      label: t('agent.debugRate', locale),
-      lv: leftEvents.filter((e) => e.phase === 'debug').length,
-      rv: rightEvents.filter((e) => e.phase === 'debug').length,
-      lowerBetter: true,
-      fmt: (v) => String(v),
+      label: t('compare.kpi.hasUnitTests', locale),
+      lv: ls.hasUnitTests ? 1 : 0,
+      rv: rs.hasUnitTests ? 1 : 0,
+      lowerBetter: false,
+      fmt: fmtYesNo,
     },
     {
-      label: t('agent.errorRate', locale),
-      lv: leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.status === 'error').length / leftEvents.length,
-      rv: rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.status === 'error').length / rightEvents.length,
+      label: t('compare.kpi.failedCommands', locale),
+      lv: ls.failedCommands,
+      rv: rs.failedCommands,
       lowerBetter: true,
-      fmt: (v) => `${(v * 100).toFixed(1)}%`,
+      fmt: (v) => String(v ?? '—'),
+    },
+    {
+      label: t('compare.kpi.fixLoops', locale),
+      lv: ls.fixLoops,
+      rv: rs.fixLoops,
+      lowerBetter: true,
+      fmt: (v) => String(v ?? '—'),
+    },
+    {
+      label: t('compare.kpi.userRounds', locale),
+      lv: ls.userRounds,
+      rv: rs.userRounds,
+      lowerBetter: false,
+      fmt: (v) => String(v ?? '—'),
     },
   ];
 
@@ -609,7 +721,9 @@ function DimsCompare({ result, locale }: { result: CompareResult; locale: Locale
     <div className="compare-dims-grid">
       <DimensionCard title={t('metric.speed', locale)} rows={speedRows} locale={locale} />
       <DimensionCard title={t('metric.cost', locale)} rows={costRows} locale={locale} />
-      <DimensionCard title={t('metric.accuracy', locale)} rows={qualityRows} locale={locale} />
+      <DimensionCard title={t('compare.dim.quality', locale)} rows={qualityRows} locale={locale} />
+      <p className="hint">{t('compare.dim.qualityDesc', locale)}</p>
+      <p className="hint">{t('compare.criteria.codeConciseness', locale)}</p>
     </div>
   );
 }
@@ -623,6 +737,9 @@ function DetailMetricsTable({ result, locale }: { result: CompareResult; locale:
   const rightEvents = result.right.events as TraceEventSlim[];
   const speed = result.speed;
   const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
+  const ls = compareSideStats(leftEvents, speed.left, left);
+  const rs = compareSideStats(rightEvents, speed.right, right);
+  const fmtYesNo = (v: number): string => (v === 1 ? t('compare.yes', locale) : t('compare.no', locale));
   const [showAll, setShowAll] = useState(false);
 
   const rows: Array<{ label: string; lv: number; rv: number; lowerBetter: boolean; fmt: (v: number) => string }> = [
@@ -636,11 +753,18 @@ function DetailMetricsTable({ result, locale }: { result: CompareResult; locale:
     { label: 'token.output', lv: left.tokenUsage.output, rv: right.tokenUsage.output, lowerBetter: true, fmt: (v) => v.toLocaleString() },
     { label: 'token.reasoning', lv: left.tokenUsage.reasoning, rv: right.tokenUsage.reasoning, lowerBetter: true, fmt: (v) => v.toLocaleString() },
     { label: 'token.cacheRead', lv: left.tokenUsage.cacheRead, rv: right.tokenUsage.cacheRead, lowerBetter: true, fmt: (v) => v.toLocaleString() },
+    { label: 'token.netInput', lv: left.tokenUsage.netInput, rv: right.tokenUsage.netInput, lowerBetter: true, fmt: (v) => v.toLocaleString() },
     { label: 'token.total', lv: left.tokenUsage.total, rv: right.tokenUsage.total, lowerBetter: true, fmt: (v) => v.toLocaleString() },
     { label: 'cost', lv: left.costUsd, rv: right.costUsd, lowerBetter: true, fmt: (v) => `$${v.toFixed(4)}` },
     { label: 'messages', lv: left.messageCount, rv: right.messageCount, lowerBetter: false, fmt: (v) => String(v) },
     { label: 'events', lv: left.eventCount, rv: right.eventCount, lowerBetter: false, fmt: (v) => String(v) },
     { label: 'tool calls', lv: leftEvents.filter((e) => e.tool !== null).length, rv: rightEvents.filter((e) => e.tool !== null).length, lowerBetter: true, fmt: (v) => String(v) },
+    { label: 'llm calls', lv: ls.llmCalls, rv: rs.llmCalls, lowerBetter: false, fmt: (v) => String(v) },
+    { label: 'total tool duration', lv: ls.totalToolDuration, rv: rs.totalToolDuration, lowerBetter: true, fmt: fmtMs },
+    { label: 'file writes', lv: ls.fileWrites, rv: rs.fileWrites, lowerBetter: false, fmt: (v) => String(v) },
+    { label: 'user rounds', lv: ls.userRounds, rv: rs.userRounds, lowerBetter: false, fmt: (v) => String(v) },
+    { label: 'fix loops', lv: ls.fixLoops, rv: rs.fixLoops, lowerBetter: true, fmt: (v) => String(v) },
+    { label: 'unit tests', lv: ls.hasUnitTests ? 1 : 0, rv: rs.hasUnitTests ? 1 : 0, lowerBetter: false, fmt: fmtYesNo },
     { label: 'error events', lv: leftEvents.filter((e) => e.status === 'error').length, rv: rightEvents.filter((e) => e.status === 'error').length, lowerBetter: true, fmt: (v) => String(v) },
     { label: 'verify events', lv: leftEvents.filter((e) => e.phase === 'verify').length, rv: rightEvents.filter((e) => e.phase === 'verify').length, lowerBetter: false, fmt: (v) => String(v) },
     { label: 'error rate', lv: leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.status === 'error').length / leftEvents.length, rv: rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.status === 'error').length / rightEvents.length, lowerBetter: true, fmt: pct },
@@ -656,7 +780,7 @@ function DetailMetricsTable({ result, locale }: { result: CompareResult; locale:
 
   return (
     <div className="compare-table-wrap">
-      <table className="ui-table ui-table-compact compare-table">
+      <table className="ui-table ui-table-compact compare-table cmp-detail-table">
         <thead>
           <tr>
             <th>{t('compare.diffSort', locale)}</th>

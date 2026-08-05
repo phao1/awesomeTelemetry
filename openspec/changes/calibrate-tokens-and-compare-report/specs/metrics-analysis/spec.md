@@ -108,3 +108,10 @@ comparison cards are separate concerns.
 - **WHEN** `buildCompareReportHtml(left, right)` runs
 - **THEN** the output contains exactly the fast / frugal / quality dimensions
 - **AND** contains no separate stability dimension card
+
+#### Scenario: code conciseness is defined and rendered
+- **GIVEN** a session with `totalSteps = 40` and `fileWriteCount = 10`
+- **THEN** code conciseness = 4.0 (`totalSteps / fileWriteCount`)
+- **AND** when `fileWriteCount = 0`, code conciseness is `null` and the UI renders
+  `—` (never 0)
+- **AND** the UI criteria line states the formula "totalSteps / fileWriteCount"

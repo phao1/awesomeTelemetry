@@ -35,12 +35,21 @@ describe('REQ-009 对比报告', () => {
     expect(html).toContain('Right');
     expect(html).toContain('session left');
     expect(html).toContain('session right');
-    expect(html).toContain('errorRate');
     expect(html).toContain('速度指标');
     expect(html).toContain('Token 分解');
     expect(html).toContain('阶段时长分布');
     expect(html).toContain('implement: 100 ms');
     expect(html).toContain('cacheWrite: 2');
+  });
+
+  it('§6.2 竞争力维度为三维（fast/frugal/quality），无独立 stability 维', () => {
+    const html = buildCompareReportHtml(record('left'), record('right'));
+    expect(html).toContain('fast: e2e');
+    expect(html).toContain('frugal: total');
+    expect(html).toContain('quality: readWriteRatio');
+    expect(html).toContain('codeConciseness n/a (totalSteps / fileWriteCount)');
+    // 三维要求：不再出现独立的 stability 维度行
+    expect(html).not.toMatch(/stability:\s/);
   });
 
   it('en locale 输出英文报告', () => {
