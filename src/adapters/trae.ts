@@ -105,6 +105,19 @@ const WRITE_TOOL_NAMES = new Set([
   'search_replace', 'str_replace', 'create',
 ]);
 
+/**
+ * B8（calibrate-tokens §10）：Trae 子代理 agent_type 名单。
+ * 外部变更说明实测的子代理是 refactor_scoper / refactor_finder /
+ * refactor_planner（独立 session_id）；本仓库无真实 Trae 库可核验
+ * （TODO(D-016)），名单未实测。匹配到名单 → isSubagent=true，交给既有
+ * buildSubagentMergeGroups（session-merge.ts）按时间窗成组，不新写合并逻辑。
+ */
+const SUBAGENT_AGENT_TYPES = new Set([
+  'refactor_scoper',
+  'refactor_finder',
+  'refactor_planner',
+]);
+
 function kindOfTurn(type: string, toolName: string | undefined): TraceEvent['kind'] {
   const byType = kindOfType(type);
   if (byType !== 'tool' || toolName === undefined || toolName === '') {
@@ -296,7 +309,10 @@ export function normalizeTraeSample(
     dataSource: 'scan',
     sourcePath,
     totalDurationMs: wallClockDurationMs(deduped),
-    isSubagent: false,
+    isSubagent:
+      record.agentType !== undefined &&
+      record.agentType !== '' &&
+      SUBAGENT_AGENT_TYPES.has(record.agentType.toLowerCase()),
     // trae.ts:100 已按相邻时间戳算 durationMs，语义同 deriveDurations
     durationSource: 'derived' as const,
   };

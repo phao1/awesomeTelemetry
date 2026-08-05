@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeTraeSample, type TraeTurn } from './trae.js';
+import { normalizeTraeSample, type TraeRecordShape, type TraeTurn } from './trae.js';
 import { traeFixture } from './__fixtures__/trae.js';
 
 const SRC = '/tmp/trae.db';
@@ -141,5 +141,36 @@ describe('Trae adapter（REQ-006）', () => {
     ];
     const r = normalizeTraeSample(sample(turns), SRC);
     expect(r.events.map((e) => e.status)).toEqual(['success', 'error', 'success']);
+  });
+
+  it('B8 isSubagent：agent_type 命中已知子代理名单为 true，其余为 false', () => {
+    const mk = (agentType: string | undefined): TraeRecordShape['session'] => ({
+      ...traeFixture.session,
+      agentType,
+    });
+    expect(
+      normalizeTraeSample(
+        { sourceAgent: 'Trae', session: mk('refactor_scoper'), events: traeFixture.events },
+        SRC,
+      ).session.isSubagent,
+    ).toBe(true);
+    expect(
+      normalizeTraeSample(
+        { sourceAgent: 'Trae', session: mk('refactor_finder'), events: traeFixture.events },
+        SRC,
+      ).session.isSubagent,
+    ).toBe(true);
+    expect(
+      normalizeTraeSample(
+        { sourceAgent: 'Trae', session: mk('solo_coder'), events: traeFixture.events },
+        SRC,
+      ).session.isSubagent,
+    ).toBe(false);
+    expect(
+      normalizeTraeSample(
+        { sourceAgent: 'Trae', session: mk(undefined), events: traeFixture.events },
+        SRC,
+      ).session.isSubagent,
+    ).toBe(false);
   });
 });

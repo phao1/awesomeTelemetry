@@ -87,13 +87,20 @@ export function readTraeDb(dbPath: string): {
     const sessionId = rows[0]?.session_id ?? 'trae';
 
     const sessionMeta = readSessionMeta(db, sessionId);
-    const llmMessages = readHistoryLlmMessages(db, sessionId);
+    // B8.4（calibrate-tokens §10）：按 session_id 分组，修复多 session 文件的错位。
+    const llmMessagesBySession = readHistoryLlmMessages(db);
     const toolCalls = hasMessageId ? readToolCalls(db) : new Map<string, TraeTurn>();
 
-    let llmIndex = 0;
+    const consumedBySession = new Map<string, number>();
     const turns = rows.map((row): TraeTurn => {
+      // 每行只消费自己 session_id 的 llm 消息；跨 session 不挪用正文。
+      const list = llmMessagesBySession.get(row.session_id) ?? null;
+      const index = consumedBySession.get(row.session_id) ?? 0;
       const llmFallback =
-        row.content_source === 'llm_default' ? llmMessages[llmIndex++] ?? null : null;
+        row.content_source === 'llm_default' && list !== null ? list[index] ?? null : null;
+      if (llmFallback !== null) {
+        consumedBySession.set(row.session_id, index + 1);
+      }
       const tool = row.message_id !== undefined && row.message_id !== null
         ? toolCalls.get(row.message_id) ?? null
         : null;
@@ -155,28 +162,34 @@ function readSessionMeta(db: Database, sessionId: string): TraeSessionMeta {
   return row ?? { title: null, agent_type: null, agent_name: null };
 }
 
-/** #7：history_v2.messages JSON 中的 reasoning_content / content（llm_default 行）。 */
-function readHistoryLlmMessages(db: Database, sessionId: string): TraeLlmMessage[] {
+/**
+ * #7/B8.4（calibrate-tokens §10）：history_v2.messages JSON 中的
+ * reasoning_content / content（llm_default 行），按 session_id 分组返回。
+ *
+ * 之前的实现只按 rows[0] 的 session_id 过滤后全局顺序消费 —— 若一个 DB 文件里
+ * 存在多个 session_id，llmIndex++ 会把 A 会话的消息配到 B 会话的 llm 行上，
+ * 正文与行错位。现在每行只消费自己 session_id 的消息，口径一致。
+ */
+function readHistoryLlmMessages(db: Database): Map<string, TraeLlmMessage[]> {
   if (!tableExists(db, 'history_v2')) {
-    return [];
+    return new Map();
   }
   const cols = columnNames(db, 'history_v2');
   if (!cols.has('messages')) {
-    return [];
+    return new Map();
   }
   const select = ['messages'].filter((col) => cols.has(col));
   const contentCol = cols.has('content_source') ? 'content_source' : null;
   const sessionCol = cols.has('session_id') ? 'session_id' : null;
   const orderCol = cols.has('created_at') ? 'created_at' : null;
-  const where = sessionCol !== null ? ` WHERE ${sessionCol} = ?` : '';
   const order = orderCol !== null ? ` ORDER BY ${orderCol}` : '';
   const rows = db
     .prepare(
-      `SELECT ${select.join(', ')}${contentCol !== null ? `, ${contentCol}` : ''} ` +
-        `FROM history_v2${where}${order}`,
+      `SELECT ${select.join(', ')}${contentCol !== null ? `, ${contentCol}` : ''}` +
+        `${sessionCol !== null ? `, ${sessionCol}` : ''} FROM history_v2${order}`,
     )
-    .all(sessionId) as Array<{ messages: string; content_source: string | null }>;
-  const out: TraeLlmMessage[] = [];
+    .all() as Array<{ messages: string; content_source: string | null; session_id: string | null }>;
+  const out = new Map<string, TraeLlmMessage[]>();
   for (const row of rows) {
     if (contentCol !== null && row.content_source !== 'llm_default') {
       continue;
@@ -195,7 +208,10 @@ function readHistoryLlmMessages(db: Database, sessionId: string): TraeLlmMessage
       const content = typeof m.content === 'string' ? m.content : null;
       const reasoning = typeof m.reasoning_content === 'string' ? m.reasoning_content : null;
       if (content !== null || reasoning !== null) {
-        out.push({ content, reasoningContent: reasoning });
+        const key = sessionCol !== null && row.session_id !== null ? row.session_id : '';
+        const list = out.get(key) ?? [];
+        list.push({ content, reasoningContent: reasoning });
+        out.set(key, list);
       }
     }
   }

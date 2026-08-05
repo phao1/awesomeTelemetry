@@ -8,7 +8,8 @@ import Database from 'better-sqlite3';
 
 import type { ProviderConfig } from '../src/core/trace-types.js';
 import { initSchema } from '../server/storage/schema.js';
-import { traeScanner } from './trae.js';
+import { readTraeDb, traeScanner } from './trae.js';
+import { normalizeTraeSample } from '../src/adapters/trae.js';
 import type { ScannerContext } from './scanner-utils.js';
 
 type Db = InstanceType<typeof Database>;
@@ -227,5 +228,109 @@ describe('REQ-010/012 Trae scanner', () => {
       total: 300,
     });
     db.close();
+  });
+
+  it('B8.4 llmIndex 错位修复：多 session 文件里每行只消费自己 session 的正文', () => {
+    const dir = tempDir();
+    const db = new Database(join(dir, 'trae-multi-session.db'));
+    db.exec(`
+      CREATE TABLE server_history_info (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        status TEXT,
+        type TEXT,
+        start_time INTEGER,
+        end_time INTEGER,
+        content_source TEXT,
+        token_usage INTEGER,
+        item_token_usage INTEGER,
+        content TEXT,
+        message_id TEXT
+      );
+      CREATE TABLE chat_session (
+        session_id TEXT PRIMARY KEY,
+        title TEXT,
+        agent_type TEXT,
+        agent_name TEXT,
+        created_at INTEGER
+      );
+      CREATE TABLE history_v2 (
+        session_id TEXT,
+        created_at INTEGER,
+        content_source TEXT,
+        messages TEXT
+      );
+    `);
+    // 行按 start_time 排序：s2 的 llm 行在前，s1 的 llm 行在后
+    db.prepare(
+      `INSERT INTO server_history_info VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run('r1', 's2', 'completed', 'llm', 1754000000, 1754000001, 'llm_default', 100, 50, null, 'm2');
+    db.prepare(
+      `INSERT INTO server_history_info VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run('r2', 's1', 'completed', 'llm', 1754000002, 1754000003, 'llm_default', 200, 120, null, 'm1');
+    db.prepare(`INSERT INTO chat_session VALUES (?, ?, ?, ?, ?)`).run(
+      's1', 'main session', 'solo_coder', 'Trae CN', 1754000000,
+    );
+    // history_v2 按 created_at 排序：s1 的行在前（旧实现会把 M1 配给 s2 的 r1）
+    db.prepare(`INSERT INTO history_v2 VALUES (?, ?, ?, ?)`).run(
+      's1', 1754000000, 'llm_default',
+      JSON.stringify([{ role: 'assistant', reasoning_content: 'M1-s1' }]),
+    );
+    db.prepare(`INSERT INTO history_v2 VALUES (?, ?, ?, ?)`).run(
+      's2', 1754000001, 'llm_default',
+      JSON.stringify([{ role: 'assistant', reasoning_content: 'M2-s2' }]),
+    );
+    db.close();
+
+    const sample = readTraeDb(join(dir, 'trae-multi-session.db'));
+    expect(sample.session.id).toBe('s2'); // rows[0] 口径：1 文件 = 1 会话 key（T-03）
+    const record = normalizeTraeSample(
+      { sourceAgent: 'Trae', session: sample.session, events: sample.turns },
+      join(dir, 'trae-multi-session.db'),
+    );
+    // r1 属于 s2 → 必须拿到 s2 的 M2；r2 属于 s1 → 拿到 s1 的 M1（不再错位）
+    expect(record.events[0]?.outputSummary).toBe('M2-s2');
+    expect(record.events[1]?.outputSummary).toBe('M1-s1');
+  });
+
+  it('B8 isSubagent：chat_session.agent_type 命中子代理名单时落库 is_subagent=1', () => {
+    const dir = tempDir();
+    const db = new Database(join(dir, 'trae-subagent.db'));
+    db.exec(`
+      CREATE TABLE server_history_info (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        status TEXT,
+        type TEXT,
+        start_time INTEGER,
+        end_time INTEGER,
+        content_source TEXT,
+        token_usage INTEGER,
+        item_token_usage INTEGER,
+        content TEXT
+      );
+      CREATE TABLE chat_session (
+        session_id TEXT PRIMARY KEY,
+        title TEXT,
+        agent_type TEXT,
+        agent_name TEXT,
+        created_at INTEGER
+      );
+    `);
+    db.prepare(
+      `INSERT INTO server_history_info VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run('r1', 'sub-s1', 'completed', 'user', 1754000000, 1754000001, null, null, null, 'do it');
+    db.prepare(`INSERT INTO chat_session VALUES (?, ?, ?, ?, ?)`).run(
+      'sub-s1', 'refactor scope', 'refactor_scoper', 'Scoper', 1754000000,
+    );
+    db.close();
+
+    const sample = readTraeDb(join(dir, 'trae-subagent.db'));
+    const record = normalizeTraeSample(
+      { sourceAgent: 'Trae', session: sample.session, events: sample.turns },
+      join(dir, 'trae-subagent.db'),
+    );
+    expect(record.session.isSubagent).toBe(true);
+    expect(record.session.sourceAgent).toBe('Scoper'); // agent_name
   });
 });

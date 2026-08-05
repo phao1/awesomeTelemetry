@@ -331,3 +331,28 @@ attention-emphasis contrast fails
 - **Suggested next step**: 未来若 Trae 客户端提供明文导出（如 settings/
   agent-config 文件）或解密库被证实含 system_prompt 列，再开独立 change 接线
   到 `GET /api/sessions/:key`；在此之前 UI 保持不显示估算值（不伪造数据源）。
+
+---
+
+## D-016 Trae 子代理关联未经真机验证（B8 调查闸门：走「停手」分支）
+
+- **Problem**: design §10 的三个调查问题（distinct `session_id` 数量、有无
+  `parent_session_id` 等父子字段、子代理 `agent_type` / `agent_name` 长相）需要
+  真实 Trae 解密库才能回答；本机 `traeKeyPath=null`（Windows %APPDATA% 路径），
+  没有真实库可跑 `PRAGMA table_info` 或 `SELECT DISTINCT session_id`。
+- **Approaches tried**: 检查本机 Trae/CodeArts 数据目录（~/.config、~/Library/
+  Application Support 等），无；trae-bridge 解密无法启动（TRAE_KEY_MISSING）。
+- **Why they failed**: 数据源不在本机，闸门表第 4 行触发（拿不到真实库 → 停）。
+- **Temporary approach**: 按闸门表「停」分支只做 **isSubagent 赋值逻辑 +
+  fixture 测试**，不做合并：`src/adapters/trae.ts` 按外部说明的子代理名单
+  （refactor_scoper / refactor_finder / refactor_planner，**未实测**）小写匹配
+  `chat_session.agent_type`，命中则 isSubagent=true，交给既有
+  `buildSubagentMergeGroups`（session-merge.ts:74）按时间窗成组 —— 不新写合并
+  逻辑（B8.6）。顺带修了 `local-sessions/trae.ts` 的 llmIndex 错位
+  （readHistoryLlmMessages 按 session_id 分组，每行只消费自己会话的正文）。
+- **Suggested next step**: 在真实 Trae 库上回答三个问题后按闸门表选方案 A /
+  A' / B：若单文件多 session + 有父子字段 → 方案 A（adapter 内并入主时间线，
+  actor='subagent'）；多 session 无父子字段 → 方案 A'（按 agent_type 名单 +
+  时间窗推断）；子代理独立文件 → 方案 B（isSubagent 赋值已就绪，直接复用
+  buildSubagentMergeGroups）。T-03 约束（deriveSessionKey(config.key, filePath)）
+  在任何方案下都不得打破。

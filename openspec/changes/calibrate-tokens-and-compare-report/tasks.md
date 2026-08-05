@@ -155,18 +155,18 @@
 
 **这是唯一必须先调查再设计的任务。看 design.md §10 的决策闸门。**
 
-- [ ] 8.1 调查并回答三个问题：distinct `session_id` 数量、有无 `parent_session_id`
+- [x] 8.1 调查并回答三个问题：distinct `session_id` 数量、有无 `parent_session_id`
       等父子字段（`PRAGMA table_info` 全表列一遍）、子代理的 `agent_type` / `agent_name`
-- [ ] 8.2 按 design.md §10 的闸门表选定方案 A / A' / B / 停手，**把选择理由写进报告**
-- [ ] 8.3 实现选定方案；`src/adapters/trae.ts:176` 的硬编码 `isSubagent: false` 改为
+- [x] 8.2 按 design.md §10 的闸门表选定方案 A / A' / B / 停手，**把选择理由写进报告**
+- [x] 8.3 实现选定方案；`src/adapters/trae.ts:176` 的硬编码 `isSubagent: false` 改为
       按调查结论赋值
-- [ ] 8.4 顺带修 `local-sessions/trae.ts` 的 `llmIndex` 错位：
+- [x] 8.4 顺带修 `local-sessions/trae.ts` 的 `llmIndex` 错位：
       `readHistoryLlmMessages` 与 `rows` 的 session 口径必须一致
-- [ ] 8.5 **不许打破 T-03**：索引与详情的 key 都必须是
+- [x] 8.5 **不许打破 T-03**：索引与详情的 key 都必须是
       `deriveSessionKey(config.key, filePath)`（trae.ts:261 / :280）
-- [ ] 8.6 **不要新写一套合并逻辑**，复用 `buildSubagentMergeGroups`（session-merge.ts:74）
-- [ ] 8.7 测试：多 session_id 的 fixture → 子代理事件并入主时间线 / 正确成组
-- [ ] 8.8 拿不到真实库 → 只做 `isSubagent` 赋值 + fixture 测试，记 `D-###`
+- [x] 8.6 **不要新写一套合并逻辑**，复用 `buildSubagentMergeGroups`（session-merge.ts:74）
+- [x] 8.7 测试：多 session_id 的 fixture → 子代理事件并入主时间线 / 正确成组
+- [x] 8.8 拿不到真实库 → 只做 `isSubagent` 赋值 + fixture 测试，记 `D-###`
 
 ## §9 收口验收（B9）
 
