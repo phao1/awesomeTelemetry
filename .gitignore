@@ -35,6 +35,7 @@ compare/
 # ===== 本地交接 / 工作文档（含真实会话 key 与本机路径，勿上传；如需公开请先脱敏）=====
 NEXT-TASKS.md
 UI-TASKS.md
+tengu-lab-dashboard-spec.md
 
 # ===== 本地 Claude 权限配置（个人允许规则，勿上传）=====
 .claude/settings.local.json

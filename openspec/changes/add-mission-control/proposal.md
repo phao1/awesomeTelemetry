@@ -2,8 +2,9 @@
 
 ## Why
 
-`tengu-lab-dashboard-spec.md`（外部参考实现 Tengu Lab 的逐面板清单）给出了一套
-成熟的「Agent 可观测性指挥中心」信息架构：五大战区 32 个 widget + Trace 瀑布页。
+`tengu-lab-dashboard-spec.md`（外部参考实现 Tengu Lab 的逐面板清单；该文件未入库，
+仅本地参考）给出了一套成熟的「Agent 可观测性指挥中心」信息架构：五大战区
+32 个 widget + Trace 瀑布页。
 逐项核对后，其中**大部分指标的口径本项目已经有数据可以支撑**，只是散落在
 `session` 单会话视图里，缺一个跨会话的聚合面。
 

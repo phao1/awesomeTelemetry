@@ -1,6 +1,6 @@
 # Design: add-mission-control
 
-> 输入：`tengu-lab-dashboard-spec.md`（Tengu Lab 逐面板清单，35 项可评估内容 =
+> 输入：`tengu-lab-dashboard-spec.md`（本地参考，未入库；Tengu Lab 逐面板清单，35 项可评估内容 =
 > 图1 的 7 项 + 图2 的 28 个 widget；D/E 两区 4 个 widget 源截图未覆盖，无内容）
 > 输出：逐项裁决 + 可融入者的融合方案 + 不可融入者的理由。
 >
