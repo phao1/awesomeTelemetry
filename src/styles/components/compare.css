@@ -631,7 +631,7 @@
   width: var(--inspector-width);
   max-width: 100%;
   overflow: hidden;
-  border-left: var(--border-width) solid var(--border-default);
+  border-left: 1px solid var(--border-default);
   background: var(--canvas-default);
   border-radius: var(--radius-md);
   z-index: var(--z-sticky);

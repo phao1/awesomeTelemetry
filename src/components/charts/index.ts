@@ -3,6 +3,7 @@ export { DonutChart, DonutRing } from './DonutChart.js';
 export { RadarChart } from './RadarChart.js';
 export type { RadarAxis, RadarChartProps } from './RadarChart.js';
 export { HeatmapGrid } from './HeatmapGrid.js';
+export { HeatmapChart } from './HeatmapChart.js';
 export { StackedAreaChart } from './StackedAreaChart.js';
 export { Histogram } from './Histogram.js';
 export { CalendarGrid } from './CalendarGrid.js';

@@ -625,3 +625,55 @@ button.finding-row:hover {
   color: var(--fg-muted);
   font-size: var(--text-xs);
 }
+
+/* ── REQ-121：会话详情 L2 可视化（事件密度热力图 + 能力雷达图）── */
+
+.session-visuals {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+@media (max-width: 60rem) {
+  .session-visuals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.session-heatmap,
+.session-radar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--canvas-raised);
+}
+
+.session-visuals-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.session-visuals-meta {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+.session-visuals-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+.session-heatmap .heatmap-chart {
+  max-width: 100%;
+}

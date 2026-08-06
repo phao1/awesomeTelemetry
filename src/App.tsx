@@ -30,6 +30,7 @@ import { SessionToolbar } from './components/SessionToolbar.js';
 import { SessionFindings } from './components/SessionFindings.js';
 import { TraceTimeline } from './components/TraceTimeline.js';
 import { PhaseRibbon } from './components/PhaseRibbon.js';
+import { SessionVisuals } from './components/SessionVisuals.js';
 import { PhaseTiles } from './components/PhaseTiles.js';
 import { TimeCompositionBar } from './components/TimeCompositionBar.js';
 import { computeTimeComposition, type TimeSegmentKey } from './core/time-composition.js';
@@ -801,6 +802,8 @@ export default function App() {
                     onSelectOnly={(phase) => setPhaseFilter([phase])}
                     locale={locale}
                   />
+                  {/* REQ-121：L2 诊断层 —— 事件密度热力图 + 8 轴能力雷达图 */}
+                  <SessionVisuals detail={detail} locale={locale} />
                   <TimeCompositionBar
                     composition={timeComposition}
                     locale={locale}
