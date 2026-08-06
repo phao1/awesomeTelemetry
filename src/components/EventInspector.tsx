@@ -305,7 +305,7 @@ export function EventInspector({
             return (
               <pre>
                 {findQuery.trim() === '' && looksLikeJson(text)
-                  ? <HighlightedJson text={text} />
+                  ? <HighlightedJson text={text} truncatedLabel={t('inspector.jsonTruncated', locale).replace('{n}', '64,000')} />
                   : highlight(text)}
               </pre>
             );
@@ -323,7 +323,7 @@ export function EventInspector({
             return (
               <pre>
                 {findQuery.trim() === '' && looksLikeJson(text)
-                  ? <HighlightedJson text={text} />
+                  ? <HighlightedJson text={text} truncatedLabel={t('inspector.jsonTruncated', locale).replace('{n}', '64,000')} />
                   : highlight(text)}
               </pre>
             );
@@ -336,7 +336,7 @@ export function EventInspector({
             ) : (
               <pre className="mono">
                 {findQuery.trim() === '' && looksLikeJson(raw)
-                  ? <HighlightedJson text={desensitize ? redactSecrets(raw) : raw} />
+                  ? <HighlightedJson text={desensitize ? redactSecrets(raw) : raw} truncatedLabel={t('inspector.jsonTruncated', locale).replace('{n}', '64,000')} />
                   : highlight(desensitize ? redactSecrets(raw) : raw)}
               </pre>
             ))}

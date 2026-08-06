@@ -119,9 +119,20 @@ export function looksLikeJson(text: string): boolean {
   );
 }
 
-/** 渲染 JSON 高亮（span 用 inspector-json-* 类，颜色由 CSS token 决定）。 */
-export function HighlightedJson({ text }: { text: string }): React.JSX.Element {
-  const tokens = tokenizeJson(text);
+/** 渲染 JSON 高亮（span 用 inspector-json-* 类，颜色由 CSS token 决定）。
+ * 大文本只高亮前 maxChars 字符（observability-designer 成本优化），
+ * 避免一次生成数万个 span 拖慢 Inspector。 */
+export function HighlightedJson({
+  text,
+  maxChars = 64_000,
+  truncatedLabel,
+}: {
+  text: string;
+  maxChars?: number;
+  truncatedLabel?: string;
+}): React.JSX.Element {
+  const truncated = text.length > maxChars;
+  const tokens = tokenizeJson(truncated ? text.slice(0, maxChars) : text);
   return (
     <span className="inspector-json">
       {tokens.map((token, i) => (
@@ -129,6 +140,11 @@ export function HighlightedJson({ text }: { text: string }): React.JSX.Element {
           {token.text}
         </span>
       ))}
+      {truncated && (
+        <span className="inspector-json-truncated">
+          {truncatedLabel ?? `…（高亮截断，前 ${maxChars.toLocaleString()} 字符）`}
+        </span>
+      )}
     </span>
   );
 }

@@ -87,7 +87,7 @@ function SessionPicker({
       <div style={{ padding: 'var(--space-2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
         <SearchInput placeholder={t('session.search', locale)} value={search} onChange={(e) => setSearch(e.target.value)} />
         <div className="compare-picker-list">
-          {filtered.map((session) => (
+          {filtered.slice(0, PICKER_LIMIT).map((session) => (
             <button
               key={session.id}
               type="button"
@@ -101,11 +101,19 @@ function SessionPicker({
               <span className="mono">{session.eventCount} ev</span>
             </button>
           ))}
+          {filtered.length > PICKER_LIMIT && (
+            <p className="hint" style={{ margin: 0 }}>
+              {t('compare.pickerMore', locale).replace('{n}', String(filtered.length - PICKER_LIMIT))}
+            </p>
+          )}
         </div>
       </div>
     </Popover>
   );
 }
+
+/** REQ-019：选择器列表上限 —— 数百会话时 Popover 不因全量渲染卡顿。 */
+const PICKER_LIMIT = 100;
 
 export interface CompareSelectorBarProps {
   sessions: SessionIndexEntry[];

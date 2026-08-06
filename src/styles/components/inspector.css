@@ -33,6 +33,12 @@
   color: var(--fg-muted);
 }
 
+.inspector-json-truncated {
+  color: var(--attention-fg);
+  font-style: italic;
+  font-size: var(--text-xs);
+}
+
 .inspector-tabs {
   border-bottom: 1px solid var(--border-default);
   flex: 0 0 auto;
@@ -217,4 +223,3 @@
 .session-findings-panel[open] summary {
   border-bottom: 1px solid var(--border-default);
 }
-
