@@ -147,6 +147,8 @@ export default function App() {
   const [transcriptEvent, setTranscriptEvent] = useState<TraceEventSlim | null>(null);
   const [tokenEvent, setTokenEvent] = useState<TraceEventSlim | null>(null);
   const [promptContextKey, setPromptContextKey] = useState<string | null>(null);
+  /** REQ-112：命令面板 `/goto` 定位目标（传给 TraceTimeline 触发滚动）。 */
+  const [focusEventId, setFocusEventId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [PaletteComponent, setPaletteComponent] = useState<PaletteModule['CommandPalette'] | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -842,6 +844,7 @@ export default function App() {
                     onLayoutModeChange={setLayoutMode}
                     phaseFilter={phaseFilter}
                     onPhaseToggle={togglePhase}
+                    focusEventId={focusEventId}
                   />
                 </div>
               </div>
@@ -968,12 +971,34 @@ export default function App() {
         <PaletteComponent
           sessions={sessions}
           locale={locale}
+          events={(detail?.events ?? []) as TraceEventSlim[]}
+          view={view}
+          providerFilter={providerFilter}
           onClose={() => setPaletteOpen(false)}
           onAction={(action) => {
             setPaletteHintSeen(true);
             storeBool(LAYOUT_KEYS.paletteHintSeen, true);
             if (action.type === 'session') {
               selectSession(action.key);
+            } else if (action.type === 'compare') {
+              // REQ-111：直接进对比视图，会话 key 来自共享 store（不发额外请求）。
+              setCompareLeft(action.left);
+              setCompareRight(action.right);
+              switchView('compare');
+            } else if (action.type === 'goto') {
+              // REQ-112：选中并滚动到目标事件（focusEventId 变更驱动 TraceTimeline 滚动）。
+              const target = (detail?.events ?? []).find((e) => e.id === action.eventId);
+              if (target !== undefined) {
+                setSelectedEvent(target as TraceEventSlim);
+                setFocusEventId(action.eventId);
+              }
+            } else if (action.type === 'filter') {
+              // REQ-113：再次选择同一 provider 取消过滤。
+              setProviderFilter((prev) =>
+                prev.includes(action.provider)
+                  ? prev.filter((p) => p !== action.provider)
+                  : [...prev, action.provider],
+              );
             } else if (action.type === 'view') {
               switchView(action.view as AppView);
             } else if (action.type === 'theme') {

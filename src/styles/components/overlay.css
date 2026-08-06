@@ -386,6 +386,40 @@
   font-size: var(--text-xs);
 }
 
+/* REQ-111/112/113：高级动作（compare 挑选态 / 禁用态 / 前缀提示） */
+
+.palette-row:disabled {
+  cursor: default;
+  color: var(--fg-muted);
+}
+
+.palette-row:disabled:hover {
+  background: transparent;
+}
+
+.palette-row-on {
+  background: var(--accent-subtle);
+  box-shadow: inset calc(var(--space-1) / 2) 0 0 0 var(--accent-emphasis);
+}
+
+.palette-mode-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--accent-subtle);
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+}
+
+.palette-prefix-hint {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
 .palette-hint {
   position: fixed;
   bottom: var(--statusbar-height);

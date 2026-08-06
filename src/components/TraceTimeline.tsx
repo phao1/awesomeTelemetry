@@ -44,6 +44,8 @@ export interface TraceTimelineProps {
   /** 阶段过滤 chips（App 持有过滤状态；缺省不过滤）。 */
   phaseFilter?: TracePhase[];
   onPhaseToggle?: (phase: TracePhase) => void;
+  /** REQ-112：命令面板 `/goto` 定位 —— 变更时滚动到该事件并置游标。 */
+  focusEventId?: string | null;
 }
 
 const ROW_HEIGHT = 28; // --row-sm（G-DS-1：虚拟滚动 itemHeight 必须为常量）
@@ -193,6 +195,7 @@ export function TraceTimeline({
   onLayoutModeChange,
   phaseFilter = [...TRACE_PHASES],
   onPhaseToggle,
+  focusEventId = null,
 }: TraceTimelineProps): React.JSX.Element {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
@@ -498,6 +501,22 @@ export function TraceTimeline({
     const element = rowRefs.current.get(cursorKey);
     element?.scrollIntoView?.({ block: 'nearest' });
   }, [cursorKey]);
+
+  // REQ-112：`/goto` 定位 —— 虚拟滚动下目标行可能未挂载，直接按行号设置 scrollTop。
+  useEffect(() => {
+    if (focusEventId === null) {
+      return;
+    }
+    const index = visibleRows.findIndex((row) => row.kind === 'event' && row.event.id === focusEventId);
+    if (index < 0) {
+      return;
+    }
+    setCursorKey(focusEventId);
+    const container = containerRef.current;
+    if (container !== null) {
+      container.scrollTop = Math.max(0, index * ROW_HEIGHT - ROW_HEIGHT * 3);
+    }
+  }, [focusEventId, visibleRows, containerRef]);
 
   const onContainerKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.nativeEvent.isComposing || isEditableTarget(event.target)) {
