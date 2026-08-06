@@ -48,6 +48,28 @@ describe('CompareCharts（建议 1）', () => {
     unmount();
   });
 
+  it('REQ-119/120：重构后仍逐像素一致（雷达几何 + 双环 dasharray 基准）', () => {
+    const radar = mount(<RadarChart result={makeResult()} locale="zh" />);
+    const svg = document.querySelector('svg')!;
+    expect(svg.getAttribute('viewBox')).toBe('0 0 200 200');
+    expect(svg.getAttribute('height')).toBe('220');
+    // 4 圈参考多边形 + L/R 两条系列多边形
+    expect(svg.querySelectorAll('polygon').length).toBe(6);
+    const strokes = [...svg.querySelectorAll('polygon')].slice(4).map((p) => p.getAttribute('stroke'));
+    expect(strokes).toEqual(['var(--accent-fg)', 'var(--attention-fg)']);
+    radar.unmount();
+
+    const donut = mount(<TokenDonutChart result={makeResult()} locale="zh" />);
+    const circles = [...document.querySelectorAll('circle')];
+    // 双环共享 2π*50 的弧长基准（与重构前一致）
+    const circ = 2 * Math.PI * 50;
+    for (const c of circles.filter((el) => el.getAttribute('stroke-dasharray') !== null)) {
+      const [len, rest] = c.getAttribute('stroke-dasharray')!.split(' ').map(Number);
+      expect(len! + rest!).toBeCloseTo(circ, 6);
+    }
+    donut.unmount();
+  });
+
   it('双环 Token 环形图渲染 8 个圆环分段 + 图例', () => {
     const { html, unmount } = mount(<TokenDonutChart result={makeResult()} locale="zh" />);
     expect((html().match(/<circle /g) ?? []).length).toBe(10); // 2 底环 + 8 分段

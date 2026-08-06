@@ -1,5 +1,7 @@
 export { HBarChart } from './HBarChart.js';
-export { DonutChart } from './DonutChart.js';
+export { DonutChart, DonutRing } from './DonutChart.js';
+export { RadarChart } from './RadarChart.js';
+export type { RadarAxis, RadarChartProps } from './RadarChart.js';
 export { HeatmapGrid } from './HeatmapGrid.js';
 export { StackedAreaChart } from './StackedAreaChart.js';
 export { Histogram } from './Histogram.js';

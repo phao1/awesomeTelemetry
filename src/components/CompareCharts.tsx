@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
@@ -11,8 +11,12 @@ import {
 } from './compare-stats.js';
 import type { CompareResult } from './compare-types.js';
 import { TokenTextModal, type TokenClass } from './TokenTextModal.js';
+import { RadarChart as RadarChartBase } from './charts/RadarChart.js';
+import { DonutRing } from './charts/DonutChart.js';
+import type { ChartSlice, ChartTone } from './charts/types.js';
 
-/** 建议 1-①：8 轴综合能力雷达图（速度/省Token/工具/LLM/写入/读取/稳定性/验证）。 */
+/** 建议 1-① + REQ-119：8 轴综合能力雷达图（速度/省Token/工具/LLM/写入/读取/稳定性/验证）。
+ * 归一化在此完成，几何绘制委托给可复用的 `charts/RadarChart`。 */
 export function RadarChart({
   result,
   locale,
@@ -52,77 +56,19 @@ export function RadarChart({
     });
   }, [result, speed, ls, rs, lErr, rErr, lVerify, rVerify, locale]);
 
-  const n = axes.length;
-  const cx = 100;
-  const cy = 100;
-  const radius = 72;
-  const pointAt = (value: number, i: number): [number, number] => {
-    const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
-    return [cx + Math.cos(angle) * radius * value, cy + Math.sin(angle) * radius * value];
-  };
-  const points = (side: 'l' | 'r'): string =>
-    axes.map((axis, i) => {
-      const [x, y] = pointAt(axis[side], i);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' ');
-  const ringPoints = (scale: number): string =>
-    axes.map((_, i) => {
-      const [x, y] = pointAt(scale, i);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' ');
-
   return (
-    <svg viewBox="0 0 200 200" width="100%" height={220} role="img" aria-label={t('compare.radar', locale)}>
-      {[0.25, 0.5, 0.75, 1].map((scale) => (
-        <polygon
-          key={scale}
-          points={ringPoints(scale)}
-          fill="none"
-          stroke="var(--border-muted)"
-          strokeWidth={0.8}
-        />
-      ))}
-      {axes.map((axis, i) => {
-        const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
-        return (
-          <line
-            key={axis.label}
-            x1={cx}
-            y1={cy}
-            x2={cx + Math.cos(angle) * radius}
-            y2={cy + Math.sin(angle) * radius}
-            stroke="var(--border-muted)"
-            strokeWidth={0.8}
-          />
-        );
-      })}
-      <polygon points={points('l')} fill="var(--accent-subtle)" stroke="var(--accent-fg)" strokeWidth={1.5} />
-      <polygon points={points('r')} fill="var(--attention-subtle)" stroke="var(--attention-fg)" strokeWidth={1.5} />
-      {axes.map((axis, i) => {
-        const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
-        const lx = cx + Math.cos(angle) * (radius + 14);
-        const ly = cy + Math.sin(angle) * (radius + 14);
-        const anchor = Math.cos(angle) > 0.3 ? 'start' : Math.cos(angle) < -0.3 ? 'end' : 'middle';
-        return (
-          <text
-            key={axis.label}
-            x={lx}
-            y={ly}
-            fontSize={7.5}
-            fill="var(--fg-muted)"
-            textAnchor={anchor}
-            dominantBaseline="middle"
-          >
-            {axis.label}
-          </text>
-        );
-      })}
-    </svg>
+    <RadarChartBase
+      data={axes.map((axis) => ({ axis: axis.label, values: [axis.l, axis.r] }))}
+      colors={['var(--accent-fg)', 'var(--attention-fg)']}
+      fills={['var(--accent-subtle)', 'var(--attention-subtle)']}
+      size={220}
+      ariaLabel={t('compare.radar', locale)}
+    />
   );
 }
 
 const TOKEN_CLASSES = ['system', 'input', 'reasoning', 'output'] as const;
-const TOKEN_CLASS_TONE: Record<(typeof TOKEN_CLASSES)[number], string> = {
+const TOKEN_CLASS_TONE: Record<(typeof TOKEN_CLASSES)[number], ChartTone> = {
   system: 'accent',
   input: 'neutral',
   reasoning: 'done',
@@ -141,8 +87,9 @@ function sideTokenValues(result: CompareResult, side: 'left' | 'right'): Record<
 }
 
 /**
- * 建议 1-② + REQ-101：双环 Token 构成环形图（内环 L / 外环 R，
+ * 建议 1-② + REQ-101 + REQ-120：双环 Token 构成环形图（内环 L / 外环 R，
  * system/input/reasoning/output），段可点击打开 TokenTextModal。
+ * 弧段几何委托给 `charts/DonutChart` 的 `DonutRing` 原语，不再重复实现。
  */
 export function TokenDonutChart({
   result,
@@ -160,51 +107,35 @@ export function TokenDonutChart({
     TOKEN_CLASSES.reduce((s, k) => s + left[k], 0),
     TOKEN_CLASSES.reduce((s, k) => s + right[k], 0),
   );
+  // 双环共享同一刻度与同一弧长基准（保持与重构前逐像素一致）。
   const CIRC = 2 * Math.PI * 50;
+  const slicesOf = (
+    values: Record<(typeof TOKEN_CLASSES)[number], number>,
+  ): ChartSlice[] =>
+    TOKEN_CLASSES.map((cls) => ({ label: cls, value: values[cls], tone: TOKEN_CLASS_TONE[cls] }));
   const ring = (
     values: Record<(typeof TOKEN_CLASSES)[number], number>,
     r: number,
     thickness: number,
     side: 'left' | 'right',
-  ): React.JSX.Element[] => {
-    let offset = 0;
-    return TOKEN_CLASSES.map((cls) => {
-      const length = (values[cls] / maxTotal) * CIRC;
-      const interactive = onSegmentClick !== undefined && length > 0;
-      const activate = (): void => {
-        if (interactive) {
-          onSegmentClick(side, cls);
-        }
-      };
-      const onKeyDown = (e: KeyboardEvent<SVGCircleElement>): void => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          activate();
-        }
-      };
-      const el = (
-        <circle
-          key={cls}
-          cx={120}
-          cy={110}
-          r={r}
-          fill="none"
-          stroke={`var(--${TOKEN_CLASS_TONE[cls]}-emphasis)`}
-          strokeWidth={thickness}
-          strokeDasharray={`${length} ${CIRC - length}`}
-          strokeDashoffset={-offset}
-          className={interactive ? 'compare-chart-donut-seg' : undefined}
-          role={interactive ? 'button' : undefined}
-          tabIndex={interactive ? 0 : undefined}
-          aria-label={interactive ? `${side === 'left' ? 'L' : 'R'} ${cls}` : undefined}
-          onClick={interactive ? activate : undefined}
-          onKeyDown={interactive ? onKeyDown : undefined}
-        />
-      );
-      offset += length;
-      return el;
-    });
-  };
+  ): React.JSX.Element => (
+    <DonutRing
+      slices={slicesOf(values)}
+      cx={120}
+      cy={110}
+      r={r}
+      thickness={thickness}
+      total={maxTotal}
+      circumference={CIRC}
+      segmentClassName="compare-chart-donut-seg"
+      ariaLabelPrefix={side === 'left' ? 'L' : 'R'}
+      onSliceClick={
+        onSegmentClick === undefined
+          ? undefined
+          : (label) => onSegmentClick(side, label as TokenClass)
+      }
+    />
+  );
 
   return (
     <div className="compare-chart-donut">
