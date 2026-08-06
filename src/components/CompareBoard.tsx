@@ -36,14 +36,17 @@ function SessionPicker({
   value,
   locale,
   onSelect,
+  open,
+  onOpenChange,
 }: {
   side: 'L' | 'R';
   sessions: SessionIndexEntry[];
   value: string;
   locale: Locale;
   onSelect: (key: string) => void;
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
 }): React.JSX.Element {
-  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const selected = sessions.find((s) => s.id === value);
   const filtered = useMemo(() => {
@@ -58,7 +61,7 @@ function SessionPicker({
     <Popover
       open={open}
       onOpenChange={(next) => {
-        setOpen(next);
+        onOpenChange(next);
         if (!next) {
           setSearch('');
         }
@@ -91,7 +94,7 @@ function SessionPicker({
               className={`compare-picker-item ${session.id === value ? 'compare-picker-item-on' : ''}`}
               onClick={() => {
                 onSelect(session.id);
-                setOpen(false);
+                onOpenChange(false);
               }}
             >
               <span className="compare-picker-title">{session.title || session.id}</span>
@@ -112,6 +115,10 @@ export interface CompareSelectorBarProps {
   rightKey: string;
   onLeftChange: (key: string) => void;
   onRightChange: (key: string) => void;
+  leftOpen: boolean;
+  rightOpen: boolean;
+  onLeftOpenChange: (next: boolean) => void;
+  onRightOpenChange: (next: boolean) => void;
 }
 
 export function CompareSelectorBar({
@@ -122,11 +129,31 @@ export function CompareSelectorBar({
   rightKey,
   onLeftChange,
   onRightChange,
+  leftOpen,
+  rightOpen,
+  onLeftOpenChange,
+  onRightOpenChange,
 }: CompareSelectorBarProps): React.JSX.Element {
   return (
     <div className="compare-bar">
-      <SessionPicker side="L" sessions={sessions} value={leftKey} locale={locale} onSelect={onLeftChange} />
-      <SessionPicker side="R" sessions={sessions} value={rightKey} locale={locale} onSelect={onRightChange} />
+      <SessionPicker
+        side="L"
+        sessions={sessions}
+        value={leftKey}
+        locale={locale}
+        onSelect={onLeftChange}
+        open={leftOpen}
+        onOpenChange={onLeftOpenChange}
+      />
+      <SessionPicker
+        side="R"
+        sessions={sessions}
+        value={rightKey}
+        locale={locale}
+        onSelect={onRightChange}
+        open={rightOpen}
+        onOpenChange={onRightOpenChange}
+      />
       <button
         type="button"
         className="btn"
@@ -311,12 +338,14 @@ function DetailMetricsTable({ result, locale }: { result: CompareResult; locale:
 function CollapsibleSection({
   id,
   title,
+  index,
   open,
   onToggle,
   children,
 }: {
   id: string;
   title: string;
+  index?: number;
   open: boolean;
   onToggle: () => void;
   children: React.ReactNode;
@@ -327,7 +356,9 @@ function CollapsibleSection({
         <span className="compare-section-chevron">
           {open ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
         </span>
-        <span className="compare-section-title">{title}</span>
+        <span className="compare-section-title">
+          {index !== undefined ? `${index}. ` : ''}{title}
+        </span>
       </button>
       {open && <div className="compare-section-body">{children}</div>}
     </section>
@@ -336,6 +367,8 @@ function CollapsibleSection({
 
 export interface CompareBoardProps {
   sessions: SessionIndexEntry[];
+  /** 会话列表仍在加载时显示骨架，避免首帧误显示「暂无数据」。 */
+  sessionsLoading?: boolean;
   locale: Locale;
   leftKey: string;
   rightKey: string;
@@ -347,6 +380,7 @@ export interface CompareBoardProps {
 /** REQ-019 + UI-TASKS 2：对比视图 —— 外壳组合各子组件（v2 拆分）。 */
 export function CompareBoard({
   sessions,
+  sessionsLoading = false,
   locale,
   leftKey,
   rightKey,
@@ -357,6 +391,8 @@ export function CompareBoard({
   const [result, setResult] = useState<CompareResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     'compare-speed': true,
     'compare-dims': true,
@@ -477,6 +513,10 @@ export function CompareBoard({
         rightKey={rightKey}
         onLeftChange={onLeftChange}
         onRightChange={onRightChange}
+        leftOpen={leftOpen}
+        rightOpen={rightOpen}
+        onLeftOpenChange={setLeftOpen}
+        onRightOpenChange={setRightOpen}
       />
       {error !== null && (
         <ErrorState
@@ -491,16 +531,21 @@ export function CompareBoard({
           }}
         />
       )}
-      {loading && result === null && (
+      {(loading || sessionsLoading) && result === null && error === null && (
         <div style={{ padding: 'var(--space-3)' }}>
           <Skeleton variant="row" count={5} />
         </div>
       )}
-      {!loading && error === null && result === null && (
+      {!loading && !sessionsLoading && error === null && result === null && (
         <EmptyState
           icon={<span aria-hidden="true" />}
           title={t('state.selectTwo', locale)}
           description={hasSelection ? undefined : t('state.empty', locale)}
+          action={
+            <button type="button" className="btn" onClick={() => setLeftOpen(true)}>
+              {t('compare.pickLeft', locale)}
+            </button>
+          }
         />
       )}
       {result !== null && (
@@ -524,6 +569,7 @@ export function CompareBoard({
           <CollapsibleSection
             id="compare-speed"
             title={t('compare.speedMetrics', locale)}
+            index={3}
             open={openSections['compare-speed']!}
             onToggle={() => toggleSection('compare-speed')}
           >
@@ -534,6 +580,7 @@ export function CompareBoard({
           <CollapsibleSection
             id="compare-dims"
             title={t('compare.dims', locale)}
+            index={4}
             open={openSections['compare-dims']!}
             onToggle={() => toggleSection('compare-dims')}
           >
@@ -544,6 +591,7 @@ export function CompareBoard({
           <CollapsibleSection
             id="compare-time-phase"
             title={t('compare.timePhase', locale)}
+            index={5}
             open={openSections['compare-time-phase']!}
             onToggle={() => toggleSection('compare-time-phase')}
           >
@@ -586,6 +634,7 @@ export function CompareBoard({
           <CollapsibleSection
             id="compare-metrics"
             title={t('compare.detailMetrics', locale)}
+            index={6}
             open={openSections['compare-metrics']!}
             onToggle={() => toggleSection('compare-metrics')}
           >
@@ -596,6 +645,7 @@ export function CompareBoard({
           <CollapsibleSection
             id="compare-tools"
             title={t('compare.toolAnalysis', locale)}
+            index={7}
             open={openSections['compare-tools']!}
             onToggle={() => toggleSection('compare-tools')}
           >
@@ -606,6 +656,7 @@ export function CompareBoard({
           <CollapsibleSection
             id="compare-timelines"
             title={t('compare.timelines', locale)}
+            index={8}
             open={openSections['compare-timelines']!}
             onToggle={() => toggleSection('compare-timelines')}
           >
@@ -616,6 +667,7 @@ export function CompareBoard({
           <CollapsibleSection
             id="compare-charts"
             title={t('compare.charts', locale)}
+            index={9}
             open={openSections['compare-charts']!}
             onToggle={() => toggleSection('compare-charts')}
           >

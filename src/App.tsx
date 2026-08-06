@@ -843,6 +843,7 @@ export default function App() {
           <main className="main">
             <CompareBoard
               sessions={sessions}
+              sessionsLoading={sessionsLoading}
               locale={locale}
               leftKey={compareLeft}
               rightKey={compareRight}
