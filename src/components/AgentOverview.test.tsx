@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AgentOverviewRow, SessionIndexEntry } from '../core/trace-types.js';
-import { AgentOverview } from './AgentOverview.js';
+import { AGENT_VIEW_KEY, AgentOverview } from './AgentOverview.js';
 
 const rows: AgentOverviewRow[] = [
   {
@@ -34,7 +34,7 @@ const rows: AgentOverviewRow[] = [
 
 const containers: HTMLDivElement[] = [];
 
-function mount(node: React.ReactNode): { unmount: () => void } {
+function mount(node: React.ReactNode): { unmount: () => void; html: () => string } {
   const container = document.createElement('div');
   document.body.appendChild(container);
   containers.push(container);
@@ -46,6 +46,7 @@ function mount(node: React.ReactNode): { unmount: () => void } {
     unmount: () => {
       root.unmount();
     },
+    html: () => container.innerHTML,
   };
 }
 
@@ -56,6 +57,7 @@ afterEach(() => {
       container.remove();
     }
   }
+  localStorage.removeItem(AGENT_VIEW_KEY);
 });
 
 describe('REQ-003 Agent 视图', () => {
@@ -140,6 +142,41 @@ describe('REQ-003 Agent 视图', () => {
     act(() => row.click());
     expect(selected).toEqual(['codex-recent-2']);
     expect(calls).toBe(1); // 展开与点击不产生新请求（G11.9）
+    unmount();
+  });
+
+  it('REQ-107：默认表格视图；点击「卡片」切换卡片网格并持久化', async () => {
+    const { html, unmount } = mount(
+      <AgentOverview locale="zh" load={async () => ({ rows, stamp: 's1', cached: true })} />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.querySelector('.agent-card-grid')).toBeNull();
+    const cardsBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('卡片'));
+    expect(cardsBtn).toBeDefined();
+    act(() => {
+      cardsBtn!.click();
+    });
+    expect(document.querySelector('.agent-card-grid')).not.toBeNull();
+    expect(html()).toContain('Codex');
+    expect(localStorage.getItem(AGENT_VIEW_KEY)).toBe('cards');
+    unmount();
+  });
+
+  it('REQ-107：卡片含 6 指标 + 堆叠 Phase 条 + 阶段分解', async () => {
+    localStorage.setItem(AGENT_VIEW_KEY, 'cards');
+    const { html, unmount } = mount(
+      <AgentOverview locale="zh" load={async () => ({ rows, stamp: 's1', cached: true })} />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.querySelector('.agent-card-grid')).not.toBeNull();
+    expect(document.querySelectorAll('.agent-card-metric').length).toBe(6);
+    expect(document.querySelector('.agent-phase-stack')).not.toBeNull();
+    expect(document.querySelectorAll('.agent-card-phase-list li').length).toBe(6);
+    expect(html()).toContain('阶段分解');
     unmount();
   });
 });

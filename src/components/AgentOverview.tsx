@@ -33,10 +33,21 @@ export interface AgentOverviewProps {
   onCompareProviders?: (left: ProviderKey, right: ProviderKey) => void;
 }
 
+/** REQ-107 / G-UI-5：视图模式持久化 key（新前缀）。 */
+export const AGENT_VIEW_KEY = 'awesome-telemetry.agentViewMode';
+
 const fmtNum = (v: number): string => v.toLocaleString();
 
 function pct(v: number | null): string {
   return v === null ? '—' : `${(v * 100).toFixed(0)}%`;
+}
+
+function readViewMode(): 'table' | 'cards' {
+  try {
+    return localStorage.getItem(AGENT_VIEW_KEY) === 'cards' ? 'cards' : 'table';
+  } catch {
+    return 'table';
+  }
 }
 
 /** 建议 4：堆叠 Phase 条 —— 6 段对应 6 个 Phase 颜色，宽度 = 各阶段耗时占比。 */
@@ -93,6 +104,15 @@ export function AgentOverview({
   const [sort, setSort] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [compareSelection, setCompareSelection] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>(readViewMode);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(AGENT_VIEW_KEY, viewMode);
+    } catch {
+      return;
+    }
+  }, [viewMode]);
 
   useEffect(() => {
     setRows(null);
@@ -354,6 +374,59 @@ export function AgentOverview({
     },
   ];
 
+  /** REQ-107：卡片网格视图 —— ProviderBadge + agent 名 + 会话数 + 堆叠 Phase 条 + 6 指标 + Phase 分解。 */
+  const cardGrid = (
+    <div className="agent-card-grid">
+      {sortedRows.map((row) => {
+        const metrics: Array<{ label: string; value: string }> = [
+          { label: t('agent.sessions', locale), value: fmtNum(row.sessionCount) },
+          { label: t('agent.tokens', locale), value: fmtNum(row.tokenTotal) },
+          { label: t('agent.cost', locale), value: `$${row.costUsd.toFixed(3)}` },
+          { label: t('agent.avgDuration', locale), value: row.avgWallClockMs > 0 ? fmtDur(row.avgWallClockMs) : '—' },
+          { label: t('agent.verification', locale), value: pct(row.verificationCoverage) },
+          { label: t('agent.errorRate', locale), value: pct(row.errorRate) },
+        ];
+        return (
+          <article key={`${row.provider}/${row.sourceAgent}`} className="agent-card">
+            <header className="agent-card-head">
+              <ProviderBadge provider={row.provider} locale={locale} />
+              <span className="agent-card-name">{row.sourceAgent || row.provider}</span>
+              <span className="mono agent-card-provider">{row.provider}</span>
+              <span className="mono agent-card-count">{fmtNum(row.sessionCount)} {t('agent.sessions', locale)}</span>
+            </header>
+            <PhaseStackBar durations={row.durationByPhase} locale={locale} />
+            <dl className="agent-card-metrics">
+              {metrics.map((metric) => (
+                <div key={metric.label} className="agent-card-metric">
+                  <dt>{metric.label}</dt>
+                  <dd className="mono">{metric.value}</dd>
+                </div>
+              ))}
+            </dl>
+            <details className="agent-card-phases">
+              <summary>{t('agent.phaseBreakdown', locale)}</summary>
+              <ul className="agent-card-phase-list">
+                {TRACE_PHASES.map((phase) => {
+                  const ms = row.durationByPhase[phase];
+                  if (ms <= 0) {
+                    return null;
+                  }
+                  return (
+                    <li key={phase}>
+                      <span className="agent-card-phase-dot" style={{ background: `var(--phase-${phase})` }} aria-hidden="true" />
+                      <span>{t(`phase.${phase}`, locale)}</span>
+                      <span className="mono">{fmtDur(ms)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </details>
+          </article>
+        );
+      })}
+    </div>
+  );
+
   if (error !== null) {
     return (
       <ErrorState code="OVERVIEW_LOAD_FAILED" message={error} onRetry={() => setRetryKey((k) => k + 1)} />
@@ -430,6 +503,24 @@ export function AgentOverview({
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <div className="agent-view-toggle" role="group" aria-label={t('agent.viewMode', locale)}>
+          <button
+            type="button"
+            className={`timeline-chip ${viewMode === 'table' ? 'timeline-chip-on' : ''}`}
+            aria-pressed={viewMode === 'table'}
+            onClick={() => setViewMode('table')}
+          >
+            {t('agent.viewTable', locale)}
+          </button>
+          <button
+            type="button"
+            className={`timeline-chip ${viewMode === 'cards' ? 'timeline-chip-on' : ''}`}
+            aria-pressed={viewMode === 'cards'}
+            onClick={() => setViewMode('cards')}
+          >
+            {t('agent.viewCards', locale)}
+          </button>
+        </div>
         {sortChips.map((chip) => (
           <button
             key={chip.key}
@@ -455,49 +546,53 @@ export function AgentOverview({
           {t('common.refresh', locale)}
         </button>
       </div>
-      <div style={{ overflowX: 'auto' }}>
-        <Table
-          columns={columns}
-          rows={sortedRows}
-          density="compact"
-          rowKey={(row) => `${row.provider}/${row.sourceAgent}`}
-          sort={sort}
-          onSort={(key) =>
-            setSort((prev) =>
-              prev?.key === key
-                ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
-                : { key, direction: 'asc' },
-            )
-          }
-          renderExpand={(row) => (
-            <tr key={`expand-${row.provider}`}>
-              <td colSpan={columns.length}>
-                <div className="overview-expand">
-                  <PhaseStackBar durations={row.durationByPhase} locale={locale} />
-                  {(recentByProvider.get(row.provider) ?? []).length === 0 ? (
-                    <span className="hint">{t('common.empty', locale)}</span>
-                  ) : (
-                    (recentByProvider.get(row.provider) ?? []).map((session) => (
-                      <button
-                        key={session.id}
-                        type="button"
-                        className="overview-expand-row"
-                        onClick={() => onSelectSession?.(session.id)}
-                      >
-                        <span className="mono">{session.id.slice(0, 14)}</span>
-                        <span>{session.title}</span>
-                        <span className="mono">{session.eventCount} ev</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </td>
-            </tr>
-          )}
-          expandedKey={expanded}
-          onToggleExpand={(key) => setExpanded((prev) => (prev === key ? null : key))}
-        />
-      </div>
+      {viewMode === 'table' ? (
+        <div style={{ overflowX: 'auto' }}>
+          <Table
+            columns={columns}
+            rows={sortedRows}
+            density="compact"
+            rowKey={(row) => `${row.provider}/${row.sourceAgent}`}
+            sort={sort}
+            onSort={(key) =>
+              setSort((prev) =>
+                prev?.key === key
+                  ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+                  : { key, direction: 'asc' },
+              )
+            }
+            renderExpand={(row) => (
+              <tr key={`expand-${row.provider}`}>
+                <td colSpan={columns.length}>
+                  <div className="overview-expand">
+                    <PhaseStackBar durations={row.durationByPhase} locale={locale} />
+                    {(recentByProvider.get(row.provider) ?? []).length === 0 ? (
+                      <span className="hint">{t('common.empty', locale)}</span>
+                    ) : (
+                      (recentByProvider.get(row.provider) ?? []).map((session) => (
+                        <button
+                          key={session.id}
+                          type="button"
+                          className="overview-expand-row"
+                          onClick={() => onSelectSession?.(session.id)}
+                        >
+                          <span className="mono">{session.id.slice(0, 14)}</span>
+                          <span>{session.title}</span>
+                          <span className="mono">{session.eventCount} ev</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </td>
+              </tr>
+            )}
+            expandedKey={expanded}
+            onToggleExpand={(key) => setExpanded((prev) => (prev === key ? null : key))}
+          />
+        </div>
+      ) : (
+        cardGrid
+      )}
       {compareSelection.length === 2 && onCompareProviders !== undefined && (
         <button type="button" className="compare-float-btn" onClick={runCompare}>
           <IconCompare size={16} />

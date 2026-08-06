@@ -114,12 +114,12 @@
 
 ## §7 Agent Overview 卡片视图 + Timeline 独立切换（B7）
 
-- [ ] 7.1 `AgentOverview.tsx`：增加视图切换按钮（表格/卡片网格）
-- [ ] 7.2 卡片网格视图：ProviderBadge + agent 名 + 堆叠 Phase 条 + 6 指标 + Phase 分解
-- [ ] 7.3 响应式 grid：`repeat(auto-fit, minmax(320px, 1fr))`
-- [ ] 7.4 视图模式持久化：`localStorage` key `awesome-telemetry.agentViewMode`
-- [ ] 7.5 `CompareTimeline.tsx`：左右 Timeline 独立 mode toggle
-- [ ] 7.6 测试：`AgentOverview.test.tsx` 断言切换 + 卡片渲染
+- [x] 7.1 `AgentOverview.tsx`：增加视图切换按钮（表格/卡片网格）
+- [x] 7.2 卡片网格视图：ProviderBadge + agent 名 + 堆叠 Phase 条 + 6 指标 + Phase 分解
+- [x] 7.3 响应式 grid：`repeat(auto-fit, minmax(320px, 1fr))`
+- [x] 7.4 视图模式持久化：`localStorage` key `awesome-telemetry.agentViewMode`
+- [x] 7.5 `CompareTimeline.tsx`：左右 Timeline 独立 mode toggle
+- [x] 7.6 测试：`AgentOverview.test.tsx` 断言切换 + 卡片渲染
 
 ## §8 Mission 分组导航 + Command Palette 扩展（B8）
 

@@ -99,3 +99,110 @@
   border-radius: var(--radius-full);
   background: var(--attention-fg);
 }
+
+/* ---- REQ-107：Agent 卡片网格视图 ---- */
+.agent-view-toggle {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.agent-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-10) * 8)), 1fr));
+  gap: var(--space-3);
+}
+
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--canvas-subtle);
+}
+
+.agent-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.agent-card-name {
+  font-weight: var(--weight-semibold);
+}
+
+.agent-card-provider {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.agent-card-count {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.agent-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--kpi-min)), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.agent-card-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--canvas-default);
+}
+
+.agent-card-metric dt {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.agent-card-metric dd {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+}
+
+.agent-card-phases {
+  border-top: 1px solid var(--border-muted);
+  padding-top: var(--space-2);
+}
+
+.agent-card-phases summary {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.agent-card-phase-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-card-phase-list li {
+  display: grid;
+  grid-template-columns: var(--space-2) 1fr auto;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--text-sm);
+}
+
+.agent-card-phase-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+}
