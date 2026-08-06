@@ -20,6 +20,7 @@ const EXPECTED_TABLES = [
   'scan_state',
   'proxy_requests',
   'frida_captures',
+  'session_prompt_context',
 ];
 
 const EXPECTED_INDEXES = [
@@ -215,6 +216,28 @@ describe('REQ-003 建库幂等', () => {
     expect(row).toEqual({ session_id: 's1', total_steps: 10, calc_version: 3, llm_call_count: 0 });
     // 幂等：重复 initSchema 不报错
     expect(() => initSchema(db)).not.toThrow();
+    db.close();
+  });
+
+  it('v4 → v5 迁移：新增 Prompt Context 表且旧 session 保留', () => {
+    const db = createDb(join(tempDir(), 'migrate-v4.sqlite'));
+    initSchema(db);
+    db.prepare("UPDATE _meta SET value = '4' WHERE key = 'schema_version'").run();
+    db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
+       VALUES ('s-v4', 'trae', 'Trae', 'old', '2026-08-01T00:00:00.000Z', '2026-08-01T00:01:00.000Z', '/tmp/trae.db')`,
+    ).run();
+
+    initSchema(db);
+
+    const table = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_prompt_context'")
+      .get();
+    expect(table).toBeTruthy();
+    const session = db.prepare('SELECT id FROM sessions WHERE id = ?').get('s-v4');
+    expect(session).toBeTruthy();
+    const meta = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as { value: string };
+    expect(meta.value).toBe('5');
     db.close();
   });
 

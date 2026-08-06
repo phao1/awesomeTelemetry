@@ -16,10 +16,12 @@
 
 MUST NOT use "DELETE all, then INSERT".
 
-The `content_hash` column SHALL be added by the schema v3→v4 migration
-(`ADD COLUMN`, idempotent, non-null default `''`) and SHALL be computed
-server-side from the normalized event content so adapter upgrades propagate
-re-parsed bodies instead of being skipped.
+The `content_hash` column SHALL be added by an idempotent `ADD COLUMN`
+(non-null default `''`) at schema init — `SCHEMA_VERSION` stays at 4 (already
+claimed by calibrate-tokens; the column is an in-version additive) — and SHALL
+be computed server-side from the normalized event content so adapter upgrades
+propagate re-parsed bodies instead of being skipped. Fresh DBs get the column
+from the DDL directly; existing v4 DBs get it from the ensure step.
 
 #### Scenario: appending one event
 - **GIVEN** a session with 347 existing events and 1 new source row
@@ -40,4 +42,3 @@ re-parsed bodies instead of being skipped.
 - **GIVEN** an existing event re-parsed with identical content
 - **WHEN** `upsertEvents` runs
 - **THEN** no UPDATE is issued for that row
-

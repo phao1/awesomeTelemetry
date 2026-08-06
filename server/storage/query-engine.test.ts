@@ -174,7 +174,7 @@ describe('REQ-006 会话列表查询', () => {
     insertSession(db, 's2', { provider: 'claude', dataSource: 'scan' });
     insertSession(db, 's3', { provider: 'codex', dataSource: 'proxy' });
 
-    const codex = listSessions(db, { dataSource: 'scan', provider: 'codex' });
+    const codex = listSessions(db, { dataSource: 'scan', provider: ['codex'] });
     expect(codex.items.map((i) => i.id)).toEqual(['s1']);
     expect(codex.total).toBe(1);
 
@@ -192,6 +192,136 @@ describe('REQ-006 会话列表查询', () => {
     expect(r.hasMore).toBe(false);
     expect(r.nextCursor).toBeNull();
     expect(r.total).toBe(2);
+    db.close();
+  });
+
+  it('q 过滤：标题 / ID 大小写不敏感子串，LIKE 元字符转义', () => {
+    const db = newDb();
+    insertSession(db, 'codearts-87fa32238de9b5', { title: '财务看板下钻优化及FIRE计算' });
+    insertSession(db, 's2', { title: 'Fix SQLite index expansion' });
+    insertSession(db, 's3', { title: '100%_coverage review' });
+    insertSession(db, 's4', { title: 'auth_token rotation' });
+
+    const byTitle = listSessions(db, { dataSource: 'scan', q: 'fire' });
+    expect(byTitle.items.map((i) => i.id)).toEqual(['codearts-87fa32238de9b5']);
+
+    const byId = listSessions(db, { dataSource: 'scan', q: 'codearts-87fa' });
+    expect(byId.items.map((i) => i.id)).toEqual(['codearts-87fa32238de9b5']);
+
+    const idFragment = listSessions(db, { dataSource: 'scan', q: '87fa3223' });
+    expect(idFragment.items.map((i) => i.id)).toEqual(['codearts-87fa32238de9b5']);
+
+    // % 与 _ 按字面量匹配，不当作通配符
+    const literalPct = listSessions(db, { dataSource: 'scan', q: '100%' });
+    expect(literalPct.items.map((i) => i.id)).toEqual(['s3']);
+    const literalUnder = listSessions(db, { dataSource: 'scan', q: 'auth_token' });
+    expect(literalUnder.items.map((i) => i.id)).toEqual(['s4']);
+    // '%coverage'（% 后直接跟 c）不是字面子串，验证 % 不当作通配符
+    const wildcardPct = listSessions(db, { dataSource: 'scan', q: '%coverage' });
+    expect(wildcardPct.items).toHaveLength(0);
+
+    // total 与过滤一致
+    expect(byId.total).toBe(1);
+    expect(literalPct.total).toBe(1);
+    db.close();
+  });
+
+  it('range 过滤：按 updated_at 活跃时间，长期会话今天更新仍可见', () => {
+    const db = newDb();
+    const now = Date.now();
+    insertSession(db, 'long-running-active-today', {
+      startedAt: new Date(now - 40 * 86_400_000).toISOString(),
+      updatedAt: new Date(now - 3600_000).toISOString(),
+    });
+    insertSession(db, 'five-days', {
+      startedAt: new Date(now - 20 * 86_400_000).toISOString(),
+      updatedAt: new Date(now - 5 * 86_400_000).toISOString(),
+    });
+    insertSession(db, 'twenty-days', {
+      startedAt: new Date(now - 40 * 86_400_000).toISOString(),
+      updatedAt: new Date(now - 20 * 86_400_000).toISOString(),
+    });
+    insertSession(db, 'forty-days', {
+      startedAt: new Date(now - 50 * 86_400_000).toISOString(),
+      updatedAt: new Date(now - 40 * 86_400_000).toISOString(),
+    });
+
+    const today = listSessions(db, { dataSource: 'scan', range: 'today' });
+    expect(today.items.map((i) => i.id)).toEqual(['long-running-active-today']);
+    expect(today.total).toBe(1);
+
+    const d7 = listSessions(db, { dataSource: 'scan', range: '7d' });
+    expect(d7.items.map((i) => i.id)).toEqual(['five-days', 'long-running-active-today']);
+    expect(d7.total).toBe(2);
+
+    const d30 = listSessions(db, { dataSource: 'scan', range: '30d' });
+    expect(d30.items.map((i) => i.id)).toEqual([
+      'five-days',
+      'long-running-active-today',
+      'twenty-days',
+    ]);
+
+    const all = listSessions(db, { dataSource: 'scan', range: 'all' });
+    expect(all.items).toHaveLength(4);
+
+    const unspecified = listSessions(db, { dataSource: 'scan' });
+    expect(unspecified.items).toHaveLength(4);
+    db.close();
+  });
+
+  it('status 多选 + 组合过滤（provider/range/q/分页 total 一致）', () => {
+    const db = newDb();
+    const now = Date.now();
+    insertSession(db, 's-ok-codex', {
+      provider: 'codex',
+      status: 'success',
+      title: 'fix build',
+      startedAt: new Date(now - 3600_000).toISOString(),
+    });
+    insertSession(db, 's-err-codex', {
+      provider: 'codex',
+      status: 'error',
+      title: 'fix build 2',
+      startedAt: new Date(now - 3600_000).toISOString(),
+    });
+    insertSession(db, 's-ok-claude', {
+      provider: 'claude',
+      status: 'success',
+      title: 'fix build 3',
+      startedAt: new Date(now - 3600_000).toISOString(),
+    });
+    insertSession(db, 's-old-err', {
+      provider: 'codex',
+      status: 'error',
+      title: 'fix build old',
+      startedAt: new Date(now - 10 * 86_400_000).toISOString(),
+      updatedAt: new Date(now - 10 * 86_400_000).toISOString(),
+    });
+
+    const statuses = listSessions(db, { dataSource: 'scan', status: ['success', 'error'] });
+    expect(statuses.items).toHaveLength(4);
+
+    const combo = listSessions(db, {
+      dataSource: 'scan',
+      provider: ['codex'],
+      status: ['error'],
+      q: 'fix build',
+      range: '7d',
+    });
+    expect(combo.items.map((i) => i.id)).toEqual(['s-err-codex']);
+    expect(combo.total).toBe(1);
+
+    const page1 = listSessions(db, { dataSource: 'scan', provider: ['codex'], limit: 1 });
+    expect(page1.items).toHaveLength(1);
+    expect(page1.total).toBe(3);
+    const page2 = listSessions(db, {
+      dataSource: 'scan',
+      provider: ['codex'],
+      limit: 1,
+      cursor: page1.nextCursor ?? undefined,
+    });
+    expect(page2.items).toHaveLength(1);
+    expect(page2.total).toBe(3);
     db.close();
   });
 });

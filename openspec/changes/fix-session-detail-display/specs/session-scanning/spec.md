@@ -11,7 +11,7 @@ names, MUST NOT fake unknown event counts with `0`.
 | Source type | Title source | Event-count source |
 |-------------|--------------|--------------------|
 | JSONL class (claude / codex / codeagent / qoder / workbuddy) | first **user-role** message's first 120 chars from streaming scan | stream-count the **message rows of the whole file**, capped at 16 MB / 100k lines; beyond the cap the count is marked approximate |
-| SQLite class (opencode / codearts / codeagent2) | the session row's own title column; if empty, that session's first user message | lightweight two-level `COUNT(*)` over `message` and non-marker `part` rows per session |
+| SQLite class (opencode / codearts / codeagent2) | the session row's own title column; if empty, that session's first user message | lightweight `COUNT(*)` of **kept parts** per session (non-marker `part` rows: pure `step-start`/`step-finish` excluded, same semantics as the detail adapter); `messageCount` = message rows |
 | Trae (SQLCipher) | `null` + `pending` until decryption is ready, then backfill | same |
 
 Constraints:
@@ -39,10 +39,11 @@ Constraints:
 
 #### Scenario: list event count matches opened detail
 - **GIVEN** a codex JSONL session with 2350 message rows and a CodeArts
-  session with 25 messages / 57 non-marker parts
+  session with 25 messages whose detail phase keeps 50 parts (pure
+  `step-start`/`step-finish` markers excluded, token-carrying steps kept)
 - **WHEN** the index phase runs before any detail is loaded
 - **THEN** the codex entry shows `eventCount` 2350 and `messageCount` 2350
-- **AND** the codearts entry shows `eventCount` 82 and `messageCount` 25
+- **AND** the codearts entry shows `eventCount` 50 and `messageCount` 25
 - **AND** opening the session does not change either count
 
 ### Requirement: Lazy detail loading
@@ -60,4 +61,3 @@ forced rescan/cleanup requires a reparse.
 - **THEN** `detail_loaded` remains 1
 - **AND** the next `GET /api/sessions/:key` returns from the detail cache
   without calling `scanAndStoreDetail`
-

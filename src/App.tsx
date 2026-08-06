@@ -12,6 +12,7 @@ import type {
   ProviderKey,
   SessionDetailResponse,
   SessionIndexEntry,
+  SessionRange,
   TraceEvent,
   TraceEventSlim,
   TracePhase,
@@ -26,12 +27,8 @@ import { localSamples } from './generated/local-samples.js';
 import { LanguageToggle } from './components/LanguageToggle.js';
 import { LiveIndicator } from './components/LiveIndicator.js';
 import { SessionList } from './components/SessionList.js';
-import { SessionHeaderCard } from './components/SessionHeaderCard.js';
+import { SessionToolbar } from './components/SessionToolbar.js';
 import { SessionFindings } from './components/SessionFindings.js';
-import { TimeCompositionBar } from './components/TimeCompositionBar.js';
-import { ContextBar } from './components/ContextBar.js';
-import { PhaseRibbon } from './components/PhaseRibbon.js';
-import { PhaseTiles } from './components/PhaseTiles.js';
 import { TraceTimeline } from './components/TraceTimeline.js';
 import { EventInspector } from './components/EventInspector.js';
 import { AgentOverview } from './components/AgentOverview.js';
@@ -51,6 +48,7 @@ function formatError(err: unknown, locale: Locale): string {
 }
 import { TranscriptModal } from './components/TranscriptModal.js';
 import { TokenTextModal } from './components/TokenTextModal.js';
+import { PromptContextModal } from './components/PromptContextModal.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
 import { ErrorState, EmptyState } from './components/ui/States.js';
 import { useTheme } from './theme.js';
@@ -69,11 +67,9 @@ import {
   setEscapeFallback,
 } from './keyboard.js';
 import { HelpModal } from './components/HelpModal.js';
-import { parseHash, serializeHash, type HashState } from './hash-router.js';
+import { parseHash, serializeHash, type HashState, type TimelineLayout } from './hash-router.js';
 import type { CommandPaletteProps } from './components/CommandPalette.js';
 import { computeFindings, type Finding } from './core/session-findings.js';
-import { fmtDur } from './core/session-findings.js';
-import { computeTimeComposition, TIME_TOOL_KINDS, type TimeSegmentKey } from './core/time-composition.js';
 
 const PAGE_SIZE = 2000;
 /** 首帧 hash 在模块加载时解析一次：避免 state→hash 写入 effect 先把它覆盖掉。 */
@@ -94,7 +90,6 @@ export default function App() {
   const [lastScanAt, setLastScanAt] = useState<string | null>(null);
   const [health, setHealth] = useState<{ dbSizeBytes: number; walSizeBytes: number } | null>(null);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
-  const [sessionCursor, setSessionCursor] = useState<string | null>(null);
   const [hasMoreSessions, setHasMoreSessions] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
@@ -114,14 +109,19 @@ export default function App() {
     return valid.length > 0 ? valid : [...TRACE_PHASES];
   });
   const deferredPhaseFilter = useDeferredValue(phaseFilter); // REQ-002
-  const [timeSegmentFilter, setTimeSegmentFilter] = useState<TimeSegmentKey | null>(null);
   const [semanticGroup, setSemanticGroup] = useState(true);
-  const [sessionContextVisible, setSessionContextVisible] = useState(false);
-  const [sessionAnchor, setSessionAnchor] = useState('session-findings');
-  const timelineActions = useRef<{ collapseAll: () => void; expandAll: () => void } | null>(null);
-  const sessionScrollRef = useRef<HTMLDivElement | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<TraceEventSlim | null>(null);
   const [detailPage, setDetailPage] = useState(0);
+  // fix-session-detail-display delta：会话列表服务端过滤 + 甘特布局模式
+  const [sessionQ, setSessionQ] = useState(() => INITIAL_HASH?.q ?? '');
+  const [sessionRange, setSessionRange] = useState<SessionRange>(
+    () => INITIAL_HASH?.time ?? 'today',
+  );
+  const [sessionTotal, setSessionTotal] = useState(0);
+  const [layoutMode, setLayoutMode] = useState<TimelineLayout>(
+    () => INITIAL_HASH?.layout ?? 'time',
+  );
+  const sessionCursorRef = useRef<string | null>(null);
   // REQ-026：布局偏好持久化（读取时范围校验）
   const [railWidth, setRailWidth] = useState(() =>
     loadNumber(LAYOUT_KEYS.railWidth, 300, LAYOUT_RANGES.railWidth),
@@ -141,6 +141,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [transcriptEvent, setTranscriptEvent] = useState<TraceEventSlim | null>(null);
   const [tokenEvent, setTokenEvent] = useState<TraceEventSlim | null>(null);
+  const [promptContextKey, setPromptContextKey] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [PaletteComponent, setPaletteComponent] = useState<PaletteModule['CommandPalette'] | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -151,6 +152,12 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState<TraceStatus[]>(
     () => (INITIAL_HASH?.status as TraceStatus[]) ?? [],
   );
+  const sessionFiltersRef = useRef({
+    q: sessionQ,
+    range: sessionRange,
+    provider: providerFilter,
+    status: statusFilter,
+  });
   const [compareLeft, setCompareLeft] = useState(() => INITIAL_HASH?.left ?? '');
   const [compareRight, setCompareRight] = useState(() => INITIAL_HASH?.right ?? '');
   const [missionRange, setMissionRange] = useState<MissionRange>(() => INITIAL_HASH?.range ?? '7d');
@@ -204,19 +211,25 @@ export default function App() {
 
   // REQ-015（G7.6）：会话索引由 App 单一持有，SessionList/CompareBoard 全部读这一份
   const loadSessions = useCallback(
-    async (nextCursor?: string) => {
+    async (mode: 'first' | 'next') => {
+      const filters = sessionFiltersRef.current;
       setSessionsLoading(true);
       try {
         const result = await api.listSessions({
           dataSource: 'scan',
           limit: 50,
-          cursor: nextCursor,
+          cursor: mode === 'next' ? sessionCursorRef.current ?? undefined : undefined,
+          provider: filters.provider.length > 0 ? filters.provider : undefined,
+          status: filters.status.length > 0 ? filters.status : undefined,
+          q: filters.q.trim() !== '' ? filters.q.trim() : undefined,
+          range: filters.range,
         });
         startTransition(() => {
-          setSessions((prev) => mergeSessionsPatch(prev, result.items));
+          setSessions((prev) => (mode === 'first' ? result.items : mergeSessionsPatch(prev, result.items)));
         });
-        setSessionCursor(result.nextCursor);
+        sessionCursorRef.current = result.nextCursor;
         setHasMoreSessions(result.hasMore);
+        setSessionTotal(result.total);
         setSessionsError(null);
         setOfflineSamples(false);
       } catch (err) {
@@ -238,12 +251,26 @@ export default function App() {
     if (!hasMoreSessions || sessionsLoading) {
       return;
     }
-    void loadSessions(sessionCursor ?? undefined);
-  }, [hasMoreSessions, sessionsLoading, sessionCursor, loadSessions]);
+    void loadSessions('next');
+  }, [hasMoreSessions, sessionsLoading, loadSessions]);
 
+  // 过滤状态同步到 ref（异步 fetch 读取同一份快照）
   useEffect(() => {
-    void loadSessions();
-  }, [loadSessions]);
+    sessionFiltersRef.current = {
+      q: sessionQ,
+      range: sessionRange,
+      provider: providerFilter,
+      status: statusFilter,
+    };
+  }, [sessionQ, sessionRange, providerFilter, statusFilter]);
+
+  // 过滤变更（含首帧）→ 防抖拉第一页，替换而非追加（分页下不做纯前端过滤）
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadSessions('first');
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [sessionQ, sessionRange, providerFilter, statusFilter, loadSessions]);
 
   // REQ-004：SSE 局部 patch——失效缓存 + 一次 keys 批量补丁，不重拉全量
   useEffect(() => {
@@ -273,8 +300,28 @@ export default function App() {
             setSessions((prev) => mergeSessionsPatch(prev, result.items));
           });
           if (selectedKeyRef.current !== null && data.keys.includes(selectedKeyRef.current)) {
+            const key = selectedKeyRef.current;
             setDetail(null);
             setPending(false);
+            setDetailError(null);
+            void api
+              .sessionDetail(key, 'slim')
+              .then((result) => {
+                if (selectedKeyRef.current !== key) return;
+                if (result.pending) {
+                  setPending(true);
+                  setDetail({ ...result, events: [], eventTotal: 0, hasMore: false });
+                  return;
+                }
+                recordCache.set(`${key}:slim`, result);
+                setDetail(result);
+              })
+              .catch((err: unknown) => {
+                console.error('[sse] 当前会话详情刷新失败:', err);
+                if (selectedKeyRef.current === key) {
+                  setDetailError(formatError(err, localeRef.current));
+                }
+              });
           }
         })
         .catch((err) => {
@@ -355,22 +402,8 @@ export default function App() {
     () =>
       detail === null
         ? []
-        : detail.events.filter((e) => {
-            if (!deferredPhaseFilter.includes(e.phase)) {
-              return false;
-            }
-            if (timeSegmentFilter === 'model') {
-              return e.kind === 'llm';
-            }
-            if (timeSegmentFilter === 'tool') {
-              return TIME_TOOL_KINDS.has(e.kind);
-            }
-            if (timeSegmentFilter === 'idle' || timeSegmentFilter === 'userWait') {
-              return false;
-            }
-            return true;
-          }),
-    [detail, deferredPhaseFilter, timeSegmentFilter],
+        : detail.events.filter((e) => deferredPhaseFilter.includes(e.phase)),
+    [detail, deferredPhaseFilter],
   );
 
   // ui-design-v2 §3.1：会话诊断（L1）——只依赖已有 slim 数据。
@@ -378,11 +411,6 @@ export default function App() {
     () => (detail !== null && detail.events.length > 0 ? computeFindings(detail.session, detail.events as TraceEventSlim[]) : null),
     [detail],
   );
-  const timeComposition = useMemo(
-    () => (detail !== null ? computeTimeComposition(detail.events as TraceEventSlim[]) : null),
-    [detail],
-  );
-
   const activateFinding = useCallback(
     (finding: Finding) => {
       if (finding.evidence.eventIds.length > 0 && detail !== null) {
@@ -428,26 +456,6 @@ export default function App() {
     },
     [sessions, switchView],
   );
-
-  const onSessionScroll = useCallback((e: React.UIEvent<HTMLDivElement>): void => {
-    const el = e.currentTarget;
-    setSessionContextVisible(el.scrollTop > 240);
-    const anchorIds = [
-      'session-findings',
-      'session-header',
-      'session-time',
-      'session-phases',
-      'session-events',
-    ];
-    let current = anchorIds[0]!;
-    for (const id of anchorIds) {
-      const node = el.querySelector<HTMLElement>(`#${id}`);
-      if (node !== null && node.offsetTop - 120 <= el.scrollTop) {
-        current = id;
-      }
-    }
-    setSessionAnchor(current);
-  }, []);
 
   const togglePhase = useCallback((phase: TracePhase) => {
     setPhaseFilter((prev) =>
@@ -530,12 +538,15 @@ export default function App() {
       ...(phaseFilter.length < TRACE_PHASES.length ? { phase: phaseFilter } : {}),
       ...(providerFilter.length > 0 ? { provider: providerFilter } : {}),
       ...(statusFilter.length > 0 ? { status: statusFilter } : {}),
+      ...(sessionQ !== '' ? { q: sessionQ } : {}),
+      ...(view === 'session' ? { time: sessionRange } : {}),
+      ...(view === 'session' ? { layout: layoutMode } : {}),
       ...(compareLeft !== '' ? { left: compareLeft } : {}),
       ...(compareRight !== '' ? { right: compareRight } : {}),
       ...(view === 'mission' ? { range: missionRange } : {}),
     };
     history.replaceState(null, '', serializeHash(state));
-  }, [view, selectedKey, phaseFilter, providerFilter, statusFilter, compareLeft, compareRight, missionRange]);
+  }, [view, selectedKey, phaseFilter, providerFilter, statusFilter, sessionQ, sessionRange, layoutMode, compareLeft, compareRight, missionRange]);
 
   // REQ-024：hashchange → 解析并应用（脏 hash 回落默认视图，不抛错）
   useEffect(() => {
@@ -560,6 +571,15 @@ export default function App() {
       }
       if (state.status !== undefined) {
         setStatusFilter(state.status as TraceStatus[]);
+      }
+      if (state.q !== undefined) {
+        setSessionQ(state.q);
+      }
+      if (state.time !== undefined) {
+        setSessionRange(state.time);
+      }
+      if (state.layout !== undefined) {
+        setLayoutMode(state.layout);
       }
       if (state.left !== undefined) {
         setCompareLeft(state.left);
@@ -625,12 +645,17 @@ export default function App() {
             loading={sessionsLoading}
             error={sessionsError}
             onLoadMore={loadMoreSessions}
-            onRetry={() => void loadSessions()}
+            onRetry={() => void loadSessions('first')}
             offlineSamples={offlineSamples}
             providerFilter={providerFilter}
             statusFilter={statusFilter}
+            q={sessionQ}
+            onQChange={setSessionQ}
+            range={sessionRange}
+            onRangeChange={setSessionRange}
             onProviderFilterChange={setProviderFilter}
             onStatusFilterChange={setStatusFilter}
+            total={sessionTotal}
             cursorIndex={cursorIndex}
             searchInputRef={searchInputRef}
             width={railWidth}
@@ -674,135 +699,81 @@ export default function App() {
                   }
                 />
               )}
+            {detailError === null &&
+              detail === null &&
+              !pending && (
+                <EmptyState
+                  icon={<span aria-hidden="true" />}
+                  title={t('session.selectPrompt', locale)}
+                  description={t('state.empty', locale)}
+                />
+              )}
             {detail !== null && detail.events.length > 0 && (
-              <div
-                className="session-scroll"
-                ref={(node) => {
-                  sessionScrollRef.current = node;
-                }}
-                onScroll={onSessionScroll}
-              >
-                <ContextBar
-                  visible={sessionContextVisible}
-                  anchors={[
-                    { id: 'session-findings', label: t('contextbar.anchorFindings', locale) },
-                    { id: 'session-header', label: t('contextbar.anchorHeader', locale) },
-                    { id: 'session-time', label: t('contextbar.anchorTime', locale) },
-                    { id: 'session-phases', label: t('contextbar.anchorPhases', locale) },
-                    { id: 'session-events', label: t('contextbar.anchorEvents', locale) },
-                  ]}
-                  activeId={sessionAnchor}
-                  locale={locale}
-                  summary={
-                    <span className="contextbar-summary mono">
-                      {detail.session.provider} · {(detail.session.title || detail.session.id).slice(0, 28)} ·{' '}
-                      {fmtDur(detail.session.totalDurationMs)} · {detail.session.eventCount} events
-                    </span>
-                  }
-                  onCollapseAll={() => timelineActions.current?.collapseAll()}
-                  onExpandAll={() => timelineActions.current?.expandAll()}
-                />
-                <div id="session-findings" className="session-anchor">
-                  {findingsResult !== null && (
-                    <SessionFindings
-                      result={findingsResult}
-                      locale={locale}
-                      onActivate={activateFinding}
-                    />
-                  )}
-                </div>
-                <div id="session-header" className="session-anchor">
-                  <SessionHeaderCard
-                    session={detail.session}
-                    events={detail.events as TraceEventSlim[]}
-                    locale={locale}
-                    onRescan={() => {
-                      if (selectedKey === null) {
-                        return;
-                      }
-                      void api
-                        .rescanSession(selectedKey)
-                        .then(() => {
-                          if (selectedKey !== null) {
-                            selectSession(selectedKey);
-                          }
-                        })
-                        .catch((err: unknown) => {
-                          console.error('[session] 重扫失败:', err);
-                        });
-                    }}
-                    onDelete={() => {
-                      if (selectedKey === null) {
-                        return;
-                      }
-                      const key = selectedKey;
-                      void api
-                        .deleteSession(key)
-                        .then(() => {
-                          setSessions((prev) => prev.filter((s) => s.id !== key));
-                          setSelectedKey(null);
-                          setDetail(null);
-                        })
-                        .catch((err: unknown) => {
-                          console.error('[session] 删除失败:', err);
-                        });
-                    }}
-                    onCopyId={() => {
-                      if (selectedKey !== null) {
-                        void navigator.clipboard.writeText(selectedKey).catch((err: unknown) => {
-                          console.error('[session] 复制失败:', err);
-                        });
-                      }
-                    }}
-                    onExport={() => {
-                      if (selectedKey !== null) {
-                        window.open(`/api/sessions/${encodeURIComponent(selectedKey)}/report`, '_blank');
-                      }
-                    }}
-                  />
-                </div>
-                <PhaseRibbon
+              <div className="session-inspector">
+                <SessionToolbar
+                  session={detail.session}
                   events={detail.events as TraceEventSlim[]}
-                  active={phaseFilter}
-                  onSelectOnly={(phase) => {
-                    setPhaseFilter((prev) =>
-                      prev.length === 1 && prev[0] === phase ? [...TRACE_PHASES] : [phase],
-                    );
-                  }}
                   locale={locale}
+                  onRescan={() => {
+                    if (selectedKey === null) {
+                      return;
+                    }
+                    void api
+                      .rescanSession(selectedKey)
+                      .then(() => {
+                        if (selectedKey !== null) {
+                          selectSession(selectedKey);
+                        }
+                      })
+                      .catch((err: unknown) => {
+                        console.error('[session] 重扫失败:', err);
+                      });
+                  }}
+                  onDelete={() => {
+                    if (selectedKey === null) {
+                      return;
+                    }
+                    const key = selectedKey;
+                    void api
+                      .deleteSession(key)
+                      .then(() => {
+                        setSessions((prev) => prev.filter((s) => s.id !== key));
+                        setSelectedKey(null);
+                        setDetail(null);
+                      })
+                      .catch((err: unknown) => {
+                        console.error('[session] 删除失败:', err);
+                      });
+                  }}
+                  onCopyId={() => {
+                    if (selectedKey !== null) {
+                      void navigator.clipboard.writeText(selectedKey).catch((err: unknown) => {
+                        console.error('[session] 复制失败:', err);
+                      });
+                    }
+                  }}
+                  onExport={() => {
+                    if (selectedKey !== null) {
+                      window.open(`/api/sessions/${encodeURIComponent(selectedKey)}/report`, '_blank');
+                    }
+                  }}
+                  onPromptContext={() => {
+                    if (selectedKey !== null) {
+                      setPromptContextKey(selectedKey);
+                    }
+                  }}
                 />
-                <div id="session-time" className="session-anchor">
-                  {timeComposition !== null && (
-                    <TimeCompositionBar
-                      composition={timeComposition}
-                      locale={locale}
-                      active={timeSegmentFilter}
-                      onToggle={(key) =>
-                        setTimeSegmentFilter((prev) => (prev === key ? null : key))
-                      }
-                    />
+                <div className="session-canvas">
+                  {findingsResult !== null && (
+                    <details className="session-findings-panel">
+                      <summary>{t('session.findings', locale)}</summary>
+                      <SessionFindings
+                        result={findingsResult}
+                        locale={locale}
+                        onActivate={activateFinding}
+                      />
+                    </details>
                   )}
-                </div>
-                <div id="session-phases" className="session-anchor">
-                  <PhaseTiles
-                    active={phaseFilter}
-                    onToggle={togglePhase}
-                    locale={locale}
-                    counts={Object.fromEntries(
-                      TRACE_PHASES.map((phase) => [
-                        phase,
-                        (detail.events as TraceEventSlim[]).filter((e) => e.phase === phase).length,
-                      ]),
-                    ) as Record<TracePhase, number>}
-                    visibleCount={visibleEvents.length}
-                    onSelectAll={() => setPhaseFilter([...TRACE_PHASES])}
-                    onClearAll={() => setPhaseFilter([])}
-                    findingPhases={findingsResult?.findings
-                      .map((f) => f.evidence.phase)
-                      .filter((phase): phase is TracePhase => phase !== undefined) ?? []}
-                  />
-                </div>
-                <div id="session-events" className="session-anchor">
                   <TraceTimeline
                     events={visibleEvents as TraceEventSlim[]}
                     total={detail.eventTotal}
@@ -813,7 +784,10 @@ export default function App() {
                     locale={locale}
                     semanticGroup={semanticGroup}
                     onSemanticGroupChange={setSemanticGroup}
-                    actionsRef={timelineActions}
+                    layoutMode={layoutMode}
+                    onLayoutModeChange={setLayoutMode}
+                    phaseFilter={phaseFilter}
+                    onPhaseToggle={togglePhase}
                   />
                 </div>
               </div>
@@ -919,6 +893,13 @@ export default function App() {
       )}
       {tokenEvent !== null && (
         <TokenTextModal event={tokenEvent as TraceEvent} locale={locale} onClose={() => setTokenEvent(null)} />
+      )}
+      {promptContextKey !== null && (
+        <PromptContextModal
+          sessionKey={promptContextKey}
+          locale={locale}
+          onClose={() => setPromptContextKey(null)}
+        />
       )}
       {paletteOpen && PaletteComponent !== null && (
         <PaletteComponent

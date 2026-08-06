@@ -25,11 +25,19 @@ Row height `--row-lg` (44px), two-line dense:
 | Selected | `--accent-subtle` background + 2px `--accent-emphasis` left bar |
 | Hover | `--canvas-raised` background, no transition (G-DS-4) |
 
-**Filter area** (list top, `--row-md` height): `SearchInput` (`/` focus) +
-provider multi-select + status multi-select. The search SHALL match both the
-session title and the session ID (including prefix matches on the provider
-key, e.g. `codearts-`), and the placeholder SHALL say "title / id". Filters
-MUST be reflected in the URL hash for sharing and refresh persistence.
+**Filter area** (list top): `SearchInput` (`/` focus) + a time-range segmented
+control (`today` default / `7d` / `30d` / `all`) + provider multi-select +
+status multi-select. The search SHALL match both the session title and the
+session ID (including prefix matches on the provider key, e.g. `codearts-`),
+and the placeholder SHALL say "title / id".
+
+**All filters are server-side** (`GET /api/sessions?q=&range=&provider=&status=`):
+the list SHALL NOT re-filter already-loaded pages in the frontend (that misses
+rows beyond the first page). Any filter change refetches page one. The list
+SHALL show a footer with the server `total` under the current filters and a
+"load more" button for the keyset next page, replacing pure infinite scroll.
+Filters MUST be reflected in the URL hash (`q` / `time`) for sharing and
+refresh persistence.
 
 #### Scenario: list shows real titles, not file names
 - **GIVEN** the DB contains sessions whose details were never loaded
@@ -52,29 +60,18 @@ MUST be reflected in the URL hash for sharing and refresh persistence.
 
 ### Requirement: Session detail main area
 
-Four segments top to bottom:
+Modern inspector layout, no longer a stacked card stream:
 
-**① SessionHeaderCard**
-- First row: `ProviderBadge` + session title (`--text-xl`) + `StatusBadge` +
-  overflow menu (rescan / delete / copy id / export report)
-- Second row meta: `cwd` (monospace, copyable) · start/end times · duration ·
-  model
-- Third row **four-dimension metric strip**: 4 `MetricCard`s
-  (Speed / Accuracy / Stability / Cost); `null` values display `—` with a
-  tooltip explaining why; MUST NOT show `0` as a stand-in.
+**① SessionToolbar** (sticky): `ProviderBadge` + session title (truncated) +
+`StatusBadge` + copyable session ID + compact four-dimension metrics (Speed /
+Accuracy / Stability / Cost; `null` shows `—`, never `0`) + overflow menu
+(rescan / delete / copy id / export report). The timeline is the main canvas
+below it — findings no longer push it off the first screen.
 
-**② PhaseRibbon**
-A horizontal color band spanning the full width on the time axis; each
-segment's width = that phase's time share, color = `--phase-*`. Hover shows
-phase name + duration + event count; click equals selecting only that phase.
-Height 8px, `--radius-full`.
+**② Findings panel**: collapsible (`<details>`), default open, placed between
+the toolbar and the timeline.
 
-**③ PhaseTiles**
-6 tiles; selected state uses that phase's `-subtle` background + same-hue text
-+ icon; each tile carries a count badge. Plus "select all / deselect all" and
-the currently visible event count.
-
-**④ TraceTimeline**
+**③ TraceTimeline** (main canvas)
 Row height `--row-sm` (28px), virtual scroll, and a toolbar toggle with two
 layout modes:
 
@@ -85,6 +82,13 @@ layout modes:
 - **Sequence mode**: bars laid out uniformly by `sequence` order (equal-width
   cells, axis labeled by sequence number); duration text still shows the real
   duration; time-axis zoom is disabled.
+
+The toolbar embeds the layout-mode toggle, timeline search, and six phase chips
+(toggle = phase filter, App owns the state). Above the time axis there is a
+**clickable phase axis**: time mode segments are proportional to each phase's
+time share, sequence mode segments to each phase's event-count share; clicking
+a segment scrolls the timeline to that phase's first event, highlights it, and
+opens it in the right-side `EventInspector`.
 
 In both modes every row stays clickable and opens `EventInspector`; event rows
 SHALL show an `in` / `out` badge when `hasInput` / `hasOutput` is true.
@@ -99,7 +103,7 @@ SHALL show an `in` / `out` badge when `hasInput` / `hasOutput` is true.
 | selected row | `--accent-subtle` background + left bar |
 | input/output badge | `in`/`out` marker on rows where `hasInput`/`hasOutput` is true |
 
-**⑤ EventInspector** (right rail)
+**④ EventInspector** (right rail)
 - Header: `#sequence` + event title + copy id + close
 - Tabs: `Summary` / `Input` / `Output` / `Raw` / `Tokens`
 - The `Raw` tab fetches **on demand** (`include=raw`); request only when the
@@ -119,6 +123,21 @@ SHALL show an `in` / `out` badge when `hasInput` / `hasOutput` is true.
 - **THEN** every event renders as a distinct uniform-width row in sequence
   order with no time axis
 - **AND** clicking any row still opens the EventInspector
+
+#### Scenario: phase axis click locates and opens the step
+- **GIVEN** a session with events across `implement` and `debug` phases
+- **WHEN** the user clicks the `debug` segment on the phase axis
+- **THEN** the timeline scrolls to the first `debug` event, highlights it
+  (`selected` style), and the right-side EventInspector shows that step's
+  details
+
+#### Scenario: list filters are server-side and paginated
+- **GIVEN** more than 50 sessions match the current `q` / `range` / provider /
+  status filters
+- **WHEN** the user scrolls the list or types in the search
+- **THEN** rows are never filtered from only the loaded page
+- **AND** the footer shows the filtered `total` and a "load more" button that
+  fetches the next keyset page
 
 #### Scenario: input/output badge reflects real data
 - **GIVEN** an event whose full tier has `inputSummary` / `outputSummary`

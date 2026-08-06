@@ -10,9 +10,14 @@ import { cachedStmt } from './stmt-cache.js';
  * v4（calibrate-tokens-and-compare-report §4）：metrics 新增
  * total_tool_duration_ms / llm_call_count / user_interaction_rounds /
  * has_unit_tests / failed_command_count（TraceMetrics 五新字段）。
+ * v4+（fix-session-detail-display §1）：events 增 content_hash —— 差分写入的
+ * 内容判等列。保持 SCHEMA_VERSION=4（版本号已被 calibrate-tokens 占用），
+ * 以幂等 ADD COLUMN 补列（见 initSchema 的 ensureEventsContentHash），
+ * 新库由 SCHEMA_SQL 直接建出。
+ * v5（show-trae-prompt-context）：新增一对一 session_prompt_context 表。
  * 迁移见 §migrateSchema —— 全部是 ADD COLUMN，非破坏性，新列随下一轮扫描回填。
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -67,6 +72,7 @@ CREATE TABLE IF NOT EXISTS events (
   tokens_json    TEXT,
   error          TEXT,
   model          TEXT,
+  content_hash   TEXT    NOT NULL DEFAULT '',
   input_len      INTEGER NOT NULL DEFAULT 0,
   output_len     INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (session_id, id)
@@ -154,6 +160,18 @@ CREATE TABLE IF NOT EXISTS frida_captures (
   message_count      INTEGER,
   tokens_json        TEXT
 );
+
+CREATE TABLE IF NOT EXISTS session_prompt_context (
+  session_id         TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  provider           TEXT NOT NULL,
+  source             TEXT NOT NULL,
+  completeness       TEXT NOT NULL,
+  captured_at        TEXT NOT NULL,
+  sections_json      TEXT NOT NULL DEFAULT '[]',
+  model_config_json  TEXT NOT NULL DEFAULT '{}',
+  analysis_json      TEXT NOT NULL DEFAULT '{}',
+  full_system_prompt TEXT
+) WITHOUT ROWID;
 `;
 
 // contracts/database.md §4 索引（全集），逐字采用。
@@ -234,11 +252,27 @@ function isDuplicateColumn(error: unknown): boolean {
   return error instanceof Error && /duplicate column name/i.test(error.message);
 }
 
+/** v4+（fix-session-detail-display §1.1）：events.content_hash 幂等补列。 */
+function ensureEventsContentHash(db: Database): void {
+  try {
+    db.exec("ALTER TABLE events ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''");
+  } catch (error) {
+    if (!isDuplicateColumn(error)) {
+      throw new Error(
+        `schema ensure events.content_hash failed: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+  }
+}
+
 export function migrateSchema(db: Database, fromVersion: number): void {
   const steps: Array<{ from: number; sql: string[] }> = [
     { from: 1, sql: V2_ADD_COLUMNS },
     { from: 2, sql: V3_ADD_COLUMNS },
     { from: 3, sql: V4_ADD_COLUMNS },
+    // v4 → v5 的新表已由上方 SCHEMA_SQL 幂等创建，无 ALTER 语句。
+    { from: 4, sql: [] },
   ];
   for (const step of steps) {
     if (fromVersion >= step.from + 1) {
@@ -272,6 +306,7 @@ export function initSchema(db: Database): void {
   if (Number.isFinite(current) && current < SCHEMA_VERSION) {
     migrateSchema(db, current);
   }
+  ensureEventsContentHash(db);
   db.exec(INDEX_SQL); // §4 全部 CREATE INDEX IF NOT EXISTS
   cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
   db.exec('ANALYZE');

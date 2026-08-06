@@ -319,6 +319,93 @@ describe('REQ-011 事件差分写入', () => {
     expect(raw).toHaveLength(0);
     db.close();
   });
+
+  it('fix-session-detail-display 1.2：同 id+sequence 内容变化仍 UPDATE 并刷新 content_hash', () => {
+    const db = newDb();
+    const counter = withSqlCounter(db);
+    upsertSessionFromTrace(db, makeSession('s1'));
+    const stale = makeEvent('ev-1', 1);
+    upsertEvents(db, 's1', [stale]);
+    const before = db
+      .prepare('SELECT duration_ms, input_summary, output_summary, content_hash FROM events WHERE id = ?')
+      .get('ev-1') as { duration_ms: number; input_summary: string | null; output_summary: string | null; content_hash: string };
+    expect(before.duration_ms).toBe(100);
+
+    counter.reset();
+    const reParsed: TraceEvent = {
+      ...stale,
+      durationMs: 181819,
+      inputSummary: '{"pattern":"*"}',
+      outputSummary: '/tmp/a.ts',
+      hasInput: true,
+      hasOutput: true,
+    };
+    upsertEvents(db, 's1', [reParsed]);
+
+    expect(counter.countInserts()).toBe(1);
+    const after = db
+      .prepare('SELECT duration_ms, input_summary, output_summary, content_hash FROM events WHERE id = ?')
+      .get('ev-1') as { duration_ms: number; input_summary: string | null; output_summary: string | null; content_hash: string };
+    expect(after.duration_ms).toBe(181819);
+    expect(after.input_summary).toBe('{"pattern":"*"}');
+    expect(after.output_summary).toBe('/tmp/a.ts');
+    expect(after.content_hash).not.toBe(before.content_hash);
+    expect(after.content_hash).toMatch(/^[0-9a-f]{16}$/);
+    db.close();
+  });
+
+  it('fix-session-detail-display 1.2：内容不变（含 hash）跳过，0 条写入', () => {
+    const db = newDb();
+    const counter = withSqlCounter(db);
+    upsertSessionFromTrace(db, makeSession('s1'));
+    upsertEvents(db, 's1', [makeEvent('ev-1', 1)]);
+
+    counter.reset();
+    upsertEvents(db, 's1', [makeEvent('ev-1', 1)]);
+    expect(counter.countInserts()).toBe(0);
+    expect(counter.countDeletes()).toBe(0);
+    db.close();
+  });
+
+  it('fix-session-detail-display 1.4：索引 upsert 不重置 detail_loaded=1', () => {
+    const db = newDb();
+    upsertSessionFromTrace(db, makeSession('s1')); // 详情路径 → detail_loaded=1
+    db.prepare('UPDATE sessions SET detail_loaded = 1 WHERE id = ?').run('s1');
+    const entry: SessionIndexEntry = {
+      id: 's1',
+      provider: 'codex',
+      sourceAgent: 'Codex',
+      title: 'test session',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:01:00.000Z',
+      status: 'success',
+      cwd: '/tmp',
+      eventCount: 0,
+      messageCount: 0,
+      tokenTotal: 0,
+      costUsd: 0,
+      dataSource: 'scan',
+      sourcePath: '/tmp/x.jsonl',
+      detailLoaded: false,
+      mergeGroupId: null,
+      hasSystemPrompt: false,
+    };
+    upsertSessionFromIndex(db, entry);
+    const row = db.prepare('SELECT detail_loaded FROM sessions WHERE id = ?').get('s1') as {
+      detail_loaded: number;
+    };
+    expect(row.detail_loaded).toBe(1);
+    db.close();
+  });
+
+  it('fix-session-detail-display 1.1：initSchema 幂等（重复执行不报错，content_hash 存在）', () => {
+    const db = new Database(':memory:');
+    initSchema(db);
+    const cols = db.prepare('PRAGMA table_info(events)').all() as Array<{ name: string }>;
+    expect(cols.some((c) => c.name === 'content_hash')).toBe(true);
+    expect(() => initSchema(db)).not.toThrow();
+    db.close();
+  });
 });
 
 describe('REQ-012 undefined 写库前转 null', () => {

@@ -2,7 +2,7 @@
 // 若 schema.ts 变更，这里必须同步；M12 的 perf 校验脚本可对比两份 DDL。
 
 // v3（add-mission-control）：与 server/storage/schema.ts 对齐。
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 5;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS _meta (
@@ -138,6 +138,18 @@ CREATE TABLE IF NOT EXISTS frida_captures (
   message_count      INTEGER,
   tokens_json        TEXT
 );
+
+CREATE TABLE IF NOT EXISTS session_prompt_context (
+  session_id         TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  provider           TEXT NOT NULL,
+  source             TEXT NOT NULL,
+  completeness       TEXT NOT NULL,
+  captured_at        TEXT NOT NULL,
+  sections_json      TEXT NOT NULL DEFAULT '[]',
+  model_config_json  TEXT NOT NULL DEFAULT '{}',
+  analysis_json      TEXT NOT NULL DEFAULT '{}',
+  full_system_prompt TEXT
+) WITHOUT ROWID;
 `;
 
 export const INDEX_SQL = `

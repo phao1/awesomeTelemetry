@@ -62,6 +62,15 @@ export const TRACE_KINDS: readonly TraceKind[] = [
  */
 export type TraceStatus = 'success' | 'error' | 'running' | 'cancelled' | 'unknown';
 
+/** Session-list time-range filter (`GET /api/sessions?range=...`). */
+export type SessionRange = 'today' | '7d' | '30d' | 'all';
+
+export const SESSION_RANGES: readonly SessionRange[] = ['today', '7d', '30d', 'all'] as const;
+
+export const TRACE_STATUSES: readonly TraceStatus[] = [
+  'success', 'error', 'running', 'cancelled', 'unknown',
+] as const;
+
 /** 9 providers. Adding a provider must update this enum, the scanner, the
  * adapter, and both i18n locales at the same time. */
 export type ProviderKey =
@@ -263,6 +272,65 @@ export interface TraceSession {
    * criteria line MUST state "durations derived from adjacent timestamps,
    * includes scheduling gaps". */
   durationSource?: DurationSource;
+}
+```
+
+### 3.1 On-demand Prompt Context (show-trae-prompt-context)
+
+Prompt Context is independent from `TraceSession.systemPrompt` and is returned
+only by `GET /api/sessions/:key/prompt-context`.
+
+```ts
+export type PromptContextCompleteness = 'dynamic_only' | 'complete';
+export type PromptContextSource = 'trae_db' | 'proxy' | 'frida';
+export type PromptContextCategory =
+  | 'terminal' | 'workspace_rules' | 'environment' | 'instructions'
+  | 'skills' | 'language' | 'other';
+
+export interface PromptContextSection {
+  id: string;
+  category: PromptContextCategory;
+  title: string;
+  /** Desensitized before persistence. */
+  content: string;
+  chars: number;
+  estimatedTokens: number;
+  duplicateOf: string | null;
+}
+
+export interface PromptModelConfig {
+  modelName: string | null;
+  configName: string | null;
+  promptMaxTokens: number | null;
+  maxOutputTokens: number | null;
+  maxTurns: number | null;
+  isPreset: boolean | null;
+  locale: string | null;
+  agentType: string | null;
+  agentName: string | null;
+  enabledFeatures: string[];
+}
+
+export interface PromptContextAnalysis {
+  totalChars: number;
+  estimatedTokens: number;
+  sectionCount: number;
+  uniqueSectionCount: number;
+  duplicateSectionCount: number;
+  duplicateChars: number;
+  contextWindowPercent: number | null;
+}
+
+export interface SessionPromptContext {
+  sessionId: string;
+  provider: ProviderKey;
+  source: PromptContextSource;
+  completeness: PromptContextCompleteness;
+  capturedAt: string;
+  dynamicSections: PromptContextSection[];
+  modelConfig: PromptModelConfig;
+  analysis: PromptContextAnalysis;
+  fullSystemPrompt: string | null;
 }
 ```
 

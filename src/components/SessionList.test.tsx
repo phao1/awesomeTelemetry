@@ -2,7 +2,12 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it } from 'vitest';
 
-import type { ProviderKey, SessionIndexEntry, TraceStatus } from '../core/trace-types.js';
+import type {
+  ProviderKey,
+  SessionIndexEntry,
+  SessionRange,
+  TraceStatus,
+} from '../core/trace-types.js';
 import { SessionList } from './SessionList.js';
 
 function entry(id: string, title: string): SessionIndexEntry {
@@ -39,6 +44,11 @@ function render(node: React.JSX.Element): HTMLDivElement {
 const baseProps = {
   providerFilter: [] as ProviderKey[],
   statusFilter: [] as TraceStatus[],
+  q: '',
+  onQChange: () => undefined,
+  range: 'today' as SessionRange,
+  onRangeChange: () => undefined,
+  total: 0,
   onProviderFilterChange: () => undefined,
   onStatusFilterChange: () => undefined,
   cursorIndex: -1,
@@ -103,10 +113,73 @@ describe('REQ-016 会话列表', () => {
     expect(calls).toEqual(['s1']);
   });
 
-  it('搜索过滤标题与 id', () => {
+  it('搜索输入受控：输入触发 onQChange，本地不做已加载页过滤（服务端过滤）', () => {
+    const calls: string[] = [];
     const container = render(
       <SessionList
         items={[entry('s1', 'fix build'), entry('s2', 'refactor api')]}
+        selectedId={null}
+        onSelect={() => undefined}
+        locale="zh"
+        hasMore={false}
+        loading={false}
+        onLoadMore={() => undefined}
+        onRetry={() => undefined}
+        offlineSamples={false}
+        {...baseProps}
+        onQChange={(q) => calls.push(q)}
+        width={300}
+        collapsed={false}
+        onResize={() => undefined}
+        onToggleCollapse={() => undefined}
+      />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, 'refactor');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(calls).toEqual(['refactor']);
+    // 服务端过滤语义：已加载 items 原样渲染（不再只过滤已加载页）
+    const rows = container.querySelectorAll('.session-row');
+    expect(rows).toHaveLength(2);
+  });
+
+  it('时间范围分段控件：默认 today，点击回调 onRangeChange', () => {
+    const calls: SessionRange[] = [];
+    const container = render(
+      <SessionList
+        items={[entry('s1', 'a')]}
+        selectedId={null}
+        onSelect={() => undefined}
+        locale="zh"
+        hasMore={false}
+        loading={false}
+        onLoadMore={() => undefined}
+        onRetry={() => undefined}
+        offlineSamples={false}
+        {...baseProps}
+        range="today"
+        onRangeChange={(r) => calls.push(r)}
+        width={300}
+        collapsed={false}
+        onResize={() => undefined}
+        onToggleCollapse={() => undefined}
+      />,
+    );
+    const buttons = Array.from(container.querySelectorAll('.session-range-btn'));
+    expect(buttons).toHaveLength(4);
+    expect(buttons[0]!.className).toContain('session-range-btn-on');
+    act(() => (buttons[2] as HTMLElement).click());
+    expect(calls).toEqual(['30d']);
+    act(() => (buttons[3] as HTMLElement).click());
+    expect(calls).toEqual(['30d', 'all']);
+  });
+
+  it('meta 行显示 session ID（mono、截断、title 完整）', () => {
+    const container = render(
+      <SessionList
+        items={[entry('codearts-87fa32238de9b5', '财务看板')]}
         selectedId={null}
         onSelect={() => undefined}
         locale="zh"
@@ -122,13 +195,56 @@ describe('REQ-016 会话列表', () => {
         onToggleCollapse={() => undefined}
       />,
     );
-    const input = container.querySelector('input') as HTMLInputElement;
-    act(() => {
-      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, 'refactor');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    const rows = container.querySelectorAll('.session-row');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.textContent).toContain('refactor api');
+    const idEl = container.querySelector('.session-row-id');
+    expect(idEl).not.toBeNull();
+    expect(idEl?.textContent).toBe('codearts-87fa32238de9b5');
+    expect(idEl?.getAttribute('title')).toBe('codearts-87fa32238de9b5');
+  });
+
+  it('分页页脚：显示总数与加载更多按钮；无更多时按钮隐藏', () => {
+    const container = render(
+      <SessionList
+        items={[entry('s1', 'a'), entry('s2', 'b')]}
+        selectedId={null}
+        onSelect={() => undefined}
+        locale="zh"
+        hasMore={true}
+        loading={false}
+        onLoadMore={() => undefined}
+        onRetry={() => undefined}
+        offlineSamples={false}
+        {...baseProps}
+        total={120}
+        width={300}
+        collapsed={false}
+        onResize={() => undefined}
+        onToggleCollapse={() => undefined}
+      />,
+    );
+    expect(container.querySelector('.session-total')?.textContent).toContain('120');
+    expect(container.querySelector('.session-list-footer button')).not.toBeNull();
+  });
+
+  it('hasMore=false 时页脚不渲染加载更多按钮', () => {
+    const container = render(
+      <SessionList
+        items={[entry('s1', 'a')]}
+        selectedId={null}
+        onSelect={() => undefined}
+        locale="zh"
+        hasMore={false}
+        loading={false}
+        onLoadMore={() => undefined}
+        onRetry={() => undefined}
+        offlineSamples={false}
+        {...baseProps}
+        total={1}
+        width={300}
+        collapsed={false}
+        onResize={() => undefined}
+        onToggleCollapse={() => undefined}
+      />,
+    );
+    expect(container.querySelector('.session-list-footer button')).toBeNull();
   });
 });

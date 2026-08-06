@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { TraceEventSlim, TracePhase, TraceStatus } from '../core/trace-types.js';
+import { TRACE_PHASES } from '../core/trace-types.js';
 import { groupEvents, type EventGroup, type GanttRow } from '../core/event-groups.js';
 import { fmtDur } from '../core/session-findings.js';
 import { useVirtualList } from '../hooks/useVirtualList.js';
@@ -37,6 +38,12 @@ export interface TraceTimelineProps {
   onSemanticGroupChange?: (next: boolean) => void;
   /** ContextBar「折叠/展开全部」的命令句柄。 */
   actionsRef?: { current: { collapseAll: () => void; expandAll: () => void } | null };
+  /** 甘特布局：时间比例（默认）/ 序列等宽。 */
+  layoutMode?: 'time' | 'sequence';
+  onLayoutModeChange?: (mode: 'time' | 'sequence') => void;
+  /** 阶段过滤 chips（App 持有过滤状态；缺省不过滤）。 */
+  phaseFilter?: TracePhase[];
+  onPhaseToggle?: (phase: TracePhase) => void;
 }
 
 const ROW_HEIGHT = 28; // --row-sm（G-DS-1：虚拟滚动 itemHeight 必须为常量）
@@ -182,6 +189,10 @@ export function TraceTimeline({
   semanticGroup = true,
   onSemanticGroupChange,
   actionsRef,
+  layoutMode = 'time',
+  onLayoutModeChange,
+  phaseFilter = [...TRACE_PHASES],
+  onPhaseToggle,
 }: TraceTimelineProps): React.JSX.Element {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
@@ -274,6 +285,64 @@ export function TraceTimeline({
     return { start, span: Math.max(1, end - start) };
   }, [baseRows]);
 
+  const maxSeq = useMemo(() => events.reduce((max, e) => Math.max(max, e.sequence), 0), [events]);
+
+  /** 可点击阶段轴分段：时间模式按时间占比，序列模式按事件数占比。 */
+  const phaseSegments = useMemo(() => {
+    if (baseRows.length === 0) {
+      return [];
+    }
+    const acc = new Map<TracePhase, { count: number; start: number; end: number }>();
+    for (const row of baseRows) {
+      if (row.kind === 'event') {
+        const e = row.event;
+        const p = acc.get(e.phase) ?? { count: 0, start: Number.POSITIVE_INFINITY, end: 0 };
+        p.count += 1;
+        p.start = Math.min(p.start, Date.parse(e.startedAt));
+        p.end = Math.max(p.end, Date.parse(e.startedAt) + e.durationMs);
+        acc.set(e.phase, p);
+      } else {
+        const g = row.group;
+        const p = acc.get(g.phase) ?? { count: 0, start: Number.POSITIVE_INFINITY, end: 0 };
+        p.count += g.eventIds.length;
+        p.start = Math.min(p.start, Date.parse(g.start.startedAt));
+        p.end = Math.max(p.end, Date.parse(g.end.startedAt) + g.end.durationMs);
+        acc.set(g.phase, p);
+      }
+    }
+    const phases = TRACE_PHASES.filter((ph) => acc.has(ph));
+    if (layoutMode === 'sequence') {
+      const total = phases.reduce((sum, ph) => sum + (acc.get(ph)?.count ?? 0), 0) || 1;
+      let left = 0;
+      return phases.map((ph) => {
+        const width = ((acc.get(ph)?.count ?? 0) / total) * 100;
+        const seg = { phase: ph, left, width, count: acc.get(ph)?.count ?? 0 };
+        left += width;
+        return seg;
+      });
+    }
+    const totalStart = Math.min(...phases.map((ph) => acc.get(ph)!.start));
+    const totalEnd = Math.max(...phases.map((ph) => acc.get(ph)!.end));
+    const span = Math.max(1, totalEnd - totalStart);
+    return phases.map((ph) => {
+      const data = acc.get(ph)!;
+      return {
+        phase: ph,
+        left: ((data.start - totalStart) / span) * 100,
+        width: Math.max(0, ((data.end - data.start) / span) * 100),
+        count: data.count,
+      };
+    });
+  }, [baseRows, layoutMode]);
+
+  const phaseCounts = useMemo(() => {
+    const counts = new Map<TracePhase, number>();
+    for (const event of events) {
+      counts.set(event.phase, (counts.get(event.phase) ?? 0) + 1);
+    }
+    return counts;
+  }, [events]);
+
   const viewWindow = useMemo(() => {
     if (axis === null) {
       return null;
@@ -358,6 +427,46 @@ export function TraceTimeline({
     setCollapsedIds(new Set());
   };
 
+  /** 点击阶段轴片段：展开所在分组、清除缩放，滚动定位到该阶段第一个事件并选中。 */
+  const locatePhase = useCallback(
+    (phase: TracePhase): void => {
+      const needsExpand = grouped.some(
+        (row) => row.kind === 'group' && row.group.phase === phase && collapsedIds.has(row.group.id),
+      );
+      if (needsExpand) {
+        setCollapsedIds((prev) => {
+          const next = new Set(prev);
+          for (const row of grouped) {
+            if (row.kind === 'group' && row.group.phase === phase) {
+              next.delete(row.group.id);
+            }
+          }
+          return next;
+        });
+      }
+      const clearedZoom = zoomRange !== null;
+      if (clearedZoom) {
+        setZoomRange(null);
+      }
+      const target = baseRows.find((row) => row.kind === 'event' && row.event.phase === phase);
+      if (target === undefined || target.kind !== 'event') {
+        return;
+      }
+      onSelectEvent(target.event);
+      const scrollTo = (): void => {
+        const el = rowRefs.current.get(target.event.id);
+        el?.scrollIntoView?.({ block: 'nearest' });
+        setCursorKey(target.event.id);
+      };
+      if (needsExpand || clearedZoom) {
+        requestAnimationFrame(scrollTo);
+      } else {
+        scrollTo();
+      }
+    },
+    [baseRows, collapsedIds, grouped, onSelectEvent, zoomRange],
+  );
+
   useEffect(() => {
     if (actionsRef === undefined) {
       return;
@@ -387,7 +496,7 @@ export function TraceTimeline({
       return;
     }
     const element = rowRefs.current.get(cursorKey);
-    element?.scrollIntoView({ block: 'nearest' });
+    element?.scrollIntoView?.({ block: 'nearest' });
   }, [cursorKey]);
 
   const onContainerKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -442,6 +551,9 @@ export function TraceTimeline({
   };
 
   const onAxisPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (layoutMode === 'sequence') {
+      return;
+    }
     const el = axisRef.current;
     if (el === null || axis === null) {
       return;
@@ -489,6 +601,24 @@ export function TraceTimeline({
   return (
     <div className="gantt-wrap">
       <div className="timeline-toolbar">
+        <div className="timeline-mode" role="group" aria-label={t('timeline.mode', locale)}>
+          <button
+            type="button"
+            className={`timeline-chip ${layoutMode === 'time' ? 'timeline-chip-on' : ''}`}
+            aria-pressed={layoutMode === 'time'}
+            onClick={() => onLayoutModeChange?.('time')}
+          >
+            {t('timeline.modeTime', locale)}
+          </button>
+          <button
+            type="button"
+            className={`timeline-chip ${layoutMode === 'sequence' ? 'timeline-chip-on' : ''}`}
+            aria-pressed={layoutMode === 'sequence'}
+            onClick={() => onLayoutModeChange?.('sequence')}
+          >
+            {t('timeline.modeSequence', locale)}
+          </button>
+        </div>
         <div className="timeline-search">
           <IconSearch size={12} />
           <input
@@ -523,15 +653,17 @@ export function TraceTimeline({
         <button type="button" className="timeline-chip" onClick={expandAll}>
           {t('timeline.expandAll', locale)}
         </button>
-        <button
-          type="button"
-          className="timeline-chip"
-          aria-pressed={absoluteTime}
-          onClick={() => setAbsoluteTime((prev) => !prev)}
-        >
-          {absoluteTime ? t('timeline.absolute', locale) : t('timeline.relative', locale)}
-        </button>
-        {zoomRange !== null && (
+        {layoutMode === 'time' && (
+          <button
+            type="button"
+            className="timeline-chip"
+            aria-pressed={absoluteTime}
+            onClick={() => setAbsoluteTime((prev) => !prev)}
+          >
+            {absoluteTime ? t('timeline.absolute', locale) : t('timeline.relative', locale)}
+          </button>
+        )}
+        {layoutMode === 'time' && zoomRange !== null && (
           <button
             type="button"
             className="timeline-chip timeline-chip-on"
@@ -545,9 +677,60 @@ export function TraceTimeline({
           </button>
         )}
       </div>
+      {onPhaseToggle !== undefined && (
+        <div className="timeline-phase-chips" role="group" aria-label={t('timeline.phaseAxis', locale)}>
+          {TRACE_PHASES.map((phase) => {
+            const active = phaseFilter.includes(phase);
+            const PhaseIcon = PHASE_ICON[phase];
+            return (
+              <button
+                key={phase}
+                type="button"
+                className={`timeline-phase-chip ${active ? 'timeline-phase-chip-on' : ''}`}
+                data-phase={phase}
+                aria-pressed={active}
+                onClick={() => onPhaseToggle(phase)}
+              >
+                <PhaseIcon size={12} />
+                <span>{t(`phase.${phase}`, locale)}</span>
+                <span className="mono">{phaseCounts.get(phase) ?? 0}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {phaseSegments.length > 0 && (
+        <div
+          className="timeline-phase-axis"
+          role="navigation"
+          aria-label={t('timeline.phaseAxis', locale)}
+          title={t('timeline.phaseAxisHint', locale)}
+        >
+          {phaseSegments.map((seg) => (
+            <button
+              key={seg.phase}
+              type="button"
+              className="timeline-phase-seg"
+              data-phase={seg.phase}
+              style={{
+                left: `${seg.left}%`,
+                width: `${Math.max(0.5, seg.width)}%`,
+                background: `var(--phase-${seg.phase})`,
+              }}
+              title={`${t(`phase.${seg.phase}`, locale)} · ${seg.count}`}
+              aria-label={`${t(`phase.${seg.phase}`, locale)} ${seg.count}`}
+              onClick={() => locatePhase(seg.phase)}
+            >
+              <span className="timeline-phase-seg-label">
+                {t(`phase.${seg.phase}`, locale)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
       <div
         ref={axisRef}
-        className="timeline-axis"
+        className={`timeline-axis ${layoutMode === 'sequence' ? 'timeline-axis-seq' : ''}`}
         role="slider"
         aria-label={t('timeline.axisHint', locale)}
         onPointerDown={onAxisPointerDown}
@@ -559,12 +742,14 @@ export function TraceTimeline({
             className="timeline-axis-tick mono"
             style={{ left: `${pct}%` }}
           >
-            {axis !== null &&
-              zoomLabel(
-                axis.start +
-                  (pct / 100) *
-                    (viewWindow === null ? axis.span : viewWindow.end - viewWindow.start),
-              )}
+            {layoutMode === 'sequence'
+              ? `#${Math.max(1, Math.round(((pct / 100) * Math.max(1, maxSeq - 1)) + 1))}`
+              : axis !== null &&
+                zoomLabel(
+                  axis.start +
+                    (pct / 100) *
+                      (viewWindow === null ? axis.span : viewWindow.end - viewWindow.start),
+                )}
           </span>
         ))}
         {dragSel !== null && (
@@ -603,15 +788,23 @@ export function TraceTimeline({
                   const group = row.group;
                   const Icon = PHASE_ICON[group.phase];
                   const left =
-                    viewWindow === null
-                      ? 0
-                      : ((Date.parse(group.start.startedAt) - viewWindow.start) / (viewWindow.end - viewWindow.start)) * 100;
+                    layoutMode === 'sequence'
+                      ? ((Math.max(1, group.start.sequence) - 1) / Math.max(1, maxSeq)) * 100
+                      : viewWindow === null
+                        ? 0
+                        : ((Date.parse(group.start.startedAt) - viewWindow.start) /
+                            (viewWindow.end - viewWindow.start)) *
+                          100;
                   const width =
-                    viewWindow === null
-                      ? 0
-                      : ((Date.parse(group.end.startedAt) + group.end.durationMs - Date.parse(group.start.startedAt)) /
-                          (viewWindow.end - viewWindow.start)) *
-                        100;
+                    layoutMode === 'sequence'
+                      ? ((group.end.sequence - group.start.sequence + 1) / Math.max(1, maxSeq)) * 100
+                      : viewWindow === null
+                        ? 0
+                        : ((Date.parse(group.end.startedAt) +
+                            group.end.durationMs -
+                            Date.parse(group.start.startedAt)) /
+                            (viewWindow.end - viewWindow.start)) *
+                          100;
                   return (
                     <div
                       key={key}
@@ -666,16 +859,23 @@ export function TraceTimeline({
                 const Icon = PHASE_ICON[event.phase];
                 const StatusIcon = STATUS_ICON[event.status];
                 const left =
-                  viewWindow === null
-                    ? 0
-                    : ((Date.parse(event.startedAt) - viewWindow.start) / (viewWindow.end - viewWindow.start)) * 100;
+                  layoutMode === 'sequence'
+                    ? ((Math.max(1, event.sequence) - 1) / Math.max(1, maxSeq)) * 100
+                    : viewWindow === null
+                      ? 0
+                      : ((Date.parse(event.startedAt) - viewWindow.start) /
+                          (viewWindow.end - viewWindow.start)) *
+                        100;
                 const width =
-                  viewWindow === null
-                    ? 0
-                    : (event.durationMs / (viewWindow.end - viewWindow.start)) * 100;
-                const timeLabel = absoluteTime
-                  ? new Date(event.startedAt).toLocaleTimeString([], { hour12: false })
-                  : fmtOffset(Date.parse(event.startedAt) - (axis?.start ?? 0));
+                  layoutMode === 'sequence'
+                    ? (1 / Math.max(1, maxSeq)) * 100
+                    : viewWindow === null
+                      ? 0
+                      : (event.durationMs / (viewWindow.end - viewWindow.start)) * 100;
+                const timeLabel =
+                  absoluteTime || layoutMode === 'sequence'
+                    ? new Date(event.startedAt).toLocaleTimeString([], { hour12: false })
+                    : fmtOffset(Date.parse(event.startedAt) - (axis?.start ?? 0));
                 return (
                   <div
                     key={key}
@@ -710,6 +910,16 @@ export function TraceTimeline({
                     <span className="gantt-title" title={event.title}>
                       {highlightTitle(event.title, tokens)}
                     </span>
+                    {event.hasInput && (
+                      <span className="io-badge io-badge-in" title={t('timeline.ioIn', locale)}>
+                        in
+                      </span>
+                    )}
+                    {event.hasOutput && (
+                      <span className="io-badge io-badge-out" title={t('timeline.ioOut', locale)}>
+                        out
+                      </span>
+                    )}
                     <span className="mono gantt-time">{timeLabel}</span>
                     <span className="mono gantt-status">
                       {event.durationMs >= 1000 ? `${(event.durationMs / 1000).toFixed(1)}s` : `${event.durationMs}ms`}

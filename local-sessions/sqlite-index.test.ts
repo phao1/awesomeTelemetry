@@ -38,7 +38,7 @@ function config(path: string) {
 }
 
 describe('REQ-021 SQLite 类索引标题与事件数（T-10 1.5）', () => {
-  it('会话行自带 title 时用 title；eventCount = COUNT(*) 消息数', () => {
+  it('会话行自带 title 时用 title；eventCount = 保留 part 数（fix-session-detail-display §3.2）', () => {
     const dir = tempDir();
     const dbPath = join(dir, 'opencode.db');
     const db = new Database(dbPath);
@@ -58,7 +58,8 @@ describe('REQ-021 SQLite 类索引标题与事件数（T-10 1.5）', () => {
     const entries = opencodeScanner.buildIndexEntries(config(dir), dbPath);
     expect(entries).toHaveLength(1);
     expect(entries[0]!.title).toBe('fix build');
-    expect(entries[0]!.eventCount).toBe(2);
+    expect(entries[0]!.eventCount).toBe(1); // 只有 m1 有 part
+    expect(entries[0]!.messageCount).toBe(2);
   });
 
   it('会话行 title 为空时取首条 user 消息正文', () => {
@@ -139,6 +140,7 @@ describe('REQ-021 SQLite 类索引标题与事件数（T-10 1.5）', () => {
 
     const entries = opencodeScanner.buildIndexEntries(config(dir), dbPath);
     expect(entries[0]!.title).toBe('启动项目，看一下当前状态');
-    expect(entries[0]!.eventCount).toBe(2);
+    expect(entries[0]!.eventCount).toBe(1); // 只有 p1 一个 part
+    expect(entries[0]!.messageCount).toBe(2);
   });
 });

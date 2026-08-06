@@ -6,6 +6,7 @@ import type {
   TraceMetrics,
   TraceSession,
 } from '../../src/core/trace-types.js';
+import { eventContentHash } from '../../src/core/event-hash.js';
 import { cachedStmt } from './stmt-cache.js';
 
 function upsertSql(
@@ -49,7 +50,7 @@ const SESSION_TRACE_COLS = [
 const EVENT_COLS = [
   'session_id', 'id', 'sequence', 'kind', 'phase', 'title', 'started_at',
   'duration_ms', 'status', 'actor', 'tool', 'input_summary', 'output_summary',
-  'tokens_json', 'error', 'model', 'input_len', 'output_len',
+  'tokens_json', 'error', 'model', 'content_hash', 'input_len', 'output_len',
 ];
 
 const METRICS_COLS = [
@@ -66,13 +67,14 @@ const METRICS_COLS = [
 const INDEX_UPSERT_SQL = upsertSql('sessions', ['id'], SESSION_INDEX_COLS, [
   'event_count',
   'message_count',
+  'detail_loaded',
 ]);
 const TRACE_UPSERT_SQL = upsertSql('sessions', ['id'], SESSION_TRACE_COLS);
 const EVENT_UPSERT_SQL = upsertSql('events', ['session_id', 'id'], EVENT_COLS);
 const METRICS_UPSERT_SQL = upsertSql('metrics', ['session_id'], METRICS_COLS);
 
 const SELECT_EXISTING_EVENT_IDS_SQL =
-  'SELECT id, sequence FROM events WHERE session_id = ?';
+  'SELECT id, sequence, content_hash FROM events WHERE session_id = ?';
 const DELETE_EVENT_BY_ID_SQL = 'DELETE FROM events WHERE session_id = ? AND id = ?';
 const DELETE_EVENT_RAW_BY_ID_SQL =
   'DELETE FROM event_raw WHERE session_id = ? AND event_id = ?';
@@ -80,6 +82,8 @@ const DELETE_EVENT_RAW_BY_SESSION_SQL =
   'DELETE FROM event_raw WHERE session_id = ?';
 const DELETE_EVENTS_BY_SESSION_SQL = 'DELETE FROM events WHERE session_id = ?';
 const DELETE_METRICS_BY_SESSION_SQL = 'DELETE FROM metrics WHERE session_id = ?';
+const DELETE_PROMPT_CONTEXT_BY_SESSION_SQL =
+  'DELETE FROM session_prompt_context WHERE session_id = ?';
 const DELETE_SESSION_SQL = 'DELETE FROM sessions WHERE id = ?';
 const DELETE_SCAN_STATE_BY_SESSION_SQL =
   'DELETE FROM scan_state WHERE session_id = ?';
@@ -148,20 +152,28 @@ export function upsertEvents(
 ): void {
   const run = db.transaction(() => {
     const existing = new Map<string, number>();
+    const existingHashes = new Map<string, string>();
     const rows = cachedStmt(db, SELECT_EXISTING_EVENT_IDS_SQL).all(sessionId) as Array<{
       id: string;
       sequence: number;
+      content_hash: string;
     }>;
     for (const row of rows) {
       existing.set(row.id, row.sequence);
+      existingHashes.set(row.id, row.content_hash ?? '');
     }
 
     const newIds = new Set<string>();
     for (const event of events) {
       newIds.add(event.id);
+      const contentHash = eventContentHash(event);
       const existingSequence = existing.get(event.id);
-      if (existingSequence !== undefined && existingSequence === event.sequence) {
-        continue; // (id, sequence) 未变，跳过；无变更重扫时为 0 条写入
+      if (
+        existingSequence !== undefined &&
+        existingSequence === event.sequence &&
+        existingHashes.get(event.id) === contentHash
+      ) {
+        continue; // (id, sequence, content_hash) 全同，跳过；无变更重扫时为 0 条写入
       }
       cachedStmt(db, EVENT_UPSERT_SQL).run(
         sessionId,
@@ -181,6 +193,7 @@ export function upsertEvents(
         event.error ?? null,
         // §2.3：input_len/output_len 冗余列（B15 bytes 用，禁 LENGTH() 全表扫描）
         event.model ?? null,
+        contentHash,
         Buffer.byteLength(event.inputSummary ?? '', 'utf8'),
         Buffer.byteLength(event.outputSummary ?? '', 'utf8'),
       );
@@ -235,6 +248,7 @@ export function deleteSession(db: Database, key: string): void {
     cachedStmt(db, DELETE_EVENT_RAW_BY_SESSION_SQL).run(key);
     cachedStmt(db, DELETE_EVENTS_BY_SESSION_SQL).run(key);
     cachedStmt(db, DELETE_METRICS_BY_SESSION_SQL).run(key);
+    cachedStmt(db, DELETE_PROMPT_CONTEXT_BY_SESSION_SQL).run(key);
     cachedStmt(db, DELETE_SESSION_SQL).run(key);
     cachedStmt(db, DELETE_SCAN_STATE_BY_SESSION_SQL).run(key);
   });

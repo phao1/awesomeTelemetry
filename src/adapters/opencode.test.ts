@@ -119,6 +119,98 @@ describe('OpenCode adapter（REQ-005）', () => {
     expect(r.events.map((e) => e.status)).toEqual(['success', 'error', 'running', 'cancelled']);
   });
 
+  it('fix-session-detail-display 2.1：tool part 的 state.input/output 进 full 档', () => {
+    const events = [
+      msg({
+        id: 'm-tool',
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool',
+            tool: 'glob',
+            state: {
+              status: 'completed',
+              title: 'glob src',
+              input: { pattern: '*', cwd: '/tmp' },
+              output: '/tmp/a.ts\n/tmp/b.ts',
+            },
+          },
+        ],
+      }),
+    ];
+    const r = normalizeOpenCode(sample(events), SRC);
+    expect(r.events).toHaveLength(1);
+    const toolEvent = r.events[0]!;
+    expect(toolEvent.hasInput).toBe(true);
+    expect(toolEvent.hasOutput).toBe(true);
+    expect(JSON.parse(toolEvent.inputSummary ?? '')).toEqual({ pattern: '*', cwd: '/tmp' });
+    expect(toolEvent.outputSummary).toBe('/tmp/a.ts\n/tmp/b.ts');
+    // raw 仍是原始 part
+    expect(JSON.parse((toolEvent as unknown as { raw?: string }).raw ?? '{}').tool).toBe('glob');
+  });
+
+  it('fix-session-detail-display 2.2：纯 step-start/step-finish 标记不产出事件', () => {
+    const events = [
+      msg({
+        id: 'm1',
+        role: 'user',
+        content: [{ type: 'text', text: '启动项目' }],
+      }),
+      msg({
+        id: 'm2',
+        role: 'assistant',
+        tokens: null,
+        content: [
+          { type: 'step-start' },
+          { type: 'tool', tool: 'Bash', state: { status: 'completed', title: 'npm test' } },
+          { type: 'step-finish' },
+        ],
+      }),
+    ];
+    const r = normalizeOpenCode(sample(events), SRC);
+    expect(r.events.map((e) => e.kind)).toEqual(['user_prompt', 'bash']);
+    expect(r.session.eventCount).toBe(2);
+    expect(r.session.messageCount).toBe(2);
+  });
+
+  it('fix-session-detail-display 2.3：step-finish part 自带 tokens → 保留为 agent 事件', () => {
+    const events = [
+      msg({
+        id: 'm1',
+        role: 'assistant',
+        tokens: null,
+        content: [
+          { type: 'step-start' },
+          {
+            type: 'step-finish',
+            tokens: { input: 14451, output: 138, reasoning: 86, cache: { read: 0, write: 0 } },
+          },
+        ],
+      }),
+    ];
+    const r = normalizeOpenCode(sample(events), SRC);
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0]!.kind).toBe('agent');
+    expect(r.events[0]!.title).toBe('agent step: success');
+    expect(r.events[0]!.tokens?.input).toBe(14451);
+    expect(r.session.tokenUsage.input).toBe(14451); // 不膨胀：只计一次
+  });
+
+  it('fix-session-detail-display 2.2：failed step 保留为 agent step: error', () => {
+    const events = [
+      msg({
+        id: 'm1',
+        role: 'assistant',
+        content: [{ type: 'step-finish', state: { status: 'failed' } }],
+      }),
+    ];
+    const r = normalizeOpenCode(sample(events), SRC);
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0]!.kind).toBe('agent');
+    expect(r.events[0]!.title).toBe('agent step: error');
+    expect(r.events[0]!.status).toBe('error');
+  });
+
   it('重复 event id 追加 :sequence 后缀', () => {
     const events = [
       msg({ id: 'dup', role: 'assistant' }),

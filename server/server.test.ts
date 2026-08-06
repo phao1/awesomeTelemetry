@@ -1,7 +1,7 @@
 import { gunzipSync } from 'node:zlib';
 import http, { type IncomingHttpHeaders } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,6 +12,7 @@ import Database from 'better-sqlite3';
 import type { LocalSessionConfig, ProviderKey } from '../src/core/trace-types.js';
 import { isForegroundBusy } from './realtime/frontline.js';
 import { initSchema } from './storage/schema.js';
+import { upsertPromptContext } from './storage/prompt-context.js';
 import {
   upsertEvents,
   upsertSessionFromTrace,
@@ -180,7 +181,11 @@ async function waitFor(
   throw new Error('waitFor 超时');
 }
 
-async function boot(seed?: (db: Db) => void, distDir?: string): Promise<BootResult> {
+async function boot(
+  seed?: (db: Db) => void,
+  distDir?: string,
+  config: LocalSessionConfig = TEST_CONFIG,
+): Promise<BootResult> {
   const db = new Database(':memory:');
   initSchema(db);
   seed?.(db);
@@ -188,7 +193,7 @@ async function boot(seed?: (db: Db) => void, distDir?: string): Promise<BootResu
   const userConfigPath = join(userDir, 'agent-observe.json');
   const server = createAgentObservabilityServer({
     db,
-    config: TEST_CONFIG,
+    config,
     detailCache: new (await import('./storage/detail-cache.js')).DetailCache(),
     userConfigPath,
     distDir,
@@ -235,6 +240,57 @@ describe('API 契约（contracts/api.md §8）', () => {
     expect(body.items.find((i) => i.id === 'codex-s1')?.hasSystemPrompt).toBe(true);
   });
 
+  it('会话列表 q/range/status 过滤；非法值 400 INVALID_ENUM', async () => {
+    const { port } = await boot((db) => {
+      seedSession(db, 'codex-s1', 'codex');
+      seedSession(db, 'claude-s1', 'claude');
+      db.prepare("UPDATE sessions SET started_at = ?, updated_at = ?, title = ?, status = ? WHERE id = 'codex-s1'").run(
+        new Date(Date.now() - 10 * 86_400_000).toISOString(),
+        new Date(Date.now() - 3600_000).toISOString(),
+        'FIRE 看板下钻',
+        'error',
+      );
+      db.prepare("UPDATE sessions SET started_at = ?, updated_at = ? WHERE id = 'claude-s1'").run(
+        new Date(Date.now() - 10 * 86_400_000).toISOString(),
+        new Date(Date.now() - 10 * 86_400_000).toISOString(),
+      );
+    });
+
+    const byQ = JSON.parse(
+      (await request(port, 'GET', '/api/sessions?q=fire')).text,
+    ) as { items: Array<{ id: string }>; total: number };
+    expect(byQ.items.map((i) => i.id)).toEqual(['codex-s1']);
+    expect(byQ.total).toBe(1);
+
+    const byRange = JSON.parse(
+      (await request(port, 'GET', '/api/sessions?range=7d')).text,
+    ) as { items: Array<{ id: string }> };
+    expect(byRange.items.map((i) => i.id)).toEqual(['codex-s1']);
+
+    const byStatus = JSON.parse(
+      (await request(port, 'GET', '/api/sessions?status=error')).text,
+    ) as { items: Array<{ id: string }> };
+    expect(byStatus.items.map((i) => i.id)).toEqual(['codex-s1']);
+
+    const combo = JSON.parse(
+      (await request(port, 'GET', '/api/sessions?provider=codex,claude&range=7d&status=error&q=fire')).text,
+    ) as { items: Array<{ id: string }>; total: number };
+    expect(combo.items.map((i) => i.id)).toEqual(['codex-s1']);
+    expect(combo.total).toBe(1);
+
+    const badRange = await request(port, 'GET', '/api/sessions?range=1y');
+    expect(badRange.status).toBe(400);
+    expect(JSON.parse(badRange.text).error.code).toBe('INVALID_ENUM');
+
+    const badStatus = await request(port, 'GET', '/api/sessions?status=bogus');
+    expect(badStatus.status).toBe(400);
+    expect(JSON.parse(badStatus.text).error.code).toBe('INVALID_ENUM');
+
+    const badProvider = await request(port, 'GET', '/api/sessions?provider=codex,nope');
+    expect(badProvider.status).toBe(400);
+    expect(JSON.parse(badProvider.text).error.code).toBe('INVALID_ENUM');
+  });
+
   it('详情默认 slim 且不含正文', async () => {
     const { port } = await boot((db) => {
       seedSession(db, 'codex-s1', 'codex');
@@ -254,6 +310,80 @@ describe('API 契约（contracts/api.md §8）', () => {
       expect(e).not.toHaveProperty('outputSummary');
       expect(e).not.toHaveProperty('raw');
     }
+  });
+
+  it('Prompt Context 按需返回；普通详情不泄漏；缺失使用统一 404', async () => {
+    const { port } = await boot((db) => {
+      seedSession(db, 'trae-s1', 'trae');
+      seedSession(db, 'codex-no-context', 'codex');
+      upsertPromptContext(db, {
+        sessionId: 'trae-s1', provider: 'trae', source: 'trae_db', completeness: 'dynamic_only',
+        capturedAt: '2026-08-06T00:00:00.000Z',
+        dynamicSections: [{ id: 'reminder-1', category: 'language', title: 'Language', content: '中文', chars: 2, estimatedTokens: 1, duplicateOf: null }],
+        modelConfig: { modelName: 'glm-5.2__dev', configName: 'glm-5.2', promptMaxTokens: 100000, maxOutputTokens: 16000, maxTurns: 70, isPreset: true, locale: 'zh', agentType: 'builder', agentName: 'Builder', enabledFeatures: [] },
+        analysis: { totalChars: 2, estimatedTokens: 1, sectionCount: 1, uniqueSectionCount: 1, duplicateSectionCount: 0, duplicateChars: 0, contextWindowPercent: 0.001 },
+        fullSystemPrompt: null,
+      });
+    });
+
+    const ordinary = JSON.parse((await request(port, 'GET', '/api/sessions/trae-s1')).text) as Record<string, unknown>;
+    expect(ordinary).not.toHaveProperty('dynamicSections');
+    expect(JSON.stringify(ordinary)).not.toContain('glm-5.2__dev');
+
+    const found = await request(port, 'GET', '/api/sessions/trae-s1/prompt-context');
+    expect(found.status).toBe(200);
+    expect(JSON.parse(found.text)).toMatchObject({
+      sessionId: 'trae-s1', source: 'trae_db', completeness: 'dynamic_only',
+      modelConfig: { modelName: 'glm-5.2__dev' },
+      fullSystemPrompt: null,
+    });
+
+    const absent = await request(port, 'GET', '/api/sessions/codex-no-context/prompt-context');
+    expect(absent.status).toBe(404);
+    expect(JSON.parse(absent.text).error.code).toBe('PROMPT_CONTEXT_NOT_FOUND');
+    const missing = await request(port, 'GET', '/api/sessions/nope/prompt-context');
+    expect(missing.status).toBe(404);
+    expect(JSON.parse(missing.text).error.code).toBe('SESSION_NOT_FOUND');
+  });
+
+  it('REQ-016/017：轮询扫描发现追加事件，并使已缓存详情失效', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'server-live-scan-'));
+    staticDirs.push(dir);
+    const sourcePath = join(dir, 'session.jsonl');
+    const row = (timestamp: string, role: string, text: string): string =>
+      JSON.stringify({
+        timestamp,
+        type: 'response_item',
+        payload: { type: 'message', role, content: [{ type: 'input_text', text }] },
+      }) + '\n';
+    writeFileSync(sourcePath, row('2026-08-06T01:00:00.000Z', 'user', 'first'));
+    const config: LocalSessionConfig = {
+      ...TEST_CONFIG,
+      providers: {
+        ...TEST_CONFIG.providers,
+        claude: { ...TEST_CONFIG.providers.claude!, enabled: false },
+        codex: {
+          ...TEST_CONFIG.providers.codex!,
+          enabled: true,
+          path: dir,
+          watchStrategy: 'poll',
+          pollIntervalMs: 20,
+        },
+      },
+    };
+    const { port } = await boot(undefined, undefined, config);
+    const key = deriveSessionKey('codex', sourcePath);
+
+    await waitFor(async () => {
+      const r = await request(port, 'GET', `/api/sessions/${key}`);
+      return r.status === 200 && (JSON.parse(r.text) as { eventTotal: number }).eventTotal === 1;
+    });
+
+    appendFileSync(sourcePath, row('2026-08-06T01:00:01.000Z', 'assistant', 'second'));
+    await waitFor(async () => {
+      const r = await request(port, 'GET', `/api/sessions/${key}`);
+      return r.status === 200 && (JSON.parse(r.text) as { eventTotal: number }).eventTotal === 2;
+    });
   });
 
   it('proxy 列表排除全部 body 列', async () => {
@@ -295,6 +425,34 @@ describe('API 契约（contracts/api.md §8）', () => {
     const body = JSON.parse(r.text) as { error: { code: string; message: string } };
     expect(body.error.code).toBe('SESSION_PARSE_FAILED');
     expect(typeof body.error.message).toBe('string');
+  });
+
+  it('aggregate-native-sessions：Trae pending 详情不在 HTTP 请求路径触发解密', async () => {
+    const sourcePath = '/definitely/not/a/real/trae/database.db';
+    const key = deriveSessionKey('trae', sourcePath);
+    const config: LocalSessionConfig = {
+      ...TEST_CONFIG,
+      traeKeyPath: '/configured/trae.key',
+    };
+    const { port, db } = await boot((seedDb) => {
+      seedSession(seedDb, key, 'trae');
+      seedDb.prepare(
+        'UPDATE sessions SET detail_loaded = 0, source_path = ?, event_count = 0, message_count = 0 WHERE id = ?',
+      ).run(sourcePath, key);
+    }, undefined, config);
+
+    const result = await request(port, 'GET', `/api/sessions/${key}`);
+
+    expect(result.status).toBe(200);
+    expect((JSON.parse(result.text) as { pending: boolean }).pending).toBe(true);
+    expect(
+      (db.prepare('SELECT detail_loaded FROM sessions WHERE id = ?').get(key) as {
+        detail_loaded: number;
+      }).detail_loaded,
+    ).toBe(0);
+    expect(
+      (db.prepare('SELECT COUNT(*) AS c FROM scan_state').get() as { c: number }).c,
+    ).toBe(0);
   });
 
   it('T-12：proxy start → running → 重复 start 409 → stop → 重复 stop 409', async () => {

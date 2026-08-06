@@ -11,7 +11,12 @@ import type {
   TraceEvent,
   TraceRecord,
 } from '../src/core/trace-types.js';
-import { PROVIDER_KEYS } from '../src/core/trace-types.js';
+import {
+  PROVIDER_KEYS,
+  SESSION_RANGES,
+  TRACE_STATUSES,
+} from '../src/core/trace-types.js';
+import type { SessionRange, TraceStatus } from '../src/core/trace-types.js';
 import { computeSpeedMetrics } from '../src/core/speed-metrics.js';
 import {
   mergeLocalSessionConfig,
@@ -31,6 +36,7 @@ import {
   listSessions,
 } from './storage/query-engine.js';
 import { getMission } from './storage/mission.js';
+import { getPromptContext } from './storage/prompt-context.js';
 import {
   buildSubagentMergeGroups,
   loadSessionGroups,
@@ -46,6 +52,7 @@ import { queueSessionChange } from './realtime/coalescer.js';
 import { eventBus } from './realtime/event-bus.js';
 import { markForegroundRequest } from './realtime/frontline.js';
 import { scanAndStoreDetail, scanLocalSessions, SessionParseError } from './watch/scan-scheduler.js';
+import { startFileWatcher } from './watch/file-watcher.js';
 import { Router } from './http/router.js';
 import { sendJson } from './http/send-json.js';
 import { sendApiError, type ErrorCode } from './http/error-envelope.js';
@@ -214,13 +221,54 @@ export function createAgentObservabilityServer(
     }
     return [...manualGroups, ...autoGroupsCache.groups];
   };
-  /** REQ-009：组内成员变更时上报 primaryKey，否则前端刷新一个列表里不存在的 key。 */
-  const notifyMerged = (key: string): void => {
-    queueSessionChange(primaryKeyFor(key, sessionGroups()));
-  };
   const detailCache = opts.detailCache ?? new DetailCache();
+  /** REQ-009/REQ-016：组内成员变更时失效成员与 primary 的详情缓存，再上报 primary。 */
+  const notifyMerged = (key: string): void => {
+    const primaryKey = primaryKeyFor(key, sessionGroups());
+    for (const cacheKey of new Set([key, primaryKey])) {
+      detailCache.invalidate(`${cacheKey}:slim`);
+      detailCache.invalidate(`${cacheKey}:full`);
+    }
+    queueSessionChange(primaryKey);
+  };
   const startedAt = Date.now();
   let scanInProgress = false;
+  const pendingAutomaticScans = new Set<ProviderKey>();
+
+  const scanProviders = async (
+    provider: ProviderKey | undefined,
+    force: boolean,
+  ) => scanLocalSessions({
+    db,
+    config,
+    force,
+    providers: provider === undefined ? undefined : [provider],
+    notify: notifyMerged,
+    emit: (event) => { eventBus.emit(event.type, event); },
+  });
+
+  const runAutomaticScan = async (provider: ProviderKey): Promise<void> => {
+    if (scanInProgress) {
+      pendingAutomaticScans.add(provider);
+      return;
+    }
+    scanInProgress = true;
+    eventBus.emit('scan_started', { provider });
+    try {
+      const results = await scanProviders(provider, false);
+      eventBus.emit('scan_completed', {
+        provider,
+        count: results.reduce((sum, result) => sum + result.eventCount, 0),
+      });
+    } finally {
+      scanInProgress = false;
+      const next = pendingAutomaticScans.values().next().value;
+      if (next !== undefined) {
+        pendingAutomaticScans.delete(next);
+        void runAutomaticScan(next);
+      }
+    }
+  };
   // T-12（D4）：proxy/frida 运行时状态机，异步启动由 SSE 通知
   const proxyRuntime = new ProxyRuntime(db, (payload) => {
     eventBus.emit('proxy_status', payload);
@@ -234,13 +282,13 @@ export function createAgentObservabilityServer(
     key: string,
     mode: 'slim' | 'full',
   ): Promise<SessionDetailResponse | null> => {
-    const meta = cachedStmt(db, 'SELECT detail_loaded FROM sessions WHERE id = ?').get(key) as
-      | { detail_loaded: number }
+    const meta = cachedStmt(db, 'SELECT detail_loaded, provider FROM sessions WHERE id = ?').get(key) as
+      | { detail_loaded: number; provider: ProviderKey }
       | undefined;
     if (meta === undefined) {
       return null;
     }
-    if (meta.detail_loaded === 0) {
+    if (meta.detail_loaded === 0 && meta.provider !== 'trae') {
       await scanAndStoreDetail(db, key, { config, notify: notifyMerged });
     }
     let detail = getSessionDetail(db, key, { mode });
@@ -281,9 +329,27 @@ export function createAgentObservabilityServer(
     if (dataSource !== 'scan' && dataSource !== 'proxy') {
       throw new HttpError(400, 'INVALID_ENUM', `dataSource must be "scan" or "proxy", got ${dataSource}`);
     }
-    const providerRaw = query.get('provider');
-    if (providerRaw !== null && !(PROVIDER_KEYS as readonly string[]).includes(providerRaw)) {
-        throw new HttpError(400, 'INVALID_ENUM', `Unknown provider: ${providerRaw}`);
+    const list = (raw: string | null, allowed: readonly string[], label: string): string[] | undefined => {
+      if (raw === null || raw === '') {
+        return undefined;
+      }
+      const values = raw.split(',');
+      for (const value of values) {
+        if (!allowed.includes(value)) {
+          throw new HttpError(400, 'INVALID_ENUM', `Unknown ${label}: ${value}`);
+        }
+      }
+      return values;
+    };
+    const providers = list(query.get('provider'), PROVIDER_KEYS, 'provider');
+    const statuses = list(query.get('status'), TRACE_STATUSES, 'status');
+    const rangeRaw = query.get('range');
+    const range =
+      rangeRaw === null || rangeRaw === ''
+        ? undefined
+        : (rangeRaw as SessionRange);
+    if (range !== undefined && !(SESSION_RANGES as readonly string[]).includes(range)) {
+      throw new HttpError(400, 'INVALID_ENUM', `range must be today|7d|30d|all, got ${rangeRaw}`);
     }
     const keysRaw = query.get('keys');
     let keys: string[] | undefined;
@@ -295,7 +361,10 @@ export function createAgentObservabilityServer(
     }
     const result = listSessions(db, {
       dataSource,
-      provider: providerRaw === null ? undefined : (providerRaw as ProviderKey),
+      provider: providers as ProviderKey[] | undefined,
+      status: statuses as TraceStatus[] | undefined,
+      q: query.get('q')?.trim() || undefined,
+      range,
       limit: intParam(query.get('limit'), 50, 500),
       cursor: query.get('cursor') ?? undefined,
       keys,
@@ -346,8 +415,9 @@ export function createAgentObservabilityServer(
 
     if (meta.detail_loaded === 0) {
       const provider = detail.session.provider;
-      if (provider === 'trae' && (config.traeKeyPath === null || config.traeKeyPath === '')) {
-        // REQ-012：Trae 解密未完成 → 返回已有索引数据 + pending，不阻塞
+      if (provider === 'trae') {
+        // Trae 解密只允许在后台轮询路径。无论密钥是否已配置，请求都立即返回
+        // pending 占位，后台展开为原生 session cards 后通过 SSE 通知。
         sendJson(res, 200, { ...detail, pending: true }, req);
         return;
       }
@@ -374,6 +444,24 @@ export function createAgentObservabilityServer(
     }
     detailCache.set(cacheKey, detail);
     sendJson(res, 200, detail, req);
+  });
+
+  router.register('GET', '/api/sessions/:key/prompt-context', (req, res, params) => {
+    const key = params.key!;
+    const exists = cachedStmt(db, 'SELECT id FROM sessions WHERE id = ?').get(key);
+    if (exists === undefined) {
+      throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
+    }
+    const context = getPromptContext(db, key);
+    if (context === null) {
+      throw new HttpError(
+        404,
+        'PROMPT_CONTEXT_NOT_FOUND',
+        `No Prompt Context captured for session ${key}`,
+        { key },
+      );
+    }
+    sendJson(res, 200, context, req);
   });
 
   router.register('GET', '/api/sessions/:key/events/:eventId', (req, res, params) => {
@@ -637,19 +725,20 @@ export function createAgentObservabilityServer(
     }
     scanInProgress = true;
     try {
-      const results = await scanLocalSessions({
-        db,
-        config,
-        force: body.force === true,
-        providers: provider === undefined ? undefined : [provider as ProviderKey],
-        notify: notifyMerged,
-        emit: (event) => {
-          eventBus.emit(event.type, event);
-        },
+      eventBus.emit('scan_started', { provider: provider as ProviderKey | undefined ?? 'all' });
+      const results = await scanProviders(provider as ProviderKey | undefined, body.force === true);
+      eventBus.emit('scan_completed', {
+        provider: provider as ProviderKey | undefined ?? 'all',
+        count: results.reduce((sum, result) => sum + result.eventCount, 0),
       });
       sendJson(res, 200, { providers: results }, req);
     } finally {
       scanInProgress = false;
+      const next = pendingAutomaticScans.values().next().value;
+      if (next !== undefined) {
+        pendingAutomaticScans.delete(next);
+        void runAutomaticScan(next);
+      }
     }
   });
 
@@ -751,7 +840,7 @@ export function createAgentObservabilityServer(
     req.on('close', cleanup);
   });
 
-  return createServer((req, res) => {
+  const server = createServer((req, res) => {
     // REQ-007 / api.md §0.6：每个 /api/* 请求进入时标记前台请求
     markForegroundRequest();
     const method = req.method ?? 'GET';
@@ -809,6 +898,12 @@ export function createAgentObservabilityServer(
       }
     })();
   });
+  const fileWatcher = startFileWatcher(
+    Object.values(config.providers).filter((provider): provider is NonNullable<typeof provider> => provider !== undefined),
+    runAutomaticScan,
+  );
+  server.once('close', () => { void fileWatcher.close(); });
+  return server;
 }
 
 function loadProjectConfig(projectConfigPath?: string): LocalSessionConfig | null {

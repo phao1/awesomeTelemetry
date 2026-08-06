@@ -17,6 +17,7 @@ import { opencodeScanner } from '../../local-sessions/opencode.js';
 import { qoderScanner } from '../../local-sessions/qoder.js';
 import { traeScanner } from '../../local-sessions/trae.js';
 import { workbuddyScanner } from '../../local-sessions/workbuddy.js';
+import { deleteSession } from '../storage/writers.js';
 import {
   enumerateSourceFiles,
   upsertIndexEntries,
@@ -121,6 +122,36 @@ export async function scanLocalSessions(
 
 const SELECT_SESSION_SOURCE_SQL =
   'SELECT provider, source_path FROM sessions WHERE id = ?';
+const SELECT_EXPANDED_SOURCE_SESSION_SQL =
+  `SELECT id FROM sessions WHERE data_source = 'scan' AND provider = ? ` +
+  `AND source_path = ? AND id <> ? LIMIT 1`;
+const SELECT_SESSION_ID_SQL = 'SELECT id FROM sessions WHERE id = ?';
+
+function suppressExpandedEncryptedPlaceholders(
+  db: Database,
+  entries: SessionIndexEntry[],
+  notify?: (key: string) => void,
+): SessionIndexEntry[] {
+  return entries.filter((entry) => {
+    if (entry.provider !== 'trae') {
+      return true;
+    }
+    const expanded = cachedStmt(db, SELECT_EXPANDED_SOURCE_SESSION_SQL).get(
+      entry.provider,
+      entry.sourcePath,
+      entry.id,
+    );
+    if (expanded === undefined) {
+      return true;
+    }
+    const placeholderExists = cachedStmt(db, SELECT_SESSION_ID_SQL).get(entry.id) !== undefined;
+    if (placeholderExists) {
+      deleteSession(db, entry.id);
+      notify?.(entry.id);
+    }
+    return false;
+  });
+}
 
 /**
  * T-11（REQ-022 / design D3）：详情解析失败的类型化错误。
@@ -193,11 +224,12 @@ export function initialScanAndStore(
       entries.push(...scanner.buildIndexEntries(config, filePath));
     }
   }
-  upsertIndexEntries(deps.db, entries);
-  deps.emit?.({ type: 'scan_completed', provider: 'all', count: entries.length });
+  const visibleEntries = suppressExpandedEncryptedPlaceholders(deps.db, entries, deps.notify);
+  upsertIndexEntries(deps.db, visibleEntries);
+  deps.emit?.({ type: 'scan_completed', provider: 'all', count: visibleEntries.length });
 
   if (deps.config.prewarmRecent > 0) {
-    const recent = entries.slice(0, deps.config.prewarmRecent);
+    const recent = visibleEntries.slice(0, deps.config.prewarmRecent);
     void backgroundPrewarm({
       sessions: recent,
       isForegroundBusy: deps.isForegroundBusy ?? (() => false),
@@ -209,5 +241,5 @@ export function initialScanAndStore(
       },
     });
   }
-  return { indexCount: entries.length };
+  return { indexCount: visibleEntries.length };
 }

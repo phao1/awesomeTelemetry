@@ -5,6 +5,7 @@ import {
   aggregateTokenUsage,
   deriveDurations,
   pickPrimaryModel,
+  titleFromText,
   DERIVED_DURATION_CAP_MS,
 } from './helpers.js';
 
@@ -114,5 +115,14 @@ describe('pickPrimaryModel（add-mission-control §1 P0-B）', () => {
   it('全部无 model 返回 null；空数组返回 null', () => {
     expect(pickPrimaryModel([ev('a', '2026-08-01T00:00:00.000Z', { model: null }), ev('b', '2026-08-01T00:00:01.000Z')])).toBeNull();
     expect(pickPrimaryModel([])).toBeNull();
+  });
+});
+
+describe('titleFromText 健壮性', () => {
+  it('非字符串 text（真实 codex JSONL 的 content.text 为对象）不抛错', () => {
+    expect(titleFromText({ type: 'text' } as unknown as string)).toBe('{"type":"text"}');
+    expect(titleFromText(42 as unknown as string)).toBe('42');
+    expect(titleFromText(null)).toBe('');
+    expect(titleFromText(undefined)).toBe('');
   });
 });

@@ -229,7 +229,17 @@ export function pickPrimaryModel(events: TraceEvent[]): string | null {
 
 /** 从文本取单行标题并截断。 */
 export function titleFromText(text: string | null | undefined, max = 200): string {
-  const firstLine = (text ?? '')
+  // 真实 codex JSONL 中部分 content.text 是对象而非 string（2026-08-05 强制重扫暴露）；
+  // 强转为字符串，避免索引/详情扫描在标题阶段抛错
+  const normalized =
+    typeof text === 'string'
+      ? text
+      : text === null || text === undefined
+        ? ''
+        : typeof text === 'object'
+          ? JSON.stringify(text)
+          : String(text);
+  const firstLine = normalized
     .split('\n')
     .map((line) => line.trim())
     .find((line) => line.length > 0);

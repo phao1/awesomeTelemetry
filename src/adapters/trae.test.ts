@@ -76,6 +76,22 @@ describe('Trae adapter（REQ-006）', () => {
     expect(r.events[0]?.title).not.toContain('"type"');
   });
 
+  it('user turn 映射到 inputSummary，不伪装成 assistant output', () => {
+    const turns: TraeTurn[] = [
+      { id: 'u1', type: 'user', content: '新的消息', startTime: 1754000000 },
+    ];
+    const r = normalizeTraeSample(sample(turns), SRC);
+    expect(r.events[0]).toMatchObject({
+      kind: 'user_prompt',
+      actor: 'user',
+      title: '新的消息',
+      hasInput: true,
+      hasOutput: false,
+      inputSummary: '新的消息',
+      outputSummary: null,
+    });
+  });
+
   it('§5.1 toolName 二级映射：PascalCase 工具名按小写归一化分类，type 优先', () => {
     const turns: TraeTurn[] = [
       { id: 't1', type: 'tool', toolName: 'SearchReplace', startTime: 1754000000 },

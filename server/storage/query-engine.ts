@@ -9,6 +9,7 @@ import type {
   ProxyRequestListItem,
   SessionDetailResponse,
   SessionIndexEntry,
+  SessionRange,
   TraceEvent,
   TraceEventRaw,
   TraceEventSlim,
@@ -33,6 +34,25 @@ const EVENT_DEFAULT_LIMIT = 2000;
 const EVENT_MAX_LIMIT = 5000;
 const EVENT_PAGINATION_THRESHOLD = 2000;
 
+/** SQL LIKE 转义：% _ \ 均为字面量（ESCAPE '\'）。 */
+function escapeLike(text: string): string {
+  return text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+/** 时间范围 → 起始 ISO 时刻；all/缺省返回 undefined（不过滤）。 */
+function rangeSince(range: SessionRange | undefined, now = Date.now()): string | undefined {
+  if (range === undefined || range === 'all') {
+    return undefined;
+  }
+  const DAY_MS = 86_400_000;
+  if (range === 'today') {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    return new Date(start.getTime()).toISOString();
+  }
+  return new Date(now - (range === '7d' ? 7 : 30) * DAY_MS).toISOString();
+}
+
 const SESSION_DETAIL_SQL = `SELECT ${SESSION_DETAIL_COLS} FROM sessions WHERE id = ?`;
 const SESSION_BY_ID_SQL = `SELECT ${SESSION_LIST_COLS} FROM sessions WHERE id = ?`;
 const EVENT_COUNT_SQL = `SELECT COUNT(*) AS c FROM events WHERE session_id = ?`;
@@ -41,24 +61,45 @@ const SYSTEM_PROMPT_SQL =
   `SELECT system_prompt FROM proxy_requests WHERE started_at BETWEEN ? AND ? ` +
   `AND system_prompt_len > 0 ORDER BY system_prompt_len DESC LIMIT 1`;
 
-function sessionsWhere(provider: boolean, cursor: boolean): string {
+interface SessionsWhereFlags {
+  /** provider IN 的占位符个数；0 表示不过滤。 */
+  provider: number;
+  q: boolean;
+  range: boolean;
+  /** status IN 的占位符个数；0 表示不过滤。 */
+  status: number;
+  cursor: boolean;
+}
+
+function sessionsWhere(flags: SessionsWhereFlags): string {
   const parts = ['data_source = ?'];
-  if (provider) {
-    parts.push('provider = ?');
+  if (flags.provider > 0) {
+    parts.push(`provider IN (${Array.from({ length: flags.provider }, () => '?').join(', ')})`);
   }
-  if (cursor) {
+  if (flags.q) {
+    parts.push("(title LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\')");
+  }
+  if (flags.range) {
+    // Activity window: long-running sessions that receive new events today
+    // must remain visible under the frontend's default Today filter.
+    parts.push('updated_at >= ?');
+  }
+  if (flags.status > 0) {
+    parts.push(`status IN (${Array.from({ length: flags.status }, () => '?').join(', ')})`);
+  }
+  if (flags.cursor) {
     parts.push('started_at < ?');
   }
   return parts.join(' AND ');
 }
 
-function sessionListSql(provider: boolean, cursor: boolean): string {
-  return `SELECT ${SESSION_LIST_COLS} FROM sessions WHERE ${sessionsWhere(provider, cursor)} ` +
+function sessionListSql(flags: SessionsWhereFlags): string {
+  return `SELECT ${SESSION_LIST_COLS} FROM sessions WHERE ${sessionsWhere(flags)} ` +
     `ORDER BY started_at DESC LIMIT ?`;
 }
 
-function sessionCountSql(provider: boolean): string {
-  return `SELECT COUNT(*) AS c FROM sessions WHERE ${provider ? 'data_source = ? AND provider = ?' : 'data_source = ?'}`;
+function sessionCountSql(flags: SessionsWhereFlags): string {
+  return `SELECT COUNT(*) AS c FROM sessions WHERE ${sessionsWhere(flags)}`;
 }
 
 function eventsSql(full: boolean): string {
@@ -249,10 +290,17 @@ function mapProxyRequest(row: Record<string, unknown>): ProxyRequest {
 
 export interface ListSessionsOptions {
   dataSource: DataSource;
-  provider?: ProviderKey;
+  /** provider 多选（IN 过滤）。 */
+  provider?: ProviderKey[];
   limit?: number;
   cursor?: string;
   keys?: string[];
+  /** 标题 / session ID 大小写不敏感子串（服务端过滤）。 */
+  q?: string;
+  /** 时间范围（today | 7d | 30d | all；缺省不过滤）。 */
+  range?: SessionRange;
+  /** 状态多选过滤。 */
+  status?: TraceStatus[];
   /** #17：会话合并组配置（可选；缺省不合并）。 */
   groups?: SessionMergeGroup[];
 }
@@ -280,29 +328,45 @@ export function listSessions(db: Database, opts: ListSessionsOptions): SessionLi
   }
 
   const limit = Math.min(Math.max(opts.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
-  const hasProvider = opts.provider !== undefined;
+  const providers = opts.provider !== undefined && opts.provider.length > 0 ? opts.provider : undefined;
+  const hasProvider = providers !== undefined;
   const hasCursor = opts.cursor !== undefined;
-  const params: unknown[] = [opts.dataSource];
+  const q = opts.q !== undefined && opts.q !== '' ? opts.q : undefined;
+  const hasQ = q !== undefined;
+  const since = rangeSince(opts.range);
+  const hasRange = since !== undefined;
+  const statuses = opts.status !== undefined && opts.status.length > 0 ? opts.status : undefined;
+  const flags: SessionsWhereFlags = {
+    provider: providers?.length ?? 0,
+    q: hasQ,
+    range: hasRange,
+    status: statuses?.length ?? 0,
+    cursor: hasCursor,
+  };
+  const pattern = hasQ ? `%${escapeLike(q)}%` : undefined;
+  const baseParams: unknown[] = [opts.dataSource];
   if (hasProvider) {
-    params.push(opts.provider);
+    baseParams.push(...providers);
   }
-  if (hasCursor) {
-    params.push(opts.cursor);
+  if (pattern !== undefined) {
+    baseParams.push(pattern, pattern);
   }
-  params.push(limit + 1);
+  if (hasRange) {
+    baseParams.push(since);
+  }
+  if (statuses !== undefined) {
+    baseParams.push(...statuses);
+  }
+  const params = [...baseParams, ...(hasCursor ? [opts.cursor] : []), limit + 1];
 
-  const rows = cachedStmt(db, sessionListSql(hasProvider, hasCursor)).all(...params) as Array<
-    Record<string, unknown>
-  >;
+  const rows = cachedStmt(db, sessionListSql(flags)).all(...params) as Array<Record<string, unknown>>;
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit);
   const items = mergeSessionIndex(page.map(mapSessionIndex), opts.groups ?? []);
   const last = items.at(-1);
-  const countParams: unknown[] = [opts.dataSource];
-  if (hasProvider) {
-    countParams.push(opts.provider);
-  }
-  const countRow = cachedStmt(db, sessionCountSql(hasProvider)).get(...countParams) as { c: number };
+  const countRow = cachedStmt(db, sessionCountSql({ ...flags, cursor: false })).get(
+    ...baseParams,
+  ) as { c: number };
   return {
     items,
     nextCursor: hasMore && last !== undefined ? last.startedAt : null,

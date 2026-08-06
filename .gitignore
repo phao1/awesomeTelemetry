@@ -35,6 +35,14 @@ compare/
 # ===== 本地交接 / 工作文档（含真实会话 key 与本机路径，勿上传；如需公开请先脱敏）=====
 NEXT-TASKS.md
 UI-TASKS.md
+TRAE-MACOS-SQLCIPHER-HANDOFF.md
+
+# ===== 构建产物压缩包 =====
+build-agent-observability-site.zip
+
+# ===== Python 缓存 =====
+__pycache__/
+*.pyc
 
 # ===== 本地 Claude 权限配置（个人允许规则，勿上传）=====
 .claude/settings.local.json

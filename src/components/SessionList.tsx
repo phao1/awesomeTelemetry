@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -9,7 +8,13 @@ import {
 
 import type { Locale, I18nKey } from '../i18n.js';
 import { t } from '../i18n.js';
-import type { ProviderKey, SessionIndexEntry, TraceStatus } from '../core/trace-types.js';
+import type {
+  ProviderKey,
+  SessionIndexEntry,
+  SessionRange,
+  TraceStatus,
+} from '../core/trace-types.js';
+import { SESSION_RANGES } from '../core/trace-types.js';
 import { useVirtualList } from '../hooks/useVirtualList.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 import { IconSidebar } from './icons/index.js';
@@ -32,8 +37,16 @@ export interface SessionListProps {
   /** REQ-016/REQ-024：受控过滤（App 持有并同步 URL hash） */
   providerFilter: ProviderKey[];
   statusFilter: TraceStatus[];
+  /** 服务端搜索（标题 / ID 子串），受控。 */
+  q: string;
+  onQChange: (q: string) => void;
+  /** 时间范围（服务端过滤），受控。 */
+  range: SessionRange;
+  onRangeChange: (range: SessionRange) => void;
   onProviderFilterChange: (providers: ProviderKey[]) => void;
   onStatusFilterChange: (statuses: TraceStatus[]) => void;
+  /** 当前过滤条件下的总条数（服务端 total）。 */
+  total: number;
   /** REQ-008：键盘浏览游标 + 全局 `/` 聚焦入口 */
   cursorIndex: number;
   searchInputRef: RefObject<HTMLInputElement | null>;
@@ -57,6 +70,13 @@ const PROVIDERS: ProviderKey[] = [
 ];
 
 const STATUSES: TraceStatus[] = ['success', 'error', 'running', 'cancelled', 'unknown'];
+
+const RANGE_LABEL: Record<SessionRange, I18nKey> = {
+  today: 'session.rangeToday',
+  '7d': 'session.range7d',
+  '30d': 'session.range30d',
+  all: 'session.rangeAll',
+};
 
 function relativeTime(iso: string, locale: Locale): string {
   const diffMs = Date.now() - Date.parse(iso);
@@ -89,8 +109,13 @@ export function SessionList({
   offlineSamples,
   providerFilter,
   statusFilter,
+  q,
+  onQChange,
+  range,
+  onRangeChange,
   onProviderFilterChange,
   onStatusFilterChange,
+  total,
   cursorIndex,
   searchInputRef,
   width,
@@ -98,24 +123,12 @@ export function SessionList({
   onResize,
   onToggleCollapse,
 }: SessionListProps): React.JSX.Element {
-  const [search, setSearch] = useState('');
   const [providerOpen, setProviderOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
 
-  const filtered = useMemo(
-    () =>
-      items.filter(
-        (s) =>
-          (search === '' ||
-            s.title.toLowerCase().includes(search.toLowerCase()) ||
-            s.id.toLowerCase().includes(search.toLowerCase())) &&
-          (providerFilter.length === 0 || providerFilter.includes(s.provider)) &&
-          (statusFilter.length === 0 || statusFilter.includes(s.status)),
-      ),
-    [items, search, providerFilter, statusFilter],
-  );
-
-  const { containerRef, range, onScroll } = useVirtualList(filtered.length, 44);
+  // REQ-016（delta）：过滤全部服务端化——App 按 q/range/provider/status 拉取，
+  // 本组件不再对已加载页做纯前端过滤（分页下只过滤已加载项会漏数据）。
+  const { containerRef, range: virtualRange, onScroll } = useVirtualList(items.length, 44);
 
   // REQ-008：游标滚动进视口
   useEffect(() => {
@@ -130,12 +143,6 @@ export function SessionList({
       container.scrollTop = top + 44 - container.clientHeight;
     }
   }, [cursorIndex, containerRef]);
-
-  useEffect(() => {
-    if (hasMore && range.endIndex >= filtered.length - 10 && !loading) {
-      onLoadMore();
-    }
-  }, [range.endIndex, filtered.length, hasMore, loading, onLoadMore]);
 
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const onDragStart = (event: ReactMouseEvent<HTMLElement>): void => {
@@ -172,9 +179,22 @@ export function SessionList({
         <SearchInput
           inputRef={searchInputRef}
           placeholder={t('session.search', locale)}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={q}
+          onChange={(e) => onQChange(e.target.value)}
         />
+        <div className="session-range-row" role="group" aria-label={t('session.range', locale)}>
+          {SESSION_RANGES.map((r) => (
+            <button
+              key={r}
+              type="button"
+              className={`session-range-btn ${r === range ? 'session-range-btn-on' : ''}`}
+              aria-pressed={r === range}
+              onClick={() => onRangeChange(r)}
+            >
+              {t(RANGE_LABEL[r], locale)}
+            </button>
+          ))}
+        </div>
         <div className="session-filter-row">
           <Popover
             open={providerOpen}
@@ -267,10 +287,10 @@ export function SessionList({
         style={{ height: '100%', overflowY: 'auto', position: 'relative' }}
         onScroll={onScroll}
       >
-        <div style={{ height: range.totalHeight, position: 'relative' }}>
-          <div style={{ transform: `translateY(${range.offsetY}px)` }}>
-            {filtered.slice(range.startIndex, range.endIndex).map((session, visibleIndex) => {
-              const index = range.startIndex + visibleIndex;
+        <div style={{ height: virtualRange.totalHeight, position: 'relative' }}>
+          <div style={{ transform: `translateY(${virtualRange.offsetY}px)` }}>
+            {items.slice(virtualRange.startIndex, virtualRange.endIndex).map((session, visibleIndex) => {
+              const index = virtualRange.startIndex + visibleIndex;
               const selected = session.id === selectedId;
               return (
                 <div
@@ -292,6 +312,9 @@ export function SessionList({
                   </div>
                   <div className="session-row-meta">
                     <ProviderBadge provider={session.provider} locale={locale} />
+                    <span className="mono session-row-id" title={session.id}>
+                      {session.id}
+                    </span>
                     <span>{relativeTime(session.startedAt, locale)}</span>
                     <span className="mono">{session.eventCount} ev</span>
                     <span className="mono">{(session.tokenTotal / 1000).toFixed(1)}k tok</span>
@@ -302,7 +325,21 @@ export function SessionList({
           </div>
         </div>
       </div>
-      {loading && items.length > 0 && <div className="hint">{t('common.loading', locale)}</div>}
+      <div className="session-list-footer">
+        <span className="session-total mono">
+          {t('session.total', locale).replace('{n}', String(total))}
+        </span>
+        {hasMore && (
+          <button
+            type="button"
+            className="btn ui-btn-sm"
+            disabled={loading}
+            onClick={onLoadMore}
+          >
+            {loading ? t('common.loading', locale) : t('session.loadMore', locale)}
+          </button>
+        )}
+      </div>
       <div className="rail-resize" onMouseDown={onDragStart} aria-hidden="true" />
     </aside>
   );

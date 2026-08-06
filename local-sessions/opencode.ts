@@ -1,4 +1,4 @@
-import type { OpenCodePart } from '../src/adapters/opencode.js';
+import type { OpenCodePart, OpenCodeTokenData } from '../src/adapters/opencode.js';
 import { opencodeAdapter } from '../src/adapters/opencode.js';
 import { toIsoFromMs } from '../src/adapters/helpers.js';
 import { openReadonly } from '../server/storage/db.js';
@@ -116,6 +116,10 @@ export function readOpenCodeDb(dbPath: string): OpenCodeSessionSample[] {
           text: typeof data.text === 'string' ? data.text : undefined,
           tool: typeof data.tool === 'string' ? data.tool : undefined,
           state: data.state as OpenCodePart['state'] | undefined,
+          tokens:
+            typeof data.tokens === 'object' && data.tokens !== null
+              ? (data.tokens as OpenCodeTokenData)
+              : undefined,
         });
       } else {
         const typed = part as unknown as OpenCodeDbPartRow;
@@ -251,6 +255,52 @@ export function readOpenCodeSessionIndex(dbPath: string): SqliteSessionMeta[] {
         : db.prepare('SELECT sessionID AS session_id, COUNT(*) AS c FROM message GROUP BY sessionID')
     ).all() as Array<{ session_id: string; c: number }>;
     const countBySession = new Map(counts.map((r) => [String(r.session_id), Number(r.c)]));
+    // fix-session-detail-display §3.2：事件数 = 非纯标记 part 数（与详情适配器同口径，
+    // 纯 step-start/step-finish = 无 text/tokens、status completed、无 message.error、
+    // 且不是 message.tokens 的载体（message 有 tokens 且无 part 级 tokens 时，
+    // 适配器保留该消息第一条 step 系 part 承载 token））
+    const partCounts = (
+      dialect.dataCols
+        ? db.prepare(
+            `SELECT session_id, COUNT(*) AS c FROM part WHERE NOT (
+               json_extract(data,'$.type') IN ('step-start','step-finish')
+               AND (json_extract(data,'$.text') IS NULL OR json_extract(data,'$.text') = '')
+               AND json_extract(data,'$.tokens') IS NULL
+               AND COALESCE(json_extract(data,'$.state.status'),'completed') = 'completed'
+               AND NOT EXISTS (
+                 SELECT 1 FROM message m2 WHERE m2.id = part.message_id
+                   AND json_extract(m2.data,'$.error') IS NOT NULL
+               )
+               AND NOT (
+                 EXISTS (
+                   SELECT 1 FROM message m2 WHERE m2.id = part.message_id
+                     AND json_extract(m2.data,'$.tokens') IS NOT NULL
+                 )
+                 AND NOT EXISTS (
+                   SELECT 1 FROM part q WHERE q.message_id = part.message_id
+                     AND json_extract(q.data,'$.tokens') IS NOT NULL
+                 )
+                 AND part.id = (
+                   SELECT q2.id FROM part q2
+                   WHERE q2.message_id = part.message_id
+                     AND json_extract(q2.data,'$.type') IN ('step-start','step-finish')
+                   ORDER BY q2.rowid LIMIT 1
+                 )
+               )
+             ) GROUP BY session_id`,
+          )
+        : db.prepare(
+            `SELECT m.sessionID AS session_id, COUNT(*) AS c FROM part p
+             JOIN message m ON m.id = p.messageID
+             WHERE NOT (
+               p.type IN ('step-start','step-finish')
+               AND (p.text IS NULL OR p.text = '')
+               AND (p.state IS NULL OR json_extract(p.state,'$.tokens') IS NULL)
+               AND COALESCE(json_extract(p.state,'$.status'),'completed') = 'completed'
+             ) GROUP BY m.sessionID`,
+          )
+    ).all() as Array<{ session_id: string; c: number }>;
+    const partCountBySession = new Map(partCounts.map((r) => [String(r.session_id), Number(r.c)]));
     return rows.map((row) => {
       const title = typeof row.title === 'string' ? row.title : '';
       const time =
@@ -269,7 +319,8 @@ export function readOpenCodeSessionIndex(dbPath: string): SqliteSessionMeta[] {
         title: title.trim() !== '' ? title : (firstUserTitle ?? ''),
         startedAt: toIsoFromMs(created),
         updatedAt: toIsoFromMs(updated),
-        eventCount: countBySession.get(sessionId) ?? 0,
+        eventCount: partCountBySession.get(sessionId) ?? 0,
+        messageCount: countBySession.get(sessionId) ?? 0,
       };
     });
   } finally {

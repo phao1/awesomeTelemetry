@@ -39,15 +39,20 @@ export function fingerprintFile(path: string): FileFingerprint {
 export function fingerprintSqliteWithWal(dbPath: string): FileFingerprint {
   const main = fingerprintFile(dbPath);
   const walPath = `${dbPath}-wal`;
-  let walHash = '';
+  let wal: FileFingerprint | null = null;
   try {
-    walHash = fingerprintFile(walPath).hash;
+    wal = fingerprintFile(walPath);
   } catch {
     // -wal 尚不存在；主文件指纹已含大小/mtime，新建 -wal 后合并指纹必变
   }
   return {
     size: main.size,
-    mtimeMs: main.mtimeMs,
-    hash: `${main.hash}:${walHash}`,
+    // G11.15: WAL may be rewritten in-place while its size and first/last 4KB
+    // remain unchanged. Preserve WAL mtime in both the comparable timestamp
+    // and composite hash so middle-page writes cannot be skipped.
+    mtimeMs: Math.max(main.mtimeMs, wal?.mtimeMs ?? 0),
+    hash: wal === null
+      ? `${main.hash}:`
+      : `${main.hash}:${wal.hash}:${wal.size}:${wal.mtimeMs}`,
   };
 }

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdtempSync, openSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   extractTitleFromUserText,
   fallbackSessionTitle,
+  JSONL_INDEX_LINE_CAP,
   readJsonlIndexMeta,
   TITLE_MAX_LENGTH,
 } from './index-title.js';
@@ -153,6 +154,49 @@ describe('REQ-021 索引阶段真实标题（T-10）', () => {
     const meta = readJsonlIndexMeta(path, 'claude');
     expect(meta.title).toMatch(/^claude session · /);
     expect(meta.eventCount).toBe(0);
+  });
+
+  it('fix-session-detail-display 3.1：eventCount 数完全文件 message 行（标题找到后继续）', () => {
+    const dir = tempDir();
+    const rows: unknown[] = [
+      { timestamp: '2026-08-04T06:00:00.000Z', type: 'session_meta', payload: { session_id: 's1' } },
+      {
+        timestamp: '2026-08-04T06:00:01.000Z',
+        type: 'response_item',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '首条真实提问' }] },
+      },
+    ];
+    for (let i = 0; i < 7; i += 1) {
+      rows.push({
+        timestamp: `2026-08-04T06:00:0${i + 2}.000Z`,
+        type: 'response_item',
+        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `reply ${i}` }] },
+      });
+    }
+    const path = writeLines(dir, 'full-count.jsonl', rows);
+    const meta = readJsonlIndexMeta(path, 'codex');
+    expect(meta.title).toBe('首条真实提问');
+    expect(meta.eventCount).toBe(8); // 1 user + 7 assistant
+    expect(meta.approximate).toBe(false);
+  });
+
+  it('fix-session-detail-display 3.1：超过行数上限标记 approximate', () => {
+    const dir = tempDir();
+    const path = join(dir, 'huge.jsonl');
+    const line = JSON.stringify({
+      timestamp: '2026-08-04T06:00:00.000Z',
+      type: 'response_item',
+      payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'x' }] },
+    });
+    const chunk = (line + '\n').repeat(1000);
+    const handle = openSync(path, 'w');
+    for (let i = 0; i < Math.ceil((JSONL_INDEX_LINE_CAP + 5) / 1000); i += 1) {
+      writeSync(handle, chunk);
+    }
+    closeSync(handle);
+    const meta = readJsonlIndexMeta(path, 'codex');
+    expect(meta.approximate).toBe(true);
+    expect(meta.eventCount).toBe(JSONL_INDEX_LINE_CAP);
   });
 
   it('fallbackSessionTitle 包含 provider 且不含文件名', () => {

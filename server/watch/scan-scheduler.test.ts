@@ -8,8 +8,11 @@ import Database from 'better-sqlite3';
 
 import type { LocalSessionConfig } from '../../src/core/trace-types.js';
 import { initSchema } from '../storage/schema.js';
+import { upsertSessionFromTrace } from '../storage/writers.js';
 import { claudeScanner } from '../../local-sessions/claude.js';
-import type { ProviderScanner } from '../../local-sessions/scanner-utils.js';
+import { upsertIndexEntries, type ProviderScanner } from '../../local-sessions/scanner-utils.js';
+import { deriveSessionKey } from '../../local-sessions/session-key.js';
+import { traeScanner } from '../../local-sessions/trae.js';
 import { initialScanAndStore, scanLocalSessions } from './scan-scheduler.js';
 
 type Db = InstanceType<typeof Database>;
@@ -162,6 +165,57 @@ describe('REQ-013 两阶段启动', () => {
     expect(rows.every((r) => r.detail_loaded === 0)).toBe(true);
     const states = db.prepare('SELECT COUNT(*) AS c FROM scan_state').get() as { c: number };
     expect(states.c).toBe(0);
+    db.close();
+  });
+
+  it('aggregate-native-sessions：已有 Trae 原生会话时重启不再创建文件占位', () => {
+    const traeDir = tempDir();
+    const dbPath = join(traeDir, 'database.db');
+    writeFileSync(dbPath, 'encrypted-placeholder');
+    const config = makeConfig(tempDir(), tempDir());
+    config.providers.claude.enabled = false;
+    config.providers.codex.enabled = false;
+    config.providers.trae = {
+      ...config.providers.trae,
+      enabled: true,
+      path: traeDir,
+    };
+    const db = newDb();
+    const placeholder = traeScanner.buildIndexEntries(config.providers.trae, dbPath)[0]!;
+    upsertIndexEntries(db, [placeholder]);
+    const nativeKey = deriveSessionKey('trae', dbPath, 'native-s1');
+    upsertSessionFromTrace(db, {
+      id: nativeKey,
+      provider: 'trae',
+      sourceAgent: 'Trae',
+      title: '6666',
+      startedAt: '2026-08-06T01:51:43.000Z',
+      updatedAt: '2026-08-06T01:51:51.000Z',
+      status: 'success',
+      cwd: null,
+      messageCount: 2,
+      eventCount: 2,
+      tokenUsage: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 0, total: 0 },
+      costUsd: 0,
+      systemPrompt: null,
+      dataSource: 'scan',
+      sourcePath: dbPath,
+      totalDurationMs: 8000,
+      isSubagent: false,
+    });
+    db.prepare('UPDATE sessions SET detail_loaded = 1 WHERE id = ?').run(nativeKey);
+    const notified: string[] = [];
+
+    const result = initialScanAndStore({
+      db,
+      config,
+      notify: (key) => notified.push(key),
+    });
+
+    expect(result.indexCount).toBe(0);
+    expect(db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(nativeKey)).toBeDefined();
+    expect(db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(placeholder.id)).toBeUndefined();
+    expect(notified).toContain(placeholder.id);
     db.close();
   });
 });

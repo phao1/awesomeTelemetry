@@ -56,6 +56,40 @@ describe('CodeArts adapter（REQ-005/G9.1 thin wrapper）', () => {
     expect(r.events.map((e) => e.status)).toEqual(['success', 'error', 'running', 'cancelled']);
   });
 
+  it('fix-session-detail-display 2.x：真实 CodeArts part 形状（tool 输入输出 + 纯 step 标记 + step tokens）', () => {
+    const events = [
+      { id: 'm1', role: 'user' as const, sessionID: 'ca2-s1', time: { created: 1754000000000 }, tokens: null, content: [{ type: 'text', text: '看板下钻' }] },
+      {
+        id: 'm2',
+        role: 'assistant' as const,
+        sessionID: 'ca2-s1',
+        time: { created: 1754000010000 },
+        tokens: null,
+        content: [
+          { type: 'step-start' },
+          {
+            type: 'tool',
+            tool: 'glob',
+            state: { status: 'completed', title: 'glob src', input: { pattern: '*' }, output: '/tmp/a.ts' },
+          },
+          { type: 'step-finish', tokens: { total: 100, input: 90, output: 10, cache: { read: 0, write: 0 } } },
+        ],
+      },
+    ];
+    const r = codeartsAdapter.normalize(
+      { sourceAgent: 'CodeArts', session: codeartsFixture.session, events },
+      SRC,
+    );
+    expect(r.events.map((e) => e.kind)).toEqual(['user_prompt', 'file_read', 'agent']);
+    expect(r.events[1]!.hasInput).toBe(true);
+    expect(JSON.parse(r.events[1]!.inputSummary ?? '')).toEqual({ pattern: '*' });
+    expect(r.events[1]!.outputSummary).toBe('/tmp/a.ts');
+    expect(r.events[2]!.title).toBe('agent step: success');
+    expect(r.events[2]!.tokens?.input).toBe(90);
+    expect(r.session.tokenUsage.input).toBe(90); // 只计一次
+    expect(r.session.eventCount).toBe(3);
+  });
+
   it('重复 event id 追加 :sequence 后缀', () => {
     const events = [
       { id: 'dup', role: 'assistant' as const, sessionID: 'ca2-s1', time: { created: 1754000000000 }, tokens: null, content: [{ type: 'text', text: 'a' }] },

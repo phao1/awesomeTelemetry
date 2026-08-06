@@ -5,9 +5,12 @@ import type {
   ProxyRequestListItem,
   SessionDetailResponse,
   SessionIndexEntry,
+  SessionRange,
+  SessionPromptContext,
   SpeedMetrics,
   TraceEvent,
   TraceEventRaw,
+  TraceStatus,
 } from '../core/trace-types.js';
 
 const BASE = '/api';
@@ -76,11 +79,11 @@ export async function fetchText(path: string): Promise<string> {
   return text;
 }
 
-function qs(params: Record<string, string | number | undefined>): string {
+function qs(params: Record<string, string | number | string[] | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined) {
-      search.set(key, String(value));
+      search.set(key, Array.isArray(value) ? value.join(',') : String(value));
     }
   }
   const raw = search.toString();
@@ -97,7 +100,10 @@ export interface SessionListResponse {
 export const api = {
   listSessions(params: {
     dataSource?: 'scan' | 'proxy';
-    provider?: string;
+    provider?: string[];
+    status?: TraceStatus[];
+    q?: string;
+    range?: SessionRange;
     limit?: number;
     cursor?: string;
     keys?: string[];
@@ -106,6 +112,9 @@ export const api = {
       `/sessions${qs({
         dataSource: params.dataSource ?? 'scan',
         provider: params.provider,
+        status: params.status,
+        q: params.q,
+        range: params.range,
         limit: params.limit ?? 50,
         cursor: params.cursor,
         keys: params.keys?.join(','),
@@ -120,6 +129,11 @@ export const api = {
   ): Promise<SessionDetailResponse> {
     return fetchJson<SessionDetailResponse>(
       `/sessions/${encodeURIComponent(key)}${qs({ mode, offset, limit })}`,
+    );
+  },
+  promptContext(key: string): Promise<SessionPromptContext> {
+    return fetchJson<SessionPromptContext>(
+      `/sessions/${encodeURIComponent(key)}/prompt-context`,
     );
   },
   eventDetail(key: string, eventId: string, includeRaw = false): Promise<TraceEvent | TraceEventRaw> {

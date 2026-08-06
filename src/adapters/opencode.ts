@@ -41,7 +41,9 @@ export interface OpenCodePart {
   type: string;
   text?: string;
   tool?: string;
-  state?: { status?: string; title?: string; input?: unknown; output?: string };
+  state?: { status?: string; title?: string; input?: unknown; output?: unknown };
+  /** 真实 CodeArts step-finish part 顶层自带 tokens（与 message.tokens 并存）。 */
+  tokens?: OpenCodeTokenData | null;
   [key: string]: unknown;
 }
 
@@ -107,25 +109,62 @@ function toEventTokens(
   };
 }
 
-/**
- * #5（审查 P0）：一条消息的多个 part 共享同一份 message.tokens，若每个 part 都挂
- * tokens，会话级聚合会把 token 膨胀 N 倍（N = part 数）。只把 tokens 挂在代表事件上：
- * 优先第一条 step part（step-finish 携带真实计量），无 step 时挂最后一个 part。
- */
-function isTokenCarrier(message: OpenCodeMessage, partIndex: number): boolean {
-  const parts = message.content ?? [];
-  if (parts[partIndex]?.type === 'step') {
-    return true;
+/** step 系 part：'step'（fixture 旧 schema）与真实 'step-start' / 'step-finish'。 */
+function isStepFamily(type: string): boolean {
+  return type === 'step' || type === 'step-start' || type === 'step-finish';
+}
+
+/** 纯控制标记：step 系 + 无 text/tokens/error + status completed（不产出事件）。 */
+function isPureStepMarker(
+  message: OpenCodeMessage,
+  part: OpenCodePart,
+  partIndex: number,
+): boolean {
+  if (!isStepFamily(part.type)) {
+    return false;
   }
-  return !parts.some((part) => part.type === 'step') && partIndex === parts.length - 1;
+  const hasText = part.text !== undefined && part.text.trim() !== '';
+  const hasPartTokens = part.tokens !== null && part.tokens !== undefined;
+  const hasMessageTokens = message.tokens !== null && message.tokens !== undefined;
+  // 真实 CodeArts：message.data.tokens 与 step-finish part.tokens 是同一份拷贝。
+  // 只要存在 part 级 tokens，message.tokens 就是冗余，不需要额外的载体 part。
+  const hasPartTokensAnywhere =
+    (message.content ?? []).some((p) => p.tokens !== null && p.tokens !== undefined);
+  const needsMessageCarrier = hasMessageTokens && !hasPartTokensAnywhere;
+  const parts = message.content ?? [];
+  const firstStepIndex = parts.findIndex((p) => isStepFamily(p.type));
+  if (hasText || hasPartTokens) {
+    return false;
+  }
+  // message.tokens 需要一个载体：第一条 step 系 part 保留（否则 token 数据会丢）
+  if (needsMessageCarrier && firstStepIndex === partIndex) {
+    return false;
+  }
+  if (message.error != null) {
+    return false;
+  }
+  return normalizeStatus(part.state?.status ?? 'completed') === 'success';
+}
+
+/** state.input / state.output → 摘要正文；缺失或空返回 null。 */
+function summaryFrom(value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed === '' ? null : trimmed;
+  }
+  const serialized = JSON.stringify(value);
+  return serialized === undefined || serialized === '' ? null : serialized;
 }
 
 function partToEvent(
   message: OpenCodeMessage,
   part: OpenCodePart,
   partIndex: number,
-  reasoningInTotal: boolean,
-): EventWithRaw {
+  tokens: TokenUsage | null,
+): EventWithRaw | null {
   const startedAt = toIsoFromMs(message.time?.created ?? 0);
   const status = normalizeStatus(message.error ?? part.state?.status ?? 'completed');
   const base = {
@@ -141,9 +180,7 @@ function partToEvent(
     tool: null,
     // P0-B：模型归因，源 message 自带
     model: message.model ?? null,
-    tokens: isTokenCarrier(message, partIndex)
-      ? toEventTokens(message.tokens, reasoningInTotal)
-      : null,
+    tokens,
     error: message.error ?? null,
     hasInput: false,
     hasOutput: false,
@@ -163,22 +200,30 @@ function partToEvent(
           : /^(read|glob|grep|search|list|view|cat|ls|find)/i.test(tool)
             ? 'file_read'
             : 'tool';
+    const inputSummary = summaryFrom(part.state?.input);
+    const outputSummary = summaryFrom(part.state?.output);
     return {
       ...base,
       kind,
       title: titleFromText(title),
       tool: tool || null,
       status: normalizeStatus(part.state?.status ?? message.error ?? 'completed'),
+      hasInput: inputSummary !== null,
+      hasOutput: outputSummary !== null,
+      inputSummary,
+      outputSummary,
       hasRaw: true,
       // raw 与正文分离（G11.10）
       raw: JSON.stringify(part),
     } as EventWithRaw;
   }
-  if (part.type === 'step') {
+  if (isStepFamily(part.type)) {
+    const status = normalizeStatus(message.error ?? part.state?.status ?? 'completed');
     return {
       ...base,
       kind: 'agent',
-      title: titleFromText(part.state?.title ?? part.text),
+      // 确定性标题，避免甘特里一排空标题行（fix-session-detail-display §2.2）
+      title: `agent step: ${status}`,
       actor: message.role === 'user' ? 'user' : 'subagent',
       hasInput: part.text !== undefined,
       hasOutput: part.text !== undefined,
@@ -260,8 +305,37 @@ export function createOpencodeAdapter(
         if (parts.length === 0) {
           continue;
         }
-        for (let partIndex = 0; partIndex < parts.length; partIndex += 1) {
-          events.push(partToEvent(message, parts[partIndex]!, partIndex, dialect.reasoningInTotal));
+        // §2.2：纯 step 标记不产出事件；token 载体解析放在过滤之后，
+        // 保证 message.tokens / part.tokens 恰好挂载到一个保留事件上（不膨胀、不丢失）
+        const kept = parts
+          .map((part, partIndex) => ({ part, partIndex }))
+          .filter(({ part, partIndex }) => !isPureStepMarker(message, part, partIndex));
+        const hasPartLevelTokens = kept.some(({ part }) => part.tokens != null);
+        const firstKeptStep = kept.findIndex(({ part }) => isStepFamily(part.type));
+        const carrierIndex =
+          hasPartLevelTokens
+            ? -1
+            : firstKeptStep >= 0
+            ? kept[firstKeptStep]!.partIndex
+            : kept[kept.length - 1]?.partIndex ?? -1;
+        for (const { part, partIndex } of kept) {
+          const partTokens =
+            part.tokens !== null && part.tokens !== undefined
+              ? toEventTokens(part.tokens, dialect.reasoningInTotal)
+              : null;
+          const messageTokens =
+            partIndex === carrierIndex
+              ? toEventTokens(message.tokens, dialect.reasoningInTotal)
+              : null;
+          const event = partToEvent(
+            message,
+            part,
+            partIndex,
+            partTokens ?? messageTokens,
+          );
+          if (event !== null) {
+            events.push(event);
+          }
         }
       }
       for (const span of otelSpans) {

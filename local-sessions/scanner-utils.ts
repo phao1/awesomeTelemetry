@@ -12,6 +12,7 @@ import type {
 } from '../src/core/trace-types.js';
 import { cachedStmt } from '../server/storage/stmt-cache.js';
 import {
+  deleteSession,
   upsertEvents,
   upsertMetrics,
   upsertSessionFromIndex,
@@ -32,12 +33,16 @@ const UPSERT_EVENT_RAW_SQL =
 const SET_DETAIL_LOADED_SQL = 'UPDATE sessions SET detail_loaded = 1 WHERE id = ?';
 const SELECT_CLEANUP_CANDIDATES_SQL =
   `SELECT id, provider, source_path, detail_loaded FROM sessions WHERE data_source = 'scan'`;
+const SELECT_SOURCE_SESSION_IDS_SQL =
+  `SELECT id FROM sessions ` +
+  `WHERE data_source = 'scan' AND provider = ? AND source_path = ?`;
 
 /** T-03：可读的 SQLite 多会话 provider（索引按 session 行展开，不再产生文件级 key）。 */
 const SQLITE_MULTI_SESSION_PROVIDERS: ReadonlySet<string> = new Set([
   'opencode',
   'codearts',
   'codeagent2',
+  'trae',
 ]);
 
 export interface ScannerContext {
@@ -96,8 +101,10 @@ export interface SqliteSessionMeta {
   title: string;
   startedAt: string;
   updatedAt: string;
-  /** REQ-021：轻量 COUNT(*) 取该会话消息行数（索引阶段事件数）。 */
+  /** REQ-021（fix-session-detail-display §3.2）：该会话事件数 = 保留 part 数。 */
   eventCount: number;
+  /** 该会话 message 行数。 */
+  messageCount: number;
 }
 
 export type SqliteIndexReader = (dbPath: string) => SqliteSessionMeta[];
@@ -159,6 +166,48 @@ export function storeTraceRecord(
   cachedStmt(db, SET_DETAIL_LOADED_SQL).run(key);
   notify?.(key);
   return key;
+}
+
+/**
+ * aggregate-native-sessions D4：完整读取一个多会话数据库后，以本次返回的原生
+ * 会话集合为权威快照。先全部写入，再清理由同一 provider/source 产生但已不在
+ * 快照中的行；解析/归一化在调用前已全部完成，失败时不会进入清理阶段。
+ */
+export function storeAuthoritativeSourceRecords(
+  db: Database,
+  config: ProviderConfig,
+  sourcePath: string,
+  records: TraceRecord[],
+  notify?: (key: string) => void,
+): { keys: string[]; eventCount: number } {
+  const planned = records.map((record) => ({
+    key: deriveSessionKey(config.key, sourcePath, record.session.id),
+    record,
+  }));
+  const currentKeys = new Set(planned.map(({ key }) => key));
+  if (currentKeys.size !== planned.length) {
+    throw new Error(`Duplicate native session id in ${config.key} source ${sourcePath}`);
+  }
+  const existing = cachedStmt(db, SELECT_SOURCE_SESSION_IDS_SQL).all(
+    config.key,
+    sourcePath,
+  ) as Array<{ id: string }>;
+
+  let eventCount = 0;
+  for (const { key, record } of planned) {
+    storeTraceRecord(db, record, sourcePath, key);
+    eventCount += record.events.length;
+  }
+  for (const row of existing) {
+    if (!currentKeys.has(row.id)) {
+      deleteSession(db, row.id);
+      notify?.(row.id);
+    }
+  }
+  for (const { key } of planned) {
+    notify?.(key);
+  }
+  return { keys: [...currentKeys], eventCount };
 }
 
 /**
@@ -276,13 +325,13 @@ export async function scanSqliteFile(
   }
   // T-03：一个 db 文件可能含 N 个会话，全部写入（详情与索引同 key 口径）
   const records = toRecords(filePath, filePath);
-  const keys: string[] = [];
-  let eventCount = 0;
-  for (const record of records) {
-    const key = deriveSessionKey(config.key, filePath, record.session.id);
-    keys.push(storeTraceRecord(ctx.db, record, filePath, key, ctx.notify));
-    eventCount += record.events.length;
-  }
+  const { keys, eventCount } = storeAuthoritativeSourceRecords(
+    ctx.db,
+    config,
+    filePath,
+    records,
+    ctx.notify,
+  );
   commitScanState(ctx.db, {
     sourcePath: filePath,
     provider: config.key,
@@ -477,7 +526,7 @@ export function sqliteIndexEntry(
     status: 'unknown',
     cwd: null,
     eventCount: meta.eventCount,
-    messageCount: 0,
+    messageCount: meta.messageCount,
     tokenTotal: 0,
     costUsd: 0,
     dataSource: 'scan',

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -90,5 +90,29 @@ describe('REQ-002 WAL 型双文件指纹', () => {
     expect(after.hash).not.toBe(before.hash);
     expect(after.hash).toContain(':');
     db.close();
+  });
+
+  it('WAL 同大小且只改中间页时，mtime 仍使组合指纹变化', () => {
+    const dir = tempDir();
+    const dbPath = join(dir, 'sessions.sqlite');
+    const walPath = `${dbPath}-wal`;
+    writeFileSync(dbPath, Buffer.alloc(16 * 1024, 0x61));
+    const wal = Buffer.alloc(16 * 1024, 0x62);
+    writeFileSync(walPath, wal);
+    const before = fingerprintSqliteWithWal(dbPath);
+    const walBefore = fingerprintFile(walPath);
+
+    wal[8 * 1024] = 0x63;
+    writeFileSync(walPath, wal);
+    const future = new Date(Date.now() + 2_000);
+    utimesSync(walPath, future, future);
+    const after = fingerprintSqliteWithWal(dbPath);
+    const walAfter = fingerprintFile(walPath);
+
+    expect(walAfter.size).toBe(walBefore.size);
+    expect(walAfter.hash).toBe(walBefore.hash);
+    expect(walAfter.mtimeMs).not.toBe(walBefore.mtimeMs);
+    expect(after.hash).not.toBe(before.hash);
+    expect(after.mtimeMs).not.toBe(before.mtimeMs);
   });
 });

@@ -216,6 +216,26 @@ describe('T-02 统一 session key', () => {
     db.close();
   });
 
+  it('aggregate-native-sessions：Trae 清理文件占位并保留多个原生 session key', () => {
+    const db = newDb();
+    const insert = db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
+       VALUES (?, 'trae', 'Trae', ?, '2026-08-06T00:00:00.000Z', '2026-08-06T00:01:00.000Z', ?)` ,
+    );
+    const sourcePath = '/data/trae/database.db';
+    const placeholder = deriveSessionKey('trae', sourcePath);
+    const nativeA = deriveSessionKey('trae', sourcePath, 'native-a');
+    const nativeB = deriveSessionKey('trae', sourcePath, 'native-b');
+    insert.run(placeholder, 'trae session', sourcePath);
+    insert.run(nativeA, 'Greeting', sourcePath);
+    insert.run(nativeB, 'Greeting', sourcePath);
+
+    expect(cleanupDuplicateSessionRows(db)).toBe(1);
+    const ids = db.prepare('SELECT id FROM sessions ORDER BY id').all() as Array<{ id: string }>;
+    expect(ids.map((row) => row.id)).toEqual([nativeA, nativeB].sort());
+    db.close();
+  });
+
   it('保留正常未打开的会话（canonical 0 行、无 loaded 兄弟行）', () => {
     const db = newDb();
     const canonical = deriveSessionKey('codex', '/a.jsonl');

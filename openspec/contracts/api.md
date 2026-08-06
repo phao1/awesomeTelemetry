@@ -57,6 +57,7 @@ Example:
 | `INVALID_ENUM` | 400 | enum value outside the allowed set |
 | `SESSION_NOT_FOUND` | 404 | session key does not exist |
 | `EVENT_NOT_FOUND` | 404 | event id not in this session |
+| `PROMPT_CONTEXT_NOT_FOUND` | 404 | session exists but has no captured Prompt Context |
 | `PROXY_REQUEST_NOT_FOUND` | 404 | proxy request id does not exist |
 | `ROUTE_NOT_FOUND` | 404 | path not registered |
 | `PROVIDER_DISABLED` | 409 | provider disabled in config |
@@ -99,7 +100,10 @@ any events.**
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `dataSource` | `'scan' \| 'proxy'` | `'scan'` | data source; scan/proxy shown separately (G7.4) |
-| `provider` | `ProviderKey` | — | optional filter |
+| `provider` | `ProviderKey` | — | optional filter; comma-separated multi-select, `provider IN (...)` |
+| `status` | `TraceStatus` | — | optional filter; comma-separated multi-select, `status IN (...)`; any invalid value returns `400 INVALID_ENUM` |
+| `q` | string | — | title / session ID case-insensitive substring (SQL `LIKE` with `ESCAPE '\'`, `% _ \` treated literally) |
+| `range` | `'today' \| '7d' \| '30d' \| 'all'` | — | `updated_at >= since` activity filter (`today` = local midnight); a long-running session updated today remains visible. Default no filter; frontend default is `today`; invalid value returns `400 INVALID_ENUM` |
 | `limit` | number | 50 | max 500 |
 | `cursor` | string | — | last item's `startedAt` of the previous page |
 | `keys` | string | — | comma-separated key list for batched patches after SSE; max 200, more returns `BAD_REQUEST` |
@@ -116,7 +120,9 @@ interface SessionListResponse {
 ```
 
 > When `keys` is passed, `limit` / `cursor` / `total` are ignored; matching
-> items are returned directly and `hasMore` is always `false`.
+> items are returned directly and `hasMore` is always `false`. The same
+> applies to `q` / `range` / `provider` / `status` — the `keys` path ignores
+> all filters.
 
 **Budget**: 500 items < 60KB (gzipped), server < 5ms.
 
@@ -157,6 +163,22 @@ Single-event drill-down. Called when EventInspector clicks.
 ```
 
 **Budget**: < 20ms.
+
+### 1.3a `GET /api/sessions/:key/prompt-context` (show-trae-prompt-context)
+
+Returns the independently stored `SessionPromptContext` for an explicit UI
+drill-down. It MUST NOT trigger Trae decryption or any child process.
+
+```ts
+// 200 → SessionPromptContext (contracts/data-model.md §3.1)
+// 404 → SESSION_NOT_FOUND when the session key does not exist
+// 404 → PROMPT_CONTEXT_NOT_FOUND when the session exists but has no context row
+```
+
+The session list and `GET /api/sessions/:key` MUST NOT contain
+`dynamicSections`, `modelConfig`, or `analysis` from this endpoint.
+
+**Budget**: < 20ms; gzip applies when the body is >= 1KB.
 
 ### 1.4 `GET /api/sessions/:key/report`
 

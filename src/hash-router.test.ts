@@ -36,4 +36,26 @@ describe('REQ-024 hash 路由', () => {
     expect(serializeHash({ view: 'agent' })).toBe('#/agent');
     expect(parseHash('#/session')).toEqual({ view: 'session' });
   });
+
+  it('会话列表过滤 q/time + 甘特 layout 往返', () => {
+    const hash = serializeHash({
+      view: 'session',
+      q: 'codearts-87fa',
+      time: '7d',
+      layout: 'sequence',
+    });
+    expect(hash).toBe('#/session?q=codearts-87fa&time=7d&layout=sequence');
+    expect(parseHash(hash)).toEqual({
+      view: 'session',
+      q: 'codearts-87fa',
+      time: '7d',
+      layout: 'sequence',
+    });
+  });
+
+  it('非法 time/layout 回落缺省；空 q 省略', () => {
+    expect(parseHash('#/session?time=1y&layout=grid&q=')).toEqual({ view: 'session' });
+    expect(serializeHash({ view: 'session', time: 'today' })).toBe('#/session?time=today');
+    expect(parseHash('#/session?layout=time')).toEqual({ view: 'session', layout: 'time' });
+  });
 });

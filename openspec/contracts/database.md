@@ -64,7 +64,7 @@ export function initSchema(db: Database): void {
   db.prepare(
     "INSERT INTO _meta(key, value) VALUES('schema_version', ?) " +
     "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-  ).run(String(SCHEMA_VERSION));  // SCHEMA_VERSION = 3
+  ).run(String(SCHEMA_VERSION));  // SCHEMA_VERSION = 5
   db.exec('ANALYZE');
 }
 ```
@@ -82,6 +82,9 @@ run the migration chain implemented in `server/storage/schema.ts`
   scan-time precompute; the per-request read is now a rollup `COUNT`.
   All `ADD COLUMN` are non-destructive — existing rows keep their values and
   the new columns are backfilled naturally on the next scan round.
+- **v4 → v5** (show-trae-prompt-context): create the additive
+  `session_prompt_context` table. Existing session/event rows are unchanged;
+  prompt context is populated by the next changed or forced Trae scan.
 - Migration failure MUST throw with a "delete the DB and rescan" hint; the
   database is a rebuildable cache of local session files, and a half-migrated
   state is more dangerous than a rescan (decision: tasks.md "已做的决策" #3).
@@ -157,6 +160,7 @@ CREATE TABLE IF NOT EXISTS events (
   tokens_json    TEXT,
   error          TEXT,
   model          TEXT,
+  content_hash   TEXT    NOT NULL DEFAULT '',
   input_len      INTEGER NOT NULL DEFAULT 0,
   output_len     INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (session_id, id)
@@ -164,6 +168,8 @@ CREATE TABLE IF NOT EXISTS events (
 ```
 
 > **No `raw` column.** raw lives in `event_raw`.
+> `content_hash`（fix-session-detail-display §1）：差分写入的内容判等列，
+> FNV-1a 64bit hex，覆盖全部可变列；同 (id, sequence) 内容变化时据此触发 UPDATE。
 > Duplicate event ids within a session get a `:{sequence}` suffix from the
 > adapter; they are unique before hitting the DB.
 
@@ -301,6 +307,30 @@ CREATE TABLE IF NOT EXISTS frida_captures (
   tokens_json        TEXT
 );
 ```
+
+### 3.9 `session_prompt_context` (show-trae-prompt-context)
+
+One latest Prompt Context snapshot per stored session. Large dynamic bodies are
+kept outside `sessions` so list and ordinary detail queries cannot select them
+accidentally.
+
+```sql
+CREATE TABLE IF NOT EXISTS session_prompt_context (
+  session_id        TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  provider          TEXT NOT NULL,
+  source            TEXT NOT NULL,
+  completeness      TEXT NOT NULL,
+  captured_at       TEXT NOT NULL,
+  sections_json     TEXT NOT NULL DEFAULT '[]',
+  model_config_json TEXT NOT NULL DEFAULT '{}',
+  analysis_json     TEXT NOT NULL DEFAULT '{}',
+  full_system_prompt TEXT
+) WITHOUT ROWID;
+```
+
+The `trae_db` source MUST store `completeness='dynamic_only'` and
+`full_system_prompt=NULL`. Reads use the primary-key index; no additional index
+is required.
 
 ## 4. Indexes (full set)
 

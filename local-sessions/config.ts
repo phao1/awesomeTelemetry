@@ -177,8 +177,8 @@ export function mergeLocalSessionConfig(
   const providers = {} as Record<ProviderKey, ProviderConfig>;
   for (const key of Object.keys(defaults.providers) as ProviderKey[]) {
     providers[key] = mergeProvider(
-      mergeProvider(defaults.providers[key]!, project?.providers[key]),
-      user?.providers[key],
+      mergeProvider(defaults.providers[key]!, project?.providers?.[key]),
+      user?.providers?.[key],
     );
   }
   return {

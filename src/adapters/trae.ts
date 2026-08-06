@@ -1,4 +1,5 @@
 import type { TraceEvent, TracePhase, TraceRecord, TraceSession, TraceStatus } from '../core/trace-types.js';
+import { extractTitleFromUserText, fallbackSessionTitle } from '../core/title-utils.js';
 import {
   aggregateTokenUsage,
   dedupeEventIds,
@@ -255,6 +256,7 @@ export function normalizeTraeSample(
       };
     }
 
+    const isUser = type === 'user';
     events.push({
       id: turn.id,
       sessionId: turn.sessionId ?? record.id ?? '',
@@ -270,12 +272,12 @@ export function normalizeTraeSample(
       tokens,
       error: status === 'error' ? titleFromText(turn.content ?? 'error', 500) : null,
       hasInput: turn.content != null,
-      hasOutput: turn.content != null || turn.reasoningContent != null,
+      hasOutput: !isUser && (turn.content != null || turn.reasoningContent != null),
       hasRaw: true,
-      inputSummary: null,
+      inputSummary: isUser ? turn.content ?? null : null,
       // #7：llm 行无正文但 history_v2 提供 reasoning_content 时回退展示。
       outputSummary:
-        turn.content != null
+        !isUser && turn.content != null
           ? titleFromText(turn.content, 5000)
           : turn.reasoningContent != null
             ? titleFromText(turn.reasoningContent, 5000)
@@ -289,6 +291,21 @@ export function normalizeTraeSample(
   const ordered = orderEventsByTime(split);
   const deduped = dedupeEventIds(ordered);
   const times = minMaxIso(deduped);
+  // aggregate-native-sessions D6：原生 chat_session 时间是卡片边界；无事件会话
+  // 也必须保留真实时间，不能落到 Unix epoch。旧样本未提供时继续回退事件范围。
+  const nativeStartedAt =
+    record.startTime !== undefined ? toIsoFromSeconds(record.startTime) : null;
+  const nativeUpdatedAt =
+    record.endTime !== undefined ? toIsoFromSeconds(record.endTime) : null;
+  const startedAt = nativeStartedAt ?? times.startedAt;
+  const firstUserTitle = turns
+    .filter((turn) => turn.type === 'user' && turn.content !== undefined)
+    .map((turn) => extractTitleFromUserText(turn.content ?? ''))
+    .find((title) => title !== null) ?? null;
+  const sessionTitle =
+    record.title !== undefined && record.title.trim() !== ''
+      ? titleFromText(record.title)
+      : firstUserTitle ?? fallbackSessionTitle('trae', Date.parse(startedAt));
   // #16（审查 P3）：Trae server_history_info 不含 cache.read 字段，
   // cacheRead 恒为 0；声明 incremental 仅是形式，不产生真实累加。
   const semantics = { cacheRead: 'incremental' as const, reasoning: 'incremental' as const };
@@ -296,9 +313,9 @@ export function normalizeTraeSample(
     id: record.id ?? `trae-${sourcePath}`,
     provider: 'trae',
     sourceAgent: record.agentName ?? 'Trae',
-    title: titleFromText(record.title ?? ''),
-    startedAt: times.startedAt,
-    updatedAt: times.updatedAt,
+    title: sessionTitle,
+    startedAt,
+    updatedAt: nativeUpdatedAt ?? times.updatedAt,
     status: deduped.at(-1)?.status ?? 'unknown',
     cwd: null,
     messageCount: turns.length,

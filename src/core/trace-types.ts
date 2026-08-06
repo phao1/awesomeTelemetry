@@ -41,6 +41,15 @@ export const TRACE_KINDS: readonly TraceKind[] = [
  */
 export type TraceStatus = 'success' | 'error' | 'running' | 'cancelled' | 'unknown';
 
+/** 会话列表时间范围（服务端过滤，前端默认 today）。 */
+export type SessionRange = 'today' | '7d' | '30d' | 'all';
+
+export const SESSION_RANGES: readonly SessionRange[] = ['today', '7d', '30d', 'all'] as const;
+
+export const TRACE_STATUSES: readonly TraceStatus[] = [
+  'success', 'error', 'running', 'cancelled', 'unknown',
+] as const;
+
 /** 9 个 provider。新增 provider 必须同时更新此枚举、扫描器、适配器、i18n 两个 locale。 */
 export type ProviderKey =
   | 'claude'
@@ -203,6 +212,70 @@ export interface TraceSession {
   costSource?: CostSource;
   /** 逐事件 durationMs 的来源，见 DurationSource。 */
   durationSource?: DurationSource;
+}
+
+// ── §3.1 按需 Prompt Context ──────────────────────────────
+
+export type PromptContextCompleteness = 'dynamic_only' | 'complete';
+export type PromptContextSource = 'trae_db' | 'proxy' | 'frida';
+export type PromptContextCategory =
+  | 'terminal'
+  | 'workspace_rules'
+  | 'environment'
+  | 'instructions'
+  | 'skills'
+  | 'language'
+  | 'other';
+
+export interface PromptContextSection {
+  id: string;
+  category: PromptContextCategory;
+  title: string;
+  /** 默认脱敏规则处理后的动态正文。 */
+  content: string;
+  chars: number;
+  estimatedTokens: number;
+  /** 与此前 section 完全重复时指向首个 section.id。 */
+  duplicateOf: string | null;
+}
+
+export interface PromptModelConfig {
+  modelName: string | null;
+  configName: string | null;
+  promptMaxTokens: number | null;
+  maxOutputTokens: number | null;
+  maxTurns: number | null;
+  isPreset: boolean | null;
+  locale: string | null;
+  agentType: string | null;
+  agentName: string | null;
+  /** model_info.extra_config 中值严格为 true 的布尔开关名（白名单值形态）。 */
+  enabledFeatures: string[];
+}
+
+export interface PromptContextAnalysis {
+  totalChars: number;
+  estimatedTokens: number;
+  sectionCount: number;
+  uniqueSectionCount: number;
+  duplicateSectionCount: number;
+  duplicateChars: number;
+  /** estimatedTokens / promptMaxTokens * 100；未知窗口为 null。 */
+  contextWindowPercent: number | null;
+}
+
+/** 独立按需接口返回；不得进入 session list 或普通 session detail。 */
+export interface SessionPromptContext {
+  sessionId: string;
+  provider: ProviderKey;
+  source: PromptContextSource;
+  completeness: PromptContextCompleteness;
+  capturedAt: string;
+  dynamicSections: PromptContextSection[];
+  modelConfig: PromptModelConfig;
+  analysis: PromptContextAnalysis;
+  /** 数据库动态上下文不能冒充完整静态 System Prompt。 */
+  fullSystemPrompt: string | null;
 }
 
 // ── §4 事件 ────────────────────────────────────────────────

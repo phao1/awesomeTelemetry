@@ -71,6 +71,21 @@ describe('REQ-004 三层配置覆盖', () => {
     expect(config.providers.trae.watchStrategy).toBe('poll');
   });
 
+  it('项目配置可以只覆盖非 provider 字段', () => {
+    const dir = tempDir();
+    const projectPath = join(dir, 'project.json');
+    writeJson(projectPath, { traeKeyPath: '/keys/trae.key' });
+
+    const config = loadLocalSessionConfig({
+      projectConfigPath: projectPath,
+      userConfigPath: join(dir, 'missing-user.json'),
+    });
+
+    expect(config.traeKeyPath).toBe('/keys/trae.key');
+    expect(config.providers.claude.path).toBe(DEFAULT_LOCAL_SESSION_CONFIG.providers.claude.path);
+    expect(config.providers.codex.path).toBe(DEFAULT_LOCAL_SESSION_CONFIG.providers.codex.path);
+  });
+
   it('mergeLocalSessionConfig 用户层覆盖 project 层', () => {
     const base = DEFAULT_LOCAL_SESSION_CONFIG;
     const merged = mergeLocalSessionConfig(
