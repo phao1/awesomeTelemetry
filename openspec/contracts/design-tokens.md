@@ -61,6 +61,7 @@ Grafana trade-offs:
 | `--canvas-subtle` | `#161b22` | `#f6f8fa` | sidebar, secondary panels, table headers |
 | `--canvas-raised` | `#1c2128` | `#ffffff` | cards, row hover |
 | `--canvas-overlay` | `#21262d` | `#ffffff` | overlays: menus / popovers / modals |
+| `--canvas-overlay-fg` | `#e6edf3` | `#1f2328` | text on overlay surfaces (Compare Hero gradient) |
 
 ### 2.2 Border
 

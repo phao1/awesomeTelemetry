@@ -19,6 +19,7 @@ import { groupEvents } from '../core/event-groups.js';
 import { diffPct, fmtMs, SIGNIFICANT_DIFF, TEST_CMD } from './compare-stats.js';
 import type { CompareResult } from './compare-types.js';
 import { CompareVerdict } from './CompareVerdict.js';
+import { CompareHeroHeader } from './CompareHeroHeader.js';
 import { CompareKPI } from './CompareKPI.js';
 import { CompareSpeedMetrics } from './CompareSpeedMetrics.js';
 import { CompareDimensions } from './CompareDimensions.js';
@@ -479,7 +480,7 @@ export function CompareBoard({
   const onScroll = (event: UIEvent<HTMLElement>): void => {
     const el = event.currentTarget;
     setContextVisible(el.scrollTop > 240);
-    const anchorIds = ['compare-verdict', 'compare-kpi', 'compare-speed', 'compare-dims', 'compare-time-phase', 'compare-metrics', 'compare-tools', 'compare-timelines', 'compare-charts'];
+    const anchorIds = ['compare-hero', 'compare-verdict', 'compare-kpi', 'compare-speed', 'compare-charts', 'compare-dims', 'compare-time-phase', 'compare-tools', 'compare-timelines', 'compare-metrics'];
     let current = anchorIds[0]!;
     for (const id of anchorIds) {
       const node = el.querySelector<HTMLElement>(`#${id}`);
@@ -494,15 +495,16 @@ export function CompareBoard({
   const leftName = result?.left.session.title || result?.left.session.id || '';
   const rightName = result?.right.session.title || result?.right.session.id || '';
   const anchors = [
+    { id: 'compare-hero', label: t('compare.hero.title', locale) },
     { id: 'compare-verdict', label: t('compare.verdict', locale) },
     { id: 'compare-kpi', label: t('compare.kpiGrid', locale) },
     { id: 'compare-speed', label: t('compare.speedMetrics', locale) },
+    { id: 'compare-charts', label: t('compare.charts', locale) },
     { id: 'compare-dims', label: t('compare.dims', locale) },
     { id: 'compare-time-phase', label: t('compare.timePhase', locale) },
-    { id: 'compare-metrics', label: t('compare.detailMetrics', locale) },
     { id: 'compare-tools', label: t('compare.toolAnalysis', locale) },
     { id: 'compare-timelines', label: t('compare.timelines', locale) },
-    { id: 'compare-charts', label: t('compare.charts', locale) },
+    { id: 'compare-metrics', label: t('compare.detailMetrics', locale) },
   ];
 
   return (
@@ -558,6 +560,9 @@ export function CompareBoard({
       )}
       {result !== null && (
         <>
+          <ErrorBoundary label={t('compare.hero.title', locale)}>
+            <CompareHeroHeader result={result} locale={locale} />
+          </ErrorBoundary>
           <ContextBar
             visible={contextVisible}
             anchors={anchors}
@@ -577,7 +582,7 @@ export function CompareBoard({
           <CollapsibleSection
             id="compare-speed"
             title={t('compare.speedMetrics', locale)}
-            index={3}
+            index={4}
             open={openSections['compare-speed']!}
             onToggle={() => toggleSection('compare-speed')}
           >
@@ -591,9 +596,20 @@ export function CompareBoard({
             </ErrorBoundary>
           </CollapsibleSection>
           <CollapsibleSection
+            id="compare-charts"
+            title={t('compare.charts', locale)}
+            index={5}
+            open={openSections['compare-charts']!}
+            onToggle={() => toggleSection('compare-charts')}
+          >
+            <ErrorBoundary label={t('compare.charts', locale)}>
+              <CompareCharts result={result} locale={locale} />
+            </ErrorBoundary>
+          </CollapsibleSection>
+          <CollapsibleSection
             id="compare-dims"
             title={t('compare.dims', locale)}
-            index={4}
+            index={6}
             open={openSections['compare-dims']!}
             onToggle={() => toggleSection('compare-dims')}
           >
@@ -604,7 +620,7 @@ export function CompareBoard({
           <CollapsibleSection
             id="compare-time-phase"
             title={t('compare.timePhase', locale)}
-            index={5}
+            index={7}
             open={openSections['compare-time-phase']!}
             onToggle={() => toggleSection('compare-time-phase')}
           >
@@ -645,20 +661,9 @@ export function CompareBoard({
             </ErrorBoundary>
           </CollapsibleSection>
           <CollapsibleSection
-            id="compare-metrics"
-            title={t('compare.detailMetrics', locale)}
-            index={6}
-            open={openSections['compare-metrics']!}
-            onToggle={() => toggleSection('compare-metrics')}
-          >
-            <ErrorBoundary label={t('compare.detailMetrics', locale)}>
-              <DetailMetricsTable result={result} locale={locale} />
-            </ErrorBoundary>
-          </CollapsibleSection>
-          <CollapsibleSection
             id="compare-tools"
             title={t('compare.toolAnalysis', locale)}
-            index={7}
+            index={8}
             open={openSections['compare-tools']!}
             onToggle={() => toggleSection('compare-tools')}
           >
@@ -669,7 +674,7 @@ export function CompareBoard({
           <CollapsibleSection
             id="compare-timelines"
             title={t('compare.timelines', locale)}
-            index={8}
+            index={9}
             open={openSections['compare-timelines']!}
             onToggle={() => toggleSection('compare-timelines')}
           >
@@ -678,14 +683,14 @@ export function CompareBoard({
             </ErrorBoundary>
           </CollapsibleSection>
           <CollapsibleSection
-            id="compare-charts"
-            title={t('compare.charts', locale)}
-            index={9}
-            open={openSections['compare-charts']!}
-            onToggle={() => toggleSection('compare-charts')}
+            id="compare-metrics"
+            title={t('compare.detailMetrics', locale)}
+            index={10}
+            open={openSections['compare-metrics']!}
+            onToggle={() => toggleSection('compare-metrics')}
           >
-            <ErrorBoundary label={t('compare.charts', locale)}>
-              <CompareCharts result={result} locale={locale} />
+            <ErrorBoundary label={t('compare.detailMetrics', locale)}>
+              <DetailMetricsTable result={result} locale={locale} />
             </ErrorBoundary>
           </CollapsibleSection>
         </>

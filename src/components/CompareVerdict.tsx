@@ -20,7 +20,7 @@ interface VerdictDim {
 }
 
 /** §6.3 裁决（calibrate-tokens-and-compare-report）：快/省/质 三维裁决。 */
-function computeVerdict(
+export function computeVerdict(
   result: CompareResult,
   locale: Locale,
 ): {
@@ -28,6 +28,13 @@ function computeVerdict(
   wins: number;
   losses: number;
   winner: 'L' | 'R' | 'tie';
+  /** REQ-104：Hero 摘要用到的比率（与裁决同一数据源，避免口径漂移）。 */
+  summary: {
+    fastRatio: number;
+    tokenDiffPct: number;
+    leftCoveragePct: number;
+    rightCoveragePct: number;
+  };
 } {
   const left = result.left.session;
   const right = result.right.session;
@@ -112,7 +119,18 @@ function computeVerdict(
     }
   }
   const winner: 'L' | 'R' | 'tie' = wins > losses ? 'L' : losses > wins ? 'R' : 'tie';
-  return { dims, wins, losses, winner };
+  return {
+    dims,
+    wins,
+    losses,
+    winner,
+    summary: {
+      fastRatio,
+      tokenDiffPct: diffPct(lTok, rTok),
+      leftCoveragePct: leftCoverage * 100,
+      rightCoveragePct: rightCoverage * 100,
+    },
+  };
 }
 
 const DIM_ICON: Record<'fast' | 'frugal' | 'quality', (props: IconProps) => React.JSX.Element> = {

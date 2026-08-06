@@ -90,16 +90,16 @@
 
 ## §5 Hero Header + section 重排（B5）
 
-- [ ] 5.1 `CompareBoard.tsx`：顶部新增 `CompareHeroHeader` 组件
-- [ ] 5.2 渐变背景：`linear-gradient(135deg, var(--provider-L-subtle), var(--provider-R-subtle))`
-- [ ] 5.3 L 侧：ProviderBadge + agent 名 + 会话标题
-- [ ] 5.4 R 侧：同上
-- [ ] 5.5 中间：关键比率摘要（取自 Verdict 结论）
-- [ ] 5.6 文字颜色 `--canvas-overlay-fg`，圆角 `--radius-lg`
-- [ ] 5.7 section 顺序重排：Hero → Verdict → KPI → Speed → **Charts** →
+- [x] 5.1 `CompareBoard.tsx`：顶部新增 `CompareHeroHeader` 组件
+- [x] 5.2 渐变背景：`linear-gradient(135deg, var(--provider-L-subtle), var(--provider-R-subtle))`
+- [x] 5.3 L 侧：ProviderBadge + agent 名 + 会话标题
+- [x] 5.4 R 侧：同上
+- [x] 5.5 中间：关键比率摘要（取自 Verdict 结论）
+- [x] 5.6 文字颜色 `--canvas-overlay-fg`，圆角 `--radius-lg`
+- [x] 5.7 section 顺序重排：Hero → Verdict → KPI → Speed → **Charts** →
   Time&Phase → Tool → Timelines → DetailTable
-- [ ] 5.8 ContextBar 锚点顺序同步更新
-- [ ] 5.9 测试：`CompareBoard.test.tsx` 断言 section 顺序 + Hero 渲染
+- [x] 5.8 ContextBar 锚点顺序同步更新
+- [x] 5.9 测试：`CompareBoard.test.tsx` 断言 section 顺序 + Hero 渲染
 
 ## §6 JSON 高亮 + 脱敏增强（B6）
 

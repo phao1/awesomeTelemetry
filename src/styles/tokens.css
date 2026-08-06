@@ -14,6 +14,7 @@
   --canvas-subtle: #161b22;
   --canvas-raised: #1c2128;
   --canvas-overlay: #21262d;
+  --canvas-overlay-fg: #e6edf3;
 
   /* §2.2 Border */
   --border-default: #30363d;
@@ -203,6 +204,7 @@
   --canvas-subtle: #f6f8fa;
   --canvas-raised: #ffffff;
   --canvas-overlay: #ffffff;
+  --canvas-overlay-fg: #1f2328;
 
   /* §2.2 */
   --border-default: #d1d9e0;
