@@ -9,7 +9,7 @@
 
 /* 建议 5：Inspector JSON 语法高亮（6 类 token，颜色全部来自 token） */
 .inspector-json-key {
-  color: var(--accent-fg);
+  color: var(--done-fg);
 }
 
 .inspector-json-string {
@@ -17,15 +17,15 @@
 }
 
 .inspector-json-number {
-  color: var(--attention-fg);
+  color: var(--accent-fg);
 }
 
 .inspector-json-boolean {
-  color: var(--done-fg);
+  color: var(--attention-fg);
 }
 
 .inspector-json-null {
-  color: var(--fg-subtle);
+  color: var(--neutral-fg);
   font-style: italic;
 }
 

@@ -39,10 +39,19 @@ describe('redactSecrets（建议 6）', () => {
     expect(redactSecrets('Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.xxxx')).toContain('Bearer ****');
   });
 
-  it('遮蔽 token 字段值（16+ 字符）', () => {
+  it('遮蔽 token 字段值（格式 $1=<REDACTED>）', () => {
     const out = redactSecrets('"token": "abcdefghijklmnop123456"');
-    expect(out).toBe('"token": "****"');
-    expect(redactSecrets("token=abcdefghijklmnop123456")).toBe('token=****');
+    expect(out).toBe('"token": "<REDACTED>"');
+    expect(redactSecrets("token=abcdefghijklmnop123456")).toBe('token=<REDACTED>');
+  });
+
+  it('REQ-106：secret / api_key / api-key / apikey 大小写不敏感遮蔽', () => {
+    expect(redactSecrets('"api_key": "sk-abc123"')).toBe('"api_key": "<REDACTED>"');
+    expect(redactSecrets('"api-key": "abc12345"')).toBe('"api-key": "<REDACTED>"');
+    expect(redactSecrets('"apikey": "abc12345"')).toBe('"apikey": "<REDACTED>"');
+    expect(redactSecrets('"secret": "s3cr3t-value"')).toBe('"secret": "<REDACTED>"');
+    expect(redactSecrets('API_KEY=abcdef1234567890')).toBe('API_KEY=<REDACTED>');
+    expect(redactSecrets('"Token": "abc12345"')).toBe('"Token": "<REDACTED>"');
   });
 
   it('整块遮蔽私钥', () => {
@@ -106,5 +115,17 @@ describe('HighlightedJson（建议 5，大文本截断）', () => {
     const html = renderJson(<HighlightedJson text='{"a": 1}' maxChars={100} />);
     expect(html).not.toContain('inspector-json-truncated');
     expect(html).toContain('inspector-json-key');
+  });
+
+  it('REQ-106：6 类 token 全部带高亮 class', () => {
+    const html = renderJson(
+      <HighlightedJson text='{"key": "value", "num": 42, "bool": true, "nil": null}' maxChars={200} />,
+    );
+    expect(html).toContain('inspector-json-key');
+    expect(html).toContain('inspector-json-string');
+    expect(html).toContain('inspector-json-number');
+    expect(html).toContain('inspector-json-boolean');
+    expect(html).toContain('inspector-json-null');
+    expect(html).toContain('inspector-json-punctuation');
   });
 });

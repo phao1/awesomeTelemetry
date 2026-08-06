@@ -103,14 +103,14 @@
 
 ## §6 JSON 高亮 + 脱敏增强（B6）
 
-- [ ] 6.1 `EventInspector.tsx`：确认 JSON 高亮覆盖 6 种 token 类型
+- [x] 6.1 `EventInspector.tsx`：确认 JSON 高亮覆盖 6 种 token 类型
   （key/string/number/boolean/null/punctuation）
-- [ ] 6.2 `src/styles/components/inspector.css`：6 种 class 颜色从 token 取值
+- [x] 6.2 `src/styles/components/inspector.css`：6 种 class 颜色从 token 取值
   （`.json-key` → `--done-fg` 等）
-- [ ] 6.3 `inspector-text.ts`：确认脱敏正则覆盖
+- [x] 6.3 `inspector-text.ts`：确认脱敏正则覆盖
   `token/secret/api_key/api-key/apikey`，大小写不敏感
-- [ ] 6.4 脱敏开关默认开启
-- [ ] 6.5 测试：`inspector-text.test.tsx` 断言 6 种高亮 + 脱敏覆盖
+- [x] 6.4 脱敏开关默认开启
+- [x] 6.5 测试：`inspector-text.test.tsx` 断言 6 种高亮 + 脱敏覆盖
 
 ## §7 Agent Overview 卡片视图 + Timeline 独立切换（B7）
 

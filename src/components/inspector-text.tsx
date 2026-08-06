@@ -47,8 +47,8 @@ export function redactSecrets(text: string): string {
   let out = text;
   out = out.replace(/(sk-|Bearer )[\w-]{20,}/gi, '$1****');
   out = out.replace(
-    /(["']?token["']?\s*[:=]\s*["']?)[\w-]{16,}(["']?)/gi,
-    '$1****$2',
+    /(["']?(?:token|secret|api[_-]?key)["']?\s*[:=]\s*["']?)([^"'\s,{}]+)(["']?)/gi,
+    '$1<REDACTED>$3',
   );
   out = out.replace(
     /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/gi,
