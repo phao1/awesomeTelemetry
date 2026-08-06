@@ -4,13 +4,19 @@ import type { SpeedMetrics } from '../core/trace-types.js';
 import { fmtMs } from './compare-stats.js';
 interface SpeedMetricDef {
   key: string;
+  /** SpeedMetrics 真实字段名（tpot → tpotMs 等，防止 undefined 崩溃）。 */
+  field: keyof SpeedMetrics;
   label: string;
   lowerBetter: boolean;
   fmt: (v: number | null) => string;
 }
 
-const fmtNumber = (v: number | null): string => (v === null ? '—' : v.toFixed(1));
-const fmtTpot = (v: number | null): string => (v === null ? '—' : `${v.toFixed(1)}ms`);
+const fmtNumber = (v: number | null | undefined): string =>
+  v === null || v === undefined ? '—' : v.toFixed(1);
+const fmtTpot = (v: number | null | undefined): string =>
+  v === null || v === undefined ? '—' : `${v.toFixed(1)}ms`;
+const fmtMsSafe = (v: number | null | undefined): string =>
+  v === null || v === undefined ? '—' : fmtMs(v);
 
 /** 建议 2：速度指标独立 section —— 6 指标（e2e / TTFT / TPS / TPOT / turnGap / pureInference）。 */
 export function CompareSpeedMetrics({
@@ -21,19 +27,19 @@ export function CompareSpeedMetrics({
   locale: Locale;
 }): React.JSX.Element {
   const defs: SpeedMetricDef[] = [
-    { key: 'e2e', label: t('compare.metric.e2e', locale), lowerBetter: true, fmt: fmtMs },
-    { key: 'ttft', label: t('compare.metric.ttft', locale), lowerBetter: true, fmt: fmtMs },
-    { key: 'tps', label: t('compare.metric.tps', locale), lowerBetter: false, fmt: fmtNumber },
-    { key: 'tpot', label: t('compare.metric.tpot', locale), lowerBetter: true, fmt: fmtTpot },
-    { key: 'turnGap', label: t('compare.metric.turnGap', locale), lowerBetter: true, fmt: fmtMs },
-    { key: 'pureInference', label: t('compare.metric.pureInference', locale), lowerBetter: true, fmt: fmtMs },
+    { key: 'e2e', field: 'e2eMs', label: t('compare.metric.e2e', locale), lowerBetter: true, fmt: fmtMsSafe },
+    { key: 'ttft', field: 'ttftMs', label: t('compare.metric.ttft', locale), lowerBetter: true, fmt: fmtMsSafe },
+    { key: 'tps', field: 'tps', label: t('compare.metric.tps', locale), lowerBetter: false, fmt: fmtNumber },
+    { key: 'tpot', field: 'tpotMs', label: t('compare.metric.tpot', locale), lowerBetter: true, fmt: fmtTpot },
+    { key: 'turnGap', field: 'turnGapMedianMs', label: t('compare.metric.turnGap', locale), lowerBetter: true, fmt: fmtMsSafe },
+    { key: 'pureInference', field: 'pureInferenceMs', label: t('compare.metric.pureInference', locale), lowerBetter: true, fmt: fmtMsSafe },
   ];
 
   return (
     <div className="compare-speed-grid">
       {defs.map((def) => {
-        const lv = speed.left[def.key as keyof SpeedMetrics] as number | null;
-        const rv = speed.right[def.key as keyof SpeedMetrics] as number | null;
+        const lv = (speed.left[def.field] ?? null) as number | null;
+        const rv = (speed.right[def.field] ?? null) as number | null;
         const leftBetter =
           lv === null || rv === null || lv === rv
             ? null

@@ -76,4 +76,37 @@ describe('CompareKPI（建议 7 drill-down）', () => {
     expect(html()).toContain('Read');
     unmount();
   });
+
+  it('建议 7：错误率卡片展开按动作分组的错误分布', () => {
+    const result = makeResult({
+      left: {
+        ...makeResult().left,
+        events: [
+          makeEvent({ id: 'e1', tool: 'Bash', status: 'error', error: 'timeout' }),
+          makeEvent({ id: 'e2', tool: 'Read', status: 'error', error: 'ENOENT' }),
+        ],
+      },
+    });
+    const { html, unmount } = mount(<CompareKPI result={result} locale="zh" />);
+    clickByLabel(html, '错误率 点击展开构成明细');
+    expect(html()).toContain('Bash');
+    expect(html()).toContain('Read');
+    unmount();
+  });
+
+  it('建议 7：验证覆盖率卡片展开验证事件列表', () => {
+    const result = makeResult({
+      left: {
+        ...makeResult().left,
+        events: [
+          makeEvent({ id: 'v1', phase: 'verify', title: 'vitest run' }),
+          makeEvent({ id: 'v2', phase: 'implement' }),
+        ],
+      },
+    });
+    const { html, unmount } = mount(<CompareKPI result={result} locale="zh" />);
+    clickByLabel(html, '验证覆盖率 点击展开构成明细');
+    expect(html()).toContain('vitest run');
+    unmount();
+  });
 });

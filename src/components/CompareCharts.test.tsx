@@ -77,6 +77,7 @@ describe('CompareCharts（建议 1）', () => {
     expect(html()).toContain('Token 构成');
     expect(html()).toContain('阶段耗时对比');
     expect(html()).toContain('事件类型分布');
+    expect(html()).toContain('compare-chart-criteria'); // 口径说明（observability-designer 数据溯源）
     unmount();
   });
 });

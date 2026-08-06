@@ -26,6 +26,7 @@ import { CompareToolAnalysis } from './CompareToolAnalysis.js';
 import { CompareCharts } from './CompareCharts.js';
 import { CompareTimeline } from './CompareTimeline.js';
 import { IconChevronDown, IconChevronRight } from './icons/index.js';
+import { ErrorBoundary } from './ui/ErrorBoundary.js';
 
 export type { CompareResult } from './compare-types.js';
 
@@ -513,8 +514,12 @@ export function CompareBoard({
             onExpandAll={expandAll}
           />
           <div className="compare-summary" aria-label={`${leftName} vs ${rightName}`}>
-            <CompareVerdict result={result} locale={locale} />
-            <CompareKPI result={result} locale={locale} />
+            <ErrorBoundary label={t('compare.verdict', locale)}>
+              <CompareVerdict result={result} locale={locale} />
+            </ErrorBoundary>
+            <ErrorBoundary label={t('compare.kpiGrid', locale)}>
+              <CompareKPI result={result} locale={locale} />
+            </ErrorBoundary>
           </div>
           <CollapsibleSection
             id="compare-speed"
@@ -522,7 +527,9 @@ export function CompareBoard({
             open={openSections['compare-speed']!}
             onToggle={() => toggleSection('compare-speed')}
           >
-            <CompareSpeedMetrics speed={result.speed} locale={locale} />
+            <ErrorBoundary label={t('compare.speedMetrics', locale)}>
+              <CompareSpeedMetrics speed={result.speed} locale={locale} />
+            </ErrorBoundary>
           </CollapsibleSection>
           <CollapsibleSection
             id="compare-dims"
@@ -530,7 +537,9 @@ export function CompareBoard({
             open={openSections['compare-dims']!}
             onToggle={() => toggleSection('compare-dims')}
           >
-            <CompareDimensions result={result} locale={locale} />
+            <ErrorBoundary label={t('compare.dims', locale)}>
+              <CompareDimensions result={result} locale={locale} />
+            </ErrorBoundary>
           </CollapsibleSection>
           <CollapsibleSection
             id="compare-time-phase"
@@ -538,39 +547,41 @@ export function CompareBoard({
             open={openSections['compare-time-phase']!}
             onToggle={() => toggleSection('compare-time-phase')}
           >
-            <div className="compare-timepair">
-              <div className="compare-timepair-side">
-                <h4>
-                  <span className="compare-side-mark" style={{ color: 'var(--accent-fg)' }}>L</span>
-                  {' '}{leftName}
-                </h4>
-                <TimeCompositionBar
-                  composition={leftComposition}
-                  locale={locale}
-                  active={null}
-                  onToggle={() => undefined}
-                  interactive={false}
-                />
+            <ErrorBoundary label={t('compare.timePhase', locale)}>
+              <div className="compare-timepair">
+                <div className="compare-timepair-side">
+                  <h4>
+                    <span className="compare-side-mark" style={{ color: 'var(--accent-fg)' }}>L</span>
+                    {' '}{leftName}
+                  </h4>
+                  <TimeCompositionBar
+                    composition={leftComposition}
+                    locale={locale}
+                    active={null}
+                    onToggle={() => undefined}
+                    interactive={false}
+                  />
+                </div>
+                <div className="compare-timepair-side">
+                  <h4>
+                    <span className="compare-side-mark" style={{ color: 'var(--attention-fg)' }}>R</span>
+                    {' '}{rightName}
+                  </h4>
+                  <TimeCompositionBar
+                    composition={rightComposition}
+                    locale={locale}
+                    active={null}
+                    onToggle={() => undefined}
+                    interactive={false}
+                  />
+                </div>
               </div>
-              <div className="compare-timepair-side">
-                <h4>
-                  <span className="compare-side-mark" style={{ color: 'var(--attention-fg)' }}>R</span>
-                  {' '}{rightName}
-                </h4>
-                <TimeCompositionBar
-                  composition={rightComposition}
-                  locale={locale}
-                  active={null}
-                  onToggle={() => undefined}
-                  interactive={false}
-                />
-              </div>
-            </div>
-            <PhaseRibbonPair
-              left={result.left.events as TraceEventSlim[]}
-              right={result.right.events as TraceEventSlim[]}
-              locale={locale}
-            />
+              <PhaseRibbonPair
+                left={result.left.events as TraceEventSlim[]}
+                right={result.right.events as TraceEventSlim[]}
+                locale={locale}
+              />
+            </ErrorBoundary>
           </CollapsibleSection>
           <CollapsibleSection
             id="compare-metrics"
@@ -578,7 +589,9 @@ export function CompareBoard({
             open={openSections['compare-metrics']!}
             onToggle={() => toggleSection('compare-metrics')}
           >
-            <DetailMetricsTable result={result} locale={locale} />
+            <ErrorBoundary label={t('compare.detailMetrics', locale)}>
+              <DetailMetricsTable result={result} locale={locale} />
+            </ErrorBoundary>
           </CollapsibleSection>
           <CollapsibleSection
             id="compare-tools"
@@ -586,7 +599,9 @@ export function CompareBoard({
             open={openSections['compare-tools']!}
             onToggle={() => toggleSection('compare-tools')}
           >
-            <CompareToolAnalysis result={result} locale={locale} />
+            <ErrorBoundary label={t('compare.toolAnalysis', locale)}>
+              <CompareToolAnalysis result={result} locale={locale} />
+            </ErrorBoundary>
           </CollapsibleSection>
           <CollapsibleSection
             id="compare-timelines"
@@ -594,7 +609,9 @@ export function CompareBoard({
             open={openSections['compare-timelines']!}
             onToggle={() => toggleSection('compare-timelines')}
           >
-            <CompareTimeline result={result} locale={locale} />
+            <ErrorBoundary label={t('compare.timelines', locale)}>
+              <CompareTimeline result={result} locale={locale} />
+            </ErrorBoundary>
           </CollapsibleSection>
           <CollapsibleSection
             id="compare-charts"
@@ -602,7 +619,9 @@ export function CompareBoard({
             open={openSections['compare-charts']!}
             onToggle={() => toggleSection('compare-charts')}
           >
-            <CompareCharts result={result} locale={locale} />
+            <ErrorBoundary label={t('compare.charts', locale)}>
+              <CompareCharts result={result} locale={locale} />
+            </ErrorBoundary>
           </CollapsibleSection>
         </>
       )}

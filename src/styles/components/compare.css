@@ -585,6 +585,13 @@
   font-size: var(--text-base);
 }
 
+.compare-chart-criteria {
+  margin: var(--space-1) 0 0;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  line-height: var(--leading-sm);
+}
+
 .compare-dist {
   display: flex;
   flex-direction: column;
@@ -822,4 +829,3 @@
   margin: 0 0 var(--space-2);
   font-size: var(--text-base);
 }
-

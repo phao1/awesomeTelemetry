@@ -628,3 +628,24 @@
   background: var(--accent-subtle);
 }
 
+/* 错误边界降级块（数据密集型视图的 section 级兜底） */
+.ui-error-boundary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--danger-emphasis);
+  border-radius: var(--radius-md);
+  background: var(--danger-subtle);
+}
+
+.ui-error-boundary-title {
+  color: var(--danger-fg);
+  font-weight: var(--weight-medium);
+}
+
+.ui-error-boundary-detail {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  word-break: break-word;
+}

@@ -66,6 +66,7 @@ function KpiDrilldown({
       { label: t('compare.kpi.netInput', locale), lv: fmtNum(left.tokenUsage.netInput), rv: fmtNum(right.tokenUsage.netInput) },
     );
   } else if (item.key === 'failedCommands' || item.key === 'fixLoops') {
+    // 建议 7：错误率 / 失败类卡片 → 按错误动作分组统计
     const buckets = errorDistribution(leftEvents, rightEvents);
     if (buckets.length === 0) {
       rows.push({ label: t('compare.noErrors', locale), lv: '—', rv: '—' });
@@ -78,12 +79,23 @@ function KpiDrilldown({
         });
       }
     }
-  } else if (item.key === 'hasUnitTests') {
+  } else if (item.key === 'hasUnitTests' || item.key === 'verificationCoverage') {
+    // 建议 7：验证覆盖率 / 单元测试 → 验证事件列表
     const lVerify = leftEvents.filter((e) => e.phase === 'verify').slice(0, 5);
     const rVerify = rightEvents.filter((e) => e.phase === 'verify').slice(0, 5);
     const lvText = lVerify.length === 0 ? '—' : lVerify.map((e) => e.title).join('\n');
     const rvText = rVerify.length === 0 ? '—' : rVerify.map((e) => e.title).join('\n');
     rows.push({ label: t('compare.kpi.verifyEvents', locale), lv: lvText, rv: rvText });
+  } else if (item.key === 'errorRate') {
+    // 建议 7：错误率 → 按错误类型分组统计
+    const buckets = errorDistribution(leftEvents, rightEvents);
+    if (buckets.length === 0) {
+      rows.push({ label: t('compare.noErrors', locale), lv: '—', rv: '—' });
+    } else {
+      for (const bucket of buckets) {
+        rows.push({ label: bucket.tool, lv: String(bucket.lf), rv: String(bucket.rf) });
+      }
+    }
   } else {
     return null;
   }
@@ -101,7 +113,7 @@ function KpiDrilldown({
           ))}
         </tbody>
       </table>
-      {item.key === 'failedCommands' || item.key === 'fixLoops' ? (
+      {item.key === 'failedCommands' || item.key === 'fixLoops' || item.key === 'errorRate' ? (
         <p className="hint">{t('compare.criteria.errorDist', locale)}</p>
       ) : null}
     </div>
@@ -142,6 +154,26 @@ export function CompareKPI({
     { key: 'hasUnitTests', label: t('compare.kpi.hasUnitTests', locale), lv: fmtYesNo(ls.hasUnitTests ? 1 : 0), rv: fmtYesNo(rs.hasUnitTests ? 1 : 0), lnum: ls.hasUnitTests ? 1 : 0, rnum: rs.hasUnitTests ? 1 : 0, lowerBetter: false, drill: true },
     { key: 'userRounds', label: t('compare.kpi.userRounds', locale), lv: String(ls.userRounds), rv: String(rs.userRounds), lnum: ls.userRounds, rnum: rs.userRounds, lowerBetter: false },
     { key: 'fixLoops', label: t('compare.kpi.fixLoops', locale), lv: String(ls.fixLoops), rv: String(rs.fixLoops), lnum: ls.fixLoops, rnum: rs.fixLoops, lowerBetter: true, drill: true },
+    {
+      key: 'errorRate',
+      label: t('compare.kpi.errorRate', locale),
+      lv: fmtPct(leftEvents.length === 0 ? null : leftEvents.filter((e) => e.status === 'error').length / leftEvents.length),
+      rv: fmtPct(rightEvents.length === 0 ? null : rightEvents.filter((e) => e.status === 'error').length / rightEvents.length),
+      lnum: leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.status === 'error').length / leftEvents.length,
+      rnum: rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.status === 'error').length / rightEvents.length,
+      lowerBetter: true,
+      drill: true,
+    },
+    {
+      key: 'verificationCoverage',
+      label: t('compare.kpi.verificationCoverage', locale),
+      lv: fmtPct(leftEvents.length === 0 ? null : leftEvents.filter((e) => e.phase === 'verify').length / leftEvents.length),
+      rv: fmtPct(rightEvents.length === 0 ? null : rightEvents.filter((e) => e.phase === 'verify').length / rightEvents.length),
+      lnum: leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.phase === 'verify').length / leftEvents.length,
+      rnum: rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.phase === 'verify').length / rightEvents.length,
+      lowerBetter: false,
+      drill: true,
+    },
   ];
 
   return (

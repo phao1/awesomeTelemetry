@@ -236,3 +236,141 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     container.remove();
   });
 });
+
+describe('Compare 端到端（UI-TASKS 2 回归）', () => {
+  it('真实 API 形状（speed 含 null）：切对比 → 选左右会话 → verdict/speed/charts 渲染且不崩溃', async () => {
+    const speedWithNulls = {
+      ttftMs: null, tps: null, tpotMs: null, e2eMs: 5000, turnGapMedianMs: null,
+      pureInferenceMs: null, avgLlmResponseLatencyMs: null, avgLlmDurationMs: null,
+      cacheHitRate: null, avgTokensPerCall: null, systemPromptTokensEstimate: null,
+    };
+    const detail = (id: string, events: unknown[], totalDurationMs: number, title: string) => ({
+      session: {
+        id,
+        provider: id === 's-1' ? 'codex' : 'claude',
+        sourceAgent: id === 's-1' ? 'Codex' : 'Claude',
+        title,
+        startedAt: '2026-08-01T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:01:00.000Z',
+        status: 'success',
+        cwd: '/tmp',
+        messageCount: 3,
+        eventCount: events.length,
+        tokenUsage: { input: 100, output: 50, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 100, total: 150 },
+        costUsd: 0.01,
+        systemPrompt: null,
+        dataSource: 'scan',
+        sourcePath: `/tmp/${id}.jsonl`,
+        totalDurationMs,
+        isSubagent: false,
+      },
+      events,
+      mode: 'slim',
+      eventTotal: events.length,
+      eventOffset: 0,
+      eventLimit: 2000,
+      hasMore: false,
+      pending: false,
+    });
+    const slimEvent = (id: string, sessionId: string, sequence: number, over: Record<string, unknown> = {}) => ({
+      id,
+      sessionId,
+      sequence,
+      kind: 'tool',
+      phase: 'implement',
+      title: 'Bash: npm test',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      durationMs: 100,
+      status: 'error',
+      actor: 'assistant',
+      tool: 'Bash',
+      tokens: null,
+      error: 'timeout',
+      hasInput: false,
+      hasOutput: false,
+      hasRaw: false,
+      ...over,
+    });
+    const comparePayload = {
+      left: detail('s-1', [
+        slimEvent('e1', 's-1', 1),
+        slimEvent('e2', 's-1', 2, { kind: 'file_write', phase: 'implement', title: 'Edit src/a.ts', status: 'success', tool: null, error: null }),
+        slimEvent('e3', 's-1', 3, { kind: 'test', phase: 'verify', title: 'vitest run', status: 'success', tool: null, error: null }),
+      ], 5000, 'fix build'),
+      right: detail('s-2', [
+        slimEvent('r1', 's-2', 1, { kind: 'llm', phase: 'implement', title: 'respond', status: 'success', tool: null, error: null }),
+        slimEvent('r2', 's-2', 2, { kind: 'bash', phase: 'verify', title: 'npm test', status: 'success', tool: null, error: null }),
+      ], 3000, 'refactor api'),
+      speed: { left: { ...speedWithNulls, e2eMs: 5000 }, right: { ...speedWithNulls, e2eMs: 3000 } },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const json = (body: unknown) => ({ ok: true, text: async () => JSON.stringify(body) });
+      if (url.includes('/api/compare')) {
+        return json(comparePayload);
+      }
+      if (url.includes('/api/health')) {
+        return json({ ok: true, schemaVersion: 1, uptimeMs: 1, dbSizeBytes: 1, walSizeBytes: 0 });
+      }
+      if (url.includes('/api/sessions')) {
+        return json({ items: THREE_SESSIONS, nextCursor: null, hasMore: false, total: 3 });
+      }
+      return json({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const container = renderApp();
+    // 会话列表首帧拉取带 250ms 防抖（与既有用例一致）
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+
+    const compareTab = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('对比'),
+    );
+    expect(compareTab).toBeDefined();
+    act(() => compareTab!.click());
+
+    act(() => {
+      (container.querySelectorAll('.compare-picker')[0] as HTMLButtonElement).click();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    const leftItems = container.querySelectorAll('.compare-picker-item');
+    expect(leftItems.length).toBeGreaterThan(0);
+    act(() => {
+      (leftItems[0] as HTMLButtonElement).click();
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    act(() => {
+      (container.querySelectorAll('.compare-picker')[1] as HTMLButtonElement).click();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    const rightItems = container.querySelectorAll('.compare-picker-item');
+    act(() => {
+      (rightItems[1] as HTMLButtonElement).click();
+    });
+
+    await act(async () => {
+      for (let i = 0; i < 20; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        if (container.querySelector('.compare-verdict') !== null) {
+          break;
+        }
+      }
+    });
+
+    expect(container.querySelector('.compare-verdict')).not.toBeNull();
+    expect(container.querySelector('.compare-speed-grid')).not.toBeNull();
+    expect(container.querySelector('.compare-charts')).not.toBeNull();
+    expect(container.textContent).not.toContain('COMPARE_FAILED');
+    expect(container.textContent).not.toContain('NaN');
+    expect(container.querySelector('.ui-error-boundary')).toBeNull();
+    container.remove();
+  });
+});

@@ -313,18 +313,22 @@ export function CompareCharts({
       <div className="compare-chart">
         <h4>{t('compare.radar', locale)}</h4>
         <RadarChart result={result} locale={locale} />
+        <p className="compare-chart-criteria">{t('compare.charts.criteria.radar', locale)}</p>
       </div>
       <div className="compare-chart">
         <h4>{t('compare.charts.tokenDonut', locale)}</h4>
         <TokenDonutChart result={result} locale={locale} />
+        <p className="compare-chart-criteria">{t('compare.charts.criteria.tokenDonut', locale)}</p>
       </div>
       <div className="compare-chart">
         <h4>{t('compare.charts.phaseBar', locale)}</h4>
         <PhaseBarChart result={result} />
+        <p className="compare-chart-criteria">{t('compare.charts.criteria.phaseBar', locale)}</p>
       </div>
       <div className="compare-chart">
         <h4>{t('compare.distribution', locale)}</h4>
         <EventKindChart result={result} />
+        <p className="compare-chart-criteria">{t('compare.charts.criteria.distribution', locale)}</p>
       </div>
     </div>
   );
