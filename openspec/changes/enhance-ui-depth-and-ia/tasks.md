@@ -47,15 +47,15 @@
 
 ## §2 Token 文本 drill-down（B2）
 
-- [ ] 2.1 `CompareCharts.tsx`：TokenDonutChart 段增加 `onClick` → 打开 `TokenTextModal`
-- [ ] 2.2 `CompareSpeedMetrics.tsx`：Token 堆叠条段增加 `onClick` → 同上
-- [ ] 2.3 `TokenTextModal.tsx` 增强：支持 compare 上下文（L/R 侧标记）
-- [ ] 2.4 数据来源：复用 `extractTokenTexts(record)`（`src/core/token-breakdown.ts`）
-- [ ] 2.5 slim 模式懒加载：`recordCache` miss 时发 `GET /api/sessions/:key?mode=full`
-- [ ] 2.6 文本缺失时显示警告 banner（`--attention-subtle` 背景）
-- [ ] 2.7 截断 10000 字符 + "Show all" 按钮
-- [ ] 2.8 复制按钮 2 秒 `IconSuccess` 反馈
-- [ ] 2.9 测试：`TokenTextModal.test.tsx` 断言正常/缺失/截断/懒加载场景
+- [x] 2.1 `CompareCharts.tsx`：TokenDonutChart 段增加 `onClick` → 打开 `TokenTextModal`
+- [x] 2.2 `CompareSpeedMetrics.tsx`：Token 堆叠条段增加 `onClick` → 同上
+- [x] 2.3 `TokenTextModal.tsx` 增强：支持 compare 上下文（L/R 侧标记）
+- [x] 2.4 数据来源：复用 `extractTokenTexts(record)`（`src/core/token-breakdown.ts`）
+- [x] 2.5 slim 模式懒加载：`recordCache` miss 时发 `GET /api/sessions/:key?mode=full`
+- [x] 2.6 文本缺失时显示警告 banner（`--attention-subtle` 背景）
+- [x] 2.7 截断 10000 字符 + "Show all" 按钮
+- [x] 2.8 复制按钮 2 秒 `IconSuccess` 反馈
+- [x] 2.9 测试：`TokenTextModal.test.tsx` 断言正常/缺失/截断/懒加载场景
 
 ## §3 Speed Metrics 扩展（B3）
 

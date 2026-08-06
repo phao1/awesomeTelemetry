@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
@@ -10,6 +10,7 @@ import {
   phaseDurations,
 } from './compare-stats.js';
 import type { CompareResult } from './compare-types.js';
+import { TokenTextModal, type TokenClass } from './TokenTextModal.js';
 
 /** 建议 1-①：8 轴综合能力雷达图（速度/省Token/工具/LLM/写入/读取/稳定性/验证）。 */
 export function RadarChart({
@@ -139,13 +140,18 @@ function sideTokenValues(result: CompareResult, side: 'left' | 'right'): Record<
   };
 }
 
-/** 建议 1-②：双环 Token 构成环形图（内环 L / 外环 R，system/input/reasoning/output）。 */
+/**
+ * 建议 1-② + REQ-101：双环 Token 构成环形图（内环 L / 外环 R，
+ * system/input/reasoning/output），段可点击打开 TokenTextModal。
+ */
 export function TokenDonutChart({
   result,
   locale,
+  onSegmentClick,
 }: {
   result: CompareResult;
   locale: Locale;
+  onSegmentClick?: (side: 'left' | 'right', tokenClass: TokenClass) => void;
 }): React.JSX.Element {
   const left = sideTokenValues(result, 'left');
   const right = sideTokenValues(result, 'right');
@@ -155,10 +161,27 @@ export function TokenDonutChart({
     TOKEN_CLASSES.reduce((s, k) => s + right[k], 0),
   );
   const CIRC = 2 * Math.PI * 50;
-  const ring = (values: Record<(typeof TOKEN_CLASSES)[number], number>, r: number, thickness: number): React.JSX.Element[] => {
+  const ring = (
+    values: Record<(typeof TOKEN_CLASSES)[number], number>,
+    r: number,
+    thickness: number,
+    side: 'left' | 'right',
+  ): React.JSX.Element[] => {
     let offset = 0;
     return TOKEN_CLASSES.map((cls) => {
       const length = (values[cls] / maxTotal) * CIRC;
+      const interactive = onSegmentClick !== undefined && length > 0;
+      const activate = (): void => {
+        if (interactive) {
+          onSegmentClick(side, cls);
+        }
+      };
+      const onKeyDown = (e: KeyboardEvent<SVGCircleElement>): void => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          activate();
+        }
+      };
       const el = (
         <circle
           key={cls}
@@ -170,6 +193,12 @@ export function TokenDonutChart({
           strokeWidth={thickness}
           strokeDasharray={`${length} ${CIRC - length}`}
           strokeDashoffset={-offset}
+          className={interactive ? 'compare-chart-donut-seg' : undefined}
+          role={interactive ? 'button' : undefined}
+          tabIndex={interactive ? 0 : undefined}
+          aria-label={interactive ? `${side === 'left' ? 'L' : 'R'} ${cls}` : undefined}
+          onClick={interactive ? activate : undefined}
+          onKeyDown={interactive ? onKeyDown : undefined}
         />
       );
       offset += length;
@@ -181,9 +210,9 @@ export function TokenDonutChart({
     <div className="compare-chart-donut">
       <svg viewBox="0 0 240 220" width="100%" height={220} role="img" aria-label={t('compare.charts.tokenDonut', locale)}>
         <circle cx={120} cy={110} r={50} fill="none" stroke="var(--canvas-subtle)" strokeWidth={12} />
-        {ring(left, 50, 12)}
+        {ring(left, 50, 12, 'left')}
         <circle cx={120} cy={110} r={68} fill="none" stroke="var(--canvas-subtle)" strokeWidth={12} />
-        {ring(right, 68, 12)}
+        {ring(right, 68, 12, 'right')}
         <text x={120} y={104} textAnchor="middle" fill="var(--fg-default)" fontSize={11} fontWeight={600}>
           L
         </text>
@@ -308,28 +337,53 @@ export function CompareCharts({
   result: CompareResult;
   locale: Locale;
 }): React.JSX.Element {
+  const [openToken, setOpenToken] = useState<{ side: 'left' | 'right'; tokenClass: TokenClass } | null>(null);
+  const side = openToken === null ? null : result[openToken.side];
   return (
-    <div className="compare-charts">
-      <div className="compare-chart">
-        <h4>{t('compare.radar', locale)}</h4>
-        <RadarChart result={result} locale={locale} />
-        <p className="compare-chart-criteria">{t('compare.charts.criteria.radar', locale)}</p>
+    <>
+      <div className="compare-charts">
+        <div className="compare-chart">
+          <h4>{t('compare.radar', locale)}</h4>
+          <RadarChart result={result} locale={locale} />
+          <p className="compare-chart-criteria">{t('compare.charts.criteria.radar', locale)}</p>
+        </div>
+        <div className="compare-chart">
+          <h4>{t('compare.charts.tokenDonut', locale)}</h4>
+          <TokenDonutChart
+            result={result}
+            locale={locale}
+            onSegmentClick={(s, tokenClass) => setOpenToken({ side: s, tokenClass })}
+          />
+          <p className="compare-chart-criteria">{t('compare.charts.criteria.tokenDonut', locale)}</p>
+        </div>
+        <div className="compare-chart">
+          <h4>{t('compare.charts.phaseBar', locale)}</h4>
+          <PhaseBarChart result={result} />
+          <p className="compare-chart-criteria">{t('compare.charts.criteria.phaseBar', locale)}</p>
+        </div>
+        <div className="compare-chart">
+          <h4>{t('compare.distribution', locale)}</h4>
+          <EventKindChart result={result} />
+          <p className="compare-chart-criteria">{t('compare.charts.criteria.distribution', locale)}</p>
+        </div>
       </div>
-      <div className="compare-chart">
-        <h4>{t('compare.charts.tokenDonut', locale)}</h4>
-        <TokenDonutChart result={result} locale={locale} />
-        <p className="compare-chart-criteria">{t('compare.charts.criteria.tokenDonut', locale)}</p>
-      </div>
-      <div className="compare-chart">
-        <h4>{t('compare.charts.phaseBar', locale)}</h4>
-        <PhaseBarChart result={result} />
-        <p className="compare-chart-criteria">{t('compare.charts.criteria.phaseBar', locale)}</p>
-      </div>
-      <div className="compare-chart">
-        <h4>{t('compare.distribution', locale)}</h4>
-        <EventKindChart result={result} />
-        <p className="compare-chart-criteria">{t('compare.charts.criteria.distribution', locale)}</p>
-      </div>
-    </div>
+      {side !== null && openToken !== null && (
+        <TokenTextModal
+          sessionKey={side.session.id}
+          provider={side.session.provider}
+          agentName={side.session.sourceAgent}
+          tokenClass={openToken.tokenClass}
+          tokenCount={(() => {
+            const cls = openToken.tokenClass;
+            if (cls === 'system') {
+              return result.speed[openToken.side].systemPromptTokensEstimate ?? 0;
+            }
+            return side.session.tokenUsage[cls];
+          })()}
+          locale={locale}
+          onClose={() => setOpenToken(null)}
+        />
+      )}
+    </>
   );
 }

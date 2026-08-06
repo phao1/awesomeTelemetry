@@ -875,6 +875,80 @@
   border-color: var(--attention-emphasis);
 }
 
+.compare-token-stacks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-muted);
+}
+
+.compare-token-stacks-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.token-stack {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.token-stack-bar {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: var(--space-5);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--canvas-inset);
+}
+
+.token-stack-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  height: 100%;
+  border: none;
+  padding: 0 var(--space-1);
+  color: var(--fg-on-emphasis);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.token-stack-seg:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.token-stack-system {
+  background: var(--accent-emphasis);
+}
+
+.token-stack-input {
+  background: var(--neutral-emphasis);
+}
+
+.token-stack-reasoning {
+  background: var(--done-emphasis);
+}
+
+.token-stack-output {
+  background: var(--success-emphasis);
+}
+
+.token-stack-seg-label,
+.token-stack-seg-count {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .compare-speed-card-head {
   display: flex;
   align-items: baseline;
@@ -913,6 +987,15 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.compare-chart-donut-seg {
+  cursor: pointer;
+}
+
+.compare-chart-donut-seg:focus-visible {
+  outline: none;
+  filter: brightness(1.35);
 }
 
 .compare-chart-legend {

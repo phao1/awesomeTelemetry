@@ -13,7 +13,6 @@ import type {
   SessionDetailResponse,
   SessionIndexEntry,
   SessionRange,
-  TraceEvent,
   TraceEventSlim,
   TracePhase,
   TraceStatus,
@@ -947,8 +946,16 @@ export default function App() {
           onClose={() => setTranscriptEvent(null)}
         />
       )}
-      {tokenEvent !== null && (
-        <TokenTextModal event={tokenEvent as TraceEvent} locale={locale} onClose={() => setTokenEvent(null)} />
+      {tokenEvent !== null && detail !== null && (
+        <TokenTextModal
+          sessionKey={selectedKey ?? ''}
+          provider={detail.session.provider}
+          agentName={detail.session.sourceAgent}
+          tokenClass={tokenEvent.kind === 'user_prompt' ? 'input' : tokenEvent.kind === 'system' ? 'system' : 'output'}
+          tokenCount={tokenEvent.tokens?.total ?? 0}
+          locale={locale}
+          onClose={() => setTokenEvent(null)}
+        />
       )}
       {promptContextKey !== null && (
         <PromptContextModal

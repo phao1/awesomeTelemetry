@@ -582,7 +582,11 @@ export function CompareBoard({
             onToggle={() => toggleSection('compare-speed')}
           >
             <ErrorBoundary label={t('compare.speedMetrics', locale)}>
-              <CompareSpeedMetrics speed={result.speed} locale={locale} />
+              <CompareSpeedMetrics
+                speed={result.speed}
+                locale={locale}
+                sessions={{ left: result.left.session, right: result.right.session }}
+              />
             </ErrorBoundary>
           </CollapsibleSection>
           <CollapsibleSection

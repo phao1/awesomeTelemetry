@@ -108,4 +108,48 @@ describe('CompareSpeedMetrics（建议 2）', () => {
     expect(html()).toContain('—');
     unmount();
   });
+
+  it('Token 堆叠条段点击打开 TokenTextModal（REQ-101）', () => {
+    const session = {
+      id: 'left',
+      provider: 'codex' as const,
+      sourceAgent: 'Codex',
+      title: 'session left',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:01:00.000Z',
+      status: 'success' as const,
+      cwd: '/tmp',
+      messageCount: 3,
+      eventCount: 5,
+      tokenUsage: {
+        input: 100,
+        output: 50,
+        reasoning: 20,
+        cacheRead: 30,
+        cacheWrite: 10,
+        netInput: 130,
+        total: 210,
+      },
+      costUsd: 0.02,
+      systemPrompt: 'You are a coding assistant',
+      dataSource: 'scan' as const,
+      sourcePath: '/tmp/left.jsonl',
+      totalDurationMs: 5000,
+      isSubagent: false,
+    };
+    const { html, unmount } = mount(
+      <CompareSpeedMetrics
+        speed={{ left: FULL_SPEED, right: FULL_SPEED }}
+        locale="zh"
+        sessions={{ left: session, right: session }}
+      />,
+    );
+    const seg = document.querySelector<HTMLButtonElement>('.token-stack-seg[aria-label="L output"]');
+    expect(seg).toBeDefined();
+    act(() => {
+      seg!.click();
+    });
+    expect(html()).toContain('Token 文本');
+    unmount();
+  });
 });

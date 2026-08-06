@@ -80,4 +80,15 @@ describe('CompareCharts（建议 1）', () => {
     expect(html()).toContain('compare-chart-criteria'); // 口径说明（observability-designer 数据溯源）
     unmount();
   });
+
+  it('点击环形图 token 段打开 TokenTextModal（REQ-101）', () => {
+    const { html, unmount } = mount(<CompareCharts result={makeResult()} locale="zh" />);
+    const seg = document.querySelector<SVGCircleElement>('circle[role="button"][aria-label="L output"]');
+    expect(seg).toBeDefined();
+    act(() => {
+      seg!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(html()).toContain('Token 文本');
+    unmount();
+  });
 });
