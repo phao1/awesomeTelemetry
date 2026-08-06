@@ -375,6 +375,12 @@
   white-space: nowrap;
 }
 
+.palette-row-icon {
+  display: inline-flex;
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
 .palette-row-hint {
   color: var(--fg-muted);
   font-size: var(--text-xs);

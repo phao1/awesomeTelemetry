@@ -123,14 +123,14 @@
 
 ## §8 Mission 分组导航 + Command Palette 扩展（B8）
 
-- [ ] 8.1 `MissionControl.tsx`：增加角色分组侧边栏（管理者/工程师/运维）
-- [ ] 8.2 侧边栏可折叠（`[` 键或按钮）
-- [ ] 8.3 点击角色名 smooth scroll 到对应 section
-- [ ] 8.4 当前可见 section 的角色名高亮
-- [ ] 8.5 `CommandPalette.tsx`：扩展为 3 类动作（会话/导航/动作）
-- [ ] 8.6 输入 `/` 前缀过滤动作类型
-- [ ] 8.7 动作类条目显示 `IconChevronRight`，会话类显示 `ProviderBadge`
-- [ ] 8.8 测试：`MissionControl.test.tsx` + `CommandPalette.test.tsx`
+- [x] 8.1 `MissionControl.tsx`：增加角色分组侧边栏（管理者/工程师/运维）
+- [x] 8.2 侧边栏可折叠（`[` 键或按钮）
+- [x] 8.3 点击角色名 smooth scroll 到对应 section
+- [x] 8.4 当前可见 section 的角色名高亮
+- [x] 8.5 `CommandPalette.tsx`：扩展为 3 类动作（会话/导航/动作）
+- [x] 8.6 输入 `/` 前缀过滤动作类型
+- [x] 8.7 动作类条目显示 `IconChevronRight`，会话类显示 `ProviderBadge`
+- [x] 8.8 测试：`MissionControl.test.tsx` + `CommandPalette.test.tsx`
 
 ## §9 收口验收（B9）
 

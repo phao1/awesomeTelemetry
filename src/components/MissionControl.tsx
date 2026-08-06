@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t, ZH, type I18nKey } from '../i18n.js';
@@ -22,6 +22,24 @@ import { StackedAreaChart } from './charts/StackedAreaChart.js';
 
 export type MissionSection = 'a' | 'b' | 'c';
 export type MissionRange = '7d' | '30d' | 'all';
+export type MissionRole = 'manager' | 'engineer' | 'ops';
+
+/** REQ-109：25+ widget 按角色分 3 组（规格表 + 其余 widget 就近归类）。
+ * 侧边栏仅做滚动导航（G-UI-8），MUST NOT 隐藏其他角色的 widget。 */
+export const ROLE_GROUPS: Record<MissionRole, string[]> = {
+  manager: [
+    'activity', 'costEfficiency', 'toolFailure', 'errorReasons',
+    'closure', 'apiQuality', 'tokenTrend', 'drift', 'riskyCommands',
+    'depth', 'heavyScenes',
+  ],
+  engineer: [
+    'toolTop', 'skillTop', 'subagent', 'promptHabits',
+    'toolEcology', 'scenes', 'parallelism', 'contextPressure', 'models',
+  ],
+  ops: ['heatmap', 'collectors', 'dualChannel', 'calendar', 'hotSessions'],
+};
+
+export const ROLE_ORDER: readonly MissionRole[] = ['manager', 'engineer', 'ops'];
 
 export interface MissionControlProps {
   locale: Locale;
@@ -428,7 +446,7 @@ function WidgetPanel({
   const criteriaText =
     criteriaKey in ZH ? t(criteriaKey, locale) : widget.criteria;
   return (
-    <section className="mission-widget">
+    <section className="mission-widget" id={`widget-${id}`}>
       <h3 className="mission-widget-title">{titleKey in ZH ? t(titleKey, locale) : id}</h3>
       <div className="mission-criteria">{criteriaText}</div>
       {widget.available && widget.data !== null ? (
@@ -465,6 +483,22 @@ export function MissionControl({
   const [retryKey, setRetryKey] = useState(0);
   const [section, setSection] = useState<MissionSection>('a');
   const [stale, setStale] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [activeRole, setActiveRole] = useState<MissionRole | null>('manager');
+  const mainRef = useRef<HTMLElement | null>(null);
+
+  // REQ-109：`[` 键折叠/展开侧边栏（不劫持输入框）。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const tag = (e.target as HTMLElement | null)?.tagName ?? '';
+      if (e.key !== '[' || tag === 'INPUT' || tag === 'TEXTAREA') {
+        return;
+      }
+      setNavCollapsed((prev) => !prev);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     setResponse(null);
@@ -497,10 +531,72 @@ export function MissionControl({
   }, [response]);
   const visibleIds = sectionIds(section);
   const visible = allWidgets.filter((entry) => visibleIds.includes(entry.id));
+  const byRole = useMemo(
+    () =>
+      ROLE_ORDER.map((role) => ({
+        role,
+        widgets: visible.filter((entry) => ROLE_GROUPS[role].includes(entry.id)),
+      })).filter((group) => group.widgets.length > 0),
+    [visible],
+  );
+
+  const onScroll = (): void => {
+    const el = mainRef.current;
+    if (el === null) {
+      return;
+    }
+    let current: MissionRole | null = null;
+    for (const group of byRole) {
+      const node = el.querySelector<HTMLElement>(`#mission-role-${group.role}`);
+      if (node !== null && node.offsetTop - 120 <= el.scrollTop) {
+        current = group.role;
+      }
+    }
+    setActiveRole(current);
+  };
+
+  const scrollToRole = (role: MissionRole): void => {
+    document.getElementById(`mission-role-${role}`)?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   return (
-    <main className="main mission-view">
-      <div className="mission-toolbar">
+    <main
+      className={`main mission-view ${navCollapsed ? 'mission-nav-collapsed' : ''}`}
+      ref={(node) => {
+        mainRef.current = node;
+      }}
+      onScroll={onScroll}
+    >
+      <div className="mission-layout">
+        <aside className="mission-nav" aria-label={t('mission.nav.title', locale)}>
+          <button
+            type="button"
+            className="mission-nav-toggle"
+            aria-expanded={!navCollapsed}
+            onClick={() => setNavCollapsed((prev) => !prev)}
+            title={t('mission.nav.collapse', locale)}
+          >
+            {t('mission.nav.title', locale)}
+          </button>
+          {!navCollapsed && (
+            <nav className="mission-nav-list">
+              {byRole.map(({ role }) => (
+                <button
+                  key={role}
+                  type="button"
+                  className={`mission-nav-item ${activeRole === role ? 'mission-nav-item-on' : ''}`}
+                  onClick={() => scrollToRole(role)}
+                >
+                  <span className="mission-nav-dot" aria-hidden="true" />
+                  {t(`mission.role.${role}`, locale)}
+                  <span className="mono mission-nav-count">{ROLE_GROUPS[role].length}</span>
+                </button>
+              ))}
+            </nav>
+          )}
+        </aside>
+        <div className="mission-main">
+          <div className="mission-toolbar">
         <div className="mission-range">
           {(['7d', '30d', 'all'] as const).map((r) => (
             <button
@@ -526,34 +622,40 @@ export function MissionControl({
             {stale ? ` · ${t('mission.stale', locale)}` : ''}
           </span>
         )}
-      </div>
+          </div>
 
-      <div className="mission-chips" role="tablist">
-        {(['a', 'b', 'c'] as const).map((s) => (
-          <button
-            key={s}
-            type="button"
-            role="tab"
-            aria-selected={section === s}
-            className={`chip ${section === s ? 'chip-active' : ''}`}
-            onClick={() => setSection(s)}
-          >
-            {t(`mission.section.${s}`, locale)}
-          </button>
-        ))}
-      </div>
+          <div className="mission-chips" role="tablist">
+            {(['a', 'b', 'c'] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                aria-selected={section === s}
+                className={`chip ${section === s ? 'chip-active' : ''}`}
+                onClick={() => setSection(s)}
+              >
+                {t(`mission.section.${s}`, locale)}
+              </button>
+            ))}
+          </div>
 
-      {error !== null && (
-        <ErrorState code="MISSION_LOAD_FAILED" message={error} onRetry={() => setRetryKey((k) => k + 1)} />
-      )}
-      {response === null && error === null && <Skeleton variant="row" count={6} />}
-      {response !== null && (
-        <div className="mission-grid">
-          {visible.map(({ id, widget }) => (
-            <WidgetPanel key={id} id={id} widget={widget} locale={locale} onOpenSession={onOpenSession} />
-          ))}
+          {error !== null && (
+            <ErrorState code="MISSION_LOAD_FAILED" message={error} onRetry={() => setRetryKey((k) => k + 1)} />
+          )}
+          {response === null && error === null && <Skeleton variant="row" count={6} />}
+          {response !== null &&
+            byRole.map(({ role, widgets }) => (
+              <section key={role} id={`mission-role-${role}`} className="mission-role-section" data-role={role}>
+                <h3 className="mission-role-title">{t(`mission.role.${role}`, locale)}</h3>
+                <div className="mission-grid">
+                  {widgets.map(({ id, widget }) => (
+                    <WidgetPanel key={id} id={id} widget={widget} locale={locale} onOpenSession={onOpenSession} />
+                  ))}
+                </div>
+              </section>
+            ))}
         </div>
-      )}
+      </div>
     </main>
   );
 }

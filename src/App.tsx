@@ -984,6 +984,8 @@ export default function App() {
               triggerScan();
             } else if (action.type === 'settings') {
               setSettingsOpen(true);
+            } else if (action.type === 'export' && selectedKey !== null) {
+              window.open(`/api/sessions/${encodeURIComponent(selectedKey)}/report`, '_blank');
             }
           }}
         />

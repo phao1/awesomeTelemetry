@@ -106,6 +106,109 @@
   flex-direction: column;
   gap: var(--row-md);
   min-width: 0;
+  overflow-y: auto;
+}
+
+.mission-layout {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.mission-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  position: sticky;
+  top: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--canvas-subtle);
+}
+
+.mission-nav-toggle {
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.mission-nav-toggle:hover {
+  color: var(--accent-fg);
+}
+
+.mission-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.mission-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: none;
+  background: none;
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mission-nav-item:hover {
+  background: var(--canvas-raised);
+}
+
+.mission-nav-item-on {
+  background: var(--accent-subtle);
+  color: var(--accent-emphasis);
+  font-weight: var(--weight-semibold);
+}
+
+.mission-nav-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--accent-emphasis);
+}
+
+.mission-nav-count {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.mission-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--row-md);
+  flex: 1;
+  min-width: 0;
+}
+
+.mission-role-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  scroll-margin-top: var(--space-4);
+}
+
+.mission-role-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border-muted);
+  padding-bottom: var(--space-2);
 }
 
 .mission-toolbar {
@@ -254,4 +357,3 @@
 .mission-hot-row:hover {
   background: var(--canvas-subtle);
 }
-

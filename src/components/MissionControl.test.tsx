@@ -88,6 +88,98 @@ describe('MissionControl（REQ-027）', () => {
     }
   });
 
+  it('REQ-109：角色侧边栏渲染三组，点击平滑滚动到对应 section', async () => {
+    const load = vi.fn(async (_range: MissionRange) => makeResponse());
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let root: ReturnType<typeof createRoot> | undefined;
+    try {
+      act(() => {
+        root = createRoot(host);
+        root.render(<MissionControl locale="zh" load={load} />);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const items = [...host.querySelectorAll<HTMLButtonElement>('.mission-nav-item')];
+      expect(items.length).toBe(3);
+      expect(host.textContent).toContain('管理者');
+      expect(host.textContent).toContain('工程师');
+      expect(host.textContent).toContain('运维');
+      expect(host.querySelector('#mission-role-manager')).not.toBeNull();
+      act(() => items[1]!.click());
+      expect(scrollSpy).toHaveBeenCalled();
+    } finally {
+      act(() => root?.unmount());
+      host.remove();
+    }
+  });
+
+  it('REQ-109：`[` 键折叠/展开侧边栏', async () => {
+    const load = vi.fn(async (_range: MissionRange) => makeResponse());
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let root: ReturnType<typeof createRoot> | undefined;
+    try {
+      act(() => {
+        root = createRoot(host);
+        root.render(<MissionControl locale="zh" load={load} />);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(host.querySelector('.mission-nav-list')).not.toBeNull();
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: '[' }));
+      });
+      expect(host.querySelector('.mission-nav-list')).toBeNull();
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: '[' }));
+      });
+      expect(host.querySelector('.mission-nav-list')).not.toBeNull();
+    } finally {
+      act(() => root?.unmount());
+      host.remove();
+    }
+  });
+
+  it('REQ-109：滚动后当前可见角色高亮', async () => {
+    const load = vi.fn(async (_range: MissionRange) => makeResponse());
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let root: ReturnType<typeof createRoot> | undefined;
+    try {
+      act(() => {
+        root = createRoot(host);
+        root.render(<MissionControl locale="zh" load={load} />);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const main = host.querySelector('.mission-view') as HTMLElement;
+      const tops: Record<string, number> = {
+        'mission-role-manager': 0,
+        'mission-role-engineer': 400,
+        'mission-role-ops': 800,
+      };
+      for (const [id, top] of Object.entries(tops)) {
+        const el = host.querySelector(`#${id}`)!;
+        Object.defineProperty(el, 'offsetTop', { configurable: true, value: top });
+      }
+      main.scrollTop = 300;
+      act(() => {
+        main.dispatchEvent(new Event('scroll'));
+      });
+      const active = host.querySelector('.mission-nav-item-on');
+      expect(active?.textContent).toContain('工程师');
+    } finally {
+      act(() => root?.unmount());
+      host.remove();
+    }
+  });
+
   it('切换 range 触发一次新请求（3 次切换 = 3 次 fetch）', async () => {
     const load = vi.fn(async (_range: MissionRange) => makeResponse());
     const host = document.createElement('div');

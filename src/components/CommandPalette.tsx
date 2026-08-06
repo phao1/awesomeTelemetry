@@ -7,10 +7,12 @@ import { Modal } from './ui/Modal.js';
 import { SearchInput } from './ui/Input.js';
 import { VirtualList } from './ui/VirtualList.js';
 import { ProviderBadge } from './ui/Badge.js';
+import { IconChevronRight } from './icons/index.js';
 
 export type PaletteAction =
   | { type: 'session'; key: string }
   | { type: 'view'; view: string }
+  | { type: 'export' }
   | { type: 'theme' }
   | { type: 'language' }
   | { type: 'scan' }
@@ -28,9 +30,11 @@ interface Command {
   label: string;
   hint: string;
   action: PaletteAction;
+  category: 'session' | 'nav' | 'action';
 }
 
-/** REQ-025：命令面板。复用共享 store，不发任何请求。 */
+/** REQ-025 + REQ-110：命令面板 —— 3 类动作（会话/导航/动作）。
+ * `/s`、`/nav`、`/act` 前缀过滤；无前缀混合搜索。复用共享 store，不发请求。 */
 export function CommandPalette({
   sessions,
   locale,
@@ -40,13 +44,25 @@ export function CommandPalette({
   const [search, setSearch] = useState('');
 
   const commands = useMemo<Command[]>(() => {
-    const q = search.trim().toLowerCase();
+    const raw = search.trim();
+    const lower = raw.toLowerCase();
+    const prefix =
+      lower === '/s' || lower.startsWith('/s ')
+        ? 'session'
+        : lower === '/nav' || lower.startsWith('/nav ')
+          ? 'nav'
+          : lower === '/act' || lower.startsWith('/act ')
+            ? 'action'
+            : null;
+    const space = raw.indexOf(' ');
+    const q = (prefix === null ? raw : space >= 0 ? raw.slice(space + 1) : '').toLowerCase();
     const sessionCommands: Command[] = sessions
       .filter(
         (session) =>
-          q === '' ||
-          session.title.toLowerCase().includes(q) ||
-          session.id.toLowerCase().includes(q),
+          (prefix === null || prefix === 'session') &&
+          (q === '' ||
+            session.title.toLowerCase().includes(q) ||
+            session.id.toLowerCase().includes(q)),
       )
       .slice(0, 200)
       .map((session) => ({
@@ -54,19 +70,28 @@ export function CommandPalette({
         label: session.title || session.id,
         hint: session.id,
         action: { type: 'session', key: session.id },
+        category: 'session',
       }));
-    const staticCommands: Command[] = [
-      { id: 'view-agent', label: t('view.agent', locale), hint: 'view', action: { type: 'view', view: 'agent' } },
-      { id: 'view-compare', label: t('view.compare', locale), hint: 'view', action: { type: 'view', view: 'compare' } },
-      { id: 'view-proxy', label: t('view.proxy', locale), hint: 'view', action: { type: 'view', view: 'proxy' } },
-      { id: 'view-frida', label: t('view.frida', locale), hint: 'view', action: { type: 'view', view: 'frida' } },
-      { id: 'view-mission', label: t('view.mission', locale), hint: 'view', action: { type: 'view', view: 'mission' } },
-      { id: 'theme', label: t('palette.theme', locale), hint: '⌘\\', action: { type: 'theme' } },
-      { id: 'language', label: t('palette.language', locale), hint: 'zh/en', action: { type: 'language' } },
-      { id: 'scan', label: t('palette.scan', locale), hint: 'scan', action: { type: 'scan' } },
-      { id: 'settings', label: t('palette.settings', locale), hint: 'settings', action: { type: 'settings' } },
+    const navCommands: Command[] = (
+      [
+        { id: 'view-agent', label: t('view.agent', locale), hint: 'nav', action: { type: 'view', view: 'agent' } },
+        { id: 'view-compare', label: t('view.compare', locale), hint: 'nav', action: { type: 'view', view: 'compare' } },
+        { id: 'view-proxy', label: t('view.proxy', locale), hint: 'nav', action: { type: 'view', view: 'proxy' } },
+        { id: 'view-frida', label: t('view.frida', locale), hint: 'nav', action: { type: 'view', view: 'frida' } },
+        { id: 'view-mission', label: t('view.mission', locale), hint: 'nav', action: { type: 'view', view: 'mission' } },
+      ] as Array<Command & { label: string }>
+    ).map((command) => ({ ...command, category: 'nav' as const }));
+    const actionCommands: Command[] = [
+      { id: 'export', label: t('palette.export', locale), hint: 'act', action: { type: 'export' }, category: 'action' },
+      { id: 'theme', label: t('palette.theme', locale), hint: 'act', action: { type: 'theme' }, category: 'action' },
+      { id: 'language', label: t('palette.language', locale), hint: 'act', action: { type: 'language' }, category: 'action' },
+      { id: 'scan', label: t('palette.scan', locale), hint: 'act', action: { type: 'scan' }, category: 'action' },
+      { id: 'settings', label: t('palette.settings', locale), hint: 'act', action: { type: 'settings' }, category: 'action' },
     ];
-    return [...sessionCommands, ...staticCommands];
+    const matches = (label: string): boolean => q === '' || label.toLowerCase().includes(q);
+    const nav = (prefix === null || prefix === 'nav') ? navCommands.filter((c) => matches(c.label)) : [];
+    const action = (prefix === null || prefix === 'action') ? actionCommands.filter((c) => matches(c.label)) : [];
+    return [...sessionCommands, ...nav, ...action];
   }, [sessions, search, locale]);
 
   const run = (command: Command): void => {
@@ -102,6 +127,11 @@ export function CommandPalette({
                       provider={sessions.find((s) => s.id === action.key)?.provider ?? 'codex'}
                       locale={locale}
                     />
+                  )}
+                  {command.category !== 'session' && (
+                    <span className="palette-row-icon" aria-hidden="true">
+                      <IconChevronRight size={12} />
+                    </span>
                   )}
                   <span className="palette-row-label">{command.label}</span>
                   <span className="mono palette-row-hint">{command.hint}</span>

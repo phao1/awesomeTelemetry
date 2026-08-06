@@ -86,4 +86,51 @@ describe('REQ-025 命令面板', () => {
     act(() => scan.click());
     expect(actions).toContainEqual({ type: 'scan' });
   });
+
+  it('REQ-110：/act 前缀只显示动作类，动作条目带 IconChevronRight', () => {
+    const container = render(
+      <CommandPalette
+        sessions={sessions}
+        locale="zh"
+        onClose={() => undefined}
+        onAction={() => undefined}
+      />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, '/act 导出');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const rows = Array.from(container.querySelectorAll('.palette-row'));
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.textContent).toContain('导出报告');
+    expect(container.querySelector('.palette-row-icon')).not.toBeNull();
+  });
+
+  it('REQ-110：/nav 只显示导航，/s 只显示会话', () => {
+    const container = render(
+      <CommandPalette
+        sessions={sessions}
+        locale="zh"
+        onClose={() => undefined}
+        onAction={() => undefined}
+      />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    const setValue = (value: string): void => {
+      act(() => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    };
+    setValue('/nav');
+    const navRows = Array.from(container.querySelectorAll('.palette-row'));
+    expect(navRows.length).toBe(5);
+    const navHints = navRows.map((row) => row.querySelector('.palette-row-hint')?.textContent);
+    expect(navHints.every((hint) => hint === 'nav')).toBe(true);
+    setValue('/s fix');
+    const sessionRows = Array.from(container.querySelectorAll('.palette-row'));
+    expect(sessionRows.length).toBe(1);
+    expect(sessionRows[0]!.textContent).toContain('fix build');
+  });
 });
