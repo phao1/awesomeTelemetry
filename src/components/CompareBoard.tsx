@@ -576,7 +576,7 @@ export function CompareBoard({
               <CompareVerdict result={result} locale={locale} />
             </ErrorBoundary>
             <ErrorBoundary label={t('compare.kpiGrid', locale)}>
-              <CompareKPI result={result} locale={locale} />
+              <CompareKPI result={result} locale={locale} sessions={sessions} />
             </ErrorBoundary>
           </div>
           <CollapsibleSection

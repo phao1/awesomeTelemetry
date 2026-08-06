@@ -1,6 +1,8 @@
 export { HBarChart } from './HBarChart.js';
 export { DonutChart, DonutRing } from './DonutChart.js';
 export { RadarChart } from './RadarChart.js';
+export { Sparkline } from './Sparkline.js';
+export type { SparklinePoint, SparklineProps, SparklineSeries } from './Sparkline.js';
 export type { RadarAxis, RadarChartProps } from './RadarChart.js';
 export { HeatmapGrid } from './HeatmapGrid.js';
 export { HeatmapChart } from './HeatmapChart.js';

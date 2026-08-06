@@ -2,7 +2,8 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { CompareKPI } from './CompareKPI.js';
+import type { SessionIndexEntry } from '../core/trace-types.js';
+import { CompareKPI, MIN_TREND_SESSIONS } from './CompareKPI.js';
 import { makeEvent, makeResult } from './compare-test-fixtures.js';
 
 const containers: HTMLDivElement[] = [];
@@ -192,6 +193,80 @@ describe('CompareKPI（建议 7 drill-down）', () => {
     const { html, unmount } = mount(<CompareKPI result={result} locale="zh" />);
     clickByLabel(html, '验证覆盖率 点击展开构成明细');
     expect(html()).toContain('vitest run');
+    unmount();
+  });
+});
+
+function historySessions(
+  provider: 'codex' | 'claude',
+  sourceAgent: string,
+  n: number,
+): SessionIndexEntry[] {
+  return Array.from({ length: n }, (_, i) => ({
+    id: `${provider}-${i}`,
+    provider,
+    sourceAgent,
+    title: `session ${i}`,
+    startedAt: `2026-08-0${i + 1}T00:00:00.000Z`,
+    updatedAt: `2026-08-0${i + 1}T00:10:00.000Z`,
+    status: 'success',
+    cwd: '/tmp',
+    eventCount: 10 * (i + 1),
+    messageCount: i + 1,
+    tokenTotal: 1000 * (i + 1),
+    costUsd: 0.01 * (i + 1),
+    dataSource: 'scan',
+    sourcePath: `/tmp/${provider}-${i}.jsonl`,
+    detailLoaded: true,
+    mergeGroupId: null,
+    hasSystemPrompt: false,
+  })) as SessionIndexEntry[];
+}
+
+describe('REQ-122 KPI 跨会话趋势 sparkline', () => {
+  it('两侧各 >= 3 个历史会话时，events/tokens/cost/userRounds 卡显示双线 sparkline', () => {
+    const result = makeResult();
+    const sessions = [
+      ...historySessions('codex', result.left.session.sourceAgent, 3),
+      ...historySessions('claude', 'Claude Code', 4),
+    ];
+    // 右侧 fixture 也是 codex/Codex，历史会话与左侧共用
+    const { unmount } = mount(<CompareKPI result={result} locale="en" sessions={sessions} />);
+    const trends = document.querySelectorAll('.compare-kpi-trend:not(.compare-kpi-trend-empty)');
+    expect(trends.length).toBe(4); // events / tokens / cost / userRounds
+    // 每张卡两条线（L + R）
+    expect(trends[0]!.querySelectorAll('path').length).toBe(2);
+    expect(document.querySelector('.compare-kpi-trend path')?.getAttribute('stroke')).toBe(
+      `var(--provider-${result.left.session.provider})`,
+    );
+    unmount();
+  });
+
+  it('历史会话不足 3 个时显示 Need 3+ sessions for trend，不画空图', () => {
+    const result = makeResult();
+    const sessions = historySessions('codex', result.left.session.sourceAgent, 2);
+    const { unmount } = mount(<CompareKPI result={result} locale="en" sessions={sessions} />);
+    const empties = document.querySelectorAll('.compare-kpi-trend-empty');
+    expect(empties.length).toBe(4);
+    expect(empties[0]!.textContent).toBe(`Need ${MIN_TREND_SESSIONS}+ sessions for trend`);
+    expect(document.querySelector('.compare-kpi-trend path')).toBeNull();
+    unmount();
+  });
+
+  it('无历史数据的 KPI 卡不渲染趋势区（不编造数据）', () => {
+    const result = makeResult();
+    const sessions = historySessions('codex', result.left.session.sourceAgent, 5);
+    const { unmount } = mount(<CompareKPI result={result} locale="en" sessions={sessions} />);
+    const cells = document.querySelectorAll('.compare-kpi-cell');
+    const withTrend = document.querySelectorAll('.compare-kpi-trend');
+    expect(cells.length).toBeGreaterThan(withTrend.length);
+    unmount();
+  });
+
+  it('不传 sessions 时完全不渲染趋势（向后兼容）', () => {
+    const { unmount } = mount(<CompareKPI result={makeResult()} locale="zh" />);
+    expect(document.querySelectorAll('.compare-kpi-trend').length).toBe(4);
+    expect(document.querySelectorAll('.compare-kpi-trend-empty').length).toBe(4);
     unmount();
   });
 });

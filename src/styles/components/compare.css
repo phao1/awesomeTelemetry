@@ -1176,3 +1176,54 @@
   margin: 0 0 var(--space-2);
   font-size: var(--text-base);
 }
+
+/* ── REQ-122：KPI 卡跨会话趋势 sparkline ── */
+
+.compare-kpi-trend {
+  display: block;
+  position: relative;
+  min-height: var(--space-5);
+  margin-bottom: var(--space-1);
+}
+
+.compare-kpi-trend-empty {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.sparkline {
+  position: relative;
+  display: inline-flex;
+}
+
+.sparkline-dot {
+  cursor: pointer;
+}
+
+.sparkline-tip {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  z-index: var(--z-sticky);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-1) / 2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-overlay);
+  color: var(--fg-default);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.sparkline-tip-title {
+  max-width: var(--space-10);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sparkline-tip-at {
+  color: var(--fg-muted);
+}

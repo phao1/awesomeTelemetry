@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
-import type { TraceEventSlim } from '../core/trace-types.js';
+import type { SessionIndexEntry, TraceEventSlim } from '../core/trace-types.js';
 import { TRACE_KINDS } from '../core/trace-types.js';
 import {
   compareSideStats,
@@ -14,6 +14,7 @@ import {
 import type { CompareResult } from './compare-types.js';
 import { classifyErrorText } from '../core/error-classifier.js';
 import { HBarChart } from './charts/HBarChart.js';
+import { Sparkline, type SparklineSeries } from './charts/Sparkline.js';
 import { BarMeter } from './ui/Misc.js';
 import { TraceTimeline } from './TraceTimeline.js';
 import { IconChevronDown } from './icons/index.js';
@@ -329,18 +330,51 @@ function KpiDrilldown({
   );
 }
 
+/** REQ-122：可从会话索引直接取到历史序列的 KPI（其余 KPI 无跨会话历史，不画趋势）。 */
+const KPI_TREND_METRIC: Record<string, (session: SessionIndexEntry) => number> = {
+  events: (s) => s.eventCount,
+  tokens: (s) => s.tokenTotal,
+  cost: (s) => s.costUsd,
+  userRounds: (s) => s.messageCount,
+};
+
+/** REQ-122：少于该会话数不画趋势线。 */
+export const MIN_TREND_SESSIONS = 3;
+
+/** 取某个 agent（provider + sourceAgent）的历史会话，按开始时间升序。 */
+function agentHistory(
+  sessions: readonly SessionIndexEntry[],
+  provider: string,
+  sourceAgent: string,
+): SessionIndexEntry[] {
+  return sessions
+    .filter((s) => s.provider === provider && s.sourceAgent === sourceAgent)
+    .sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1));
+}
+
 export function CompareKPI({
   result,
   locale,
+  sessions = [],
 }: {
   result: CompareResult;
   locale: Locale;
+  /** REQ-122：App 共享的会话索引，用于跨会话趋势。MUST NOT 发额外请求（G11.9）。 */
+  sessions?: readonly SessionIndexEntry[];
 }): React.JSX.Element {
   const left = result.left.session;
   const right = result.right.session;
   const leftEvents = result.left.events as TraceEventSlim[];
   const rightEvents = result.right.events as TraceEventSlim[];
   const [expanded, setExpanded] = useState<string | null>(null);
+  // REQ-122：两侧 agent 的历史会话（从共享 store 派生，不发请求）。
+  const history = useMemo(
+    () => ({
+      left: agentHistory(sessions, left.provider, left.sourceAgent),
+      right: agentHistory(sessions, right.provider, right.sourceAgent),
+    }),
+    [sessions, left.provider, left.sourceAgent, right.provider, right.sourceAgent],
+  );
   const ls = useMemo(() => compareSideStats(leftEvents, result.speed.left, left), [leftEvents, result.speed.left, left]);
   const rs = useMemo(() => compareSideStats(rightEvents, result.speed.right, right), [rightEvents, result.speed.right, right]);
   const fmtPct = (v: number | null): string => (v === null ? '—' : `${(v * 100).toFixed(1)}%`);
@@ -423,14 +457,58 @@ export function CompareKPI({
     },
   ];
 
+  /** REQ-122：KPI 卡上方的双线趋势条。两侧都不足 3 个历史会话时给出提示而非空图。 */
+  const trendFor = (key: string): React.JSX.Element | null => {
+    const metric = KPI_TREND_METRIC[key];
+    if (metric === undefined) {
+      return null;
+    }
+    const series: SparklineSeries[] = [];
+    const push = (rows: SessionIndexEntry[], color: string, label: string): void => {
+      if (rows.length < MIN_TREND_SESSIONS) {
+        return;
+      }
+      series.push({
+        label,
+        color,
+        points: rows.map((s) => ({
+          value: metric(s),
+          label: s.title || s.id,
+          at: s.startedAt.slice(0, 16).replace('T', ' '),
+        })),
+      });
+    };
+    push(history.left, `var(--provider-${left.provider})`, 'L');
+    push(history.right, `var(--provider-${right.provider})`, 'R');
+    if (series.length === 0) {
+      return (
+        <span className="compare-kpi-trend compare-kpi-trend-empty">
+          {t('compare.trend.needMore', locale).replace('{n}', String(MIN_TREND_SESSIONS))}
+        </span>
+      );
+    }
+    return (
+      <span className="compare-kpi-trend">
+        <Sparkline
+          series={series}
+          width={140}
+          height={26}
+          ariaLabel={t('compare.trend.label', locale)}
+        />
+      </span>
+    );
+  };
+
   return (
     <section className="compare-kpis" id="compare-kpi">
       {items.map((item) => {
         const leftBetter = item.lnum === item.rnum ? null : item.lowerBetter ? item.lnum < item.rnum : item.lnum > item.rnum;
         const diff = diffPct(item.lnum, item.rnum);
         const isExpanded = expanded === item.key;
+        const trend = trendFor(item.key);
         const content = (
           <>
+            {trend}
             <span className="compare-kpi-head">
               <span className="compare-kpi-label">{item.label}</span>
               {item.drill === true && (
