@@ -52,11 +52,96 @@ describe('CompareKPI（建议 7 drill-down）', () => {
     unmount();
   });
 
-  it('Token 卡片点击展开 token 构成', () => {
+  it('Token 卡片点击展开 Top-10 token 事件双列对比（REQ-100）', () => {
+    const tokenEvent = (id: string): ReturnType<typeof makeEvent> =>
+      makeEvent({
+        id,
+        kind: 'llm',
+        title: `big call ${id}`,
+        tokens: { input: 100, output: 300, reasoning: 50, cacheRead: 0, cacheWrite: 0, netInput: 100, total: 450 },
+      });
+    const result = makeResult({
+      left: {
+        ...makeResult().left,
+        events: [tokenEvent('l1'), makeEvent({ id: 'l2', kind: 'llm', title: 'small call', tokens: { input: 1, output: 1, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 1, total: 2 } })],
+      },
+      right: {
+        ...makeResult().right,
+        events: [tokenEvent('r1')],
+      },
+    });
+    const { html, unmount } = mount(<CompareKPI result={result} locale="zh" />);
+    clickByLabel(html, 'Token 点击展开构成明细');
+    expect(html()).toContain('Token 消耗 TOP 10');
+    expect(html()).toContain('big call l1');
+    expect(html()).toContain('450');
+    unmount();
+  });
+
+  it('Events 卡片展开事件类型分布双条形图（REQ-100）', () => {
+    const result = makeResult({
+      left: {
+        ...makeResult().left,
+        events: [
+          makeEvent({ id: 'a1', kind: 'bash', title: 'run' }),
+          makeEvent({ id: 'a2', kind: 'bash', title: 'run 2' }),
+          makeEvent({ id: 'a3', kind: 'llm', title: 'think' }),
+        ],
+      },
+      right: {
+        ...makeResult().right,
+        events: [makeEvent({ id: 'b1', kind: 'llm', title: 'think' })],
+      },
+    });
+    const { html, unmount } = mount(<CompareKPI result={result} locale="zh" />);
+    clickByLabel(html, '事件 点击展开构成明细');
+    expect(html()).toContain('事件类型分布');
+    expect(html()).toContain('kpi-drilldown-events');
+    unmount();
+  });
+
+  it('Failures 卡片展开失败事件明细（标题 + 错误类型 + 时间）（REQ-100）', () => {
+    const result = makeResult({
+      left: {
+        ...makeResult().left,
+        events: [
+          makeEvent({ id: 'f1', tool: 'Bash', status: 'error', error: 'ETIMEDOUT', startedAt: '2026-08-01T01:02:03.000Z' }),
+          makeEvent({ id: 'f2', status: 'success', title: 'ok' }),
+        ],
+      },
+    });
+    const { html, unmount } = mount(<CompareKPI result={result} locale="zh" />);
+    clickByLabel(html, '失败事件 点击展开构成明细');
+    expect(html()).toContain('失败事件明细');
+    expect(html()).toContain('timeout');
+    expect(html()).toContain('01:02:03');
+    unmount();
+  });
+
+  it('LLM Calls 卡片展开双 TraceTimeline compact（REQ-100）', () => {
+    const llm = Array.from({ length: 25 }, (_, i) =>
+      makeEvent({ id: `llm-${i}`, kind: 'llm', title: `call ${i}` }),
+    );
+    const result = makeResult({
+      left: { ...makeResult().left, events: llm },
+      right: { ...makeResult().right, events: llm.slice(0, 5) },
+    });
+    const { html, unmount } = mount(<CompareKPI result={result} locale="zh" />);
+    clickByLabel(html, 'LLM 调用数 点击展开构成明细');
+    expect(html()).toContain('LLM 时间线');
+    expect(html()).toContain('kpi-drilldown-duration');
+    unmount();
+  });
+
+  it('手风琴模式：同一时刻仅一张卡展开（REQ-100）', () => {
     const { html, unmount } = mount(<CompareKPI result={makeResult()} locale="zh" />);
     clickByLabel(html, 'Token 点击展开构成明细');
-    expect(html()).toContain('token.reasoning');
-    expect(html()).toContain('token.cacheWrite');
+    const openButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('button[aria-expanded="true"]'));
+    expect(openButtons.length).toBe(1);
+    clickByLabel(html, '事件 点击展开构成明细');
+    const openButtonsAfter = Array.from(document.querySelectorAll<HTMLButtonElement>('button[aria-expanded="true"]'));
+    expect(openButtonsAfter.length).toBe(1);
+    expect(openButtonsAfter[0]?.getAttribute('aria-label')).toContain('事件');
     unmount();
   });
 

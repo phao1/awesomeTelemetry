@@ -726,6 +726,130 @@
   margin: var(--space-1) 0 0;
 }
 
+/* ---- REQ-100：KPI drill-down 增强（chevron + 动效 + 4 面板） ---- */
+.compare-kpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.compare-kpi-chevron {
+  display: inline-flex;
+  color: var(--fg-muted);
+  transition: transform var(--duration-base) var(--ease-in-out);
+}
+
+.compare-kpi-chevron-open {
+  transform: rotate(180deg);
+}
+
+.compare-kpi-detail {
+  animation: kpi-drill-in var(--duration-base) var(--ease-out);
+}
+
+@keyframes kpi-drill-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--space-1)));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kpi-drilldown {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--kpi-min)), 1fr));
+  gap: var(--space-3);
+}
+
+.kpi-drilldown-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+}
+
+.kpi-drilldown-chart {
+  min-width: 0;
+}
+
+.kpi-drilldown-token-list,
+.kpi-drilldown-error-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kpi-drilldown-token-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.kpi-drilldown-token-title,
+.kpi-drilldown-error-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+}
+
+.kpi-drilldown-token-count {
+  color: var(--fg-muted);
+}
+
+.kpi-drilldown-error-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--canvas-subtle);
+}
+
+.kpi-drilldown-error-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.kpi-drilldown-error-class {
+  color: var(--danger-fg);
+  font-size: var(--text-xs);
+}
+
+.kpi-drilldown-error-time {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.kpi-drilldown-duration {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--rail-width)), 1fr));
+}
+
+.kpi-drilldown-timeline {
+  min-width: 0;
+  max-height: calc(var(--space-10) * 9);
+  overflow-y: auto;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+}
+
 /* ---- UI-TASKS 2：Speed Metrics 独立 section（建议 2） ---- */
 .compare-speed-grid {
   display: grid;

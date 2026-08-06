@@ -3,13 +3,20 @@ import { useMemo, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { TraceEventSlim } from '../core/trace-types.js';
+import { TRACE_KINDS } from '../core/trace-types.js';
 import {
   compareSideStats,
   diffPct,
   errorDistribution,
+  eventKindCounts,
   fmtMs,
 } from './compare-stats.js';
 import type { CompareResult } from './compare-types.js';
+import { classifyErrorText } from '../core/error-classifier.js';
+import { HBarChart } from './charts/HBarChart.js';
+import { BarMeter } from './ui/Misc.js';
+import { TraceTimeline } from './TraceTimeline.js';
+import { IconChevronDown } from './icons/index.js';
 
 interface KpiItem {
   key: string;
@@ -21,6 +28,188 @@ interface KpiItem {
   lowerBetter: boolean;
   /** 有 drill-down 明细的 key 才可展开。 */
   drill?: boolean;
+}
+
+function eventTokenTotal(e: TraceEventSlim): number {
+  return e.tokens === null ? 0 : e.tokens.total;
+}
+
+/** REQ-100 DrillDownEvents：事件类型分布双条形图（L/R 各一，复用 HBarChart）。 */
+function DrillDownEvents({
+  leftEvents,
+  rightEvents,
+  locale,
+}: {
+  leftEvents: TraceEventSlim[];
+  rightEvents: TraceEventSlim[];
+  locale: Locale;
+}): React.JSX.Element {
+  const lCounts = eventKindCounts(leftEvents);
+  const rCounts = eventKindCounts(rightEvents);
+  const rows = TRACE_KINDS.map((kind) => ({
+    kind,
+    l: lCounts.get(kind) ?? 0,
+    r: rCounts.get(kind) ?? 0,
+  }))
+    .filter((row) => row.l > 0 || row.r > 0)
+    .sort((a, b) => b.l + b.r - (a.l + a.r));
+  const peak = Math.max(1, ...rows.map((row) => Math.max(row.l, row.r)));
+  if (rows.length === 0) {
+    return <p className="hint">{t('compare.drilldown.noEvents', locale)}</p>;
+  }
+  const toSlices = (side: 'l' | 'r'): Array<{ label: string; value: number }> =>
+    rows.map((row) => ({ label: row.kind, value: row[side] }));
+  return (
+    <div className="kpi-drilldown kpi-drilldown-events">
+      <div className="kpi-drilldown-chart">
+        <h5 className="kpi-drilldown-title">
+          <span className="compare-side-mark" style={{ color: 'var(--accent-fg)' }}>L</span>
+          {t('compare.drilldown.events', locale)}
+        </h5>
+        <HBarChart rows={toSlices('l')} max={peak} tone="accent" height={rows.length * 24 + 12} />
+      </div>
+      <div className="kpi-drilldown-chart">
+        <h5 className="kpi-drilldown-title">
+          <span className="compare-side-mark" style={{ color: 'var(--attention-fg)' }}>R</span>
+          {t('compare.drilldown.events', locale)}
+        </h5>
+        <HBarChart rows={toSlices('r')} max={peak} tone="attention" height={rows.length * 24 + 12} />
+      </div>
+    </div>
+  );
+}
+
+/** REQ-100 DrillDownTokens：Top-10 token 消耗事件双列对比表。 */
+function DrillDownTokens({
+  leftEvents,
+  rightEvents,
+  locale,
+}: {
+  leftEvents: TraceEventSlim[];
+  rightEvents: TraceEventSlim[];
+  locale: Locale;
+}): React.JSX.Element {
+  const side = (events: TraceEventSlim[]): TraceEventSlim[] =>
+    events
+      .filter((e) => e.tokens !== null && e.tokens.total > 0)
+      .sort((a, b) => eventTokenTotal(b) - eventTokenTotal(a))
+      .slice(0, 10);
+  const lTop = side(leftEvents);
+  const rTop = side(rightEvents);
+  if (lTop.length === 0 && rTop.length === 0) {
+    return <p className="hint">{t('compare.drilldown.noTokens', locale)}</p>;
+  }
+  const max = Math.max(1, ...lTop.map(eventTokenTotal), ...rTop.map(eventTokenTotal));
+  const column = (events: TraceEventSlim[], mark: 'L' | 'R'): React.JSX.Element => (
+    <div className="kpi-drilldown-token-col">
+      <h5 className="kpi-drilldown-title">
+        <span className="compare-side-mark" style={{ color: mark === 'L' ? 'var(--accent-fg)' : 'var(--attention-fg)' }}>{mark}</span>
+        {t('compare.drilldown.tokens', locale)}
+      </h5>
+      {events.length === 0 ? (
+        <p className="hint">{t('compare.drilldown.noTokens', locale)}</p>
+      ) : (
+        <ul className="kpi-drilldown-token-list">
+          {events.map((e) => (
+            <li key={e.id} className="kpi-drilldown-token-row">
+              <span className="kpi-drilldown-token-title" title={e.title}>{e.title}</span>
+              <span className="mono kpi-drilldown-token-count">{eventTokenTotal(e).toLocaleString()}</span>
+              <BarMeter value={eventTokenTotal(e)} max={max} tone={mark === 'L' ? 'accent' : 'attention'} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+  return (
+    <div className="kpi-drilldown kpi-drilldown-tokens">
+      {column(lTop, 'L')}
+      {column(rTop, 'R')}
+    </div>
+  );
+}
+
+/** REQ-100 DrillDownErrors：失败事件列表（L/R 各列：标题 + 错误类型 + 时间）。 */
+function DrillDownErrors({
+  leftEvents,
+  rightEvents,
+  locale,
+}: {
+  leftEvents: TraceEventSlim[];
+  rightEvents: TraceEventSlim[];
+  locale: Locale;
+}): React.JSX.Element {
+  const failed = (events: TraceEventSlim[]): TraceEventSlim[] =>
+    events.filter((e) => e.status === 'error');
+  const column = (events: TraceEventSlim[], mark: 'L' | 'R'): React.JSX.Element => {
+    const list = failed(events);
+    return (
+      <div className="kpi-drilldown-error-col">
+        <h5 className="kpi-drilldown-title">
+          <span className="compare-side-mark" style={{ color: mark === 'L' ? 'var(--accent-fg)' : 'var(--attention-fg)' }}>{mark}</span>
+          {t('compare.drilldown.errors', locale)}
+        </h5>
+        {list.length === 0 ? (
+          <p className="hint">{t('compare.drilldown.noFailures', locale)}</p>
+        ) : (
+          <ul className="kpi-drilldown-error-list">
+            {list.slice(0, 20).map((e) => (
+              <li key={e.id} className="kpi-drilldown-error-row">
+                <span className="kpi-drilldown-error-title" title={e.title}>{e.title}</span>
+                <span className="kpi-drilldown-error-meta">
+                  <span className="kpi-drilldown-error-class">{classifyErrorText(e.error)}</span>
+                  <span className="mono kpi-drilldown-error-time">{e.startedAt.slice(11, 19)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  };
+  return (
+    <div className="kpi-drilldown kpi-drilldown-errors">
+      {column(leftEvents, 'L')}
+      {column(rightEvents, 'R')}
+    </div>
+  );
+}
+
+/** REQ-100 DrillDownDuration：双 TraceTimeline compact（20 行上限）。 */
+function DrillDownDuration({
+  leftEvents,
+  rightEvents,
+  locale,
+}: {
+  leftEvents: TraceEventSlim[];
+  rightEvents: TraceEventSlim[];
+  locale: Locale;
+}): React.JSX.Element {
+  const timeline = (events: TraceEventSlim[], mark: 'L' | 'R'): React.JSX.Element => (
+    <div className="kpi-drilldown-timeline">
+      <h5 className="kpi-drilldown-title">
+        <span className="compare-side-mark" style={{ color: mark === 'L' ? 'var(--accent-fg)' : 'var(--attention-fg)' }}>{mark}</span>
+        {t('compare.drilldown.duration', locale)}
+      </h5>
+      <TraceTimeline
+        events={events.slice(0, 20)}
+        total={Math.min(20, events.length)}
+        hasMore={false}
+        onLoadMore={() => undefined}
+        onSelectEvent={() => undefined}
+        selectedEventId={null}
+        locale={locale}
+        layoutMode="time"
+        semanticGroup={false}
+      />
+    </div>
+  );
+  return (
+    <div className="kpi-drilldown kpi-drilldown-duration">
+      {timeline(leftEvents, 'L')}
+      {timeline(rightEvents, 'R')}
+    </div>
+  );
 }
 
 /** 建议 7：KPI 卡片 drill-down —— 速度/Token/错误率/验证覆盖率 的构成明细。 */
@@ -42,6 +231,34 @@ function KpiDrilldown({
   const rows: Array<{ label: string; lv: string; rv: string }> = [];
   const fmtNum = (v: number): string => v.toLocaleString();
 
+  if (item.key === 'events') {
+    return (
+      <div className="compare-kpi-detail kpi-drilldown-panel">
+        <DrillDownEvents leftEvents={leftEvents} rightEvents={rightEvents} locale={locale} />
+      </div>
+    );
+  }
+  if (item.key === 'tokens') {
+    return (
+      <div className="compare-kpi-detail kpi-drilldown-panel">
+        <DrillDownTokens leftEvents={leftEvents} rightEvents={rightEvents} locale={locale} />
+      </div>
+    );
+  }
+  if (item.key === 'failures') {
+    return (
+      <div className="compare-kpi-detail kpi-drilldown-panel">
+        <DrillDownErrors leftEvents={leftEvents} rightEvents={rightEvents} locale={locale} />
+      </div>
+    );
+  }
+  if (item.key === 'llmCalls') {
+    return (
+      <div className="compare-kpi-detail kpi-drilldown-panel">
+        <DrillDownDuration leftEvents={leftEvents} rightEvents={rightEvents} locale={locale} />
+      </div>
+    );
+  }
   if (item.key === 'e2e') {
     rows.push(
       { label: 'TTFT', lv: fmtMs(speed.left.ttftMs), rv: fmtMs(speed.right.ttftMs) },
@@ -51,14 +268,6 @@ function KpiDrilldown({
       { label: t('compare.metric.pureInference', locale), lv: fmtMs(speed.left.pureInferenceMs), rv: fmtMs(speed.right.pureInferenceMs) },
       { label: t('compare.kpi.avgLlmDuration', locale), lv: fmtMs(speed.left.avgLlmDurationMs), rv: fmtMs(speed.right.avgLlmDurationMs) },
     );
-  } else if (item.key === 'tokens') {
-    for (const key of ['input', 'output', 'reasoning', 'cacheRead', 'cacheWrite', 'netInput', 'total'] as const) {
-      rows.push({
-        label: `token.${key}`,
-        lv: fmtNum(left.tokenUsage[key]),
-        rv: fmtNum(right.tokenUsage[key]),
-      });
-    }
   } else if (item.key === 'cost') {
     rows.push(
       { label: t('session.cost', locale), lv: `$${left.costUsd.toFixed(4)}`, rv: `$${right.costUsd.toFixed(4)}` },
@@ -140,10 +349,48 @@ export function CompareKPI({
   const fmtYesNo = (v: number): string => (v === 1 ? t('compare.yes', locale) : t('compare.no', locale));
 
   const items: KpiItem[] = [
+    {
+      key: 'events',
+      label: t('compare.kpi.events', locale),
+      lv: left.eventCount.toLocaleString(),
+      rv: right.eventCount.toLocaleString(),
+      lnum: left.eventCount,
+      rnum: right.eventCount,
+      lowerBetter: false,
+      drill: true,
+    },
+    {
+      key: 'tokens',
+      label: t('session.tokens', locale),
+      lv: left.tokenUsage.total.toLocaleString(),
+      rv: right.tokenUsage.total.toLocaleString(),
+      lnum: left.tokenUsage.total,
+      rnum: right.tokenUsage.total,
+      lowerBetter: true,
+      drill: true,
+    },
+    {
+      key: 'failures',
+      label: t('compare.kpi.failures', locale),
+      lv: String(leftEvents.filter((e) => e.status === 'error').length),
+      rv: String(rightEvents.filter((e) => e.status === 'error').length),
+      lnum: leftEvents.filter((e) => e.status === 'error').length,
+      rnum: rightEvents.filter((e) => e.status === 'error').length,
+      lowerBetter: true,
+      drill: true,
+    },
+    {
+      key: 'llmCalls',
+      label: t('compare.kpi.llmCalls', locale),
+      lv: String(ls.llmCalls),
+      rv: String(rs.llmCalls),
+      lnum: ls.llmCalls,
+      rnum: rs.llmCalls,
+      lowerBetter: false,
+      drill: true,
+    },
     { key: 'e2e', label: t('metric.speed', locale), lv: fmtMs(result.speed.left.e2eMs ?? null), rv: fmtMs(result.speed.right.e2eMs ?? null), lnum: result.speed.left.e2eMs ?? 0, rnum: result.speed.right.e2eMs ?? 0, lowerBetter: true, drill: true },
-    { key: 'tokens', label: t('session.tokens', locale), lv: left.tokenUsage.total.toLocaleString(), rv: right.tokenUsage.total.toLocaleString(), lnum: left.tokenUsage.total, rnum: right.tokenUsage.total, lowerBetter: true, drill: true },
     { key: 'cost', label: t('session.cost', locale), lv: `$${left.costUsd.toFixed(4)}`, rv: `$${right.costUsd.toFixed(4)}`, lnum: left.costUsd, rnum: right.costUsd, lowerBetter: true, drill: true },
-    { key: 'llmCalls', label: t('compare.kpi.llmCalls', locale), lv: String(ls.llmCalls), rv: String(rs.llmCalls), lnum: ls.llmCalls, rnum: rs.llmCalls, lowerBetter: false },
     { key: 'avgLlmDuration', label: t('compare.kpi.avgLlmDuration', locale), lv: fmtMs(ls.avgLlmDuration), rv: fmtMs(rs.avgLlmDuration), lnum: ls.avgLlmDuration ?? 0, rnum: rs.avgLlmDuration ?? 0, lowerBetter: true },
     { key: 'totalToolDuration', label: t('compare.kpi.totalToolDuration', locale), lv: fmtMs(ls.totalToolDuration), rv: fmtMs(rs.totalToolDuration), lnum: ls.totalToolDuration, rnum: rs.totalToolDuration, lowerBetter: true },
     { key: 'cacheHitRate', label: t('compare.kpi.cacheHitRate', locale), lv: fmtPct(ls.cacheHitRate), rv: fmtPct(rs.cacheHitRate), lnum: ls.cacheHitRate ?? 0, rnum: rs.cacheHitRate ?? 0, lowerBetter: false },
@@ -184,7 +431,14 @@ export function CompareKPI({
         const isExpanded = expanded === item.key;
         const content = (
           <>
-            <span className="compare-kpi-label">{item.label}</span>
+            <span className="compare-kpi-head">
+              <span className="compare-kpi-label">{item.label}</span>
+              {item.drill === true && (
+                <span className={`compare-kpi-chevron ${isExpanded ? 'compare-kpi-chevron-open' : ''}`} aria-hidden="true">
+                  <IconChevronDown size={12} />
+                </span>
+              )}
+            </span>
             <div className="compare-kpi-values">
               <span className="mono compare-kpi-side">
                 <span className="compare-side-mark" style={{ color: 'var(--accent-fg)' }}>L</span>
