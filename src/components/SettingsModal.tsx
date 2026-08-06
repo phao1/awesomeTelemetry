@@ -5,6 +5,10 @@ import { t } from '../i18n.js';
 import type { LocalSessionConfig } from '../core/trace-types.js';
 import { api } from '../api/client.js';
 import { ErrorState, Skeleton } from './ui/States.js';
+import {
+  isDesensitizationEnabled,
+  setDesensitizationEnabled,
+} from './inspector-text.js';
 
 export interface SettingsModalProps {
   locale: Locale;
@@ -18,6 +22,7 @@ export function SettingsModal({ locale, onClose, load = () => api.configProvider
   const [config, setConfig] = useState<LocalSessionConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [desensitize, setDesensitize] = useState(isDesensitizationEnabled());
 
   useEffect(() => {
     void load()
@@ -53,6 +58,19 @@ export function SettingsModal({ locale, onClose, load = () => api.configProvider
           </button>
         </header>
         <div className="modal-body">
+          <h4>{t('settings.security', locale)}</h4>
+          <label className="settings-row">
+            <input
+              type="checkbox"
+              checked={desensitize}
+              onChange={(e) => {
+                setDesensitize(e.target.checked);
+                setDesensitizationEnabled(e.target.checked);
+              }}
+            />
+            <span>{t('settings.desensitize', locale)}</span>
+            <span className="hint">{t('settings.desensitizeHint', locale)}</span>
+          </label>
           <h4>{t('settings.providers', locale)}</h4>
           {error !== null && (
             <ErrorState

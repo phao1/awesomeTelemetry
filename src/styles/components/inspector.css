@@ -1,0 +1,220 @@
+.inspector-body pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--canvas-inset);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: inherit;
+}
+
+/* 建议 5：Inspector JSON 语法高亮（6 类 token，颜色全部来自 token） */
+.inspector-json-key {
+  color: var(--accent-fg);
+}
+
+.inspector-json-string {
+  color: var(--success-fg);
+}
+
+.inspector-json-number {
+  color: var(--attention-fg);
+}
+
+.inspector-json-boolean {
+  color: var(--done-fg);
+}
+
+.inspector-json-null {
+  color: var(--fg-subtle);
+  font-style: italic;
+}
+
+.inspector-json-punctuation {
+  color: var(--fg-muted);
+}
+
+.inspector-tabs {
+  border-bottom: 1px solid var(--border-default);
+  flex: 0 0 auto;
+}
+
+.inspector-tabs .ui-tabs {
+  border-bottom: none;
+}
+
+.inspector-find {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.inspector-find-input {
+  flex: 1;
+  min-width: 0;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+}
+
+.inspector-find-input:focus {
+  border-color: var(--accent-fg);
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+.inspector-find-count {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.ui-drawer.inspector-full {
+  width: 80vw;
+}
+
+.inspector-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.inspector-drawer .inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.inspector-body pre mark,
+.inspector-drawer pre mark {
+  background: var(--attention-subtle);
+  color: var(--fg-default);
+  border-radius: var(--mark-radius);
+  padding: 0 1px;
+}
+
+.inspector-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-md);
+}
+
+/* ---- fix-session-detail-display：会话视图 IA 重构（inspector 布局） ---- */
+.session-inspector {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.session-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--canvas-default);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky, 10);
+}
+
+.session-toolbar-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.session-toolbar-title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 28ch;
+  margin: 0;
+}
+
+.session-toolbar-id {
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  padding: 0;
+}
+
+.session-toolbar-id:hover {
+  color: var(--accent-fg);
+}
+
+.session-toolbar-metrics {
+  display: flex;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.session-toolbar-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.session-toolbar-metric-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+
+.session-toolbar-metric .mono {
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+}
+
+.session-canvas {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-2);
+  gap: var(--space-2);
+}
+
+.session-findings-panel {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-subtle);
+}
+
+.session-findings-panel summary {
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--fg-default);
+  user-select: none;
+}
+
+.session-findings-panel summary:hover {
+  color: var(--accent-fg);
+}
+
+.session-findings-panel[open] summary {
+  border-bottom: 1px solid var(--border-default);
+}
+

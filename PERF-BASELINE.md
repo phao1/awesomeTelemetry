@@ -113,3 +113,27 @@ runs):
 > schema 已升 v4（metrics 五新列）；本 change 未触碰扫描热路径的 SQL 形状，
 > 指标与上一条基线持平。metrics 表在 perf 合成库中仍为 0 行（D-014：扫描路径
 > metrics 生产者缺失，与性能无关）。
+
+## UI-TASKS 2 优化 perf:check（2026-08-06，本地基线）
+
+| 指标 | 实测 | 预算 | 结论 |
+|------|------|------|------|
+| listSessions(500) | 0.368ms | < 1ms | ✅ |
+| worst detail slim (9,590 events) | 9.080ms | < 15ms | ✅ |
+| eventDetail drill-down | 0.006ms | < 20ms | ✅ |
+| getSystemPromptForSession | 0.012ms | < 1ms | ✅ |
+| proxyList(50) | 0.752ms | — | — |
+| Overview 冷路径（3 SQL，含阶段耗时聚合） | 23.73ms | < 400ms | ✅ |
+| Overview 缓存命中（1 SQL stamp 判定） | 0.293ms | < 20ms | ✅ |
+| 差分写入 append 1 | 2 语句 / 0.29ms | 仅 1 INSERT、< 20ms | ✅ |
+| 事件循环 p99（200-request hammer） | < 0.01ms | < 50ms | ✅ |
+| 三条核心查询 EXPLAIN | 无 USE TEMP B-TREE | 无临时 B 树 | ✅ |
+| Mission 冷启（stamp + 16 widget SQL） | 51.76ms | < 500ms | ✅ |
+| Mission 缓存命中 | 0.050ms | < 20ms | ✅ |
+| Mission 单 widget SQL 最差 | 11.965ms | < 30ms @ tier B | ✅ |
+| Mission 响应 gzip | 316B | < 120KB | ✅ |
+| 前端 CSS gzip（拆分后 @import 聚合） | 10.50KB | < 16KB | ✅ |
+
+> 本 change 为 UI 可视化/交互优化：Agent Overview 聚合新增阶段耗时 SQL
+> （第三条，冷路径 23.73ms 仍在预算内）；前端 Compare 图表全部为 SVG 内联
+> 渲染，无新增运行时依赖；CSS 拆分后 gzip 10.50KB 符合 REQ-011 预算。

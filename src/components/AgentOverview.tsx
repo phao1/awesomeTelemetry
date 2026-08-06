@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
-import type { AgentOverviewRow, ProviderKey, SessionIndexEntry } from '../core/trace-types.js';
+import type {
+  AgentOverviewRow,
+  ProviderKey,
+  SessionIndexEntry,
+  TracePhase,
+} from '../core/trace-types.js';
+import { TRACE_PHASES } from '../core/trace-types.js';
 import { api, type AgentOverviewResponse } from '../api/client.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 import { Table, type TableColumn } from './ui/Table.js';
@@ -31,6 +37,42 @@ const fmtNum = (v: number): string => v.toLocaleString();
 
 function pct(v: number | null): string {
   return v === null ? '—' : `${(v * 100).toFixed(0)}%`;
+}
+
+/** 建议 4：堆叠 Phase 条 —— 6 段对应 6 个 Phase 颜色，宽度 = 各阶段耗时占比。 */
+function PhaseStackBar({
+  durations,
+  locale,
+}: {
+  durations: Record<TracePhase, number>;
+  locale: Locale;
+}): React.JSX.Element {
+  const total = TRACE_PHASES.reduce((sum, phase) => sum + durations[phase], 0);
+  if (total <= 0) {
+    return <div className="agent-phase-stack agent-phase-stack-empty" aria-hidden="true" />;
+  }
+  return (
+    <div
+      className="agent-phase-stack"
+      role="img"
+      aria-label={t('agent.phaseDist', locale)}
+    >
+      {TRACE_PHASES.map((phase) => {
+        const ms = durations[phase];
+        if (ms <= 0) {
+          return null;
+        }
+        return (
+          <div
+            key={phase}
+            className="agent-phase-stack-seg"
+            style={{ width: `${(ms / total) * 100}%`, background: `var(--phase-${phase})` }}
+            title={`${t(`phase.${phase}`, locale)} · ${(ms / 1000).toFixed(1)}s`}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
 /** REQ-018：Agent 概览。①KPI 行 ②可排序对比表（1 个请求，G11.9）。 */
@@ -212,10 +254,13 @@ export function AgentOverview({
       label: t('session.provider', locale),
       sortable: true,
       render: (row) => (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <ProviderBadge provider={row.provider} locale={locale} />
-          <span>{row.provider}</span>
-          <span style={{ color: 'var(--fg-subtle)' }}>{row.sourceAgent}</span>
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', minWidth: 140 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <ProviderBadge provider={row.provider} locale={locale} />
+            <span>{row.provider}</span>
+            <span style={{ color: 'var(--fg-subtle)' }}>{row.sourceAgent}</span>
+          </span>
+          <PhaseStackBar durations={row.durationByPhase} locale={locale} />
         </span>
       ),
     },
@@ -428,6 +473,7 @@ export function AgentOverview({
             <tr key={`expand-${row.provider}`}>
               <td colSpan={columns.length}>
                 <div className="overview-expand">
+                  <PhaseStackBar durations={row.durationByPhase} locale={locale} />
                   {(recentByProvider.get(row.provider) ?? []).length === 0 ? (
                     <span className="hint">{t('common.empty', locale)}</span>
                   ) : (

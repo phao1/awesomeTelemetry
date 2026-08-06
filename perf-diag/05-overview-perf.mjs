@@ -1,5 +1,5 @@
-// Step 2 §4.2：Agent Overview 聚合（两条 SQL + stamp 缓存命中）。
-// 预算：冷路径 < 400ms；缓存命中 < 20ms；只用两条聚合 SQL。
+// Step 2 §4.2：Agent Overview 聚合（三条 SQL + stamp 缓存命中）。
+// 预算：冷路径 < 400ms；缓存命中 < 20ms。
 import { createSyntheticDb } from './lib/synthetic-db.mjs';
 
 const SESSION_AGG =
@@ -16,15 +16,27 @@ const EVENT_AGG =
   `SUM(CASE WHEN e.phase = 'debug' THEN 1 ELSE 0 END) AS debug_count ` +
   `FROM events e JOIN sessions s ON s.id = e.session_id WHERE s.data_source = ? GROUP BY s.provider, s.source_agent`;
 
+const PHASE_AGG =
+  `SELECT provider, source_agent, ` +
+  `SUM(CASE WHEN e.phase = 'understand' THEN e.duration_ms ELSE 0 END) AS d_understand, ` +
+  `SUM(CASE WHEN e.phase = 'plan' THEN e.duration_ms ELSE 0 END) AS d_plan, ` +
+  `SUM(CASE WHEN e.phase = 'implement' THEN e.duration_ms ELSE 0 END) AS d_implement, ` +
+  `SUM(CASE WHEN e.phase = 'debug' THEN e.duration_ms ELSE 0 END) AS d_debug, ` +
+  `SUM(CASE WHEN e.phase = 'verify' THEN e.duration_ms ELSE 0 END) AS d_verify, ` +
+  `SUM(CASE WHEN e.phase = 'report' THEN e.duration_ms ELSE 0 END) AS d_report ` +
+  `FROM events e JOIN sessions s ON s.id = e.session_id WHERE s.data_source = ? GROUP BY s.provider, s.source_agent`;
+
 const fixture = createSyntheticDb();
 try {
   const { db } = fixture;
   const agg1 = db.prepare(SESSION_AGG);
   const agg2 = db.prepare(EVENT_AGG);
+  const agg3 = db.prepare(PHASE_AGG);
 
   const cold = performance.now();
   const rows1 = agg1.all('scan');
   agg2.all('scan');
+  agg3.all('scan');
   const coldMs = performance.now() - cold;
 
   // 缓存命中路径：只跑会话级 SQL（stamp 判定），跳过 event 级聚合
@@ -32,7 +44,7 @@ try {
   agg1.all('scan');
   const hitMs = performance.now() - hit;
 
-  console.log(`overview 冷路径（2 条 SQL）: ${coldMs.toFixed(2)} ms, 行数=${rows1.length}`);
+  console.log(`overview 冷路径（3 条 SQL）: ${coldMs.toFixed(2)} ms, 行数=${rows1.length}`);
   console.log(`overview 缓存命中（1 条 SQL）: ${hitMs.toFixed(3)} ms`);
   console.log(`预算：冷 < 400ms，命中 < 20ms`);
 } finally {

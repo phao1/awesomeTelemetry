@@ -1,0 +1,101 @@
+/* ===== REQ-018 Agent 概览 ===== */
+
+.overview-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+
+.overview-expand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+}
+
+/* 建议 4：Agent 概览堆叠 Phase 条 */
+.agent-phase-stack {
+  display: flex;
+  height: var(--dot-size);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: var(--canvas-raised);
+  min-width: var(--dist-label-width);
+}
+
+.agent-phase-stack-empty {
+  background: transparent;
+}
+
+.agent-phase-stack-seg {
+  height: 100%;
+}
+
+.overview-expand-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+.overview-expand-row:hover {
+  background: var(--accent-subtle);
+}
+
+/* ---- Agent 概览 v2（§4） ---- */
+.agent-conclusion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--canvas-subtle);
+}
+
+.agent-conclusion-title {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.agent-conclusion-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.agent-conclusion-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.agent-conclusion-label {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.agent-conclusion-name {
+  font-weight: var(--weight-medium);
+  font-size: var(--text-base);
+}
+
+.agent-conclusion-detail {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.phase-tile-dot {
+  width: var(--dot-size);
+  height: var(--dot-size);
+  border-radius: var(--radius-full);
+  background: var(--attention-fg);
+}

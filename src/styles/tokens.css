@@ -193,6 +193,7 @@
   --kpi-min: 200px;
   --dims-card-min: 280px;
   --chart-min: 260px;
+  --speed-card-min: 240px;
 }
 
 [data-theme="light"] {
@@ -378,4 +379,5 @@
   --kpi-min: 200px;
   --dims-card-min: 280px;
   --chart-min: 260px;
+  --speed-card-min: 240px;
 }

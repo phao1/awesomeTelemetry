@@ -129,7 +129,7 @@ function rowMap(rows: AgentOverviewRow[]): Map<string, AgentOverviewRow> {
 }
 
 describe('REQ-009 Agent Overview 服务端聚合', () => {
-  it('REQ-009 冷路径只发两条 SQL 且 cached=false', () => {
+  it('REQ-009 冷路径只发三条 SQL 且 cached=false', () => {
     const db = newDb();
     insertSession(db, 's1');
     insertEvent(db, { sessionId: 's1', id: 'e1', sequence: 1 });
@@ -137,10 +137,18 @@ describe('REQ-009 Agent Overview 服务端聚合', () => {
     const counter = withSqlCounter(db);
     const r = getAgentOverview(db, 'scan');
 
-    expect(counter.count()).toBe(2);
+    expect(counter.count()).toBe(3);
     expect(r.cached).toBe(false);
     expect(typeof r.stamp).toBe('string');
     expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]?.durationByPhase).toEqual({
+      understand: 0,
+      plan: 0,
+      implement: 10,
+      debug: 0,
+      verify: 0,
+      report: 0,
+    });
     db.close();
   });
 
@@ -173,7 +181,7 @@ describe('REQ-009 Agent Overview 服务端聚合', () => {
     counter.reset();
 
     const second = getAgentOverview(db, 'scan');
-    expect(counter.count()).toBe(2); // 本次聚合只发两条 SQL
+    expect(counter.count()).toBe(3); // 本次聚合只发三条 SQL
     expect(second.cached).toBe(false);
     expect(second.rows[0]?.sessionCount).toBe(2);
     db.close();
@@ -215,9 +223,15 @@ describe('REQ-009 Agent Overview 服务端聚合', () => {
     // #15：3 个步骤事件中 1 个 verify → 1/3（不再恒为 1）
     expect(codex?.verificationCoverage).toBeCloseTo(1 / 3);
     expect(codex?.debugEntryRate).toBe(0);
+    // 阶段累计耗时：implement 100 + 10 = 110，verify 10，其余 0
+    expect(codex?.durationByPhase.implement).toBeCloseTo(110);
+    expect(codex?.durationByPhase.verify).toBeCloseTo(10);
+    expect(codex?.durationByPhase.debug).toBe(0);
 
     const claude = rows.get('claude/Claude');
     expect(claude?.sessionCount).toBe(1);
+    expect(claude?.durationByPhase.debug).toBeCloseTo(10);
+    expect(claude?.durationByPhase.implement).toBeCloseTo(10);
     expect(claude?.eventCount).toBe(2);
     expect(claude?.errorRate).toBe(0);
     expect(claude?.verificationCoverage).toBe(0);

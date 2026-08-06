@@ -1,0 +1,257 @@
+.live {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+}
+
+.live-on {
+  background: var(--success-subtle);
+  color: var(--success-fg);
+}
+
+.live-off {
+  background: var(--danger-subtle);
+  color: var(--danger-fg);
+}
+
+.transcript-row {
+  border-bottom: 1px solid var(--border-muted);
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+}
+
+.transcript-row pre {
+  white-space: pre-wrap;
+  background: var(--canvas-inset);
+  padding: var(--space-1);
+}
+
+/* ===== REQ-020/021 Proxy / Frida 视图 ===== */
+
+.proxy-controlbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
+.proxy-list-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.proxy-filters {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  flex: 0 0 auto;
+}
+
+.proxy-table {
+  flex: 1;
+  min-height: 0;
+}
+
+.proxy-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+}
+
+.proxy-table-row {
+  cursor: pointer;
+}
+
+.proxy-table-row:hover td {
+  background: var(--canvas-raised);
+}
+
+.proxy-url-cell {
+  max-width: var(--space-10);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* REQ-009：200% 缩放（等效窄视口）兜底——单栏，无横向滚动 */
+@media (max-width: 56.25em) {
+  .rail,
+  .inspector {
+    display: none;
+  }
+
+  .view-body {
+    flex-direction: column;
+  }
+
+  .main {
+    min-width: 0;
+    overflow-x: hidden;
+  }
+}
+
+/* ============================================================
+ * ui-design-v2：三层收敛（L1 结论 / L2 维度 / L3 明细）
+ * ============================================================ */
+
+/* ── Mission 视图（add-mission-control §8.2/8.3/8.5）── */
+.mission-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--row-md);
+  min-width: 0;
+}
+
+.mission-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.mission-range {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.mission-meta {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  margin-left: auto;
+}
+
+.mission-chips {
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--canvas-subtle);
+  padding-bottom: var(--space-2);
+}
+
+.chip {
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  font: inherit;
+}
+
+.chip-active {
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.mission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 30rem), 1fr));
+  gap: var(--space-4);
+}
+
+.mission-widget {
+  background: var(--canvas-raised);
+  border: 1px solid var(--canvas-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  min-width: 0;
+}
+
+.mission-widget-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.mission-criteria {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  margin-bottom: var(--space-2);
+  line-height: 1.5;
+}
+
+.mission-widget-body {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.mission-kv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.mission-kv-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.mission-kv-key {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.mission-kv-value {
+  font-size: var(--text-xs);
+}
+
+.mission-alert {
+  background: var(--danger-subtle);
+  color: var(--danger-fg);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.mission-collectors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mission-provider-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.mission-provider {
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+  background: var(--canvas-subtle);
+}
+
+.mission-provider.ok {
+  color: var(--success-fg);
+}
+
+.mission-provider.bad {
+  color: var(--danger-fg);
+}
+
+.mission-hot-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.mission-hot-row:hover {
+  background: var(--canvas-subtle);
+}
+

@@ -1,0 +1,311 @@
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+}
+
+.modal {
+  background: var(--canvas-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: min(var(--modal-max-width), 90vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.modal-body {
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+/* Overlay: Tooltip / Popover / DropdownMenu */
+.ui-overlay-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.ui-tooltip {
+  position: absolute;
+  z-index: var(--z-popover);
+  background: var(--canvas-overlay);
+  color: var(--fg-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.ui-tooltip-visible {
+  opacity: 1;
+}
+
+.ui-tooltip-bottom {
+  top: calc(100% + var(--space-1));
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.ui-tooltip-top {
+  bottom: calc(100% + var(--space-1));
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.ui-popover {
+  position: absolute;
+  z-index: var(--z-popover);
+  background: var(--canvas-overlay);
+  color: var(--fg-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  min-width: var(--space-10);
+}
+
+.ui-menu {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ui-menu-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  width: 100%;
+}
+
+.ui-menu-item:hover,
+.ui-menu-item[aria-selected="true"] {
+  background: var(--accent-subtle);
+}
+
+/* Modal / Drawer */
+.ui-modal {
+  width: min(var(--modal-max-width), 90vw);
+}
+
+.ui-modal-sm {
+  width: min(var(--modal-width-sm), 90vw);
+}
+
+.ui-modal-md {
+  width: min(var(--modal-width-md), 90vw);
+}
+
+.ui-modal-lg {
+  width: min(var(--modal-width-lg), 94vw);
+}
+
+.prompt-context {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.prompt-context h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+}
+
+.prompt-context-provenance {
+  padding: var(--space-3);
+  border: 1px solid var(--attention-muted);
+  border-radius: var(--radius-md);
+  background: var(--attention-subtle);
+}
+
+.prompt-context-provenance p {
+  margin: var(--space-2) 0;
+  color: var(--fg-muted);
+}
+
+.prompt-context-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.prompt-context-stats > div {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--canvas-subtle);
+}
+
+.prompt-context-stats span,
+.prompt-context-section-meta {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.prompt-context-model {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.prompt-context-model dt {
+  color: var(--fg-muted);
+}
+
+.prompt-context-model dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.prompt-context-features code {
+  display: block;
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  max-height: calc(var(--row-lg) * 4);
+  overflow: auto;
+  white-space: pre-wrap;
+  background: var(--canvas-inset);
+}
+
+.prompt-context-sections {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.prompt-context-sections details {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--canvas-subtle);
+}
+
+.prompt-context-sections summary {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.prompt-context-sections pre {
+  margin: 0;
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-default);
+  max-height: calc(var(--row-lg) * 7);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--canvas-inset);
+}
+
+@media (max-width: 48.75em) {
+  .prompt-context-stats,
+  .prompt-context-model {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.ui-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(calc(var(--inspector-width) * 1.2), 90vw);
+  background: var(--canvas-overlay);
+  border-left: 1px solid var(--border-default);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform var(--duration-slow) var(--ease-out);
+}
+
+.ui-drawer-open {
+  transform: translateX(0);
+}
+
+.ui-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.ui-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+/* ===== REQ-025 命令面板 / REQ-008 键盘游标 / REQ-024 hash ===== */
+
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+  text-align: left;
+  padding: 0 var(--space-2);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+}
+
+.palette-row:hover {
+  background: var(--accent-subtle);
+}
+
+.palette-row-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-row-hint {
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+
+.palette-hint {
+  position: fixed;
+  bottom: var(--statusbar-height);
+  left: var(--space-4);
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  pointer-events: none;
+  z-index: var(--z-sticky);
+}
+

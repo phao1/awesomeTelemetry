@@ -21,6 +21,14 @@ const rows: AgentOverviewRow[] = [
     errorRate: 0.1,
     verificationCoverage: 0.5,
     debugEntryRate: 0,
+    durationByPhase: {
+      understand: 100,
+      plan: 200,
+      implement: 300,
+      debug: 400,
+      verify: 500,
+      report: 600,
+    },
   },
 ];
 
@@ -79,6 +87,22 @@ describe('REQ-003 Agent 视图', () => {
     });
     expect(document.body.textContent).toContain('Codex');
     expect(document.body.textContent).toContain('150');
+    unmount();
+  });
+
+  it('建议 4：每行渲染堆叠 Phase 条（6 段，宽度=耗时占比）', async () => {
+    const { unmount } = mount(
+      <AgentOverview locale="zh" load={async () => ({ rows, stamp: 's1', cached: true })} />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const stack = document.querySelector('.agent-phase-stack');
+    expect(stack).not.toBeNull();
+    const segs = stack!.querySelectorAll('.agent-phase-stack-seg');
+    expect(segs.length).toBe(6);
+    const first = segs[0] as HTMLElement;
+    expect(Number.parseFloat(first.style.width)).toBeCloseTo((100 / 2100) * 100);
     unmount();
   });
 

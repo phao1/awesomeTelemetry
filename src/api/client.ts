@@ -5,6 +5,7 @@ import type {
   ProxyRequestListItem,
   SessionDetailResponse,
   SessionIndexEntry,
+  SessionMergeGroupInfo,
   SessionRange,
   SessionPromptContext,
   SpeedMetrics,
@@ -130,6 +131,9 @@ export const api = {
     return fetchJson<SessionDetailResponse>(
       `/sessions/${encodeURIComponent(key)}${qs({ mode, offset, limit })}`,
     );
+  },
+  sessionGroups(): Promise<{ groups: SessionMergeGroupInfo[] }> {
+    return fetchJson<{ groups: SessionMergeGroupInfo[] }>('/session-groups');
   },
   promptContext(key: string): Promise<SessionPromptContext> {
     return fetchJson<SessionPromptContext>(

@@ -459,6 +459,20 @@ export interface AgentOverviewRow {
   errorRate: number | null;
   verificationCoverage: number | null;
   debugEntryRate: number | null;
+  /** 各阶段累计耗时（SUM(events.duration_ms) 按 phase 分组，6 键全量、缺失为 0）。
+   * 供 Agent Overview 堆叠 Phase 条使用；口径与单会话 PhaseRibbon 一致。 */
+  durationByPhase: Record<TracePhase, number>;
+}
+
+/** GET /api/session-groups 的合并组条目（与 config/session-groups.json 同形，
+ * 见 specs/session-merge REQ-001；UI 用它展开合并会话的成员列表）。 */
+export interface SessionMergeGroupInfo {
+  id: string;
+  primaryKey: string;
+  title: string;
+  sourceAgent: string;
+  mergedKeys: string[];
+  reason: string;
 }
 
 // ── §7 代理与 Frida ────────────────────────────────────────

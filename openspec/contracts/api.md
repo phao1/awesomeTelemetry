@@ -233,9 +233,10 @@ interface AgentOverviewResponse {
 }
 ```
 
-**Implementation requirement**: two SQL queries (session-level aggregation +
-event-level aggregation) merged server-side, cached by `stamp`. The frontend
-**must not** fetch per-session details for this view.
+**Implementation requirement**: three SQL queries (session-level aggregation +
+event-level aggregation + phase-duration aggregation) merged server-side,
+cached by `stamp`. The frontend **must not** fetch per-session details for
+this view.
 
 **Budget**: 1 request, < 80KB, < 400ms (cache hit < 20ms).
 
@@ -374,6 +375,7 @@ forbidden.**
 |----------|--------|-------------|
 | `/api/config/providers` | GET | returns the merged `LocalSessionConfig` |
 | `/api/config/providers` | PUT | writes the user config layer, **must be atomic** (tmp + rename, G2.3); returns the new merged config |
+| `/api/session-groups` | GET | merge groups from `config/session-groups.json` (+ auto subagent groups); members are session keys usable with `GET /api/sessions?keys=` |
 | `/api/desensitization/rules` | GET | current rule set (incl. enabled state) |
 | `/api/desensitization/rules` | PUT | updates rules; also atomic write |
 | `/api/scan` | POST | body `{ provider?: ProviderKey, force?: boolean }`; scan in progress → 429 `SCAN_IN_PROGRESS` |

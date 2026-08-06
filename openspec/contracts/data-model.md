@@ -755,6 +755,12 @@ export interface AgentOverviewRow {
   errorRate: number | null;
   verificationCoverage: number | null;
   debugEntryRate: number | null;
+  /**
+   * 各阶段累计耗时（SUM(events.duration_ms) 按 phase 分组，6 键全量、缺失为 0）。
+   * 供 Agent Overview 堆叠 Phase 条使用；口径与单会话 PhaseRibbon 一致
+   * （按事件 duration 求和，不是 wall-clock，G4.6 的 totalDuration 语义不适用）。
+   */
+  durationByPhase: Record<TracePhase, number>;
 }
 ```
 

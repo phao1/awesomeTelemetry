@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   ProviderKey,
@@ -54,6 +54,10 @@ const baseProps = {
   cursorIndex: -1,
   searchInputRef: { current: null } as React.RefObject<HTMLInputElement | null>,
 };
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('REQ-016 会话列表', () => {
   it('44px 双行密排：标题 + ProviderBadge + 相对时间 + events/tokens 计数', () => {
@@ -246,5 +250,70 @@ describe('REQ-016 会话列表', () => {
       />,
     );
     expect(container.querySelector('.session-list-footer button')).toBeNull();
+  });
+
+  it('建议 11：M 徽章点击懒加载合并成员，点击成员回调 onSelect', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const text = url.includes('/api/session-groups')
+        ? JSON.stringify({
+            groups: [{
+              id: 'g1',
+              primaryKey: 'main-1',
+              title: 'merged title',
+              sourceAgent: 'CodeArts',
+              mergedKeys: ['sub-1', 'sub-2'],
+              reason: 'test',
+            }],
+          })
+        : JSON.stringify({
+            items: [
+              entry('sub-1', 'subagent one'),
+              entry('sub-2', 'subagent two'),
+            ],
+            nextCursor: null,
+            hasMore: false,
+            total: 2,
+          });
+      return {
+        ok: true,
+        text: async () => text,
+      };
+    }));
+    const merged = entry('main-1', 'merged title');
+    merged.mergeGroupId = 'g1';
+    const selected: string[] = [];
+    const container = render(
+      <SessionList
+        items={[merged]}
+        selectedId={null}
+        onSelect={(id) => selected.push(id)}
+        locale="zh"
+        hasMore={false}
+        loading={false}
+        onLoadMore={() => undefined}
+        onRetry={() => undefined}
+        offlineSamples={false}
+        {...baseProps}
+        width={300}
+        collapsed={false}
+        onResize={() => undefined}
+        onToggleCollapse={() => undefined}
+      />,
+    );
+    const badge = container.querySelector('.session-merge-badge') as HTMLButtonElement;
+    expect(badge).not.toBeNull();
+    act(() => {
+      badge.click();
+    });
+    // 等待懒加载完成
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    const members = container.querySelectorAll('.session-merge-member');
+    expect(members.length).toBe(2);
+    act(() => {
+      (members[0] as HTMLButtonElement).click();
+    });
+    expect(selected).toEqual(['sub-1']);
   });
 });

@@ -669,6 +669,11 @@ export function createAgentObservabilityServer(
   router.register('GET', '/api/config/providers', (_req, res) => {
     sendJson(res, 200, config, _req);
   });
+  // api.md §6：合并组配置（手工 session-groups.json + 自动 subagent 组）。
+  // 成员 keys 可直接用于 GET /api/sessions?keys= 批量拉取索引行。
+  router.register('GET', '/api/session-groups', (_req, res) => {
+    sendJson(res, 200, { groups: sessionGroups() }, _req);
+  });
 
   router.register('GET', '/api/desensitization/rules', (_req, res) => {
     const override = loadRulesOverride(rulesPath);

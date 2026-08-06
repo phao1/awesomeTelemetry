@@ -11,10 +11,12 @@ import { t } from '../i18n.js';
 import type {
   ProviderKey,
   SessionIndexEntry,
+  SessionMergeGroupInfo,
   SessionRange,
   TraceStatus,
 } from '../core/trace-types.js';
 import { SESSION_RANGES } from '../core/trace-types.js';
+import { api } from '../api/client.js';
 import { useVirtualList } from '../hooks/useVirtualList.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 import { IconSidebar } from './icons/index.js';
@@ -125,6 +127,37 @@ export function SessionList({
 }: SessionListProps): React.JSX.Element {
   const [providerOpen, setProviderOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
+  // 建议 11：合并会话成员（点击 M 徽章懒加载，Popover 展示，不破坏虚拟滚动行高）
+  const [mergeOpenFor, setMergeOpenFor] = useState<string | null>(null);
+  const [groups, setGroups] = useState<SessionMergeGroupInfo[] | null>(null);
+  const [membersByGroup, setMembersByGroup] = useState<Map<string, SessionIndexEntry[]>>(new Map());
+  const [membersError, setMembersError] = useState<string | null>(null);
+  const [membersLoading, setMembersLoading] = useState(false);
+
+  const openMerge = (groupId: string): void => {
+    setMembersError(null);
+    if (membersByGroup.has(groupId)) {
+      return;
+    }
+    setMembersLoading(true);
+    void api
+      .sessionGroups()
+      .then(async (res) => {
+        setGroups(res.groups);
+        const group = res.groups.find((g) => g.id === groupId);
+        if (group === undefined) {
+          setMembersError(t('session.mergeNoGroup', locale));
+          return;
+        }
+        const members = await api.listSessions({ keys: group.mergedKeys });
+        setMembersByGroup((prev) => new Map(prev).set(groupId, members.items));
+      })
+      .catch((err: unknown) => {
+        console.error('[session-list] 合并成员加载失败:', err);
+        setMembersError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => setMembersLoading(false));
+  };
 
   // REQ-016（delta）：过滤全部服务端化——App 按 q/range/provider/status 拉取，
   // 本组件不再对已加载页做纯前端过滤（分页下只过滤已加载项会漏数据）。
@@ -293,31 +326,92 @@ export function SessionList({
               const index = virtualRange.startIndex + visibleIndex;
               const selected = session.id === selectedId;
               return (
-                <div
-                  key={session.id}
-                  className={`session-row ${selected ? 'session-row-on' : ''} ${
-                    index === cursorIndex ? 'session-row-cursor' : ''
-                  }`}
-                  role="option"
-                  aria-selected={selected}
-                  onClick={() => onSelect(session.id)}
-                  title={`${session.title}\n${new Date(session.startedAt).toLocaleString()}`}
-                >
-                  <div className="session-row-main">
-                    <span
-                      className={`status-dot status-${session.status}`}
-                      aria-hidden="true"
-                    />
-                    <span className="session-row-title">{session.title}</span>
-                  </div>
-                  <div className="session-row-meta">
-                    <ProviderBadge provider={session.provider} locale={locale} />
-                    <span className="mono session-row-id" title={session.id}>
-                      {session.id}
-                    </span>
-                    <span>{relativeTime(session.startedAt, locale)}</span>
-                    <span className="mono">{session.eventCount} ev</span>
-                    <span className="mono">{(session.tokenTotal / 1000).toFixed(1)}k tok</span>
+                <div key={session.id} className="session-row-cell">
+                  <div
+                    className={`session-row ${selected ? 'session-row-on' : ''} ${
+                      index === cursorIndex ? 'session-row-cursor' : ''
+                    }`}
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => onSelect(session.id)}
+                    title={`${session.title}\n${new Date(session.startedAt).toLocaleString()}`}
+                  >
+                    <div className="session-row-main">
+                      <span
+                        className={`status-dot status-${session.status}`}
+                        aria-hidden="true"
+                      />
+                      <span className="session-row-title">{session.title}</span>
+                      {session.mergeGroupId !== null && (
+                        <Popover
+                          open={mergeOpenFor === session.id}
+                          onOpenChange={(next) => {
+                            setMergeOpenFor(next ? session.id : null);
+                            if (next && session.mergeGroupId !== null) {
+                              openMerge(session.mergeGroupId);
+                            }
+                          }}
+                          trigger={(props) => (
+                            <button
+                              type="button"
+                              className="session-merge-badge"
+                              aria-label={t('session.mergeBadge', locale)}
+                              title={t('session.mergeBadge', locale)}
+                              {...props}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                props.onClick();
+                              }}
+                            >
+                              M
+                            </button>
+                          )}
+                          style={{ width: 280, maxHeight: '50vh', overflowY: 'auto' }}
+                        >
+                          <div className="session-merge-panel">
+                            <h4>{t('session.mergeMembers', locale)}</h4>
+                            {membersLoading && <Skeleton variant="row" count={3} />}
+                            {membersError !== null && !membersLoading && (
+                              <p className="hint">{membersError}</p>
+                            )}
+                            {!membersLoading &&
+                              membersError === null &&
+                              (membersByGroup.get(session.mergeGroupId!) ?? []).map((member) => (
+                                <button
+                                  key={member.id}
+                                  type="button"
+                                  className="session-merge-member"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelect(member.id);
+                                    setMergeOpenFor(null);
+                                  }}
+                                >
+                                  <ProviderBadge provider={member.provider} locale={locale} />
+                                  <span className="session-merge-member-title">{member.title || member.id}</span>
+                                  <span className="mono">{relativeTime(member.startedAt, locale)}</span>
+                                  <span className="mono">{member.eventCount} ev</span>
+                                </button>
+                              ))}
+                            {!membersLoading &&
+                              membersError === null &&
+                              (membersByGroup.get(session.mergeGroupId!) ?? []).length === 0 &&
+                              groups !== null && (
+                                <p className="hint">{t('common.empty', locale)}</p>
+                              )}
+                          </div>
+                        </Popover>
+                      )}
+                    </div>
+                    <div className="session-row-meta">
+                      <ProviderBadge provider={session.provider} locale={locale} />
+                      <span className="mono session-row-id" title={session.id}>
+                        {session.id}
+                      </span>
+                      <span>{relativeTime(session.startedAt, locale)}</span>
+                      <span className="mono">{session.eventCount} ev</span>
+                      <span className="mono">{(session.tokenTotal / 1000).toFixed(1)}k tok</span>
+                    </div>
                   </div>
                 </div>
               );

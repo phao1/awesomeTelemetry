@@ -569,6 +569,26 @@ describe('API 契约（contracts/api.md §8）', () => {
     expect(typeof body.stamp).toBe('string');
   });
 
+  it('GET /api/session-groups 返回自动 subagent 合并组（成员 keys 可查）', async () => {
+    const { port } = await boot((db) => {
+      seedSession(db, 'parent-1', 'codex');
+      seedSession(db, 'sub-1', 'codex');
+      // 子会话落在父会话时间窗内且标记 is_subagent
+      db.prepare(
+        `UPDATE sessions SET is_subagent = 1, started_at = '2026-08-01T00:00:30.000Z', title = 'task (@subagent)' WHERE id = 'sub-1'`,
+      ).run();
+    });
+    const r = await request(port, 'GET', '/api/session-groups');
+    expect(r.status).toBe(200);
+    const body = JSON.parse(r.text) as {
+      groups: Array<{ id: string; primaryKey: string; mergedKeys: string[]; reason: string }>;
+    };
+    expect(body.groups.length).toBeGreaterThan(0);
+    const group = body.groups.find((g) => g.primaryKey === 'parent-1');
+    expect(group?.mergedKeys).toContain('sub-1');
+    expect(group?.reason).toBe('auto-subagent-time-window');
+  });
+
   it('mission 单请求返回全部区块，每个 widget 有非空 criteria；available=false 时 data 为 null 且 reason 非空', async () => {
     const { port } = await boot((db) => {
       seedSession(db, 'codex-s1', 'codex');

@@ -12,6 +12,12 @@ import { eventDetailCache } from '../cache/caches.js';
 import { ErrorState, Skeleton } from './ui/States.js';
 import { Tabs } from './ui/Tabs.js';
 import { Drawer } from './ui/Modal.js';
+import {
+  HighlightedJson,
+  looksLikeJson,
+  redactSecrets,
+  useDesensitizationEnabled,
+} from './inspector-text.js';
 
 export interface EventInspectorProps {
   sessionKey: string;
@@ -63,24 +69,28 @@ export function EventInspector({
   const [findQuery, setFindQuery] = useState('');
   const [diffOnly, setDiffOnly] = useState(false);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const desensitize = useDesensitizationEnabled();
 
   const currentTabText = (): string => {
     if (event === null || detail === null) {
       return '';
     }
-    if (tab === 'input') {
-      return detail.inputSummary ?? '';
-    }
-    if (tab === 'output') {
-      return detail.outputSummary ?? '';
-    }
-    if (tab === 'raw') {
-      return raw ?? '';
-    }
-    if (tab === 'tokens') {
-      return event.tokens === null ? '' : JSON.stringify(event.tokens, null, 2);
-    }
-    return event.error ?? event.title;
+    const rawText = ((): string => {
+      if (tab === 'input') {
+        return detail.inputSummary ?? '';
+      }
+      if (tab === 'output') {
+        return detail.outputSummary ?? '';
+      }
+      if (tab === 'raw') {
+        return raw ?? '';
+      }
+      if (tab === 'tokens') {
+        return event.tokens === null ? '' : JSON.stringify(event.tokens, null, 2);
+      }
+      return event.error ?? event.title;
+    })();
+    return desensitize ? redactSecrets(rawText) : rawText;
   };
 
   const matchCount = useMemo(() => {
@@ -103,7 +113,7 @@ export function EventInspector({
       }
     }
     return count;
-  }, [findQuery, tab, detail, raw, event]);
+  }, [findQuery, tab, detail, raw, event, desensitize]);
 
   useEffect(() => {
     if (event === null) {
@@ -282,29 +292,53 @@ export function EventInspector({
               </div>
             </div>
           )}
-          {tab === 'input' &&
-            (detail.inputSummary === null ? (
-              <p className="hint">{t('common.empty', locale)}</p>
-            ) : diffOnly && !diffOnlyLines(detail.inputSummary).trim() ? (
-              <p className="hint">{t('inspector.noDiffLines', locale)}</p>
-            ) : (
-              <pre>{highlight(diffOnly ? diffOnlyLines(detail.inputSummary) : detail.inputSummary)}</pre>
-            ))}
-          {tab === 'output' &&
-            (detail.outputSummary === null ? (
-              <p className="hint">{t('common.empty', locale)}</p>
-            ) : diffOnly && !diffOnlyLines(detail.outputSummary).trim() ? (
-              <p className="hint">{t('inspector.noDiffLines', locale)}</p>
-            ) : (
-              <pre>{highlight(diffOnly ? diffOnlyLines(detail.outputSummary) : detail.outputSummary)}</pre>
-            ))}
+          {tab === 'input' && (() => {
+            const source = detail.inputSummary;
+            if (source === null) {
+              return <p className="hint">{t('common.empty', locale)}</p>;
+            }
+            const body = desensitize ? redactSecrets(source) : source;
+            const text = diffOnly ? diffOnlyLines(body) : body;
+            if (diffOnly && !diffOnlyLines(body).trim()) {
+              return <p className="hint">{t('inspector.noDiffLines', locale)}</p>;
+            }
+            return (
+              <pre>
+                {findQuery.trim() === '' && looksLikeJson(text)
+                  ? <HighlightedJson text={text} />
+                  : highlight(text)}
+              </pre>
+            );
+          })()}
+          {tab === 'output' && (() => {
+            const source = detail.outputSummary;
+            if (source === null) {
+              return <p className="hint">{t('common.empty', locale)}</p>;
+            }
+            const body = desensitize ? redactSecrets(source) : source;
+            const text = diffOnly ? diffOnlyLines(body) : body;
+            if (diffOnly && !diffOnlyLines(body).trim()) {
+              return <p className="hint">{t('inspector.noDiffLines', locale)}</p>;
+            }
+            return (
+              <pre>
+                {findQuery.trim() === '' && looksLikeJson(text)
+                  ? <HighlightedJson text={text} />
+                  : highlight(text)}
+              </pre>
+            );
+          })()}
           {tab === 'raw' &&
             (rawLoading ? (
               <Skeleton variant="block" count={1} />
             ) : raw === null ? (
               <p className="hint">{t('common.empty', locale)}</p>
             ) : (
-              <pre className="mono">{highlight(raw)}</pre>
+              <pre className="mono">
+                {findQuery.trim() === '' && looksLikeJson(raw)
+                  ? <HighlightedJson text={desensitize ? redactSecrets(raw) : raw} />
+                  : highlight(desensitize ? redactSecrets(raw) : raw)}
+              </pre>
             ))}
           {tab === 'tokens' &&
             (event.tokens === null ? (

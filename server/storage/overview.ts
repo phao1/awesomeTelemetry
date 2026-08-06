@@ -4,7 +4,9 @@ import type {
   AgentOverviewRow,
   DataSource,
   ProviderKey,
+  TracePhase,
 } from '../../src/core/trace-types.js';
+import { TRACE_PHASES } from '../../src/core/trace-types.js';
 import { cachedStmt } from './stmt-cache.js';
 
 /** #14/#15：与 src/core/metrics.ts STEP_KINDS 保持一致（errorRate 分母、verificationCoverage 分子/分母）。 */
@@ -40,6 +42,16 @@ const EVENT_AGG_SQL =
   `  WHERE s.data_source = ? ` +
   `  GROUP BY s.provider, s.source_agent, s.id ` +
   `) GROUP BY provider, source_agent`;
+
+/** 阶段累计耗时聚合：SUM(events.duration_ms) 按 phase 分组（口径同 PhaseRibbon）。
+ * 6 列全量生成，缺失 phase 为 0；禁止用 wall-clock 代替（G4.6 不适用）。 */
+const PHASE_AGG_SQL =
+  `SELECT provider, source_agent, ` +
+  TRACE_PHASES.map(
+    (phase) => `SUM(CASE WHEN e.phase = '${phase}' THEN e.duration_ms ELSE 0 END) AS d_${phase}`,
+  ).join(', ') +
+  ` FROM events e JOIN sessions s ON s.id = e.session_id ` +
+  ` WHERE s.data_source = ? GROUP BY s.provider, s.source_agent`;
 
 const EMPTY_STAMP = '1970-01-01T00:00:00.000Z';
 
@@ -96,10 +108,25 @@ export function getAgentOverview(db: Database, dataSource: DataSource): AgentOve
   for (const row of eventRows) {
     eventByGroup.set(`${row.provider as string}\u0000${row.source_agent as string}`, row);
   }
+  const phaseRows = cachedStmt(db, PHASE_AGG_SQL).all(dataSource) as Array<
+    Record<string, unknown>
+  >;
+  const phaseByGroup = new Map<string, Record<TracePhase, number>>();
+  for (const row of phaseRows) {
+    const key = `${row.provider as string}\u0000${row.source_agent as string}`;
+    const durations = {} as Record<TracePhase, number>;
+    for (const phase of TRACE_PHASES) {
+      durations[phase] = (row[`d_${phase}`] as number | null) ?? 0;
+    }
+    phaseByGroup.set(key, durations);
+  }
 
   const rows: AgentOverviewRow[] = sessionRows.map((row) => {
     const key = `${row.provider as string}\u0000${row.source_agent as string}`;
     const ev = eventByGroup.get(key);
+    const durations =
+      phaseByGroup.get(key) ??
+      Object.fromEntries(TRACE_PHASES.map((phase) => [phase, 0])) as Record<TracePhase, number>;
     return {
       provider: row.provider as ProviderKey,
       sourceAgent: row.source_agent as string,
@@ -115,6 +142,7 @@ export function getAgentOverview(db: Database, dataSource: DataSource): AgentOve
       errorRate: ev?.error_rate as number | null | undefined ?? null,
       verificationCoverage: ev?.verification_coverage as number | null | undefined ?? null,
       debugEntryRate: ev?.debug_entry_rate as number | null | undefined ?? null,
+      durationByPhase: durations,
     };
   });
 
