@@ -132,21 +132,21 @@ function VerdictScoreBar({ wins, losses }: { wins: number; losses: number }): Re
   const total = wins + losses;
   const leftPct = total === 0 ? 50 : (wins / total) * 100;
   return (
-    <div
-      className="compare-verdict-bar"
-      role="img"
-      aria-label={`L ${wins} : ${losses} R`}
-    >
-      <div
-        className="compare-verdict-bar-fill compare-verdict-bar-left"
-        style={{ width: `${leftPct}%` }}
-      />
-      <div
-        className="compare-verdict-bar-fill compare-verdict-bar-right"
-        style={{ width: `${100 - leftPct}%` }}
-      />
-      <span className="compare-verdict-bar-mark compare-verdict-bar-mark-left">L {wins}</span>
-      <span className="compare-verdict-bar-mark compare-verdict-bar-mark-right">{losses} R</span>
+    <div className="compare-verdict-scoreline" role="img" aria-label={`L ${wins} : ${losses} R`}>
+      <div className="compare-verdict-bar" aria-hidden="true">
+        <div
+          className="compare-verdict-bar-fill compare-verdict-bar-left"
+          style={{ width: `${leftPct}%` }}
+        />
+        <div
+          className="compare-verdict-bar-fill compare-verdict-bar-right"
+          style={{ width: `${100 - leftPct}%` }}
+        />
+      </div>
+      <div className="compare-verdict-bar-labels">
+        <span className="mono compare-verdict-bar-label-left">L {wins}</span>
+        <span className="mono compare-verdict-bar-label-right">{losses} R</span>
+      </div>
     </div>
   );
 }

@@ -520,7 +520,7 @@ button.finding-row:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--fg-subtle);
+  color: var(--fg-muted);
   font-size: var(--text-xs);
 }
 
@@ -538,4 +538,3 @@ button.finding-row:hover {
   color: var(--fg-muted);
   font-size: var(--text-xs);
 }
-

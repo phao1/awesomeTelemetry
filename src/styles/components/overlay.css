@@ -295,7 +295,7 @@
 }
 
 .palette-row-hint {
-  color: var(--fg-subtle);
+  color: var(--fg-muted);
   font-size: var(--text-xs);
 }
 
@@ -303,9 +303,8 @@
   position: fixed;
   bottom: var(--statusbar-height);
   left: var(--space-4);
-  color: var(--fg-subtle);
+  color: var(--fg-muted);
   font-size: var(--text-xs);
   pointer-events: none;
   z-index: var(--z-sticky);
 }
-

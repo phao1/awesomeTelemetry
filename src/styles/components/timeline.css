@@ -364,7 +364,7 @@
 }
 
 .timeline-search-input::placeholder {
-  color: var(--fg-subtle);
+  color: var(--fg-muted);
 }
 
 .timeline-matches {
@@ -434,7 +434,7 @@
 
 .gantt-time {
   width: var(--seq-col-width);
-  color: var(--fg-subtle);
+  color: var(--fg-muted);
   font-size: var(--text-xs);
   text-align: right;
 }
@@ -470,7 +470,7 @@
   position: absolute;
   top: var(--space-1);
   transform: translateX(-50%);
-  color: var(--fg-subtle);
+  color: var(--fg-muted);
   font-size: var(--text-xs);
   pointer-events: none;
 }

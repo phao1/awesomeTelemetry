@@ -258,7 +258,7 @@ export function AgentOverview({
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
             <ProviderBadge provider={row.provider} locale={locale} />
             <span>{row.provider}</span>
-            <span style={{ color: 'var(--fg-subtle)' }}>{row.sourceAgent}</span>
+            <span style={{ color: 'var(--fg-muted)' }}>{row.sourceAgent}</span>
           </span>
           <PhaseStackBar durations={row.durationByPhase} locale={locale} />
         </span>

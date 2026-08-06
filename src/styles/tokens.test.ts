@@ -178,4 +178,30 @@ describe('Design Tokens 契约断言（design-tokens.md §9）', () => {
     expect(base).toContain('prefers-reduced-motion');
     expect(base).toContain('transition-duration: 0ms');
   });
+
+  it('T6: 小字号（xs/sm）文本不得使用 --fg-subtle（AA 4.5:1 回归，senior-frontend）', () => {
+    // --fg-subtle 在 canvas-default 上仅约 4.12:1，达不到 AA 4.5:1；
+    // 小字号文本必须用 --fg-muted。例外：JSON null 字面量（inspector-text 文档指定）
+    // 与纯装饰箭头（finding-arrow，无字号声明）。
+    const allowlist = new Set(['.inspector-json-null', '.finding-arrow']);
+    const offenders: string[] = [];
+    for (const path of cssFiles()) {
+      const source = readFileSync(path, 'utf8');
+      const blocks = source.split('}');
+      for (const block of blocks) {
+        if (!block.includes('color: var(--fg-subtle)')) {
+          continue;
+        }
+        if (!/(font-size|line-height): var\(--text-(xs|sm)\)/.test(block)) {
+          continue;
+        }
+        const selector = block.split('{')[0]?.trim() ?? '';
+        if ([...allowlist].some((name) => selector.includes(name))) {
+          continue;
+        }
+        offenders.push(`${relative(stylesDir, path)} :: ${selector}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });
