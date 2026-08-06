@@ -1,6 +1,6 @@
 # PROGRESS.md — milestone progress
 
-> Last updated: 2026-08-06 (enhance-ui-depth-and-ia done, B1~B9)
+> Last updated: 2026-08-06 (enhance-interaction-depth-and-ia-v2 done, C1~C9)
 
 ## OpenSpec change progress
 
@@ -12,6 +12,42 @@
 | add-palette-and-a11y | 30/30 | ✅ done (P-01 ~ P-05) | dff2c1b / a0032e5 |
 | add-mission-control | 82/82 | ✅ done (MC-B1 ~ MC-B8) | c3e4580 / 33b8083 / 88f88a0 / bcc571e / aa36a4f / 5356de9 / 438e091 / MC-B8 |
 | enhance-ui-depth-and-ia | 72/72 | ✅ done (UI-B1 ~ UI-B9) | 6997cd2 / da49771 / a3bd0c6 / 86ce9c6 / edda2a8 / 675c33e / 1f0543b / f8c5a6d / (UI-B9) |
+| enhance-interaction-depth-and-ia-v2 | 60/60 | ✅ done (C1 ~ C9) | 15d61a2 / 871d1c5 / 2087b15 / 95042fc / f2c0b8b / c7401d0 / 3590dfb / 186cd5e / (C9) |
+
+### enhance-interaction-depth-and-ia-v2（done，2026-08-06）
+
+- **C1** CommandPalette 高级动作（REQ-111/112/113）：`/compare` 二段式挑选最近
+  10 个会话直接发起对比、`/goto` 按事件序号或标题关键词定位（TraceTimeline 新增
+  `focusEventId`，虚拟滚动下按行号 scrollTop 定位）、`/filter` 9 个 provider
+  开关式过滤；禁用态（无会话 / 非 Session 视图）；数据全部来自共享 store。
+- **C2** CompareTimeline 事件选择 + 去硬上限（REQ-114/115）：事件块可点选，
+  右侧 `--inspector-width` 面板复用 EventInspector（新增 `initialTab` /
+  `visibleTabs` / `fillParent`，只留 Summary + Raw）；Esc / 点空白取消；
+  L/R 同 id 同步高亮；移除 `slice(0,200)` 改由既有 useVirtualList 承载，
+  底部 "Showing X of Y events"；rAF 帧率哨兵 < 50 FPS 回退每页 200 分页。
+- **C3** TokenTextModal 搜索（REQ-116）：inspector-text 提取共享
+  `countMatches` / `highlightMatches`（EventInspector 同步改为复用），
+  正文 > 500 字符出搜索图标，Ctrl/⌘+F 打开、实时高亮、"X / Y 匹配"、
+  Enter / Shift+Enter 循环导航、无匹配红框 + aria-invalid。
+- **C4** Mission 导航去冗余（REQ-117）：删除 A/B/C 标签页与
+  `MissionSection`/`sectionIds`/`.mission-chips`，25 个 widget 一次性按角色
+  分组全量呈现，默认定位「管理者」；新增 `redirectLegacyMissionHash`
+  （`#mission-a|b|c` → `#mission-role-manager|engineer|ops`）。
+- **C5** Agent 卡片 compare 复选框（REQ-118）：卡片与表格共享同一
+  `compareSelection`，切换视图选中态保持，选满 2 个出「对比这两个 →」。
+- **C6** 图表组件重构（REQ-119/120）：新增 `charts/RadarChart.tsx`（N 系列
+  props 标准化）与 `DonutRing` 弧段原语（total / circumference / onSliceClick），
+  CompareCharts 的 RadarChart / TokenDonutChart 退化为薄封装，逐像素一致断言。
+- **C7** 会话详情可视化（REQ-121）：`core/session-visuals.ts`（桶算法
+  <10min→1min 否则 ceil(分钟/30)、事件密度、8 轴雷达含固定参考量纲与 null 处理）
+  + `charts/HeatmapChart.tsx` + `SessionVisuals.tsx`，接在 PhaseRibbon 下方。
+- **C8** Compare KPI Sparkline（REQ-122）：`charts/Sparkline.tsx`（多系列共享
+  纵轴 + 每点 title + hover tooltip），events/tokens/cost/userRounds 四卡带
+  L/R 双线趋势，历史 < 3 个会话显示 "Need 3+ sessions for trend"。
+- **C9** 收口：typecheck/test/lint 全绿（663 tests / 113 files）；
+  `npm run build` 通过；perf:check 追加 PERF-BASELINE.md；hex 审计零命中；
+  真机 build+start（:4188）CDP DOM 断言 + 截图覆盖 REQ-111~118 与 121/122，
+  控制台零报错、零失败请求。
 
 ### enhance-ui-depth-and-ia（done，2026-08-06）
 

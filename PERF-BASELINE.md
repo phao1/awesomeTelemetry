@@ -162,3 +162,35 @@ runs):
 > 内联渲染，无新增运行时依赖；KPI drill-down 数据复用 compare 响应、
 > TokenTextModal 复用 recordCache，MUST NOT 发额外请求（G11.9 / G-UI-1 /
 > G-UI-2）；前端 CSS 增量后 gzip 11.88KB 仍在 REQ-011 预算内。
+
+## enhance-interaction-depth-and-ia-v2 perf:check（2026-08-06，本地基线）
+
+| 指标 | 实测 | 预算 | 结论 |
+|------|------|------|------|
+| listSessions(500) | 0.369ms | < 1ms | ✅ |
+| worst detail slim (9,590 events) | 10.764ms | < 15ms | ✅ |
+| eventDetail drill-down | 0.005ms | < 20ms | ✅ |
+| getSystemPromptForSession | 0.014ms | < 1ms | ✅ |
+| proxyList(50) | 1.146ms | — | — |
+| Overview 冷路径（3 SQL） | 47.10ms | < 400ms | ✅ |
+| Overview 缓存命中（1 SQL stamp 判定） | 0.302ms | < 20ms | ✅ |
+| 差分写入 append 1 | 2 语句 / 0.32ms | 仅 1 INSERT、< 20ms | ✅ |
+| 事件循环 p99（200-request hammer） | 0.00ms | < 50ms | ✅ |
+| Mission 冷启（stamp + 16 widget SQL） | 51.63ms | < 500ms | ✅ |
+| Mission 缓存命中 | 0.050ms | < 20ms | ✅ |
+| Mission 单 widget SQL 最差 | 11.949ms | < 30ms @ tier B | ✅ |
+| Mission 响应 gzip | 314B | < 120KB | ✅ |
+| 前端 CSS gzip（vite 构建产物 dist/assets/*.css） | 12.30KB | < 16KB | ✅ |
+| 前端 JS gzip（index chunk） | 135.19KB | — | 参考 |
+
+> 本 change（C1-C9 / REQ-111~122）为交互深度 + 信息架构 + 组件复用性优化：
+> 服务端零改动，SQL 与写入路径完全未触碰，故数据库侧指标与上一轮基线同量级
+> 波动（worst detail slim 8.7→10.8ms 属于同机噪声，仍在 15ms 预算内）。
+> 前端全部新增可视化（RadarChart / HeatmapChart / Sparkline / DonutRing）均为
+> 内联 SVG，0 新增运行时依赖；CommandPalette 仍为独立懒加载 chunk（5.64KB）。
+> Compare Timeline 去掉 200 事件硬上限后改由既有 useVirtualList 承载，DOM 行数
+> 与截断前同量级（虚拟窗口固定），不引入额外渲染成本。
+> 所有新增数据（/compare 会话列表、/goto 事件、KPI sparkline 历史、Session
+> Heatmap/Radar）均从 App 已持有的共享 store 或已加载详情派生，
+> MUST NOT 发额外请求（G11.9 / gotcha 1 / gotcha 9）。
+> CSS 增量后 gzip 12.30KB 仍在 REQ-011 的 16KB 预算内。
