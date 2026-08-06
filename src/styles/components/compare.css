@@ -613,6 +613,51 @@
   height: var(--compare-timeline-height);
 }
 
+/* REQ-114/115：事件选择面板 + 分页/计数页脚 */
+
+.compare-timelines {
+  position: relative;
+}
+
+.compare-timelines-inspecting {
+  padding-right: var(--inspector-width);
+}
+
+.timeline-inspector-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--inspector-width);
+  max-width: 100%;
+  overflow: hidden;
+  border-left: var(--border-width) solid var(--border-default);
+  background: var(--canvas-default);
+  border-radius: var(--radius-md);
+  z-index: var(--z-sticky);
+}
+
+.inspector-fill {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.compare-timeline-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.compare-timeline-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 .compare-timeline h4 {
   display: flex;
   align-items: center;

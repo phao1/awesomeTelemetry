@@ -36,9 +36,15 @@ export interface EventInspectorProps {
   /** ui-design-v2 §3.5：上一步 / 下一步顺序浏览。 */
   onNavigate?: (direction: -1 | 1) => void;
   canNavigate?: { prev: boolean; next: boolean };
+  /** REQ-114：默认页签（compare Timeline 面板用 summary）。 */
+  initialTab?: InspectorTab;
+  /** REQ-114：可见页签白名单（compare Timeline 面板只保留 Summary + Raw）。 */
+  visibleTabs?: InspectorTab[];
+  /** REQ-114：填充父容器（宽度交给 CSS 的 --inspector-width，不用内联 px）。 */
+  fillParent?: boolean;
 }
 
-type InspectorTab = 'summary' | 'input' | 'output' | 'raw' | 'tokens';
+export type InspectorTab = 'summary' | 'input' | 'output' | 'raw' | 'tokens';
 const TEXT_TABS: InspectorTab[] = ['input', 'output', 'raw'];
 
 /** ui-design-v2 §3.5：详情面板 —— 复制落实、上/下步、全屏抽屉、面板内局部搜索。 */
@@ -58,11 +64,14 @@ export function EventInspector({
   onClose,
   onNavigate,
   canNavigate = { prev: false, next: false },
+  initialTab = 'summary',
+  visibleTabs,
+  fillParent = false,
 }: EventInspectorProps): React.JSX.Element {
   const [detail, setDetail] = useState<TraceEvent | TraceEventRaw | null>(null);
   const [raw, setRaw] = useState<string | null>(null);
   const [rawLoading, setRawLoading] = useState(false);
-  const [tab, setTab] = useState<InspectorTab>('summary');
+  const [tab, setTab] = useState<InspectorTab>(initialTab);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -119,7 +128,7 @@ export function EventInspector({
     if (event === null) {
       setDetail(null);
       setRaw(null);
-      setTab('summary');
+      setTab(initialTab);
       setError(null);
       return;
     }
@@ -183,22 +192,27 @@ export function EventInspector({
     window.addEventListener('mouseup', onUp);
   };
 
+  const asideClass = fillParent ? 'inspector inspector-fill' : 'inspector';
+  const asideStyle = fillParent ? undefined : { width: collapsed ? 0 : width };
+
   if (event === null) {
     return (
-      <aside className="inspector" style={{ width: collapsed ? 0 : width }}>
-        <div className="drag-handle" onMouseDown={onMouseDown} />
+      <aside className={asideClass} style={asideStyle}>
+        {!fillParent && <div className="drag-handle" onMouseDown={onMouseDown} />}
         <p className="hint">{t('common.empty', locale)}</p>
       </aside>
     );
   }
 
-  const tabs: Array<{ id: InspectorTab; label: string }> = [
-    { id: 'summary', label: 'Summary' },
-    { id: 'input', label: t('event.input', locale) },
-    { id: 'output', label: t('event.output', locale) },
-    { id: 'raw', label: t('event.raw', locale) },
-    { id: 'tokens', label: t('event.tokens', locale) },
-  ];
+  const tabs: Array<{ id: InspectorTab; label: string }> = (
+    [
+      { id: 'summary', label: 'Summary' },
+      { id: 'input', label: t('event.input', locale) },
+      { id: 'output', label: t('event.output', locale) },
+      { id: 'raw', label: t('event.raw', locale) },
+      { id: 'tokens', label: t('event.tokens', locale) },
+    ] as Array<{ id: InspectorTab; label: string }>
+  ).filter((entry) => visibleTabs === undefined || visibleTabs.includes(entry.id));
 
   const retry = (): void => {
     setError(null);
@@ -411,8 +425,8 @@ export function EventInspector({
 
   return (
     <>
-      <aside className="inspector" style={{ width: collapsed ? 0 : width }}>
-        <div className="drag-handle" onMouseDown={onMouseDown} />
+      <aside className={asideClass} style={asideStyle}>
+        {!fillParent && <div className="drag-handle" onMouseDown={onMouseDown} />}
         <header className="inspector-header">
           <span className="mono">#{event.sequence}</span>
           <span style={{ display: 'inline-flex', gap: 'var(--space-1)' }}>
