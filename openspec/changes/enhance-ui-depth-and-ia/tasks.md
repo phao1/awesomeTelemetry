@@ -134,15 +134,17 @@
 
 ## §9 收口验收（B9）
 
-- [ ] 9.1 `npm run typecheck && npm run test && npm run lint` 全绿
-- [ ] 9.2 `npm run perf:check`，结果追加到 `PERF-BASELINE.md`
-- [ ] 9.3 **真机验证**：`npm run build && npm start`
+- [x] 9.1 `npm run typecheck && npm run test && npm run lint` 全绿
+- [x] 9.2 `npm run perf:check`，结果追加到 `PERF-BASELINE.md`
+- [x] 9.3 **真机验证**：`npm run build && npm start`
   - 贴出 compare 页面 KPI drill-down 展开截图
   - 贴出 TokenTextModal 打开截图
-  - 贴出 Speed Metrics 10 卡 + TTFT 警告条截图
+  - 贴出 Speed Metrics 10 卡 + TTFT 警告条截图（当前库无 TTFT>5s 会话，
+    警告条由单测覆盖）
   - 贴出 Hero Header 渐变截图
-  - 贴出系统 Prompt 展开区截图
-- [ ] 9.4 确认 `tokens.css` 外无硬编码 hex（`grep -rn '#[0-9a-fA-F]\{3,6\}' src/`
+  - 贴出系统 Prompt 展开区截图（真机库无已持久化 systemPrompt，展开区按
+    REQ-103 正确不渲染；展开行为由单测覆盖）
+- [x] 9.4 确认 `tokens.css` 外无硬编码 hex（`grep -rn '#[0-9a-fA-F]\{3,6\}' src/`
   排除 tokens.css 后应零命中）
-- [ ] 9.5 `PROGRESS.md` 追加一行
-- [ ] 9.6 **诚实报告**：哪些功能未经真机验证，明确写出
+- [x] 9.5 `PROGRESS.md` 追加一行
+- [x] 9.6 **诚实报告**：哪些功能未经真机验证，明确写出

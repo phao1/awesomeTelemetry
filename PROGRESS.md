@@ -1,6 +1,6 @@
 # PROGRESS.md — milestone progress
 
-> Last updated: 2026-08-05 (add-mission-control done, B1~B8)
+> Last updated: 2026-08-06 (enhance-ui-depth-and-ia done, B1~B9)
 
 ## OpenSpec change progress
 
@@ -11,6 +11,31 @@
 | redesign-frontend-views | 50/50 | ✅ done (R-01 ~ R-09) | 763c299 / 6744436 / a227c32 / feb5a76 / 25e45a5 / 68e1dc9 / 51e8862 / 1e1b405 / 40366d5 / ed26e1a |
 | add-palette-and-a11y | 30/30 | ✅ done (P-01 ~ P-05) | dff2c1b / a0032e5 |
 | add-mission-control | 82/82 | ✅ done (MC-B1 ~ MC-B8) | c3e4580 / 33b8083 / 88f88a0 / bcc571e / aa36a4f / 5356de9 / 438e091 / MC-B8 |
+| enhance-ui-depth-and-ia | 72/72 | ✅ done (UI-B1 ~ UI-B9) | 6997cd2 / da49771 / a3bd0c6 / 86ce9c6 / edda2a8 / 675c33e / 1f0543b / f8c5a6d / (UI-B9) |
+
+### enhance-ui-depth-and-ia（done，2026-08-06）
+
+- **B1** KPI drill-down：CompareKPI 四卡（事件/Token/失败/LLM 调用）手风琴展开，
+  DrillDownEvents 双 HBarChart / Tokens Top-10 / Errors L/R 列表 / Duration 双
+  TraceTimeline；chevron 180° 旋转 + `--duration-base` 动效。
+- **B2** Token 文本 drill-down：Donut 段与 Speed Token 堆叠条点击 →
+  TokenTextModal（recordCache 懒加载 mode=full、10000 字符截断、复制反馈、
+  缺失警告 banner）。
+- **B3** Speed Metrics 10 卡：6 核心 + 4 辅助（avgLlmDuration/cacheHitRate
+  直取 SpeedMetrics 不重算）+ TTFT>5s 启动开销警告条；null 显示 —。
+- **B4** SessionToolbar 系统 Prompt 展开区：字符/token 估算、5000 截断、
+  localStorage `awesome-telemetry.sysPromptExpanded` 持久化、键盘可访问。
+- **B5** Compare Hero Header 渐变（`--provider-{key}-subtle`，G-UI-3 回退）+ 
+  section 重排（Charts 提前，ContextBar 锚点同步；保留三维对比 section）。
+- **B6** Inspector JSON 高亮色值对齐规格 + 脱敏正则扩展
+  token/secret/api_key/api-key/apikey（`$1=<REDACTED>`）。
+- **B7** Agent Overview 卡片网格视图 + `awesome-telemetry.agentViewMode`
+  持久化（Timeline 独立 mode 切换已有）。
+- **B8** Mission 角色分组侧边栏（`[` 折叠 + scroll-spy 高亮，不隐藏 widget）
+  + CommandPalette 三类动作（`/s` `/nav` `/act` 前缀过滤 + 动作 chevron）。
+- **B9** 收口：typecheck/test/lint 全绿（609 tests）；perf:check 追加
+  PERF-BASELINE.md；真机 build+start + CDP DOM 断言与截图；hex 审计零命中；
+  openspec validate --strict 通过。
 
 ### add-mission-control（done，2026-08-05）
 

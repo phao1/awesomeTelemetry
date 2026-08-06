@@ -5,9 +5,9 @@
 
 ---
 
-## P0 — 高优先级（信息密度 + 可视化深度）
+## ADDED Requirements
 
-### REQ-100: KPI drill-down
+### Requirement: KPI drill-down (REQ-100)
 
 CompareBoard 的 4 张 KPI 卡（Events / Tokens / Failures / LLM Calls）SHALL
 支持点击展开 inline drill-down 面板，展示指标构成明细。
@@ -39,7 +39,7 @@ CompareBoard 的 4 张 KPI 卡（Events / Tokens / Failures / LLM Calls）SHALL
 
 ---
 
-### REQ-101: Token 文本 drill-down
+### Requirement: Token 文本 drill-down (REQ-101)
 
 CompareCharts 的 TokenDonutChart 和 CompareSpeedMetrics 的 Token 堆叠条
 SHALL 支持点击 token 段（system / input / output / reasoning）打开
@@ -77,7 +77,7 @@ Modal 内容：
 
 ---
 
-### REQ-102: Speed Metrics 扩展到 6+ 指标
+### Requirement: Speed Metrics 扩展到 6+ 指标 (REQ-102)
 
 CompareSpeedMetrics SHALL 从当前 3 核心指标（e2e/TTFT/TPS）扩展为完整 6 指标
 + 4 辅助指标，共 10 卡。
@@ -122,7 +122,7 @@ CompareSpeedMetrics SHALL 从当前 3 核心指标（e2e/TTFT/TPS）扩展为完
 
 ---
 
-### REQ-103: Session Header 系统 Prompt 展开区
+### Requirement: Session Header 系统 Prompt 展开区 (REQ-103)
 
 SessionToolbar 下方 SHALL 增加可折叠的系统 Prompt 展开区（L0 上下文层）。
 
@@ -166,9 +166,9 @@ SessionToolbar 下方 SHALL 增加可折叠的系统 Prompt 展开区（L0 上�
 
 ---
 
-## P1 — 中优先级（交互 + 视觉）
+## ADDED Requirements
 
-### REQ-104: Compare Hero Header 渐变
+### Requirement: Compare Hero Header 渐变 (REQ-104)
 
 CompareBoard 顶部 SHALL 增加 Hero Header，使用双方 provider 色渐变背景。
 
@@ -198,7 +198,7 @@ CompareBoard 顶部 SHALL 增加 Hero Header，使用双方 provider 色渐变�
 
 ---
 
-### REQ-105: Compare section 顺序重排
+### Requirement: Compare section 顺序重排 (REQ-105)
 
 CompareBoard 的 9 section 顺序 SHALL 调整为：
 
@@ -227,7 +227,7 @@ ContextBar 锚点导航 SHALL 同步更新顺序。
 
 ---
 
-### REQ-106: Inspector JSON 语法高亮升级 + 密钥脱敏增强
+### Requirement: Inspector JSON 语法高亮升级 + 密钥脱敏增强 (REQ-106)
 
 EventInspector 的 Raw tab JSON 高亮 SHALL 覆盖 6 种 token 类型：
 
@@ -259,9 +259,9 @@ EventInspector 的 Raw tab JSON 高亮 SHALL 覆盖 6 种 token 类型：
 
 ---
 
-## P2 — 低优先级（信息架构调整）
+## ADDED Requirements
 
-### REQ-107: Agent Overview 卡片网格视图
+### Requirement: Agent Overview 卡片网格视图 (REQ-107)
 
 AgentOverview SHALL 增加视图切换按钮（表格/卡片网格），默认保持表格视图。
 
@@ -280,7 +280,7 @@ AgentOverview SHALL 增加视图切换按钮（表格/卡片网格），默认�
 
 ---
 
-### REQ-108: Compare Timeline 独立模式切换
+### Requirement: Compare Timeline 独立模式切换 (REQ-108)
 
 Compare Timelines section 的左右两条 Timeline SHALL 支持独立 time/sequence
 模式切换（当前可能为同步切换）。
@@ -296,7 +296,7 @@ Compare Timelines section 的左右两条 Timeline SHALL 支持独立 time/seque
 
 ---
 
-### REQ-109: Mission Control widget 分组导航
+### Requirement: Mission Control widget 分组导航 (REQ-109)
 
 MissionControl SHALL 增加角色分组侧边栏（可折叠），将 25+ widget 按角色分为
 3 组：
@@ -320,7 +320,7 @@ MissionControl SHALL 增加角色分组侧边栏（可折叠），将 25+ widget
 
 ---
 
-### REQ-110: Command Palette 动作扩展
+### Requirement: Command Palette 动作扩展 (REQ-110)
 
 CommandPalette（REQ-025）SHALL 从仅支持会话 fuzzy 搜索扩展为 3 类动作：
 

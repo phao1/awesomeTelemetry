@@ -137,3 +137,28 @@ runs):
 > 本 change 为 UI 可视化/交互优化：Agent Overview 聚合新增阶段耗时 SQL
 > （第三条，冷路径 23.73ms 仍在预算内）；前端 Compare 图表全部为 SVG 内联
 > 渲染，无新增运行时依赖；CSS 拆分后 gzip 10.50KB 符合 REQ-011 预算。
+
+## enhance-ui-depth-and-ia perf:check（2026-08-06，本地基线）
+
+| 指标 | 实测 | 预算 | 结论 |
+|------|------|------|------|
+| listSessions(500) | 0.374ms | < 1ms | ✅ |
+| worst detail slim (9,590 events) | 8.667ms | < 15ms | ✅ |
+| eventDetail drill-down | 0.005ms | < 20ms | ✅ |
+| getSystemPromptForSession | 0.011ms | < 1ms | ✅ |
+| proxyList(50) | 0.769ms | — | — |
+| Overview 冷路径（3 SQL，含阶段耗时聚合） | 47.10ms | < 400ms | ✅ |
+| Overview 缓存命中（1 SQL stamp 判定） | 0.298ms | < 20ms | ✅ |
+| 差分写入 append 1 | 2 语句 / 0.33ms | 仅 1 INSERT、< 20ms | ✅ |
+| 事件循环 p99（200-request hammer） | 0.00ms | < 50ms | ✅ |
+| Mission 冷启（stamp + 16 widget SQL） | 55.63ms | < 500ms | ✅ |
+| Mission 缓存命中 | 0.052ms | < 20ms | ✅ |
+| Mission 单 widget SQL 最差 | 12.561ms | < 30ms @ tier B | ✅ |
+| Mission 响应 gzip | 317B | < 120KB | ✅ |
+| 前端 CSS gzip（vite 构建产物 dist/assets/*.css） | 11.88KB | < 16KB | ✅ |
+
+> 本 change 为 UI 深度/信息架构优化：新增 KPI drill-down 面板、Token 文本
+> Modal、Speed 10 卡、Hero 渐变、Agent 卡片、Mission 角色导航全部为 SVG/
+> 内联渲染，无新增运行时依赖；KPI drill-down 数据复用 compare 响应、
+> TokenTextModal 复用 recordCache，MUST NOT 发额外请求（G11.9 / G-UI-1 /
+> G-UI-2）；前端 CSS 增量后 gzip 11.88KB 仍在 REQ-011 预算内。

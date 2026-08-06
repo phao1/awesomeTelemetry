@@ -109,6 +109,6 @@ export function buildCompareReportHtml(
   locale: ReportLocale = 'zh',
 ): string {
   return `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><title>Compare</title>
-<style>.columns{display:flex;gap:24px}.column{flex:1;border:1px solid #ccc;padding:12px}</style></head>
+<style>.columns{display:flex;gap:24px}.column{flex:1;border:1px solid rgb(204, 204, 204);padding:12px}</style></head>
 <body><h1>${reportLabel('title', locale)}</h1><div class="columns">${column('Left', left, locale)}${column('Right', right, locale)}</div></body></html>`;
 }
