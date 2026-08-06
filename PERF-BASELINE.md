@@ -132,7 +132,7 @@ runs):
 | Mission 缓存命中 | 0.050ms | < 20ms | ✅ |
 | Mission 单 widget SQL 最差 | 11.965ms | < 30ms @ tier B | ✅ |
 | Mission 响应 gzip | 316B | < 120KB | ✅ |
-| 前端 CSS gzip（拆分后 @import 聚合） | 10.50KB | < 16KB | ✅ |
+| 前端 CSS gzip（拆分后 @import 聚合，含会话签名区与趋势图） | 10.62KB | < 16KB | ✅ |
 
 > 本 change 为 UI 可视化/交互优化：Agent Overview 聚合新增阶段耗时 SQL
 > （第三条，冷路径 23.73ms 仍在预算内）；前端 Compare 图表全部为 SVG 内联
