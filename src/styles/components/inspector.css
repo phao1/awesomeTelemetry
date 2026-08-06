@@ -80,6 +80,25 @@
   white-space: nowrap;
 }
 
+/* REQ-116：无匹配红框 + 当前匹配项高亮（TokenTextModal 与 Inspector 共用） */
+
+.inspector-find-input-empty,
+.inspector-find-input-empty:focus {
+  border-color: var(--danger-fg);
+  box-shadow: none;
+}
+
+.inspector-find-active {
+  background: var(--attention-emphasis);
+  color: var(--canvas-default);
+}
+
+.token-modal-find {
+  border-bottom: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .ui-drawer.inspector-full {
   width: 80vw;
 }

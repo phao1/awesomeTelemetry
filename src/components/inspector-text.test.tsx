@@ -3,7 +3,10 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import {
+  FIND_MATCH_LIMIT,
   HighlightedJson,
+  countMatches,
+  highlightMatches,
   isDesensitizationEnabled,
   looksLikeJson,
   redactSecrets,
@@ -127,5 +130,28 @@ describe('HighlightedJson（建议 5，大文本截断）', () => {
     expect(html).toContain('inspector-json-boolean');
     expect(html).toContain('inspector-json-null');
     expect(html).toContain('inspector-json-punctuation');
+  });
+});
+
+describe('REQ-116：共享 find-in-text（EventInspector + TokenTextModal）', () => {
+  it('countMatches 大小写不敏感，空查询为 0，超上限截断', () => {
+    expect(countMatches('AbcABCabc', 'abc')).toBe(3);
+    expect(countMatches('abc', '   ')).toBe(0);
+    expect(countMatches('x'.repeat(FIND_MATCH_LIMIT + 50), 'x')).toBe(FIND_MATCH_LIMIT + 1);
+  });
+
+  it('highlightMatches 给每个匹配加 <mark>，activeIndex 命中的加 inspector-find-active', () => {
+    const html = renderJson(highlightMatches('one two one', 'one', 1));
+    expect(html.match(/<mark/g)?.length).toBe(2);
+    expect(html).toContain('inspector-find-active');
+    // 第二个匹配才是 active
+    const first = html.indexOf('<mark');
+    expect(html.slice(first, html.indexOf('<mark', first + 1))).not.toContain('inspector-find-active');
+  });
+
+  it('空查询原样返回文本，不产生 mark', () => {
+    const html = renderJson(highlightMatches('plain text', ''));
+    expect(html).not.toContain('<mark');
+    expect(html).toContain('plain text');
   });
 });

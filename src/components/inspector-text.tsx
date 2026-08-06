@@ -57,6 +57,78 @@ export function redactSecrets(text: string): string {
   return out;
 }
 
+/** 面板内搜索一次最多标记的匹配数（避免超长文本生成上万个 <mark>）。 */
+export const FIND_MATCH_LIMIT = 500;
+
+/** REQ-116：统计 query 在 text 中的出现次数（大小写不敏感，上限 FIND_MATCH_LIMIT+1）。 */
+export function countMatches(text: string, query: string): number {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') {
+    return 0;
+  }
+  const haystack = text.toLowerCase();
+  let count = 0;
+  let cursor = 0;
+  while (true) {
+    const at = haystack.indexOf(needle, cursor);
+    if (at < 0) {
+      break;
+    }
+    count += 1;
+    cursor = at + needle.length;
+    if (count > FIND_MATCH_LIMIT) {
+      break;
+    }
+  }
+  return count;
+}
+
+/**
+ * REQ-116：find-in-text 高亮 —— EventInspector 与 TokenTextModal 共用同一实现，
+ * 保证快捷键、高亮样式、导航行为一致（G-C3）。
+ * `activeIndex >= 0` 时给第 N 个匹配加 `.inspector-find-active`（用于跳转定位）。
+ */
+export function highlightMatches(
+  text: string,
+  query: string,
+  activeIndex = -1,
+): React.JSX.Element {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') {
+    return <>{text}</>;
+  }
+  const haystack = text.toLowerCase();
+  const parts: Array<React.JSX.Element> = [];
+  let cursor = 0;
+  let count = 0;
+  while (true) {
+    const at = haystack.indexOf(needle, cursor);
+    if (at < 0) {
+      break;
+    }
+    if (at > cursor) {
+      parts.push(<span key={`t${cursor}`}>{text.slice(cursor, at)}</span>);
+    }
+    parts.push(
+      <mark
+        key={`m${at}`}
+        className={count === activeIndex ? 'inspector-find-active' : undefined}
+      >
+        {text.slice(at, at + needle.length)}
+      </mark>,
+    );
+    cursor = at + needle.length;
+    count += 1;
+    if (count > FIND_MATCH_LIMIT) {
+      break;
+    }
+  }
+  if (cursor < text.length) {
+    parts.push(<span key={`t${cursor}`}>{text.slice(cursor)}</span>);
+  }
+  return <>{parts}</>;
+}
+
 export type JsonTokenType =
   | 'key'
   | 'string'

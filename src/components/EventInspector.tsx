@@ -14,6 +14,8 @@ import { Tabs } from './ui/Tabs.js';
 import { Drawer } from './ui/Modal.js';
 import {
   HighlightedJson,
+  countMatches,
+  highlightMatches,
   looksLikeJson,
   redactSecrets,
   useDesensitizationEnabled,
@@ -102,27 +104,10 @@ export function EventInspector({
     return desensitize ? redactSecrets(rawText) : rawText;
   };
 
-  const matchCount = useMemo(() => {
-    const query = findQuery.trim().toLowerCase();
-    if (query === '') {
-      return 0;
-    }
-    const text = currentTabText().toLowerCase();
-    let count = 0;
-    let cursor = 0;
-    while (true) {
-      const at = text.indexOf(query, cursor);
-      if (at < 0) {
-        break;
-      }
-      count += 1;
-      cursor = at + query.length;
-      if (count > 500) {
-        break;
-      }
-    }
-    return count;
-  }, [findQuery, tab, detail, raw, event, desensitize]);
+  const matchCount = useMemo(
+    () => countMatches(currentTabText(), findQuery),
+    [findQuery, tab, detail, raw, event, desensitize],
+  );
 
   useEffect(() => {
     if (event === null) {
@@ -240,35 +225,7 @@ export function EventInspector({
       });
   };
 
-  const highlight = (text: string): React.JSX.Element => {
-    const query = findQuery.trim().toLowerCase();
-    if (query === '') {
-      return <>{text}</>;
-    }
-    const lower = text.toLowerCase();
-    const parts: Array<React.JSX.Element> = [];
-    let cursor = 0;
-    let count = 0;
-    while (true) {
-      const at = lower.indexOf(query, cursor);
-      if (at < 0) {
-        break;
-      }
-      if (at > cursor) {
-        parts.push(<span key={`t${cursor}`}>{text.slice(cursor, at)}</span>);
-      }
-      parts.push(<mark key={`m${at}`}>{text.slice(at, at + query.length)}</mark>);
-      cursor = at + query.length;
-      count += 1;
-      if (count > 500) {
-        break;
-      }
-    }
-    if (cursor < text.length) {
-      parts.push(<span key={`t${cursor}`}>{text.slice(cursor)}</span>);
-    }
-    return <>{parts}</>;
-  };
+  const highlight = (text: string): React.JSX.Element => highlightMatches(text, findQuery);
 
   /** §3.5：diff 视图「仅看变更行」—— 只保留 +/- 变更行，去掉 +++/--- 头。 */
   const diffOnlyLines = (text: string): string =>

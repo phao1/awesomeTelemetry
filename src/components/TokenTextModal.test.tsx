@@ -165,3 +165,98 @@ describe('TokenTextModal（REQ-101）', () => {
     unmount();
   });
 });
+
+describe('REQ-116 TokenTextModal 搜索/高亮', () => {
+  /** 长文本：600 字符，其中 needle 出现 3 次。 */
+  const longText = `${'a'.repeat(200)}needle${'b'.repeat(200)}needle${'c'.repeat(200)}needle`;
+
+  async function openLong(): Promise<{ unmount: () => void }> {
+    const loadFull = vi.fn(async () => fullRecord(longText));
+    const mounted = mount(<TokenTextModal {...baseProps({ tokenClass: 'output', loadFull })} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    return mounted;
+  }
+
+  function findInput(): HTMLInputElement {
+    return document.querySelector('.token-modal-find .inspector-find-input') as HTMLInputElement;
+  }
+
+  function setQuery(value: string): void {
+    const input = findInput();
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  it('短文本（≤500 字符）不提供搜索入口', async () => {
+    const short = vi.fn(async () => fullRecord('tiny'));
+    const mounted = mount(<TokenTextModal {...baseProps({ tokenClass: 'output', loadFull: short })} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.querySelector('[aria-label="在面板内搜索…"]')).toBeNull();
+    mounted.unmount();
+  });
+
+  it('长文本（>500 字符）提供搜索入口', async () => {
+    const mounted = await openLong();
+    expect(document.querySelector('[aria-label="在面板内搜索…"]')).not.toBeNull();
+    mounted.unmount();
+  });
+
+  it('Ctrl+F 打开搜索框，实时高亮所有匹配并显示 X / Y 计数', async () => {
+    const mounted = await openLong();
+    expect(findInput()).toBeNull();
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }));
+    });
+    expect(findInput()).not.toBeNull();
+    setQuery('needle');
+    expect(document.querySelectorAll('.token-modal-text mark').length).toBe(3);
+    expect(document.querySelector('.inspector-find-count')?.textContent).toBe('1 / 3 匹配');
+    // 第一个匹配为 active
+    const marks = Array.from(document.querySelectorAll('.token-modal-text mark'));
+    expect(marks[0]!.className).toContain('inspector-find-active');
+    mounted.unmount();
+  });
+
+  it('Enter 下一个 / Shift+Enter 上一个（循环）', async () => {
+    const mounted = await openLong();
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true }));
+    });
+    setQuery('needle');
+    const input = findInput();
+    const press = (shift: boolean): void => {
+      act(() => {
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: shift, bubbles: true }));
+      });
+    };
+    press(false);
+    expect(document.querySelector('.inspector-find-count')?.textContent).toBe('2 / 3 匹配');
+    press(false);
+    expect(document.querySelector('.inspector-find-count')?.textContent).toBe('3 / 3 匹配');
+    press(false);
+    expect(document.querySelector('.inspector-find-count')?.textContent).toBe('1 / 3 匹配');
+    press(true);
+    expect(document.querySelector('.inspector-find-count')?.textContent).toBe('3 / 3 匹配');
+    mounted.unmount();
+  });
+
+  it('无匹配：红框 + No matches 文案', async () => {
+    const mounted = await openLong();
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }));
+    });
+    setQuery('zzzznope');
+    expect(document.querySelectorAll('.token-modal-text mark').length).toBe(0);
+    expect(document.querySelector('.inspector-find-count')?.textContent).toBe('无匹配');
+    const input = findInput();
+    expect(input.className).toContain('inspector-find-input-empty');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    mounted.unmount();
+  });
+});

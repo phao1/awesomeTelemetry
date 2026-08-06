@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
@@ -13,7 +13,8 @@ import { api } from '../api/client.js';
 import { Modal } from './ui/Modal.js';
 import { ProviderBadge } from './ui/Badge.js';
 import { ErrorState, Skeleton } from './ui/States.js';
-import { IconSuccess, IconWarning } from './icons/index.js';
+import { countMatches, highlightMatches } from './inspector-text.js';
+import { IconSearch, IconSuccess, IconWarning } from './icons/index.js';
 
 export type TokenClass = 'system' | 'input' | 'output' | 'reasoning';
 
@@ -32,6 +33,9 @@ export interface TokenTextModalProps {
 
 /** 截断阈值（REQ-101）。 */
 export const TOKEN_TEXT_LIMIT = 10_000;
+
+/** REQ-116：正文超过该长度才提供面板内搜索。 */
+export const TOKEN_TEXT_SEARCH_MIN = 500;
 
 /**
  * REQ-101：Token 文本 drill-down。
@@ -56,6 +60,12 @@ export function TokenTextModal({
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [copied, setCopied] = useState(false);
+  // REQ-116：面板内搜索（与 EventInspector 同一套快捷键 / 高亮 / 导航）。
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [activeMatch, setActiveMatch] = useState(0);
+  const findInputRef = useRef<HTMLInputElement | null>(null);
+  const bodyRef = useRef<HTMLPreElement | null>(null);
 
   const resolve = (loader: (key: string) => Promise<SessionDetailResponse>): void => {
     const full = recordCache.get(`${sessionKey}:full`);
@@ -99,6 +109,46 @@ export function TokenTextModal({
   const isSystemMissing = tokenClass === 'system' && record !== null && record.session.systemPrompt === null;
   const truncated = charCount > TOKEN_TEXT_LIMIT;
   const shown = text === null ? '' : truncated && !showAll ? text.slice(0, TOKEN_TEXT_LIMIT) : text;
+  const searchable = charCount > TOKEN_TEXT_SEARCH_MIN;
+  const matchCount = useMemo(() => countMatches(shown, findQuery), [shown, findQuery]);
+  const hasQuery = findQuery.trim() !== '';
+  const noMatches = hasQuery && matchCount === 0;
+
+  // REQ-116：Ctrl/⌘+F 打开搜索框并聚焦（仅在正文足够长时接管）。
+  useEffect(() => {
+    if (!searchable) {
+      return;
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key.toLowerCase() === 'f' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setFindOpen(true);
+        window.setTimeout(() => findInputRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [searchable]);
+
+  // 查询变化时重置到第一个匹配。
+  useEffect(() => {
+    setActiveMatch(0);
+  }, [findQuery, shown]);
+
+  // 当前匹配滚动到可视区。
+  useEffect(() => {
+    if (!hasQuery || matchCount === 0) {
+      return;
+    }
+    bodyRef.current?.querySelector('.inspector-find-active')?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeMatch, hasQuery, matchCount]);
+
+  const stepMatch = (delta: 1 | -1): void => {
+    if (matchCount === 0) {
+      return;
+    }
+    setActiveMatch((prev) => (prev + delta + matchCount) % matchCount);
+  };
 
   const retry = (): void => {
     setError(null);
@@ -140,11 +190,59 @@ export function TokenTextModal({
             {charCount.toLocaleString()} {t('token.modal.chars', locale)}
           </span>
           <span className="spacer" />
+          {searchable && (
+            <button
+              type="button"
+              className="ui-icon-btn ui-btn-sm"
+              aria-label={t('inspector.find', locale)}
+              aria-expanded={findOpen}
+              title={t('inspector.find', locale)}
+              onClick={() => {
+                setFindOpen((prev) => !prev);
+                window.setTimeout(() => findInputRef.current?.focus(), 0);
+              }}
+            >
+              <IconSearch size={16} />
+            </button>
+          )}
           <button type="button" className="btn ui-btn-sm" onClick={copy} disabled={text === null}>
             {copied ? <IconSuccess size={16} /> : null}
             {copied ? t('token.modal.copied', locale) : t('token.modal.copy', locale)}
           </button>
         </header>
+        {searchable && findOpen && (
+          <div className="inspector-find token-modal-find">
+            <input
+              ref={findInputRef}
+              type="search"
+              className={`inspector-find-input ${noMatches ? 'inspector-find-input-empty' : ''}`}
+              placeholder={t('inspector.find', locale)}
+              aria-label={t('inspector.find', locale)}
+              aria-invalid={noMatches}
+              value={findQuery}
+              onChange={(e) => setFindQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  stepMatch(e.shiftKey ? -1 : 1);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setFindOpen(false);
+                  setFindQuery('');
+                }
+              }}
+            />
+            <span className="mono inspector-find-count">
+              {!hasQuery
+                ? ''
+                : matchCount > 0
+                  ? t('token.modal.matchNav', locale)
+                      .replace('{x}', String(activeMatch + 1))
+                      .replace('{y}', String(matchCount))
+                  : t('inspector.noMatches', locale)}
+            </span>
+          </div>
+        )}
         {loading && record === null && <Skeleton variant="block" count={3} />}
         {error !== null && (
           <ErrorState
@@ -163,7 +261,9 @@ export function TokenTextModal({
         )}
         {!loading && error === null && record !== null && text !== null && (
           <div className="token-modal-body">
-            <pre className="mono token-modal-text">{shown}</pre>
+            <pre className="mono token-modal-text" ref={bodyRef}>
+              {hasQuery ? highlightMatches(shown, findQuery, activeMatch) : shown}
+            </pre>
             {truncated && (
               <button
                 type="button"
