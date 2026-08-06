@@ -76,17 +76,17 @@
 
 ## §4 系统 Prompt 展开区（B4）
 
-- [ ] 4.1 `SessionToolbar.tsx` 下方新增可折叠 `SystemPromptSection` 组件
-- [ ] 4.2 折叠态：`▸ System Prompt · X chars · ~Y tokens [📋]`
-- [ ] 4.3 展开态：前 5000 字符 + "Show more (Z chars remaining)" 按钮
-- [ ] 4.4 字符数：`session.systemPrompt.length`，token 估算：`Math.ceil(length / 4)`
-- [ ] 4.5 复制按钮 2 秒 `IconSuccess` 反馈
-- [ ] 4.6 `role="button"` + `tabIndex={0}` + Enter/Space 切换
-- [ ] 4.7 `session.systemPrompt === null` 时整个区域不渲染
-- [ ] 4.8 折叠状态持久化：`localStorage` key `awesome-telemetry.sysPromptExpanded`
-- [ ] 4.9 CSS：`src/styles/components/session.css` 加样式（T2/T3）
-- [ ] 4.10 i18n：新增 `session.sysPrompt.*` key
-- [ ] 4.11 测试：`SessionToolbar.test.tsx` 断言展开/折叠/截断/null 场景
+- [x] 4.1 `SessionToolbar.tsx` 下方新增可折叠 `SystemPromptSection` 组件
+- [x] 4.2 折叠态：`▸ System Prompt · X chars · ~Y tokens [📋]`
+- [x] 4.3 展开态：前 5000 字符 + "Show more (Z chars remaining)" 按钮
+- [x] 4.4 字符数：`session.systemPrompt.length`，token 估算：`Math.ceil(length / 4)`
+- [x] 4.5 复制按钮 2 秒 `IconSuccess` 反馈
+- [x] 4.6 `role="button"` + `tabIndex={0}` + Enter/Space 切换
+- [x] 4.7 `session.systemPrompt === null` 时整个区域不渲染
+- [x] 4.8 折叠状态持久化：`localStorage` key `awesome-telemetry.sysPromptExpanded`
+- [x] 4.9 CSS：`src/styles/components/session.css` 加样式（T2/T3）
+- [x] 4.10 i18n：新增 `session.sysPrompt.*` key
+- [x] 4.11 测试：`SessionToolbar.test.tsx` 断言展开/折叠/截断/null 场景
 
 ## §5 Hero Header + section 重排（B5）
 
