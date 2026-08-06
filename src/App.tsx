@@ -30,6 +30,11 @@ import { SessionList } from './components/SessionList.js';
 import { SessionToolbar } from './components/SessionToolbar.js';
 import { SessionFindings } from './components/SessionFindings.js';
 import { TraceTimeline } from './components/TraceTimeline.js';
+import { PhaseRibbon } from './components/PhaseRibbon.js';
+import { PhaseTiles } from './components/PhaseTiles.js';
+import { TimeCompositionBar } from './components/TimeCompositionBar.js';
+import { computeTimeComposition, type TimeSegmentKey } from './core/time-composition.js';
+import { computePhaseTrends } from './core/phase-trend.js';
 import { EventInspector } from './components/EventInspector.js';
 import { AgentOverview } from './components/AgentOverview.js';
 import { CompareBoard } from './components/CompareBoard.js';
@@ -110,6 +115,7 @@ export default function App() {
   });
   const deferredPhaseFilter = useDeferredValue(phaseFilter); // REQ-002
   const [semanticGroup, setSemanticGroup] = useState(true);
+  const [timeSegFilter, setTimeSegFilter] = useState<TimeSegmentKey | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<TraceEventSlim | null>(null);
   const [detailPage, setDetailPage] = useState(0);
   // fix-session-detail-display delta：会话列表服务端过滤 + 甘特布局模式
@@ -398,13 +404,37 @@ export default function App() {
       });
   }, [selectedKey, detail, detailPage]);
 
-  const visibleEvents = useMemo(
-    () =>
-      detail === null
-        ? []
-        : detail.events.filter((e) => deferredPhaseFilter.includes(e.phase)),
-    [detail, deferredPhaseFilter],
+  const timeComposition = useMemo(
+    () => computeTimeComposition((detail?.events ?? []) as TraceEventSlim[]),
+    [detail],
   );
+  const phaseCounts = useMemo(() => {
+    const counts = Object.fromEntries(
+      TRACE_PHASES.map((phase) => [phase, 0]),
+    ) as Record<TracePhase, number>;
+    for (const e of detail?.events ?? []) {
+      counts[e.phase as TracePhase] += 1;
+    }
+    return counts;
+  }, [detail]);
+  const phaseTrends = useMemo(
+    () => computePhaseTrends((detail?.events ?? []) as TraceEventSlim[]),
+    [detail],
+  );
+  const visibleEvents = useMemo(() => {
+    if (detail === null) {
+      return [];
+    }
+    let events = detail.events.filter((e) => deferredPhaseFilter.includes(e.phase as TracePhase));
+    if (timeSegFilter !== null) {
+      const segment = timeComposition.segments.find((s) => s.key === timeSegFilter);
+      if (segment !== undefined) {
+        const ids = new Set(segment.eventIds);
+        events = events.filter((e) => ids.has(e.id));
+      }
+    }
+    return events;
+  }, [detail, deferredPhaseFilter, timeSegFilter, timeComposition]);
 
   // ui-design-v2 §3.1：会话诊断（L1）——只依赖已有 slim 数据。
   const findingsResult = useMemo(
@@ -763,6 +793,31 @@ export default function App() {
                     }
                   }}
                 />
+                <div className="session-signals">
+                  <PhaseRibbon
+                    events={detail.events as TraceEventSlim[]}
+                    active={phaseFilter}
+                    onSelectOnly={(phase) => setPhaseFilter([phase])}
+                    locale={locale}
+                  />
+                  <TimeCompositionBar
+                    composition={timeComposition}
+                    locale={locale}
+                    active={timeSegFilter}
+                    onToggle={setTimeSegFilter}
+                  />
+                  <PhaseTiles
+                    active={phaseFilter}
+                    onToggle={togglePhase}
+                    locale={locale}
+                    counts={phaseCounts}
+                    visibleCount={visibleEvents.length}
+                    onSelectAll={() => setPhaseFilter([...TRACE_PHASES])}
+                    onClearAll={() => setPhaseFilter([])}
+                    findingPhases={[]}
+                    trends={phaseTrends}
+                  />
+                </div>
                 <div className="session-canvas">
                   {findingsResult !== null && (
                     <details className="session-findings-panel">

@@ -383,6 +383,8 @@ export function SessionList({
                                   className="session-merge-member"
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    // 成员 key 在服务端返回自身详情（mergeSessionDetail
+                                    // 只合并 primaryKey），即"单独查看"。
                                     onSelect(member.id);
                                     setMergeOpenFor(null);
                                   }}

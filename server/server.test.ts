@@ -589,6 +589,25 @@ describe('API 契约（contracts/api.md §8）', () => {
     expect(group?.reason).toBe('auto-subagent-time-window');
   });
 
+  it('建议 11：成员 key 详情返回成员自身（单独查看），primary 返回合并详情', async () => {
+    const { port } = await boot((db) => {
+      seedSession(db, 'parent-1', 'codex');
+      seedSession(db, 'sub-1', 'codex');
+      db.prepare(
+        `UPDATE sessions SET is_subagent = 1, started_at = '2026-08-01T00:00:30.000Z', title = 'task (@subagent)' WHERE id = 'sub-1'`,
+      ).run();
+    });
+    const member = await request(port, 'GET', '/api/sessions/sub-1');
+    expect(member.status).toBe(200);
+    const memberBody = JSON.parse(member.text) as { session: { title: string; eventCount: number } };
+    expect(memberBody.session.title).toContain('@subagent');
+    expect(memberBody.session.eventCount).toBe(2); // 自身 2 条，非合并 4 条
+
+    const primary = await request(port, 'GET', '/api/sessions/parent-1');
+    const primaryBody = JSON.parse(primary.text) as { session: { title: string; eventCount: number } };
+    expect(primaryBody.session.eventCount).toBe(4); // 合并求和
+  });
+
   it('mission 单请求返回全部区块，每个 widget 有非空 criteria；available=false 时 data 为 null 且 reason 非空', async () => {
     const { port } = await boot((db) => {
       seedSession(db, 'codex-s1', 'codex');

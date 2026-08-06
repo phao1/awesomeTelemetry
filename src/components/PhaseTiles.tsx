@@ -11,6 +11,7 @@ import {
   IconVerify,
   type IconProps,
 } from './icons/index.js';
+import { Sparkline } from './ui/Misc.js';
 
 export interface PhaseTilesProps {
   active: TracePhase[];
@@ -22,6 +23,8 @@ export interface PhaseTilesProps {
   onClearAll: () => void;
   /** ui-design-v2 §3.3：命中 Finding 的阶段显示异常色点。 */
   findingPhases?: TracePhase[];
+  /** 建议 10：每个 tile 底部该阶段的会话内历史趋势（时间桶时长）。 */
+  trends?: Record<TracePhase, number[]>;
 }
 
 const PHASE_ICON: Record<TracePhase, (props: IconProps) => React.JSX.Element> = {
@@ -43,6 +46,7 @@ export function PhaseTiles({
   onSelectAll,
   onClearAll,
   findingPhases = [],
+  trends,
 }: PhaseTilesProps): React.JSX.Element {
   const allSelected = active.length === TRACE_PHASES.length;
   const findingSet = new Set(findingPhases);
@@ -52,6 +56,8 @@ export function PhaseTiles({
         const Icon = PHASE_ICON[phase];
         const selected = active.includes(phase);
         const flagged = findingSet.has(phase);
+        const points = trends?.[phase] ?? [];
+        const hasTrend = counts[phase] > 0 && points.some((v) => v > 0);
         return (
           <button
             key={phase}
@@ -72,6 +78,11 @@ export function PhaseTiles({
             {t(`phase.${phase}`, locale)}
             {flagged && <span className="phase-tile-dot" aria-label={t('findings.title', locale)} />}
             <span className="phase-tile-count mono">{counts[phase]}</span>
+            {hasTrend && (
+              <span className="phase-tile-trend" aria-hidden="true">
+                <Sparkline points={points} width={56} height={10} />
+              </span>
+            )}
           </button>
         );
       })}

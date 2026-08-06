@@ -51,6 +51,16 @@
   background: var(--canvas-raised);
 }
 
+.phase-tile-trend {
+  display: flex;
+  align-items: center;
+  margin-top: var(--space-1);
+}
+
+.phase-tile-trend svg {
+  color: var(--fg-muted);
+}
+
 .phase-tile-on {
   background: var(--accent-emphasis);
   color: var(--fg-on-emphasis);
@@ -586,4 +596,3 @@
   background: var(--success-subtle);
   border: 1px solid var(--success-emphasis);
 }
-
