@@ -20,9 +20,27 @@ import { CalendarGrid } from './charts/CalendarGrid.js';
 import { ComboBarLine } from './charts/ComboBarLine.js';
 import { StackedAreaChart } from './charts/StackedAreaChart.js';
 
-export type MissionSection = 'a' | 'b' | 'c';
 export type MissionRange = '7d' | '30d' | 'all';
 export type MissionRole = 'manager' | 'engineer' | 'ops';
+
+/** REQ-117：旧 A/B/C 标签页锚点 → 角色分组锚点（标签页已移除）。 */
+export const LEGACY_SECTION_ROLE: Record<string, MissionRole> = {
+  a: 'manager',
+  b: 'engineer',
+  c: 'ops',
+};
+
+/**
+ * REQ-117：把旧的 `#mission-a|b|c` 锚点重写为 `#mission-role-<role>`。
+ * 无旧锚点时返回 null（调用方不做任何跳转）。
+ */
+export function redirectLegacyMissionHash(hash: string): string | null {
+  const match = /#mission-([abc])(?![\w-])/.exec(hash);
+  if (match === null) {
+    return null;
+  }
+  return hash.replace(match[0], `#mission-role-${LEGACY_SECTION_ROLE[match[1]!]!}`);
+}
 
 /** REQ-109：25+ widget 按角色分 3 组（规格表 + 其余 widget 就近归类）。
  * 侧边栏仅做滚动导航（G-UI-8），MUST NOT 隐藏其他角色的 widget。 */
@@ -68,20 +86,6 @@ function entries(
     out.push({ id, widget: widget as MissionWidget<unknown> });
   }
   return out;
-}
-
-function sectionIds(section: MissionSection): string[] {
-  if (section === 'a') {
-    return ['toolTop', 'skillTop', 'subagent', 'heatmap', 'promptHabits', 'activity'];
-  }
-  if (section === 'b') {
-    return [
-      'closure', 'costEfficiency', 'toolFailure', 'tokenTrend', 'apiQuality',
-      'errorReasons', 'riskyCommands', 'drift', 'contextPressure', 'models',
-      'depth', 'toolEcology', 'scenes', 'heavyScenes', 'parallelism',
-    ];
-  }
-  return ['collectors', 'dualChannel', 'calendar', 'hotSessions'];
 }
 
 function fmtNum(v: number): string {
@@ -465,7 +469,8 @@ function WidgetPanel({
 }
 
 /**
- * REQ-027：Mission 视图。单列主区 + A/B/C chip 导航；顶部控制条
+ * REQ-027 + REQ-117：Mission 视图。左侧角色分组导航是唯一导航方式
+ * （A/B/C 标签页已移除，角色分组已完全覆盖其能力）；顶部控制条
  * （range 7d/30d/all + 手动刷新 + meta 行）。整个视图 = 1 个请求（G11.9）。
  */
 export function MissionControl({
@@ -481,11 +486,11 @@ export function MissionControl({
   const [response, setResponse] = useState<MissionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
-  const [section, setSection] = useState<MissionSection>('a');
   const [stale, setStale] = useState(false);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activeRole, setActiveRole] = useState<MissionRole | null>('manager');
   const mainRef = useRef<HTMLElement | null>(null);
+  const initialScrollDone = useRef(false);
 
   // REQ-109：`[` 键折叠/展开侧边栏（不劫持输入框）。
   useEffect(() => {
@@ -529,15 +534,14 @@ export function MissionControl({
     }
     return entries(response.usage, response.quality, response.health);
   }, [response]);
-  const visibleIds = sectionIds(section);
-  const visible = allWidgets.filter((entry) => visibleIds.includes(entry.id));
+  // REQ-117：不再按 A/B/C 切片，全部 widget 一次性按角色分组呈现。
   const byRole = useMemo(
     () =>
       ROLE_ORDER.map((role) => ({
         role,
-        widgets: visible.filter((entry) => ROLE_GROUPS[role].includes(entry.id)),
+        widgets: allWidgets.filter((entry) => ROLE_GROUPS[role].includes(entry.id)),
       })).filter((group) => group.widgets.length > 0),
-    [visible],
+    [allWidgets],
   );
 
   const onScroll = (): void => {
@@ -556,8 +560,30 @@ export function MissionControl({
   };
 
   const scrollToRole = (role: MissionRole): void => {
-    document.getElementById(`mission-role-${role}`)?.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById(`mission-role-${role}`)?.scrollIntoView?.({ behavior: 'smooth' });
   };
+
+  // REQ-117：旧 A/B/C 标签页锚点重定向到角色分组锚点，并定位到该分组。
+  useEffect(() => {
+    const rewritten = redirectLegacyMissionHash(window.location.hash);
+    if (rewritten === null) {
+      return;
+    }
+    history.replaceState(null, '', rewritten);
+    const role = /#mission-role-(\w+)/.exec(rewritten)?.[1] as MissionRole | undefined;
+    if (role !== undefined) {
+      setActiveRole(role);
+    }
+  }, []);
+
+  // REQ-117：数据就绪后默认定位到当前角色（缺省「管理者」），只做一次。
+  useEffect(() => {
+    if (response === null || initialScrollDone.current) {
+      return;
+    }
+    initialScrollDone.current = true;
+    scrollToRole(activeRole ?? 'manager');
+  }, [response, activeRole]);
 
   return (
     <main
@@ -622,21 +648,6 @@ export function MissionControl({
             {stale ? ` · ${t('mission.stale', locale)}` : ''}
           </span>
         )}
-          </div>
-
-          <div className="mission-chips" role="tablist">
-            {(['a', 'b', 'c'] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                role="tab"
-                aria-selected={section === s}
-                className={`chip ${section === s ? 'chip-active' : ''}`}
-                onClick={() => setSection(s)}
-              >
-                {t(`mission.section.${s}`, locale)}
-              </button>
-            ))}
           </div>
 
           {error !== null && (

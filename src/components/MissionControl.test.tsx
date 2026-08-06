@@ -3,7 +3,12 @@ import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { MissionResponse } from '../core/trace-types.js';
-import { MissionControl, type MissionRange } from './MissionControl.js';
+import {
+  LEGACY_SECTION_ROLE,
+  MissionControl,
+  redirectLegacyMissionHash,
+  type MissionRange,
+} from './MissionControl.js';
 
 function makeResponse(): MissionResponse {
   const widget = (id: string, available: boolean): unknown => ({
@@ -81,7 +86,10 @@ describe('MissionControl（REQ-027）', () => {
       expect(text).toContain('25'); // widgetCount
       expect(text).toContain('events.tool 按调用数聚合 TOP 10'); // 8.7：criteria 经 i18n 字典渲染
       expect(text).toContain('该指标当前不可用'); // unavailable EmptyState
-      expect(host.querySelectorAll('.mission-widget').length).toBe(6); // A 区
+      // REQ-117：A/B/C 标签页移除后，25 个 widget 一次性按角色分组全量呈现
+      expect(host.querySelectorAll('.mission-widget').length).toBe(25);
+      expect(host.querySelector('.mission-chips')).toBeNull();
+      expect(host.querySelector('[role="tablist"]')).toBeNull();
     } finally {
       act(() => root?.unmount());
       host.remove();
@@ -246,11 +254,7 @@ describe('MissionControl（REQ-027）', () => {
       await act(async () => {
         await Promise.resolve();
       });
-      const bChip = host.querySelector<HTMLButtonElement>('.mission-chips .chip:nth-child(2)');
-      act(() => bChip?.click());
-      await act(async () => {
-        await Promise.resolve();
-      });
+      // REQ-117：models widget 不再需要切 B 标签页，角色分组下直接可见
       const text = host.textContent ?? '';
       expect(text).toContain('glm-4-plus');
       expect(text).toContain('—');
@@ -258,6 +262,70 @@ describe('MissionControl（REQ-027）', () => {
     } finally {
       act(() => root?.unmount());
       host.remove();
+    }
+  });
+});
+
+describe('REQ-117 导航去冗余', () => {
+  it('A/B/C 标签页彻底移除，角色分组是唯一导航', async () => {
+    const load = vi.fn(async (_range: MissionRange) => makeResponse());
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let root: ReturnType<typeof createRoot> | undefined;
+    try {
+      act(() => {
+        root = createRoot(host);
+        root.render(<MissionControl locale="zh" load={load} />);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(host.querySelector('.mission-chips')).toBeNull();
+      expect(host.querySelectorAll('[role="tab"]').length).toBe(0);
+      expect(host.querySelectorAll('.mission-nav-item').length).toBe(3);
+      // 默认选中「管理者」
+      const active = host.querySelector('.mission-nav-item-on');
+      expect(active?.textContent).toContain('管理者');
+      // 三个角色 section 全部存在
+      for (const role of ['manager', 'engineer', 'ops']) {
+        expect(host.querySelector(`#mission-role-${role}`)).not.toBeNull();
+      }
+    } finally {
+      act(() => root?.unmount());
+      host.remove();
+    }
+  });
+
+  it('redirectLegacyMissionHash：#mission-a|b|c → #mission-role-<role>，其余返回 null', () => {
+    expect(redirectLegacyMissionHash('#mission-a')).toBe('#mission-role-manager');
+    expect(redirectLegacyMissionHash('#mission-b')).toBe('#mission-role-engineer');
+    expect(redirectLegacyMissionHash('#mission-c')).toBe('#mission-role-ops');
+    expect(redirectLegacyMissionHash('#/mission?range=7d')).toBeNull();
+    // 已经是角色锚点时不再改写
+    expect(redirectLegacyMissionHash('#mission-role-ops')).toBeNull();
+    expect(LEGACY_SECTION_ROLE.a).toBe('manager');
+  });
+
+  it('挂载时把旧锚点重定向到角色锚点并高亮该角色', async () => {
+    history.replaceState(null, '', '#mission-c');
+    const load = vi.fn(async (_range: MissionRange) => makeResponse());
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let root: ReturnType<typeof createRoot> | undefined;
+    try {
+      act(() => {
+        root = createRoot(host);
+        root.render(<MissionControl locale="zh" load={load} />);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(window.location.hash).toBe('#mission-role-ops');
+      expect(host.querySelector('.mission-nav-item-on')?.textContent).toContain('运维');
+    } finally {
+      act(() => root?.unmount());
+      host.remove();
+      history.replaceState(null, '', '#');
     }
   });
 });

@@ -229,28 +229,6 @@
   margin-left: auto;
 }
 
-.mission-chips {
-  display: flex;
-  gap: var(--space-2);
-  border-bottom: 1px solid var(--canvas-subtle);
-  padding-bottom: var(--space-2);
-}
-
-.chip {
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-full);
-  cursor: pointer;
-  font: inherit;
-}
-
-.chip-active {
-  background: var(--accent-subtle);
-  color: var(--accent-fg);
-}
-
 .mission-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 30rem), 1fr));
