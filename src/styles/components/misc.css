@@ -73,7 +73,8 @@
 }
 
 .proxy-url-cell {
-  max-width: var(--space-10);
+  /* URL 尾部信息量更高，截断到 40px 等于完全不可读 */
+  max-width: 48ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -249,10 +250,34 @@
   font-weight: 600;
 }
 
+/* 一句人话的卡片说明（正文层） */
+.mission-summary {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  margin: 0 0 var(--space-2);
+}
+
+/* 完整计算口径：默认折叠的实现者视角 */
+.mission-criteria-disclosure {
+  margin-bottom: var(--space-2);
+}
+
+.mission-criteria-disclosure > summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  user-select: none;
+}
+
+.mission-criteria-disclosure > summary:hover {
+  color: var(--accent-fg);
+}
+
 .mission-criteria {
   color: var(--fg-muted);
   font-size: var(--text-xs);
-  margin-bottom: var(--space-2);
+  margin-top: var(--space-1);
   line-height: 1.5;
 }
 

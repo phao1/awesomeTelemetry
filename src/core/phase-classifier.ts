@@ -6,7 +6,10 @@ import type { TraceEvent, TracePhase } from './trace-types.js';
  * Pass 2：propagate 与 meta 继承最近 explicit 的 phase；前后取近者，LLM 偏前，agent 与 message 偏后。
  */
 
-const VERIFY_CMD = /(npm test|vitest|jest|pytest|cargo test|go test|tsc|eslint)/;
+// `npm run test` / `pnpm test` / `yarn test:unit` 是最常见的跑测方式，
+// 只匹配字面量 `npm test` 会把绝大多数验证行为漏判成 implement。
+const VERIFY_CMD =
+  /((npm|pnpm|yarn|bun)( run)? (test|typecheck|lint)|vitest|jest|pytest|cargo test|go test|tsc|eslint|playwright test)/;
 const REPORT_CMD = /(^|\s)(git commit|git push|gh pr|git pr|gh issue)/;
 const UNDERSTAND_CMD = /(^|\s)(cat|ls|find|grep|rg|head|tail|less|more|jq|stat)/;
 const IMPLEMENT_CMD = /(^|\s)(rm|cp|mv|mkdir|touch|git add|sed|awk|echo)/;
@@ -34,6 +37,25 @@ export function classifyBashCommand(cmd: string): BashCommandClass {
   }
   return 'other';
 }
+
+/**
+ * 执行 shell 的工具：真正决定阶段的是**命令内容**，不是工具名。
+ *
+ * 实测数据里 `npm test` 一律通过 Claude 的 `Bash` 或 Codex 的 `exec_command`
+ * 发出，命令本身在 inputSummary 里。此前只按工具名查表，这些全部落到
+ * 'implement'，导致全库 33,046 个事件里 verify 阶段 **一个都没有**，
+ * 「准 / 验证覆盖 / 调试率」三个指标恒为 0。
+ */
+const SHELL_TOOLS = new Set([
+  'bash',
+  'shell',
+  'exec_command',
+  'execute_command',
+  'run_command',
+  'run_terminal_cmd',
+  'terminal',
+  'local_shell',
+]);
 
 /** REQ-002：ACTION_PHASE 查找表（约 30 个 action 名）。 */
 const ACTION_PHASE: Record<string, TracePhase> = {
@@ -64,6 +86,11 @@ const ACTION_PHASE: Record<string, TracePhase> = {
   mcp__: 'implement',
   todowrite: 'plan',
   todo_write: 'plan',
+  update_plan: 'plan',
+  taskcreate: 'plan',
+  taskupdate: 'plan',
+  tasklist: 'plan',
+  exitplanmode: 'plan',
   plan: 'plan',
   reasoning: 'plan',
   think: 'plan',
@@ -113,6 +140,13 @@ function explicitPhaseOf(event: TraceEvent): TracePhase | null {
       return 'implement';
     case 'tool': {
       const action = (event.tool ?? event.title ?? '').toLowerCase();
+      // 跑 shell 的工具按命令内容判定（npm test → verify、git commit → report…），
+      // 只看工具名会把所有命令都判成 implement。
+      if (SHELL_TOOLS.has(action)) {
+        const cmd = event.inputSummary ?? event.title;
+        const cls = classifyBashCommand(cmd);
+        return cls === 'other' ? 'implement' : cls;
+      }
       for (const [name, phase] of Object.entries(ACTION_PHASE)) {
         if (action.startsWith(name)) {
           return phase;

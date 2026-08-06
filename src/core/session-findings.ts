@@ -49,6 +49,13 @@ export function fmtDur(ms: number): string {
     return '0s';
   }
   const seconds = ms / 1000;
+  // 指挥中心的 E2E 分位数动辄上千万毫秒（实测 e2eP99 ≈ 34 小时），
+  // 只分到分钟会得到 "2071m"，同样要用户心算。
+  if (seconds >= 3600) {
+    const hours = Math.floor(seconds / 3600);
+    const restMinutes = Math.round((seconds % 3600) / 60);
+    return restMinutes > 0 ? `${hours}h${restMinutes}m` : `${hours}h`;
+  }
   if (seconds >= 60) {
     const minutes = Math.floor(seconds / 60);
     const rest = Math.round(seconds % 60);

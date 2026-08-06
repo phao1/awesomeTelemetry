@@ -116,7 +116,10 @@
 }
 
 .compare-picker-title {
-  max-width: var(--space-10);
+  /* 曾误用间距 token（--space-10 = 40px）当宽度，标题被截成 4 个字、
+     多条会话渲染后完全同形。flex 子项应靠 min-width:0 收缩，而不是设固定上限。 */
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -147,7 +150,7 @@
 .compare-conclusion-left {
   color: var(--accent-fg);
   font-weight: var(--weight-medium);
-  max-width: var(--space-10);
+  max-width: 32ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -156,7 +159,7 @@
 .compare-conclusion-right {
   color: var(--attention-fg);
   font-weight: var(--weight-medium);
-  max-width: var(--space-10);
+  max-width: 32ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1219,7 +1222,7 @@
 }
 
 .sparkline-tip-title {
-  max-width: var(--space-10);
+  max-width: 28ch;
   overflow: hidden;
   text-overflow: ellipsis;
 }

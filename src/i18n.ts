@@ -43,6 +43,32 @@ export const ZH = {
   'mission.widget.dualChannel': '双通道覆盖',
   'mission.widget.calendar': '任务日历',
   'mission.widget.hotSessions': '热会话',
+  'mission.summary.toolTop': '调用次数最多的 10 个工具，以及各自的失败次数。',
+  'mission.summary.skillTop': '被调用过的 Skill 与 slash 命令，按次数排序。',
+  'mission.summary.subagent': '子 Agent 的使用情况，以及平均每个会话派生多少个。',
+  'mission.summary.heatmap': '一周 7×24 小时的会话分布，看你通常在什么时段干活。',
+  'mission.summary.promptHabits': '你的提问长度分布，以及催促、否定类措辞的出现频率。',
+  'mission.summary.activity': '每小时的活跃会话数与消息量。',
+  'mission.summary.closure': '会话的成功率与端到端耗时分布，以及触发返工的会话数。',
+  'mission.summary.costEfficiency': '每轮对话、每次成功工具调用、每个会话各花了多少钱。',
+  'mission.summary.toolFailure': '各工具的失败率排行，分母是该工具的总调用次数。',
+  'mission.summary.tokenTrend': '每天的 token 用量，按输入 / 输出 / 缓存读 / 缓存写拆分。',
+  'mission.summary.apiQuality': '缓存命中率与首字延迟；API 调用量仅统计代理抓包通道。',
+  'mission.summary.errorReasons': '失败原因归类：网络 / 超时 / 权限 / 命令 / 解析 / 找不到 / 其它。',
+  'mission.summary.riskyCommands': '执行过的高风险命令统计，预览已脱敏并限长。',
+  'mission.summary.drift': '成功率、耗时、工具失败率、每轮成本的逐日走势。',
+  'mission.summary.contextPressure': '上下文占用相对模型窗口的比例，以及疑似压缩的次数。',
+  'mission.summary.models': '各模型的调用次数、token 与成本；未收录价格的模型显示 —。',
+  'mission.summary.depth': '单个会话的工具调用次数分布。',
+  'mission.summary.parallelism': '事件耗时之和与实际墙钟时长的比值，大于 1.2 视为存在并行。',
+  'mission.summary.toolEcology': '各工具的耗时分布与输入输出体量。',
+  'mission.summary.scenes': '会话按首条提问自动归类到的使用场景。',
+  'mission.summary.heavyScenes': 'token 消耗超过阈值的重量级场景。',
+  'mission.summary.collectors': '各数据采集通道的健康状况与最近扫描时间。',
+  'mission.summary.dualChannel': '本地扫描与代理抓包两条通道各自覆盖到的会话数。',
+  'mission.summary.calendar': '按日历看每天的会话数，当天有失败会标红。',
+  'mission.summary.hotSessions': '花费最高的 10 个会话，点击可下钻。',
+  'mission.criteriaLabel': '计算口径',
   'mission.criteria.toolTop': "events.tool 按调用数聚合 TOP 10；errors = status='error' 计数，全部失败标红；覆盖当前 dataSource 与 range 内会话",
   'mission.criteria.skillTop': "events.tool IN ('Skill','SlashCommand') 的调用计数 + input_summary 取 skill 名；砍掉 loaded 分支（REQ-006 数据边界）与「近 7 天新见」标记",
   'mission.criteria.subagent': "events.kind='agent' 按 extractSubagentType(input_summary) 聚合（启发式提取，未逐厂商核验）；avg subagent/session 覆盖 range 内全部会话",
@@ -84,12 +110,25 @@ export const ZH = {
   'common.confirm': '确认',
   'common.cancel': '取消',
   'state.loading': '加载中…',
+  'a11y.close': '关闭',
+  'a11y.clearSearch': '清空搜索',
+  'a11y.expandRow': '展开这一行',
+  'a11y.dismiss': '关闭提示',
+  'a11y.loading': '加载中',
+  'a11y.popover': '浮层',
+  'a11y.prevEvent': '上一个事件',
+  'a11y.nextEvent': '下一个事件',
+  'a11y.collapsePanel': '折叠面板',
+  'a11y.sparkline': '{label} 趋势迷你图',
+  'a11y.phaseDurationChart': '左右两个会话的各阶段耗时对比',
   'state.empty': '暂无数据',
   'state.error': '加载失败',
   'state.offlineSamples': '当前为离线样本数据',
   'state.noEvents': '该会话未解析出事件',
   'state.retry': '重试',
   'state.selectTwo': '选择两个会话开始对比',
+  'proxy.waitingTraffic': '代理已在运行，等待流量',
+  'proxy.waitingHint': '把浏览器或客户端的代理指向上面的端口，请求会实时出现在这里。',
   'state.proxyNotRunning': '代理未运行',
   'time.justNow': '刚刚',
   'time.minutesAgo': '{n} 分钟前',
@@ -110,7 +149,10 @@ export const ZH = {
   'session.mergeNoGroup': '未找到该合并组配置',
   'session.loadMore': '加载更多',
   'session.selectPrompt': '从左侧选择一个会话',
+  'session.selectHint': '选中后可以逐条查看完整调用时间线，以及每个事件的输入 / 输出。',
   'session.findings': '诊断',
+  'session.visuals': '会话画像（热力图 · 能力雷达）',
+  'inspector.selectPrompt': '在时间线上选择一个事件，查看它的输入 / 输出 / 原始报文',
   'session.provider': 'Provider',
   'session.date': '时间',
   'session.title': '标题',
@@ -478,6 +520,8 @@ export const ZH = {
   'compare.left': '左侧',
   'compare.right': '右侧',
   'compare.pickLeft': '选择左侧会话',
+  'compare.pickRight': '选择右侧会话',
+  'compare.selectHint': '选好两侧后点「加载对比」，会逐维度给出速度 / 准确 / 稳定 / 成本的差异。',
   'compare.pickerMore': '还有 {n} 个会话，输入关键词过滤',
   'compare.load': '加载对比',
   'compare.speed': '速度',
@@ -567,6 +611,32 @@ export const EN: Record<I18nKey, string> = {
   'mission.widget.dualChannel': 'Dual-channel coverage',
   'mission.widget.calendar': 'Task calendar',
   'mission.widget.hotSessions': 'Hot sessions',
+  'mission.summary.toolTop': 'The 10 most-called tools and how often each failed.',
+  'mission.summary.skillTop': 'Skills and slash commands you have used, ranked by call count.',
+  'mission.summary.subagent': 'Sub-agent usage, and how many each session spawns on average.',
+  'mission.summary.heatmap': 'Sessions across a 7×24 week — when you actually work.',
+  'mission.summary.promptHabits': 'How long your prompts are, and how often you nudge or push back.',
+  'mission.summary.activity': 'Active sessions and message volume, by hour.',
+  'mission.summary.closure': 'Session success rate, end-to-end duration, and how many needed rework.',
+  'mission.summary.costEfficiency': 'What you spend per turn, per successful tool call, and per session.',
+  'mission.summary.toolFailure': 'Failure rate per tool, out of that tool’s total calls.',
+  'mission.summary.tokenTrend': 'Daily token usage, split by input / output / cache read / cache write.',
+  'mission.summary.apiQuality': 'Cache hit rate and time to first token; call volume covers the proxy channel only.',
+  'mission.summary.errorReasons': 'Failures grouped into network / timeout / permission / shell / parse / not-found / other.',
+  'mission.summary.riskyCommands': 'Risky commands that were run; previews are redacted and truncated.',
+  'mission.summary.drift': 'Day-by-day trend of success rate, duration, tool failures, and cost per turn.',
+  'mission.summary.contextPressure': 'Context used against the model’s window, plus likely compaction events.',
+  'mission.summary.models': 'Calls, tokens and cost per model; models without a published price show —.',
+  'mission.summary.depth': 'Distribution of tool calls per session.',
+  'mission.summary.parallelism': 'Summed event time over wall-clock time; above 1.2 means work ran in parallel.',
+  'mission.summary.toolEcology': 'Duration spread and payload sizes per tool.',
+  'mission.summary.scenes': 'Sessions auto-grouped by what the first prompt was asking for.',
+  'mission.summary.heavyScenes': 'Scenes whose token usage crosses the heavy-usage threshold.',
+  'mission.summary.collectors': 'Health of each collection channel and when it last scanned.',
+  'mission.summary.dualChannel': 'How many sessions each channel — local scan and proxy capture — covers.',
+  'mission.summary.calendar': 'Sessions per day on a calendar; days with failures are flagged red.',
+  'mission.summary.hotSessions': 'The 10 most expensive sessions; click to drill in.',
+  'mission.criteriaLabel': 'How this is calculated',
   'mission.criteria.toolTop': "events.tool aggregated by call count TOP 10; errors = status='error' count, all-failed rows flagged; covers current dataSource and range sessions",
   'mission.criteria.skillTop': "events.tool IN ('Skill','SlashCommand') call counts + skill name from input_summary; loaded branch and 'new in 7 days' markers removed (REQ-006 data boundary)",
   'mission.criteria.subagent': "events.kind='agent' aggregated by extractSubagentType(input_summary) (heuristic, not verified per vendor); avg subagent/session covers all range sessions",
@@ -608,12 +678,25 @@ export const EN: Record<I18nKey, string> = {
   'common.confirm': 'Confirm',
   'common.cancel': 'Cancel',
   'state.loading': 'Loading…',
+  'a11y.close': 'Close',
+  'a11y.clearSearch': 'Clear search',
+  'a11y.expandRow': 'Expand this row',
+  'a11y.dismiss': 'Dismiss',
+  'a11y.loading': 'Loading',
+  'a11y.popover': 'Popover',
+  'a11y.prevEvent': 'Previous event',
+  'a11y.nextEvent': 'Next event',
+  'a11y.collapsePanel': 'Collapse panel',
+  'a11y.sparkline': '{label} trend sparkline',
+  'a11y.phaseDurationChart': 'Phase duration comparison between the two sessions',
   'state.empty': 'No data',
   'state.error': 'Failed to load',
   'state.offlineSamples': 'Showing offline sample data',
   'state.noEvents': 'No events parsed for this session',
   'state.retry': 'Retry',
   'state.selectTwo': 'Select two sessions to compare',
+  'proxy.waitingTraffic': 'Proxy is running, waiting for traffic',
+  'proxy.waitingHint': 'Point your browser or client at the port above and requests will show up here live.',
   'state.proxyNotRunning': 'Proxy is not running',
   'time.justNow': 'just now',
   'time.minutesAgo': '{n}m ago',
@@ -634,7 +717,10 @@ export const EN: Record<I18nKey, string> = {
   'session.mergeNoGroup': 'merge group config not found',
   'session.loadMore': 'Load more',
   'session.selectPrompt': 'Select a session on the left',
+  'session.selectHint': 'You’ll get the full call timeline, plus the input and output of every event.',
   'session.findings': 'Findings',
+  'session.visuals': 'Session profile (heatmap · capability radar)',
+  'inspector.selectPrompt': 'Pick an event on the timeline to see its input, output and raw payload',
   'session.provider': 'Provider',
   'session.date': 'Date',
   'session.title': 'Title',
@@ -1002,6 +1088,8 @@ export const EN: Record<I18nKey, string> = {
   'compare.left': 'Left',
   'compare.right': 'Right',
   'compare.pickLeft': 'Pick left session',
+  'compare.pickRight': 'Pick right session',
+  'compare.selectHint': 'Pick both sides, then hit Compare to see speed, accuracy, stability and cost side by side.',
   'compare.pickerMore': '{n} more sessions, type to filter',
   'compare.load': 'Load compare',
   'compare.speed': 'Speed',
@@ -1045,12 +1133,22 @@ export const EN: Record<I18nKey, string> = {
   'err.PROXY_REQUEST_NOT_FOUND': 'Proxy request not found',
 };
 
-export const LOCALE_STORAGE_KEY = 'agent-observability.locale';
+export const LOCALE_STORAGE_KEY = 'awesome-telemetry.locale';
+/** B6 改名前的旧键，读不到新键时回退并回写（同 theme / layout）。 */
+const LEGACY_LOCALE_STORAGE_KEY = 'agent-observability.locale';
 export type Locale = 'zh' | 'en';
 
 export function getStoredLocale(): Locale {
   try {
-    const raw = localStorage.getItem(LOCALE_STORAGE_KEY);
+    let raw = localStorage.getItem(LOCALE_STORAGE_KEY);
+    if (raw === null) {
+      const legacy = localStorage.getItem(LEGACY_LOCALE_STORAGE_KEY);
+      if (legacy !== null) {
+        localStorage.setItem(LOCALE_STORAGE_KEY, legacy);
+        localStorage.removeItem(LEGACY_LOCALE_STORAGE_KEY);
+        raw = legacy;
+      }
+    }
     return raw === 'en' ? 'en' : 'zh';
   } catch {
     return 'zh';
@@ -1068,6 +1166,30 @@ export function storeLocale(locale: Locale): void {
 
 export function t(key: I18nKey, locale: Locale): string {
   return locale === 'zh' ? ZH[key] : EN[key];
+}
+
+/**
+ * ui/* 基础组件（Modal / Table / Popover…）不接收 locale prop，
+ * 早期它们的 aria-label 直接写死英文（"close" / "expand" / "popover"），
+ * 中文界面下读屏用户听到的全是英文。这里保存一份当前语言，
+ * 供这些无 locale 上下文的地方取用；App 在语言切换时调用 setActiveLocale。
+ */
+let activeLocale: Locale = 'zh';
+
+export function setActiveLocale(locale: Locale): void {
+  activeLocale = locale;
+}
+
+/** 无 locale 上下文时的翻译入口，`{var}` 占位按 vars 替换。 */
+export function ta(key: I18nKey, vars?: Record<string, string>): string {
+  const text = t(key, activeLocale);
+  if (vars === undefined) {
+    return text;
+  }
+  return Object.entries(vars).reduce(
+    (acc, [name, value]) => acc.replaceAll(`{${name}}`, value),
+    text,
+  );
 }
 
 /** REQ-010：错误码 → 人类可读文案。 */

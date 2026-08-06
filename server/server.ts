@@ -103,6 +103,9 @@ export interface HealthResponse {
   uptimeMs: number;
   dbSizeBytes: number;
   walSizeBytes: number;
+  /** 全库会话 / 事件总数。状态栏是系统级读数，不能拿当前筛选结果冒充。 */
+  sessionCount: number;
+  eventCount: number;
   devOnly: readonly string[];
 }
 
@@ -282,13 +285,27 @@ export function createAgentObservabilityServer(
     key: string,
     mode: 'slim' | 'full',
   ): Promise<SessionDetailResponse | null> => {
-    const meta = cachedStmt(db, 'SELECT detail_loaded, provider FROM sessions WHERE id = ?').get(key) as
-      | { detail_loaded: number; provider: ProviderKey }
+    const meta = cachedStmt(
+      db,
+      'SELECT detail_loaded, provider, source_path FROM sessions WHERE id = ?',
+    ).get(key) as
+      | { detail_loaded: number; provider: ProviderKey; source_path: string }
       | undefined;
     if (meta === undefined) {
       return null;
     }
     if (meta.detail_loaded === 0 && meta.provider !== 'trae') {
+      // 源文件可能已被删除（用户清理了 agent 的历史目录），而库里的行还在。
+      // DB 是持久层，重扫只是刷新：此时不该 500，能拿多少给多少。
+      if (meta.source_path !== '' && !existsSync(meta.source_path)) {
+        const stored = getSessionDetail(db, key, { mode });
+        if (stored !== null && stored.events.length > 0) {
+          return stored;
+        }
+        // 源文件没了、库里也没有事件 —— 这是一条死行，回收掉并按「不存在」处理。
+        deleteSession(db, key);
+        return null;
+      }
       await scanAndStoreDetail(db, key, { config, notify: notifyMerged });
     }
     let detail = getSessionDetail(db, key, { mode });
@@ -312,12 +329,20 @@ export function createAgentObservabilityServer(
     const dbSizeBytes = dbPath !== '' && existsSync(dbPath) ? statSync(dbPath).size : 0;
     const walSizeBytes =
       dbPath !== '' && existsSync(`${dbPath}-wal`) ? statSync(`${dbPath}-wal`).size : 0;
+    const counts = db
+      .prepare(
+        'SELECT (SELECT COUNT(*) FROM sessions) AS sessions, ' +
+          '(SELECT COUNT(*) FROM events) AS events',
+      )
+      .get() as { sessions: number; events: number };
     const body: HealthResponse = {
       ok: true,
       schemaVersion: SCHEMA_VERSION,
       uptimeMs: Date.now() - startedAt,
       dbSizeBytes,
       walSizeBytes,
+      sessionCount: counts.sessions,
+      eventCount: counts.events,
       devOnly: DEV_ONLY_ROUTES,
     };
     sendJson(res, 200, body, _req);
@@ -387,12 +412,17 @@ export function createAgentObservabilityServer(
       return;
     }
 
-    const meta = cachedStmt(db, 'SELECT detail_loaded FROM sessions WHERE id = ?').get(key) as
-      | { detail_loaded: number }
-      | undefined;
+    const meta = cachedStmt(
+      db,
+      'SELECT detail_loaded, source_path FROM sessions WHERE id = ?',
+    ).get(key) as { detail_loaded: number; source_path: string } | undefined;
     if (meta === undefined) {
       throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
     }
+    // 源文件已被删除（用户清理了 agent 历史目录）时不要再去解析它：
+    // DB 才是持久层，重扫只是刷新。此前这里直接 500（SESSION_PARSE_FAILED），
+    // 哪怕库里已经存着几百条事件。
+    const sourceGone = meta.source_path !== '' && !existsSync(meta.source_path);
 
     const offset = intParam(query.get('offset'), 0, Number.MAX_SAFE_INTEGER);
     const limit = intParam(query.get('limit'), 2000, 5000);
@@ -421,6 +451,9 @@ export function createAgentObservabilityServer(
         sendJson(res, 200, { ...detail, pending: true }, req);
         return;
       }
+    }
+    // 只跳过「注定失败的那次解析」，其余流程（含 Trae pending 契约）照常。
+    if (meta.detail_loaded === 0 && !sourceGone) {
       await scanAndStoreDetail(db, key, {
         config,
         notify: notifyMerged,

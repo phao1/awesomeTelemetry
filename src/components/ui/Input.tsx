@@ -1,3 +1,4 @@
+import { ta } from '../../i18n.js';
 import { useState, type InputHTMLAttributes, type RefObject, type SelectHTMLAttributes } from 'react';
 
 import { IconClose, IconSearch } from '../icons/index.js';
@@ -107,7 +108,7 @@ export function SearchInput({
           <button
             type="button"
             className="ui-icon-btn ui-btn-sm"
-            aria-label="clear search"
+            aria-label={ta('a11y.clearSearch')}
             onClick={() => {
               commit('');
               inputRef?.current?.focus();

@@ -16,7 +16,11 @@ const STEP_KINDS_SQL =
 const SESSION_AGG_SQL =
   `SELECT provider, source_agent, COUNT(*) AS session_count, SUM(event_count) AS event_count, ` +
   `SUM(token_input) AS token_input, SUM(token_output) AS token_output, SUM(token_total) AS token_total, ` +
-  `SUM(cost_usd) AS cost_usd, AVG(total_duration_ms) AS avg_wall_clock_ms, ` +
+  `SUM(cost_usd) AS cost_usd, ` +
+  // 未收录价格的模型 costSource='unknown'，其成本恒为 0；
+  // 若一个 provider 全部会话都未定价，UI 必须显示 — 而不是 $0.000
+  `SUM(CASE WHEN cost_source <> 'unknown' THEN 1 ELSE 0 END) AS priced_session_count, ` +
+  `AVG(total_duration_ms) AS avg_wall_clock_ms, ` +
   `MAX(updated_at) AS latest_updated_at ` +
   `FROM sessions WHERE data_source = ? GROUP BY provider, source_agent`;
 
@@ -135,6 +139,7 @@ export function getAgentOverview(db: Database, dataSource: DataSource): AgentOve
       tokenInput: row.token_input as number,
       tokenOutput: row.token_output as number,
       tokenTotal: row.token_total as number,
+      pricedSessionCount: row.priced_session_count as number,
       costUsd: row.cost_usd as number,
       avgWallClockMs: row.avg_wall_clock_ms as number,
       latestUpdatedAt: row.latest_updated_at as string,

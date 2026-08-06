@@ -453,6 +453,8 @@ export interface AgentOverviewRow {
   tokenOutput: number;
   tokenTotal: number;
   costUsd: number;
+  /** 其中有多少个会话的模型能查到价格。为 0 表示成本不可知，UI 显示 — 而非 $0。 */
+  pricedSessionCount: number;
   avgWallClockMs: number;
   latestUpdatedAt: string;
   avgToolDurationMs: number | null;

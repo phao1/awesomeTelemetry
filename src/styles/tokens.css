@@ -97,28 +97,32 @@
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
     "Liberation Mono", "Courier New", monospace;
 
-  /* §3.1 字号刻度（size / line-height） */
-  --text-xs: 11px;
-  --leading-xs: 16px;
-  --text-sm: 12px;
-  --leading-sm: 18px;
-  --text-base: 13px;
-  --leading-base: 20px;
-  --text-md: 14px;
-  --leading-md: 21px;
-  --text-lg: 16px;
-  --leading-lg: 24px;
-  --text-xl: 20px;
-  --leading-xl: 28px;
-  --text-2xl: 24px;
-  --leading-2xl: 32px;
+  /* §3.1 字号刻度（size / line-height）
+     全刻度乘 --ui-scale：头部 A− / A+ 从此对整个界面生效，
+     而不是只改事件详情面板一处。
+     原 --text-xs 为 11px，低于正文可读下限，已并入 12px。 */
+  --ui-scale: 1;
+  --text-xs: calc(12px * var(--ui-scale));
+  --leading-xs: calc(16px * var(--ui-scale));
+  --text-sm: calc(12px * var(--ui-scale));
+  --leading-sm: calc(18px * var(--ui-scale));
+  --text-base: calc(13px * var(--ui-scale));
+  --leading-base: calc(20px * var(--ui-scale));
+  --text-md: calc(14px * var(--ui-scale));
+  --leading-md: calc(21px * var(--ui-scale));
+  --text-lg: calc(16px * var(--ui-scale));
+  --leading-lg: calc(24px * var(--ui-scale));
+  --text-xl: calc(20px * var(--ui-scale));
+  --leading-xl: calc(28px * var(--ui-scale));
+  --text-2xl: calc(24px * var(--ui-scale));
+  --leading-2xl: calc(32px * var(--ui-scale));
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
 
   /* §3.2 用户字号调整（仅长文本区，8–28px） */
-  --user-font-size: 13px;
-  --user-line-height: 20px;
+  --user-font-size: calc(13px * var(--ui-scale));
+  --user-line-height: calc(20px * var(--ui-scale));
 
   /* §4.1 间距（4px 基准） */
   --space-1: 4px;
@@ -186,6 +190,7 @@
   --dot-size: 8px;
   --drag-handle-width: 4px;
   --gantt-group-border: 2px;
+  --gantt-min-height: 360px;
   --gantt-max-height: 720px;
   --mark-radius: 2px;
   --diff-min-width: 80px;
@@ -285,27 +290,28 @@
     "Liberation Mono", "Courier New", monospace;
 
   /* §3.1 */
-  --text-xs: 11px;
-  --leading-xs: 16px;
-  --text-sm: 12px;
-  --leading-sm: 18px;
-  --text-base: 13px;
-  --leading-base: 20px;
-  --text-md: 14px;
-  --leading-md: 21px;
-  --text-lg: 16px;
-  --leading-lg: 24px;
-  --text-xl: 20px;
-  --leading-xl: 28px;
-  --text-2xl: 24px;
-  --leading-2xl: 32px;
+  --ui-scale: 1;
+  --text-xs: calc(12px * var(--ui-scale));
+  --leading-xs: calc(16px * var(--ui-scale));
+  --text-sm: calc(12px * var(--ui-scale));
+  --leading-sm: calc(18px * var(--ui-scale));
+  --text-base: calc(13px * var(--ui-scale));
+  --leading-base: calc(20px * var(--ui-scale));
+  --text-md: calc(14px * var(--ui-scale));
+  --leading-md: calc(21px * var(--ui-scale));
+  --text-lg: calc(16px * var(--ui-scale));
+  --leading-lg: calc(24px * var(--ui-scale));
+  --text-xl: calc(20px * var(--ui-scale));
+  --leading-xl: calc(28px * var(--ui-scale));
+  --text-2xl: calc(24px * var(--ui-scale));
+  --leading-2xl: calc(32px * var(--ui-scale));
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
 
   /* §3.2 */
-  --user-font-size: 13px;
-  --user-line-height: 20px;
+  --user-font-size: calc(13px * var(--ui-scale));
+  --user-line-height: calc(20px * var(--ui-scale));
 
   /* §4.1 */
   --space-1: 4px;
@@ -373,6 +379,7 @@
   --dot-size: 8px;
   --drag-handle-width: 4px;
   --gantt-group-border: 2px;
+  --gantt-min-height: 360px;
   --gantt-max-height: 720px;
   --mark-radius: 2px;
   --diff-min-width: 80px;

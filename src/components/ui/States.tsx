@@ -1,3 +1,4 @@
+import { ta } from '../../i18n.js';
 import { useEffect, type ReactNode } from 'react';
 
 import { IconClose } from '../icons/index.js';
@@ -14,7 +15,7 @@ export function Skeleton({ variant = 'text', count = 1 }: SkeletonProps): React.
     <div
       role="status"
       aria-live="polite"
-      aria-label="loading"
+      aria-label={ta('a11y.loading')}
       style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}
     >
       {Array.from({ length: count }, (_, index) => (
@@ -94,7 +95,7 @@ export function Toast({
         <div style={{ fontWeight: 'var(--weight-medium)' }}>{title}</div>
         {message !== undefined && <div style={{ color: 'var(--fg-muted)' }}>{message}</div>}
       </div>
-      <button type="button" className="ui-icon-btn ui-btn-sm" aria-label="dismiss" onClick={onDismiss}>
+      <button type="button" className="ui-icon-btn ui-btn-sm" aria-label={ta('a11y.dismiss')} onClick={onDismiss}>
         <IconClose size={12} />
       </button>
     </div>

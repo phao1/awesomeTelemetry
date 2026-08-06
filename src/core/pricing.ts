@@ -112,3 +112,20 @@ export function computeCostUsd(
     tokens.cacheWrite * price.cacheWrite;
   return { costUsd: perMillion / 1_000_000, costSource: 'estimated' };
 }
+
+/**
+ * 成本展示的唯一入口。
+ *
+ * 未收录价格的模型走 costSource='unknown'，其 costUsd 恒为 0 ——
+ * 直接渲染成 `$0.0000` 会让用户以为「这次真的没花钱」。
+ * 不可知就显示 `—`，这也是本文件顶部注释里「宁可留空也不编价格」的下半句。
+ */
+export function formatCostUsd(
+  costUsd: number,
+  costSource: CostSource | null | undefined,
+  digits = 4,
+): string {
+  return costSource === 'unknown' || costSource === null || costSource === undefined
+    ? '—'
+    : `$${costUsd.toFixed(digits)}`;
+}

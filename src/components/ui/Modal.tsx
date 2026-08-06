@@ -1,3 +1,4 @@
+import { ta } from '../../i18n.js';
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import { IconClose } from '../icons/index.js';
@@ -45,7 +46,7 @@ export function Modal({
           <button
             type="button"
             className="ui-icon-btn"
-            aria-label="close"
+            aria-label={ta('a11y.close')}
             onClick={onClose}
           >
             <IconClose size={16} />
@@ -95,7 +96,7 @@ export function Drawer({ title, onClose, children, open, footer, className }: Dr
       >
         <div className="ui-drawer-header">
           <h2 style={{ margin: 0, fontSize: 'var(--text-lg)' }}>{title}</h2>
-          <button type="button" className="ui-icon-btn" aria-label="close" onClick={onClose}>
+          <button type="button" className="ui-icon-btn" aria-label={ta('a11y.close')} onClick={onClose}>
             <IconClose size={16} />
           </button>
         </div>

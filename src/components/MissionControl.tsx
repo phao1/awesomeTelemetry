@@ -1,3 +1,4 @@
+import { fmtDur } from '../core/session-findings.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -258,9 +259,9 @@ function WidgetData({
             success: fmtPct(c.successRate),
             ok: c.ok,
             err: c.err,
-            e2eP50: c.e2eP50Ms === null ? '—' : `${fmtNum(c.e2eP50Ms)}ms`,
-            e2eP90: c.e2eP90Ms === null ? '—' : `${fmtNum(c.e2eP90Ms)}ms`,
-            e2eP99: c.e2eP99Ms === null ? '—' : `${fmtNum(c.e2eP99Ms)}ms`,
+            e2eP50: c.e2eP50Ms === null ? '—' : fmtDur(c.e2eP50Ms),
+            e2eP90: c.e2eP90Ms === null ? '—' : fmtDur(c.e2eP90Ms),
+            e2eP99: c.e2eP99Ms === null ? '—' : fmtDur(c.e2eP99Ms),
             turnsP50: c.turnsP50,
             repair: c.repairSessions,
           }}
@@ -288,8 +289,8 @@ function WidgetData({
         <KeyValueTable
           data={{
             cacheHit: fmtPct(a.cacheHitRate),
-            ttftP50: a.ttftP50Ms === null ? '—' : `${fmtNum(a.ttftP50Ms)}ms`,
-            ttftP95: a.ttftP95Ms === null ? '—' : `${fmtNum(a.ttftP95Ms)}ms`,
+            ttftP50: a.ttftP50Ms === null ? '—' : fmtDur(a.ttftP50Ms),
+            ttftP95: a.ttftP95Ms === null ? '—' : fmtDur(a.ttftP95Ms),
             proxyCalls: a.proxyCalls,
             proxyErr: fmtPct(a.proxyErrorRate),
           }}
@@ -449,10 +450,19 @@ function WidgetPanel({
   const criteriaKey = `mission.criteria.${id}` as I18nKey;
   const criteriaText =
     criteriaKey in ZH ? t(criteriaKey, locale) : widget.criteria;
+  // 口径原文是给实现者看的（含 SQL 片段、内部代号、规格编号），此前直接当正文渲染。
+  // 正文改用一句人话，完整口径收进「计算口径」折叠层，两边信息都不丢。
+  const summaryKey = `mission.summary.${id}` as I18nKey;
   return (
     <section className="mission-widget" id={`widget-${id}`}>
       <h3 className="mission-widget-title">{titleKey in ZH ? t(titleKey, locale) : id}</h3>
-      <div className="mission-criteria">{criteriaText}</div>
+      {summaryKey in ZH && <p className="mission-summary">{t(summaryKey, locale)}</p>}
+      {criteriaText !== '' && (
+        <details className="mission-criteria-disclosure">
+          <summary>{t('mission.criteriaLabel', locale)}</summary>
+          <div className="mission-criteria">{criteriaText}</div>
+        </details>
+      )}
       {widget.available && widget.data !== null ? (
         <div className="mission-widget-body">
           <WidgetData id={id} data={widget.data} locale={locale} onOpenSession={onOpenSession} />

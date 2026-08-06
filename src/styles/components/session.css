@@ -287,7 +287,7 @@
 }
 
 .session-cwd {
-  max-width: var(--space-10);
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -547,13 +547,45 @@ button.finding-row:hover {
   scroll-margin-top: var(--row-md);
 }
 
+.session-scroll .session-canvas {
+  /* 画布在滚动容器里按内容撑开，不再去抢「剩下的高度」 */
+  flex: none;
+}
+
 .session-scroll .gantt-wrap {
   flex: none;
+  /* 下限保证时间线永远是可读的主体；上限避免长会话把画像层顶出视野 */
+  min-height: var(--gantt-min-height);
   max-height: min(60vh, var(--gantt-max-height));
 }
 
 .session-scroll .gantt {
   min-height: var(--compare-timeline-height);
+}
+
+/* 会话画像（热力图 + 能力雷达）：默认折叠的次要层 */
+.session-visuals-panel {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-subtle);
+}
+
+.session-visuals-panel summary {
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--fg-default);
+  user-select: none;
+}
+
+.session-visuals-panel summary:hover {
+  color: var(--accent-fg);
+}
+
+.session-visuals-panel[open] summary {
+  border-bottom: 1px solid var(--border-default);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -7,6 +7,7 @@ import {
   minMaxIso,
   normalizeStatus,
   orderEventsByTime,
+  rollupSessionStatus,
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
@@ -140,7 +141,7 @@ export function normalizeWorkBuddySample(
     title: sample.session.title ?? extractUserQuery(messages.map((m) => m.content ?? '').join('\n')) ?? '',
     startedAt: times.startedAt,
     updatedAt: times.updatedAt,
-    status: classified.at(-1)?.status ?? 'unknown',
+    status: rollupSessionStatus(classified),
     cwd: null,
     messageCount: messages.length,
     eventCount: classified.length,

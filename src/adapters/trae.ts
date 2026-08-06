@@ -8,6 +8,7 @@ import {
   minMaxIso,
   normalizeStatus,
   orderEventsByTime,
+  rollupSessionStatus,
   titleFromText,
   toIsoFromSeconds,
   wallClockDurationMs,
@@ -312,11 +313,13 @@ export function normalizeTraeSample(
   const session: TraceSession = {
     id: record.id ?? `trae-${sourcePath}`,
     provider: 'trae',
+    // B8：Trae 的 source_agent 有意带上 chat_session.agent_type（子代理名），
+    // 因此 Agent 概览里同一 provider 出现多行是预期行为，不是重复。
     sourceAgent: record.agentName ?? 'Trae',
     title: sessionTitle,
     startedAt,
     updatedAt: nativeUpdatedAt ?? times.updatedAt,
-    status: deduped.at(-1)?.status ?? 'unknown',
+    status: rollupSessionStatus(deduped),
     cwd: null,
     messageCount: turns.length,
     eventCount: deduped.length,

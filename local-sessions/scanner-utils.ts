@@ -10,6 +10,7 @@ import type {
   SourceKind,
   TraceRecord,
 } from '../src/core/trace-types.js';
+import { computeMetrics } from '../src/core/metrics.js';
 import { cachedStmt } from '../server/storage/stmt-cache.js';
 import {
   deleteSession,
@@ -160,9 +161,10 @@ export function storeTraceRecord(
       cachedStmt(db, UPSERT_EVENT_RAW_SQL).run(key, event.id, raw);
     }
   }
-  if (record.metrics !== undefined) {
-    upsertMetrics(db, key, record.metrics);
-  }
+  // 没有任何 adapter 会填 record.metrics，早期实现在这里静默跳过写入，
+  // 导致 metrics 表恒为空、验证覆盖 / 错误率 / repair_loop 全站取不到值。
+  // computeMetrics 是纯函数，落库前按已归一化的 record 现算。
+  upsertMetrics(db, key, record.metrics ?? computeMetrics(record));
   cachedStmt(db, SET_DETAIL_LOADED_SQL).run(key);
   notify?.(key);
   return key;
@@ -239,6 +241,18 @@ export function cleanupDuplicateSessionRows(db: Database): number {
   const orphanIds = new Set<string>();
   for (const row of rows) {
     const provider = row.provider as ProviderKey;
+    // 源文件已被删除（用户清理了 agent 的历史目录）：库里若还留着没有事件的空壳行，
+    // 它在列表里点开必然 500（详情阶段无从解析）。有事件的行保留，DB 就是它的归宿。
+    if (row.source_path !== '' && !existsSync(row.source_path)) {
+      const stored = cachedStmt(
+        db,
+        'SELECT COUNT(*) AS c FROM events WHERE session_id = ?',
+      ).get(row.id) as { c: number };
+      if (stored.c === 0) {
+        orphanIds.add(row.id);
+      }
+      continue;
+    }
     if (SQLITE_MULTI_SESSION_PROVIDERS.has(provider)) {
       if (row.id === deriveSessionKey(provider, row.source_path)) {
         orphanIds.add(row.id);

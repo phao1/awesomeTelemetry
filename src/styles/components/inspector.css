@@ -252,3 +252,10 @@
 .session-findings-panel[open] summary {
   border-bottom: 1px solid var(--border-default);
 }
+
+/* 未选中事件时不预留版面（那部分宽度让给时间线） */
+.inspector-empty {
+  width: 0;
+  border-left: none;
+  overflow: hidden;
+}

@@ -181,10 +181,14 @@ export function EventInspector({
   const asideStyle = fillParent ? undefined : { width: collapsed ? 0 : width };
 
   if (event === null) {
+    // 未选中事件时不占版面：此前它恒定占住约 26% 的横向空间只为显示「暂无数据」，
+    // 而那部分宽度正是时间线最需要的。选中事件后面板自然出现。
+    if (!fillParent) {
+      return <aside className="inspector inspector-empty" aria-hidden="true" />;
+    }
     return (
-      <aside className={asideClass} style={asideStyle}>
-        {!fillParent && <div className="drag-handle" onMouseDown={onMouseDown} />}
-        <p className="hint">{t('common.empty', locale)}</p>
+      <aside className={asideClass}>
+        <p className="hint">{t('inspector.selectPrompt', locale)}</p>
       </aside>
     );
   }
@@ -392,7 +396,7 @@ export function EventInspector({
                 <button
                   type="button"
                   className="ui-icon-btn ui-btn-sm"
-                  aria-label="previous event"
+                  aria-label={t('a11y.prevEvent', locale)}
                   disabled={!canNavigate.prev}
                   onClick={() => onNavigate(-1)}
                 >
@@ -401,7 +405,7 @@ export function EventInspector({
                 <button
                   type="button"
                   className="ui-icon-btn ui-btn-sm"
-                  aria-label="next event"
+                  aria-label={t('a11y.nextEvent', locale)}
                   disabled={!canNavigate.next}
                   onClick={() => onNavigate(1)}
                 >
@@ -426,10 +430,10 @@ export function EventInspector({
             >
               ⤢
             </button>
-            <button type="button" className="ui-icon-btn ui-btn-sm" aria-label="collapse panel" onClick={onToggleCollapse}>
+            <button type="button" className="ui-icon-btn ui-btn-sm" aria-label={t('a11y.collapsePanel', locale)} onClick={onToggleCollapse}>
               ⇥
             </button>
-            <button type="button" className="ui-icon-btn ui-btn-sm" aria-label="close" onClick={onClose}>
+            <button type="button" className="ui-icon-btn ui-btn-sm" aria-label={t('a11y.close', locale)} onClick={onClose}>
               ×
             </button>
           </span>

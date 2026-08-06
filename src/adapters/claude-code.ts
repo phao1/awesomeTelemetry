@@ -13,11 +13,12 @@ import {
   normalizeStatus,
   orderEventsByTime,
   pickPrimaryModel,
+  rollupSessionStatus,
+  sessionTitleFromEvents,
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
 import { computeCostUsd } from '../core/pricing.js';
-import { extractTitleFromUserText } from '../core/title-utils.js';
 import type { Adapter, RawSample } from './sample-loader.js';
 
 export interface ClaudeContentPart {
@@ -54,6 +55,8 @@ export interface ClaudeRawRow {
   uuid?: string;
   sessionId?: string;
   timestamp?: string;
+  /** 每行都带工作目录；此前从未被读取，导致 cwd 全库为 NULL。 */
+  cwd?: string;
   message?: ClaudeRawMessage;
 }
 
@@ -220,13 +223,6 @@ export function normalizeClaudeSample(
   const timed = deriveDurations(deduped);
   const classified = classifyEvents(timed);
   const times = minMaxIso(classified);
-  const firstUser = classified.find((e) => e.kind === 'user_prompt');
-  const firstRealUser = classified.find(
-    (e) =>
-      e.kind === 'user_prompt' &&
-      e.inputSummary !== null &&
-      extractTitleFromUserText(e.inputSummary) !== null,
-  );
   const semantics = { cacheRead: 'incremental' as const, reasoning: 'incremental' as const };
   const tokenUsage = aggregateTokenUsage(classified, semantics);
   const primaryModel = pickPrimaryModel(classified);
@@ -235,11 +231,11 @@ export function normalizeClaudeSample(
     id: sessionId,
     provider: 'claude',
     sourceAgent: 'Claude',
-    title: firstRealUser?.title ?? firstUser?.title ?? '',
+    title: sessionTitleFromEvents(classified),
     startedAt: times.startedAt,
     updatedAt: times.updatedAt,
-    status: classified.at(-1)?.status ?? 'unknown',
-    cwd: null,
+    status: rollupSessionStatus(classified),
+    cwd: rows.find((r) => r.cwd !== undefined && r.cwd !== '')?.cwd ?? null,
     messageCount,
     eventCount: classified.length,
     tokenUsage,

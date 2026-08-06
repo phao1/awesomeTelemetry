@@ -92,4 +92,31 @@ describe('REQ-001 两遍分类', () => {
     expect(events[1]?.phase).toBe('implement');
     expect(events[2]?.phase).toBe('plan');
   });
+
+  /**
+   * 真实数据里 npm test 一律通过 Claude 的 `Bash` / Codex 的 `exec_command` 发出，
+   * 命令在 inputSummary。此前只查工具名 → 全部落到 implement，
+   * 全库 33,046 个事件里 verify 阶段一个都没有，「准 / 验证覆盖」恒为 0。
+   */
+  it('跑 shell 的工具按命令内容判定，而不是工具名', () => {
+    const events = classifyEvents([
+      ev({ id: 'e1', kind: 'tool', tool: 'Bash', title: 'Bash', inputSummary: 'npm test' }),
+      ev({ id: 'e2', kind: 'tool', tool: 'exec_command', title: 'exec_command', inputSummary: 'npm run test -- foo' }),
+      ev({ id: 'e3', kind: 'tool', tool: 'Bash', title: 'Bash', inputSummary: 'git commit -m x' }),
+      ev({ id: 'e4', kind: 'tool', tool: 'exec_command', title: 'exec_command', inputSummary: 'rg TODO src' }),
+      ev({ id: 'e5', kind: 'tool', tool: 'Bash', title: 'Bash', inputSummary: 'mkdir dist' }),
+      ev({ id: 'e6', kind: 'tool', tool: 'Bash', title: 'Bash', inputSummary: 'node scripts/x.mjs' }),
+    ]);
+    expect(events.map((e) => e.phase)).toEqual([
+      'verify', 'verify', 'report', 'understand', 'implement', 'implement',
+    ]);
+  });
+
+  it('计划类工具归入 plan（update_plan / TaskCreate）', () => {
+    const events = classifyEvents([
+      ev({ id: 'e1', kind: 'tool', tool: 'update_plan', title: 'update_plan' }),
+      ev({ id: 'e2', kind: 'tool', tool: 'TaskCreate', title: 'TaskCreate' }),
+    ]);
+    expect(events.map((e) => e.phase)).toEqual(['plan', 'plan']);
+  });
 });

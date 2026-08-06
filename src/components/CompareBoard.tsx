@@ -550,11 +550,19 @@ export function CompareBoard({
         <EmptyState
           icon={<span aria-hidden="true" />}
           title={t('state.selectTwo', locale)}
-          description={hasSelection ? undefined : t('state.empty', locale)}
+          description={hasSelection ? t('compare.selectHint', locale) : t('state.empty', locale)}
+          /* 行动按钮跟随选择进度推进：此前选好左侧之后它仍然写着「选择左侧会话」，
+             点下去只会把已经选好的那一侧再打开一次。 */
           action={
-            <button type="button" className="btn" onClick={() => setLeftOpen(true)}>
-              {t('compare.pickLeft', locale)}
-            </button>
+            leftKey === '' ? (
+              <button type="button" className="btn" onClick={() => setLeftOpen(true)}>
+                {t('compare.pickLeft', locale)}
+              </button>
+            ) : rightKey === '' ? (
+              <button type="button" className="btn" onClick={() => setRightOpen(true)}>
+                {t('compare.pickRight', locale)}
+              </button>
+            ) : undefined
           }
         />
       )}

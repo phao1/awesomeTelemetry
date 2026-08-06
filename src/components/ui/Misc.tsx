@@ -1,3 +1,4 @@
+import { ta } from '../../i18n.js';
 import type { ReactNode } from 'react';
 
 /** REQ-005：Kbd —— 渲染键位（⌘K / j / Esc）。 */
@@ -63,13 +64,21 @@ export interface SparklineProps {
   points: number[];
   width?: number;
   height?: number;
+  /** 这条迷你图画的是什么。读屏只念 "sparkline" 等于没给信息。 */
+  label?: string;
 }
 
 /** REQ-005：Sparkline —— 内联 SVG，无依赖。 */
-export function Sparkline({ points, width = 100, height = 24 }: SparklineProps): React.JSX.Element {
+export function Sparkline({
+  points,
+  width = 100,
+  height = 24,
+  label,
+}: SparklineProps): React.JSX.Element {
+  const a11yLabel = ta('a11y.sparkline', { label: label ?? '' }).trim();
   if (points.length < 2) {
     return (
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="sparkline">
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={a11yLabel}>
         <line
           x1={0}
           y1={height / 2}
@@ -91,7 +100,7 @@ export function Sparkline({ points, width = 100, height = 24 }: SparklineProps):
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="sparkline">
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={a11yLabel}>
       <polyline
         points={coords.join(' ')}
         fill="none"

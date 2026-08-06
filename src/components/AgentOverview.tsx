@@ -36,6 +36,14 @@ export interface AgentOverviewProps {
 /** REQ-107 / G-UI-5：视图模式持久化 key（新前缀）。 */
 export const AGENT_VIEW_KEY = 'awesome-telemetry.agentViewMode';
 
+/**
+ * 聚合成本：该 provider 一个已定价会话都没有时显示 —。
+ * 直接 SUM(cost_usd) 会把「模型没有价目表」渲染成 $0.000，看着像免费。
+ */
+function fmtAggCost(row: AgentOverviewRow): string {
+  return row.pricedSessionCount === 0 ? '—' : `$${row.costUsd.toFixed(3)}`;
+}
+
 const fmtNum = (v: number): string => v.toLocaleString();
 
 function pct(v: number | null): string {
@@ -325,7 +333,7 @@ export function AgentOverview({
       align: 'right',
       render: (row) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <span className="mono">${row.costUsd.toFixed(3)}</span>
+          <span className="mono">{fmtAggCost(row)}</span>
           <BarMeter value={row.costUsd} max={maxCost} tone="attention" />
         </span>
       ),
@@ -383,7 +391,7 @@ export function AgentOverview({
         const metrics: Array<{ label: string; value: string }> = [
           { label: t('agent.sessions', locale), value: fmtNum(row.sessionCount) },
           { label: t('agent.tokens', locale), value: fmtNum(row.tokenTotal) },
-          { label: t('agent.cost', locale), value: `$${row.costUsd.toFixed(3)}` },
+          { label: t('agent.cost', locale), value: fmtAggCost(row) },
           { label: t('agent.avgDuration', locale), value: row.avgWallClockMs > 0 ? fmtDur(row.avgWallClockMs) : '—' },
           { label: t('agent.verification', locale), value: pct(row.verificationCoverage) },
           { label: t('agent.errorRate', locale), value: pct(row.errorRate) },

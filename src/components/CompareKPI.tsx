@@ -1,3 +1,4 @@
+import { formatCostUsd } from '../core/pricing.js';
 import { useMemo, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -271,7 +272,7 @@ function KpiDrilldown({
     );
   } else if (item.key === 'cost') {
     rows.push(
-      { label: t('session.cost', locale), lv: `$${left.costUsd.toFixed(4)}`, rv: `$${right.costUsd.toFixed(4)}` },
+      { label: t('session.cost', locale), lv: formatCostUsd(left.costUsd, left.costSource), rv: formatCostUsd(right.costUsd, right.costSource) },
       { label: t('session.tokens', locale), lv: fmtNum(left.tokenUsage.total), rv: fmtNum(right.tokenUsage.total) },
       { label: t('compare.kpi.netInput', locale), lv: fmtNum(left.tokenUsage.netInput), rv: fmtNum(right.tokenUsage.netInput) },
     );
@@ -424,7 +425,7 @@ export function CompareKPI({
       drill: true,
     },
     { key: 'e2e', label: t('metric.speed', locale), lv: fmtMs(result.speed.left.e2eMs ?? null), rv: fmtMs(result.speed.right.e2eMs ?? null), lnum: result.speed.left.e2eMs ?? 0, rnum: result.speed.right.e2eMs ?? 0, lowerBetter: true, drill: true },
-    { key: 'cost', label: t('session.cost', locale), lv: `$${left.costUsd.toFixed(4)}`, rv: `$${right.costUsd.toFixed(4)}`, lnum: left.costUsd, rnum: right.costUsd, lowerBetter: true, drill: true },
+    { key: 'cost', label: t('session.cost', locale), lv: formatCostUsd(left.costUsd, left.costSource), rv: formatCostUsd(right.costUsd, right.costSource), lnum: left.costUsd, rnum: right.costUsd, lowerBetter: true, drill: true },
     { key: 'avgLlmDuration', label: t('compare.kpi.avgLlmDuration', locale), lv: fmtMs(ls.avgLlmDuration), rv: fmtMs(rs.avgLlmDuration), lnum: ls.avgLlmDuration ?? 0, rnum: rs.avgLlmDuration ?? 0, lowerBetter: true },
     { key: 'totalToolDuration', label: t('compare.kpi.totalToolDuration', locale), lv: fmtMs(ls.totalToolDuration), rv: fmtMs(rs.totalToolDuration), lnum: ls.totalToolDuration, rnum: rs.totalToolDuration, lowerBetter: true },
     { key: 'cacheHitRate', label: t('compare.kpi.cacheHitRate', locale), lv: fmtPct(ls.cacheHitRate), rv: fmtPct(rs.cacheHitRate), lnum: ls.cacheHitRate ?? 0, rnum: rs.cacheHitRate ?? 0, lowerBetter: false },

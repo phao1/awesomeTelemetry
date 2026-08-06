@@ -25,6 +25,11 @@ function cssFiles(): string[] {
   return out;
 }
 
+/** 契约只约束声明本身；注释里出现 `40px` / `#fff` 是解释，不是样式。 */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
 interface TokenBlock {
   selector: string;
   tokens: Map<string, string>;
@@ -103,7 +108,7 @@ describe('Design Tokens 契约断言（design-tokens.md §9）', () => {
 
   it('T2: tokens.css 之外无字面量 hex 颜色', () => {
     for (const path of cssFiles()) {
-      const source = readFileSync(path, 'utf8');
+      const source = stripComments(readFileSync(path, 'utf8'));
       const hits = source.match(/#[0-9a-f]{3,8}\b/gi) ?? [];
       expect(hits, relative(stylesDir, path)).toEqual([]);
     }
@@ -111,10 +116,27 @@ describe('Design Tokens 契约断言（design-tokens.md §9）', () => {
 
   it('T3: tokens.css 之外无非 var() 的 px 间距（0px/1px 描边除外）', () => {
     for (const path of cssFiles()) {
-      const source = readFileSync(path, 'utf8');
+      const source = stripComments(readFileSync(path, 'utf8'));
       const hits: string[] = source.match(/\b\d+px\b/g) ?? [];
       const illegal = hits.filter((h: string) => h !== '0px' && h !== '1px');
       expect(illegal, relative(stylesDir, path)).toEqual([]);
+    }
+  });
+
+  /**
+   * T3 禁止裸 px，曾把开发者逼成「拿间距 token 当宽度」：
+   * `max-width: var(--space-10)` = 40px，一度把对比选择器标题、代理 URL、
+   * 甚至对比结论都截成 40 像素。
+   *
+   * 用 `--space-*` 做小色块 / 分隔条的 width、min-width 是正当的（就是那个尺度）；
+   * 但把间距刻度当作内容的**上限**必然是截断 bug —— 间距刻度最大只有 40px，
+   * 没有任何文本应该被限制在一个间距值以内。
+   */
+  it('T4: --space-* 不得用作 max-width（间距刻度 ≠ 内容宽度）', () => {
+    const capped = /\bmax-(?:width|inline-size)\s*:\s*var\(--space-[^)]*\)/g;
+    for (const path of [...cssFiles(), tokensPath]) {
+      const source = stripComments(readFileSync(path, 'utf8'));
+      expect(source.match(capped) ?? [], relative(stylesDir, path)).toEqual([]);
     }
   });
 

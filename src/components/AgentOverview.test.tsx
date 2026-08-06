@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AgentOverviewRow, SessionIndexEntry } from '../core/trace-types.js';
 import { AGENT_VIEW_KEY, AgentOverview } from './AgentOverview.js';
+import { ZH } from '../i18n.js';
 
 const rows: AgentOverviewRow[] = [
   {
@@ -15,6 +16,7 @@ const rows: AgentOverviewRow[] = [
     tokenOutput: 50,
     tokenTotal: 150,
     costUsd: 0.02,
+    pricedSessionCount: 2,
     avgWallClockMs: 1000,
     latestUpdatedAt: '2026-08-01T00:00:00.000Z',
     avgToolDurationMs: 100,
@@ -131,7 +133,10 @@ describe('REQ-003 Agent 视图', () => {
       await Promise.resolve();
     });
     expect(calls).toBe(1);
-    const expandButton = document.querySelector('button[aria-label="expand"]') as HTMLButtonElement;
+    // 展开按钮的 aria-label 已本地化（不再是写死的英文 "expand"）
+    const expandButton = document.querySelector(
+      `button[aria-label="${ZH['a11y.expandRow']}"]`,
+    ) as HTMLButtonElement;
     expect(expandButton).not.toBeNull();
     act(() => expandButton.click());
     expect(document.body.textContent).toContain('recent one');

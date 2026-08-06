@@ -174,7 +174,7 @@ export function ProxyView({ locale }: ProxyViewProps): React.JSX.Element {
           <>
             <input
               className="ui-input ui-btn-sm"
-              style={{ width: 'var(--space-10)' }}
+              style={{ width: '7ch' }}
               placeholder={t('proxy.port', locale)}
               value={port}
               onChange={(e) => setPort(e.target.value)}
@@ -193,9 +193,12 @@ export function ProxyView({ locale }: ProxyViewProps): React.JSX.Element {
         <button type="button" className="btn" onClick={() => void downloadCa()}>
           {t('proxy.downloadCa', locale)}
         </button>
-        <span className="hint" style={{ margin: 0 }}>
-          {t('proxy.caHint', locale)}
-        </span>
+        {/* CA 说明只在运行时留在工具栏；未运行时它与下方空状态的引导逐字重复。 */}
+        {running && (
+          <span className="hint" style={{ margin: 0 }}>
+            {t('proxy.caHint', locale)}
+          </span>
+        )}
         <span className="spacer" />
         <span className="mono">{status?.requestCount ?? 0} req</span>
         <button type="button" className="btn" onClick={() => setConfirming('clear')} disabled={items.length === 0}>
@@ -211,15 +214,19 @@ export function ProxyView({ locale }: ProxyViewProps): React.JSX.Element {
           <Skeleton variant="row" count={4} />
         </div>
       )}
+      {/* 「未运行」和「已运行但还没抓到请求」是两种状态，
+          此前都渲染成「代理未运行」，运行中的用户会以为没启动成功。 */}
       {error === null && status !== null && items.length === 0 && (
         <EmptyState
           icon={<span aria-hidden="true" />}
-          title={t('state.proxyNotRunning', locale)}
-          description={t('proxy.caHint', locale)}
+          title={t(running ? 'proxy.waitingTraffic' : 'state.proxyNotRunning', locale)}
+          description={t(running ? 'proxy.waitingHint' : 'proxy.caHint', locale)}
           action={
-            <button type="button" className="btn" onClick={() => void start()} disabled={starting}>
-              {t('proxy.start', locale)}
-            </button>
+            running ? undefined : (
+              <button type="button" className="btn" onClick={() => void start()} disabled={starting}>
+                {t('proxy.start', locale)}
+              </button>
+            )
           }
         />
       )}

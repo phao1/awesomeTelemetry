@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 /** 建议 6：Inspector 密钥脱敏开关（localStorage 持久化，Settings 中切换）。 */
-export const DESENSITIZE_KEY = 'agent-observability.desensitize';
+export const DESENSITIZE_KEY = 'awesome-telemetry.desensitize';
 
 const listeners = new Set<() => void>();
 

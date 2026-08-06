@@ -18,7 +18,14 @@ import type {
   TraceStatus,
 } from './core/trace-types.js';
 import { TRACE_PHASES } from './core/trace-types.js';
-import { errorMessage, getStoredLocale, storeLocale, t, type Locale } from './i18n.js';
+import {
+  errorMessage,
+  getStoredLocale,
+  setActiveLocale,
+  storeLocale,
+  t,
+  type Locale,
+} from './i18n.js';
 import { api, ApiError } from './api/client.js';
 import { invalidateSessionDetail, recordCache } from './cache/caches.js';
 import { mergeSessionsPatch } from './core/list-utils.js';
@@ -77,6 +84,8 @@ import type { CommandPaletteProps } from './components/CommandPalette.js';
 import { computeFindings, type Finding } from './core/session-findings.js';
 
 const PAGE_SIZE = 2000;
+/** --ui-scale 的基准字号：fontPx 等于它时缩放为 1（同 tokens.css §3.1 的 --text-base）。 */
+const BASE_FONT_PX = 13;
 /** 首帧 hash 在模块加载时解析一次：避免 state→hash 写入 effect 先把它覆盖掉。 */
 const INITIAL_HASH = parseHash(window.location.hash);
 
@@ -93,7 +102,12 @@ export default function App() {
   const [live, setLive] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [lastScanAt, setLastScanAt] = useState<string | null>(null);
-  const [health, setHealth] = useState<{ dbSizeBytes: number; walSizeBytes: number } | null>(null);
+  const [health, setHealth] = useState<{
+    dbSizeBytes: number;
+    walSizeBytes: number;
+    sessionCount: number;
+    eventCount: number;
+  } | null>(null);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
   const [hasMoreSessions, setHasMoreSessions] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -142,7 +156,7 @@ export default function App() {
     loadBool(LAYOUT_KEYS.inspectorCollapsed, false),
   );
   const [fontPx, setFontPx] = useState(() =>
-    loadNumber(LAYOUT_KEYS.fontSize, 14, LAYOUT_RANGES.fontSize),
+    loadNumber(LAYOUT_KEYS.fontSize, BASE_FONT_PX, LAYOUT_RANGES.fontSize),
   ); // REQ-012：8–28px
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [transcriptEvent, setTranscriptEvent] = useState<TraceEventSlim | null>(null);
@@ -185,6 +199,8 @@ export default function App() {
   useEffect(() => {
     localeRef.current = locale;
     document.documentElement.lang = locale;
+    // ui/* 基础组件不接收 locale prop，其 aria-label 走 ta() 读这里的当前语言。
+    setActiveLocale(locale);
   }, [locale]);
 
   const switchView = useCallback((next: AppView) => {
@@ -205,6 +221,12 @@ export default function App() {
   }, [inspectorCollapsed]);
   useEffect(() => {
     storeNumber(LAYOUT_KEYS.fontSize, fontPx);
+    // A− / A+ 此前只作为 prop 传给 EventInspector，对其余界面完全无效。
+    // 改为驱动全局 --ui-scale，字号刻度整体跟随（tokens.css §3.1）。
+    document.documentElement.style.setProperty(
+      '--ui-scale',
+      String(fontPx / BASE_FONT_PX),
+    );
   }, [fontPx]);
 
   // REQ-023：health 只在启动时取一次，MUST NOT 轮询
@@ -650,7 +672,7 @@ export default function App() {
         <button type="button" className="btn" onClick={() => adjustFont(2)}>
           {t('common.fontLarge', locale)}
         </button>
-        <button type="button" className="btn" onClick={() => setFontPx(14)}>
+        <button type="button" className="btn" onClick={() => setFontPx(BASE_FONT_PX)}>
           {t('common.fontReset', locale)}
         </button>
         <button type="button" className="btn" onClick={() => setSettingsOpen(true)}>
@@ -737,7 +759,9 @@ export default function App() {
                 <EmptyState
                   icon={<span aria-hidden="true" />}
                   title={t('session.selectPrompt', locale)}
-                  description={t('state.empty', locale)}
+                  /* 这里曾复用通用空态文案「暂无数据」——它说的是「没有数据」，
+                     而实际状态是「你还没选」，两句话互相矛盾。改成引导语。 */
+                  description={t('session.selectHint', locale)}
                 />
               )}
             {detail !== null && detail.events.length > 0 && (
@@ -795,6 +819,10 @@ export default function App() {
                     }
                   }}
                 />
+                {/* 会话视图必须有自己的滚动容器：签名区是 flex:0 0 auto，
+                    没有它时时间线只能分到「剩下的高度」——1280×800 下剩 0px，
+                    且 overflow 一路 visible 到 document，滚都滚不到。 */}
+                <div className="session-scroll">
                 <div className="session-signals">
                   <PhaseRibbon
                     events={detail.events as TraceEventSlim[]}
@@ -802,8 +830,6 @@ export default function App() {
                     onSelectOnly={(phase) => setPhaseFilter([phase])}
                     locale={locale}
                   />
-                  {/* REQ-121：L2 诊断层 —— 事件密度热力图 + 8 轴能力雷达图 */}
-                  <SessionVisuals detail={detail} locale={locale} />
                   <TimeCompositionBar
                     composition={timeComposition}
                     locale={locale}
@@ -845,10 +871,16 @@ export default function App() {
                     onSemanticGroupChange={setSemanticGroup}
                     layoutMode={layoutMode}
                     onLayoutModeChange={setLayoutMode}
-                    phaseFilter={phaseFilter}
-                    onPhaseToggle={togglePhase}
                     focusEventId={focusEventId}
                   />
+                  {/* REQ-121：热力图 + 8 轴能力雷达是「看一眼就够」的画像层，
+                      放在时间线之后并默认折叠 —— 它们此前钉在首屏，占掉约 45%
+                      高度，把用户真正要逐条读的时间线挤没了。 */}
+                  <details className="session-visuals-panel">
+                    <summary>{t('session.visuals', locale)}</summary>
+                    <SessionVisuals detail={detail} locale={locale} />
+                  </details>
+                </div>
                 </div>
               </div>
             )}
@@ -1025,8 +1057,10 @@ export default function App() {
       <StatusBar
         live={live}
         locale={locale}
-        sessionCount={sessions.length}
-        eventCount={sessions.reduce((sum, s) => sum + s.eventCount, 0)}
+        /* 状态栏是系统级读数：显示全库总量，不是当前筛选/已加载的那一页。
+           筛选后的条数由列表底部的「共 N 条」负责。 */
+        sessionCount={health?.sessionCount ?? sessionTotal}
+        eventCount={health?.eventCount ?? 0}
         scanning={scanning}
         lastScanAt={lastScanAt}
         dbSizeBytes={health?.dbSizeBytes ?? null}

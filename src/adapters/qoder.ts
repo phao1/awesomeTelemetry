@@ -7,6 +7,7 @@ import {
   minMaxIso,
   normalizeStatus,
   orderEventsByTime,
+  rollupSessionStatus,
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
@@ -124,7 +125,7 @@ export function normalizeQoderSample(
     title: sample.session.title ?? classified.find((e) => e.kind === 'user_prompt')?.title ?? '',
     startedAt: times.startedAt,
     updatedAt: times.updatedAt,
-    status: classified.at(-1)?.status ?? 'unknown',
+    status: rollupSessionStatus(classified),
     cwd: null,
     messageCount: rows.length,
     eventCount: classified.length,

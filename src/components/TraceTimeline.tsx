@@ -41,9 +41,6 @@ export interface TraceTimelineProps {
   /** 甘特布局：时间比例（默认）/ 序列等宽。 */
   layoutMode?: 'time' | 'sequence';
   onLayoutModeChange?: (mode: 'time' | 'sequence') => void;
-  /** 阶段过滤 chips（App 持有过滤状态；缺省不过滤）。 */
-  phaseFilter?: TracePhase[];
-  onPhaseToggle?: (phase: TracePhase) => void;
   /** REQ-112：命令面板 `/goto` 定位 —— 变更时滚动到该事件并置游标。 */
   focusEventId?: string | null;
 }
@@ -193,8 +190,6 @@ export function TraceTimeline({
   actionsRef,
   layoutMode = 'time',
   onLayoutModeChange,
-  phaseFilter = [...TRACE_PHASES],
-  onPhaseToggle,
   focusEventId = null,
 }: TraceTimelineProps): React.JSX.Element {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
@@ -337,14 +332,6 @@ export function TraceTimeline({
       };
     });
   }, [baseRows, layoutMode]);
-
-  const phaseCounts = useMemo(() => {
-    const counts = new Map<TracePhase, number>();
-    for (const event of events) {
-      counts.set(event.phase, (counts.get(event.phase) ?? 0) + 1);
-    }
-    return counts;
-  }, [events]);
 
   const viewWindow = useMemo(() => {
     if (axis === null) {
@@ -696,28 +683,9 @@ export function TraceTimeline({
           </button>
         )}
       </div>
-      {onPhaseToggle !== undefined && (
-        <div className="timeline-phase-chips" role="group" aria-label={t('timeline.phaseAxis', locale)}>
-          {TRACE_PHASES.map((phase) => {
-            const active = phaseFilter.includes(phase);
-            const PhaseIcon = PHASE_ICON[phase];
-            return (
-              <button
-                key={phase}
-                type="button"
-                className={`timeline-phase-chip ${active ? 'timeline-phase-chip-on' : ''}`}
-                data-phase={phase}
-                aria-pressed={active}
-                onClick={() => onPhaseToggle(phase)}
-              >
-                <PhaseIcon size={12} />
-                <span>{t(`phase.${phase}`, locale)}</span>
-                <span className="mono">{phaseCounts.get(phase) ?? 0}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* 这里曾有第二排阶段筛选 chip，与上方 PhaseTiles 外观几乎一致、语义相同，
+          且两处计数由不同代码算出（实测同一会话一处 733、一处 732）。
+          筛选统一由 PhaseTiles 承担；下面的阶段轴是「点击定位」，形态不同、不冲突。 */}
       {phaseSegments.length > 0 && (
         <div
           className="timeline-phase-axis"

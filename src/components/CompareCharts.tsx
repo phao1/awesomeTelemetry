@@ -1,3 +1,4 @@
+import { ta } from '../i18n.js';
 import { useMemo, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -189,7 +190,7 @@ export function PhaseBarChart({
   const height = TRACE_PHASES.length * rowHeight + 8;
 
   return (
-    <svg viewBox={`0 0 440 ${height}`} width="100%" height={height} role="img" aria-label="phase duration compare">
+    <svg viewBox={`0 0 440 ${height}`} width="100%" height={height} role="img" aria-label={ta('a11y.phaseDurationChart')}>
       <line x1={axisX} y1={4} x2={axisX} y2={height - 4} stroke="var(--border-default)" strokeWidth={1} />
       {TRACE_PHASES.map((phase, i) => {
         const y = 8 + i * rowHeight;

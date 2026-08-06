@@ -10,6 +10,8 @@ coverage/
 # *.sqlite* 同时覆盖 .sqlite / .sqlite3 / -shm / -wal / -journal
 # *.db*     同时覆盖 .db / -wal / -shm / -journal
 agent-observe-data/
+# B6 改名后的新数据目录（旧目录仍在上面保留，两者都不入库）
+awesome-telemetry-data/
 *.sqlite*
 *.db*
 

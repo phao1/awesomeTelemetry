@@ -9,24 +9,49 @@ import type {
 import { eventContentHash } from '../../src/core/event-hash.js';
 import { cachedStmt } from './stmt-cache.js';
 
+/**
+ * 索引阶段写不出真值的列，其 excluded 值只是占位符（0 / 'unknown' / NULL）。
+ * 这里给出「什么样的 excluded 值才算真值」的判据；不满足时保留库中已存值，
+ * 避免一次索引扫描把详情扫描算好的 token / 成本 / 状态 / cwd 清回占位符。
+ */
+const PLACEHOLDER_GUARDS = {
+  /** #9：数值列的占位符是 0（如 Trae SQLCipher 不可读时的 event_count）。 */
+  zero: (col: string) => `excluded.${col} > 0`,
+  /** 文本列的占位符是 NULL（如索引阶段拿不到的 cwd / primary_model）。 */
+  nullish: (col: string) => `excluded.${col} IS NOT NULL`,
+  /** status 的占位符是字面量 'unknown'。 */
+  unknown: (col: string) => `excluded.${col} <> 'unknown'`,
+  /**
+   * 索引阶段的计数只是「粗读到的行数」，详情阶段归一化后的计数才是权威值
+   * （实测同一会话索引报 1、详情实为 355）。已详情扫描的行不接受索引计数。
+   */
+  indexOnly: (col: string) => `excluded.${col} > 0 AND sessions.detail_loaded = 0`,
+  /** 已有值即为准，只在空缺时写入。 */
+  keepFirst: (col: string) => `sessions.${col} IS NULL OR sessions.${col} = ''`,
+} as const;
+
+type PreserveKind = keyof typeof PLACEHOLDER_GUARDS;
+
 function upsertSql(
   table: string,
   conflictCols: string[],
   cols: string[],
-  /** #9：这些列在索引阶段可能因源不可读而报 0（如 Trae SQLCipher），
-   * 已存非零值时不得用 0 覆盖。仅当 excluded 值 > 0 才更新。 */
-  preserveOnZero: string[] = [],
+  /** 列 → 占位符判据。未列出的列一律直接覆盖。 */
+  preserve: Partial<Record<string, PreserveKind>> = {},
 ): string {
   const placeholders = cols.map(() => '?').join(', ');
   const conflict = conflictCols.join(', ');
   const excluded = conflictCols.map((col) => `${col} = excluded.${col}`).join(', ');
   const updateSet = cols
     .filter((col) => !conflictCols.includes(col))
-    .map((col) =>
-      preserveOnZero.includes(col)
-        ? `${col} = CASE WHEN excluded.${col} > 0 THEN excluded.${col} ELSE ${table}.${col} END`
-        : `${col} = excluded.${col}`,
-    )
+    .map((col) => {
+      const kind = preserve[col];
+      if (kind === undefined) {
+        return `${col} = excluded.${col}`;
+      }
+      const guard = PLACEHOLDER_GUARDS[kind](col);
+      return `${col} = CASE WHEN ${guard} THEN excluded.${col} ELSE ${table}.${col} END`;
+    })
     .join(', ');
   return `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) ` +
     `ON CONFLICT(${conflict}) DO UPDATE SET ${excluded}, ${updateSet}`;
@@ -64,12 +89,27 @@ const METRICS_COLS = [
 
 // #9（审查 P1）：Trae 索引阶段无法解密读事件，event_count/message_count 报 0；
 // 若详情扫描后再触发索引扫描，不得把已存非零计数覆盖为 0。
-const INDEX_UPSERT_SQL = upsertSql('sessions', ['id'], SESSION_INDEX_COLS, [
-  'event_count',
-  'message_count',
-  'detail_loaded',
-]);
-const TRACE_UPSERT_SQL = upsertSql('sessions', ['id'], SESSION_TRACE_COLS);
+//
+// 索引阶段对 token_total / cost_usd / status / cwd 一律写占位符
+// （见 scanner-utils.ts 的 buildIndexEntry / jsonlIndexEntry / sqliteIndexEntry），
+// 而文件监听每次变更都会重跑索引扫描 —— 不加守卫就会把详情扫描算好的
+// token 与成本清回 0、状态清回 'unknown'、cwd 清回 NULL，
+// 导致「省 / 准 / 稳」三个评测维度全库为空。
+const INDEX_UPSERT_SQL = upsertSql('sessions', ['id'], SESSION_INDEX_COLS, {
+  event_count: 'indexOnly',
+  message_count: 'indexOnly',
+  detail_loaded: 'zero',
+  token_total: 'zero',
+  cost_usd: 'zero',
+  status: 'unknown',
+  cwd: 'nullish',
+});
+// source_agent 是**展示名**，归 provider 配置所有（config.label，用户可改）。
+// 各 adapter 却硬编码了自己的叫法（'Claude' vs 配置里的 'Claude Code'），
+// 于是索引阶段与详情阶段各写各的，Agent 概览把同一个 provider 拆成了两行。
+const TRACE_UPSERT_SQL = upsertSql('sessions', ['id'], SESSION_TRACE_COLS, {
+  source_agent: 'keepFirst',
+});
 const EVENT_UPSERT_SQL = upsertSql('events', ['session_id', 'id'], EVENT_COLS);
 const METRICS_UPSERT_SQL = upsertSql('metrics', ['session_id'], METRICS_COLS);
 

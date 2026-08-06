@@ -1,3 +1,4 @@
+import { ta } from '../../i18n.js';
 import type { ReactNode } from 'react';
 
 import { IconChevronDown, IconChevronRight } from '../icons/index.js';
@@ -44,7 +45,7 @@ export function Table<T>({
     <table className={classes}>
       <thead>
         <tr>
-          {expandable && <th style={{ width: 'var(--space-4)' }} aria-label="expand" />}
+          {expandable && <th style={{ width: 'var(--space-4)' }} aria-label={ta('a11y.expandRow')} />}
           {columns.map((column) => {
             const active = sort?.key === column.key;
             const label = (
@@ -94,7 +95,7 @@ export function Table<T>({
                 <button
                   type="button"
                   className="ui-table-sort"
-                  aria-label="expand"
+                  aria-label={ta('a11y.expandRow')}
                   aria-expanded={expandedKey === rowKey(row)}
                   onClick={() => onToggleExpand!(rowKey(row))}
                 >

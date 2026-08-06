@@ -5,6 +5,7 @@ import type {
   TraceEventRaw,
   TraceStatus,
 } from '../core/trace-types.js';
+import { extractTitleFromUserText } from '../core/title-utils.js';
 
 /** adapter 产出的 event：slim/full 字段 + 独立 raw（G11.10），由 scanner 写入 event_raw。 */
 export type EventWithRaw = TraceEvent | TraceEventRaw;
@@ -35,6 +36,51 @@ export function normalizeStatus(raw: string | null | undefined): TraceStatus {
   }
   const key = raw.trim().toLowerCase();
   return STATUS_MAP[key] ?? 'unknown';
+}
+
+/**
+ * 会话状态汇总。
+ *
+ * 早期各 adapter 直接取 `events.at(-1).status`，但会话最后一条往往是
+ * token_count / system 这类没有状态的辅助事件，于是整个会话被判成 'unknown' ——
+ * 实测 80 个会话里 73 个如此，直接让「准 / 稳」两个评测维度和状态筛选失去数据。
+ * 改为按全量事件汇总：未结束的以末条为准，否则「有失败即失败，有成功即成功」。
+ */
+export function rollupSessionStatus(events: TraceEvent[]): TraceStatus {
+  const last = events.at(-1)?.status;
+  if (last === 'running' || last === 'cancelled') {
+    return last;
+  }
+  let sawSuccess = false;
+  for (const event of events) {
+    if (event.status === 'error') {
+      return 'error';
+    }
+    if (event.status === 'success') {
+      sawSuccess = true;
+    }
+  }
+  return sawSuccess ? 'success' : 'unknown';
+}
+
+/**
+ * 会话标题：取第一条真实用户提问，并走 extractTitleFromUserText 净化。
+ *
+ * 各 adapter 此前只把 extractTitleFromUserText 当作「是不是注入内容」的判据，
+ * 真正取用的却是事件自身的 title（原始首行前 200 字符）。结果是详情扫描
+ * 又把索引阶段清洗好的标题覆盖成 `<command-name>/goal</command-name>` 这类原文。
+ */
+export function sessionTitleFromEvents(events: TraceEvent[]): string {
+  for (const event of events) {
+    if (event.kind !== 'user_prompt' || event.inputSummary === null) {
+      continue;
+    }
+    const title = extractTitleFromUserText(event.inputSummary);
+    if (title !== null && title !== '') {
+      return title;
+    }
+  }
+  return events.find((e) => e.kind === 'user_prompt')?.title ?? '';
 }
 
 /** REQ-003：title 上限 200 字符。 */

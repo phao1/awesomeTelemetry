@@ -1,9 +1,35 @@
 /**
- * REQ-026：布局偏好持久化（localStorage，键前缀 agent-observability.）。
+ * REQ-026：布局偏好持久化（localStorage，键前缀 awesome-telemetry.）。
  * 读取时 MUST 做范围校验（越界回落到默认），脏数据不得崩溃。
+ *
+ * B6 品牌改名时只迁移了 theme 键，布局 / 字号 / locale 仍留在旧前缀下，
+ * 于是同一份偏好散落在两个命名空间里。这里统一到新前缀，并对旧键做一次性
+ * 读旧写新迁移（同 theme.ts 的做法），避免用户升级后偏好凭空丢失。
  */
 
-const PREFIX = 'agent-observability.';
+const PREFIX = 'awesome-telemetry.';
+const LEGACY_PREFIX = 'agent-observability.';
+
+/** 读取时若新键缺失而旧键存在，则搬到新键并删除旧键。 */
+export function migrateLegacyKey(key: string): void {
+  if (!key.startsWith(PREFIX)) {
+    return;
+  }
+  try {
+    if (localStorage.getItem(key) !== null) {
+      return;
+    }
+    const legacyKey = LEGACY_PREFIX + key.slice(PREFIX.length);
+    const legacy = localStorage.getItem(legacyKey);
+    if (legacy !== null) {
+      localStorage.setItem(key, legacy);
+      localStorage.removeItem(legacyKey);
+    }
+  } catch (err) {
+    // localStorage 不可用（隐私模式 / 配额满）：迁移失败不影响使用，读取方回落默认值
+    console.error(`[layout] 旧键迁移 ${key} 失败:`, err);
+  }
+}
 
 export const LAYOUT_KEYS = {
   railWidth: `${PREFIX}layout.railWidth`,
@@ -25,6 +51,7 @@ export function loadNumber(
   fallback: number,
   range: { min: number; max: number },
 ): number {
+  migrateLegacyKey(key);
   try {
     const raw = localStorage.getItem(key);
     if (raw === null) {
@@ -42,6 +69,7 @@ export function loadNumber(
 }
 
 export function loadBool(key: string, fallback: boolean): boolean {
+  migrateLegacyKey(key);
   try {
     const raw = localStorage.getItem(key);
     return raw === 'true' ? true : raw === 'false' ? false : fallback;

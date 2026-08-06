@@ -229,6 +229,8 @@ export const api = {
     uptimeMs: number;
     dbSizeBytes: number;
     walSizeBytes: number;
+    sessionCount: number;
+    eventCount: number;
   }> {
     return fetchJson('/health');
   },

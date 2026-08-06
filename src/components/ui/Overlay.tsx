@@ -1,3 +1,4 @@
+import { ta } from '../../i18n.js';
 import {
   useEffect,
   useRef,
@@ -134,7 +135,7 @@ export function Popover({
         'aria-expanded': open,
       })}
       {open && (
-        <div className="ui-popover" style={style} role="dialog" aria-label="popover">
+        <div className="ui-popover" style={style} role="dialog" aria-label={ta('a11y.popover')}>
           {children}
         </div>
       )}

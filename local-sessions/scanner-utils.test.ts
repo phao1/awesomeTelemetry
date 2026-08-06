@@ -102,10 +102,45 @@ describe('REQ-010 JSONL 系 scanner', () => {
     writeFileSync(join(dir, 'codex-s1.jsonl'), codexFixture.events.map((r) => JSON.stringify(r)).join('\n') + '\n');
     const db = newDb();
     const result = await codexScanner.scanProvider(config('codex', dir), ctx(db));
-    expect(result.eventCount).toBe(4);
-    const row = db.prepare('SELECT provider, cwd FROM sessions').get() as { provider: string; cwd: string };
+    expect(result.eventCount).toBe(6);
+    const row = db.prepare(
+      'SELECT provider, cwd, token_total, status, primary_model FROM sessions',
+    ).get() as {
+      provider: string; cwd: string; token_total: number; status: string; primary_model: string;
+    };
     expect(row.provider).toBe('codex');
     expect(row.cwd).toBe('/tmp/proj');
+    // Codex 的用量在独立的 token_count 行里，曾因 adapter 读错字段而整源为 0
+    expect(row.token_total).toBe(33);
+    expect(row.primary_model).toBe('deepseek-v4-flash');
+    expect(row.status).toBe('success');
+    // metrics 曾因 adapter 不填 record.metrics 而整表为空
+    const metrics = db.prepare('SELECT COUNT(*) c FROM metrics').get() as { c: number };
+    expect(metrics.c).toBe(1);
+    db.close();
+  });
+
+  it('索引扫描不得把详情扫描算好的 token / 成本 / 状态 / cwd 清回占位符', async () => {
+    const dir = tempDir();
+    const file = join(dir, 'codex-s1.jsonl');
+    writeFileSync(file, codexFixture.events.map((r) => JSON.stringify(r)).join('\n') + '\n');
+    const db = newDb();
+    const cfg = config('codex', dir);
+    await codexScanner.scanProvider(cfg, ctx(db));
+
+    const cols = 'token_total, cost_usd, status, cwd, event_count';
+    const before = db.prepare(`SELECT ${cols} FROM sessions`).get() as { token_total: number };
+    expect(before.token_total).toBeGreaterThan(0);
+
+    // 索引条目一律带占位符（tokenTotal 0 / status 'unknown' / cwd null）。
+    // 文件监听每次变更都会重跑索引阶段 —— 它绝不能覆盖详情阶段的真值。
+    const entry = buildIndexEntry(cfg, file);
+    expect(entry.tokenTotal).toBe(0);
+    expect(entry.status).toBe('unknown');
+    expect(entry.id).toBe(deriveSessionKey('codex', file));
+    upsertIndexEntries(db, [entry]);
+
+    expect(db.prepare(`SELECT ${cols} FROM sessions`).get()).toEqual(before);
     db.close();
   });
 
@@ -151,6 +186,17 @@ describe('REQ-010 JSONL 系 scanner', () => {
   });
 });
 
+/**
+ * 清理逻辑会回收「源文件已不存在且库里无事件」的死行，
+ * 所以这些用例的 source_path 必须真实存在 —— 否则命中的是那条新规则，
+ * 而不是它们本来要验证的 key 规范化逻辑。
+ */
+function realPath(name: string): string {
+  const path = join(tempDir(), name);
+  writeFileSync(path, '');
+  return path;
+}
+
 describe('T-02 统一 session key', () => {
   it('同一文件先索引后详情：sessions 表只有 1 行且 detail_loaded=1、event_count>0', async () => {
     const dir = tempDir();
@@ -180,12 +226,14 @@ describe('T-02 统一 session key', () => {
       `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
-    const canonical = deriveSessionKey('claude', '/same/file.jsonl');
-    insert.run(canonical, 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/same/file.jsonl');
-    insert.run('claude-00000000000000', 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/same/file.jsonl');
+    const samePath = realPath('same.jsonl');
+    const otherPath = realPath('other.jsonl');
+    const canonical = deriveSessionKey('claude', samePath);
+    insert.run(canonical, 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', samePath);
+    insert.run('claude-00000000000000', 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', samePath);
     db.prepare("UPDATE sessions SET detail_loaded = 1 WHERE id = 'claude-00000000000000'").run();
-    const legit = deriveSessionKey('claude', '/other/file.jsonl');
-    insert.run(legit, 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/other/file.jsonl');
+    const legit = deriveSessionKey('claude', otherPath);
+    insert.run(legit, 'claude', 'Claude', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', otherPath);
 
     const removed = cleanupDuplicateSessionRows(db);
     expect(removed).toBe(2);
@@ -202,10 +250,11 @@ describe('T-02 统一 session key', () => {
       `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
-    const fileKey = deriveSessionKey('opencode', '/data/opencode.db');
-    const sessionKey = deriveSessionKey('opencode', '/data/opencode.db', 'oc-s1');
-    insert.run(fileKey, 'opencode', 'OpenCode', 'opencode.db', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/data/opencode.db');
-    insert.run(sessionKey, 'opencode', 'OpenCode', 'fix build', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/data/opencode.db');
+    const dbPath = realPath('opencode.db');
+    const fileKey = deriveSessionKey('opencode', dbPath);
+    const sessionKey = deriveSessionKey('opencode', dbPath, 'oc-s1');
+    insert.run(fileKey, 'opencode', 'OpenCode', 'opencode.db', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', dbPath);
+    insert.run(sessionKey, 'opencode', 'OpenCode', 'fix build', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', dbPath);
 
     const removed = cleanupDuplicateSessionRows(db);
     expect(removed).toBe(1);
@@ -222,7 +271,7 @@ describe('T-02 统一 session key', () => {
       `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
        VALUES (?, 'trae', 'Trae', ?, '2026-08-06T00:00:00.000Z', '2026-08-06T00:01:00.000Z', ?)` ,
     );
-    const sourcePath = '/data/trae/database.db';
+    const sourcePath = realPath('trae.db');
     const placeholder = deriveSessionKey('trae', sourcePath);
     const nativeA = deriveSessionKey('trae', sourcePath, 'native-a');
     const nativeB = deriveSessionKey('trae', sourcePath, 'native-b');
@@ -238,14 +287,45 @@ describe('T-02 统一 session key', () => {
 
   it('保留正常未打开的会话（canonical 0 行、无 loaded 兄弟行）', () => {
     const db = newDb();
-    const canonical = deriveSessionKey('codex', '/a.jsonl');
+    const codexPath = realPath('a.jsonl');
+    const canonical = deriveSessionKey('codex', codexPath);
     db.prepare(
       `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
-       VALUES (?, 'codex', 'Codex', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '/a.jsonl')`,
-    ).run(canonical);
+       VALUES (?, 'codex', 'Codex', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', ?)`,
+    ).run(canonical, codexPath);
     expect(cleanupDuplicateSessionRows(db)).toBe(0);
     const count = db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number };
     expect(count.c).toBe(1);
+    db.close();
+  });
+
+  /**
+   * 用户删掉了 agent 的历史目录后，库里会残留指向已消失文件的行。
+   * 这类空壳行在列表里点开必然 500（SESSION_PARSE_FAILED / Failed to fetch），
+   * 扫描时就该回收；但已经存下事件的行不能删 —— DB 就是它最后的归宿。
+   */
+  it('源文件已删除：无事件的空壳行回收，有事件的行保留', () => {
+    const db = newDb();
+    const gonePath = join(tempDir(), 'deleted.jsonl');
+    const emptyId = deriveSessionKey('claude', gonePath);
+    const keptPath = join(tempDir(), 'also-deleted.jsonl');
+    const keptId = deriveSessionKey('claude', keptPath);
+    const insert = db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path)
+       VALUES (?, 'claude', 'Claude Code', 't', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', ?)`,
+    );
+    insert.run(emptyId, gonePath);
+    insert.run(keptId, keptPath);
+    db.prepare(
+      `INSERT INTO events (session_id, id, sequence, kind, phase, title, started_at,
+         duration_ms, status, actor, content_hash, input_len, output_len)
+       VALUES (?, 'e1', 1, 'llm', 'implement', 't', '2026-01-01T00:00:00.000Z',
+         0, 'success', 'assistant', 'h', 0, 0)`,
+    ).run(keptId);
+
+    expect(cleanupDuplicateSessionRows(db)).toBe(1);
+    const ids = db.prepare('SELECT id FROM sessions').all() as Array<{ id: string }>;
+    expect(ids.map((r) => r.id)).toEqual([keptId]);
     db.close();
   });
 });
