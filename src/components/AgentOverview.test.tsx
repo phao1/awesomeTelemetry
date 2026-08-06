@@ -180,3 +180,63 @@ describe('REQ-003 Agent 视图', () => {
     unmount();
   });
 });
+
+const twoRows: AgentOverviewRow[] = [
+  rows[0]!,
+  { ...rows[0]!, provider: 'claude', sourceAgent: 'Claude Code', tokenTotal: 300 },
+];
+
+describe('REQ-118 卡片视图 compare 复选框', () => {
+  it('每张卡片带 compare 复选框，选中两个后出现 Compare selected 并可跳转', async () => {
+    localStorage.setItem(AGENT_VIEW_KEY, 'cards');
+    const compared: Array<[string, string]> = [];
+    const { unmount } = mount(
+      <AgentOverview
+        locale="zh"
+        load={async () => ({ rows: twoRows, stamp: 's1', cached: true })}
+        onCompareProviders={(l, r) => compared.push([l, r])}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const boxes = Array.from(document.querySelectorAll<HTMLInputElement>('.agent-card-compare'));
+    expect(boxes.length).toBe(2);
+    expect(document.querySelector('.compare-float-btn')).toBeNull();
+    act(() => boxes[0]!.click());
+    act(() => boxes[1]!.click());
+    expect(document.querySelectorAll('.agent-card-on').length).toBe(2);
+    const cta = document.querySelector('.compare-float-btn') as HTMLButtonElement;
+    expect(cta).not.toBeNull();
+    act(() => cta.click());
+    expect(compared).toEqual([['codex', 'claude']]);
+    unmount();
+  });
+
+  it('卡片 ↔ 表格切换后选中态保持（共享同一 state）', async () => {
+    localStorage.setItem(AGENT_VIEW_KEY, 'cards');
+    const { unmount } = mount(
+      <AgentOverview
+        locale="zh"
+        load={async () => ({ rows: twoRows, stamp: 's1', cached: true })}
+        onCompareProviders={() => undefined}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const box = document.querySelector<HTMLInputElement>('.agent-card-compare')!;
+    act(() => box.click());
+    expect(document.querySelectorAll('.agent-card-on').length).toBe(1);
+
+    const tableBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '表格');
+    act(() => tableBtn!.click());
+    const tableBoxes = Array.from(document.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]'));
+    expect(tableBoxes.filter((b) => b.checked).length).toBe(1);
+
+    const cardsBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '卡片');
+    act(() => cardsBtn!.click());
+    expect(document.querySelectorAll('.agent-card-on').length).toBe(1);
+    unmount();
+  });
+});

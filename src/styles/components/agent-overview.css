@@ -129,6 +129,18 @@
   min-width: 0;
 }
 
+/* REQ-118：卡片视图 compare 复选框（与表格视图共享选中态） */
+
+.agent-card-on {
+  border-color: var(--accent-emphasis);
+  box-shadow: inset 0 0 0 1px var(--accent-emphasis);
+}
+
+.agent-card-compare {
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
 .agent-card-name {
   font-weight: var(--weight-semibold);
 }

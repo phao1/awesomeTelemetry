@@ -374,10 +374,12 @@ export function AgentOverview({
     },
   ];
 
-  /** REQ-107：卡片网格视图 —— ProviderBadge + agent 名 + 会话数 + 堆叠 Phase 条 + 6 指标 + Phase 分解。 */
+  /** REQ-107 + REQ-118：卡片网格视图 —— compare 复选框 + ProviderBadge + agent 名 +
+   * 会话数 + 堆叠 Phase 条 + 6 指标 + Phase 分解。选中态与表格视图共享同一 state。 */
   const cardGrid = (
     <div className="agent-card-grid">
       {sortedRows.map((row) => {
+        const compareKey = `${row.provider}/${row.sourceAgent}`;
         const metrics: Array<{ label: string; value: string }> = [
           { label: t('agent.sessions', locale), value: fmtNum(row.sessionCount) },
           { label: t('agent.tokens', locale), value: fmtNum(row.tokenTotal) },
@@ -387,8 +389,18 @@ export function AgentOverview({
           { label: t('agent.errorRate', locale), value: pct(row.errorRate) },
         ];
         return (
-          <article key={`${row.provider}/${row.sourceAgent}`} className="agent-card">
+          <article
+            key={compareKey}
+            className={`agent-card ${compareSelection.includes(compareKey) ? 'agent-card-on' : ''}`}
+          >
             <header className="agent-card-head">
+              <input
+                type="checkbox"
+                className="agent-card-compare"
+                aria-label={`${t('compare.left', locale)} ${compareKey}`}
+                checked={compareSelection.includes(compareKey)}
+                onChange={() => toggleCompare(compareKey)}
+              />
               <ProviderBadge provider={row.provider} locale={locale} />
               <span className="agent-card-name">{row.sourceAgent || row.provider}</span>
               <span className="mono agent-card-provider">{row.provider}</span>
