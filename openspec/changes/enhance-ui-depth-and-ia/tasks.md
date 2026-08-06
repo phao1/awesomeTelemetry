@@ -59,20 +59,20 @@
 
 ## §3 Speed Metrics 扩展（B3）
 
-- [ ] 3.1 `CompareSpeedMetrics.tsx`：从 3 卡扩展为 6 核心 + 4 辅助 = 10 卡
-- [ ] 3.2 核心 6 卡：e2e / TTFT / TPS / TPOT / turnGap / pureInference
+- [x] 3.1 `CompareSpeedMetrics.tsx`：从 3 卡扩展为 6 核心 + 4 辅助 = 10 卡
+- [x] 3.2 核心 6 卡：e2e / TTFT / TPS / TPOT / turnGap / pureInference
   （L/R 值 + winner 标记）
-- [ ] 3.3 辅助 4 卡：LLM Calls / avgLlmDuration / totalToolDuration / cacheHitRate
+- [x] 3.3 辅助 4 卡：LLM Calls / avgLlmDuration / totalToolDuration / cacheHitRate
   （紧凑排列，仅 L/R 值 + delta）
-- [ ] 3.4 TTFT > 5000ms 时显示启动开销警告条
+- [x] 3.4 TTFT > 5000ms 时显示启动开销警告条
   （`--attention-subtle` + `IconWarning` + "Startup overhead: Xs"）
-- [ ] 3.5 `null` 值显示 `—`，MUST NOT 显示 `0`
-- [ ] 3.6 winner 判定：lower-is-better / higher-is-better 逻辑
-- [ ] 3.7 确认 `cacheHitRate` / `avgLlmDuration` 从 `SpeedMetrics` 类型取值
+- [x] 3.5 `null` 值显示 `—`，MUST NOT 显示 `0`
+- [x] 3.6 winner 判定：lower-is-better / higher-is-better 逻辑
+- [x] 3.7 确认 `cacheHitRate` / `avgLlmDuration` 从 `SpeedMetrics` 类型取值
   （已在 calibrate B2 实现），MUST NOT 重复计算
-- [ ] 3.8 i18n：新增 `compare.speed.{tpot,turnGap,pureInference,llmCalls,
+- [x] 3.8 i18n：新增 `compare.speed.{tpot,turnGap,pureInference,llmCalls,
   avgLlmDuration,totalToolDuration,cacheHitRate,startupOverhead}` key
-- [ ] 3.9 测试：`CompareSpeedMetrics.test.tsx` 断言 10 卡渲染 + 警告条 + null 处理
+- [x] 3.9 测试：`CompareSpeedMetrics.test.tsx` 断言 10 卡渲染 + 警告条 + null 处理
 
 ## §4 系统 Prompt 展开区（B4）
 

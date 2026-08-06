@@ -586,6 +586,7 @@ export function CompareBoard({
                 speed={result.speed}
                 locale={locale}
                 sessions={{ left: result.left.session, right: result.right.session }}
+                events={{ left: result.left.events as TraceEventSlim[], right: result.right.events as TraceEventSlim[] }}
               />
             </ErrorBoundary>
           </CollapsibleSection>

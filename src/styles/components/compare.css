@@ -982,6 +982,46 @@
   font-size: var(--text-xs);
 }
 
+.compare-speed-warn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--attention-subtle);
+  color: var(--fg-default);
+  font-size: var(--text-xs);
+}
+
+.compare-speed-aux {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--kpi-min)), 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.compare-speed-aux-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--canvas-default);
+}
+
+.compare-speed-aux-label {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.compare-speed-aux-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
 /* ---- UI-TASKS 2：图表区（建议 1） ---- */
 .compare-chart-donut {
   display: flex;
