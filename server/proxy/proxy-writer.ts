@@ -10,8 +10,8 @@ const INSERT_PROXY_SQL =
   `INSERT INTO proxy_requests (request_id, method, url, hostname, request_headers, request_body, ` +
   `response_status, response_body, content_type, is_streaming, started_at, completed_at, duration_ms, ` +
   `capture_method, ttnet_encrypted, system_prompt, system_prompt_len, model, input_tokens, output_tokens, ` +
-  `parsed_session_id, parser_route, raw_request_body, raw_response_body) ` +
-  `VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  `parsed_session_id, parser_route, capture_group_id, request_format, raw_request_body, raw_response_body) ` +
+  `VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 export interface ProxyWriteInput {
   db: Database;
@@ -25,6 +25,8 @@ export interface ProxyWriteInput {
   captureMethod: CaptureMethod;
   desensitizeOptions?: DesensitizeOptions;
   notify?: (id: number) => void;
+  /** design D2：一次成功 proxy run 的不透明 UUID；历史行/未接线调用为 null。 */
+  captureGroupId?: string | null;
 }
 
 /** REQ-004/005：写入 proxy_requests；keepRawBodies 默认 false 时不写 raw 列。 */
@@ -54,6 +56,8 @@ export function writeProxyRequest(input: ProxyWriteInput): number {
     input.parsed.outputTokens,
     null,
     input.parsed.parserRoute,
+    input.captureGroupId ?? null,
+    input.parsed.requestFormat ?? 'unknown',
     keepRaw ? input.desensitizedRequestBody : null,
     keepRaw ? input.desensitizedResponseBody : null,
   );

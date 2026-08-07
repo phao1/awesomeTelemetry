@@ -2,7 +2,19 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { EMPTY_TOKEN_USAGE, PROVIDER_KEYS, TRACE_KINDS, TRACE_PHASES } from './trace-types';
 import type {
+  ContextCategoryDiff,
+  ContextChangeEntry,
+  ContextChangeKind,
+  ContextDiffCategory,
+  ContextDiffSegmentKind,
+  ContextGrowth,
+  ContextIndicator,
+  ContextPairingConfidence,
+  ContextRequestRef,
+  ProxyRequest,
   ProxyRequestListItem,
+  RequestContextDiffResponse,
+  RequestContextFormat,
   SessionIndexEntry,
   TraceEventSlim,
   TracePhase,
@@ -53,6 +65,103 @@ describe('REQ-001 类型形状逐字采用契约', () => {
     expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('rawRequestBody');
     expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('rawResponseBody');
     expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('systemPrompt');
+    expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('requestHeaders');
+  });
+});
+
+describe('REQ-001 RequestContextFormat 封闭枚举（add-request-context-diff D3）', () => {
+  it('REQ-001 格式枚举全集不得遗漏', () => {
+    expectTypeOf<RequestContextFormat>().toEqualTypeOf<
+      'anthropic_messages' | 'openai_chat' | 'openai_responses' | 'unknown'
+    >();
+  });
+
+  it('REQ-001 ProxyRequest 携带 captureGroupId/requestFormat 元数据', () => {
+    expectTypeOf<ProxyRequest>().toHaveProperty('captureGroupId');
+    expectTypeOf<ProxyRequest>().toHaveProperty('requestFormat');
+    expectTypeOf<Pick<ProxyRequest, 'captureGroupId'>>().toEqualTypeOf<{
+      captureGroupId: string | null;
+    }>();
+    expectTypeOf<Pick<ProxyRequest, 'requestFormat'>>().toEqualTypeOf<{
+      requestFormat: RequestContextFormat;
+    }>();
+  });
+
+  it('REQ-001 列表项仍排除全部 body/header/system-prompt 字段且只带轻量元数据', () => {
+    expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('requestBody');
+    expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('responseBody');
+    expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('rawRequestBody');
+    expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('rawResponseBody');
+    expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('systemPrompt');
+    expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('requestHeaders');
+    expectTypeOf<ProxyRequestListItem>().toHaveProperty('captureGroupId');
+    expectTypeOf<ProxyRequestListItem>().toHaveProperty('requestFormat');
+    expectTypeOf<ProxyRequestListItem>().toHaveProperty('hasSystemPrompt');
+  });
+});
+
+describe('REQ-001 Request-context diff 公共类型逐字采用（add-request-context-diff D10）', () => {
+  it('REQ-001 四个 diff 枚举封闭且全集一致', () => {
+    expectTypeOf<ContextPairingConfidence>().toEqualTypeOf<
+      'exact' | 'capture_group' | 'manual'
+    >();
+    expectTypeOf<ContextDiffCategory>().toEqualTypeOf<
+      'system' | 'messages' | 'tools' | 'parameters'
+    >();
+    expectTypeOf<ContextChangeKind>().toEqualTypeOf<
+      'added' | 'removed' | 'modified'
+    >();
+    expectTypeOf<ContextDiffSegmentKind>().toEqualTypeOf<
+      'equal' | 'added' | 'removed'
+    >();
+  });
+
+  it('REQ-001 RequestContextDiffResponse 顶层形状与契约一致', () => {
+    expectTypeOf<RequestContextDiffResponse>().toHaveProperty('base');
+    expectTypeOf<RequestContextDiffResponse>().toHaveProperty('target');
+    expectTypeOf<RequestContextDiffResponse>().toHaveProperty('pairing');
+    expectTypeOf<RequestContextDiffResponse>().toHaveProperty('noChange');
+    expectTypeOf<RequestContextDiffResponse>().toHaveProperty('growth');
+    expectTypeOf<RequestContextDiffResponse>().toHaveProperty('indicators');
+    expectTypeOf<RequestContextDiffResponse>().toHaveProperty('categories');
+    expectTypeOf<RequestContextDiffResponse>().toHaveProperty('completeness');
+    expectTypeOf<RequestContextDiffResponse>().toHaveProperty('generatedAt');
+    expectTypeOf<RequestContextDiffResponse>().toHaveProperty('durationMs');
+    expectTypeOf<RequestContextDiffResponse['pairing']>().toEqualTypeOf<{
+      confidence: ContextPairingConfidence;
+      reason: string;
+      warnings: string[];
+    }>();
+    expectTypeOf<RequestContextDiffResponse['categories']>().toEqualTypeOf<
+      ContextCategoryDiff[]
+    >();
+  });
+
+  it('REQ-001 证据/条目/增长/指标形状与契约一致', () => {
+    expectTypeOf<ContextRequestRef>().toHaveProperty('captureMethod');
+    expectTypeOf<ContextRequestRef>().toHaveProperty('parserRoute');
+    expectTypeOf<ContextRequestRef>().toHaveProperty('requestFormat');
+    expectTypeOf<ContextRequestRef>().toHaveProperty('parsedSessionId');
+    expectTypeOf<ContextRequestRef>().toHaveProperty('captureGroupId');
+    expectTypeOf<ContextRequestRef>().toHaveProperty('bodySha256');
+    expectTypeOf<ContextRequestRef>().toHaveProperty('bodyBytes');
+    expectTypeOf<ContextChangeEntry>().toHaveProperty('changedPaths');
+    expectTypeOf<ContextChangeEntry>().toHaveProperty('segments');
+    expectTypeOf<ContextChangeEntry>().toHaveProperty('truncatedReason');
+    expectTypeOf<ContextGrowth>().toHaveProperty('inputTokenDelta');
+    expectTypeOf<ContextGrowth>().toHaveProperty('inputTokenDeltaReason');
+    expectTypeOf<ContextIndicator>().toHaveProperty('classification');
+    expectTypeOf<ContextIndicator>().toHaveProperty('severity');
+  });
+
+  it('REQ-001 公共 diff 类型绝不泄漏 body/header 字段（NFR-S1）', () => {
+    expectTypeOf<RequestContextDiffResponse>().not.toHaveProperty('requestBody');
+    expectTypeOf<RequestContextDiffResponse>().not.toHaveProperty('rawRequestBody');
+    expectTypeOf<RequestContextDiffResponse>().not.toHaveProperty('requestHeaders');
+    expectTypeOf<ContextRequestRef>().not.toHaveProperty('requestBody');
+    expectTypeOf<ContextRequestRef>().not.toHaveProperty('requestHeaders');
+    expectTypeOf<ContextChangeEntry>().not.toHaveProperty('beforeBody');
+    expectTypeOf<ContextChangeEntry>().not.toHaveProperty('afterBody');
   });
 });
 

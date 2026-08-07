@@ -64,6 +64,8 @@ Example:
 | `SESSION_PARSE_FAILED` | 500 | session source parse failed (corrupt / not this provider's format, G5.6) |
 | `PROXY_ALREADY_RUNNING` | 409 | proxy already running |
 | `PROXY_NOT_RUNNING` | 409 | proxy not running |
+| `CONTEXT_DIFF_UNAVAILABLE` | 409 | target is valid but no trustworthy automatic predecessor exists |
+| `CONTEXT_DIFF_UNSUPPORTED` | 422 | target/base source cannot be normalized safely within phase-1 rules |
 | `FRIDA_TARGET_NOT_FOUND` | 409 | no Trae process or ai_agent.dll not loaded |
 | `TRAE_KEY_MISSING` | 412 | Trae SQLCipher key not extracted (G6.1) |
 | `SCAN_IN_PROGRESS` | 429 | a scan is already running |
@@ -350,10 +352,56 @@ forbidden.**
 | `/api/proxy/status` | GET | `{ running: boolean, starting: boolean, port: number \| null, requestCount: number, startedAt: string \| null }` (D4: `starting=true` during async startup) |
 | `/api/proxy/requests` | GET | list, `ProxyRequestListItem[]`, **excludes all 4 body columns and the systemPrompt body** |
 | `/api/proxy/requests/:id` | GET | full `ProxyRequest` incl. bodies |
+| `/api/proxy/requests/:id/context-diff` | GET | bounded evidence-grade request-context diff (see §4.1) |
 | `/api/ca-cert` | GET | `application/x-pem-file`, downloads the CA certificate |
 
 `/api/proxy/requests` params: `limit` (default 50, max 500), `cursor`,
 `hostname`, `captureMethod`.
+
+### 4.1 `GET /api/proxy/requests/:id/context-diff` (add-request-context-diff)
+
+On-demand comparison of the desensitized request context of the target
+request `:id` with an eligible base request. Query:
+
+```ts
+interface RequestContextDiffQuery {
+  base?: 'previous' | `${number}`; // omitted equals previous; numeric value MUST be a positive integer
+}
+```
+
+Semantics:
+
+- Omitted `base` is identical to `base=previous` (automatic pairing).
+- Automatic pairing precedence (design D4): nearest earlier supported request
+  with the same non-empty `parsed_session_id` and `request_format`, then
+  nearest earlier supported request in the same non-empty `capture_group_id`
+  with the same `request_format` and null-safe-equal `model`. Candidates with
+  conflicting non-empty known session IDs are rejected. Never pair by
+  timestamp alone.
+- `base=<positive integer>` selects an explicit manual base; base→target
+  order is preserved, confidence is `manual`, and identity mismatches are
+  returned as warnings, never silently coerced.
+- The route reads exactly the target row and at most one base row; it never
+  scans a capture group/session and never selects raw body columns.
+
+```ts
+// 200 → RequestContextDiffResponse (contracts/data-model.md §7.1, verbatim
+//       from design D10); uncompressed body < 1 MiB; gzip applies via §0.2.
+```
+
+Errors (all via the unified `ApiError` envelope, §0.3; `details` never
+contains a source body, auth header, or stack):
+
+| HTTP | Code | Trigger |
+|---:|---|---|
+| 400 | `BAD_REQUEST` | invalid target/base param or base equals target |
+| 404 | `PROXY_REQUEST_NOT_FOUND` | target missing; manual base missing (`details.role='base'`, no body evidence) |
+| 409 | `CONTEXT_DIFF_UNAVAILABLE` | no trustworthy automatic predecessor; `details.reason='pairing_unavailable'` |
+| 422 | `CONTEXT_DIFF_UNSUPPORTED` | source cannot be normalized safely (missing/unknown/malformed/encrypted/oversized body, format disagreement) with a stable reason |
+| 500 | `INTERNAL_ERROR` | unclassified failure; sanitized, no stack/body/partial diff |
+
+**Budget**: service p95 < 100 ms, event-loop p99 < 50 ms, uncompressed
+response < 1 MiB, two-row read (see `contracts/nfr.md` §2).
 
 ---
 

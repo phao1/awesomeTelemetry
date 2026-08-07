@@ -8,6 +8,7 @@ import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 import { Drawer } from './ui/Modal.js';
 import { Tabs } from './ui/Tabs.js';
 import { Badge } from './ui/Badge.js';
+import { RequestContextDiffPanel } from './RequestContextDiffPanel.js';
 
 export interface ProxyViewProps {
   locale: Locale;
@@ -298,7 +299,12 @@ export function ProxyView({ locale }: ProxyViewProps): React.JSX.Element {
       >
         {detailError !== null && <ErrorState code="PROXY_DETAIL_FAILED" message={detailError} onRetry={() => selected !== null && void openDetail(selected)} />}
         {detail !== null && (
-          <ProxyDetailDrawer request={detail} locale={locale} />
+          <ProxyDetailDrawer
+            request={detail}
+            locale={locale}
+            loadedItems={items}
+            onOpenRequest={(id) => void openDetail(id)}
+          />
         )}
       </Drawer>
     </section>
@@ -308,24 +314,38 @@ export function ProxyView({ locale }: ProxyViewProps): React.JSX.Element {
 function ProxyDetailDrawer({
   request,
   locale,
+  loadedItems,
+  onOpenRequest,
 }: {
   request: ProxyRequest;
   locale: Locale;
+  loadedItems: ProxyRequestListItem[];
+  onOpenRequest: (id: number) => void;
 }): React.JSX.Element {
-  const [tab, setTab] = useState<'request' | 'response' | 'headers' | 'timing'>('request');
+  const [tab, setTab] = useState<'request' | 'response' | 'headers' | 'timing' | 'contextDiff'>('request');
+  // 首次激活 Context Diff 后保持挂载，切走/回来时复用本地缓存而不重发（design D14）。
+  const [contextDiffActivated, setContextDiffActivated] = useState(false);
   const desensitized = request.rawRequestBody !== null && request.rawRequestBody !== request.requestBody;
   const desensitizedResponse = request.rawResponseBody !== null && request.rawResponseBody !== request.responseBody;
+  const showContextDiff = tab === 'contextDiff' || contextDiffActivated;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
       <Tabs
         variant="pill"
         activeId={tab}
-        onChange={(id) => setTab(id as typeof tab)}
+        onChange={(id) => {
+          const next = id as typeof tab;
+          if (next === 'contextDiff') {
+            setContextDiffActivated(true);
+          }
+          setTab(next);
+        }}
         items={[
           { id: 'request', label: t('proxy.request', locale) },
           { id: 'response', label: t('proxy.response', locale) },
           { id: 'headers', label: t('proxy.headers', locale) },
           { id: 'timing', label: t('proxy.timing', locale) },
+          { id: 'contextDiff', label: t('proxy.contextDiff.title', locale) },
         ]}
       />
       {tab === 'request' && (
@@ -365,6 +385,17 @@ function ProxyDetailDrawer({
           <dt>capture</dt>
           <dd className="mono">{request.captureMethod}</dd>
         </dl>
+      )}
+      {showContextDiff && (
+        <div hidden={tab !== 'contextDiff'}>
+          <RequestContextDiffPanel
+            targetId={request.id}
+            targetFormat={request.requestFormat}
+            locale={locale}
+            loadedItems={loadedItems}
+            onOpenRequest={onOpenRequest}
+          />
+        </div>
       )}
     </div>
   );

@@ -49,6 +49,30 @@ upgrade the architecture per the §7 escalation rules.
 | Incremental write of one session (append 1 event) | 348 SQL / 181.91ms | **1 SQL / < 20ms** | write-counter test |
 | Event-loop delay p99 (during service) | unmeasured (spawnSync blocked 6,074ms) | **< 50ms** | `monitorEventLoopDelay` |
 | Steady-state DB + WAL size | 471.64MB | **< 200MB, WAL < 20MB** | health endpoint |
+| Context-diff service (tier-B ceiling pair) | did not exist | **< 100ms p95** | `server.perf.test.ts` |
+| Context-diff event-loop delay p99 | did not exist | **< 50ms** | `monitorEventLoopDelay` |
+| Context-diff uncompressed 200 response | did not exist | **< 1 MiB** | contract test |
+
+---
+
+## 2.1 Context-diff budget (add-request-context-diff)
+
+The `GET /api/proxy/requests/:id/context-diff` route is an on-demand,
+two-row workflow. The following are hard requirements at the same level as the
+§2 table:
+
+| Assertion | Budget | Verification |
+|---|---|---|
+| Service time (endpoint to response) at the tier-B ceiling pair | p95 < 100 ms | `server.perf.test.ts` |
+| Event-loop delay during a diff | p99 < 50 ms | `monitorEventLoopDelay` |
+| Uncompressed successful response size | < 1 MiB | contract test + serialize-once assert (design D9) |
+| Source rows read per diff | exactly 1 target + at most 1 base | query instrumentation; no capture-group/session scan (design D12) |
+| Per-source stored body size cap | ≤ 2 MiB; larger → 422 `source_too_large`, no partial JSON parsing | normalizer test (design D9) |
+| Semantic work on the forwarding/startup/list/SSE/detail paths | zero — normalization/diff runs only after explicit Context Diff activation | regression test proving proxy capture does not import diff modules (NFR-P6) |
+
+Both predecessor lookups (exact-session and capture-group) must use their
+composite index and their `EXPLAIN QUERY PLAN` must not contain
+`USE TEMP B-TREE` (see `contracts/database.md` §5.3).
 
 ---
 

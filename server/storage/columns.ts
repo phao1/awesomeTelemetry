@@ -30,6 +30,6 @@ export const PROXY_LIST_COLS = [
   'id', 'request_id', 'method', 'url', 'hostname', 'response_status',
   'content_type', 'is_streaming', 'started_at', 'completed_at', 'duration_ms',
   'capture_method', 'ttnet_encrypted', 'model', 'input_tokens', 'output_tokens',
-  'parsed_session_id', 'parser_route',
+  'parsed_session_id', 'parser_route', 'capture_group_id', 'request_format',
   'CASE WHEN system_prompt_len > 0 THEN 1 ELSE 0 END AS has_system_prompt',
 ].join(', ');

@@ -508,6 +508,12 @@ export interface ProxyRequest {
   outputTokens: number | null;
   parsedSessionId: string | null;
   parserRoute: string | null;
+  /** 一次成功代理运行对应一个不透明 UUID（add-request-context-diff D2）。
+   * 仅作关联证据，绝不可当作 agent session 展示。 */
+  captureGroupId: string | null;
+  /** 封闭的 phase-1 请求格式分类（add-request-context-diff D3）。
+   * 历史行（分类落地前捕获）为 `unknown`。 */
+  requestFormat: RequestContextFormat;
   /** 未脱敏原文。仅在脱敏开启时填充（G8.3）。列表接口不返回。 */
   rawRequestBody: string | null;
   rawResponseBody: string | null;
@@ -530,6 +536,124 @@ export interface FridaCapture {
   captureSessionId: string | null;
   messageCount: number | null;
   tokens: TokenUsage | null;
+}
+
+// ── §7.1 Request-context diff（add-request-context-diff，design D3/D10 逐字采用） ──
+
+/** 封闭的 phase-1 请求格式全集（design D3）。其余一律 `unknown`，
+ * 不存在“尽力而为的成功”。 */
+export type RequestContextFormat =
+  | 'anthropic_messages'
+  | 'openai_chat'
+  | 'openai_responses'
+  | 'unknown';
+
+export type ContextPairingConfidence = 'exact' | 'capture_group' | 'manual';
+export type ContextDiffCategory = 'system' | 'messages' | 'tools' | 'parameters';
+export type ContextChangeKind = 'added' | 'removed' | 'modified';
+export type ContextDiffSegmentKind = 'equal' | 'added' | 'removed';
+
+export interface ContextCompleteness {
+  complete: boolean;
+  omittedCount: number;
+  reasons: Array<
+    | 'item_limit'
+    | 'entry_limit'
+    | 'inline_limit'
+    | 'response_limit'
+    | 'source_incomplete'
+  >;
+}
+
+export interface ContextRequestRef {
+  id: number;
+  requestId: string;
+  startedAt: string;
+  hostname: string;
+  model: string | null;
+  captureMethod: CaptureMethod;
+  parserRoute: string | null;
+  requestFormat: Exclude<RequestContextFormat, 'unknown'>;
+  parsedSessionId: string | null;
+  captureGroupId: string | null;
+  bodySha256: string;
+  bodyBytes: number;
+}
+
+export interface ContextDiffSegment {
+  kind: ContextDiffSegmentKind;
+  text: string;
+}
+
+export interface ContextEvidenceValue {
+  jsonType: 'string' | 'number' | 'boolean' | 'null' | 'array' | 'object';
+  sha256: string;
+  charLength: number;
+  excerptStart: string;
+  excerptEnd: string;
+  truncated: boolean;
+}
+
+export interface ContextChangeEntry {
+  category: ContextDiffCategory;
+  kind: ContextChangeKind;
+  identity: string;
+  label: string;
+  beforePath: string | null;
+  afterPath: string | null;
+  beforeIndex: number | null;
+  afterIndex: number | null;
+  changedPaths: string[];
+  before: ContextEvidenceValue | null;
+  after: ContextEvidenceValue | null;
+  segments: ContextDiffSegment[] | null;
+  truncatedReason: 'inline_limit' | 'response_limit' | null;
+}
+
+export interface ContextCategoryDiff {
+  category: ContextDiffCategory;
+  added: number;
+  removed: number;
+  modified: number;
+  unchanged: number;
+  completeness: ContextCompleteness;
+  entries: ContextChangeEntry[];
+}
+
+export interface ContextGrowth {
+  baseChars: number;
+  targetChars: number;
+  deltaChars: number;
+  messageDelta: number;
+  toolDelta: number;
+  inputTokenDelta: number | null;
+  inputTokenDeltaReason: 'captured_usage' | 'usage_missing';
+}
+
+export interface ContextIndicator {
+  code: 'history_shrink' | 'system_loss' | 'tool_loss' | 'source_incomplete';
+  classification: 'observation' | 'suspected_compaction';
+  severity: 'info' | 'warning';
+  before: number | null;
+  after: number | null;
+  message: string;
+}
+
+export interface RequestContextDiffResponse {
+  base: ContextRequestRef;
+  target: ContextRequestRef;
+  pairing: {
+    confidence: ContextPairingConfidence;
+    reason: string;
+    warnings: string[];
+  };
+  noChange: boolean;
+  growth: ContextGrowth;
+  indicators: ContextIndicator[];
+  categories: ContextCategoryDiff[];
+  completeness: ContextCompleteness;
+  generatedAt: string;
+  durationMs: number;
 }
 
 // ── §8 扫描状态 ────────────────────────────────────────────

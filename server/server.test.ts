@@ -1,5 +1,5 @@
 import { gunzipSync } from 'node:zlib';
-import http, { type IncomingHttpHeaders } from 'node:http';
+import http, { type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -179,6 +179,59 @@ async function waitFor(
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
   throw new Error('waitFor 超时');
+}
+
+interface ProxyOrigin {
+  port: number;
+  close: () => Promise<void>;
+}
+
+/** 本地 origin：模拟 Anthropic / OpenAI 上游 JSON 响应。 */
+async function startProxyOrigin(
+  handler: (req: IncomingMessage, res: ServerResponse) => void,
+): Promise<ProxyOrigin> {
+  const server = http.createServer(handler);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    port,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      }),
+  };
+}
+
+/** 经真实 http-mitm-proxy 转发：绝对形式 URL + Host 覆盖（连接仍走 originPort）。 */
+function proxyRequest(
+  proxyPort: number,
+  originPort: number,
+  path: string,
+  host: string,
+  body: string,
+): Promise<RequestResult> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port: proxyPort,
+        method: 'POST',
+        path: `http://127.0.0.1:${originPort}${path}`,
+        headers: { host, 'content-type': 'application/json', accept: 'application/json' },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          const raw = Buffer.concat(chunks);
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, raw, text: raw.toString('utf8') });
+        });
+      },
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
 }
 
 async function boot(
@@ -506,6 +559,231 @@ describe('API 契约（contracts/api.md §8）', () => {
     expect(stopped.status).toBe(200);
   });
 
+  it('T08 E2E：真实代理捕获两个 Anthropic 请求 → context-diff HTTP capture_group 配对与差异', async () => {
+    const { port, close } = await boot();
+    const proxyPort = await freePort();
+    const origin = await startProxyOrigin((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          id: 'msg_1',
+          type: 'message',
+          usage: { input_tokens: 9, output_tokens: 4 },
+          content: [{ type: 'text', text: 'ok' }],
+        }),
+      );
+    });
+    try {
+      const started = await request(port, 'POST', '/api/proxy/start', {
+        body: JSON.stringify({ port: proxyPort }),
+      });
+      expect(started.status).toBe(200);
+      await waitFor(async () => {
+        const r = await request(port, 'GET', '/api/proxy/status');
+        return (JSON.parse(r.text) as { running: boolean }).running;
+      });
+
+      const model = 'claude-3-5-sonnet-20241022';
+      await proxyRequest(
+        proxyPort,
+        origin.port,
+        '/v1/messages',
+        'api.anthropic.com',
+        JSON.stringify({ model, system: 'be brief', messages: [{ role: 'user', content: 'hello' }], max_tokens: 64 }),
+      );
+      await proxyRequest(
+        proxyPort,
+        origin.port,
+        '/v1/messages',
+        'api.anthropic.com',
+        JSON.stringify({
+          model,
+          system: 'be brief',
+          messages: [
+            { role: 'user', content: 'hello' },
+            { role: 'assistant', content: 'hi' },
+            { role: 'user', content: 'second question' },
+          ],
+          max_tokens: 64,
+        }),
+      );
+
+      await waitFor(async () => {
+        const list = JSON.parse((await request(port, 'GET', '/api/proxy/requests?limit=20')).text) as {
+          items: Array<{ id: number; captureGroupId: string | null; requestFormat: string }>;
+        };
+        return list.items.filter((i) => i.captureGroupId !== null && i.requestFormat === 'anthropic_messages').length >= 2;
+      });
+
+      const list = JSON.parse((await request(port, 'GET', '/api/proxy/requests?limit=20')).text) as {
+        items: Array<{ id: number; captureGroupId: string | null; requestFormat: string; requestId: string }>;
+      };
+      const anthropic = list.items.filter((i) => i.captureGroupId !== null && i.requestFormat === 'anthropic_messages');
+      expect(anthropic).toHaveLength(2);
+      expect(anthropic[0]!.captureGroupId).not.toBeNull();
+      expect(anthropic[0]!.captureGroupId).toBe(anthropic[1]!.captureGroupId);
+      // 列表按 started_at DESC（最新在前）；target 取较晚行（id 较大）
+      const [baseId, targetId] = [Math.min(...anthropic.map((i) => i.id)), Math.max(...anthropic.map((i) => i.id))];
+
+      const diff = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff`);
+      expect(diff.status).toBe(200);
+      const body = JSON.parse(diff.text) as {
+        base: { id: number; requestId: string };
+        target: { id: number; requestId: string };
+        pairing: { confidence: string; reason: string };
+        noChange: boolean;
+        categories: Array<{ category: string; entries: unknown[] }>;
+      };
+      expect(body.pairing.confidence).toBe('capture_group');
+      expect(body.base.id).toBe(baseId);
+      expect(body.target.id).toBe(targetId);
+      expect(body.noChange).toBe(false);
+      expect(body.base.requestId.length).toBeGreaterThan(0);
+      expect(body.target.requestId.length).toBeGreaterThan(0);
+      const messages = body.categories.find((c) => c.category === 'messages');
+      expect(messages).toBeDefined();
+      expect(messages!.entries.length).toBeGreaterThan(0);
+    } finally {
+      await request(port, 'POST', '/api/proxy/stop').catch(() => undefined);
+      await origin.close();
+      await close();
+    }
+  });
+
+  it('T08 E2E：真实代理捕获两个 OpenAI Responses 请求 → context-diff HTTP capture_group 配对', async () => {
+    const { port, close } = await boot();
+    const proxyPort = await freePort();
+    const origin = await startProxyOrigin((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ id: 'resp_1', output: [], usage: { input_tokens: 5, output_tokens: 2 } }));
+    });
+    try {
+      await request(port, 'POST', '/api/proxy/start', {
+        body: JSON.stringify({ port: proxyPort }),
+      });
+      await waitFor(async () => {
+        const r = await request(port, 'GET', '/api/proxy/status');
+        return (JSON.parse(r.text) as { running: boolean }).running;
+      });
+
+      const message = (text: string) => ({
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text }],
+      });
+      await proxyRequest(
+        proxyPort,
+        origin.port,
+        '/v1/responses',
+        'api.openai.com',
+        JSON.stringify({ model: 'gpt-4o', instructions: 'be brief', input: [message('hello')] }),
+      );
+      await proxyRequest(
+        proxyPort,
+        origin.port,
+        '/v1/responses',
+        'api.openai.com',
+        JSON.stringify({ model: 'gpt-4o', instructions: 'be brief', input: [message('hello'), message('follow-up')] }),
+      );
+
+      await waitFor(async () => {
+        const list = JSON.parse((await request(port, 'GET', '/api/proxy/requests?limit=20')).text) as {
+          items: Array<{ id: number; captureGroupId: string | null; requestFormat: string }>;
+        };
+        return list.items.filter((i) => i.captureGroupId !== null && i.requestFormat === 'openai_responses').length >= 2;
+      });
+
+      const list = JSON.parse((await request(port, 'GET', '/api/proxy/requests?limit=20')).text) as {
+        items: Array<{ id: number; captureGroupId: string | null; requestFormat: string }>;
+      };
+      const responses = list.items.filter((i) => i.captureGroupId !== null && i.requestFormat === 'openai_responses');
+      expect(responses).toHaveLength(2);
+      // 列表按 started_at DESC（最新在前）；target 取较晚行（id 较大）
+      const [baseId, targetId] = [Math.min(...responses.map((i) => i.id)), Math.max(...responses.map((i) => i.id))];
+
+      const diff = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff`);
+      expect(diff.status).toBe(200);
+      const body = JSON.parse(diff.text) as {
+        base: { id: number };
+        target: { id: number };
+        pairing: { confidence: string };
+        noChange: boolean;
+      };
+      expect(body.pairing.confidence).toBe('capture_group');
+      expect(body.base.id).toBe(baseId);
+      expect(body.target.id).toBe(targetId);
+      expect(body.noChange).toBe(false);
+    } finally {
+      await request(port, 'POST', '/api/proxy/stop').catch(() => undefined);
+      await origin.close();
+      await close();
+    }
+  });
+
+  it('T08 E2E：raw-only sentinel 注入 raw 列/headers → context-diff HTTP 成功与错误响应均不含 sentinel（NFR-S1）', async () => {
+    const { port, db, close } = await boot();
+    const proxyPort = await freePort();
+    const origin = await startProxyOrigin((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ id: 'msg_1', usage: { input_tokens: 2, output_tokens: 1 } }));
+    });
+    try {
+      await request(port, 'POST', '/api/proxy/start', {
+        body: JSON.stringify({ port: proxyPort }),
+      });
+      await waitFor(async () => {
+        const r = await request(port, 'GET', '/api/proxy/status');
+        return (JSON.parse(r.text) as { running: boolean }).running;
+      });
+
+      const model = 'claude-3-5-sonnet-20241022';
+      // 两行可自动配对 + 一行 unknown 格式（走 unsupported 错误路径）
+      await proxyRequest(proxyPort, origin.port, '/v1/messages', 'api.anthropic.com', JSON.stringify({ model, messages: [{ role: 'user', content: 'a' }] }));
+      await proxyRequest(proxyPort, origin.port, '/v1/messages', 'api.anthropic.com', JSON.stringify({ model, messages: [{ role: 'user', content: 'b' }] }));
+      await proxyRequest(proxyPort, origin.port, '/elsewhere', 'example.com', JSON.stringify({ foo: 1 }));
+
+      await waitFor(async () => {
+        const list = JSON.parse((await request(port, 'GET', '/api/proxy/requests?limit=20')).text) as {
+          items: Array<{ id: number }>;
+        };
+        return list.items.length >= 3;
+      });
+
+      const rows = db
+        .prepare('SELECT id, request_format FROM proxy_requests ORDER BY id')
+        .all() as Array<{ id: number; request_format: string }>;
+      expect(rows).toHaveLength(3);
+      const sentinel = 'sk-RAWONLYSENTINEL9876543210';
+      const updateRaw = db.prepare(
+        'UPDATE proxy_requests SET raw_request_body = ?, raw_response_body = ?, request_headers = ? WHERE id = ?',
+      );
+      for (const row of rows) {
+        updateRaw.run(`raw:${sentinel}`, `resp:${sentinel}`, JSON.stringify({ authorization: `Bearer ${sentinel}` }), row.id);
+      }
+      const anthropicRows = rows.filter((r) => r.request_format === 'anthropic_messages');
+      const base = anthropicRows[0];
+      const target = anthropicRows[1];
+      const unknown = rows.find((r) => r.request_format === 'unknown');
+      expect(base).toBeDefined();
+      expect(target).toBeDefined();
+      expect(unknown).toBeDefined();
+
+      const diff = await request(port, 'GET', `/api/proxy/requests/${target!.id}/context-diff`);
+      expect(diff.status).toBe(200);
+      expect(diff.text).not.toContain(sentinel);
+      expect((JSON.parse(diff.text) as { base: { id: number } }).base.id).toBe(base!.id);
+
+      // 错误路径：手动 base 为 unknown 格式 → 422 CONTEXT_DIFF_UNSUPPORTED
+      const unsupported = await request(port, 'GET', `/api/proxy/requests/${target!.id}/context-diff?base=${unknown!.id}`);
+      expect(unsupported.status).toBe(422);
+      expect(unsupported.text).not.toContain(sentinel);
+    } finally {
+      await request(port, 'POST', '/api/proxy/stop').catch(() => undefined);
+      await origin.close();
+      await close();
+    }
+  });
+
   it('R-09：compare 触发惰性详情加载且标题不被注入内容覆盖', async () => {
     const userDir = mkdtempSync(join(tmpdir(), 'server-compare-'));
     staticDirs.push(userDir);
@@ -827,5 +1105,357 @@ describe('T-01 静态兜底（前端可达）', () => {
     expect(r.status).toBe(200);
     expect(r.headers['content-type']).toContain('text/html');
     expect(r.text).toContain('npm run build');
+  });
+});
+
+// ── add-request-context-diff §6：HTTP 契约与隐私 ─────────────────────────────
+
+const RAW_SENTINEL = 'RAW_ONLY_SENTINEL_7f3a';
+const AUTH_SENTINEL = 'Bearer PRIVATE_AUTH_9c21';
+
+interface DiffSeed {
+  requestId: string;
+  startedAt: string;
+  format: 'anthropic_messages' | 'unknown';
+  body: string | null;
+  captureGroupId?: string | null;
+  parsedSessionId?: string | null;
+  model?: string | null;
+  /** 在 raw 列 / headers 里埋 sentinel（NFR-S1）。 */
+  privacyLeak?: boolean;
+}
+
+function seedDiffProxy(db: Db, s: DiffSeed): number {
+  const r = db
+    .prepare(
+      `INSERT INTO proxy_requests (request_id, method, url, hostname, started_at,
+         capture_group_id, request_format, model, parsed_session_id, request_body,
+         input_tokens, request_headers, raw_request_body, raw_response_body)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      s.requestId,
+      'POST',
+      'https://api.anthropic.com',
+      'api.anthropic.com',
+      s.startedAt,
+      s.captureGroupId ?? null,
+      s.format,
+      s.model ?? null,
+      s.parsedSessionId ?? null,
+      s.body,
+      null,
+      s.privacyLeak === true ? JSON.stringify({ authorization: AUTH_SENTINEL }) : null,
+      s.privacyLeak === true ? RAW_SENTINEL : null,
+      s.privacyLeak === true ? RAW_SENTINEL : null,
+    );
+  return Number(r.lastInsertRowid);
+}
+
+function anthropicBody(messages: Array<{ role: string; content: string }>): string {
+  return JSON.stringify({ model: 'claude-3-5-sonnet', system: 'be helpful', messages });
+}
+
+function messages(n: number, contentLen: number, prefix: string): Array<{ role: string; content: string }> {
+  return Array.from({ length: n }, (_, i) => ({
+    role: i % 2 === 0 ? 'user' : 'assistant',
+    content: `${prefix}${i}`.padEnd(contentLen, 'x'),
+  }));
+}
+
+describe('context-diff API（design D10 / §6.1-§6.5）', () => {
+  it('6.1/6.2 自动成功：省略 base 与 base=previous 等价 → 200', async () => {
+    const { port, db } = await boot((d) => {
+      seedDiffProxy(d, {
+        requestId: 'r1', startedAt: '2026-08-01T00:00:00.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(1, 8, 'm')),
+        captureGroupId: 'grp-1', parsedSessionId: 'sess-1', model: 'claude-3-5-sonnet',
+      });
+      seedDiffProxy(d, {
+        requestId: 'r2', startedAt: '2026-08-01T00:00:01.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(2, 8, 'm')),
+        captureGroupId: 'grp-1', parsedSessionId: 'sess-1', model: 'claude-3-5-sonnet',
+      });
+    });
+    const { items } = JSON.parse(
+      (await request(port, 'GET', '/api/proxy/requests?limit=5')).text,
+    ) as { items: Array<{ id: number }> };
+    const targetId = Math.max(...items.map((i) => i.id));
+
+    for (const base of [undefined, 'previous']) {
+      const path = `/api/proxy/requests/${targetId}/context-diff${base ? `?base=${base}` : ''}`;
+      const r = await request(port, 'GET', path);
+      expect(r.status).toBe(200);
+      const body = JSON.parse(r.text) as {
+        base: { id: number };
+        target: { id: number };
+        pairing: { confidence: string };
+        categories: unknown[];
+        completeness: { complete: boolean };
+      };
+      expect(body.base.id).toBe(targetId - 1);
+      expect(body.target.id).toBe(targetId);
+      expect(['exact', 'capture_group']).toContain(body.pairing.confidence);
+      expect(Array.isArray(body.categories)).toBe(true);
+      expect(typeof body.completeness.complete).toBe('boolean');
+    }
+    void db;
+  });
+
+  it('手动 base=<正整数> → 200 confidence manual', async () => {
+    const { port } = await boot((d) => {
+      seedDiffProxy(d, {
+        requestId: 'a', startedAt: '2026-08-01T00:00:00.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(1, 8, 'a')),
+        captureGroupId: 'gA', parsedSessionId: 'sA', model: 'claude-3-5-sonnet',
+      });
+      seedDiffProxy(d, {
+        requestId: 'b', startedAt: '2026-08-01T00:00:01.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(1, 8, 'b')),
+        captureGroupId: 'gB', parsedSessionId: 'sB', model: 'claude-3-5-sonnet',
+      });
+    });
+    const { items } = JSON.parse(
+      (await request(port, 'GET', '/api/proxy/requests?limit=5')).text,
+    ) as { items: Array<{ id: number }> };
+    const [baseId, targetId] = [Math.min(...items.map((i) => i.id)), Math.max(...items.map((i) => i.id))];
+    const r = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff?base=${baseId}`);
+    expect(r.status).toBe(200);
+    const body = JSON.parse(r.text) as {
+      base: { id: number };
+      pairing: { confidence: string; warnings: string[] };
+    };
+    expect(body.base.id).toBe(baseId);
+    expect(body.pairing.confidence).toBe('manual');
+    expect(Array.isArray(body.pairing.warnings)).toBe(true);
+  });
+
+  it('非法 target id → 400 BAD_REQUEST', async () => {
+    const { port } = await boot();
+    for (const bad of ['abc', '0', '-1']) {
+      const r = await request(port, 'GET', `/api/proxy/requests/${bad}/context-diff`);
+      expect(r.status).toBe(400);
+      expect(JSON.parse(r.text).error.code).toBe('BAD_REQUEST');
+    }
+  });
+
+  it('base 非正整数/非法 → 400 BAD_REQUEST', async () => {
+    const { port, db } = await boot((d) => {
+      seedDiffProxy(d, {
+        requestId: 't', startedAt: '2026-08-01T00:00:00.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(1, 8, 't')),
+      });
+    });
+    const { items } = JSON.parse(
+      (await request(port, 'GET', '/api/proxy/requests?limit=5')).text,
+    ) as { items: Array<{ id: number }> };
+    const targetId = items[0]!.id;
+    for (const base of ['abc', '0', '-3']) {
+      const r = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff?base=${base}`);
+      expect(r.status).toBe(400);
+      expect(JSON.parse(r.text).error.code).toBe('BAD_REQUEST');
+    }
+    void db;
+  });
+
+  it('base 等于 target → 400 BAD_REQUEST', async () => {
+    const { port } = await boot((d) => {
+      seedDiffProxy(d, {
+        requestId: 't', startedAt: '2026-08-01T00:00:00.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(1, 8, 't')),
+      });
+    });
+    const { items } = JSON.parse(
+      (await request(port, 'GET', '/api/proxy/requests?limit=5')).text,
+    ) as { items: Array<{ id: number }> };
+    const targetId = items[0]!.id;
+    const r = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff?base=${targetId}`);
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.text).error.code).toBe('BAD_REQUEST');
+  });
+
+  it('target 不存在 → 404 PROXY_REQUEST_NOT_FOUND', async () => {
+    const { port } = await boot();
+    const r = await request(port, 'GET', '/api/proxy/requests/999999/context-diff');
+    expect(r.status).toBe(404);
+    expect(JSON.parse(r.text).error.code).toBe('PROXY_REQUEST_NOT_FOUND');
+  });
+
+  it('手动 base 不存在 → 404 + details.role=base，无正文证据', async () => {
+    const { port } = await boot((d) => {
+      seedDiffProxy(d, {
+        requestId: 't', startedAt: '2026-08-01T00:00:00.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(1, 8, 't')),
+      });
+    });
+    const { items } = JSON.parse(
+      (await request(port, 'GET', '/api/proxy/requests?limit=5')).text,
+    ) as { items: Array<{ id: number }> };
+    const targetId = items[0]!.id;
+    const r = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff?base=777777`);
+    expect(r.status).toBe(404);
+    const body = JSON.parse(r.text) as { error: { code: string; details?: { role: string } } };
+    expect(body.error.code).toBe('PROXY_REQUEST_NOT_FOUND');
+    expect(body.error.details?.role).toBe('base');
+  });
+
+  it('无可信自动前驱 → 409 CONTEXT_DIFF_UNAVAILABLE + reason=pairing_unavailable', async () => {
+    const { port } = await boot((d) => {
+      seedDiffProxy(d, {
+        requestId: 't', startedAt: '2026-08-01T00:00:00.000Z',
+        format: 'unknown', body: anthropicBody(messages(1, 8, 't')),
+      });
+    });
+    const { items } = JSON.parse(
+      (await request(port, 'GET', '/api/proxy/requests?limit=5')).text,
+    ) as { items: Array<{ id: number }> };
+    const targetId = items[0]!.id;
+    const r = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff`);
+    expect(r.status).toBe(409);
+    const body = JSON.parse(r.text) as {
+      error: { code: string; details?: { reason: string } };
+    };
+    expect(body.error.code).toBe('CONTEXT_DIFF_UNAVAILABLE');
+    expect(body.error.details?.reason).toBe('pairing_unavailable');
+  });
+
+  it('source 无法安全标准化 → 422 CONTEXT_DIFF_UNSUPPORTED（全部 reason）', async () => {
+    const cases: Array<{ name: string; format: 'anthropic_messages' | 'unknown'; body: string | null }> = [
+      { name: 'desensitized_body_missing', format: 'anthropic_messages', body: null },
+      { name: 'invalid_json', format: 'anthropic_messages', body: '{ not json' },
+      { name: 'not_an_object', format: 'anthropic_messages', body: '"a string"' },
+      { name: 'source_too_large', format: 'anthropic_messages', body: 'x'.repeat(2 * 1024 * 1024 + 1) },
+      { name: 'unknown_format', format: 'unknown', body: anthropicBody(messages(1, 8, 't')) },
+      { name: 'classification_mismatch', format: 'anthropic_messages', body: JSON.stringify({ model: 'm' }) },
+    ];
+    for (const c of cases) {
+      const { port } = await boot((d) => {
+        seedDiffProxy(d, {
+          requestId: 'base', startedAt: '2026-08-01T00:00:00.000Z',
+          format: 'anthropic_messages', body: anthropicBody(messages(1, 8, 'b')),
+        });
+        seedDiffProxy(d, {
+          requestId: 'target', startedAt: '2026-08-01T00:00:01.000Z',
+          format: c.format, body: c.body,
+        });
+      });
+      const { items } = JSON.parse(
+        (await request(port, 'GET', '/api/proxy/requests?limit=5')).text,
+      ) as { items: Array<{ id: number }> };
+      const [baseId, targetId] = [Math.min(...items.map((i) => i.id)), Math.max(...items.map((i) => i.id))];
+      const r = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff?base=${baseId}`);
+      expect(r.status).toBe(422);
+      const body = JSON.parse(r.text) as {
+        error: { code: string; details?: { role: string; reason: string } };
+      };
+      expect(body.error.code).toBe('CONTEXT_DIFF_UNSUPPORTED');
+      expect(body.error.details?.reason).toBe(c.name);
+      expect(body.error.details?.role).toBe('target');
+    }
+  });
+
+  it('内部不可控失败 → 500 INTERNAL_ERROR，且无栈/无正文/无 sentinel', async () => {
+    // 触发 enforceResponseBudget 抛错（响应超 1 MiB 且无法缩减到界内）。
+    const { port } = await boot((d) => {
+      seedDiffProxy(d, {
+        requestId: 'bigbase', startedAt: '2026-08-01T00:00:00.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(1000, 1800, 'b')),
+        privacyLeak: true,
+      });
+      seedDiffProxy(d, {
+        requestId: 'bigtarget', startedAt: '2026-08-01T00:00:01.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(1000, 1800, 't')),
+        privacyLeak: true,
+      });
+    });
+    const { items } = JSON.parse(
+      (await request(port, 'GET', '/api/proxy/requests?limit=5')).text,
+    ) as { items: Array<{ id: number }> };
+    const [baseId, targetId] = [Math.min(...items.map((i) => i.id)), Math.max(...items.map((i) => i.id))];
+    const r = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff?base=${baseId}`);
+    expect(r.status).toBe(500);
+    const body = JSON.parse(r.text) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(body.error.message).not.toContain('Error:');
+    expect(body.error.message).not.toContain(RAW_SENTINEL);
+    expect(body.error.message).not.toContain(AUTH_SENTINEL);
+    expect(r.text).not.toContain(RAW_SENTINEL);
+    expect(r.text).not.toContain(AUTH_SENTINEL);
+    expect(r.text).not.toContain(' at ');
+  });
+
+  it('gzip：成功响应 ≥1KB 且 accept-encoding:gzip → content-encoding:gzip + vary', async () => {
+    const { port } = await boot((d) => {
+      seedDiffProxy(d, {
+        requestId: 'g1', startedAt: '2026-08-01T00:00:00.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(50, 600, 'b')),
+        captureGroupId: 'gg', parsedSessionId: 'sg', model: 'claude-3-5-sonnet',
+      });
+      seedDiffProxy(d, {
+        requestId: 'g2', startedAt: '2026-08-01T00:00:01.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(60, 600, 't')),
+        captureGroupId: 'gg', parsedSessionId: 'sg', model: 'claude-3-5-sonnet',
+      });
+    });
+    const { items } = JSON.parse(
+      (await request(port, 'GET', '/api/proxy/requests?limit=5')).text,
+    ) as { items: Array<{ id: number }> };
+    const targetId = Math.max(...items.map((i) => i.id));
+    const r = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff`, {
+      headers: { 'accept-encoding': 'gzip' },
+    });
+    expect(r.status).toBe(200);
+    expect(r.raw.length).toBeGreaterThanOrEqual(1024);
+    expect(r.headers['content-encoding']).toBe('gzip');
+    expect(r.headers.vary).toContain('accept-encoding');
+    const decoded = gunzipSync(r.raw).toString('utf8');
+    const body = JSON.parse(decoded) as { pairing: { confidence: string } };
+    expect(body.pairing.confidence).toBeTruthy();
+  });
+
+  it('6.5 成功与每个错误路径都不泄漏 raw-only sentinel / authorization / 源正文 / 栈', async () => {
+    const { port } = await boot((d) => {
+      // 有效 pair（成功路径）
+      seedDiffProxy(d, {
+        requestId: 'p1', startedAt: '2026-08-01T00:00:00.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(1, 8, 'b')),
+        captureGroupId: 'pp', parsedSessionId: 'sp', model: 'claude-3-5-sonnet', privacyLeak: true,
+      });
+      seedDiffProxy(d, {
+        requestId: 'p2', startedAt: '2026-08-01T00:00:01.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(2, 8, 't')),
+        captureGroupId: 'pp', parsedSessionId: 'sp', model: 'claude-3-5-sonnet', privacyLeak: true,
+      });
+      // 手动 base 不存在（404）
+      seedDiffProxy(d, {
+        requestId: 'p3', startedAt: '2026-08-01T00:00:02.000Z',
+        format: 'anthropic_messages', body: anthropicBody(messages(1, 8, 't')), privacyLeak: true,
+      });
+    });
+    const { items } = JSON.parse(
+      (await request(port, 'GET', '/api/proxy/requests?limit=10')).text,
+    ) as { items: Array<{ id: number }> };
+    const sorted = items.map((i) => i.id).sort((a, b) => a - b);
+    const baseId = sorted[0]!;
+    const targetId = sorted[1]!;
+    const singleTarget = sorted[2]!;
+
+    const paths = [
+      { path: `/api/proxy/requests/${targetId}/context-diff`, expected: 200 },
+      { path: `/api/proxy/requests/${targetId}/context-diff?base=${baseId}`, expected: 200 },
+      { path: `/api/proxy/requests/${singleTarget}/context-diff?base=999999`, expected: 404 },
+      { path: `/api/proxy/requests/${singleTarget}/context-diff?base=abc`, expected: 400 },
+      { path: '/api/proxy/requests/999999/context-diff', expected: 404 },
+      { path: `/api/proxy/requests/${singleTarget}/context-diff?base=${singleTarget}`, expected: 400 },
+    ];
+    for (const p of paths) {
+      const r = await request(port, 'GET', p.path);
+      expect(r.status).toBe(p.expected);
+      expect(r.text).not.toContain(RAW_SENTINEL);
+      expect(r.text).not.toContain(AUTH_SENTINEL);
+      expect(r.text).not.toContain(' at ');
+      expect(r.text).not.toContain('Error:');
+      expect(r.text).not.toContain('{ not json');
+    }
   });
 });

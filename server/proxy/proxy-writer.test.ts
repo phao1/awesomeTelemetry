@@ -78,4 +78,66 @@ describe('REQ-004/005 proxy-writer', () => {
     expect(row.ttnet_encrypted).toBe(1);
     db.close();
   });
+
+  it('持久化 capture_group_id 与 request_format（design D2/D3 / tasks §3.6）', () => {
+    const db = setup();
+    const ctx = new RequestContext(
+      { method: 'POST', url: '/v1/messages', hostname: 'api.anthropic.com', headers: {} },
+      3,
+    );
+    const parsed = parseProxyRequest({
+      hostname: 'api.anthropic.com',
+      url: '/v1/messages',
+      requestBody: JSON.stringify({ model: 'claude-3-5-sonnet', messages: [{ role: 'user', content: 'hi' }] }),
+    });
+    const id = writeProxyRequest({
+      db,
+      ctx,
+      parsed,
+      desensitizedRequestBody: '{"messages":[]}',
+      desensitizedResponseBody: null,
+      contentType: 'application/json',
+      isStreaming: false,
+      captureMethod: 'mitm',
+      captureGroupId: '00000000-0000-4000-8000-0000000000ff',
+    });
+    const row = db
+      .prepare('SELECT capture_group_id, request_format FROM proxy_requests WHERE id = ?')
+      .get(id) as { capture_group_id: string | null; request_format: string };
+    expect(row.capture_group_id).toBe('00000000-0000-4000-8000-0000000000ff');
+    expect(row.request_format).toBe('anthropic_messages');
+    db.close();
+  });
+
+  it('历史行/未接线调用：capture_group_id null、request_format 默认 unknown（tasks §3.8）', () => {
+    const db = setup();
+    const ctx = new RequestContext(
+      { method: 'POST', url: '/v1/chat/completions', hostname: 'api.openai.com', headers: {} },
+      4,
+    );
+    // 不传 captureGroupId；parsed 缺 requestFormat 时 writer 兜底 'unknown'
+    const id = writeProxyRequest({
+      db,
+      ctx,
+      parsed: {
+        parserRoute: 'openai',
+        model: 'gpt-4o',
+        systemPrompt: null,
+        systemPromptLen: 0,
+        inputTokens: null,
+        outputTokens: null,
+      },
+      desensitizedRequestBody: '{}',
+      desensitizedResponseBody: null,
+      contentType: 'application/json',
+      isStreaming: false,
+      captureMethod: 'mitm',
+    });
+    const row = db
+      .prepare('SELECT capture_group_id, request_format FROM proxy_requests WHERE id = ?')
+      .get(id) as { capture_group_id: string | null; request_format: string };
+    expect(row.capture_group_id).toBeNull();
+    expect(row.request_format).toBe('unknown');
+    db.close();
+  });
 });
