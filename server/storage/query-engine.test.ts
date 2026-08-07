@@ -10,7 +10,10 @@ import type {
 } from '../../src/core/trace-types.js';
 import { initSchema } from './schema.js';
 import {
+  findCaptureGroupPredecessor,
+  findExactSessionPredecessor,
   getEventDetail,
+  getProxyRequestById,
   getSessionDetail,
   getSystemPromptForSession,
   listProxyRequests,
@@ -119,6 +122,40 @@ function newDb(): Db {
   const db = new Database(':memory:');
   initSchema(db);
   return db;
+}
+
+function insertProxyRow(
+  db: Db,
+  over: {
+    requestId: string;
+    startedAt: string;
+    captureGroupId?: string | null;
+    requestFormat?: string;
+    model?: string | null;
+    parsedSessionId?: string | null;
+    requestBody?: string | null;
+    inputTokens?: number | null;
+    parserRoute?: string | null;
+  },
+): void {
+  db.prepare(
+    `INSERT INTO proxy_requests (request_id, method, url, hostname, started_at,
+       capture_group_id, request_format, model, parsed_session_id, request_body, input_tokens, parser_route)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    over.requestId,
+    'POST',
+    'https://api.example.com',
+    'api.example.com',
+    over.startedAt,
+    over.captureGroupId ?? null,
+    over.requestFormat ?? 'unknown',
+    over.model ?? null,
+    over.parsedSessionId ?? null,
+    over.requestBody ?? null,
+    over.inputTokens ?? null,
+    over.parserRoute ?? null,
+  );
 }
 
 describe('REQ-006 会话列表查询', () => {
@@ -540,6 +577,261 @@ describe('REQ-015 proxy 列表', () => {
     expect(page2.items.map((i) => i.requestId)).toEqual(['r2']);
     expect(page2.hasMore).toBe(false);
     expect(page2.nextCursor).toBeNull();
+    db.close();
+  });
+});
+
+describe('v6 capture_group_id / request_format 元数据映射（§2.4/§2.5）', () => {
+  it('列表项含 captureGroupId/requestFormat，历史行 null/unknown，排除项保持', () => {
+    const db = newDb();
+    db.prepare(
+      `INSERT INTO proxy_requests (request_id, method, url, hostname, request_headers, request_body,
+         response_body, raw_request_body, raw_response_body, system_prompt, system_prompt_len, started_at,
+         capture_group_id, request_format)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'req-new', 'POST', 'https://api.example.com', 'api.example.com',
+      '{"a":"b"}', 'req body', 'resp body', 'raw req', 'raw resp', 'sys prompt', 10,
+      '2026-08-01T00:00:00.000Z', 'group-1', 'anthropic_messages',
+    );
+    db.prepare(
+      `INSERT INTO proxy_requests (request_id, method, url, hostname, started_at)
+       VALUES ('req-hist', 'POST', 'https://h', 'h', '2026-08-01T00:00:01.000Z')`,
+    ).run();
+
+    const r = listProxyRequests(db, {});
+    expect(r.items).toHaveLength(2);
+
+    const byId = new Map(r.items.map((i) => [i.requestId, i]));
+    expect(byId.get('req-new')?.captureGroupId).toBe('group-1');
+    expect(byId.get('req-new')?.requestFormat).toBe('anthropic_messages');
+    expect(byId.get('req-hist')?.captureGroupId).toBeNull();
+    expect(byId.get('req-hist')?.requestFormat).toBe('unknown');
+
+    // 列表仍排除 4 个 body 列 + systemPrompt + requestHeaders
+    const item = r.items[0] as Record<string, unknown>;
+    for (const col of [
+      'requestBody', 'responseBody', 'rawRequestBody', 'rawResponseBody',
+      'systemPrompt', 'requestHeaders',
+    ]) {
+      expect(item).not.toHaveProperty(col);
+    }
+    db.close();
+  });
+
+  it('完整行映射：getProxyRequestById 返回 captureGroupId/requestFormat', () => {
+    const db = newDb();
+    insertProxyRow(db, {
+      requestId: 'req-full',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      captureGroupId: 'group-9',
+      requestFormat: 'openai_responses',
+      model: 'gpt-4o',
+      parsedSessionId: 'sess-9',
+      requestBody: '{"input":[]}',
+    });
+
+    const row = db
+      .prepare('SELECT id FROM proxy_requests WHERE request_id = ?')
+      .get('req-full') as { id: number };
+    const full = getProxyRequestById(db, row.id);
+    expect(full).not.toBeNull();
+    expect(full?.captureGroupId).toBe('group-9');
+    expect(full?.requestFormat).toBe('openai_responses');
+    expect(full?.requestBody).toBe('{"input":[]}');
+    db.close();
+  });
+});
+
+describe('design D4 前驱查询（§2.6/§2.7）', () => {
+  it('exact-session：同 session + 同 format 的最近更早行，过滤 NULL session 与异构', () => {
+    const db = newDb();
+    insertProxyRow(db, {
+      requestId: 'r0', startedAt: '2026-08-01T00:00:00.000Z',
+      parsedSessionId: null, requestFormat: 'anthropic_messages',
+    });
+    insertProxyRow(db, {
+      requestId: 'r1', startedAt: '2026-08-01T00:00:01.000Z',
+      parsedSessionId: 's1', requestFormat: 'anthropic_messages', requestBody: '{"a":1}',
+    });
+    insertProxyRow(db, {
+      requestId: 'r2', startedAt: '2026-08-01T00:00:02.000Z',
+      parsedSessionId: 's1', requestFormat: 'openai_chat',
+    });
+    insertProxyRow(db, {
+      requestId: 'r3', startedAt: '2026-08-01T00:00:03.000Z',
+      parsedSessionId: 's1', requestFormat: 'anthropic_messages', requestBody: '{"b":2}',
+    });
+    insertProxyRow(db, {
+      requestId: 'r4', startedAt: '2026-08-01T00:00:04.000Z',
+      parsedSessionId: 's2', requestFormat: 'anthropic_messages',
+    });
+    insertProxyRow(db, {
+      requestId: 'r5', startedAt: '2026-08-01T00:00:05.000Z',
+      parsedSessionId: 's1', requestFormat: 'anthropic_messages',
+    });
+    const target = db
+      .prepare('SELECT id FROM proxy_requests WHERE request_id = ?')
+      .get('r5') as { id: number };
+
+    const exact = findExactSessionPredecessor(db, 's1', 'anthropic_messages', target.id);
+    expect(exact?.requestId).toBe('r3');
+    expect(exact?.requestBody).toBe('{"b":2}');
+    // 异构 format 各自命中最近更早行
+    const chat = findExactSessionPredecessor(db, 's1', 'openai_chat', target.id);
+    expect(chat?.requestId).toBe('r2');
+    // 其他 session
+    const other = findExactSessionPredecessor(db, 's2', 'anthropic_messages', target.id);
+    expect(other?.requestId).toBe('r4');
+    // NULL parsed_session_id 的行永远不会成为 exact-session 候选
+    const nullSession = findExactSessionPredecessor(db, 's1', 'anthropic_messages', target.id);
+    expect(nullSession?.requestId).not.toBe('r0');
+    // 前驱行只含显式列，绝不带 raw 字段
+    expect(exact).not.toHaveProperty('rawRequestBody');
+    expect(exact).not.toHaveProperty('rawResponseBody');
+    db.close();
+  });
+
+  it('capture-group：同组 + 同 format + 同 model 的最近更早行', () => {
+    const db = newDb();
+    insertProxyRow(db, {
+      requestId: 'g1', startedAt: '2026-08-01T00:00:00.000Z',
+      captureGroupId: 'cg1', requestFormat: 'anthropic_messages', model: null,
+    });
+    insertProxyRow(db, {
+      requestId: 'g2', startedAt: '2026-08-01T00:00:01.000Z',
+      captureGroupId: 'cg1', requestFormat: 'anthropic_messages', model: 'claude-3',
+    });
+    insertProxyRow(db, {
+      requestId: 'g3', startedAt: '2026-08-01T00:00:02.000Z',
+      captureGroupId: 'cg1', requestFormat: 'openai_chat', model: 'claude-3',
+    });
+    insertProxyRow(db, {
+      requestId: 'g4', startedAt: '2026-08-01T00:00:03.000Z',
+      captureGroupId: 'cg1', requestFormat: 'anthropic_messages', model: 'claude-3',
+      requestBody: '{"m":1}',
+    });
+    insertProxyRow(db, {
+      requestId: 'g5', startedAt: '2026-08-01T00:00:04.000Z',
+      captureGroupId: 'cg1', requestFormat: 'anthropic_messages', model: 'claude-3',
+    });
+    const target = db
+      .prepare('SELECT id FROM proxy_requests WHERE request_id = ?')
+      .get('g5') as { id: number };
+
+    const pred = findCaptureGroupPredecessor(db, 'cg1', 'anthropic_messages', 'claude-3', target.id);
+    expect(pred?.requestId).toBe('g4');
+    expect(pred?.requestBody).toBe('{"m":1}');
+    // 异构 format
+    const chat = findCaptureGroupPredecessor(db, 'cg1', 'openai_chat', 'claude-3', target.id);
+    expect(chat?.requestId).toBe('g3');
+    // model 不匹配 → 无候选
+    const mismatch = findCaptureGroupPredecessor(db, 'cg1', 'anthropic_messages', 'other-model', target.id);
+    expect(mismatch).toBeNull();
+    // 其他组 → 无候选
+    const otherGroup = findCaptureGroupPredecessor(db, 'cg2', 'anthropic_messages', 'claude-3', target.id);
+    expect(otherGroup).toBeNull();
+    db.close();
+  });
+
+  it('null-safe model 相等：NULL 只匹配 NULL，非 NULL 只匹配同值', () => {
+    const db = newDb();
+    insertProxyRow(db, {
+      requestId: 'n1', startedAt: '2026-08-01T00:00:00.000Z',
+      captureGroupId: 'cg', requestFormat: 'anthropic_messages', model: null,
+    });
+    insertProxyRow(db, {
+      requestId: 'n2', startedAt: '2026-08-01T00:00:01.000Z',
+      captureGroupId: 'cg', requestFormat: 'anthropic_messages', model: 'gpt-4o',
+    });
+    insertProxyRow(db, {
+      requestId: 'n3', startedAt: '2026-08-01T00:00:02.000Z',
+      captureGroupId: 'cg', requestFormat: 'anthropic_messages', model: null,
+    });
+    insertProxyRow(db, {
+      requestId: 'n4', startedAt: '2026-08-01T00:00:03.000Z',
+      captureGroupId: 'cg', requestFormat: 'anthropic_messages', model: 'gpt-4o',
+    });
+    const target = db
+      .prepare('SELECT id FROM proxy_requests WHERE request_id = ?')
+      .get('n4') as { id: number };
+
+    const nullPred = findCaptureGroupPredecessor(db, 'cg', 'anthropic_messages', null, target.id);
+    expect(nullPred?.requestId).toBe('n3');
+    const namedPred = findCaptureGroupPredecessor(db, 'cg', 'anthropic_messages', 'gpt-4o', target.id);
+    expect(namedPred?.requestId).toBe('n2');
+    db.close();
+  });
+
+  it('已知 session 冲突数据：候选照常返回，冲突可由 parsedSessionId 检测（服务层拒绝）', () => {
+    const db = newDb();
+    insertProxyRow(db, {
+      requestId: 'c1', startedAt: '2026-08-01T00:00:00.000Z',
+      captureGroupId: 'cg', requestFormat: 'anthropic_messages', model: 'm', parsedSessionId: 'sA',
+    });
+    insertProxyRow(db, {
+      requestId: 'c2', startedAt: '2026-08-01T00:00:01.000Z',
+      captureGroupId: 'cg', requestFormat: 'anthropic_messages', model: 'm', parsedSessionId: 'sB',
+    });
+    const target = db
+      .prepare('SELECT id FROM proxy_requests WHERE request_id = ?')
+      .get('c2') as { id: number };
+
+    // 目标 sB，候选 c1 的 session 是 sA：存储层返回候选，调用方（T05 服务）
+    // 以“双方非空且不同”拒绝自动配对（design D4 step 3）。
+    const pred = findCaptureGroupPredecessor(db, 'cg', 'anthropic_messages', 'm', target.id);
+    expect(pred?.requestId).toBe('c1');
+    expect(pred?.parsedSessionId).toBe('sA');
+    expect(pred?.parsedSessionId).not.toBe('sB');
+    db.close();
+  });
+
+  it('10,000 行 capture group：返回最近更早行，无前驱返回 null', () => {
+    const db = newDb();
+    const insert = db.prepare(
+      `INSERT INTO proxy_requests (request_id, method, url, hostname, started_at,
+         capture_group_id, request_format, model, parsed_session_id, request_body)
+       VALUES (?, 'POST', 'https://h', 'h', ?, 'cg-big', 'anthropic_messages', NULL, NULL, ?)`,
+    );
+    const tx = db.transaction(() => {
+      for (let i = 1; i <= 10_000; i += 1) {
+        insert.run(
+          `bulk-${i}`,
+          new Date(Date.UTC(2026, 7, 1, 0, 0, i)).toISOString(),
+          `{"body":${i}}`,
+        );
+      }
+      // 一条异构 format 行夹在末尾（id 10001），不应干扰 anthropic_messages 的最近更早
+      insert.run(
+        'bulk-other',
+        new Date(Date.UTC(2026, 7, 1, 0, 1, 0)).toISOString(),
+        '{}',
+      );
+    });
+    tx();
+
+    // 异构行 request_format 为 openai_chat，单独更新以证明跨 format 过滤
+    db.prepare(
+      `UPDATE proxy_requests SET request_format = 'openai_chat' WHERE request_id = 'bulk-other'`,
+    ).run();
+
+    const target = db
+      .prepare('SELECT id FROM proxy_requests WHERE request_id = ?')
+      .get('bulk-other') as { id: number };
+    expect(target.id).toBe(10_001);
+
+    const pred = findCaptureGroupPredecessor(db, 'cg-big', 'anthropic_messages', null, target.id);
+    expect(pred?.id).toBe(10_000);
+    expect(pred?.requestId).toBe('bulk-10000');
+    expect(pred?.requestBody).toBe('{"body":10000}');
+
+    // 无更早行
+    const first = findCaptureGroupPredecessor(db, 'cg-big', 'anthropic_messages', null, 1);
+    expect(first).toBeNull();
+
+    // 10k 行场景下 exact-session 无候选（全部 parsed_session_id 为 NULL）
+    const exact = findExactSessionPredecessor(db, 's1', 'anthropic_messages', target.id);
+    expect(exact).toBeNull();
     db.close();
   });
 });

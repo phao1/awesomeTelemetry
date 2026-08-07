@@ -1,11 +1,13 @@
 # Contract: Database
 
 > **Authoritative source.** This is a fresh build; the schema starts at **v1**
-> and is currently at **v4** (add-mission-control: model attribution + cost /
-> duration sources + ttft/e2e persistence + scan-time repair rollup;
-> calibrate-tokens-and-compare-report: TraceMetrics five new fields). All DDL
-> must be adopted verbatim — no column renames, no added or removed columns
-> beyond this contract.
+> and is currently at **v6** (add-request-context-diff: proxy capture-group
+> correlation + request-format classification; preceding versions:
+> add-mission-control model attribution + cost / duration sources + ttft/e2e
+> persistence + scan-time repair rollup, calibrate-tokens-and-compare-report
+> TraceMetrics five new fields, show-trae-prompt-context
+> `session_prompt_context`). All DDL must be adopted verbatim — no column
+> renames, no added or removed columns beyond this contract.
 > Corresponding source file: `server/storage/schema.ts`
 >
 > Numbers marked "reference-implementation measured" come from the recreated
@@ -85,6 +87,14 @@ run the migration chain implemented in `server/storage/schema.ts`
 - **v4 → v5** (show-trae-prompt-context): create the additive
   `session_prompt_context` table. Existing session/event rows are unchanged;
   prompt context is populated by the next changed or forced Trae scan.
+- **v5 → v6** (add-request-context-diff): exactly two additive column
+  operations on `proxy_requests` (`capture_group_id TEXT`,
+  `request_format TEXT NOT NULL DEFAULT 'unknown'`) plus the two composite
+  predecessor indexes from §4. Historical proxy rows remain readable with
+  `capture_group_id = NULL` and `request_format = 'unknown'`; no body is
+  parsed or backfilled during migration. Rollback uses the prior binary:
+  SQLite ignores additive columns and indexes, and new proxy rows remain
+  readable through the old explicit column lists.
 - Migration failure MUST throw with a "delete the DB and rescan" hint; the
   database is a rebuildable cache of local session files, and a half-migrated
   state is more dangerous than a rescan (decision: tasks.md "已做的决策" #3).
@@ -286,10 +296,21 @@ CREATE TABLE IF NOT EXISTS proxy_requests (
   output_tokens     INTEGER,
   parsed_session_id TEXT,
   parser_route      TEXT,
+  capture_group_id  TEXT,
+  request_format    TEXT    NOT NULL DEFAULT 'unknown',
   raw_request_body  TEXT,
   raw_response_body TEXT
 );
 ```
+
+> v6 columns:
+> - `capture_group_id` — nullable UUID identifying one successful proxy run
+>   (design D2); correlation evidence only, never an agent session. Historical
+>   rows are null; a later proxy run receives a different value.
+> - `request_format` — closed phase-1 classification
+>   (`anthropic_messages | openai_chat | openai_responses | unknown`, design
+>   D3), default `unknown`; historical rows stay `unknown` (no startup
+>   backfill by body parsing).
 
 ### 3.8 `frida_captures`
 
@@ -361,6 +382,9 @@ CREATE INDEX IF NOT EXISTS idx_scan_state_session    ON scan_state(session_id);
 CREATE INDEX IF NOT EXISTS idx_proxy_started_len     ON proxy_requests(started_at, system_prompt_len DESC);
 CREATE INDEX IF NOT EXISTS idx_proxy_hostname        ON proxy_requests(hostname);
 CREATE INDEX IF NOT EXISTS idx_proxy_parsed_session  ON proxy_requests(parsed_session_id);
+-- v6 (add-request-context-diff, design D4): nearest-earlier predecessor lookup
+CREATE INDEX IF NOT EXISTS idx_proxy_session_format_id ON proxy_requests(parsed_session_id, request_format, id DESC);
+CREATE INDEX IF NOT EXISTS idx_proxy_group_format_model_id ON proxy_requests(capture_group_id, request_format, model, id DESC);
 
 -- frida_captures
 CREATE INDEX IF NOT EXISTS idx_frida_captured_at     ON frida_captures(captured_at);
@@ -417,10 +441,14 @@ export const PROXY_LIST_COLS = [
   'id', 'request_id', 'method', 'url', 'hostname', 'response_status',
   'content_type', 'is_streaming', 'started_at', 'completed_at', 'duration_ms',
   'capture_method', 'ttnet_encrypted', 'model', 'input_tokens', 'output_tokens',
-  'parsed_session_id', 'parser_route',
+  'parsed_session_id', 'parser_route', 'capture_group_id', 'request_format',
   'CASE WHEN system_prompt_len > 0 THEN 1 ELSE 0 END AS has_system_prompt',
 ].join(', ');
 ```
+
+The full proxy row column list (used by the request-detail and context-diff
+paths) also carries `capture_group_id` and `request_format` in addition to the
+existing columns. No list body/header/system-prompt exclusion changes.
 
 > `has_raw` would require joining `event_raw`; cost exceeds benefit. The slim
 > tier uniformly sets `hasRaw = true`; the drill-down endpoint returns null
@@ -435,6 +463,11 @@ export const PROXY_LIST_COLS = [
 | `SELECT {SESSION_LIST_COLS} FROM sessions WHERE data_source=? ORDER BY started_at DESC LIMIT ?` | `SEARCH sessions USING INDEX idx_sessions_ds_started` | < 1ms |
 | `SELECT {EVENT_SLIM_COLS} FROM events WHERE session_id=? ORDER BY sequence LIMIT ? OFFSET ?` | `SEARCH events USING INDEX idx_events_session_seq` | < 15ms @ 9,590 rows |
 | `SELECT system_prompt FROM proxy_requests WHERE started_at BETWEEN ? AND ? AND system_prompt_len > 0 ORDER BY system_prompt_len DESC LIMIT 1` | `SEARCH proxy_requests USING INDEX idx_proxy_started_len` | < 1ms |
+| `SELECT {predecessor cols} FROM proxy_requests WHERE parsed_session_id IS NOT NULL AND parsed_session_id = ? AND request_format = ? AND id < ? ORDER BY id DESC LIMIT 1` (exact-session predecessor, design D4) | `SEARCH proxy_requests USING INDEX idx_proxy_session_format_id` | < 1ms @ tier B |
+| `SELECT {predecessor cols} FROM proxy_requests WHERE capture_group_id = ? AND request_format = ? AND model IS ? AND id < ? ORDER BY id DESC LIMIT 1` (capture-group predecessor, design D4, null-safe model equality) | `SEARCH proxy_requests USING INDEX idx_proxy_group_format_model_id` | < 1ms @ tier B |
+
+Both predecessor queries list columns explicitly, never `SELECT *`, and the
+plans must not contain `USE TEMP B-TREE`.
 
 ## 6. Data retention
 

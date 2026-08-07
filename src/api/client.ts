@@ -3,6 +3,7 @@ import type {
   MissionResponse,
   ProxyRequest,
   ProxyRequestListItem,
+  RequestContextDiffResponse,
   SessionDetailResponse,
   SessionIndexEntry,
   SessionMergeGroupInfo,
@@ -196,6 +197,16 @@ export const api = {
   },
   proxyRequest(id: number): Promise<ProxyRequest> {
     return fetchJson(`/proxy/requests/${id}`);
+  },
+  /**
+   * design D10 / §6.3：bounded evidence-grade request-context diff。
+   * 惰性——仅在 Context Diff 显式激活时调用。`base` 省略等同 `previous`；
+   * 结构化 API 错误码（400/404/409/422/500）由 fetchJson 抛出的 ApiError.code 保留。
+   */
+  contextDiff(targetId: number, base?: 'previous' | number): Promise<RequestContextDiffResponse> {
+    return fetchJson(
+      `/proxy/requests/${targetId}/context-diff${qs({ base })}`,
+    );
   },
   clearProxyRequests(): Promise<unknown> {
     return fetchJson('/proxy/requests', { method: 'DELETE' });

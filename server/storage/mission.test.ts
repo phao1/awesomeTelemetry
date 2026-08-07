@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import Database from 'better-sqlite3';
 
-import { initSchema } from './schema.js';
+import { SCHEMA_VERSION, initSchema } from './schema.js';
 import { clearMissionCache, getMission } from './mission.js';
 
 type Db = InstanceType<typeof Database>;
@@ -249,7 +249,8 @@ describe('逐 widget 口径断言（design.md §10 R8：防 SQL 改写悄悄漂�
     expect(data.scanStateRows).toBe(1);
     expect(data.providers[0]).toMatchObject({ key: 'claude', sessionCount: 2, ready: true });
     expect(data.proxy).toEqual({ running: true, starting: false, port: 8080 });
-    expect(data.schemaVersion).toBe(5); // SCHEMA_VERSION v5（show-trae-prompt-context）
+    // 跟随 SCHEMA_VERSION 常量，避免每次 schema 升版都要改断言字面量（D-001）
+    expect(data.schemaVersion).toBe(SCHEMA_VERSION);
   });
 
   it('A4 热力图与 A7 活跃曲线：tz=0 时按 UTC 分桶', async () => {

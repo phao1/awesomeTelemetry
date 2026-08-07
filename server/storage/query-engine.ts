@@ -7,6 +7,7 @@ import type {
   ProxyRequest,
   ProviderKey,
   ProxyRequestListItem,
+  RequestContextFormat,
   SessionDetailResponse,
   SessionIndexEntry,
   SessionRange,
@@ -115,10 +116,30 @@ const PROXY_FULL_COLS = [
   'response_status', 'response_body', 'content_type', 'is_streaming', 'started_at',
   'completed_at', 'duration_ms', 'capture_method', 'ttnet_encrypted', 'system_prompt',
   'system_prompt_len', 'model', 'input_tokens', 'output_tokens', 'parsed_session_id',
-  'parser_route', 'raw_request_body', 'raw_response_body',
+  'parser_route', 'capture_group_id', 'request_format',
+  'raw_request_body', 'raw_response_body',
 ].join(', ');
 
 const PROXY_BY_ID_SQL = `SELECT ${PROXY_FULL_COLS} FROM proxy_requests WHERE id = ?`;
+
+// design D4：前驱候选只取配对所需元数据 + 已脱敏 request_body，绝不选 raw 列（NFR-P5 / 禁令 2）。
+const PROXY_PREDECESSOR_COLS = [
+  'id', 'request_id', 'started_at', 'hostname', 'model', 'capture_method',
+  'parser_route', 'request_format', 'parsed_session_id', 'capture_group_id',
+  'input_tokens', 'request_body',
+].join(', ');
+
+// contracts/database.md §5.3：exact-session 前驱（design D4 step 1）。
+export const EXACT_SESSION_PREDECESSOR_SQL =
+  `SELECT ${PROXY_PREDECESSOR_COLS} FROM proxy_requests ` +
+  'WHERE parsed_session_id IS NOT NULL AND parsed_session_id = ? ' +
+  'AND request_format = ? AND id < ? ORDER BY id DESC LIMIT 1';
+
+// contracts/database.md §5.3：capture-group 前驱（design D4 step 2，`IS` 为 null-safe 相等）。
+export const CAPTURE_GROUP_PREDECESSOR_SQL =
+  `SELECT ${PROXY_PREDECESSOR_COLS} FROM proxy_requests ` +
+  'WHERE capture_group_id = ? AND request_format = ? AND model IS ? ' +
+  'AND id < ? ORDER BY id DESC LIMIT 1';
 
 function proxyWhere(hostname: boolean, captureMethod: boolean, cursor: boolean): string {
   const parts: string[] = [];
@@ -250,6 +271,8 @@ function mapProxyListItem(row: Record<string, unknown>): ProxyRequestListItem {
     outputTokens: row.output_tokens as number | null,
     parsedSessionId: row.parsed_session_id as string | null,
     parserRoute: row.parser_route as string | null,
+    captureGroupId: row.capture_group_id as string | null,
+    requestFormat: row.request_format as RequestContextFormat,
     systemPromptLen: row.system_prompt_len as number,
     hasSystemPrompt: Boolean(row.has_system_prompt),
   };
@@ -283,8 +306,47 @@ function mapProxyRequest(row: Record<string, unknown>): ProxyRequest {
     outputTokens: row.output_tokens as number | null,
     parsedSessionId: row.parsed_session_id as string | null,
     parserRoute: row.parser_route as string | null,
+    captureGroupId: row.capture_group_id as string | null,
+    requestFormat: row.request_format as RequestContextFormat,
     rawRequestBody: row.raw_request_body as string | null,
     rawResponseBody: row.raw_response_body as string | null,
+  };
+}
+
+/**
+ * 前驱候选行（design D4 / 存储 delta spec “Two-row body access boundary”）：
+ * 仅含配对所需元数据与已脱敏 request_body，供 context-diff 服务精确读取
+ * “一个目标 + 至多一个 base”两个 body。
+ */
+export interface ProxyPredecessor {
+  id: number;
+  requestId: string;
+  startedAt: string;
+  hostname: string;
+  model: string | null;
+  captureMethod: CaptureMethod;
+  parserRoute: string | null;
+  requestFormat: RequestContextFormat;
+  parsedSessionId: string | null;
+  captureGroupId: string | null;
+  inputTokens: number | null;
+  requestBody: string | null;
+}
+
+function mapProxyPredecessor(row: Record<string, unknown>): ProxyPredecessor {
+  return {
+    id: row.id as number,
+    requestId: row.request_id as string,
+    startedAt: row.started_at as string,
+    hostname: row.hostname as string,
+    model: row.model as string | null,
+    captureMethod: row.capture_method as CaptureMethod,
+    parserRoute: row.parser_route as string | null,
+    requestFormat: row.request_format as RequestContextFormat,
+    parsedSessionId: row.parsed_session_id as string | null,
+    captureGroupId: row.capture_group_id as string | null,
+    inputTokens: row.input_tokens as number | null,
+    requestBody: row.request_body as string | null,
   };
 }
 
@@ -521,4 +583,43 @@ export function listProxyRequests(
 export function getProxyRequestById(db: Database, id: number): ProxyRequest | null {
   const row = cachedStmt(db, PROXY_BY_ID_SQL).get(id) as Record<string, unknown> | undefined;
   return row === undefined ? null : mapProxyRequest(row);
+}
+
+/**
+ * design D4 step 1：同 parsed_session_id + request_format 的最近更早行（id < beforeId）。
+ * 显式列、缓存语句、不选 raw 列。
+ */
+export function findExactSessionPredecessor(
+  db: Database,
+  parsedSessionId: string,
+  requestFormat: RequestContextFormat,
+  beforeId: number,
+): ProxyPredecessor | null {
+  const row = cachedStmt(db, EXACT_SESSION_PREDECESSOR_SQL).get(
+    parsedSessionId,
+    requestFormat,
+    beforeId,
+  ) as Record<string, unknown> | undefined;
+  return row === undefined ? null : mapProxyPredecessor(row);
+}
+
+/**
+ * design D4 step 2：同 capture_group_id + request_format + null-safe model 相等的
+ * 最近更早行（id < beforeId）。冲突判定（双方非空且不同的 parsed_session_id）
+ * 由 context-diff 服务在拿到候选行后执行。
+ */
+export function findCaptureGroupPredecessor(
+  db: Database,
+  captureGroupId: string,
+  requestFormat: RequestContextFormat,
+  model: string | null,
+  beforeId: number,
+): ProxyPredecessor | null {
+  const row = cachedStmt(db, CAPTURE_GROUP_PREDECESSOR_SQL).get(
+    captureGroupId,
+    requestFormat,
+    model,
+    beforeId,
+  ) as Record<string, unknown> | undefined;
+  return row === undefined ? null : mapProxyPredecessor(row);
 }

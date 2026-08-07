@@ -1,8 +1,8 @@
 // 镜像 server/storage/schema.ts 的 SCHEMA_SQL / INDEX_SQL（Node 原生 TS 无法解析 .js 相对导入）。
 // 若 schema.ts 变更，这里必须同步；M12 的 perf 校验脚本可对比两份 DDL。
 
-// v3（add-mission-control）：与 server/storage/schema.ts 对齐。
-export const SCHEMA_VERSION = 5;
+// v6（add-request-context-diff）：与 server/storage/schema.ts 对齐。
+export const SCHEMA_VERSION = 6;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS _meta (
@@ -122,6 +122,8 @@ CREATE TABLE IF NOT EXISTS proxy_requests (
   output_tokens     INTEGER,
   parsed_session_id TEXT,
   parser_route      TEXT,
+  capture_group_id  TEXT,
+  request_format    TEXT NOT NULL DEFAULT 'unknown',
   raw_request_body  TEXT,
   raw_response_body TEXT
 );

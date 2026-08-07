@@ -7,6 +7,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
 
 import { EVENT_SLIM_COLS, SESSION_LIST_COLS } from './columns.js';
+import { openWritable } from './db.js';
+import {
+  CAPTURE_GROUP_PREDECESSOR_SQL,
+  EXACT_SESSION_PREDECESSOR_SQL,
+} from './query-engine.js';
 import { SCHEMA_VERSION, initSchema } from './schema.js';
 
 type Db = InstanceType<typeof Database>;
@@ -40,10 +45,47 @@ const EXPECTED_INDEXES = [
   'idx_proxy_started_len',
   'idx_proxy_hostname',
   'idx_proxy_parsed_session',
+  'idx_proxy_session_format_id',
+  'idx_proxy_group_format_model_id',
   'idx_frida_captured_at',
   'idx_frida_session',
   'idx_frida_capture_session',
 ];
+
+/** v5 的 proxy_requests DDL（v6 迁移前形态，无 capture_group_id / request_format）。 */
+const V5_PROXY_REQUESTS_DDL = `
+CREATE TABLE proxy_requests (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id        TEXT    NOT NULL UNIQUE,
+  method            TEXT    NOT NULL,
+  url               TEXT    NOT NULL,
+  hostname          TEXT    NOT NULL,
+  request_headers   TEXT,
+  request_body      TEXT,
+  response_status   INTEGER,
+  response_body     TEXT,
+  content_type      TEXT,
+  is_streaming      INTEGER NOT NULL DEFAULT 0,
+  started_at        TEXT    NOT NULL,
+  completed_at      TEXT,
+  duration_ms       INTEGER,
+  capture_method    TEXT    NOT NULL DEFAULT 'mitm',
+  ttnet_encrypted   INTEGER NOT NULL DEFAULT 0,
+  system_prompt     TEXT,
+  system_prompt_len INTEGER NOT NULL DEFAULT 0,
+  model             TEXT,
+  input_tokens      INTEGER,
+  output_tokens     INTEGER,
+  parsed_session_id TEXT,
+  parser_route      TEXT,
+  raw_request_body  TEXT,
+  raw_response_body TEXT
+);`;
+
+function proxyRequestColumns(db: Db): string[] {
+  const cols = db.prepare('PRAGMA table_info(proxy_requests)').all() as Array<{ name: string }>;
+  return cols.map((c) => c.name);
+}
 
 const tempDirs: string[] = [];
 
@@ -106,6 +148,34 @@ describe('REQ-003 建库幂等', () => {
     db.close();
   });
 
+  it('v6 新库直建两列：capture_group_id 可空、request_format 默认 unknown', () => {
+    const db = createDb(join(tempDir(), 'fresh-v6.sqlite'));
+    initSchema(db);
+
+    const cols = proxyRequestColumns(db);
+    expect(cols).toContain('capture_group_id');
+    expect(cols).toContain('request_format');
+
+    // 未显式给出 request_format 的行默认 'unknown'，capture_group_id 为 NULL
+    db.prepare(
+      `INSERT INTO proxy_requests (request_id, method, url, hostname, started_at)
+       VALUES ('req-1', 'POST', 'https://h', 'h', '2026-08-01T00:00:00.000Z')`,
+    ).run();
+    const row = db
+      .prepare(
+        `SELECT capture_group_id, request_format FROM proxy_requests WHERE request_id = 'req-1'`,
+      )
+      .get() as { capture_group_id: string | null; request_format: string };
+    expect(row.capture_group_id).toBeNull();
+    expect(row.request_format).toBe('unknown');
+
+    const meta = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
+      value: string;
+    };
+    expect(meta.value).toBe(String(SCHEMA_VERSION));
+    db.close();
+  });
+
   it('REQ-003 三条核心查询 EXPLAIN QUERY PLAN 不含 USE TEMP B-TREE', () => {
     const db = createDb(join(tempDir(), 'plan.sqlite'));
     initSchema(db);
@@ -132,6 +202,24 @@ describe('REQ-003 建库幂等', () => {
     expect(plans[0]).toContain('idx_sessions_ds_started');
     expect(plans[1]).toContain('idx_events_session_seq');
     expect(plans[2]).toContain('idx_proxy_started_len');
+
+    db.close();
+  });
+
+  it('design D4 前驱查询 EXPLAIN：使用复合索引且无 USE TEMP B-TREE（含 null-safe model）', () => {
+    const db = createDb(join(tempDir(), 'pred-plan.sqlite'));
+    initSchema(db);
+
+    const plans = [
+      explain(db, EXACT_SESSION_PREDECESSOR_SQL, ['s1', 'anthropic_messages', 2]),
+      explain(db, CAPTURE_GROUP_PREDECESSOR_SQL, ['g1', 'anthropic_messages', null, 2]),
+      explain(db, CAPTURE_GROUP_PREDECESSOR_SQL, ['g1', 'anthropic_messages', 'claude-3', 2]),
+    ];
+
+    expect(plans.join('\n')).not.toContain('USE TEMP B-TREE');
+    expect(plans[0]).toContain('idx_proxy_session_format_id');
+    expect(plans[1]).toContain('idx_proxy_group_format_model_id');
+    expect(plans[2]).toContain('idx_proxy_group_format_model_id');
 
     db.close();
   });
@@ -237,8 +325,82 @@ describe('REQ-003 建库幂等', () => {
     const session = db.prepare('SELECT id FROM sessions WHERE id = ?').get('s-v4');
     expect(session).toBeTruthy();
     const meta = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as { value: string };
-    expect(meta.value).toBe('5');
+    expect(meta.value).toBe(String(SCHEMA_VERSION));
     db.close();
+  });
+
+  it('v5 → v6 迁移：两列幂等补列 + 两条复合索引 + 历史行 null/unknown（2.2/2.3）', () => {
+    const db = createDb(join(tempDir(), 'migrate-v5.sqlite'));
+    // 构造 v5 库：proxy_requests 无两新列，含一条历史行（带 raw 原文，用于验证非破坏性）
+    db.exec(`
+      ${V5_PROXY_REQUESTS_DDL}
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
+      INSERT INTO _meta VALUES ('schema_version', '5');
+    `);
+    db.prepare(
+      `INSERT INTO proxy_requests (request_id, method, url, hostname, started_at,
+         model, parsed_session_id, request_body, raw_request_body)
+       VALUES ('hist-1', 'POST', 'https://h', 'h', '2026-08-01T00:00:00.000Z',
+         'claude-3', 's-old', '{"messages":[]}', 'RAW-SECRET-ONLY')`,
+    ).run();
+
+    initSchema(db);
+
+    // 两列已补上
+    const cols = proxyRequestColumns(db);
+    expect(cols).toContain('capture_group_id');
+    expect(cols).toContain('request_format');
+    // 两条复合索引已建
+    for (const index of ['idx_proxy_session_format_id', 'idx_proxy_group_format_model_id']) {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?")
+        .get(index);
+      expect(row, `索引 ${index} 应存在`).toBeTruthy();
+    }
+    // schema_version 升到 6
+    const meta = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
+      value: string;
+    };
+    expect(meta.value).toBe(String(SCHEMA_VERSION));
+    // 历史行非破坏：capture_group_id NULL、request_format 'unknown'、raw 原文保留
+    const row = db
+      .prepare(
+        `SELECT request_id, capture_group_id, request_format, raw_request_body FROM proxy_requests
+         WHERE request_id = 'hist-1'`,
+      )
+      .get() as {
+        request_id: string;
+        capture_group_id: string | null;
+        request_format: string;
+        raw_request_body: string;
+      };
+    expect(row.request_id).toBe('hist-1');
+    expect(row.capture_group_id).toBeNull();
+    expect(row.request_format).toBe('unknown');
+    expect(row.raw_request_body).toBe('RAW-SECRET-ONLY');
+    // 幂等：重复 initSchema 不报错、版本不变、列不重复
+    expect(() => initSchema(db)).not.toThrow();
+    expect(proxyRequestColumns(db).filter((c) => c === 'request_format')).toHaveLength(1);
+    db.close();
+  });
+
+  it('REQ-003 更新版本库拒绝启动且不改写（schema.test 侧覆盖，2.3）', () => {
+    const path = join(tempDir(), 'future-schema.sqlite');
+    const seed = createDb(path);
+    seed.exec('CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID');
+    seed
+      .prepare('INSERT INTO _meta (key, value) VALUES (?, ?)')
+      .run('schema_version', String(SCHEMA_VERSION + 1));
+    seed.close();
+
+    expect(() => openWritable(path)).toThrow('Database was created by a newer version');
+
+    const check = new Database(path, { readonly: true });
+    const value = (check
+      .prepare("SELECT value FROM _meta WHERE key = 'schema_version'")
+      .get() as { value: string }).value;
+    expect(value).toBe(String(SCHEMA_VERSION + 1));
+    check.close();
   });
 
   it('v1 → v3 全链迁移：8 个 v2 列 + repair_loop 全部补上（9.7）', () => {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import type { Database } from 'better-sqlite3';
@@ -54,17 +55,38 @@ export class FridaTargetError extends Error {
 
 const COUNT_PROXY_REQUESTS_SQL = 'SELECT COUNT(*) AS c FROM proxy_requests';
 
+export interface ProxyRuntimeDeps {
+  /** 测试注入：默认 createMitmProxy。 */
+  createProxy?: typeof createMitmProxy;
+  /** 测试注入：默认 node:crypto randomUUID。 */
+  uuid?: () => string;
+}
+
 export class ProxyRuntime {
   private phase: ProxyPhase = 'idle';
   private port: number | null = null;
   private startedAt: string | null = null;
   private proxy: ProxyServerLike | null = null;
+  /** design D2：一次成功 proxy run 的不透明 UUID；stop/启动失败即清理。 */
+  private captureGroupId: string | null = null;
   private readonly db: Database;
   private readonly emit: (payload: BusEvents['proxy_status']) => void;
+  private readonly createProxy: typeof createMitmProxy;
+  private readonly uuid: () => string;
 
-  constructor(db: Database, emit: (payload: BusEvents['proxy_status']) => void) {
+  constructor(db: Database, emit: (payload: BusEvents['proxy_status']) => void, deps: ProxyRuntimeDeps = {}) {
     this.db = db;
     this.emit = emit;
+    this.createProxy = deps.createProxy ?? createMitmProxy;
+    this.uuid = deps.uuid ?? randomUUID;
+  }
+
+  /**
+   * 当前活跃 captureGroupId（非 API 契约字段；供测试/诊断断言生命周期）。
+   * 仅在成功进入 running 期间非空；stop 或启动失败后为 null。
+   */
+  get currentCaptureGroupId(): string | null {
+    return this.captureGroupId;
   }
 
   status(): ProxyStatus {
@@ -86,6 +108,8 @@ export class ProxyRuntime {
     this.phase = 'starting';
     this.port = opts.port ?? null;
     this.startedAt = null;
+    // design D2：每次启动尝试生成一个新 UUID；仅成功运行期间活跃。
+    this.captureGroupId = this.uuid();
     void this.boot(opts.port);
     return this.status();
   }
@@ -97,6 +121,7 @@ export class ProxyRuntime {
     this.phase = 'idle';
     this.port = null;
     this.startedAt = null;
+    this.captureGroupId = null;
     const proxy = this.proxy;
     this.proxy = null;
     if (proxy !== null) {
@@ -112,8 +137,9 @@ export class ProxyRuntime {
   }
 
   private async boot(port?: number): Promise<void> {
+    const captureGroupId = this.captureGroupId;
     try {
-      const proxy = await createMitmProxy({ db: this.db, port });
+      const proxy = await this.createProxy({ db: this.db, port, captureGroupId: captureGroupId ?? undefined });
       if (this.phase !== 'starting') {
         // stop() 在启动完成前被调用：直接关闭新实例
         try {
@@ -132,6 +158,7 @@ export class ProxyRuntime {
       this.phase = 'idle';
       this.port = null;
       this.startedAt = null;
+      this.captureGroupId = null;
       const message = err instanceof Error ? err.message : String(err);
       console.error(`mitm proxy start failed: ${message}`);
       this.emit({ running: false, starting: false, port: null, error: message });

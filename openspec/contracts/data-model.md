@@ -801,6 +801,13 @@ export interface ProxyRequest {
   outputTokens: number | null;
   parsedSessionId: string | null;
   parserRoute: string | null;
+  /** One opaque UUID per successful proxy run (add-request-context-diff D2).
+   * Correlation evidence only; MUST NOT be presented as an agent session. */
+  captureGroupId: string | null;
+  /** Closed phase-1 request-format classification (add-request-context-diff
+   * D3). Historical rows captured before the classification landed are
+   * `unknown`. */
+  requestFormat: RequestContextFormat;
   /** Un-desensitized original. Filled only when desensitization is enabled
    * (G8.3). List endpoints do not return it. */
   rawRequestBody: string | null;
@@ -808,7 +815,8 @@ export interface ProxyRequest {
 }
 
 /** List endpoint shape. Explicitly excludes the 4 body columns + the
- * systemPrompt body. */
+ * systemPrompt body + request headers; carries only the lightweight
+ * capture-group/request-format metadata. */
 export type ProxyRequestListItem = Omit<
   ProxyRequest,
   'requestBody' | 'responseBody' | 'rawRequestBody' | 'rawResponseBody' | 'systemPrompt' | 'requestHeaders'
@@ -827,6 +835,135 @@ export interface FridaCapture {
   tokens: TokenUsage | null;
 }
 ```
+
+### 7.1 Request-context diff (add-request-context-diff)
+
+> Types copied verbatim from `design.md` D10 into `contracts/data-model.md`
+> and `src/core/trace-types.ts`. The full nested interfaces and enum values
+> below are contractual; the implementation MUST adopt them verbatim.
+
+```ts
+/** Closed phase-1 request-format set (design D3). Everything else is
+ * `unknown`; there is no generic best-effort success. */
+export type RequestContextFormat =
+  | 'anthropic_messages'
+  | 'openai_chat'
+  | 'openai_responses'
+  | 'unknown';
+
+export type ContextPairingConfidence = 'exact' | 'capture_group' | 'manual';
+export type ContextDiffCategory = 'system' | 'messages' | 'tools' | 'parameters';
+export type ContextChangeKind = 'added' | 'removed' | 'modified';
+export type ContextDiffSegmentKind = 'equal' | 'added' | 'removed';
+
+export interface ContextCompleteness {
+  complete: boolean;
+  omittedCount: number;
+  reasons: Array<
+    | 'item_limit'
+    | 'entry_limit'
+    | 'inline_limit'
+    | 'response_limit'
+    | 'source_incomplete'
+  >;
+}
+
+export interface ContextRequestRef {
+  id: number;
+  requestId: string;
+  startedAt: string;
+  hostname: string;
+  model: string | null;
+  captureMethod: CaptureMethod;
+  parserRoute: string | null;
+  requestFormat: Exclude<RequestContextFormat, 'unknown'>;
+  parsedSessionId: string | null;
+  captureGroupId: string | null;
+  bodySha256: string;
+  bodyBytes: number;
+}
+
+export interface ContextDiffSegment {
+  kind: ContextDiffSegmentKind;
+  text: string;
+}
+
+export interface ContextEvidenceValue {
+  jsonType: 'string' | 'number' | 'boolean' | 'null' | 'array' | 'object';
+  sha256: string;
+  charLength: number;
+  excerptStart: string;
+  excerptEnd: string;
+  truncated: boolean;
+}
+
+export interface ContextChangeEntry {
+  category: ContextDiffCategory;
+  kind: ContextChangeKind;
+  identity: string;
+  label: string;
+  beforePath: string | null;
+  afterPath: string | null;
+  beforeIndex: number | null;
+  afterIndex: number | null;
+  changedPaths: string[];
+  before: ContextEvidenceValue | null;
+  after: ContextEvidenceValue | null;
+  segments: ContextDiffSegment[] | null;
+  truncatedReason: 'inline_limit' | 'response_limit' | null;
+}
+
+export interface ContextCategoryDiff {
+  category: ContextDiffCategory;
+  added: number;
+  removed: number;
+  modified: number;
+  unchanged: number;
+  completeness: ContextCompleteness;
+  entries: ContextChangeEntry[];
+}
+
+export interface ContextGrowth {
+  baseChars: number;
+  targetChars: number;
+  deltaChars: number;
+  messageDelta: number;
+  toolDelta: number;
+  inputTokenDelta: number | null;
+  inputTokenDeltaReason: 'captured_usage' | 'usage_missing';
+}
+
+export interface ContextIndicator {
+  code: 'history_shrink' | 'system_loss' | 'tool_loss' | 'source_incomplete';
+  classification: 'observation' | 'suspected_compaction';
+  severity: 'info' | 'warning';
+  before: number | null;
+  after: number | null;
+  message: string;
+}
+
+export interface RequestContextDiffResponse {
+  base: ContextRequestRef;
+  target: ContextRequestRef;
+  pairing: {
+    confidence: ContextPairingConfidence;
+    reason: string;
+    warnings: string[];
+  };
+  noChange: boolean;
+  growth: ContextGrowth;
+  indicators: ContextIndicator[];
+  categories: ContextCategoryDiff[];
+  completeness: ContextCompleteness;
+  generatedAt: string;
+  durationMs: number;
+}
+```
+
+> `unchanged` is an exact summary count. The `entries` array contains changed
+> items only (added/removed/modified); unchanged evidence is not repeated in
+> the response. Incomplete/truncated evidence can never return
+> `noChange=true`; unknown/unavailable numbers render `—`, never `0`.
 
 ---
 
@@ -947,3 +1084,39 @@ expectTypeOf<SessionIndexEntry>().not.toHaveProperty('systemPrompt');
 expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('requestBody');
 expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('rawResponseBody');
 ```
+
+Additional exclusions added by add-request-context-diff §1.2 — the list item
+must still omit every body/header/system-prompt field while carrying the two
+new lightweight metadata fields:
+
+```ts
+// Proxy list items must still exclude ALL body + header + system-prompt fields
+expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('requestBody');
+expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('responseBody');
+expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('rawRequestBody');
+expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('rawResponseBody');
+expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('systemPrompt');
+expectTypeOf<ProxyRequestListItem>().not.toHaveProperty('requestHeaders');
+
+// Proxy list items carry only the lightweight correlation metadata
+expectTypeOf<ProxyRequestListItem>().toHaveProperty('captureGroupId');
+expectTypeOf<ProxyRequestListItem>().toHaveProperty('requestFormat');
+
+// The closed request-format enum must not gain or lose entries
+expectTypeOf<RequestContextFormat>().toEqualTypeOf<
+  'anthropic_messages' | 'openai_chat' | 'openai_responses' | 'unknown'
+>();
+
+// The response shape compiles verbatim from design D10
+expectTypeOf<ContextPairingConfidence>().toEqualTypeOf<
+  'exact' | 'capture_group' | 'manual'
+>();
+expectTypeOf<ContextDiffCategory>().toEqualTypeOf<
+  'system' | 'messages' | 'tools' | 'parameters'
+>();
+expectTypeOf<ContextChangeKind>().toEqualTypeOf<
+  'added' | 'removed' | 'modified'
+>();
+expectTypeOf<ContextDiffSegmentKind>().toEqualTypeOf<
+  'equal' | 'added' | 'removed'
+>();

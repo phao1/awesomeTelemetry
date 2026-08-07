@@ -16,8 +16,13 @@ import { cachedStmt } from './stmt-cache.js';
  * 新库由 SCHEMA_SQL 直接建出。
  * v5（show-trae-prompt-context）：新增一对一 session_prompt_context 表。
  * 迁移见 §migrateSchema —— 全部是 ADD COLUMN，非破坏性，新列随下一轮扫描回填。
+ * v6（add-request-context-diff，design D2/D3/D4）：proxy_requests 增
+ * capture_group_id（一次成功代理运行的关联证据，可空）与
+ * request_format（封闭 phase-1 格式分类，NOT NULL DEFAULT 'unknown'），
+ * 并新增两条复合 predecessor 索引（exact-session / capture-group 最近前驱查询）。
+ * 历史行保持 capture_group_id = NULL、request_format = 'unknown'，不做启动回填。
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -144,6 +149,8 @@ CREATE TABLE IF NOT EXISTS proxy_requests (
   output_tokens     INTEGER,
   parsed_session_id TEXT,
   parser_route      TEXT,
+  capture_group_id  TEXT,
+  request_format    TEXT    NOT NULL DEFAULT 'unknown',
   raw_request_body  TEXT,
   raw_response_body TEXT
 );
@@ -199,6 +206,11 @@ CREATE INDEX IF NOT EXISTS idx_scan_state_session    ON scan_state(session_id);
 CREATE INDEX IF NOT EXISTS idx_proxy_started_len     ON proxy_requests(system_prompt_len DESC, started_at); -- TODO(D-002): §4 原为 (started_at, system_prompt_len DESC)，与 §5.3 期望计划矛盾，按期望计划调整列序
 CREATE INDEX IF NOT EXISTS idx_proxy_hostname        ON proxy_requests(hostname);
 CREATE INDEX IF NOT EXISTS idx_proxy_parsed_session  ON proxy_requests(parsed_session_id);
+-- v6（add-request-context-diff，design D4）：最近更早前驱查询的两条复合索引
+CREATE INDEX IF NOT EXISTS idx_proxy_session_format_id
+  ON proxy_requests(parsed_session_id, request_format, id DESC);
+CREATE INDEX IF NOT EXISTS idx_proxy_group_format_model_id
+  ON proxy_requests(capture_group_id, request_format, model, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_frida_captured_at     ON frida_captures(captured_at);
 CREATE INDEX IF NOT EXISTS idx_frida_session         ON frida_captures(session_id);
@@ -248,6 +260,23 @@ const V4_ADD_COLUMNS = [
   'ALTER TABLE metrics ADD COLUMN failed_command_count INTEGER NOT NULL DEFAULT 0',
 ];
 
+/**
+ * v5 → v6 迁移（add-request-context-diff，contracts/database.md §2 逐字采用）：
+ * proxy_requests 仅两个幂等 ADD COLUMN，外加 design D4 的两条复合前驱索引。
+ * 历史行不解析 body、不回填格式 —— capture_group_id 保持 NULL、
+ * request_format 保持 'unknown'；新索引由 INDEX_SQL 对旧库幂等补建，
+ * 此处重复 CREATE INDEX IF NOT EXISTS 仅为满足“迁移本身建索引”的契约表述，
+ * 幂等且无副作用。
+ */
+const V6_ADD_COLUMNS = [
+  'ALTER TABLE proxy_requests ADD COLUMN capture_group_id TEXT',
+  "ALTER TABLE proxy_requests ADD COLUMN request_format TEXT NOT NULL DEFAULT 'unknown'",
+  'CREATE INDEX IF NOT EXISTS idx_proxy_session_format_id ' +
+    'ON proxy_requests(parsed_session_id, request_format, id DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_proxy_group_format_model_id ' +
+    'ON proxy_requests(capture_group_id, request_format, model, id DESC)',
+];
+
 function isDuplicateColumn(error: unknown): boolean {
   return error instanceof Error && /duplicate column name/i.test(error.message);
 }
@@ -273,6 +302,7 @@ export function migrateSchema(db: Database, fromVersion: number): void {
     { from: 3, sql: V4_ADD_COLUMNS },
     // v4 → v5 的新表已由上方 SCHEMA_SQL 幂等创建，无 ALTER 语句。
     { from: 4, sql: [] },
+    { from: 5, sql: V6_ADD_COLUMNS },
   ];
   for (const step of steps) {
     if (fromVersion >= step.from + 1) {

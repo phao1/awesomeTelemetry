@@ -65,6 +65,7 @@ import {
   ProxyRuntime,
   ProxyStateError,
 } from './proxy/controller.js';
+import { runContextDiff, type ContextDiffErrorCode } from './proxy/context-diff-service.js';
 
 const DEV_ONLY_ROUTES = [
   '/api/cdp/start',
@@ -168,6 +169,15 @@ class HttpError extends Error {
     this.details = details;
   }
 }
+
+/** design D10 / §6.2：context-diff 服务错误码 -> 统一 HTTP 状态。 */
+const CONTEXT_DIFF_STATUS: Record<ContextDiffErrorCode, number> = {
+  BAD_REQUEST: 400,
+  PROXY_REQUEST_NOT_FOUND: 404,
+  CONTEXT_DIFF_UNAVAILABLE: 409,
+  CONTEXT_DIFF_UNSUPPORTED: 422,
+  INTERNAL_ERROR: 500,
+};
 
 export function createAgentObservabilityServer(
   opts: AgentObservabilityServerOptions,
@@ -624,6 +634,37 @@ export function createAgentObservabilityServer(
       }),
       req,
     );
+  });
+
+  // design D10 / §6.1：context-diff 必须在泛化 `:id` 路由之前注册；
+  // Router 按精确段数匹配，但保持此顺序以避免任何未来被 `:id` 吞掉的风险。
+  router.register('GET', '/api/proxy/requests/:id/context-diff', async (req, res, params) => {
+    const targetId = Number(params.id);
+    if (!Number.isInteger(targetId) || targetId <= 0) {
+      throw new HttpError(400, 'BAD_REQUEST', 'invalid target request id', { role: 'target' });
+    }
+    const query = parseQuery(req);
+    const baseRaw = query.get('base');
+    // design D10：省略 base 等同于 base=previous；数字值必须是正整数。
+    let base: 'previous' | number;
+    if (baseRaw === undefined || baseRaw === null || baseRaw === '' || baseRaw === 'previous') {
+      base = 'previous';
+    } else {
+      const parsed = Number(baseRaw);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new HttpError(400, 'BAD_REQUEST', 'base must be "previous" or a positive integer', { role: 'base' });
+      }
+      base = parsed;
+    }
+    const result = await runContextDiff(db, { targetId, base });
+    if (!result.ok) {
+      // design D10 统一错误映射：400/404/409/422/500；details 不含 body/header/stack。
+      const { code, message, details } = result.error;
+      const status = CONTEXT_DIFF_STATUS[code];
+      sendApiError(res, status, code, message, details, req);
+      return;
+    }
+    sendJson(res, 200, result.value, req);
   });
 
   router.register('GET', '/api/proxy/requests/:id', (req, res, params) => {
