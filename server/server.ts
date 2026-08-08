@@ -7,6 +7,8 @@ import type { Database } from 'better-sqlite3';
 import type {
   LocalSessionConfig,
   ProviderKey,
+  SessionAnnotations,
+  SessionAnnotationsUpdate,
   SessionDetailResponse,
   TraceEvent,
   TraceRecord,
@@ -37,6 +39,15 @@ import {
 } from './storage/query-engine.js';
 import { getMission } from './storage/mission.js';
 import { getPromptContext } from './storage/prompt-context.js';
+import {
+  AnnotationBoundError,
+  AnnotationSessionNotFoundError,
+  ANNOTATION_MAX_TAGS,
+  ANNOTATION_TAG_PATTERN,
+  listTagVocabulary,
+  readAnnotations,
+  writeAnnotations,
+} from './storage/annotations.js';
 import {
   buildSubagentMergeGroups,
   loadSessionGroups,
@@ -394,6 +405,24 @@ export function createAgentObservabilityServer(
         throw new HttpError(400, 'BAD_REQUEST', 'keys limit is 200');
       }
     }
+    // api.md §1.1 / design D14：tags 多选过滤，OR 语义（与 provider/status 同款
+    // IN 匹配）。逗号分隔、上限 32；超过上限或值不满足 ANNOTATION_TAG_PATTERN
+    // → 400 BAD_REQUEST。过滤在 listSessions 的一次 join 里完成，绝无逐行查询。
+    const tagsRaw = query.get('tags');
+    let tags: string[] | undefined;
+    if (tagsRaw !== null && tagsRaw !== '') {
+      tags = tagsRaw.split(',');
+      if (tags.length > ANNOTATION_MAX_TAGS) {
+        throw new HttpError(400, 'BAD_REQUEST', `tags limit is ${ANNOTATION_MAX_TAGS}`);
+      }
+      for (const value of tags) {
+        if (!ANNOTATION_TAG_PATTERN.test(value)) {
+          // 图案已限 1-64 字符：预览必然有界，避免错误信息回显超长值。
+          const preview = value.length > 64 ? `${value.slice(0, 64)}...` : value;
+          throw new HttpError(400, 'BAD_REQUEST', `invalid tag value: ${preview}`);
+        }
+      }
+    }
     const result = listSessions(db, {
       dataSource,
       provider: providers as ProviderKey[] | undefined,
@@ -403,6 +432,7 @@ export function createAgentObservabilityServer(
       limit: intParam(query.get('limit'), 50, 500),
       cursor: query.get('cursor') ?? undefined,
       keys,
+      tags,
       groups: sessionGroups(),
     });
     sendJson(res, 200, result, req);
@@ -505,6 +535,76 @@ export function createAgentObservabilityServer(
       );
     }
     sendJson(res, 200, context, req);
+  });
+
+  // api.md §1.7（add-trajectory-inspector D13）：注解路由对。与 prompt-context /
+  // events/:eventId 同一约定：注册在 `:key` 泛化路由之后；Router 按精确段数
+  // 匹配（4 段 vs `:key` 的 3 段不会互吞），保持此顺序防御未来被 `:key` 吞掉。
+  // GET 未注解会话 → 200 空形状（tags: [] / note: null / updatedAt: null），
+  // 不创建行，也**不是** 404；未知会话键 → 404 SESSION_NOT_FOUND。
+  router.register('GET', '/api/sessions/:key/annotations', (req, res, params) => {
+    const key = params.key!;
+    const exists = cachedStmt(db, 'SELECT id FROM sessions WHERE id = ?').get(key);
+    if (exists === undefined) {
+      throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
+    }
+    sendJson(res, 200, readAnnotations(db, key), req);
+  });
+
+  // PUT 部分更新：缺省键不动、tags:[] 清空、note:null 清空；每次成功写刷新
+  // updatedAt。畸形 body / 边界违反（AnnotationBoundError）→ 400 BAD_REQUEST；
+  // 未知会话键（AnnotationSessionNotFoundError）→ 404 SESSION_NOT_FOUND。
+  // 错误信息只含干净的业务文本，绝无堆栈或 SQL。
+  router.register('PUT', '/api/sessions/:key/annotations', async (req, res, params) => {
+    const key = params.key!;
+    const text = await readBody(req);
+    let parsed: unknown = {};
+    if (text !== '') {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new HttpError(400, 'BAD_REQUEST', 'Request body is not valid JSON');
+      }
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new HttpError(400, 'BAD_REQUEST', 'annotations body must be an object');
+    }
+    const body = parsed as Record<string, unknown>;
+    const update: SessionAnnotationsUpdate = {};
+    if (body.tags !== undefined) {
+      if (!Array.isArray(body.tags) || !body.tags.every((t) => typeof t === 'string')) {
+        throw new HttpError(400, 'BAD_REQUEST', 'tags must be an array of strings');
+      }
+      update.tags = body.tags as string[];
+    }
+    if (body.note !== undefined) {
+      if (typeof body.note !== 'string' && body.note !== null) {
+        throw new HttpError(400, 'BAD_REQUEST', 'note must be a string or null');
+      }
+      update.note = body.note;
+    }
+    let result: SessionAnnotations;
+    try {
+      result = writeAnnotations(db, key, update);
+    } catch (err) {
+      if (err instanceof AnnotationBoundError) {
+        // D13：违反边界 → 400，绝不静默截断，什么也不落库。
+        throw new HttpError(400, 'BAD_REQUEST', err.message);
+      }
+      if (err instanceof AnnotationSessionNotFoundError) {
+        throw new HttpError(404, 'SESSION_NOT_FOUND', err.message, { key });
+      }
+      throw err;
+    }
+    sendJson(res, 200, result, req);
+  });
+
+  // api.md §1.7：标签词表（D14 候选列表）。注册于 sessions 簇内、任何泛化
+  // `:key` 模式之前；Router 按精确段数匹配，`/api/annotations/tags`（3 段，
+  // 第 2 段字面量 annotations）今天不会被任何 `:key` 路由捕获，保持此位置
+  // 以防御未来泛化模式的吞并风险（与 context-diff 注册顺序同一约定）。
+  router.register('GET', '/api/annotations/tags', (_req, res) => {
+    sendJson(res, 200, { tags: listTagVocabulary(db) }, _req);
   });
 
   router.register('GET', '/api/sessions/:key/events/:eventId', (req, res, params) => {

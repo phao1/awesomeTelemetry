@@ -55,15 +55,15 @@ Do not commit or push unless the user separately asks.
 
 **Depends on:** §2
 
-- [ ] 3.1 Register `GET` and `PUT /api/sessions/:key/annotations`, ordered so existing `:key` routes are not shadowed.
-- [ ] 3.2 Register `GET /api/annotations/tags` returning the tag vocabulary with counts.
-- [ ] 3.3 Add the `tags` query parameter to `GET /api/sessions`: comma-separated, OR semantics, max 32, invalid → `400 BAD_REQUEST`.
-- [ ] 3.4 Map storage bound errors to `400` and unknown session keys to `404 SESSION_NOT_FOUND` through the unified `ApiError` envelope; never leak a stack trace or SQL text.
-- [ ] 3.5 Send every response through the existing gzip-aware `sendJson`.
-- [ ] 3.6 Add typed client methods to `src/api/client.ts` preserving structured error codes.
-- [ ] 3.7 Add contract tests: empty read `200`, round trip, each partial update, each clear, every bound violation, unknown key `404`, malformed body `400`, tag vocabulary shape, OR filtering, 33-tag filter rejection, gzip.
-- [ ] 3.8 Add a regression test proving session list and detail shapes are unchanged apart from the added `tags` array.
-- [ ] 3.9 Run targeted API tests, then `npm run typecheck && npm run test && npm run lint`.
+- [x] 3.1 Register `GET` and `PUT /api/sessions/:key/annotations`, ordered so existing `:key` routes are not shadowed.
+- [x] 3.2 Register `GET /api/annotations/tags` returning the tag vocabulary with counts.
+- [x] 3.3 Add the `tags` query parameter to `GET /api/sessions`: comma-separated, OR semantics, max 32, invalid → `400 BAD_REQUEST`.
+- [x] 3.4 Map storage bound errors to `400` and unknown session keys to `404 SESSION_NOT_FOUND` through the unified `ApiError` envelope; never leak a stack trace or SQL text.
+- [x] 3.5 Send every response through the existing gzip-aware `sendJson`.
+- [x] 3.6 Add typed client methods to `src/api/client.ts` preserving structured error codes.
+- [x] 3.7 Add contract tests: empty read `200`, round trip, each partial update, each clear, every bound violation, unknown key `404`, malformed body `400`, tag vocabulary shape, OR filtering, 33-tag filter rejection, gzip.
+- [x] 3.8 Add a regression test proving session list and detail shapes are unchanged apart from the added `tags` array.
+- [x] 3.9 Run targeted API tests, then `npm run typecheck && npm run test && npm run lint`.
 
 ## 4. Turn model
 
@@ -143,16 +143,23 @@ Do not commit or push unless the user separately asks.
 
 **Depends on:** §4 (integrated in §6)
 
-- [ ] 8.1 Create `src/core/turn-analysis.ts` computing the five sections plus anomalies from `TurnModel`, pure and request-free.
-- [ ] 8.2 Implement tool-usage grouping with count-descending, name-ascending ordering.
-- [ ] 8.3 Implement both top-ten lists with turn-index-ascending tie-breaking.
-- [ ] 8.4 Implement the cache-rate trend with null for a zero denominator.
-- [ ] 8.5 Implement the four anomaly rules at exactly the stated thresholds, each entry naming the measured value and the threshold crossed.
-- [ ] 8.6 Propagate model incompleteness into the analysis result.
+- [x] 8.1 Create `src/core/turn-analysis.ts` computing the five sections plus anomalies from `TurnModel`, pure and request-free.
+- [x] 8.2 Implement tool-usage grouping with count-descending, name-ascending ordering.
+- [x] 8.3 Implement both top-ten lists with turn-index-ascending tie-breaking.
+- [x] 8.4 Implement the cache-rate trend with null for a zero denominator.
+- [x] 8.5 Implement the four anomaly rules at exactly the stated thresholds, each entry naming the measured value and the threshold crossed.
+- [x] 8.6 Propagate model incompleteness into the analysis result.
 - [ ] 8.7 Create `TrajectoryAnalysisPanel` rendering all sections with the existing chart atoms, icon plus text per anomaly, `—` for every unavailable value, and the incompleteness banner.
-- [ ] 8.8 Add `src/core/turn-analysis.test.ts` against a hand-computed fixture, a boundary test per anomaly rule at the threshold and one step past it, a null-cache-rate case, and a zero-turn case.
+- [x] 8.8 Add `src/core/turn-analysis.test.ts` against a hand-computed fixture, a boundary test per anomaly rule at the threshold and one step past it, a null-cache-rate case, and a zero-turn case.
 - [ ] 8.9 Add a panel test asserting zero network requests on open and `—` totals when incomplete.
-- [ ] 8.10 Run targeted tests, then `npm run typecheck && npm run test && npm run lint`.
+- [x] 8.10 Run targeted tests, then `npm run typecheck && npm run test && npm run lint`.
+
+> Blocked note (8.7 / 8.9): the panel needs §6's `TrajectoryStatBar` (B6) to
+> mount it, and B6 has not landed (`src/components/trajectory/` holds only
+> `renderers`). Per the §8 brief, 8.1–8.6 and 8.8 are delivered now; 8.7 and
+> 8.9 (including the panel's zero-network-request test) ship with §6. The
+> request-free property itself is already covered at the core level by the
+> fetch-stub assertion in `turn-analysis.test.ts`.
 
 ## 9. Verification and sign-off
 
