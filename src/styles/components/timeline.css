@@ -1,34 +1,45 @@
-.phase-dot {
-  width: var(--dot-size);
-  height: var(--dot-size);
+/* timeline.css — 会话视图时间构成 + 甘特/时间线相关样式。
+ *
+ * add-trajectory-inspector tasks §6.1：TraceTimeline / EventInspector 已删除，
+ * 本文件删除它们专属的选择器（timeline-toggle / timeline-search / timeline-axis /
+ * timeline-phase-axis / io-badge / gantt-group-* / gantt-child-row 等）。
+ * 保留仍被存活组件使用的部分：
+ *   - PhaseRibbon / PhaseTiles（会话视图保留）→ .phase-ribbon-* / .phase-tile*
+ *   - TimeCompositionBar（保留）→ .timecomp-*
+ *   - CompareTimeline 的自包含迷你时间线（CompareMiniTimeline）→
+ *     .gantt-wrap / .timeline-mode / .timeline-chip / .gantt-row* /
+ *     .timeline-track / .timeline-bar / .timeline-phase-* / .gantt-time
+ *   - 替换 EventInspector 的 compact 面板 → .compare-event-panel
+ */
+
+/* ---- 会话视图阶段轴（PhaseRibbon，保留） ---- */
+.phase-ribbon {
+  display: flex;
+  height: var(--space-2);
   border-radius: var(--radius-full);
-  display: inline-block;
+  overflow: hidden;
+  flex: 0 0 auto;
+  margin: var(--space-2) var(--space-3) 0;
 }
 
-.phase-understand {
-  background: var(--phase-understand);
+.phase-ribbon-empty {
+  background: var(--canvas-raised);
 }
 
-.phase-plan {
-  background: var(--phase-plan);
+.phase-ribbon-seg {
+  appearance: none;
+  border: none;
+  height: 100%;
+  padding: 0;
+  cursor: pointer;
+  min-width: var(--space-1);
 }
 
-.phase-implement {
-  background: var(--phase-implement);
+.phase-ribbon-only {
+  outline: 1px solid var(--canvas-default);
 }
 
-.phase-debug {
-  background: var(--phase-debug);
-}
-
-.phase-verify {
-  background: var(--phase-verify);
-}
-
-.phase-report {
-  background: var(--phase-report);
-}
-
+/* ---- PhaseTiles（保留） ---- */
 .phase-tiles {
   display: flex;
   gap: var(--space-2);
@@ -65,43 +76,6 @@
   background: var(--accent-emphasis);
   color: var(--fg-on-emphasis);
   border-color: var(--accent-emphasis);
-}
-
-.timeline {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: var(--text-sm);
-}
-
-.timeline li {
-  padding: var(--space-1) 0;
-}
-
-.phase-ribbon {
-  display: flex;
-  height: var(--space-2);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-  flex: 0 0 auto;
-  margin: var(--space-2) var(--space-3) 0;
-}
-
-.phase-ribbon-empty {
-  background: var(--canvas-raised);
-}
-
-.phase-ribbon-seg {
-  appearance: none;
-  border: none;
-  height: 100%;
-  padding: 0;
-  cursor: pointer;
-  min-width: var(--space-1);
-}
-
-.phase-ribbon-only {
-  outline: 1px solid var(--canvas-default);
 }
 
 .phase-tiles {
@@ -141,6 +115,7 @@
   font-size: var(--text-xs);
 }
 
+/* ---- 迷你时间线行（CompareMiniTimeline，保留） ---- */
 .gantt-row {
   display: flex;
   gap: var(--space-2);
@@ -158,24 +133,6 @@
 
 .gantt-row-on {
   background: var(--accent-subtle);
-}
-
-.timeline-toggle {
-  appearance: none;
-  border: none;
-  background: transparent;
-  color: var(--fg-muted);
-  padding: 0;
-  width: var(--space-3);
-  height: var(--space-3);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-}
-
-.timeline-toggle:disabled {
-  visibility: hidden;
 }
 
 .timeline-track {
@@ -219,7 +176,7 @@
   color: var(--phase-report);
 }
 
-/* ---- 时间构成条（L2，§3.2） ---- */
+/* ---- 时间构成条（L2，§3.2，TimeCompositionBar 保留） ---- */
 .timecomp {
   display: flex;
   flex-direction: column;
@@ -316,61 +273,12 @@
   font-size: var(--text-xs);
 }
 
-/* ---- 甘特工具栏与语义折叠（L3，§3.4） ---- */
+/* ---- 迷你时间线容器与模式切换（CompareMiniTimeline） ---- */
 .gantt-wrap {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
-}
-
-.timeline-toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-top: 1px solid var(--border-default);
-  border-bottom: 1px solid var(--border-default);
-  background: var(--canvas-subtle);
-}
-
-.timeline-search {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 1;
-  min-width: 0;
-  height: var(--control-height-md);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--canvas-default);
-  color: var(--fg-muted);
-}
-
-.timeline-search:focus-within {
-  border-color: var(--accent-fg);
-  box-shadow: var(--focus-ring);
-}
-
-.timeline-search-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: none;
-  color: var(--fg-default);
-  font-size: var(--text-sm);
-}
-
-.timeline-search-input::placeholder {
-  color: var(--fg-muted);
-}
-
-.timeline-matches {
-  color: var(--fg-muted);
-  font-size: var(--text-xs);
-  white-space: nowrap;
 }
 
 .timeline-chip {
@@ -404,34 +312,6 @@
   outline-offset: -1px;
 }
 
-.gantt-row-cursor {
-  background: var(--accent-subtle);
-}
-
-.gantt-child-row {
-  background: var(--canvas-inset);
-}
-
-.gantt-group-row {
-  border-left: var(--gantt-group-border) solid var(--phase-implement);
-  font-weight: var(--weight-medium);
-}
-
-.gantt-group-row.gantt-group-failed {
-  border-left-color: var(--danger-fg);
-}
-
-/* §6.2：Prompt 事件用中性底 + 加粗竖条，不占用色相预算 */
-.gantt-row[data-kind='user_prompt'],
-.gantt-row[data-kind='subagent_prompt'] {
-  border-left: var(--gantt-group-border) solid var(--neutral-fg);
-  background: var(--canvas-subtle);
-}
-
-.gantt-group-title {
-  color: var(--fg-default);
-}
-
 .gantt-time {
   width: var(--seq-col-width);
   color: var(--fg-muted);
@@ -439,160 +319,26 @@
   text-align: right;
 }
 
-.gantt-title mark {
-  background: var(--attention-subtle);
-  color: var(--fg-default);
-  border-radius: var(--mark-radius);
-  padding: 0 1px;
-}
-
-.gantt-empty-search {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-8);
-  color: var(--fg-muted);
-  font-size: var(--text-base);
-}
-
-.timeline-axis {
-  position: relative;
-  flex: 0 0 auto;
-  height: var(--row-md);
-  border-bottom: 1px solid var(--border-default);
-  background: var(--canvas-inset);
-  cursor: col-resize;
-  user-select: none;
-  touch-action: none;
-}
-
-.timeline-axis-tick {
-  position: absolute;
-  top: var(--space-1);
-  transform: translateX(-50%);
-  color: var(--fg-muted);
-  font-size: var(--text-xs);
-  pointer-events: none;
-}
-
-.timeline-axis-tick:first-child {
-  transform: none;
-}
-
-.timeline-axis-tick:last-child {
-  transform: translateX(-100%);
-}
-
-.timeline-axis-sel {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  background: var(--accent-subtle);
-  border-left: 1px solid var(--accent-fg);
-  border-right: 1px solid var(--accent-fg);
-  pointer-events: none;
-}
-
-/* ---- fix-session-detail-display：甘特双模式 + 可点击阶段轴 + io 徽标 ---- */
 .timeline-mode {
   display: inline-flex;
   gap: var(--space-1);
   flex: 0 0 auto;
 }
 
-.timeline-phase-chips {
+/* ---- 替换 EventInspector 的 compact 面板（CompareEventPanel） ---- */
+.compare-event-panel {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-3) 0;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
 }
 
-.timeline-phase-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  height: var(--control-height-md);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--canvas-default);
-  color: var(--fg-muted);
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-
-.timeline-phase-chip:hover {
-  border-color: var(--border-strong);
-  color: var(--fg-default);
-}
-
-.timeline-phase-chip-on {
-  border-color: var(--accent-emphasis);
-  color: var(--accent-fg);
-  background: var(--accent-subtle);
-}
-
-.timeline-phase-axis {
-  position: relative;
-  flex: 0 0 auto;
-  height: var(--row-md);
-  margin: 0 var(--space-2);
-  border-radius: var(--radius-sm);
+.compare-event-panel-title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  cursor: pointer;
-}
-
-.timeline-phase-seg {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  min-width: calc(var(--space-1) / 2);
-  cursor: pointer;
-}
-
-.timeline-phase-seg:hover {
-  filter: brightness(1.2);
-  outline: 1px solid var(--accent-fg);
-  outline-offset: -1px;
-}
-
-.timeline-phase-seg-label {
-  position: absolute;
-  left: var(--space-1);
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--fg-on-emphasis);
-  font-size: var(--text-xs);
+  text-overflow: ellipsis;
   white-space: nowrap;
-  pointer-events: none;
-}
-
-.timeline-axis-seq {
-  cursor: default;
-  touch-action: auto;
-}
-
-.io-badge {
-  flex: 0 0 auto;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  line-height: 1;
-  padding: calc(var(--space-1) / 2) var(--space-2);
-  border-radius: var(--radius-sm);
-  pointer-events: none;
-}
-
-.io-badge-in {
-  color: var(--accent-fg);
-  background: var(--accent-subtle);
-  border: 1px solid var(--accent-emphasis);
-}
-
-.io-badge-out {
-  color: var(--success-fg);
-  background: var(--success-subtle);
-  border: 1px solid var(--success-emphasis);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
 }

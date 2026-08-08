@@ -5,8 +5,10 @@ import {
   LAYOUT_RANGES,
   loadBool,
   loadNumber,
+  loadRibbonMode,
   storeBool,
   storeNumber,
+  storeRibbonMode,
 } from './layout.js';
 
 afterEach(() => {
@@ -40,5 +42,34 @@ describe('REQ-026 布局持久化', () => {
     expect(localStorage.getItem(LAYOUT_KEYS.fontSize)).toBe('18');
     storeBool(LAYOUT_KEYS.inspectorCollapsed, true);
     expect(localStorage.getItem(LAYOUT_KEYS.inspectorCollapsed)).toBe('true');
+  });
+
+  it('trajectory railWidth：240–300 钳制（add-trajectory-inspector D18）', () => {
+    localStorage.setItem(LAYOUT_KEYS.trajectoryRailWidth, '10');
+    expect(loadNumber(LAYOUT_KEYS.trajectoryRailWidth, 260, LAYOUT_RANGES.trajectoryRailWidth)).toBe(240);
+
+    localStorage.setItem(LAYOUT_KEYS.trajectoryRailWidth, '9999');
+    expect(loadNumber(LAYOUT_KEYS.trajectoryRailWidth, 260, LAYOUT_RANGES.trajectoryRailWidth)).toBe(300);
+
+    localStorage.setItem(LAYOUT_KEYS.trajectoryRailWidth, '280');
+    expect(loadNumber(LAYOUT_KEYS.trajectoryRailWidth, 260, LAYOUT_RANGES.trajectoryRailWidth)).toBe(280);
+  });
+
+  it('trajectory ribbonMode：time/token 往返，脏值回落缺省', () => {
+    storeRibbonMode(LAYOUT_KEYS.trajectoryRibbonMode, 'token');
+    expect(loadRibbonMode(LAYOUT_KEYS.trajectoryRibbonMode)).toBe('token');
+    storeRibbonMode(LAYOUT_KEYS.trajectoryRibbonMode, 'time');
+    expect(loadRibbonMode(LAYOUT_KEYS.trajectoryRibbonMode)).toBe('time');
+
+    localStorage.setItem(LAYOUT_KEYS.trajectoryRibbonMode, 'garbage');
+    expect(loadRibbonMode(LAYOUT_KEYS.trajectoryRibbonMode)).toBe('time');
+  });
+
+  it('被删除甘特的 .layout 旧键读取时被忽略并移除（D18）', () => {
+    localStorage.setItem('awesome-telemetry.layout', 'sequence');
+    localStorage.setItem('agent-observability.layout', 'time');
+    expect(loadRibbonMode(LAYOUT_KEYS.trajectoryRibbonMode)).toBe('time');
+    expect(localStorage.getItem('awesome-telemetry.layout')).toBeNull();
+    expect(localStorage.getItem('agent-observability.layout')).toBeNull();
   });
 });

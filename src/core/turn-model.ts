@@ -18,6 +18,7 @@
 
 import type {
   MessageRole,
+  ProviderKey,
   TraceEvent,
   TraceEventSlim,
   TraceKind,
@@ -348,4 +349,33 @@ export function countRounds(turns: readonly TraceTurn[]): number {
     }
   }
   return rounds;
+}
+
+/**
+ * Provider → adapter 声明的 turn-key provenance（design D3 口径行输入）。
+ *
+ * API 契约不逐会话下发 `turnKeySource`（§1 契约冻结未增加该字段），但
+ * adapter 在各自的 `TraceRecord.turnKeySource` 中声明了来源；这里把这九个
+ * provider 的声明镜像为前端常量，供 §6 口径行命名 provenance。来源：
+ * src/adapters/{codex,claude-code,opencode,codeagent,trae,qoder,workbuddy}.ts。
+ *
+ * 关键约束（D3）：当前没有任何 adapter 声明 `native_boundary`，所以
+ * `turn_key` 切分的会话几乎总是渲染一条带 provenance 的口径行 —— 这正是
+ * 设计意图：读者永远知道回合是怎么切出来的。
+ */
+export function turnKeySourceForProvider(provider: ProviderKey): TurnKeySource {
+  switch (provider) {
+    case 'codex':
+      return 'stream_structure';
+    case 'claude':
+    case 'opencode':
+    case 'codearts':
+    case 'codeagent':
+    case 'codeagent2':
+    case 'trae':
+      return 'message_identity';
+    case 'qoder':
+    case 'workbuddy':
+      return 'unavailable';
+  }
 }

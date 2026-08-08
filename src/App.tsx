@@ -35,14 +35,13 @@ import { LiveIndicator } from './components/LiveIndicator.js';
 import { SessionList } from './components/SessionList.js';
 import { SessionToolbar } from './components/SessionToolbar.js';
 import { SessionFindings } from './components/SessionFindings.js';
-import { TraceTimeline } from './components/TraceTimeline.js';
 import { PhaseRibbon } from './components/PhaseRibbon.js';
 import { SessionVisuals } from './components/SessionVisuals.js';
 import { PhaseTiles } from './components/PhaseTiles.js';
 import { TimeCompositionBar } from './components/TimeCompositionBar.js';
 import { computeTimeComposition, type TimeSegmentKey } from './core/time-composition.js';
 import { computePhaseTrends } from './core/phase-trend.js';
-import { EventInspector } from './components/EventInspector.js';
+import { TrajectoryPane } from './components/trajectory/TrajectoryPane.js';
 import { AgentOverview } from './components/AgentOverview.js';
 import { CompareBoard } from './components/CompareBoard.js';
 import { ProxyView } from './components/ProxyView.js';
@@ -58,8 +57,6 @@ function formatError(err: unknown, locale: Locale): string {
   }
   return err instanceof Error ? err.message : String(err);
 }
-import { TranscriptModal } from './components/TranscriptModal.js';
-import { TokenTextModal } from './components/TokenTextModal.js';
 import { PromptContextModal } from './components/PromptContextModal.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
 import { ErrorState, EmptyState } from './components/ui/States.js';
@@ -70,8 +67,10 @@ import {
   LAYOUT_RANGES,
   loadBool,
   loadNumber,
+  loadRibbonMode,
   storeBool,
   storeNumber,
+  storeRibbonMode,
 } from './layout.js';
 import {
   installKeyboardShortcuts,
@@ -79,11 +78,10 @@ import {
   setEscapeFallback,
 } from './keyboard.js';
 import { HelpModal } from './components/HelpModal.js';
-import { parseHash, serializeHash, type HashState, type TimelineLayout } from './hash-router.js';
+import { parseHash, serializeHash, type HashState, type RibbonMode } from './hash-router.js';
 import type { CommandPaletteProps } from './components/CommandPalette.js';
 import { computeFindings, type Finding } from './core/session-findings.js';
 
-const PAGE_SIZE = 2000;
 /** --ui-scale 的基准字号：fontPx 等于它时缩放为 1（同 tokens.css §3.1 的 --text-base）。 */
 const BASE_FONT_PX = 13;
 /** 首帧 hash 在模块加载时解析一次：避免 state→hash 写入 effect 先把它覆盖掉。 */
@@ -128,42 +126,36 @@ export default function App() {
     return valid.length > 0 ? valid : [...TRACE_PHASES];
   });
   const deferredPhaseFilter = useDeferredValue(phaseFilter); // REQ-002
-  const [semanticGroup, setSemanticGroup] = useState(true);
   const [timeSegFilter, setTimeSegFilter] = useState<TimeSegmentKey | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<TraceEventSlim | null>(null);
-  const [detailPage, setDetailPage] = useState(0);
   // fix-session-detail-display delta：会话列表服务端过滤 + 甘特布局模式
   const [sessionQ, setSessionQ] = useState(() => INITIAL_HASH?.q ?? '');
   const [sessionRange, setSessionRange] = useState<SessionRange>(
     () => INITIAL_HASH?.time ?? 'today',
   );
   const [sessionTotal, setSessionTotal] = useState(0);
-  const [layoutMode, setLayoutMode] = useState<TimelineLayout>(
-    () => INITIAL_HASH?.layout ?? 'time',
-  );
   const sessionCursorRef = useRef<string | null>(null);
   // REQ-026：布局偏好持久化（读取时范围校验）
   const [railWidth, setRailWidth] = useState(() =>
     loadNumber(LAYOUT_KEYS.railWidth, 300, LAYOUT_RANGES.railWidth),
   );
-  const [inspectorWidth, setInspectorWidth] = useState(() =>
-    loadNumber(LAYOUT_KEYS.inspectorWidth, 420, LAYOUT_RANGES.inspectorWidth),
-  );
   const [railCollapsed, setRailCollapsed] = useState(() =>
     loadBool(LAYOUT_KEYS.railCollapsed, false),
   );
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(() =>
-    loadBool(LAYOUT_KEYS.inspectorCollapsed, false),
+  // add-trajectory-inspector D18：色带模式（hash 优先于 localStorage）。
+  const [ribbonMode, setRibbonMode] = useState<RibbonMode>(
+    () => INITIAL_HASH?.ribbon ?? loadRibbonMode(LAYOUT_KEYS.trajectoryRibbonMode),
   );
+  const [selectedTurn, setSelectedTurn] = useState<number | null>(
+    () => INITIAL_HASH?.turn ?? null,
+  );
+  const [tagFilter, setTagFilter] = useState<string[]>(() => INITIAL_HASH?.tags ?? []);
+  /** 轨迹 rail（详情内右栏）折叠态；宽度由 SplitPane 自行持久化（D18）。 */
+  const [trajectoryRailCollapsed, setTrajectoryRailCollapsed] = useState(false);
   const [fontPx, setFontPx] = useState(() =>
     loadNumber(LAYOUT_KEYS.fontSize, BASE_FONT_PX, LAYOUT_RANGES.fontSize),
   ); // REQ-012：8–28px
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [transcriptEvent, setTranscriptEvent] = useState<TraceEventSlim | null>(null);
-  const [tokenEvent, setTokenEvent] = useState<TraceEventSlim | null>(null);
   const [promptContextKey, setPromptContextKey] = useState<string | null>(null);
-  /** REQ-112：命令面板 `/goto` 定位目标（传给 TraceTimeline 触发滚动）。 */
-  const [focusEventId, setFocusEventId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [PaletteComponent, setPaletteComponent] = useState<PaletteModule['CommandPalette'] | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -174,11 +166,13 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState<TraceStatus[]>(
     () => (INITIAL_HASH?.status as TraceStatus[]) ?? [],
   );
+  const [focusEventId, setFocusEventId] = useState<string | null>(null);
   const sessionFiltersRef = useRef({
     q: sessionQ,
     range: sessionRange,
     provider: providerFilter,
     status: statusFilter,
+    tags: tagFilter,
   });
   const [compareLeft, setCompareLeft] = useState(() => INITIAL_HASH?.left ?? '');
   const [compareRight, setCompareRight] = useState(() => INITIAL_HASH?.right ?? '');
@@ -211,14 +205,11 @@ export default function App() {
     storeNumber(LAYOUT_KEYS.railWidth, railWidth);
   }, [railWidth]);
   useEffect(() => {
-    storeNumber(LAYOUT_KEYS.inspectorWidth, inspectorWidth);
-  }, [inspectorWidth]);
-  useEffect(() => {
     storeBool(LAYOUT_KEYS.railCollapsed, railCollapsed);
   }, [railCollapsed]);
   useEffect(() => {
-    storeBool(LAYOUT_KEYS.inspectorCollapsed, inspectorCollapsed);
-  }, [inspectorCollapsed]);
+    storeRibbonMode(LAYOUT_KEYS.trajectoryRibbonMode, ribbonMode);
+  }, [ribbonMode]);
   useEffect(() => {
     storeNumber(LAYOUT_KEYS.fontSize, fontPx);
     // A− / A+ 此前只作为 prop 传给 EventInspector，对其余界面完全无效。
@@ -251,6 +242,7 @@ export default function App() {
           cursor: mode === 'next' ? sessionCursorRef.current ?? undefined : undefined,
           provider: filters.provider.length > 0 ? filters.provider : undefined,
           status: filters.status.length > 0 ? filters.status : undefined,
+          tags: filters.tags.length > 0 ? filters.tags : undefined,
           q: filters.q.trim() !== '' ? filters.q.trim() : undefined,
           range: filters.range,
         });
@@ -291,8 +283,9 @@ export default function App() {
       range: sessionRange,
       provider: providerFilter,
       status: statusFilter,
+      tags: tagFilter,
     };
-  }, [sessionQ, sessionRange, providerFilter, statusFilter]);
+  }, [sessionQ, sessionRange, providerFilter, statusFilter, tagFilter]);
 
   // 过滤变更（含首帧）→ 防抖拉第一页，替换而非追加（分页下不做纯前端过滤）
   useEffect(() => {
@@ -300,7 +293,7 @@ export default function App() {
       void loadSessions('first');
     }, 250);
     return () => clearTimeout(timer);
-  }, [sessionQ, sessionRange, providerFilter, statusFilter, loadSessions]);
+  }, [sessionQ, sessionRange, providerFilter, statusFilter, tagFilter, loadSessions]);
 
   // REQ-004：SSE 局部 patch——失效缓存 + 一次 keys 批量补丁，不重拉全量
   useEffect(() => {
@@ -366,8 +359,6 @@ export default function App() {
     (key: string) => {
       selectedKeyRef.current = key;
       setSelectedKey(key);
-      setSelectedEvent(null);
-      setDetailPage(0);
       const cached = recordCache.get(`${key}:slim`);
       if (cached !== undefined) {
         setDetail(cached);
@@ -398,35 +389,6 @@ export default function App() {
     },
     [],
   );
-
-  const loadMoreEvents = useCallback(() => {
-    if (selectedKey === null || detail === null || !detail.hasMore) {
-      return;
-    }
-    const nextPage = detailPage + 1;
-    void api
-      .sessionDetail(selectedKey, 'slim', nextPage * PAGE_SIZE, PAGE_SIZE)
-      .then((result) => {
-        setDetail((prev) => {
-          if (prev === null) {
-            return prev;
-          }
-          const seen = new Set(prev.events.map((e) => e.id));
-          return {
-            ...prev,
-            events: [...prev.events, ...result.events.filter((e) => !seen.has(e.id))],
-            eventTotal: result.eventTotal,
-            hasMore: result.hasMore,
-            eventOffset: result.eventOffset,
-            eventLimit: result.eventLimit,
-          };
-        });
-        setDetailPage(nextPage);
-      })
-      .catch((err: unknown) => {
-        console.error('[detail] 分页加载失败:', err);
-      });
-  }, [selectedKey, detail, detailPage]);
 
   const timeComposition = useMemo(
     () => computeTimeComposition((detail?.events ?? []) as TraceEventSlim[]),
@@ -471,7 +433,8 @@ export default function App() {
         const targetIds = new Set(finding.evidence.eventIds);
         const target = detail.events.find((e) => targetIds.has(e.id));
         if (target !== undefined) {
-          setSelectedEvent(target);
+          // 甘特与 Inspector 已删除：定位到目标事件所在的回合。
+          setFocusEventId(target.id);
           return;
         }
       }
@@ -532,7 +495,7 @@ export default function App() {
   useEffect(() => {
     installKeyboardShortcuts();
     setEscapeFallback(() => {
-      setSelectedEvent(null);
+      setFocusEventId(null);
       setCursorIndex(-1);
     });
     return () => setEscapeFallback(null);
@@ -564,7 +527,7 @@ export default function App() {
       }
     });
     add({ key: '[' }, () => setRailCollapsed((prev) => !prev));
-    add({ key: ']' }, () => setInspectorCollapsed((prev) => !prev));
+    add({ key: ']' }, () => setTrajectoryRailCollapsed((prev) => !prev));
     add({ key: '\\', ctrlOrMeta: true }, () => theme.cycle());
     add({ key: 'k', ctrlOrMeta: true }, () => {
       setPaletteOpen((prev) => {
@@ -582,7 +545,7 @@ export default function App() {
         unsubscribe();
       }
     };
-  }, [sessions, cursorIndex, selectSession, switchView, theme, setRailCollapsed, setInspectorCollapsed]);
+  }, [sessions, cursorIndex, selectSession, switchView, theme, setRailCollapsed]);
 
   // REQ-024（D3）：状态变 → 写 hash（replaceState 不触发 hashchange，避免循环）
   useEffect(() => {
@@ -592,15 +555,17 @@ export default function App() {
       ...(phaseFilter.length < TRACE_PHASES.length ? { phase: phaseFilter } : {}),
       ...(providerFilter.length > 0 ? { provider: providerFilter } : {}),
       ...(statusFilter.length > 0 ? { status: statusFilter } : {}),
+      ...(tagFilter.length > 0 ? { tags: tagFilter } : {}),
       ...(sessionQ !== '' ? { q: sessionQ } : {}),
       ...(view === 'session' ? { time: sessionRange } : {}),
-      ...(view === 'session' ? { layout: layoutMode } : {}),
+      ...(view === 'session' ? { ribbon: ribbonMode } : {}),
+      ...(view === 'session' && selectedTurn !== null ? { turn: selectedTurn } : {}),
       ...(compareLeft !== '' ? { left: compareLeft } : {}),
       ...(compareRight !== '' ? { right: compareRight } : {}),
       ...(view === 'mission' ? { range: missionRange } : {}),
     };
     history.replaceState(null, '', serializeHash(state));
-  }, [view, selectedKey, phaseFilter, providerFilter, statusFilter, sessionQ, sessionRange, layoutMode, compareLeft, compareRight, missionRange]);
+  }, [view, selectedKey, phaseFilter, providerFilter, statusFilter, tagFilter, sessionQ, sessionRange, ribbonMode, selectedTurn, compareLeft, compareRight, missionRange]);
 
   // REQ-024：hashchange → 解析并应用（脏 hash 回落默认视图，不抛错）
   useEffect(() => {
@@ -626,14 +591,20 @@ export default function App() {
       if (state.status !== undefined) {
         setStatusFilter(state.status as TraceStatus[]);
       }
+      if (state.tags !== undefined) {
+        setTagFilter(state.tags);
+      }
       if (state.q !== undefined) {
         setSessionQ(state.q);
       }
       if (state.time !== undefined) {
         setSessionRange(state.time);
       }
-      if (state.layout !== undefined) {
-        setLayoutMode(state.layout);
+      if (state.ribbon !== undefined) {
+        setRibbonMode(state.ribbon);
+      }
+      if (state.turn !== undefined) {
+        setSelectedTurn(state.turn);
       }
       if (state.left !== undefined) {
         setCompareLeft(state.left);
@@ -655,13 +626,6 @@ export default function App() {
       selectSession(INITIAL_HASH.key);
     }
   }, [switchView, selectSession]);
-
-  const openTranscript = useCallback(
-    (event: TraceEventSlim) => {
-      setTranscriptEvent(event);
-    },
-    [],
-  );
 
   return (
     <div className="app">
@@ -709,6 +673,8 @@ export default function App() {
             onRangeChange={setSessionRange}
             onProviderFilterChange={setProviderFilter}
             onStatusFilterChange={setStatusFilter}
+            tagFilter={tagFilter}
+            onTagFilterChange={setTagFilter}
             total={sessionTotal}
             cursorIndex={cursorIndex}
             searchInputRef={searchInputRef}
@@ -770,6 +736,14 @@ export default function App() {
                   session={detail.session}
                   events={detail.events as TraceEventSlim[]}
                   locale={locale}
+                  tags={sessions.find((s) => s.id === selectedKey)?.tags ?? []}
+                  onBack={() => {
+                    setSelectedKey(null);
+                    setDetail(null);
+                    selectedKeyRef.current = null;
+                    setDetailError(null);
+                    setPending(false);
+                  }}
                   onRescan={() => {
                     if (selectedKey === null) {
                       return;
@@ -859,19 +833,21 @@ export default function App() {
                       />
                     </details>
                   )}
-                  <TraceTimeline
-                    events={visibleEvents as TraceEventSlim[]}
-                    total={detail.eventTotal}
-                    hasMore={detail.hasMore}
-                    onLoadMore={loadMoreEvents}
-                    onSelectEvent={setSelectedEvent}
-                    selectedEventId={selectedEvent?.id ?? null}
+                  <TrajectoryPane
                     locale={locale}
-                    semanticGroup={semanticGroup}
-                    onSemanticGroupChange={setSemanticGroup}
-                    layoutMode={layoutMode}
-                    onLayoutModeChange={setLayoutMode}
+                    sessionKey={selectedKey ?? ''}
+                    detail={detail}
+                    ribbonMode={ribbonMode}
+                    onRibbonModeChange={setRibbonMode}
+                    selectedTurn={selectedTurn}
+                    onSelectedTurnChange={setSelectedTurn}
                     focusEventId={focusEventId}
+                    onSelectAgent={(key) => {
+                      setFocusEventId(null);
+                      selectSession(key);
+                    }}
+                    railCollapsed={trajectoryRailCollapsed}
+                    onToggleRailCollapse={() => setTrajectoryRailCollapsed((prev) => !prev)}
                   />
                   {/* REQ-121：热力图 + 8 轴能力雷达是「看一眼就够」的画像层，
                       放在时间线之后并默认折叠 —— 它们此前钉在首屏，占掉约 45%
@@ -885,34 +861,6 @@ export default function App() {
               </div>
             )}
           </main>
-          <EventInspector
-            sessionKey={selectedKey ?? ''}
-            event={selectedEvent}
-            locale={locale}
-            fontPx={fontPx}
-            width={inspectorWidth}
-            collapsed={inspectorCollapsed}
-            onResize={setInspectorWidth}
-            onToggleCollapse={() => setInspectorCollapsed((prev) => !prev)}
-            onOpenTranscript={openTranscript}
-            onOpenTokens={setTokenEvent}
-            onClose={() => setSelectedEvent(null)}
-            onNavigate={(direction) => {
-              const index = visibleEvents.findIndex((e) => e.id === selectedEvent?.id);
-              const target = visibleEvents[index + direction];
-              if (target !== undefined) {
-                setSelectedEvent(target);
-              }
-            }}
-            canNavigate={{
-              prev:
-                selectedEvent !== null &&
-                visibleEvents.findIndex((e) => e.id === selectedEvent.id) > 0,
-              next:
-                selectedEvent !== null &&
-                visibleEvents.findIndex((e) => e.id === selectedEvent.id) < visibleEvents.length - 1,
-            }}
-          />
         </div>
       )}
       {view === 'agent' && (
@@ -976,25 +924,6 @@ export default function App() {
       {settingsOpen && (
         <SettingsModal locale={locale} onClose={() => setSettingsOpen(false)} />
       )}
-      {transcriptEvent !== null && (
-        <TranscriptModal
-          sessionKey={selectedKey ?? ''}
-          title={transcriptEvent.title}
-          locale={locale}
-          onClose={() => setTranscriptEvent(null)}
-        />
-      )}
-      {tokenEvent !== null && detail !== null && (
-        <TokenTextModal
-          sessionKey={selectedKey ?? ''}
-          provider={detail.session.provider}
-          agentName={detail.session.sourceAgent}
-          tokenClass={tokenEvent.kind === 'user_prompt' ? 'input' : tokenEvent.kind === 'system' ? 'system' : 'output'}
-          tokenCount={tokenEvent.tokens?.total ?? 0}
-          locale={locale}
-          onClose={() => setTokenEvent(null)}
-        />
-      )}
       {promptContextKey !== null && (
         <PromptContextModal
           sessionKey={promptContextKey}
@@ -1021,12 +950,8 @@ export default function App() {
               setCompareRight(action.right);
               switchView('compare');
             } else if (action.type === 'goto') {
-              // REQ-112：选中并滚动到目标事件（focusEventId 变更驱动 TraceTimeline 滚动）。
-              const target = (detail?.events ?? []).find((e) => e.id === action.eventId);
-              if (target !== undefined) {
-                setSelectedEvent(target as TraceEventSlim);
-                setFocusEventId(action.eventId);
-              }
+              // REQ-112：定位到目标事件所在的回合（focusEventId 驱动 TrajectoryPane 展开滚动）。
+              setFocusEventId(action.eventId);
             } else if (action.type === 'filter') {
               // REQ-113：再次选择同一 provider 取消过滤。
               setProviderFilter((prev) =>

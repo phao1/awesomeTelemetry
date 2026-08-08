@@ -128,7 +128,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     container.remove();
   });
 
-  it('会话视图 IA：粘性工具条 + findings 折叠 + 时间线主画布（含双模式）', async () => {
+  it('会话视图 IA：粘性工具条 + findings 折叠 + turn 表面（统计条 + 色带 + 回合列表）', async () => {
     const sessionDetail: SessionDetailResponse = {
       session: {
         id: 's-1',
@@ -182,6 +182,18 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('/api/sessions/s-1/annotations')) {
+          return okJson({ sessionKey: 's-1', tags: [], note: null, updatedAt: null });
+        }
+        if (url.includes('/api/session-groups')) {
+          return okJson({ groups: [] });
+        }
+        if (url.includes('/api/annotations/tags')) {
+          return okJson({ tags: [] });
+        }
+        if (url.includes('/api/sessions/s-1/events/')) {
+          return okJson({ ...sessionDetail.events[0], inputSummary: null, outputSummary: 'step one' });
+        }
         if (url.includes('/api/sessions/s-1')) {
           return okJson(sessionDetail);
         }
@@ -209,16 +221,33 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     expect(container.querySelector('.session-toolbar')).not.toBeNull();
     expect(container.querySelector('.session-toolbar-title')?.textContent).toContain('fix build');
     expect(container.querySelector('.session-findings-panel')).not.toBeNull();
-    expect(container.querySelector('.gantt-wrap')).not.toBeNull();
-    expect(container.querySelector('.timeline-mode')).not.toBeNull();
-    expect(container.querySelector('.timeline-phase-axis')).not.toBeNull();
-    // 点击甘特阶段轴片段 → 右侧 EventInspector 出现
-    const debugSeg = Array.from(container.querySelectorAll('.timeline-phase-seg')).find(
-      (s) => s.getAttribute('data-phase') === 'debug',
+    // 被删除的时间线/检查器换成 turn 表面：统计条 + 色带 + 回合列表
+    expect(container.querySelector('.gantt-wrap')).toBeNull();
+    expect(container.querySelector('.timeline-phase-axis')).toBeNull();
+    expect(container.querySelector('.trajectory-pane')).not.toBeNull();
+    expect(container.querySelector('.trajectory-statbar')).not.toBeNull();
+    expect(container.querySelector('.turn-ribbon')).not.toBeNull();
+    expect(container.querySelector('.turn-list')).not.toBeNull();
+    // llm_boundary：两个 llm 事件 → 两个回合行
+    expect(container.querySelectorAll('.turn-row').length).toBe(2);
+    // 点击第一行展开 → 消息卡出现（assistant 卡）
+    act(() => {
+      (container.querySelector('.turn-row') as HTMLButtonElement).click();
+    });
+    expect(container.querySelectorAll('.message-card').length).toBeGreaterThan(0);
+    expect(container.querySelector('.message-card-role-assistant')).not.toBeNull();
+
+    // D16：detail 打开 = slim + 1 次 annotations；不逐回合/逐消息拉取
+    const fetchMock = vi.mocked(fetch);
+    const annotationsCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).includes('/api/sessions/s-1/annotations'),
     );
-    expect(debugSeg).toBeDefined();
-    act(() => (debugSeg as HTMLElement).click());
-    expect(container.querySelector('.inspector')).not.toBeNull();
+    expect(annotationsCalls).toHaveLength(1);
+    const detailCalls = fetchMock.mock.calls.filter((call) => {
+      const url = String(call[0]);
+      return url.includes('/api/sessions/s-1') && !url.includes('annotations') && !url.includes('events/');
+    });
+    expect(detailCalls).toHaveLength(1);
 
     sessionDetail.events.push({
       id: 'e3', sessionId: 's-1', sequence: 3, turnKey: null, kind: 'llm', phase: 'implement',
@@ -233,7 +262,8 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       EventSourceStub.instances.at(-1)?.emit('sessions_changed', { keys: ['s-1'], count: 1 });
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(container.textContent).toContain('live update');
+    // SSE 后 detail 刷新 → 第三个回合行出现
+    expect(container.querySelectorAll('.turn-row').length).toBe(3);
     container.remove();
   });
 });

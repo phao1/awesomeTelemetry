@@ -50,6 +50,28 @@
   --neutral-emphasis: #6e7681;
   --neutral-subtle: rgba(110, 118, 129, 0.15);
 
+  /* §2.8 消息角色色（add-trajectory-inspector D19）：六组 × 三档 + 色带高亮。
+     数值来自契约 §2.8 表，复用既有产品色相，组件只读 token，不写字面量（REQ-002）。 */
+  --role-system-fg: #f85149;
+  --role-system-emphasis: #da3633;
+  --role-system-subtle: rgba(248, 81, 73, 0.15);
+  --role-user-fg: #3fb950;
+  --role-user-emphasis: #238636;
+  --role-user-subtle: rgba(46, 160, 67, 0.15);
+  --role-assistant-fg: #ab7df8;
+  --role-assistant-emphasis: #8957e5;
+  --role-assistant-subtle: rgba(163, 113, 247, 0.15);
+  --role-tool-fg: #39c5cf;
+  --role-tool-emphasis: #1b7c83;
+  --role-tool-subtle: rgba(57, 197, 207, 0.15);
+  --role-reasoning-fg: #8b949e;
+  --role-reasoning-emphasis: #6e7681;
+  --role-reasoning-subtle: rgba(110, 118, 129, 0.15);
+  --role-compact-fg: #d29922;
+  --role-compact-emphasis: #9e6a03;
+  --role-compact-subtle: rgba(187, 128, 9, 0.15);
+  --ribbon-active: rgba(230, 237, 243, 0.28);
+
   /* ui-design-v2 §3.2 时间构成分段色（模型/工具/空转/用户等待） */
   --seg-model: #14b8a6;
   --seg-tool: #7d8ba1;
@@ -241,6 +263,27 @@
   --neutral-fg: #59636e;
   --neutral-emphasis: #6e7681;
   --neutral-subtle: rgba(89, 99, 110, 0.1);
+
+  /* §2.8 */
+  --role-system-fg: #d1242f;
+  --role-system-emphasis: #cf222e;
+  --role-system-subtle: rgba(209, 36, 47, 0.1);
+  --role-user-fg: #1a7f37;
+  --role-user-emphasis: #1f883d;
+  --role-user-subtle: rgba(26, 127, 55, 0.1);
+  --role-assistant-fg: #8250df;
+  --role-assistant-emphasis: #8250df;
+  --role-assistant-subtle: rgba(130, 80, 223, 0.1);
+  --role-tool-fg: #1b7c83;
+  --role-tool-emphasis: #1b7c83;
+  --role-tool-subtle: rgba(27, 124, 131, 0.1);
+  --role-reasoning-fg: #59636e;
+  --role-reasoning-emphasis: #6e7681;
+  --role-reasoning-subtle: rgba(89, 99, 110, 0.1);
+  --role-compact-fg: #9a6700;
+  --role-compact-emphasis: #bf8700;
+  --role-compact-subtle: rgba(154, 103, 0, 0.1);
+  --ribbon-active: rgba(31, 35, 40, 0.18);
 
   /* ui-design-v2 §3.2 时间构成分段色 */
   --seg-model: #0d9488;

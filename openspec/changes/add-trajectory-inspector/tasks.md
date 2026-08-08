@@ -96,30 +96,30 @@ Do not commit or push unless the user separately asks.
 - [x] 5.6 Emit an accessible label per segment naming turn index or range, duration, and token total.
 - [x] 5.7 Add `src/core/turn-ribbon.test.ts` covering proportionality in both modes, the floor, zero total, exactly 200 turns, 201, 500, a single turn, dominant-role ties across all six roles, and label content.
 - [x] 5.8 Add a benchmark asserting 200 turns compute in under 5 ms.
-- [ ] 5.9 Run targeted core tests, then `npm run typecheck && npm run test && npm run lint`.
+- [x] 5.9 Run targeted core tests, then `npm run typecheck && npm run test && npm run lint`. (evidence: 200-turn ribbon benchmark <5ms in turn-ribbon.test; full gates green after §6)
 
 ## 6. Detail-view replacement and panels
 
 **Depends on:** §3, §4, §5, §7
 
-- [ ] 6.1 Delete `TraceTimeline.tsx`, `EventInspector.tsx`, and their tests; delete `inspector-text.tsx` and its test only if nothing else imports it; prune the dead selectors from `src/styles/components/timeline.css`.
-- [ ] 6.2 Remove the `layout` hash key and add `turn`, `ribbon`, and `tags`; drop invalid values without throwing; extend `src/hash-router.test.ts` with round-trip, invalid-value, and stored-`layout`-ignored cases.
-- [ ] 6.3 Add the two layout persistence keys with the 240–300 clamp to `src/layout.ts`; extend `src/layout.test.ts`.
-- [ ] 6.4 Add every `trajectory.*` string to both locales in `src/i18n.ts`, including the four segmentation criteria lines, the adapter-provenance criteria line, the incompleteness banner, all four states, and every unavailable-value tooltip; extend `src/i18n.test.ts` for locale parity.
-- [ ] 6.5 Add the six role token groups and `--ribbon-active` to `src/styles/tokens.css` for both themes; create `src/styles/components/trajectory.css` and import it from `components.css`; keep `src/styles/tokens.test.ts` green with zero colour literals in the new CSS.
-- [ ] 6.6 Create `TrajectoryPane` replacing the deleted timeline and inspector inside the session detail view, keeping `SessionHeaderCard`, `PhaseRibbon`, and `PhaseTiles` above it, and wiring the D16 request budget.
-- [ ] 6.7 Create `TrajectoryRail` using the existing split-pane atom with the clamped, persisted width and the sub-1024px collapse.
-- [ ] 6.8 Create `AgentHierarchyPanel` per D9: merge-group resolution, one batched key fetch, depth-5 tree, accent selection, unknown-type handling, single-agent root, and agent switching.
-- [ ] 6.9 Create `AnnotationsPanel` per D13: immediate tag save, explicit note save disabled when unchanged, success and error toasts carrying the error code, and the never-annotated empty case.
-- [ ] 6.10 Create `TrajectoryStatBar` with the D6 agent-scoped pills, the agent name label, the segmentation criteria line, the ribbon mode switch, and the analysis trigger.
-- [ ] 6.11 Create `TurnRibbon` rendering computed segments in one commit, with the six-entry legend (swatch + icon + name), hover detail, keyboard activation, and two-way highlight throttled to one update per animation frame.
-- [ ] 6.12 Create `TurnList` and `TurnCard`: fixed collapsed row height, virtualisation above 50 turns via the existing hook, expanded turns at natural height outside virtualisation, and the incompleteness banner.
-- [ ] 6.13 Create `MessageCard` and `ToolCallBlock` per D4 and D12: assistant card with a collapsed reasoning section and nested tool-call blocks, tool result cards below in order, system / user / compact / subagent cards, the three-state view control, on-demand body and raw fetches, the 100-entry LRU, and all four states.
-- [ ] 6.14 Add the tag column and OR tag filter to `SessionList` and `SessionToolbar`, with free-text entry and the vocabulary fetched once when the filter opens.
-- [ ] 6.15 Wire everything in `src/App.tsx` without restructuring existing view state; add a back affordance to the detail header.
-- [ ] 6.16 Add component tests: detail-open request count, agent switch issuing one batched fetch, card body fetched once and cached, Raw fetched once, ribbon mode switch issuing zero requests, node-count stability at 200 turns, two tool calls rendering as two nested blocks plus two result cards in order, a compact card, all four states in each panel, annotations success and failure, criteria line per segmentation source and per adapter provenance, tag filter OR behaviour, and locale parity.
-- [ ] 6.17 Re-run the existing session, compare, proxy, mission, and command-palette tests; remove or rewrite only those that tested the deleted components, and list each in your report.
-- [ ] 6.18 Run targeted frontend tests, then `npm run typecheck && npm run test && npm run lint`.
+- [x] 6.1 Delete `TraceTimeline.tsx`, `EventInspector.tsx`, and their tests; delete `inspector-text.tsx` and its test only if nothing else imports it; prune the dead selectors from `src/styles/components/timeline.css`. (evidence: files deleted; inspector-text kept — SettingsModal/TokenTextModal still import it; `rg TraceTimeline|EventInspector` tree-wide = 0 imports; timeline.css pruned, tokens.test green)
+- [x] 6.2 Remove the `layout` hash key and add `turn`, `ribbon`, and `tags`; drop invalid values without throwing; extend `src/hash-router.test.ts` with round-trip, invalid-value, and stored-`layout`-ignored cases. (evidence: hash-router.test 10/10)
+- [x] 6.3 Add the two layout persistence keys with the 240–300 clamp to `src/layout.ts`; extend `src/layout.test.ts`. (evidence: layout.test 8/8 incl. 240/300 clamp + legacy .layout removal)
+- [x] 6.4 Add every `trajectory.*` string to both locales in `src/i18n.ts`, including the four segmentation criteria lines, the adapter-provenance criteria line, the incompleteness banner, all four states, and every unavailable-value tooltip; extend `src/i18n.test.ts` for locale parity. (evidence: i18n.test zh/en parity 3/3; ~110 trajectory.* keys both locales)
+- [x] 6.5 Add the six role token groups and `--ribbon-active` to `src/styles/tokens.css` for both themes; create `src/styles/components/trajectory.css` and import it from `components.css`; keep `src/styles/tokens.test.ts` green with zero colour literals in the new CSS. (evidence: tokens.test 10/10 T1-T7; trajectory.css T2/T3 clean)
+- [x] 6.6 Create `TrajectoryPane` replacing the deleted timeline and inspector inside the session detail view, keeping `SessionHeaderCard`, `PhaseRibbon`, and `PhaseTiles` above it, and wiring the D16 request budget. (evidence: TrajectoryPane.test 9/9 — detail-open = slim+1 annotations, agent switch 1 batched fetch, mode switch/turn toggle 0 requests, 200-turn node stability)
+- [x] 6.7 Create `TrajectoryRail` using the existing split-pane atom with the clamped, persisted width and the sub-1024px collapse. (evidence: TrajectoryRail.test 3/3 — persist key, <1024 collapse, user collapse)
+- [x] 6.8 Create `AgentHierarchyPanel` per D9: merge-group resolution, one batched key fetch, depth-5 tree, accent selection, unknown-type handling, single-agent root, and agent switching. (evidence: AgentHierarchyPanel.test 5/5)
+- [x] 6.9 Create `AnnotationsPanel` per D13: immediate tag save, explicit note save disabled when unchanged, success and error toasts carrying the error code, and the never-annotated empty case. (evidence: AnnotationsPanel.test 5/5)
+- [x] 6.10 Create `TrajectoryStatBar` with the D6 agent-scoped pills, the agent name label, the segmentation criteria line, the ribbon mode switch, and the analysis trigger. (evidence: TrajectoryPane.test criteria-line cases + segmentationCriteriaKey unit cases)
+- [x] 6.11 Create `TurnRibbon` rendering computed segments in one commit, with the six-entry legend (swatch + icon + name), hover detail, keyboard activation, and two-way highlight throttled to one update per animation frame. (evidence: TurnRibbon.test 4/4)
+- [x] 6.12 Create `TurnList` and `TurnCard`: fixed collapsed row height, virtualisation above 50 turns via the existing hook, expanded turns at natural height outside virtualisation, and the incompleteness banner. (evidence: TurnList.test 6/6 incl. banner, 200-turn virtualisation, 50-turn threshold, D4 grouping)
+- [x] 6.13 Create `MessageCard` and `ToolCallBlock` per D4 and D12: assistant card with a collapsed reasoning section and nested tool-call blocks, tool result cards below in order, system / user / compact / subagent cards, the three-state view control, on-demand body and raw fetches, the 100-entry LRU, and all four states. (evidence: MessageCard.test 7/7 — 1 body request + 1 raw, reasoning collapsed, 2 nested blocks, empty state, compact single-line, error+retry, duration criteria line, D5 id fallback)
+- [x] 6.14 Add the tag column and OR tag filter to `SessionList` and `SessionToolbar`, with free-text entry and the vocabulary fetched once when the filter opens. (evidence: SessionList.test 10/10 incl. tag column + OR multi-select + typed tag + no per-keystroke request; SessionToolbar.test 7/7 tags + back)
+- [x] 6.15 Wire everything in `src/App.tsx` without restructuring existing view state; add a back affordance to the detail header. (evidence: App.test 4/4 incl. trajectory surface, turn rows, SSE turn-count update, D16 request-count assertions)
+- [x] 6.16 Add component tests: detail-open request count, agent switch issuing one batched fetch, card body fetched once and cached, Raw fetched once, ribbon mode switch issuing zero requests, node-count stability at 200 turns, two tool calls rendering as two nested blocks plus two result cards in order, a compact card, all four states in each panel, annotations success and failure, criteria line per segmentation source and per adapter provenance, tag filter OR behaviour, and locale parity. (evidence: new tests above + i18n.test parity)
+- [x] 6.17 Re-run the existing session, compare, proxy, mission, and command-palette tests; remove or rewrite only those that tested the deleted components, and list each in your report. (evidence: full suite 137 files / 1127 tests green; deleted TraceTimeline.test.tsx + EventInspector.test.tsx; rewrote App.test.tsx 会话视图 IA; CompareTimeline.test.tsx unchanged — mini timeline keeps .gantt-wrap/.timeline-mode DOM)
+- [x] 6.18 Run targeted frontend tests, then `npm run typecheck && npm run test && npm run lint`. (evidence: npm run typecheck / npx vitest run 137 files / npm run lint all green; npm run build green)
 
 ## 7. Tool renderers
 
@@ -149,9 +149,9 @@ Do not commit or push unless the user separately asks.
 - [x] 8.4 Implement the cache-rate trend with null for a zero denominator.
 - [x] 8.5 Implement the four anomaly rules at exactly the stated thresholds, each entry naming the measured value and the threshold crossed.
 - [x] 8.6 Propagate model incompleteness into the analysis result.
-- [ ] 8.7 Create `TrajectoryAnalysisPanel` rendering all sections with the existing chart atoms, icon plus text per anomaly, `—` for every unavailable value, and the incompleteness banner.
+- [x] 8.7 Create `TrajectoryAnalysisPanel` rendering all sections with the existing chart atoms, icon plus text per anomaly, `—` for every unavailable value, and the incompleteness banner. (shipped with §6; evidence: TrajectoryAnalysisPanel.tsx + TrajectoryAnalysisPanel.test 4/4)
 - [x] 8.8 Add `src/core/turn-analysis.test.ts` against a hand-computed fixture, a boundary test per anomaly rule at the threshold and one step past it, a null-cache-rate case, and a zero-turn case.
-- [ ] 8.9 Add a panel test asserting zero network requests on open and `—` totals when incomplete.
+- [x] 8.9 Add a panel test asserting zero network requests on open and `—` totals when incomplete. (shipped with §6; evidence: TrajectoryAnalysisPanel.test zero-request fetch stub + incomplete banner)
 - [x] 8.10 Run targeted tests, then `npm run typecheck && npm run test && npm run lint`.
 
 > Blocked note (8.7 / 8.9): the panel needs §6's `TrajectoryStatBar` (B6) to
