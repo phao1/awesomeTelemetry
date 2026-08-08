@@ -33,6 +33,7 @@ export const codexFixture: { sourceAgent: string; session: Record<string, never>
       type: 'response_item',
       payload: {
         type: 'message',
+        id: 'msg-s1-u1',
         role: 'user',
         content: [{ type: 'input_text', text: 'run the tests' }],
       },
@@ -42,6 +43,7 @@ export const codexFixture: { sourceAgent: string; session: Record<string, never>
       type: 'response_item',
       payload: {
         type: 'function_call',
+        id: 'fc-s1-1',
         call_id: 'call-1',
         name: 'shell',
         arguments: 'npm test',
@@ -52,6 +54,7 @@ export const codexFixture: { sourceAgent: string; session: Record<string, never>
       type: 'response_item',
       payload: {
         type: 'function_call_output',
+        id: 'fco-s1-1',
         call_id: 'call-1',
         output: '1 passed',
       },
@@ -78,6 +81,7 @@ export const codexFixture: { sourceAgent: string; session: Record<string, never>
       type: 'response_item',
       payload: {
         type: 'message',
+        id: 'msg-s1-a1',
         role: 'assistant',
         content: [{ type: 'output_text', text: 'all green' }],
       },
