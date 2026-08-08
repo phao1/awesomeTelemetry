@@ -110,17 +110,6 @@ npm run pack:binary    # scripts/pack-binary.mjs → dist-binary/
 package.json and generates platform launchers: `agent-observe.ps1` (UTF-8) on
 Windows, `agent-observe.sh` on Unix.
 
-## 品牌改名与兼容（B6）
-
-- 品牌名从 `Agent Observability` 改为 **AwesomeTelemetry**（页面标题 / CLI 横幅 /
-  package 名 / bin 命令 `awesome-telemetry`）。
-- `bin/agent-observe.js` 保留为旧名转发入口一个版本周期；`agent-observe` 与
-  `awesome-telemetry` 两个 bin 都指向同一入口。
-- 数据目录改名为 `awesome-telemetry-data`，带回退：新目录不存在且旧目录
-  `agent-observe-data` 存在时继续用旧目录（不自动搬运、不静默新建空库）。
-- localStorage 主题键改名为 `awesome-telemetry.theme`，读不到时回退旧键
-  `agent-observability.theme` 并回写新键。
-
 ## Scripts
 
 - `npm run gen:samples` — generates `src/generated/local-samples.ts`

@@ -25,7 +25,8 @@ export const codexRollout2026_08_05Fixture: {
       payload: {
         id: '019fd1d9-bc0b-7cb0-93c9-b46cf3be52d4',
         session_id: '019fd1d9-bc0b-7cb0-93c9-b46cf3be52d4',
-        cwd: '/Users/howell/Documents/Coding/awesomeTelemetry/awesomeTelemetry',
+        // cwd sanitized for public delivery (personal absolute path removed).
+        cwd: '/home/dev/awesomeTelemetry',
         model_provider: 'deepseek',
       },
     },
@@ -91,7 +92,7 @@ export const codexRollout2026_08_05Fixture: {
       type: 'turn_context',
       payload: {
         turn_id: '019fd1d9-bccb-74b3-9f0d-6126b5aa86ed',
-        cwd: '/Users/howell/Documents/Coding/awesomeTelemetry/awesomeTelemetry',
+        cwd: '/home/dev/awesomeTelemetry',
         model: 'deepseek-v4-flash',
       },
     },
