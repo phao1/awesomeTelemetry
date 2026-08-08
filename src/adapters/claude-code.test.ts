@@ -6,6 +6,13 @@ import { claudeFixture } from './__fixtures__/claude.js';
 
 const SRC = '/tmp/claude.jsonl';
 
+// fix-adapter-turn-semantics A3 rule 3（§6 验证修复，2026-08-08）：claude 的
+// message.id 并非全局唯一（实测两个会话共享同一 msg_… id），按契约以会话 id
+// 加前缀。以下全部 turnKey 期望值按记录实际的 session.id 重算前缀（分组语义
+// 不变，仅键值加前缀）。
+const key = (record: { session: { id: string } }, k: string): string =>
+  `${record.session.id}:${k}`;
+
 function sample(events: ClaudeRawRow[]) {
   return { sourceAgent: 'Claude', session: {}, events };
 }
@@ -29,7 +36,9 @@ describe('Claude Code adapter（REQ-004）', () => {
     // fix-adapter-turn-semantics A5：按 assistant message.id 分组 → message_identity。
     expect(r.turnKeySource).toBe('message_identity');
     // A4：user prompt 携带其后 assistant 的 id；tool_use 与回填的 tool_result 继承同 key。
-    expect(r.events.map((e) => e.turnKey)).toEqual(['msg-a1', 'msg-a1', 'msg-a1', 'msg-a2']);
+    expect(r.events.map((e) => e.turnKey)).toEqual([
+      key(r, 'msg-a1'), key(r, 'msg-a1'), key(r, 'msg-a1'), key(r, 'msg-a2'),
+    ]);
     // A7：toolu-1 的 tool 事件拿到结果输出，不再有 user_prompt。
     const tool = r.events.find((e) => e.kind === 'tool')!;
     expect(tool.hasOutput).toBe(true);
@@ -192,7 +201,7 @@ describe('Claude Code adapter（REQ-004）', () => {
       expect(tool.kind).toBe('tool');
       expect(tool.hasOutput).toBe(true);
       expect(tool.outputSummary).toBe('ls output');
-      expect(tool.turnKey).toBe('a1');
+      expect(tool.turnKey).toBe(key(r, 'a1'));
     });
 
     it('3.3：无匹配 tool_use 的 tool_result → 只带结果侧的 tool 事件，不丢弃、不转 user message', () => {
@@ -246,14 +255,14 @@ describe('Claude Code adapter（REQ-004）', () => {
       const r = normalizeClaudeSample(sample(rows), SRC);
       expect(r.events.map((e) => e.kind)).toEqual(['user_prompt', 'tool', 'tool', 'llm']);
       // user_prompt 也携带其后 assistant 消息的 key（A4 前瞻），故同 key 集合含它。
-      expect(r.events.filter((e) => e.turnKey === 'msg-a1').map((e) => e.kind)).toEqual([
+      expect(r.events.filter((e) => e.turnKey === key(r, 'msg-a1')).map((e) => e.kind)).toEqual([
         'user_prompt', 'tool', 'tool',
       ]);
       const a1 = r.events.filter((e) => e.kind === 'tool');
       expect(a1.map((e) => e.kind)).toEqual(['tool', 'tool']);
       expect(a1.every((e) => e.hasOutput && e.outputSummary !== null)).toBe(true);
-      expect(r.events.find((e) => e.kind === 'user_prompt')!.turnKey).toBe('msg-a1');
-      expect(r.events.find((e) => e.kind === 'llm')!.turnKey).toBe('msg-a2');
+      expect(r.events.find((e) => e.kind === 'user_prompt')!.turnKey).toBe(key(r, 'msg-a1'));
+      expect(r.events.find((e) => e.kind === 'llm')!.turnKey).toBe(key(r, 'msg-a2'));
     });
 
     it('3.7：同时间戳的三 part 保持源顺序（A11 稳定排序）', () => {
@@ -277,7 +286,7 @@ describe('Claude Code adapter（REQ-004）', () => {
       expect(r.events.map((e) => e.kind)).toEqual(['llm', 'tool', 'llm']);
       expect(r.events.map((e) => e.sequence)).toEqual([1, 2, 3]);
       expect(r.events.map((e) => e.outputSummary ?? e.tool)).toEqual(['first', 'Read', 'last']);
-      expect(r.events.every((e) => e.turnKey === 'msg-a1')).toBe(true);
+      expect(r.events.every((e) => e.turnKey === key(r, 'msg-a1'))).toBe(true);
     });
 
     it('3.9 回归：live 的 llm > tool > user_prompt > tool > user_prompt 模式不再出现', () => {
@@ -330,8 +339,25 @@ describe('Claude Code adapter（REQ-004）', () => {
       for (const seqs of turns.values()) {
         expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
       }
-      expect(turns.get('msg-a1')).toEqual([1, 2, 3]);
-      expect(turns.get('msg-a2')).toEqual([4, 5]);
+      expect(turns.get(key(r, 'msg-a1'))).toEqual([1, 2, 3]);
+      expect(turns.get(key(r, 'msg-a2'))).toEqual([4, 5]);
+    });
+
+    // ── A3 rule 3 会话级唯一（§6 验证修复，2026-08-08）──
+    it('A3 rule 3 回归：两个会话共享同一 message.id → 加会话前缀互不串扰', () => {
+      const rows = (sid: string): ClaudeRawRow[] => [
+        {
+          type: 'assistant',
+          sessionId: sid,
+          timestamp: '2026-08-01T00:00:00.000Z',
+          message: { id: 'msg-shared', role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+        },
+      ];
+      const a = normalizeClaudeSample(sample(rows('ca-a')), SRC);
+      const b = normalizeClaudeSample(sample(rows('ca-b')), SRC);
+      expect(a.session.id).not.toBe(b.session.id);
+      expect(a.events[0]?.turnKey).toBe(`${a.session.id}:msg-shared`);
+      expect(b.events[0]?.turnKey).toBe(`${b.session.id}:msg-shared`);
     });
   });
 });

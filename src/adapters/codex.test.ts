@@ -6,6 +6,14 @@ import { codexRollout2026_08_05Fixture } from './__fixtures__/codex-rollout-2026
 
 const SRC = '/tmp/codex.jsonl';
 
+// fix-adapter-turn-semantics A3 rule 3（§6 验证修复，2026-08-08）：codex 的
+// payload id 与 `codex-N` 回退键并非全局唯一（实测 11 个会话共享 codex-2），
+// 按契约以会话 id 加前缀。以下全部 turnKey 期望值按记录实际的 session.id
+// 重算前缀（分组语义不变，仅键值加前缀；fixture / rollout / 合成行的会话 id
+// 各不相同，故不从常量推断）。
+const key = (record: { session: { id: string } }, k: string): string =>
+  `${record.session.id}:${k}`;
+
 function sample(events: CodexRawRow[]) {
   return { sourceAgent: 'Codex', session: {}, events };
 }
@@ -37,7 +45,8 @@ describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
     // 周期：msg-s1-u1 开周期 0（turn_context/用户消息/调用/结果/carrier），
     // msg-s1-a1 在其后的 function_call_output 之后开周期 1。
     expect(r.events.map((e) => e.turnKey)).toEqual([
-      'msg-s1-u1', 'msg-s1-u1', 'msg-s1-u1', 'msg-s1-u1', 'msg-s1-u1', 'msg-s1-a1',
+      key(r, 'msg-s1-u1'), key(r, 'msg-s1-u1'), key(r, 'msg-s1-u1'), key(r, 'msg-s1-u1'),
+      key(r, 'msg-s1-u1'), key(r, 'msg-s1-a1'),
     ]);
     expect(r.turnKeySource).toBe('stream_structure');
     // 取末条累计快照：input 25 已减去 cached 8 → 17；Codex 的 input 本就含 cached，
@@ -339,9 +348,9 @@ describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
     ];
     const r = normalizeCodexSample(sample(rows), SRC);
     expect(r.events.map((e) => e.turnKey)).toEqual([
-      'msg-u1', 'msg-u1', 'msg-u1', 'msg-u1',  // 周期 0：用户消息 + 推理 + 调用 + 结果
-      'rs-2', 'rs-2', 'rs-2',                  // 周期 1：推理 + 调用 + 结果
-      'msg-a1',                                // 周期 2：assistant 消息（紧邻 fco-2）
+      key(r, 'msg-u1'), key(r, 'msg-u1'), key(r, 'msg-u1'), key(r, 'msg-u1'), // 周期 0
+      key(r, 'rs-2'), key(r, 'rs-2'), key(r, 'rs-2'),                        // 周期 1
+      key(r, 'msg-a1'),                                                      // 周期 2
     ]);
     expect(new Set(r.events.map((e) => e.turnKey)).size).toBe(3);
   });
@@ -352,7 +361,7 @@ describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
     // task_started（第 2 行）与 user_message（第 10 行）都挂到周期 0
     const taskStarted = r.events.find((e) => e.title === 'task_started');
     const userMessage = r.events.find((e) => e.title === 'user_message');
-    const cycle0Key = 'msg_019fd1d9-ccb2-7170-869b-413413308ce0';
+    const cycle0Key = key(r, 'msg_019fd1d9-ccb2-7170-869b-413413308ce0');
     expect(taskStarted?.turnKey).toBe(cycle0Key);
     expect(userMessage?.turnKey).toBe(cycle0Key);
   });
@@ -370,9 +379,9 @@ describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
       row('response_item', { type: 'reasoning', id: 'rs-2', content: [{ type: 'reasoning_text', text: 'r2' }] }),
     ];
     const r = normalizeCodexSample(sample(rows), SRC);
-    const cycle1 = r.events.filter((e) => e.turnKey === 'rs-1');
+    const cycle1 = r.events.filter((e) => e.turnKey === key(r, 'rs-1'));
     expect(cycle1.map((e) => e.kind).sort()).toEqual(['llm', 'reasoning', 'tool', 'tool']);
-    expect(r.events.find((e) => e.turnKey === 'rs-2')?.kind).toBe('reasoning');
+    expect(r.events.find((e) => e.turnKey === key(r, 'rs-2'))?.kind).toBe('reasoning');
   });
 
   it('2.15 task_started 不开启周期：其数量与周期数无关', () => {
@@ -392,12 +401,12 @@ describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
     const r = normalizeCodexSample(sample(rows), SRC);
     const cycles = new Set(r.events.map((e) => e.turnKey));
     expect(cycles.size).toBe(2);
-    expect(cycles.has('msg-u1')).toBe(true);
-    expect(cycles.has('rs-2')).toBe(true);
+    expect(cycles.has(key(r, 'msg-u1'))).toBe(true);
+    expect(cycles.has(key(r, 'rs-2'))).toBe(true);
     const taskStartedKeys = r.events.filter((e) => e.title === 'task_started').map((e) => e.turnKey);
     // 第二条 task_started 出现在 rs-2 开启新周期之前，挂到开启中的周期 0；
     // 第三条挂到 rs-2 周期。周期数（2）与 task_started 数（3）无关。
-    expect(taskStartedKeys).toEqual(['msg-u1', 'msg-u1', 'rs-2']);
+    expect(taskStartedKeys).toEqual([key(r, 'msg-u1'), key(r, 'msg-u1'), key(r, 'rs-2')]);
   });
 
   // ── §2.12：按源 call_id 配对，不按相邻 ──
@@ -415,7 +424,7 @@ describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
     expect(call?.tool).toBe('write_stdin');
     expect(output?.tool).toBe('write_stdin');
     // 两个事件同属 rs-1 开启的周期
-    expect(output?.turnKey).toBe('rs-1');
+    expect(output?.turnKey).toBe(key(r, 'rs-1'));
   });
 
   it('2.12 并发工具：两个调用的输出交错出现，仍按 call_id 各归其主且同属一个周期', () => {
@@ -430,7 +439,7 @@ describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
     expect(r.events.find((e) => e.id === 'fco-a')?.tool).toBe('read_file');
     // 连续工具结果不开启新周期：整批并发调用共享一把 key（A3）
     expect(new Set(r.events.map((e) => e.turnKey)).size).toBe(1);
-    expect(r.events.every((e) => e.turnKey === 'fc-a')).toBe(true);
+    expect(r.events.every((e) => e.turnKey === key(r, 'fc-a'))).toBe(true);
   });
 
   // ── §2.5 / §2.10 / §2.11 ──
@@ -502,15 +511,15 @@ describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
     const keys = r.events.map((e) => e.turnKey);
     const distinct = [...new Set(keys)];
     expect(distinct).toEqual([
-      'msg_019fd1d9-ccb2-7170-869b-413413308ce0', // 周期 0：第 3 行 developer 消息开启
-      'a052b6cb-5973-4149-a1dd-6327338c6755',     // 周期 1：第 15 行 reasoning
-      '987ec1ba-9375-451d-966f-bbb673fef2ff',     // 周期 2：第 21 行 reasoning
-      '107c607f-f678-4b12-be1e-500ae2e562e7',     // 周期 3：第 25 行 reasoning
-      'f0687cce-2137-4091-a52b-8646bde6007a',     // 周期 4：第 29 行 reasoning
-      'ee54a307-976c-479e-a72f-0b8182e1c860',     // 周期 5：第 33 行 reasoning
-      '08f356f9-f390-4679-aabb-cf598691f778',     // 周期 6：第 39 行 reasoning
-      '547c7168-3853-46e3-a912-ea06ca415022',     // 周期 7：第 43 行 reasoning
-      'msg_019fd1db-1b6a-7880-aec8-9803ca626462', // 周期 8：第 47 行 developer（turn_aborted）
+      key(r, 'msg_019fd1d9-ccb2-7170-869b-413413308ce0'), // 周期 0：第 3 行 developer 消息开启
+      key(r, 'a052b6cb-5973-4149-a1dd-6327338c6755'),     // 周期 1：第 15 行 reasoning
+      key(r, '987ec1ba-9375-451d-966f-bbb673fef2ff'),     // 周期 2：第 21 行 reasoning
+      key(r, '107c607f-f678-4b12-be1e-500ae2e562e7'),     // 周期 3：第 25 行 reasoning
+      key(r, 'f0687cce-2137-4091-a52b-8646bde6007a'),     // 周期 4：第 29 行 reasoning
+      key(r, 'ee54a307-976c-479e-a72f-0b8182e1c860'),     // 周期 5：第 33 行 reasoning
+      key(r, '08f356f9-f390-4679-aabb-cf598691f778'),     // 周期 6：第 39 行 reasoning
+      key(r, '547c7168-3853-46e3-a912-ea06ca415022'),     // 周期 7：第 43 行 reasoning
+      key(r, 'msg_019fd1db-1b6a-7880-aec8-9803ca626462'), // 周期 8：第 47 行 developer（turn_aborted）
     ]);
     expect(keys.filter((k) => k === distinct[0])).toHaveLength(13);
     expect(keys.filter((k) => k === distinct[8])).toHaveLength(2);
@@ -539,6 +548,25 @@ describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
       cacheWrite: 0, netInput: 1227, total: 26435,
     });
     expect(r.events.some((e) => e.kind === 'llm' && e.title !== 'token_count' && e.id.startsWith('codex-'))).toBe(false);
+  });
+
+  // ── A3 rule 3 会话级唯一（§6 验证修复，2026-08-08）──
+  it('A3 rule 3 回归：两个会话的 `codex-N` 回退键互不串扰', () => {
+    // 无 payload.id / call_id 的行触发 cycleKeyOf 的 `codex-${rowIndex}` 回退，
+    // 该键并非全局唯一（实测 11 个会话共享 codex-2）→ 必须以会话 id 加前缀。
+    const rows: CodexRawRow[] = [
+      row('response_item', { type: 'reasoning', content: [{ type: 'reasoning_text', text: 'x' }] }),
+      row('response_item', { type: 'function_call', call_id: 'call_00_1', name: 'shell' }),
+      row('response_item', { type: 'function_call_output', call_id: 'call_00_1', output: 'o' }),
+    ];
+    const a = normalizeCodexSample(sample(rows), '/tmp/session-a.jsonl');
+    const b = normalizeCodexSample(sample(rows), '/tmp/session-b.jsonl');
+    expect(a.session.id).not.toBe(b.session.id);
+    const aKeys = [...new Set(a.events.map((e) => e.turnKey))];
+    const bKeys = [...new Set(b.events.map((e) => e.turnKey))];
+    expect(aKeys.length).toBeGreaterThan(0);
+    expect(aKeys.every((k) => k !== null && k.startsWith(`${a.session.id}:`))).toBe(true);
+    expect(aKeys.every((k) => !bKeys.includes(k))).toBe(true);
   });
 
   it('2.14 三条系统提示词 developer 消息（及 turn_aborted developer 消息）分类为 system', () => {

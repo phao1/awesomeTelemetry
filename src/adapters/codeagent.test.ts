@@ -79,6 +79,9 @@ describe('CodeAgent adapter（REQ-004/G9.2）', () => {
     );
     expect(r.turnKeySource).toBe('message_identity');
     // snapshot 行被 drop；fixture 的真实用户行承接其后 assistant 消息的 id（A4 claude 行）
-    expect(r.events.map((e) => e.turnKey)).toEqual(['a1', 'a1']);
+    // A3 rule 3（§6 验证修复）：claude 系 message.id 加会话 id 前缀。
+    expect(r.events.map((e) => e.turnKey)).toEqual([
+      `${r.session.id}:a1`, `${r.session.id}:a1`,
+    ]);
   });
 });

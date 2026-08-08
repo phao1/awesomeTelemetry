@@ -169,6 +169,9 @@ describe('fix-adapter-turn-semantics 4.6：禁止从时间邻近 / 事件计数�
       { sourceAgent: 'CodeAgent', session: {}, events: rows },
       SRC,
     );
-    expect(r.events.map((e) => e.turnKey)).toEqual(['a1', 'a2']);
+    // A3 rule 3（§6 验证修复）：claude 系 message.id 加会话 id 前缀。
+    expect(r.events.map((e) => e.turnKey)).toEqual([
+      `${r.session.id}:a1`, `${r.session.id}:a2`,
+    ]);
   });
 });

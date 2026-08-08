@@ -747,7 +747,10 @@ export function normalizeCodexSample(
     events.push(
       ...cycleEvents.map((event) => ({
         ...event,
-        turnKey: cycle.key,
+        // A3 rule 3（§6 验证修复，2026-08-08）：codex 的 payload id 与
+        // `codex-N` 回退键并非全局唯一（实测 11 个会话共享 codex-2），
+        // 按契约以会话 id 加前缀；null（无边界信号的隐式周期）保持不变。
+        turnKey: cycle.key === null ? null : `${sessionId}:${cycle.key}`,
       })),
     );
   }

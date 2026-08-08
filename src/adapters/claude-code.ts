@@ -140,6 +140,11 @@ export function normalizeClaudeSample(
     }
   }
 
+  // A3 rule 3（§6 验证修复，2026-08-08）：claude 的 message.id 并非全局唯一
+  // （实测两个会话共享同一 msg_… id），按契约以会话 id 加前缀；null 保持。
+  const scopeKey = (key: string | null | undefined): string | null =>
+    key === null || key === undefined ? null : `${sessionId}:${key}`;
+
   // A7：tool_use part 的事件按 toolu_… id 登记；tool_result 行据此回填输出侧。
   const toolEventsById = new Map<string, EventWithRaw>();
 
@@ -199,7 +204,7 @@ export function normalizeClaudeSample(
         id: message?.id ?? `user-${events.length}`,
         sessionId,
         sequence: 0,
-        turnKey: nextAssistantIds[rowIndex],
+        turnKey: scopeKey(nextAssistantIds[rowIndex]),
         kind: 'user_prompt',
         phase: 'understand',
         title: titleFromText(text),
@@ -225,7 +230,7 @@ export function normalizeClaudeSample(
       const tokens = usageToTokens(message?.usage);
       // A4 claude 行：assistant 行的 message.id 是本周期 key。3.6：显式携带
       // message id，绝不从 event.id 反解析（tool 事件的公共 id 是 toolu_…）。
-      const turnKey = message?.id ?? null;
+      const turnKey = scopeKey(message?.id ?? null);
       let partIndex = 0;
       for (const part of parts) {
         partIndex += 1;
@@ -295,7 +300,7 @@ export function normalizeClaudeSample(
         id: message?.id ?? `system-${events.length}`,
         sessionId,
         sequence: 0,
-        turnKey: nextAssistantIds[rowIndex],
+        turnKey: scopeKey(nextAssistantIds[rowIndex]),
         kind: 'system',
         phase: 'understand',
         title: titleFromText(row.subtype ?? text),

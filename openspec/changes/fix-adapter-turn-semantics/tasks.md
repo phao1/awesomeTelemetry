@@ -98,16 +98,16 @@ Do not commit or push unless the user separately asks.
 
 **Depends on:** all groups
 
-- [ ] 6.1 Run `openspec validate fix-adapter-turn-semantics --strict` with no warnings.
-- [ ] 6.2 Run `npm run typecheck && npm run test && npm run lint && npm run build && npm run perf:check`; fix implementation, never relax assertions.
-- [ ] 6.3 Audit the diff against the A12 whitelist; list every file touched outside it and confirm each was an expected-value update only.
-- [ ] 6.4 Prove no runtime dependency was added.
-- [ ] 6.5 Audit the AGENTS.md prohibitions on every file touched, in particular no `SELECT *`, no prepare-in-loop, no silent scan-state catch, and no whole-file regex split.
-- [ ] 6.6 Back up the live database, run the migration against it, and record: rows cleared per table, rows preserved per table, and migration duration.
-- [ ] 6.7 Trigger a full rescan and record wall-clock duration, sessions repopulated, and event count before versus after.
-- [ ] 6.8 Re-run the A1 measurement queries after the rescan and record the new provider-by-kind distribution; codex `system` must have dropped by roughly the reclassified volume and `tool` plus `reasoning` must have risen correspondingly.
-- [ ] 6.9 Record turn-key coverage per provider: how many events carry a non-null key, and the provenance each adapter declared.
-- [ ] 6.10 Re-run the A1 segmentation check on the largest codex and claude sessions and record turns-per-session before versus after; a codex session that previously produced 864 turns must now produce a count consistent with its `task_started` count.
-- [ ] 6.11 Record before-and-after phase distribution, error rate, average tool duration, and tool event count for one codex and one claude session, per A9.
-- [ ] 6.12 Append the new performance baseline and annotate the superseded entry.
-- [ ] 6.13 Mark only evidenced tasks complete and report Delivered / Contract mapping / Verification / Needs confirmation exactly as `AGENTS.md` requires, listing every adapter whose rule is fixture-derived and unverified against live data.
+- [x] 6.1 Run `openspec validate fix-adapter-turn-semantics --strict` with no warnings.
+- [x] 6.2 Run `npm run typecheck && npm run test && npm run lint && npm run build && npm run perf:check`; fix implementation, never relax assertions.
+- [x] 6.3 Audit the diff against the A12 whitelist; list every file touched outside it and confirm each was an expected-value update only.
+- [x] 6.4 Prove no runtime dependency was added.
+- [x] 6.5 Audit the AGENTS.md prohibitions on every file touched, in particular no `SELECT *`, no prepare-in-loop, no silent scan-state catch, and no whole-file regex split.
+- [x] 6.6 Back up the live database, run the migration against it, and record: rows cleared per table, rows preserved per table, and migration duration.
+- [x] 6.7 Trigger a full rescan and record wall-clock duration, sessions repopulated, and event count before versus after.
+- [x] 6.8 Re-run the A1 measurement queries after the rescan and record the new provider-by-kind distribution; codex `system` must have dropped by roughly the reclassified volume and `tool` plus `reasoning` must have risen correspondingly.
+- [x] 6.9 Record turn-key coverage per provider: how many events carry a non-null key, and the provenance each adapter declared.
+- [x] 6.10 Re-run the A1 segmentation check on the largest codex and claude sessions and record turns-per-session before versus after; a codex session that previously produced 864 turns must now produce a count consistent with its `task_started` count.
+- [x] 6.11 Record before-and-after phase distribution, error rate, average tool duration, and tool event count for one codex and one claude session, per A9.
+- [x] 6.12 Append the new performance baseline and annotate the superseded entry.
+- [x] 6.13 Mark only evidenced tasks complete and report Delivered / Contract mapping / Verification / Needs confirmation exactly as `AGENTS.md` requires, listing every adapter whose rule is fixture-derived and unverified against live data.

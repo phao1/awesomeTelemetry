@@ -27,6 +27,7 @@
 | 2026-08-05 | add-mission-control (B1~B8, schema v3) | frontend built | 8.9ms (slim 9,590 events) | 23.5ms cold / 0.3ms hit | no frontend yet | 24.70MB (synthetic, no raw) |
 | 2026-08-05 | fix-session-detail-display UI（会话导航服务端过滤/分页 + 甘特双模式/阶段轴 + IA 重构；数据层 1–3 未做） | frontend built | 9.350ms (slim 9,590 events) | 23.03ms cold / 0.267ms hit | no frontend yet | 29.34MB (synthetic, no raw) |
 | 2026-08-05 | fix-session-detail-display 数据层（events.content_hash 差分写入 + opencode 系输入输出提取/step 过滤 + 索引计数与详情对齐；真实库强制重扫 23,726 事件） | frontend built | 9.056ms (slim 9,590 events) | 22.79ms cold / 0.269ms hit | no frontend yet | 29.34MB (synthetic, no raw) |
+| 2026-08-08 | fix-adapter-turn-semantics（schema v7：turn_key + 破坏性重分类重扫；上一行及以下 2026-08-06 基线被本条目取代） | frontend built | 10.375ms (slim 9,590 events) | 52.91ms cold / 0.347ms hit | no frontend yet | 29.57MB (synthetic, no raw) |
 
 > M4/M5 numbers are essentially flat vs M3 (only new watch/adapter layers, not
 > touching the measured query paths); differences are within P-4 machine
@@ -163,7 +164,7 @@ runs):
 > TokenTextModal 复用 recordCache，MUST NOT 发额外请求（G11.9 / G-UI-1 /
 > G-UI-2）；前端 CSS 增量后 gzip 11.88KB 仍在 REQ-011 预算内。
 
-## enhance-interaction-depth-and-ia-v2 perf:check（2026-08-06，本地基线）
+## enhance-interaction-depth-and-ia-v2 perf:check（2026-08-06，本地基线；已被 fix-adapter-turn-semantics 2026-08-08 条目取代，保留不删）
 
 | 指标 | 实测 | 预算 | 结论 |
 |------|------|------|------|
@@ -194,3 +195,42 @@ runs):
 > Heatmap/Radar）均从 App 已持有的共享 store 或已加载详情派生，
 > MUST NOT 发额外请求（G11.9 / gotcha 1 / gotcha 9）。
 > CSS 增量后 gzip 12.30KB 仍在 REQ-011 的 16KB 预算内。
+
+## fix-adapter-turn-semantics perf:check（2026-08-08，本地基线，schema v7）
+
+> 本 change 为事件语义修复（A6 codex 重分类 / A7 claude 工具结果回填 /
+> turnKey），不触碰扫描热路径的 SQL 形状；perf 合成库随 schema v7 同步
+> （`perf-diag/lib/schema-sql.mjs` 镜像补 `events.turn_key` / `content_hash`
+> 与 metrics v4 五列，`SCHEMA_VERSION` 6→7）。`npm run perf:check` 全绿。
+
+| 指标 | 实测 | 预算 | 结论 |
+|------|------|------|------|
+| listSessions(500) | 0.421ms | < 1ms | ✅ |
+| worst detail slim (9,590 events) | 10.375ms | < 15ms | ✅ |
+| eventDetail drill-down | 0.007ms | < 20ms | ✅ |
+| getSystemPromptForSession | 0.013ms | < 1ms | ✅ |
+| proxyList(50) | 0.879ms | — | — |
+| Overview 冷路径（3 SQL，含阶段耗时聚合） | 52.91ms | < 400ms | ✅ |
+| Overview 缓存命中（1 SQL stamp 判定） | 0.347ms | < 20ms | ✅ |
+| 差分写入 append 1 | 2 语句 / 0.41ms | 仅 1 INSERT、< 20ms | ✅ |
+| 事件循环 p99（200-request hammer） | 0.00ms | < 50ms | ✅ |
+| 三条核心查询 EXPLAIN | 无 USE TEMP B-TREE | 无临时 B 树 | ✅ |
+| Mission 冷启（stamp + 16 widget SQL） | 39.50ms | < 500ms | ✅ |
+| Mission 缓存命中 | 0.074ms | < 20ms | ✅ |
+| Mission 单 widget SQL 最差 | 12.630ms | < 30ms @ tier B | ✅ |
+| Mission 响应 gzip | 317B | < 120KB | ✅ |
+
+### v6→v7 迁移与重扫实测（真实库，2026-08-08，tasks.md §6.6/6.7，nfr §3）
+
+| 项 | 实测 |
+|----|------|
+| 迁移前（备份库快照） | 103 sessions / 35,299 events / event_raw 35,299 / metrics 82 / scan_state 71；proxy_requests 0 / frida 0 / session_prompt_context 7 |
+| 迁移后清空 | events 0 / event_raw 0 / metrics 0 / scan_state 0（四表具名 DELETE，A10） |
+| 迁移后保留 | sessions（103 行原样；启动自检另清理 2 条源文件已删除的 claude 空壳行） / proxy_requests / frida_captures / session_prompt_context 7 |
+| detail_loaded 重置 | 全部置 0，下次打开触发重扫 |
+| 迁移耗时（副本实测） | 首启到健康 326.8ms − 二次启动（无迁移）156.0ms ≈ **170.8ms** |
+| 重复初始化 | 幂等 no-op（二次启动不重清，schema 仍 7） |
+| 强制全量重扫（POST /api/scan {force:true}） | 墙钟 **3,264ms**（修复后终态重扫；首次 3,204ms），124 sessions 全部重扫（claude 12 / codex 98 / opencode 1 / codearts 1 / trae 1） |
+| 重扫后事件数 | 35,299 → **39,658**（+21 个会话文件增长；classification 修复后 codex system 11,664→1,478，tool 9,578→16,620，reasoning 0→6,336；claude 伪造 user_prompt 1,059→27） |
+| §6 验证修复（A3 rule 3） | codex payload id / `codex-N` 回退键与 claude message.id 非全局唯一（实测 codex-2 跨 11 会话）→ 两 adapter 均以会话 id 加前缀；重扫后跨会话键冲突 **0** |
+| 真实库大小 | 重扫后稳态 **208.65MB**（WAL checkpoint 后 0MB）——超出 nfr §2 的 <200MB 目标约 4%。归因：修复后的分类把此前丢弃的正文落盘（reasoning 10.4MB / tool 输入 7.3MB / system 6.3MB，迁移前 events 19.5MB → 65.1MB）；这是数据语义修复的合法结果，非 SQL 形状或迁移引入。距 §1 的 2GB 升级阈值仍远，报告 §6.8 已如实记录 |
