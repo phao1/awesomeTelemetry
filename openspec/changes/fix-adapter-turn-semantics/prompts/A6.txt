@@ -1,0 +1,91 @@
+/goal Run task group §6 of openspec/changes/fix-adapter-turn-semantics/tasks.md — full verification and sign-off. Keep working until every §6 task is either done and evidenced or explicitly reported as blocked. Do not mark a box optimistically.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/fix-adapter-turn-semantics/proposal.md — why this exists
+3. openspec/changes/fix-adapter-turn-semantics/design.md — fixed decisions A1-A12,
+   including the measured baseline in A1 and the file whitelist in A12
+4. openspec/changes/fix-adapter-turn-semantics/specs/*/spec.md — the delta specs
+5. openspec/changes/fix-adapter-turn-semantics/tasks.md — your task group
+6. openspec/contracts/{data-model,database,nfr}.md, openspec/specs/adapters/spec.md,
+   openspec/specs/trace-model/spec.md, and openspec/gotchas.md before each edit
+
+Field names, enum values, table names, and limits come from those files. Do not write
+any of them from memory.
+
+Context: this change repairs event semantics BEFORE any turn UI is built. Measured on
+the live database 2026-08-07: about 64% of Codex events are misclassified as `system`,
+Codex emits 6,492 phantom `llm` events from usage records, and every Claude tool result
+is emitted as a fabricated user message. design.md A1 has the full measurement.
+
+Rules that apply to every window:
+- Touch only the files in design.md A12. Expected-value updates in existing tests
+  elsewhere are the ONE permitted exception (design A9) — record every such file.
+- No new runtime dependency. The project allows exactly four.
+- Never loosen, widen, or delete an assertion to make a test pass. When a metric value
+  legitimately moved, RECOMPUTE the expectation from the corrected classification and
+  say so in a comment naming this change.
+- Never synthesise a turn key from timestamp proximity, event count, or a guess. A
+  correct `null` beats a wrong key, because a wrong key silently mis-slices every
+  downstream turn.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: a contract conflicts with the design; a source
+format turns out not to carry the signal design A4 assumes; the A1 measurement no longer
+matches the live database; you need a file outside A12; or the token-total invariant in
+A6 cannot be satisfied.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisite: §1 through §5 are complete. Begin by reading tasks.md and listing every
+unchecked box from an earlier group — those are inputs to your report, not things to
+quietly finish.
+
+Your scope is tasks.md §6 only (6.1 through 6.13). This window verifies; it does not add
+features. If verification finds a defect, fix the implementation.
+
+Gates first: 6.1 openspec validate --strict; 6.2 typecheck, test, lint, build,
+perf:check; 6.3 diff audit against the A12 whitelist — every file outside it must be an
+expected-value update and must be listed; 6.4 no runtime dependency; 6.5 AGENTS.md
+prohibition audit.
+
+Then the part that actually proves this change worked. BACK UP THE DATABASE FIRST
+(6.6) — the migration clears four tables and there is no undo.
+
+  6.6  run the migration against a copy of the live database; record rows cleared per
+       table, rows preserved per table, and migration duration
+  6.7  trigger a full rescan; record wall-clock duration, sessions repopulated, and event
+       count before versus after
+  6.8  re-run the design A1 measurement queries. Codex `system` must have dropped by
+       roughly the reclassified volume (~10,700) and `tool` plus `reasoning` must have
+       risen correspondingly. If they have not, the repair did not take effect on real
+       data — report it rather than passing the gate.
+  6.9  turn-key coverage per provider: non-null count, and the provenance each adapter
+       declared
+  6.10 re-run the A1 segmentation check on the largest codex and claude sessions. The
+       codex session that previously produced 864 turns must now produce a count
+       consistent with its task_started count. This is the single number that says
+       whether Change B is worth starting.
+  6.11 before-and-after phase distribution, errorRate, avgToolDurationMs, and tool event
+       count for one codex session and one claude session
+  6.12 append the new performance baseline; annotate the superseded entry rather than
+       deleting it
+
+Your final report must state plainly, for each of the nine adapters, whether its
+turn-key rule is backed by live data or only by a fixture. Change B's UI will write a
+criteria line from that distinction, so it must be accurate.
+
+Report Delivered / Contract mapping / Verification / Needs confirmation exactly as
+AGENTS.md requires. tasks.md must reflect evidence, not optimism.

@@ -1,0 +1,87 @@
+/goal Implement task group §3 of openspec/changes/fix-adapter-turn-semantics/tasks.md — stop Claude tool results from being emitted as user messages, and add Claude turn keys. Keep working until every §3 task is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/fix-adapter-turn-semantics/proposal.md — why this exists
+3. openspec/changes/fix-adapter-turn-semantics/design.md — fixed decisions A1-A12,
+   including the measured baseline in A1 and the file whitelist in A12
+4. openspec/changes/fix-adapter-turn-semantics/specs/*/spec.md — the delta specs
+5. openspec/changes/fix-adapter-turn-semantics/tasks.md — your task group
+6. openspec/contracts/{data-model,database,nfr}.md, openspec/specs/adapters/spec.md,
+   openspec/specs/trace-model/spec.md, and openspec/gotchas.md before each edit
+
+Field names, enum values, table names, and limits come from those files. Do not write
+any of them from memory.
+
+Context: this change repairs event semantics BEFORE any turn UI is built. Measured on
+the live database 2026-08-07: about 64% of Codex events are misclassified as `system`,
+Codex emits 6,492 phantom `llm` events from usage records, and every Claude tool result
+is emitted as a fabricated user message. design.md A1 has the full measurement.
+
+Rules that apply to every window:
+- Touch only the files in design.md A12. Expected-value updates in existing tests
+  elsewhere are the ONE permitted exception (design A9) — record every such file.
+- No new runtime dependency. The project allows exactly four.
+- Never loosen, widen, or delete an assertion to make a test pass. When a metric value
+  legitimately moved, RECOMPUTE the expectation from the corrected classification and
+  say so in a comment naming this change.
+- Never synthesise a turn key from timestamp proximity, event count, or a guess. A
+  correct `null` beats a wrong key, because a wrong key silently mis-slices every
+  downstream turn.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: a contract conflicts with the design; a source
+format turns out not to carry the signal design A4 assumes; the A1 measurement no longer
+matches the live database; you need a file outside A12; or the token-total invariant in
+A6 cannot be satisfied.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisite: §1 is complete. If TraceKind lacks the new members or the event type lacks
+turnKey, STOP and report.
+
+Your scope is tasks.md §3 only (3.1 through 3.10). Files: src/adapters/claude-code.ts and
+its test, plus src/adapters/helpers.ts if a shared helper is genuinely needed.
+
+The defect: Claude Code stores tool results as `type: 'user'` rows. The adapter converts
+every user row into a `user_prompt` event. Live data therefore reads
+`llm > tool(Bash) > user_prompt > tool(Bash) > user_prompt` — 1,059 user_prompt events
+against 624 real assistant messages. A turn view built on this would show a fabricated
+user message after every single tool call, and the tool events themselves would keep
+`hasOutput: false` forever even though the result is right there in the file.
+
+The repair (design A7):
+- a user row whose content is a tool_result block is NOT a user prompt;
+- attach its text to the tool event whose id equals the block's tool_use_id, and set
+  hasOutput true — this fills the hole those events carry today;
+- an unmatched tool_result becomes a result-only tool event carrying is_error as status.
+  Never drop it. Never turn it back into a user message;
+- genuine user rows keep emitting user_prompt, and the existing isGenuineUserPrompt
+  system-reminder filter is untouched — it solves a different problem.
+
+Turn keys (design A4): the assistant row's `message.id` is the key. Its tool_use parts
+and the results answering them inherit it. Declare `message_identity` provenance.
+Task 3.6 is deliberate: carry the message id explicitly rather than string-parsing
+event.id. The public id field is `toolu_…` for tool parts, so parsing it would not even
+work — and a contract field is not a place to hide structure.
+
+Task 3.7 is easy to skip and expensive to skip: all parts of one assistant row share one
+timestamp, so an unstable sort in orderEventsByTime can shuffle them and break the
+relationship between turnKey grouping and sequence. Make the sort stable with source
+order as tie-break and test it with three same-timestamp parts.
+
+Definition of done: §3 boxes checked with evidence, including the 3.9 regression test
+that the llm > tool > user_prompt > tool > user_prompt pattern is gone; targeted adapter
+tests green; then npm run typecheck && npm run test && npm run lint all green.

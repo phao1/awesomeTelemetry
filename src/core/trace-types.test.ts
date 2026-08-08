@@ -17,7 +17,10 @@ import type {
   RequestContextFormat,
   SessionIndexEntry,
   TraceEventSlim,
+  TraceKind,
   TracePhase,
+  TraceRecord,
+  TurnKeySource,
 } from './trace-types';
 
 // contracts/data-model.md §11 类型级验收（编译期即失败）
@@ -37,11 +40,12 @@ describe('REQ-001 常量数组与契约逐元素一致', () => {
     ] as const);
   });
 
-  it('REQ-001 TRACE_KINDS 长度 11 且逐元素与契约一致', () => {
-    expect(TRACE_KINDS).toHaveLength(11);
+  it('REQ-001 TRACE_KINDS 长度 13 且逐元素与契约一致（fix-adapter-turn-semantics 新增 reasoning/compact）', () => {
+    expect(TRACE_KINDS).toHaveLength(13);
     expect(TRACE_KINDS).toEqual([
       'llm', 'tool', 'file_read', 'file_write', 'bash', 'test',
       'agent', 'system', 'message', 'user_prompt', 'subagent_prompt',
+      'reasoning', 'compact',
     ] as const);
   });
 
@@ -51,6 +55,39 @@ describe('REQ-001 常量数组与契约逐元素一致', () => {
       'claude', 'codex', 'opencode', 'codearts',
       'codeagent', 'codeagent2', 'trae', 'qoder', 'workbuddy',
     ] as const);
+  });
+});
+
+describe('REQ-001 TraceKind 新增成员（fix-adapter-turn-semantics A2）', () => {
+  it('REQ-001 TraceKind 枚举全集含 reasoning/compact 且封闭', () => {
+    expectTypeOf<TraceKind>().toEqualTypeOf<
+      'llm' | 'tool' | 'file_read' | 'file_write' | 'bash' | 'test'
+      | 'agent' | 'system' | 'message' | 'user_prompt' | 'subagent_prompt'
+      | 'reasoning' | 'compact'
+    >();
+  });
+
+  it('REQ-001 TRACE_KINDS 同时包含两个新成员（运行时成员断言）', () => {
+    expect(TRACE_KINDS).toContain('reasoning');
+    expect(TRACE_KINDS).toContain('compact');
+  });
+});
+
+describe('REQ-001 turnKey 与 TurnKeySource（fix-adapter-turn-semantics A3/A5）', () => {
+  it('REQ-001 slim 档携带 turnKey 且 null 是合法值', () => {
+    expectTypeOf<Pick<TraceEventSlim, 'turnKey'>>().toEqualTypeOf<{
+      turnKey: string | null;
+    }>();
+  });
+
+  it('REQ-001 TurnKeySource 来源枚举封闭且全集一致', () => {
+    expectTypeOf<TurnKeySource>().toEqualTypeOf<
+      'native_boundary' | 'stream_structure' | 'message_identity' | 'unavailable'
+    >();
+  });
+
+  it('REQ-001 TraceRecord 声明 turnKeySource（A5 与 trace-model delta 的 "Declaration accompanies the record"）', () => {
+    expectTypeOf<TraceRecord>().toHaveProperty('turnKeySource');
   });
 });
 

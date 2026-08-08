@@ -22,6 +22,10 @@
 
 ## 1. Enums (full set, must not be extended)
 
+> fix-adapter-turn-semantics deliberately amended `TraceKind` exactly once,
+> adding `reasoning` and `compact` (rationale below). After this amendment the
+> enum is closed again; no further member may be added.
+
 ```ts
 /** Six phases. Classification algorithm: specs/metrics-analysis REQ-001. */
 export type TracePhase =
@@ -48,12 +52,24 @@ export type TraceKind =
   | 'system'
   | 'message'
   | 'user_prompt'
-  | 'subagent_prompt';
+  | 'subagent_prompt'
+  | 'reasoning'
+  | 'compact';
 
 export const TRACE_KINDS: readonly TraceKind[] = [
   'llm', 'tool', 'file_read', 'file_write', 'bash', 'test',
   'agent', 'system', 'message', 'user_prompt', 'subagent_prompt',
+  'reasoning', 'compact',
 ] as const;
+
+/**
+ * 新增两个成员的依据（fix-adapter-turn-semantics A2）。
+ * - `reasoning` — 模型思考与用户可见回复分开输出的记录。并入 `llm` 会让
+ *   回合卡片无法区分「推演」与「作答」，而这是阅读轨迹时最有用的区分。
+ * - `compact` — 客户端执行的上下文压缩 / 自动摘要。它既不是模型消息也不是
+ *   工具；轨迹带需要它作为独立的一条 band。
+ * 本 change 只新增这两个成员；其后枚举仍保持封闭，不得再扩展。
+ */
 
 /**
  * Unified status. Provider-native statuses are normalized by adapters:
@@ -128,6 +144,21 @@ export type CostSource = 'reported' | 'estimated' | 'unknown';
  * ⚠️ 与 G4.1 同类风险：把推导值当测量值用会系统性高估。
  */
 export type DurationSource = 'measured' | 'derived' | 'unknown';
+
+/**
+ * turn key 的来源声明（fix-adapter-turn-semantics A5）。adapter 必须声明它如何
+ * 产出 turn key；UI 读取它以写口径行，且**永远不得**从「key 恰好非 null」推断
+ * 可信度。
+ * - native_boundary：源格式显式标注了决策周期的起止
+ * - stream_structure：周期由源自身 item 流的形状推导（边界真实但非显式标记）
+ * - message_identity：按源自身的消息标识分组
+ * - unavailable：源中无边界信号，turnKey 为 null
+ */
+export type TurnKeySource =
+  | 'native_boundary'
+  | 'stream_structure'
+  | 'message_identity'
+  | 'unavailable';
 ```
 
 ---
@@ -346,6 +377,28 @@ export interface TraceEventSlim {
   /** 1-based, unique and continuous within a session. Must be re-sequenced
    * after merging (G10.3). */
   sequence: number;
+  /**
+   * Decision-cycle identity. All events produced by one model inference and the
+   * tool activity it triggered share one key. Null means the source format carries
+   * no boundary signal; consumers then fall back to their own segmentation and must
+   * disclose that they did. (fix-adapter-turn-semantics A3)
+   *
+   * Normative rules:
+   * 1. `turnKey` is **opaque**. No consumer parses it, sorts by it, or derives an
+   *    index from it. Turn ordering comes from `sequence`.
+   * 2. `turnKey` is stable across rescans of unchanged source data.
+   * 3. `turnKey` is unique within a session and MUST NOT be reused across
+   *    sessions; prefix it with a session-scoped value when the source identifier
+   *    is not globally unique.
+   * 4. `null` is a first-class value, not an error. An adapter that cannot find a
+   *    boundary signal in its real source data returns `null` for every event,
+   *    and the reason is recorded in the adapter's provenance declaration.
+   * 5. A tool event and the `llm` / `reasoning` events of the inference that
+   *    requested it share one `turnKey`. Turn 0 material (system prompt, first
+   *    user message) carries the key of the cycle it precedes, or `null` when no
+   *    cycle follows.
+   */
+  turnKey: string | null;
   kind: TraceKind;
   phase: TracePhase;
   /** Single-line summary, shown directly in the UI. Max 200 chars; adapters
@@ -396,6 +449,11 @@ export interface TraceRecord {
   events: TraceEvent[];
   metrics?: TraceMetrics;
   tokenSemantics: TokenSemantics;
+  /**
+   * turn key 的来源声明（fix-adapter-turn-semantics A5），与
+   * `tokenSemantics` 并列，adapter 必须声明。
+   */
+  turnKeySource: TurnKeySource;
 }
 
 /** Detail shape returned by the API. The events tier is decided by mode. */
@@ -1120,3 +1178,27 @@ expectTypeOf<ContextChangeKind>().toEqualTypeOf<
 expectTypeOf<ContextDiffSegmentKind>().toEqualTypeOf<
   'equal' | 'added' | 'removed'
 >();
+```
+
+Additional assertions added by fix-adapter-turn-semantics §1.7 — the two new
+kinds are closed members of `TraceKind`, `turnKey` exists on the slim tier with
+`null` as a valid value, and the provenance enum is closed:
+
+```ts
+// The two new kinds are first-class members
+expectTypeOf<TraceKind>().toEqualTypeOf<
+  'llm' | 'tool' | 'file_read' | 'file_write' | 'bash' | 'test'
+  | 'agent' | 'system' | 'message' | 'user_prompt' | 'subagent_prompt'
+  | 'reasoning' | 'compact'
+>();
+
+// turnKey exists and null is a valid value
+expectTypeOf<Pick<TraceEventSlim, 'turnKey'>>().toEqualTypeOf<{
+  turnKey: string | null;
+}>();
+
+// The provenance enum is closed
+expectTypeOf<TurnKeySource>().toEqualTypeOf<
+  'native_boundary' | 'stream_structure' | 'message_identity' | 'unavailable'
+>();
+```

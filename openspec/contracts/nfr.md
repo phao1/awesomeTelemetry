@@ -86,6 +86,7 @@ composite index and their `EXPLAIN QUERY PLAN` must not contain
 | Optional prewarm must yield | pause when a foreground request is detected within 750ms; `await setTimeout(0)` between sessions to yield a full event-loop round |
 | Server listen must not be blocked by prewarm | prewarm uses `void backgroundPrewarm(...)`, never `await` |
 | No child process spawns on the request path | Trae decryption only runs in 30s polling; the request path returns `pending: true` when not ready |
+| One-time rescan after schema v7 upgrade (fix-adapter-turn-semantics A10) | The v6→v7 migration clears derived event data (`events`, `event_raw`, `metrics`, `scan_state`) and marks every session `detail_loaded = 0`, so each session's next open triggers a full rescan. The cost is **one-time and bounded**: source files are untouched and scanning is deterministic, so the rescan reproduces the data exactly; startup after upgrade is slower once, and the change's final report records the measured wall-clock duration (tasks.md §6.7). Repeated initialisation against an already-migrated database is a no-op (completion recorded in `_meta`) and must not rescan again |
 
 ---
 
