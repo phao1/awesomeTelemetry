@@ -55,7 +55,18 @@ function rangeSince(range: SessionRange | undefined, now = Date.now()): string |
 }
 
 const SESSION_DETAIL_SQL = `SELECT ${SESSION_DETAIL_COLS} FROM sessions WHERE id = ?`;
-const SESSION_BY_ID_SQL = `SELECT ${SESSION_LIST_COLS} FROM sessions WHERE id = ?`;
+// D14：joined 投影 —— session_annotations 也有 updated_at，SELECT 里的无前缀
+// `updated_at` 会歧义；对主表列加 `sessions.` 前缀消歧（显式列清单，无 SELECT *）。
+// columns.ts 的 SESSION_LIST_COLS 保持契约原样，不做前缀化。
+const SESSION_LIST_JOIN_COLS = SESSION_LIST_COLS.split(', ')
+  .map((col) => (col.startsWith('CASE') ? col : `sessions.${col}`))
+  .join(', ');
+// add-trajectory-inspector D14：keys 批量路径同样返回 tags；一次 LEFT JOIN，
+// 绝无逐行查询。session_annotations 无 `id` 列，投影无歧义。
+const SESSION_BY_ID_SQL =
+  `SELECT ${SESSION_LIST_JOIN_COLS}, sa.tags_json AS tags_json ` +
+  'FROM sessions LEFT JOIN session_annotations AS sa ON sa.session_id = sessions.id ' +
+  'WHERE sessions.id = ?';
 const EVENT_COUNT_SQL = `SELECT COUNT(*) AS c FROM events WHERE session_id = ?`;
 const EVENT_RAW_SQL = `SELECT raw FROM event_raw WHERE session_id = ? AND event_id = ?`;
 const SYSTEM_PROMPT_SQL =
@@ -69,38 +80,54 @@ interface SessionsWhereFlags {
   range: boolean;
   /** status IN 的占位符个数；0 表示不过滤。 */
   status: number;
+  /** tags IN 的占位符个数；0 表示不过滤。 */
+  tags: number;
   cursor: boolean;
 }
 
 function sessionsWhere(flags: SessionsWhereFlags): string {
-  const parts = ['data_source = ?'];
+  // 标签过滤引用 joined 行的 tags_json —— 调用方必须保证 SQL 已带该 LEFT JOIN。
+  const parts = ['sessions.data_source = ?'];
   if (flags.provider > 0) {
-    parts.push(`provider IN (${Array.from({ length: flags.provider }, () => '?').join(', ')})`);
+    parts.push(`sessions.provider IN (${Array.from({ length: flags.provider }, () => '?').join(', ')})`);
   }
   if (flags.q) {
-    parts.push("(title LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\')");
+    parts.push("(sessions.title LIKE ? ESCAPE '\\' OR sessions.id LIKE ? ESCAPE '\\')");
   }
   if (flags.range) {
     // Activity window: long-running sessions that receive new events today
     // must remain visible under the frontend's default Today filter.
-    parts.push('updated_at >= ?');
+    parts.push('sessions.updated_at >= ?');
   }
   if (flags.status > 0) {
-    parts.push(`status IN (${Array.from({ length: flags.status }, () => '?').join(', ')})`);
+    parts.push(`sessions.status IN (${Array.from({ length: flags.status }, () => '?').join(', ')})`);
+  }
+  if (flags.tags > 0) {
+    // D14：JSON 数组包含谓词，OR 语义，与 provider/status 的 IN 一致；
+    // 评估一次，绝无逐行查询。
+    parts.push(
+      `EXISTS (SELECT 1 FROM json_each(sa.tags_json) AS je ` +
+        `WHERE je.value IN (${Array.from({ length: flags.tags }, () => '?').join(', ')}))`,
+    );
   }
   if (flags.cursor) {
-    parts.push('started_at < ?');
+    parts.push('sessions.started_at < ?');
   }
   return parts.join(' AND ');
 }
 
 function sessionListSql(flags: SessionsWhereFlags): string {
-  return `SELECT ${SESSION_LIST_COLS} FROM sessions WHERE ${sessionsWhere(flags)} ` +
-    `ORDER BY started_at DESC LIMIT ?`;
+  return `SELECT ${SESSION_LIST_JOIN_COLS}, sa.tags_json AS tags_json FROM sessions ` +
+    'LEFT JOIN session_annotations AS sa ON sa.session_id = sessions.id ' +
+    `WHERE ${sessionsWhere(flags)} ORDER BY sessions.started_at DESC LIMIT ?`;
 }
 
 function sessionCountSql(flags: SessionsWhereFlags): string {
-  return `SELECT COUNT(*) AS c FROM sessions WHERE ${sessionsWhere(flags)}`;
+  // 标签过滤需要 joined 行；session_annotations.session_id 是主键，每会话至多
+  // 一行，COUNT(*) 仍与会话数一致。
+  return `SELECT COUNT(*) AS c FROM sessions ` +
+    'LEFT JOIN session_annotations AS sa ON sa.session_id = sessions.id ' +
+    `WHERE ${sessionsWhere(flags)}`;
 }
 
 function eventsSql(full: boolean): string {
@@ -180,7 +207,21 @@ function mapSessionIndex(row: Record<string, unknown>): SessionIndexEntry {
     detailLoaded: Boolean(row.detail_loaded),
     mergeGroupId: null,
     hasSystemPrompt: Boolean(row.has_system_prompt),
+    // D14：无注解行 → tags_json 为 NULL → 空数组。
+    tags: parseTagsJson(row.tags_json),
   };
+}
+
+function parseTagsJson(tagsJson: unknown): string[] {
+  if (typeof tagsJson !== 'string' || tagsJson === '') {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(tagsJson);
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 function mapSession(row: Record<string, unknown>): TraceSession {
@@ -240,6 +281,8 @@ function mapEvent(
     // §5.2：slim 档统一置 hasRaw = true，由下钻接口返回 null 表示实际不存在。
     hasRaw: true,
     model: row.model === undefined ? undefined : (row.model as string | null),
+    // fix-adapter-turn-semantics 5.5：turnKey 原样回读，null 是一等值。
+    turnKey: row.turn_key as string | null,
   };
   if (!full) {
     return slim;
@@ -363,6 +406,8 @@ export interface ListSessionsOptions {
   range?: SessionRange;
   /** 状态多选过滤。 */
   status?: TraceStatus[];
+  /** 标签多选过滤（D14）：OR 语义，JSON 数组包含谓词，一次 join 评估。 */
+  tags?: string[];
   /** #17：会话合并组配置（可选；缺省不合并）。 */
   groups?: SessionMergeGroup[];
 }
@@ -398,11 +443,13 @@ export function listSessions(db: Database, opts: ListSessionsOptions): SessionLi
   const since = rangeSince(opts.range);
   const hasRange = since !== undefined;
   const statuses = opts.status !== undefined && opts.status.length > 0 ? opts.status : undefined;
+  const tags = opts.tags !== undefined && opts.tags.length > 0 ? opts.tags : undefined;
   const flags: SessionsWhereFlags = {
     provider: providers?.length ?? 0,
     q: hasQ,
     range: hasRange,
     status: statuses?.length ?? 0,
+    tags: tags?.length ?? 0,
     cursor: hasCursor,
   };
   const pattern = hasQ ? `%${escapeLike(q)}%` : undefined;
@@ -418,6 +465,9 @@ export function listSessions(db: Database, opts: ListSessionsOptions): SessionLi
   }
   if (statuses !== undefined) {
     baseParams.push(...statuses);
+  }
+  if (tags !== undefined) {
+    baseParams.push(...tags);
   }
   const params = [...baseParams, ...(hasCursor ? [opts.cursor] : []), limit + 1];
 

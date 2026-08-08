@@ -13,6 +13,7 @@ import type { LocalSessionConfig, ProviderKey } from '../src/core/trace-types.js
 import { isForegroundBusy } from './realtime/frontline.js';
 import { initSchema } from './storage/schema.js';
 import { upsertPromptContext } from './storage/prompt-context.js';
+import { writeAnnotations } from './storage/annotations.js';
 import {
   upsertEvents,
   upsertSessionFromTrace,
@@ -125,6 +126,7 @@ function seedEvent(db: Db, sessionId: string, id: string, sequence: number): voi
       id,
       sessionId,
       sequence,
+      turnKey: null,
       kind: 'llm',
       phase: 'implement',
       title: 'event title',
@@ -934,6 +936,292 @@ describe('API 契约（contracts/api.md §8）', () => {
     expect(r.status).toBe(404);
     const body = JSON.parse(r.text) as { error: { code: string } };
     expect(body.error.code).toBe('ROUTE_NOT_FOUND');
+  });
+});
+
+describe('Session annotations API（api.md §1.7 / design D13-D14）', () => {
+  it('未注解会话 GET 返回 200 空形状，且不创建行', async () => {
+    const { port, db } = await boot((seedDb) => {
+      seedSession(seedDb, 'codex-s1', 'codex');
+    });
+    const r = await request(port, 'GET', '/api/sessions/codex-s1/annotations');
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.text)).toEqual({
+      sessionKey: 'codex-s1',
+      tags: [],
+      note: null,
+      updatedAt: null,
+    });
+    const rowCount = db
+      .prepare('SELECT COUNT(*) AS c FROM session_annotations')
+      .get() as { c: number };
+    expect(rowCount.c).toBe(0);
+  });
+
+  it('PUT 规范化往返：trim/lowercase/去重/升序 + ISO updatedAt；GET 读回一致', async () => {
+    const { port } = await boot((seedDb) => seedSession(seedDb, 'codex-s1', 'codex'));
+    const put = await request(port, 'PUT', '/api/sessions/codex-s1/annotations', {
+      body: JSON.stringify({ tags: ['Refactor', 'refactor', '  Résumé  '], note: 'keep an eye' }),
+    });
+    expect(put.status).toBe(200);
+    const saved = JSON.parse(put.text) as {
+      sessionKey: string;
+      tags: string[];
+      note: string | null;
+      updatedAt: string | null;
+    };
+    expect(saved.sessionKey).toBe('codex-s1');
+    expect(saved.tags).toEqual(['refactor', 'résumé']);
+    expect(saved.note).toBe('keep an eye');
+    expect(saved.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    const readBack = JSON.parse(
+      (await request(port, 'GET', '/api/sessions/codex-s1/annotations')).text,
+    );
+    expect(readBack).toEqual(saved);
+  });
+
+  it('部分更新：只写 tags 不动 note；只写 note 不动 tags', async () => {
+    const { port } = await boot((seedDb) => seedSession(seedDb, 'codex-s1', 'codex'));
+    await request(port, 'PUT', '/api/sessions/codex-s1/annotations', {
+      body: JSON.stringify({ tags: ['a'], note: 'note-1' }),
+    });
+    const onlyTags = JSON.parse(
+      (
+        await request(port, 'PUT', '/api/sessions/codex-s1/annotations', {
+          body: JSON.stringify({ tags: ['b'] }),
+        })
+      ).text,
+    ) as { tags: string[]; note: string | null };
+    expect(onlyTags.tags).toEqual(['b']);
+    expect(onlyTags.note).toBe('note-1');
+
+    const onlyNote = JSON.parse(
+      (
+        await request(port, 'PUT', '/api/sessions/codex-s1/annotations', {
+          body: JSON.stringify({ note: 'note-2' }),
+        })
+      ).text,
+    ) as { tags: string[]; note: string | null };
+    expect(onlyNote.tags).toEqual(['b']);
+    expect(onlyNote.note).toBe('note-2');
+  });
+
+  it('清空语义：tags:[] 清空标签；note:null 清空备注', async () => {
+    const { port } = await boot((seedDb) => seedSession(seedDb, 'codex-s1', 'codex'));
+    await request(port, 'PUT', '/api/sessions/codex-s1/annotations', {
+      body: JSON.stringify({ tags: ['a'], note: 'note-1' }),
+    });
+    const clearedTags = JSON.parse(
+      (
+        await request(port, 'PUT', '/api/sessions/codex-s1/annotations', {
+          body: JSON.stringify({ tags: [] }),
+        })
+      ).text,
+    ) as { tags: string[]; note: string | null };
+    expect(clearedTags.tags).toEqual([]);
+    expect(clearedTags.note).toBe('note-1');
+
+    const clearedNote = JSON.parse(
+      (
+        await request(port, 'PUT', '/api/sessions/codex-s1/annotations', {
+          body: JSON.stringify({ note: null }),
+        })
+      ).text,
+    ) as { tags: string[]; note: string | null };
+    expect(clearedNote.tags).toEqual([]);
+    expect(clearedNote.note).toBeNull();
+  });
+
+  it('边界违反 → 400 BAD_REQUEST，什么也不持久化', async () => {
+    const { port, db } = await boot((seedDb) => seedSession(seedDb, 'codex-s1', 'codex'));
+    const tooMany = Array.from({ length: 33 }, (_, i) => `tag-${i}`);
+    const cases: Array<[string, unknown]> = [
+      ['33 tags', { tags: tooMany }],
+      ['tag over 64 chars', { tags: ['x'.repeat(65)] }],
+      ['tag with invalid chars', { tags: ['bad tag!'] }],
+      ['note over 8192 chars', { note: 'n'.repeat(8193) }],
+    ];
+    for (const [label, body] of cases) {
+      const r = await request(port, 'PUT', '/api/sessions/codex-s1/annotations', {
+        body: JSON.stringify(body),
+      });
+      expect(r.status, label).toBe(400);
+      expect((JSON.parse(r.text) as { error: { code: string } }).error.code, label).toBe(
+        'BAD_REQUEST',
+      );
+      const rowCount = db
+        .prepare('SELECT COUNT(*) AS c FROM session_annotations')
+        .get() as { c: number };
+      expect(rowCount.c, label).toBe(0);
+    }
+  });
+
+  it('未知会话键：GET 与 PUT 均 404 SESSION_NOT_FOUND', async () => {
+    const { port } = await boot();
+    const get = await request(port, 'GET', '/api/sessions/nope/annotations');
+    expect(get.status).toBe(404);
+    expect((JSON.parse(get.text) as { error: { code: string } }).error.code).toBe(
+      'SESSION_NOT_FOUND',
+    );
+    const put = await request(port, 'PUT', '/api/sessions/nope/annotations', {
+      body: JSON.stringify({ tags: ['a'] }),
+    });
+    expect(put.status).toBe(404);
+    expect((JSON.parse(put.text) as { error: { code: string } }).error.code).toBe(
+      'SESSION_NOT_FOUND',
+    );
+  });
+
+  it('畸形 body → 400 BAD_REQUEST：非法 JSON、数组 body、tags 非数组、note 非字符串', async () => {
+    const { port } = await boot((seedDb) => seedSession(seedDb, 'codex-s1', 'codex'));
+    const cases: Array<[string, string]> = [
+      ['invalid JSON', '{ not json'],
+      ['array body', '[1,2]'],
+      ['tags not array', JSON.stringify({ tags: 'a' })],
+      ['tags element not string', JSON.stringify({ tags: [1] })],
+      ['note not string', JSON.stringify({ note: 7 })],
+    ];
+    for (const [label, body] of cases) {
+      const r = await request(port, 'PUT', '/api/sessions/codex-s1/annotations', { body });
+      expect(r.status, label).toBe(400);
+      expect((JSON.parse(r.text) as { error: { code: string } }).error.code, label).toBe(
+        'BAD_REQUEST',
+      );
+    }
+  });
+
+  it('标签词表：count 降序、标签升序，一条查询返回', async () => {
+    const { port } = await boot((seedDb) => {
+      seedSession(seedDb, 'codex-s1', 'codex');
+      seedSession(seedDb, 'codex-s2', 'codex');
+      seedSession(seedDb, 'claude-s1', 'claude');
+      writeAnnotations(seedDb, 'codex-s1', { tags: ['perf', 'refactor'] });
+      writeAnnotations(seedDb, 'codex-s2', { tags: ['perf', 'arch'] });
+      writeAnnotations(seedDb, 'claude-s1', { tags: ['refactor'] });
+    });
+    const r = await request(port, 'GET', '/api/annotations/tags');
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.text)).toEqual({
+      tags: [
+        { tag: 'perf', count: 2 },
+        { tag: 'refactor', count: 2 },
+        { tag: 'arch', count: 1 },
+      ],
+    });
+  });
+
+  it('会话列表 tags 过滤：OR 语义，命中携带任一标签的会话', async () => {
+    const { port } = await boot((seedDb) => {
+      seedSession(seedDb, 'codex-s1', 'codex');
+      seedSession(seedDb, 'codex-s2', 'codex');
+      seedSession(seedDb, 'claude-s1', 'claude');
+      writeAnnotations(seedDb, 'codex-s1', { tags: ['perf'] });
+      writeAnnotations(seedDb, 'codex-s2', { tags: ['refactor'] });
+    });
+    const both = JSON.parse(
+      (await request(port, 'GET', '/api/sessions?tags=perf,refactor')).text,
+    ) as { items: Array<{ id: string }>; total: number };
+    expect(both.items.map((i) => i.id).sort()).toEqual(['codex-s1', 'codex-s2']);
+    expect(both.total).toBe(2);
+
+    const one = JSON.parse(
+      (await request(port, 'GET', '/api/sessions?tags=refactor')).text,
+    ) as { items: Array<{ id: string }>; total: number };
+    expect(one.items.map((i) => i.id)).toEqual(['codex-s2']);
+    expect(one.total).toBe(1);
+
+    const none = JSON.parse(
+      (await request(port, 'GET', '/api/sessions?tags=missing-tag')).text,
+    ) as { items: unknown[]; total: number };
+    expect(none.items).toEqual([]);
+    expect(none.total).toBe(0);
+  });
+
+  it('tags 过滤边界：33 个标签 400；非法标签值 400；32 个合法标签 200', async () => {
+    const { port } = await boot();
+    const many = Array.from({ length: 33 }, (_, i) => `tag-${i}`).join(',');
+    const tooMany = await request(port, 'GET', `/api/sessions?tags=${many}`);
+    expect(tooMany.status).toBe(400);
+    expect((JSON.parse(tooMany.text) as { error: { code: string } }).error.code).toBe(
+      'BAD_REQUEST',
+    );
+
+    const invalid = await request(port, 'GET', '/api/sessions?tags=bad%20tag');
+    expect(invalid.status).toBe(400);
+    expect((JSON.parse(invalid.text) as { error: { code: string } }).error.code).toBe(
+      'BAD_REQUEST',
+    );
+
+    const ok = Array.from({ length: 32 }, (_, i) => `tag-${i}`).join(',');
+    const fine = await request(port, 'GET', `/api/sessions?tags=${ok}`);
+    expect(fine.status).toBe(200);
+  });
+
+  it('注解成功响应 ≥1KB 且 accept-encoding:gzip → content-encoding: gzip + vary', async () => {
+    const { port } = await boot((seedDb) => seedSession(seedDb, 'codex-s1', 'codex'));
+    const r = await request(port, 'PUT', '/api/sessions/codex-s1/annotations', {
+      headers: { 'accept-encoding': 'gzip' },
+      body: JSON.stringify({ tags: ['perf'], note: 'n'.repeat(3000) }),
+    });
+    expect(r.headers['content-encoding']).toBe('gzip');
+    expect(r.headers.vary).toContain('accept-encoding');
+    const decoded = gunzipSync(r.raw).toString('utf8');
+    const body = JSON.parse(decoded) as { tags: string[]; note: string };
+    expect(body.tags).toEqual(['perf']);
+    expect(body.note.length).toBe(3000);
+  });
+
+  it('回归：会话列表与详情形状除新增 tags 数组外不变（AC-3 / 3.8）', async () => {
+    const { port } = await boot((seedDb) => {
+      seedSession(seedDb, 'codex-s1', 'codex');
+      seedSession(seedDb, 'claude-s1', 'claude');
+      seedEvent(seedDb, 'codex-s1', 'e1', 1);
+      writeAnnotations(seedDb, 'codex-s1', { tags: ['perf'] });
+    });
+
+    const listBody = JSON.parse(
+      (await request(port, 'GET', '/api/sessions?limit=10')).text,
+    ) as { items: Array<Record<string, unknown>> };
+    const item = listBody.items.find((i) => i.id === 'codex-s1');
+    expect(item).toBeDefined();
+    // contracts/data-model.md §3 SessionIndexEntry 精确键集：除新增 tags 外，
+    // 没有任何字段被加入或移除（防止 body 列或无关字段泄漏进列表投影）。
+    expect(Object.keys(item!).sort()).toEqual(
+      [
+        'id', 'provider', 'sourceAgent', 'title', 'startedAt', 'updatedAt',
+        'status', 'cwd', 'eventCount', 'messageCount', 'tokenTotal', 'costUsd',
+        'dataSource', 'sourcePath', 'detailLoaded', 'mergeGroupId',
+        'hasSystemPrompt', 'tags',
+      ].sort(),
+    );
+    expect(item!.tags).toEqual(['perf']);
+    expect(listBody.items.find((i) => i.id === 'claude-s1')?.tags).toEqual([]);
+    for (const row of listBody.items) {
+      expect(row).not.toHaveProperty('systemPrompt');
+      expect(row).not.toHaveProperty('inputSummary');
+      expect(row).not.toHaveProperty('outputSummary');
+      expect(row).not.toHaveProperty('raw');
+    }
+
+    // 详情响应 = SessionDetailResponse 精确键集；session 对象无 tags（TraceSession
+    // 契约不带该字段，注解独立走 §1.7 路由对）。
+    const detail = JSON.parse(
+      (await request(port, 'GET', '/api/sessions/codex-s1')).text,
+    ) as Record<string, unknown>;
+    expect(Object.keys(detail).sort()).toEqual(
+      ['session', 'events', 'mode', 'eventTotal', 'eventOffset', 'eventLimit', 'hasMore', 'pending'].sort(),
+    );
+    const session = detail.session as Record<string, unknown>;
+    expect(Object.keys(session).sort()).toEqual(
+      [
+        'id', 'provider', 'sourceAgent', 'title', 'startedAt', 'updatedAt',
+        'status', 'cwd', 'messageCount', 'eventCount', 'tokenUsage', 'costUsd',
+        'systemPrompt', 'dataSource', 'sourcePath', 'totalDurationMs',
+        'isSubagent', 'primaryModel', 'costSource', 'durationSource',
+      ].sort(),
+    );
+    expect(session).not.toHaveProperty('tags');
+    expect(session.id).toBe('codex-s1');
   });
 });
 

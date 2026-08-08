@@ -1,0 +1,90 @@
+/goal Implement task group §2 of openspec/changes/add-trajectory-inspector/tasks.md — the annotations table, its reader and writer, and the session-list tag join. Keep working until every §2 task is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/add-trajectory-inspector/proposal.md — boundary
+3. openspec/changes/add-trajectory-inspector/implementation-spec.md — FR map, the
+   16-row conflict register, acceptance criteria, and the edge-case table
+4. openspec/changes/add-trajectory-inspector/design.md — fixed decisions D1-D20,
+   including the file whitelist in D20
+5. openspec/changes/add-trajectory-inspector/specs/*/spec.md — the delta specs
+6. openspec/changes/add-trajectory-inspector/tasks.md — your task group
+7. openspec/contracts/{data-model,database,api,design-tokens,nfr}.md and
+   openspec/gotchas.md before each module edit
+
+Field names, table names, routes, enum values, limits, error codes, tokens, and UI
+states come from those files. Do not write any of them from memory.
+
+Prerequisite: the change fix-adapter-turn-semantics is landed. Confirm that
+src/core/trace-types.ts carries `turnKey`, `TurnKeySource`, and the `reasoning` and
+`compact` kinds. If it does not, STOP and report — this whole change reads that data.
+
+Source-spec note: tempspec0806/new_view.md and the reference screenshot are product
+input, NOT the contract. implementation-spec.md §3 lists 16 deliberate deviations
+(C1-C16). Restoring any of them to match the source is a regression, not a fix. Note
+especially C7: an earlier draft claimed no tool-call id exists. That was wrong —
+event.id carries the native call id. Display it verbatim; do not add a toolCallId field
+and do not generate one.
+
+Rules that apply to every window:
+- Touch only the files in design.md D20. If another file is truly required, STOP and
+  report the requirement id, the file, and the reason before editing.
+- No new runtime dependency. The project allows exactly four.
+- No hex/rgb/named colour literal in any new CSS or TSX. Read design tokens.
+- Colour never carries meaning alone: always pair it with an icon or text.
+- Selection is the accent group. Red is danger and means failure — never selection.
+- Unknown values render an em dash with a tooltip, never 0.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Never mock the logic under test and never loosen an assertion to make a test pass.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: Change A is not landed; a contract conflicts
+with the design; a required field/route/error/token is missing; you need a file outside
+D20; a performance budget cannot be met within the stated bounds; the session-list tag
+join degrades the measured list baseline; or turn segmentation would require inventing a
+boundary the data does not support.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisite: §1 is complete. If openspec/contracts/database.md does not describe schema
+v8, STOP and report.
+
+Your scope is tasks.md §2 only (2.1 through 2.13). Files: server/storage/{schema,columns,
+query-engine}.ts with their tests, and the new annotations.ts / annotations.test.ts. Do
+not touch server/server.ts — routes are B3.
+
+Non-negotiables:
+- SCHEMA_VERSION 7 -> 8, one idempotent CREATE TABLE + CREATE INDEX, altering nothing.
+- Migration failure throws with rebuild guidance. A silent catch is a rework condition.
+- Module-level cached prepared statements. No db.prepare() in a loop. No SELECT *.
+- Tag normalisation is exactly D13: trim, lowercase, de-duplicate, sort ascending. Bounds
+  are 32 tags, 64 chars per tag, /^[\p{L}\p{N}_-]{1,64}$/u, 8192-char note. A violated
+  bound throws a typed error. Silent truncation is prohibited.
+- Partial update: absent key untouched, empty array clears tags, null clears the note.
+- Reading a session with no row returns empty/null/null and creates nothing.
+
+Task 2.4 protects the user's own data and is easy to overlook: Change A's migration
+clears four tables by name. Write a test that runs Change A's migration against a
+database that ALREADY holds annotations and asserts the rows survive. If they do not,
+Change A's deletion list is wrong — report it rather than working around it here.
+
+Tasks 2.9 through 2.11 are the risky part. The session list is the app's hottest query,
+with a recorded baseline of 524 entries at 447.8KB / 5.33ms. You are adding a join.
+Requirements: one join evaluated once, never a query per row; every existing body-column
+exclusion preserved; EXPLAIN QUERY PLAN showing no USE TEMP B-TREE; and a measured
+before/after cost recorded. If the cost degrades materially, STOP and report — do not
+ship a slower list to get a tag column.
+
+Definition of done: §2 boxes checked with evidence, targeted storage tests green, then
+npm run typecheck && npm run test && npm run lint all green.

@@ -1,0 +1,86 @@
+/goal Freeze the contracts for openspec/changes/add-trajectory-inspector/, then stop. Keep working until every task in §1 of that change's tasks.md is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/add-trajectory-inspector/proposal.md — boundary
+3. openspec/changes/add-trajectory-inspector/implementation-spec.md — FR map, the
+   16-row conflict register, acceptance criteria, and the edge-case table
+4. openspec/changes/add-trajectory-inspector/design.md — fixed decisions D1-D20,
+   including the file whitelist in D20
+5. openspec/changes/add-trajectory-inspector/specs/*/spec.md — the delta specs
+6. openspec/changes/add-trajectory-inspector/tasks.md — your task group
+7. openspec/contracts/{data-model,database,api,design-tokens,nfr}.md and
+   openspec/gotchas.md before each module edit
+
+Field names, table names, routes, enum values, limits, error codes, tokens, and UI
+states come from those files. Do not write any of them from memory.
+
+Prerequisite: the change fix-adapter-turn-semantics is landed. Confirm that
+src/core/trace-types.ts carries `turnKey`, `TurnKeySource`, and the `reasoning` and
+`compact` kinds. If it does not, STOP and report — this whole change reads that data.
+
+Source-spec note: tempspec0806/new_view.md and the reference screenshot are product
+input, NOT the contract. implementation-spec.md §3 lists 16 deliberate deviations
+(C1-C16). Restoring any of them to match the source is a regression, not a fix. Note
+especially C7: an earlier draft claimed no tool-call id exists. That was wrong —
+event.id carries the native call id. Display it verbatim; do not add a toolCallId field
+and do not generate one.
+
+Rules that apply to every window:
+- Touch only the files in design.md D20. If another file is truly required, STOP and
+  report the requirement id, the file, and the reason before editing.
+- No new runtime dependency. The project allows exactly four.
+- No hex/rgb/named colour literal in any new CSS or TSX. Read design tokens.
+- Colour never carries meaning alone: always pair it with an icon or text.
+- Selection is the accent group. Red is danger and means failure — never selection.
+- Unknown values render an em dash with a tooltip, never 0.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Never mock the logic under test and never loosen an assertion to make a test pass.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: Change A is not landed; a contract conflicts
+with the design; a required field/route/error/token is missing; you need a file outside
+D20; a performance budget cannot be met within the stated bounds; the session-list tag
+join degrades the measured list baseline; or turn segmentation would require inventing a
+boundary the data does not support.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Your scope is tasks.md §1 only (1.1 through 1.10). Write no implementation beyond type
+definitions in src/core/trace-types.ts and their tests.
+
+Task 1.1 is a gate, not a formality: confirm Change A landed AND that the live database
+was rescanned. If events still carry null turn keys everywhere, this change's primary
+segmentation path is dead on arrival — report it and stop.
+
+Then amend five contracts:
+1. data-model.md — the derived turn types verbatim from specs/trace-model/spec.md, plus
+   SessionAnnotations / SessionAnnotationsUpdate from D13, plus `tags: string[]` on
+   SessionIndexEntry.
+2. database.md — schema v8, the session_annotations DDL and index from D15. State
+   explicitly that Change A's destructive migration must preserve this table — that is
+   why Change A enumerates the tables it clears instead of writing an exclusion list.
+3. api.md — the three routes from D13 and the `tags` list parameter from D14, with
+   bounds, OR semantics, 400/404 behaviour, and the empty-shape 200.
+4. design-tokens.md — §2.8 Role colours: six groups, three tiers, both themes, each with
+   a mandatory icon, plus --ribbon-active.
+5. nfr.md — the D20 budgets including the session-list tag-join delta requirement.
+
+Then copy the new types verbatim into src/core/trace-types.ts and extend its test with
+shape assertions plus a NEGATIVE assertion that no toolCallId field is introduced —
+identity comes from event.id (deviation C7).
+
+Definition of done: openspec validate add-trajectory-inspector --strict passes, typecheck
+passes, test and lint pass, §1 boxes checked with evidence, and every conflict you found
+between the source spec, the design, and the existing contracts is listed in your report.

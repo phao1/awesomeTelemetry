@@ -28,6 +28,25 @@ export const claudeFixture: { sourceAgent: string; session: Record<string, never
         usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 10, cache_creation_input_tokens: 0 },
       },
     },
+    // fix-adapter-turn-semantics A7：Claude 把 tool 结果存成 type:'user' 行。
+    // 该行不得再变成 user_prompt，其结果回填到 toolu-1 那个 tool 事件。
+    {
+      type: 'user',
+      sessionId: 'claude-s1',
+      timestamp: '2026-08-01T00:00:07.000Z',
+      message: {
+        id: 'msg-result-1',
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu-1',
+            content: [{ type: 'text', text: 'parse.ts:42 — missing null check' }],
+            is_error: false,
+          },
+        ],
+      },
+    },
     {
       type: 'assistant',
       sessionId: 'claude-s1',

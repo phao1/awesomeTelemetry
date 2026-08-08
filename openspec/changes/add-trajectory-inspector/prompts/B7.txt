@@ -1,0 +1,96 @@
+/goal Implement task group §7 of openspec/changes/add-trajectory-inspector/tasks.md — the tool renderer registry and its eight renderers. Keep working until every §7 task is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/add-trajectory-inspector/proposal.md — boundary
+3. openspec/changes/add-trajectory-inspector/implementation-spec.md — FR map, the
+   16-row conflict register, acceptance criteria, and the edge-case table
+4. openspec/changes/add-trajectory-inspector/design.md — fixed decisions D1-D20,
+   including the file whitelist in D20
+5. openspec/changes/add-trajectory-inspector/specs/*/spec.md — the delta specs
+6. openspec/changes/add-trajectory-inspector/tasks.md — your task group
+7. openspec/contracts/{data-model,database,api,design-tokens,nfr}.md and
+   openspec/gotchas.md before each module edit
+
+Field names, table names, routes, enum values, limits, error codes, tokens, and UI
+states come from those files. Do not write any of them from memory.
+
+Prerequisite: the change fix-adapter-turn-semantics is landed. Confirm that
+src/core/trace-types.ts carries `turnKey`, `TurnKeySource`, and the `reasoning` and
+`compact` kinds. If it does not, STOP and report — this whole change reads that data.
+
+Source-spec note: tempspec0806/new_view.md and the reference screenshot are product
+input, NOT the contract. implementation-spec.md §3 lists 16 deliberate deviations
+(C1-C16). Restoring any of them to match the source is a regression, not a fix. Note
+especially C7: an earlier draft claimed no tool-call id exists. That was wrong —
+event.id carries the native call id. Display it verbatim; do not add a toolCallId field
+and do not generate one.
+
+Rules that apply to every window:
+- Touch only the files in design.md D20. If another file is truly required, STOP and
+  report the requirement id, the file, and the reason before editing.
+- No new runtime dependency. The project allows exactly four.
+- No hex/rgb/named colour literal in any new CSS or TSX. Read design tokens.
+- Colour never carries meaning alone: always pair it with an icon or text.
+- Selection is the accent group. Red is danger and means failure — never selection.
+- Unknown values render an em dash with a tooltip, never 0.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Never mock the logic under test and never loosen an assertion to make a test pass.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: Change A is not landed; a contract conflicts
+with the design; a required field/route/error/token is missing; you need a file outside
+D20; a performance budget cannot be met within the stated bounds; the session-list tag
+join degrades the measured list baseline; or turn segmentation would require inventing a
+boundary the data does not support.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisite: §1 is complete. This window depends on no other implementation window and
+runs in parallel with B2, B3, B4, and B5. B6 integrates the result.
+
+Your scope is tasks.md §7 only (7.1 through 7.13). Files: everything under
+src/components/trajectory/renderers/. Do not touch MessageCard, TurnList, or any other
+component — integration is B6's task 6.13.
+
+Build the registry first (7.1), then the default JSON tree (7.2), then the seven
+built-ins (7.3-7.9). Read design D11 for each renderer's exact behaviour.
+
+Registry: registerToolRenderer / resolveToolRenderer, matching on event.tool lowercased
+and trimmed, exact; unmatched falls to default.
+
+Bounds, verbatim: RENDER_MAX_LINES 200, RENDER_MAX_CHARS 100_000,
+JSON_TREE_DEFAULT_DEPTH 3, JSON_TREE_ARRAY_PREVIEW 5.
+
+Two rules decide whether this window succeeds:
+
+1. EVERY RENDERER IS TOTAL. Unparseable input returns { kind: 'fallback' } — it never
+   throws, and it never renders a half-parsed structure as if complete. The card then
+   shows raw text with a small "raw" marker so the reader knows what they are looking at.
+   A renderer that throws takes down the turn card around it.
+
+2. RENDER_MAX_CHARS IS CHECKED BEFORE PARSING. A 200 KB tool result must not enter a JSON
+   parser at all; show raw plus a truncation notice.
+
+Colour never carries meaning alone (deviation C2 — the source spec used colour-only dots
+and colour-only diff rows):
+- todowrite status is an icon PLUS a label, never a coloured dot alone.
+- edit diff rows carry their + or - sign in addition to the background colour.
+- grep matches are marked structurally, not only by highlight colour.
+
+Reuse src/core/error-classifier.ts to detect error lines in bash output. Do not write a
+second error-pattern list.
+
+Definition of done: §7 boxes checked with evidence, targeted renderer tests green, then
+npm run typecheck && npm run test && npm run lint all green.

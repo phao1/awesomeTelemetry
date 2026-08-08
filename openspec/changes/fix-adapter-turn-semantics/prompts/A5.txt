@@ -1,0 +1,89 @@
+/goal Implement task group §5 of openspec/changes/fix-adapter-turn-semantics/tasks.md — persist turn keys, ship the destructive-rescan migration, classify the new kinds, and recompute the metric expectations that moved. Keep working until every §5 task is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/fix-adapter-turn-semantics/proposal.md — why this exists
+3. openspec/changes/fix-adapter-turn-semantics/design.md — fixed decisions A1-A12,
+   including the measured baseline in A1 and the file whitelist in A12
+4. openspec/changes/fix-adapter-turn-semantics/specs/*/spec.md — the delta specs
+5. openspec/changes/fix-adapter-turn-semantics/tasks.md — your task group
+6. openspec/contracts/{data-model,database,nfr}.md, openspec/specs/adapters/spec.md,
+   openspec/specs/trace-model/spec.md, and openspec/gotchas.md before each edit
+
+Field names, enum values, table names, and limits come from those files. Do not write
+any of them from memory.
+
+Context: this change repairs event semantics BEFORE any turn UI is built. Measured on
+the live database 2026-08-07: about 64% of Codex events are misclassified as `system`,
+Codex emits 6,492 phantom `llm` events from usage records, and every Claude tool result
+is emitted as a fabricated user message. design.md A1 has the full measurement.
+
+Rules that apply to every window:
+- Touch only the files in design.md A12. Expected-value updates in existing tests
+  elsewhere are the ONE permitted exception (design A9) — record every such file.
+- No new runtime dependency. The project allows exactly four.
+- Never loosen, widen, or delete an assertion to make a test pass. When a metric value
+  legitimately moved, RECOMPUTE the expectation from the corrected classification and
+  say so in a comment naming this change.
+- Never synthesise a turn key from timestamp proximity, event count, or a guess. A
+  correct `null` beats a wrong key, because a wrong key silently mis-slices every
+  downstream turn.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: a contract conflicts with the design; a source
+format turns out not to carry the signal design A4 assumes; the A1 measurement no longer
+matches the live database; you need a file outside A12; or the token-total invariant in
+A6 cannot be satisfied.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisite: §2, §3, and §4 are all complete and green. If any adapter still lacks its
+turn-key rule, STOP and report — this window's migration assumes the adapters can
+repopulate correct data.
+
+Your scope is tasks.md §5 only (5.1 through 5.12). Files: server/storage/{schema,
+columns,writers,query-engine,overview}.ts with their tests, and
+src/core/{phase-classifier,metrics}.ts with theirs.
+
+The migration (design A10) is destructive for DERIVED data and must be exact:
+  1. ALTER TABLE events ADD COLUMN turn_key TEXT   (idempotent)
+  2. clear events, event_raw, metrics, scan_state — NAMED EXPLICITLY
+  3. preserve sessions, proxy_requests, frida_captures, session_prompt_context
+  4. set detail_loaded = 0 on every session
+  5. record completion so a second run is a no-op
+Failure throws with rebuild guidance. A silent catch is a rework condition.
+
+Task 5.3 is not stylistic. Write the cleared list explicitly, never as "everything except
+the following". Change B adds a session_annotations table holding the user's hand-written
+tags and notes; if this migration is written as an exclusion list, that table gets wiped
+by a migration that predates it, and the user's own data is gone. Enumerate what you
+delete.
+
+Phase classification (design A8): reasoning inherits the phase of its own decision
+cycle's inference event — it is not an activity of its own. compact is `understand`.
+Compaction events are excluded from average tool duration and error rate on BOTH
+computation paths, not just the one you happen to be editing.
+
+Tasks 5.10 and 5.11 are where this window is most likely to go wrong. Repairing 6,400+
+codex events genuinely moves errorRate, avgToolDurationMs, and phase distribution. When
+an existing test fails on a value:
+  - RECOMPUTE the expectation from the corrected classification and comment it with this
+    change's name — that is correct and expected;
+  - do NOT widen a tolerance, relax a comparison, or delete an assertion.
+The one test you may never adjust is the SQL-versus-computeMetrics consistency check at
+tolerance 0.001. If that fails, your two paths disagree — fix the implementation.
+
+Definition of done: §5 boxes checked with evidence, targeted storage and metrics tests
+green, then npm run typecheck && npm run test && npm run lint all green.

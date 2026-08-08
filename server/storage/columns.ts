@@ -10,6 +10,7 @@ export const SESSION_LIST_COLS = [
 export const EVENT_SLIM_COLS = [
   'session_id', 'id', 'sequence', 'kind', 'phase', 'title', 'started_at',
   'duration_ms', 'status', 'actor', 'tool', 'tokens_json', 'error', 'model',
+  'turn_key',
   "CASE WHEN input_summary  IS NOT NULL AND input_summary  != '' THEN 1 ELSE 0 END AS has_input",
   "CASE WHEN output_summary IS NOT NULL AND output_summary != '' THEN 1 ELSE 0 END AS has_output",
 ].join(', ');
@@ -32,4 +33,9 @@ export const PROXY_LIST_COLS = [
   'capture_method', 'ttnet_encrypted', 'model', 'input_tokens', 'output_tokens',
   'parsed_session_id', 'parser_route', 'capture_group_id', 'request_format',
   'CASE WHEN system_prompt_len > 0 THEN 1 ELSE 0 END AS has_system_prompt',
+].join(', ');
+
+/** session_annotations 读取列（contracts/database.md §3.10）。显式列，禁止 SELECT *。 */
+export const SESSION_ANNOTATION_COLS = [
+  'session_id', 'tags_json', 'note', 'updated_at',
 ].join(', ');

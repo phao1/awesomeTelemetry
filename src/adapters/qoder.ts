@@ -94,6 +94,11 @@ export function normalizeQoderSample(
       id: row.id ?? `qoder-${i}`,
       sessionId,
       sequence: 0,
+      // fix-adapter-turn-semantics A4 qoder 行：fixture 中每条记录只有各自唯一的
+      // row.id，没有任何字段把一次 inference 与它触发的工具活动分组，也没有 round /
+      // cycle 标记 —— 源格式不携带边界信号。错误的 key 会静默切碎整条轨迹，
+      // 诚实的 null 让消费方回退并声明（A3 规则 4）。
+      turnKey: null,
       kind,
       phase: 'understand',
       title: titleFromText(row.command ?? (text !== '' ? text : (tool ?? type))),
@@ -139,7 +144,13 @@ export function normalizeQoderSample(
     // qoder.ts:65 已按相邻时间戳算 durationMs（REQ-008）
     durationSource: 'derived' as const,
   };
-  return { session, events: classified, tokenSemantics: semantics };
+  return {
+    session,
+    events: classified,
+    tokenSemantics: semantics,
+    // fix-adapter-turn-semantics A5：qoder fixture 无边界信号，turnKey 全为 null。
+    turnKeySource: 'unavailable',
+  };
 }
 
 export const qoderAdapter: Adapter<{ id?: string; title?: string }, QoderRawRow> = {

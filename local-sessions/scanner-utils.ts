@@ -486,6 +486,7 @@ export function buildIndexEntry(
     detailLoaded: false,
     mergeGroupId: null,
     hasSystemPrompt: false,
+    tags: [],
   };
 }
 
@@ -517,6 +518,7 @@ export function jsonlIndexEntry(
     detailLoaded: false,
     mergeGroupId: null,
     hasSystemPrompt: false,
+    tags: [],
   };
 }
 
@@ -548,6 +550,7 @@ export function sqliteIndexEntry(
     detailLoaded: false,
     mergeGroupId: null,
     hasSystemPrompt: false,
+    tags: [],
   };
 }
 

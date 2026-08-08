@@ -15,7 +15,7 @@ function record(id: string): TraceRecord {
     },
     events: [
       {
-        id: `${id}-e1`, sessionId: id, sequence: 1, kind: 'tool', phase: 'implement',
+        id: `${id}-e1`, sessionId: id, sequence: 1, turnKey: null, kind: 'tool', phase: 'implement',
         title: 'fix', startedAt: '2026-08-01T00:00:00.000Z', durationMs: 100,
         status: 'success', actor: 'assistant', tool: 'Bash',
         tokens: { input: 10, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 2, netInput: 7, total: 40 },
@@ -24,6 +24,7 @@ function record(id: string): TraceRecord {
       },
     ],
     tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+    turnKeySource: 'unavailable',
   };
 }
 

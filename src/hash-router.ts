@@ -7,8 +7,8 @@ import type { SessionRange } from './core/trace-types.js';
 
 export const HASH_VIEWS = ['session', 'agent', 'compare', 'proxy', 'frida', 'mission'] as const;
 
-/** 甘特布局模式（时间比例 / 序列等宽）。 */
-export type TimelineLayout = 'time' | 'sequence';
+/** 色带宽度模式（add-trajectory-inspector D10/D18）。 */
+export type RibbonMode = 'time' | 'token';
 
 export interface HashState {
   view: (typeof HASH_VIEWS)[number];
@@ -20,8 +20,12 @@ export interface HashState {
   q?: string;
   /** 会话列表时间范围（缺省 today）。 */
   time?: SessionRange;
-  /** 甘特布局模式（缺省 time）。 */
-  layout?: TimelineLayout;
+  /** 选中 turn 的索引（整数 ≥ 0，add-trajectory-inspector D18）。 */
+  turn?: number;
+  /** 色带宽度模式（缺省 time，add-trajectory-inspector D10/D18）。 */
+  ribbon?: RibbonMode;
+  /** 会话列表标签过滤（OR 语义，逗号分隔，add-trajectory-inspector D14）。 */
+  tags?: string[];
   left?: string;
   right?: string;
   /** Mission 视图时间窗（REQ-027：#/mission?range=7d）。 */
@@ -53,8 +57,15 @@ export function parseHash(hash: string): HashState | null {
       timeRaw === 'today' || timeRaw === '7d' || timeRaw === '30d' || timeRaw === 'all'
         ? (timeRaw as SessionRange)
         : undefined;
-    const layoutRaw = params.get('layout');
-    const layout = layoutRaw === 'sequence' ? 'sequence' : layoutRaw === 'time' ? 'time' : undefined;
+    const turnRaw = params.get('turn');
+    const turn =
+      turnRaw !== null && turnRaw.trim() !== '' && /^\d+$/.test(turnRaw)
+        ? Math.max(0, Number.parseInt(turnRaw, 10))
+        : undefined;
+    const ribbonRaw = params.get('ribbon');
+    const ribbon = ribbonRaw === 'token' ? 'token' : ribbonRaw === 'time' ? 'time' : undefined;
+    // D18：tags 与 provider/status 同构 —— 逗号分隔、非法值整体丢弃。
+    const tags = list('tags');
     const left = params.get('left');
     const right = params.get('right');
     const rangeRaw = params.get('range');
@@ -68,7 +79,9 @@ export function parseHash(hash: string): HashState | null {
       ...(status !== undefined ? { status } : {}),
       ...(q !== null && q !== '' ? { q } : {}),
       ...(time !== undefined ? { time } : {}),
-      ...(layout !== undefined ? { layout } : {}),
+      ...(turn !== undefined ? { turn } : {}),
+      ...(ribbon !== undefined ? { ribbon } : {}),
+      ...(tags !== undefined && tags.length > 0 ? { tags } : {}),
       ...(left !== null ? { left } : {}),
       ...(right !== null ? { right } : {}),
       ...(range !== undefined ? { range } : {}),
@@ -98,8 +111,14 @@ export function serializeHash(state: HashState): string {
   if (state.time !== undefined) {
     params.set('time', state.time);
   }
-  if (state.layout !== undefined) {
-    params.set('layout', state.layout);
+  if (state.turn !== undefined) {
+    params.set('turn', String(state.turn));
+  }
+  if (state.ribbon !== undefined) {
+    params.set('ribbon', state.ribbon);
+  }
+  if (state.tags !== undefined && state.tags.length > 0) {
+    params.set('tags', state.tags.join(','));
   }
   if (state.left !== undefined) {
     params.set('left', state.left);

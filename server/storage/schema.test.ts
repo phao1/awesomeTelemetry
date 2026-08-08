@@ -26,6 +26,7 @@ const EXPECTED_TABLES = [
   'proxy_requests',
   'frida_captures',
   'session_prompt_context',
+  'session_annotations',
 ];
 
 const EXPECTED_INDEXES = [
@@ -50,6 +51,7 @@ const EXPECTED_INDEXES = [
   'idx_frida_captured_at',
   'idx_frida_session',
   'idx_frida_capture_session',
+  'idx_session_annotations_updated',
 ];
 
 /** v5 的 proxy_requests DDL（v6 迁移前形态，无 capture_group_id / request_format）。 */
@@ -297,11 +299,14 @@ describe('REQ-003 建库幂等', () => {
     }
     const meta = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as { value: string };
     expect(meta.value).toBe(String(SCHEMA_VERSION));
-    // 非破坏性：旧行仍在，calc_version 保持 3（由读取侧触发重算回填）
+    // fix-adapter-turn-semantics A10：v3 走完整迁移链到 v7，末尾的 v6→v7 是
+    // **破坏性**重分类重扫——metrics 等四个派生表被显式清空，旧行不再保留。
+    // v3→v4 的 ADD COLUMN 本身仍是非破坏性的；「旧行保留」的旧期望被 v7 的
+    // 设计取代（本 change 的 5.10：期望值按新口径重算）。
     const row = db
       .prepare('SELECT session_id, total_steps, calc_version, llm_call_count FROM metrics WHERE session_id = ?')
-      .get('s1') as { session_id: string; total_steps: number; calc_version: number; llm_call_count: number };
-    expect(row).toEqual({ session_id: 's1', total_steps: 10, calc_version: 3, llm_call_count: 0 });
+      .get('s1');
+    expect(row).toBeUndefined();
     // 幂等：重复 initSchema 不报错
     expect(() => initSchema(db)).not.toThrow();
     db.close();
@@ -463,6 +468,362 @@ describe('REQ-003 建库幂等', () => {
       duration_source: string;
     };
     expect(row).toEqual({ id: 's1', cost_source: 'unknown', duration_source: 'unknown' });
+    db.close();
+  });
+});
+
+describe('REQ-003 v6 → v7 破坏性重分类迁移（fix-adapter-turn-semantics A10）', () => {
+  /** 把 v7 新库降级成 v6 形态：events 去掉 turn_key，_meta 置 6。 */
+  function downgradeToV6(db: Db): void {
+    db.exec(`
+      ALTER TABLE events RENAME TO events_v7;
+      CREATE TABLE events (
+        session_id     TEXT    NOT NULL,
+        id             TEXT    NOT NULL,
+        sequence       INTEGER NOT NULL,
+        kind           TEXT    NOT NULL,
+        phase          TEXT    NOT NULL,
+        title          TEXT    NOT NULL DEFAULT '',
+        started_at     TEXT    NOT NULL,
+        duration_ms    INTEGER NOT NULL DEFAULT 0,
+        status         TEXT    NOT NULL DEFAULT 'unknown',
+        actor          TEXT    NOT NULL DEFAULT '',
+        tool           TEXT,
+        input_summary  TEXT,
+        output_summary TEXT,
+        tokens_json    TEXT,
+        error          TEXT,
+        model          TEXT,
+        content_hash   TEXT    NOT NULL DEFAULT '',
+        input_len      INTEGER NOT NULL DEFAULT 0,
+        output_len     INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (session_id, id)
+      ) WITHOUT ROWID;
+      INSERT INTO events
+        (session_id, id, sequence, kind, phase, title, started_at, duration_ms,
+         status, actor, tool, input_summary, output_summary, tokens_json, error,
+         model, content_hash, input_len, output_len)
+        SELECT session_id, id, sequence, kind, phase, title, started_at, duration_ms,
+               status, actor, tool, input_summary, output_summary, tokens_json, error,
+               model, content_hash, input_len, output_len
+          FROM events_v7;
+      DROP TABLE events_v7;
+    `);
+    db.prepare("UPDATE _meta SET value = '6' WHERE key = 'schema_version'").run();
+  }
+
+  function countRows(db: Db, table: string): number {
+    return (db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c;
+  }
+
+  it('v7 新库直建 turn_key 列，schema_version = 7', () => {
+    const db = createDb(join(tempDir(), 'fresh-v7.sqlite'));
+    initSchema(db);
+
+    const cols = db.prepare('PRAGMA table_info(events)').all() as Array<{ name: string }>;
+    expect(cols.some((c) => c.name === 'turn_key')).toBe(true);
+    const meta = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
+      value: string;
+    };
+    expect(meta.value).toBe(String(SCHEMA_VERSION));
+    db.close();
+  });
+
+  it('v6 升级：只清空四个派生表、保留四个表、重置 detail_loaded、重复 init 为 no-op', () => {
+    const db = createDb(join(tempDir(), 'migrate-v6-to-v7.sqlite'));
+    initSchema(db);
+    downgradeToV6(db);
+
+    // 四个派生表与四个保留表各写 1 行；会话 detail_loaded = 1
+    db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, source_path, detail_loaded)
+       VALUES ('s1', 'codex', 'Codex', 't', '2026-08-01T00:00:00.000Z', '2026-08-01T00:01:00.000Z', '/tmp/x.jsonl', 1)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO events (session_id, id, sequence, kind, phase, title, started_at, status, actor, tool, content_hash)
+       VALUES ('s1', 'e1', 1, 'llm', 'implement', 't', '2026-08-01T00:00:00.000Z', 'success', 'assistant', NULL, '')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO event_raw (session_id, event_id, raw) VALUES ('s1', 'e1', 'raw')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO metrics (session_id, total_steps, calc_version) VALUES ('s1', 3, 4)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO scan_state (source_path, provider, session_id, file_size, file_mtime_ms, content_hash, byte_offset, last_scan_at, event_count)
+       VALUES ('/tmp/x.jsonl', 'codex', 's1', 100, 1000, 'h', 0, '2026-08-01T00:00:00.000Z', 1)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO proxy_requests (request_id, method, url, hostname, started_at)
+       VALUES ('r1', 'POST', 'https://h', 'h', '2026-08-01T00:00:00.000Z')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO frida_captures (pid, captured_at, capture_type, json_data)
+       VALUES (1, '2026-08-01T00:00:00.000Z', 'x', '{}')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO session_prompt_context (session_id, provider, source, completeness, captured_at)
+       VALUES ('s1', 'trae', 'trae_db', 'dynamic_only', '2026-08-01T00:00:00.000Z')`,
+    ).run();
+
+    initSchema(db); // 触发 v6→v7 迁移
+
+    // 5.3：被清空的表逐一具名——四个派生表必须为空
+    for (const table of ['events', 'event_raw', 'metrics', 'scan_state']) {
+      expect(countRows(db, table), `${table} 应被迁移清空`).toBe(0);
+    }
+    // 保留表原样保留
+    for (const table of ['sessions', 'proxy_requests', 'frida_captures', 'session_prompt_context']) {
+      expect(countRows(db, table), `${table} 应保留`).toBe(1);
+    }
+    // 每个会话 detail_loaded 重置为 0 → 下次打开触发重扫
+    const detail = db
+      .prepare('SELECT detail_loaded FROM sessions WHERE id = ?')
+      .get('s1') as { detail_loaded: number };
+    expect(detail.detail_loaded).toBe(0);
+    // 版本与列到位
+    const meta = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
+      value: string;
+    };
+    expect(meta.value).toBe(String(SCHEMA_VERSION));
+    const cols = db.prepare('PRAGMA table_info(events)').all() as Array<{ name: string }>;
+    expect(cols.some((c) => c.name === 'turn_key')).toBe(true);
+
+    // 重复 init：no-op，不再清第二次（detail_loaded 不被重置、保留表不被再清）
+    db.prepare(
+      `INSERT INTO proxy_requests (request_id, method, url, hostname, started_at)
+       VALUES ('r2', 'POST', 'https://h', 'h', '2026-08-01T00:00:00.000Z')`,
+    ).run();
+    db.prepare("UPDATE sessions SET detail_loaded = 1 WHERE id = 's1'").run();
+    expect(() => initSchema(db)).not.toThrow();
+    const preserved = db
+      .prepare('SELECT detail_loaded FROM sessions WHERE id = ?')
+      .get('s1') as { detail_loaded: number };
+    expect(preserved.detail_loaded).toBe(1);
+    expect(countRows(db, 'proxy_requests')).toBe(2);
+    db.close();
+  });
+
+  it('v6 迁移失败：抛带重建指引的错误，不静默吞掉', () => {
+    const db = createDb(join(tempDir(), 'migrate-fail.sqlite'));
+    initSchema(db);
+    downgradeToV6(db);
+    db.prepare(
+      `INSERT INTO events (session_id, id, sequence, kind, phase, title, started_at, status, actor, tool, content_hash)
+       VALUES ('s1', 'e1', 1, 'llm', 'implement', 't', '2026-08-01T00:00:00.000Z', 'success', 'assistant', NULL, '')`,
+    ).run();
+    // 用触发器让 DELETE FROM events 失败，模拟迁移中断
+    db.exec(
+      "CREATE TRIGGER forbid_events_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT, 'blocked-by-test'); END;",
+    );
+
+    let message = '';
+    try {
+      initSchema(db);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain('blocked-by-test'); // 原错误未被静默吞掉
+    expect(message).toContain('delete it and rescan'); // 重建指引
+    db.close();
+  });
+});
+
+describe('REQ-003 schema v8 —— session_annotations（add-trajectory-inspector D15）', () => {
+  function countRows(db: Db, table: string): number {
+    return (db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c;
+  }
+
+  function metaVersion(db: Db): string {
+    return (db
+      .prepare("SELECT value FROM _meta WHERE key = 'schema_version'")
+      .get() as { value: string }).value;
+  }
+
+  /** 把 v8 新库降级成 v7 形态：去掉 session_annotations 表（依赖索引一并消失），_meta 置 7。 */
+  function downgradeToV7(db: Db): void {
+    db.exec('DROP TABLE IF EXISTS session_annotations');
+    db.prepare("UPDATE _meta SET value = '7' WHERE key = 'schema_version'").run();
+  }
+
+  /** 把 v8 新库降级成 v6 形态：去掉 turn_key 与注解表，_meta 置 6。 */
+  function downgradeToV6(db: Db): void {
+    db.exec(`
+      ALTER TABLE events RENAME TO events_v7;
+      CREATE TABLE events (
+        session_id     TEXT    NOT NULL,
+        id             TEXT    NOT NULL,
+        sequence       INTEGER NOT NULL,
+        kind           TEXT    NOT NULL,
+        phase          TEXT    NOT NULL,
+        title          TEXT    NOT NULL DEFAULT '',
+        started_at     TEXT    NOT NULL,
+        duration_ms    INTEGER NOT NULL DEFAULT 0,
+        status         TEXT    NOT NULL DEFAULT 'unknown',
+        actor          TEXT    NOT NULL DEFAULT '',
+        tool           TEXT,
+        input_summary  TEXT,
+        output_summary TEXT,
+        tokens_json    TEXT,
+        error          TEXT,
+        model          TEXT,
+        content_hash   TEXT    NOT NULL DEFAULT '',
+        input_len      INTEGER NOT NULL DEFAULT 0,
+        output_len     INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (session_id, id)
+      ) WITHOUT ROWID;
+      INSERT INTO events
+        (session_id, id, sequence, kind, phase, title, started_at, duration_ms,
+         status, actor, tool, input_summary, output_summary, tokens_json, error,
+         model, content_hash, input_len, output_len)
+        SELECT session_id, id, sequence, kind, phase, title, started_at, duration_ms,
+               status, actor, tool, input_summary, output_summary, tokens_json, error,
+               model, content_hash, input_len, output_len
+          FROM events_v7;
+      DROP TABLE events_v7;
+    `);
+    db.exec('DROP TABLE IF EXISTS session_annotations');
+    db.prepare("UPDATE _meta SET value = '6' WHERE key = 'schema_version'").run();
+  }
+
+  it('v8 新库直建 session_annotations 表与索引，schema_version = 8', () => {
+    const db = createDb(join(tempDir(), 'fresh-v8.sqlite'));
+    initSchema(db);
+
+    const table = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_annotations'")
+      .get();
+    expect(table).toBeTruthy();
+    const index = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_session_annotations_updated'")
+      .get();
+    expect(index).toBeTruthy();
+    // 表结构逐字采用 D15
+    const cols = db.prepare('PRAGMA table_info(session_annotations)').all() as Array<{
+      name: string;
+      notnull: number;
+      pk: number;
+      dflt_value: string | null;
+    }>;
+    const byName = new Map(cols.map((c) => [c.name, c]));
+    expect(byName.get('session_id')?.pk).toBe(1);
+    expect(byName.get('tags_json')?.notnull).toBe(1);
+    expect(byName.get('tags_json')?.dflt_value).toBe("'[]'");
+    expect(byName.get('updated_at')?.notnull).toBe(1);
+    expect(metaVersion(db)).toBe(String(SCHEMA_VERSION));
+    db.close();
+  });
+
+  it('v7 升级：只增表与索引、旧行保留、重复 init 为 no-op', () => {
+    const db = createDb(join(tempDir(), 'migrate-v7-to-v8.sqlite'));
+    initSchema(db);
+    downgradeToV7(db);
+    db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, status, source_path)
+       VALUES ('s1', 'codex', 'Codex', 'old', '2026-08-01T00:00:00.000Z', '2026-08-01T00:01:00.000Z', 'success', '/tmp/x.jsonl')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO proxy_requests (request_id, method, url, hostname, started_at)
+       VALUES ('r1', 'POST', 'https://h', 'h', '2026-08-01T00:00:00.000Z')`,
+    ).run();
+
+    initSchema(db); // 触发 v7→v8 迁移
+
+    const table = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_annotations'")
+      .get();
+    expect(table).toBeTruthy();
+    const index = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_session_annotations_updated'")
+      .get();
+    expect(index).toBeTruthy();
+    expect(metaVersion(db)).toBe(String(SCHEMA_VERSION));
+    // 旧行保留（只增不改）
+    const session = db.prepare('SELECT id FROM sessions WHERE id = ?').get('s1');
+    expect(session).toBeTruthy();
+    expect(countRows(db, 'proxy_requests')).toBe(1);
+    // 幂等：重复 init 不报错、版本不变、注解表仍在
+    expect(() => initSchema(db)).not.toThrow();
+    expect(metaVersion(db)).toBe(String(SCHEMA_VERSION));
+    expect(
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_annotations'")
+        .get(),
+    ).toBeTruthy();
+    db.close();
+  });
+
+  it('任务 2.4：Change A 的 v6→v7 破坏性迁移在已含注解行的库上运行，注解行保留', () => {
+    const db = createDb(join(tempDir(), 'preserve-annotations.sqlite'));
+    initSchema(db);
+    downgradeToV6(db);
+    // 模拟“已加了注解表”的库：Change A 的删除清单按名枚举
+    // （events / event_raw / metrics / scan_state），清单外的表默认保留。
+    db.exec(`
+      CREATE TABLE session_annotations (
+        session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+        tags_json  TEXT NOT NULL DEFAULT '[]',
+        note       TEXT,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_annotations_updated
+        ON session_annotations(updated_at);
+    `);
+    db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, status, source_path, detail_loaded)
+       VALUES ('s1', 'codex', 'Codex', 't', '2026-08-01T00:00:00.000Z', '2026-08-01T00:01:00.000Z', 'success', '/tmp/x.jsonl', 1)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO events (session_id, id, sequence, kind, phase, title, started_at, status, actor, tool, content_hash)
+       VALUES ('s1', 'e1', 1, 'llm', 'implement', 't', '2026-08-01T00:00:00.000Z', 'success', 'assistant', NULL, '')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO session_annotations (session_id, tags_json, note, updated_at)
+       VALUES ('s1', ?, 'note-1', '2026-08-08T00:00:00.000Z')`,
+    ).run(JSON.stringify(['perf', 'refactor']));
+
+    initSchema(db); // 触发 v6→v7 破坏性迁移 + v7→v8 幂等迁移
+
+    // 注解行原样保留 —— Change A 的删除清单没有误伤本表
+    const rows = db
+      .prepare('SELECT session_id, tags_json, note, updated_at FROM session_annotations')
+      .all() as Array<{ session_id: string; tags_json: string; note: string; updated_at: string }>;
+    expect(rows).toEqual([
+      {
+        session_id: 's1',
+        tags_json: JSON.stringify(['perf', 'refactor']),
+        note: 'note-1',
+        updated_at: '2026-08-08T00:00:00.000Z',
+      },
+    ]);
+    // 迁移语义未被削弱：四个派生表仍被清空
+    for (const table of ['events', 'event_raw', 'metrics', 'scan_state']) {
+      expect(countRows(db, table), `${table} 应被迁移清空`).toBe(0);
+    }
+    expect(metaVersion(db)).toBe(String(SCHEMA_VERSION));
+    db.close();
+  });
+
+  it('v7→v8 迁移失败：抛带重建指引的错误，不静默吞掉', () => {
+    const db = createDb(join(tempDir(), 'migrate-v8-fail.sqlite'));
+    initSchema(db);
+    downgradeToV7(db);
+    // 用同名 VIEW 占住 session_annotations：CREATE TABLE IF NOT EXISTS 变 no-op，
+    // 迁移循环里的 CREATE INDEX 必然失败（views may not be indexed），
+    // 模拟迁移中断且验证失败不被静默吞掉。
+    db.exec(
+      'CREATE VIEW session_annotations AS SELECT 1 AS x',
+    );
+
+    let message = '';
+    try {
+      initSchema(db);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain('v7→v8 migration failed');
+    expect(message).toContain('views may not be indexed'); // 原错误未被静默吞掉
+    expect(message).toContain('delete it and rescan'); // 重建指引
     db.close();
   });
 });

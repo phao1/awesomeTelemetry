@@ -68,4 +68,20 @@ describe('CodeAgent adapter（REQ-004/G9.2）', () => {
     expect(ev.raw).toContain('"text"');
     expect(r.events[1]?.outputSummary).not.toContain(ev.raw ?? '');
   });
+
+  // fix-adapter-turn-semantics A4 codeagent 行：CodeAgent 3.0 复用 claude 格式，
+  // 边界信号 = assistant 行的 message.id（A4 claude 行）。规则经
+  // normalizeClaudeSample 填充后由本 adapter 继承，fixture 派生、无活数据背书。
+  it('fix-adapter-turn-semantics A4：继承 claude 的 message.id 规则并声明 provenance', () => {
+    const r = codeAgentAdapter.normalize(
+      { sourceAgent: 'CodeAgent', session: {}, events: codeagentFixture.events },
+      SRC,
+    );
+    expect(r.turnKeySource).toBe('message_identity');
+    // snapshot 行被 drop；fixture 的真实用户行承接其后 assistant 消息的 id（A4 claude 行）
+    // A3 rule 3（§6 验证修复）：claude 系 message.id 加会话 id 前缀。
+    expect(r.events.map((e) => e.turnKey)).toEqual([
+      `${r.session.id}:a1`, `${r.session.id}:a1`,
+    ]);
+  });
 });

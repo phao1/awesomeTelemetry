@@ -262,6 +262,9 @@ export function normalizeTraeSample(
       id: turn.id,
       sessionId: turn.sessionId ?? record.id ?? '',
       sequence: 0,
+      // fix-adapter-turn-semantics A4 trae 行：fixture 的每条 turn 自带 id ——
+      // 这是源格式自己的 message/round 标识，直接用（fixture 派生，无活数据背书）。
+      turnKey: turn.id ?? null,
       kind: kindOfTurn(type, turn.toolName),
       phase: type === 'bash' && turn.command !== undefined && TEST_CMD.test(turn.command) ? 'verify' : phase,
       title: titleFromText(turn.content ?? turn.command ?? type),
@@ -336,7 +339,13 @@ export function normalizeTraeSample(
     // trae.ts:100 已按相邻时间戳算 durationMs，语义同 deriveDurations
     durationSource: 'derived' as const,
   };
-  return { session, events: deduped, tokenSemantics: semantics };
+  return {
+    session,
+    events: deduped,
+    tokenSemantics: semantics,
+    // fix-adapter-turn-semantics A5：按源 turn 自身的 id 分组（A4 trae 行）。
+    turnKeySource: 'message_identity',
+  };
 }
 
 export const traeAdapter: Adapter<TraeRecordShape['session'], TraeTurn> = {

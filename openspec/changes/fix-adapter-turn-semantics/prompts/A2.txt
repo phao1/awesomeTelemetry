@@ -1,0 +1,107 @@
+/goal Implement task group §2 of openspec/changes/fix-adapter-turn-semantics/tasks.md — repair Codex event classification and add its turn keys. Keep working until every §2 task is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/fix-adapter-turn-semantics/proposal.md — why this exists
+3. openspec/changes/fix-adapter-turn-semantics/design.md — fixed decisions A1-A12,
+   including the measured baseline in A1 and the file whitelist in A12
+4. openspec/changes/fix-adapter-turn-semantics/specs/*/spec.md — the delta specs
+5. openspec/changes/fix-adapter-turn-semantics/tasks.md — your task group
+6. openspec/contracts/{data-model,database,nfr}.md, openspec/specs/adapters/spec.md,
+   openspec/specs/trace-model/spec.md, and openspec/gotchas.md before each edit
+
+Field names, enum values, table names, and limits come from those files. Do not write
+any of them from memory.
+
+Context: this change repairs event semantics BEFORE any turn UI is built. Measured on
+the live database 2026-08-07: about 64% of Codex events are misclassified as `system`,
+Codex emits 6,492 phantom `llm` events from usage records, and every Claude tool result
+is emitted as a fabricated user message. design.md A1 has the full measurement.
+
+Rules that apply to every window:
+- Touch only the files in design.md A12. Expected-value updates in existing tests
+  elsewhere are the ONE permitted exception (design A9) — record every such file.
+- No new runtime dependency. The project allows exactly four.
+- Never loosen, widen, or delete an assertion to make a test pass. When a metric value
+  legitimately moved, RECOMPUTE the expectation from the corrected classification and
+  say so in a comment naming this change.
+- Never synthesise a turn key from timestamp proximity, event count, or a guess. A
+  correct `null` beats a wrong key, because a wrong key silently mis-slices every
+  downstream turn.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: a contract conflicts with the design; a source
+format turns out not to carry the signal design A4 assumes; the A1 measurement no longer
+matches the live database; you need a file outside A12; or the token-total invariant in
+A6 cannot be satisfied.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisite: §1 is complete — TraceKind carries `reasoning` and `compact`, and the event
+type carries `turnKey`. If not, STOP and report.
+
+Your scope is tasks.md §2 only (2.1 through 2.16). Files: src/adapters/codex.ts and its
+test, plus src/adapters/helpers.ts if a shared helper is genuinely needed.
+
+Before writing anything, open the real rollout file quoted in design.md A1 and read it end
+to end. It is 48 lines. Every rule below was verified against it, and your fixture in task
+2.14 is built from it.
+
+This adapter is where the damage is concentrated. Live measurement: Codex produces 11,664
+`system` events, of which about 10,700 are actually tool calls, tool outputs, patch
+applications, or reasoning. It also produces 6,492 `llm` events that are `token_count`
+usage records, not messages. design.md A6 has the complete mapping table — implement it
+exactly.
+
+Three things that will decide whether this window succeeds:
+
+1. TOKEN TOTALS MUST NOT MOVE. You are removing 6,492 standalone events whose only
+   content was usage. Their usage must be attached to the decision cycle's assistant
+   event instead. Task 2.7 requires an assertion that per-session aggregated token usage
+   is identical to the pre-repair value, on a fixture whose totals were computed
+   independently of the adapter. If that assertion fails, the attachment is wrong — do
+   not adjust the expected total.
+
+2. PAIR BY CALL ID, NOT ADJACENCY. Live data shows the call event id is
+   `call_00_FUHEa1XZOVIWinblpRnH4144` and its output is the same id with a `:38` suffix.
+   Use that relationship. Adjacency breaks the moment two tools run concurrently.
+
+3. `task_started` IS NOT THE TURN BOUNDARY. This is the trap in this window. It looks
+   like one and an earlier draft of this design used it. Measured: per-session
+   `task_started` counts track user submissions almost exactly (21/24, 2/3, 2/3, 11/12).
+   One session with 411 assistant messages and 724 tool calls carries TWO `task_started`
+   records — segmenting on it would give that session two turns.
+
+   The real boundary is the item stream: a new cycle opens at a `response_item` whose
+   immediately preceding `response_item` was a `function_call_output`. Verified on the A1
+   file: 48 lines yield 9 cycles. The key is the opening item's payload id, `event_msg`
+   records attach to the open cycle, and provenance is `stream_structure` — NOT
+   `native_boundary`, because the boundary is derived from stream shape rather than
+   labelled by the source, and the UI will say so.
+
+Three smaller repairs in the same window, all verified on the A1 file:
+- `response_item/message` with role `developer` or `system` is the SYSTEM PROMPT. It is
+  currently emitted as an assistant reply. Map it to `system`.
+- `event_msg/agent_message` duplicates `response_item/message` where both exist (lines
+  16/17 and 34/35 of the A1 file). Emit one message per cycle, preferring the
+  `response_item`; keep the `event_msg` only when the cycle has no message item.
+- `session_meta` is not an event at all. `turn_context` and `world_state` stay as system
+  events.
+
+Also required: a payload type NOT named in design A6 must still fall through to `system`.
+Task 2.13 wants a test for that — the repair narrows the fallback, it does not remove it.
+
+Definition of done: §2 boxes checked with evidence, targeted adapter tests green, then
+npm run typecheck && npm run test && npm run lint all green.

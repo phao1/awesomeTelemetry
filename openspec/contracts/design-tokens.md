@@ -160,6 +160,41 @@ uppercase letter.
 icons, statuses must have icons, and compare sides must carry `L` / `R`
 markers rather than just blue/orange.
 
+### 2.8 Role colours (add-trajectory-inspector)
+
+Six message-role colour groups for the trajectory surface (design D19). Each
+group has three tiers — `-fg` (text/icon), `-emphasis` (solid background),
+`-subtle` (light background / badge background) — in **both** themes, plus a
+mandatory icon. **Colour never carries the role alone**: every role marker,
+turn badge, and ribbon legend entry pairs the role colour with its icon and
+name (design-system REQ-009).
+
+Each role's `-fg` is fixed by D19 and **reuses an existing product hue**; the
+`-emphasis` and `-subtle` tiers inherit the values of that hue's existing
+group in §2.4 / §2.5, so the palette stays single and no component writes a
+colour literal (REQ-002):
+
+| Role | Prefix | Dark fg / emphasis / subtle | Light fg / emphasis / subtle | Icon | Reuses hue of |
+|------|--------|------------------------------|-------------------------------|------|---------------|
+| system | `--role-system-` | `#f85149` / `#da3633` / `rgba(248,81,73,.15)` | `#d1242f` / `#cf222e` / `rgba(209,36,47,.1)` | `gear` | danger |
+| user | `--role-user-` | `#3fb950` / `#238636` / `rgba(46,160,67,.15)` | `#1a7f37` / `#1f883d` / `rgba(26,127,55,.1)` | `command` | success |
+| assistant | `--role-assistant-` | `#ab7df8` / `#8957e5` / `rgba(163,113,247,.15)` | `#8250df` / `#8250df` / `rgba(130,80,223,.1)` | `message` | done |
+| tool | `--role-tool-` | `#39c5cf` / `#1b7c83` / `rgba(57,197,207,.15)` | `#1b7c83` / `#1b7c83` / `rgba(27,124,131,.1)` | `tool` | phase-understand |
+| reasoning | `--role-reasoning-` | `#8b949e` / `#6e7681` / `rgba(110,118,129,.15)` | `#59636e` / `#6e7681` / `rgba(89,99,110,.1)` | `thought` | neutral |
+| compact | `--role-compact-` | `#d29922` / `#9e6a03` / `rgba(187,128,9,.15)` | `#9a6700` / `#bf8700` / `rgba(154,103,0,.1)` | `chevron-down` | attention |
+
+Plus the ribbon highlight token:
+
+| Token | Dark | Light | Use |
+|-------|------|-------|-----|
+| `--ribbon-active` | `rgba(230,237,243,.28)` | `rgba(31,35,40,.18)` | active segment / two-way highlight on the turn ribbon (D10) |
+
+The source spec's light-only `#F5F5F5` / `#FFFFFF` / `#1A202C` palette and its
+red-for-selection are **not adopted** (deviation C1 / C3): this product is
+dark-first with an equal light theme, and red means failure. Selection on the
+trajectory surface uses the accent group (`--accent-`), never the danger group
+(design-system selection semantics).
+
 ---
 
 ## 3. Typography

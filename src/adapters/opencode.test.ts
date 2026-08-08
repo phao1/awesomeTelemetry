@@ -255,4 +255,37 @@ describe('OpenCode adapter（REQ-005）', () => {
     const otelEvent = r.events.find((e) => (e as unknown as { raw?: string }).raw?.includes('POST /chat'));
     expect(otelEvent?.durationMs).toBe(1000);
   });
+
+  // fix-adapter-turn-semantics A4 opencode 行：fixture 的消息自带 id（边界信号），
+  // key = 源 message id；无活数据背书，规则由 fixture 派生（A1：opencode 仅 15 事件）。
+  it('fix-adapter-turn-semantics A4：turnKey = 源 message id，同一消息的 part 共享', () => {
+    const events = [
+      msg({ id: 'turn-a', role: 'user', content: [{ type: 'text', text: 'q1' }] }),
+      msg({
+        id: 'turn-b',
+        role: 'assistant',
+        content: [
+          { type: 'tool', tool: 'Bash', state: { status: 'completed', title: 'npm test' } },
+          { type: 'text', text: 'done' },
+        ],
+      }),
+    ];
+    const r = normalizeOpenCode(sample(events), SRC);
+    // user 消息 → 'turn-a'；assistant 消息的两个 part → 都 'turn-b'（不按 part 序号拆分）
+    expect(r.events.map((e) => e.turnKey)).toEqual(['turn-a', 'turn-b', 'turn-b']);
+    expect(r.turnKeySource).toBe('message_identity');
+  });
+
+  it('fix-adapter-turn-semantics A4：OTel span 无 message id → turnKey null', () => {
+    const otel: OpenCodeOtelSpan[] = [
+      { name: 'POST /chat', startTime: 1754000000000, endTime: 1754000001000 },
+    ];
+    const r = normalizeOpenCode(
+      { sourceAgent: 'OpenCode', session: opencodeFixture.session, events: [...opencodeFixture.events, ...otel] },
+      SRC,
+    );
+    const otelEvent = r.events.find((e) => (e as unknown as { raw?: string }).raw?.includes('POST /chat'));
+    expect(otelEvent?.turnKey).toBeNull();
+    expect(r.turnKeySource).toBe('message_identity');
+  });
 });

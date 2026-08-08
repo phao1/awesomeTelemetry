@@ -2,12 +2,29 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
-import type { TraceEventSlim } from '../core/trace-types.js';
+import type { TraceEvent, TraceEventRaw, TraceEventSlim, TracePhase, TraceStatus } from '../core/trace-types.js';
 import type { CompareResult } from './compare-types.js';
-import { TraceTimeline } from './TraceTimeline.js';
-import { EventInspector } from './EventInspector.js';
+import { api } from '../api/client.js';
+import { eventDetailCache } from '../cache/caches.js';
+import { useVirtualList } from '../hooks/useVirtualList.js';
+import { ErrorState, Skeleton } from './ui/States.js';
+import { Tabs } from './ui/Tabs.js';
 import { TranscriptModal } from './TranscriptModal.js';
 import { TokenTextModal } from './TokenTextModal.js';
+import {
+  IconCancelled,
+  IconDebug,
+  IconError,
+  IconImplement,
+  IconPlan,
+  IconReport,
+  IconRunning,
+  IconSuccess,
+  IconUnderstand,
+  IconVerify,
+  IconWarning,
+  type IconProps,
+} from './icons/index.js';
 
 export type CompareSide = 'left' | 'right';
 
@@ -17,6 +34,25 @@ export const COMPARE_TIMELINE_PAGE_SIZE = 200;
 export const FPS_FALLBACK_THRESHOLD = 50;
 /** REQ-115：一次帧率采样窗口（ms）。 */
 const FPS_SAMPLE_MS = 320;
+
+const ROW_HEIGHT = 28; // --row-sm（与虚拟滚动 itemHeight 一致的常量）
+
+const PHASE_ICON: Record<TracePhase, (props: IconProps) => React.JSX.Element> = {
+  understand: IconUnderstand,
+  plan: IconPlan,
+  implement: IconImplement,
+  debug: IconDebug,
+  verify: IconVerify,
+  report: IconReport,
+};
+
+const STATUS_ICON: Record<TraceStatus, (props: IconProps) => React.JSX.Element> = {
+  success: IconSuccess,
+  error: IconError,
+  running: IconRunning,
+  cancelled: IconCancelled,
+  unknown: IconWarning,
+};
 
 /** REQ-115：由 rAF 时间戳序列算平均 FPS。样本不足或时间跨度为 0 时返回 null。 */
 export function measureFps(frameTimes: number[]): number | null {
@@ -75,6 +111,297 @@ function useScrollFpsGuard(
   return degraded;
 }
 
+function fmtDuration(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
+
+function fmtOffset(ms: number): string {
+  if (ms <= 0) {
+    return '0s';
+  }
+  const seconds = ms / 1000;
+  if (seconds >= 60) {
+    return `${Math.floor(seconds / 60)}m`;
+  }
+  return `${Math.round(seconds)}s`;
+}
+
+/**
+ * 自包含紧凑时间线（建议 8 / REQ-114/115）。
+ *
+ * 原来的实现复用 `TraceTimeline`（时间/序列双模式甘特）+ `EventInspector`。
+ * `TraceTimeline` / `EventInspector` 已随 add-trajectory-inspector 删除
+ * （tasks §6.1，orchestrator 授权的最小化 compare 改造），本组件改为内置的
+ * 无依赖迷你时间线：相同的 `.gantt-wrap` / `.timeline-mode` / `.gantt-row`
+ * 结构，虚拟滚动 + FPS 回退分页语义保持不变。
+ */
+export interface CompareMiniTimelineProps {
+  events: TraceEventSlim[];
+  total: number;
+  locale: Locale;
+  mode: 'time' | 'sequence';
+  onModeChange?: (mode: 'time' | 'sequence') => void;
+  selectedEventId?: string | null;
+  onSelectEvent?: (event: TraceEventSlim) => void;
+  /** KPI drilldown 等嵌入场景：无工具栏、无选择、无虚拟滚动。 */
+  compact?: boolean;
+}
+
+export function CompareMiniTimeline({
+  events,
+  total,
+  locale,
+  mode,
+  onModeChange,
+  selectedEventId = null,
+  onSelectEvent,
+  compact = false,
+}: CompareMiniTimelineProps): React.JSX.Element {
+  const maxDuration = useMemo(
+    () => events.reduce((max, e) => Math.max(max, e.durationMs), 0),
+    [events],
+  );
+  const { containerRef, range, onScroll } = useVirtualList(events.length, ROW_HEIGHT);
+  const shown = compact ? events : events.slice(range.startIndex, range.endIndex);
+  const offsetY = compact ? 0 : range.startIndex * ROW_HEIGHT;
+  const totalHeight = compact ? 0 : events.length * ROW_HEIGHT;
+
+  return (
+    <div className="gantt-wrap">
+      {!compact && (
+        <div className="timeline-mode" role="group" aria-label={t('timeline.mode', locale)}>
+          <button
+            type="button"
+            className={`timeline-chip ${mode === 'time' ? 'timeline-chip-on' : ''}`}
+            aria-pressed={mode === 'time'}
+            onClick={() => onModeChange?.('time')}
+          >
+            {t('timeline.modeTime', locale)}
+          </button>
+          <button
+            type="button"
+            className={`timeline-chip ${mode === 'sequence' ? 'timeline-chip-on' : ''}`}
+            aria-pressed={mode === 'sequence'}
+            onClick={() => onModeChange?.('sequence')}
+          >
+            {t('timeline.modeSequence', locale)}
+          </button>
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        className="compare-timeline-scroll"
+        style={{ position: 'relative', overflowY: 'auto', flex: 1, minHeight: 0 }}
+        onScroll={onScroll}
+      >
+        <div style={{ height: compact ? 'auto' : totalHeight, position: 'relative' }}>
+          <div style={compact ? undefined : { transform: `translateY(${offsetY}px)` }}>
+            {shown.map((event) => {
+              const PhaseIcon = PHASE_ICON[event.phase];
+              const StatusIcon = STATUS_ICON[event.status];
+              const selected = event.id === selectedEventId;
+              const barWidth =
+                mode === 'sequence' || maxDuration === 0
+                  ? '100%'
+                  : `${Math.max(0, (event.durationMs / maxDuration) * 100)}%`;
+              return (
+                <div
+                  key={event.id}
+                  className={`gantt-row ${selected ? 'gantt-row-on' : ''}`}
+                  data-side-row
+                  role="option"
+                  aria-selected={selected}
+                  tabIndex={0}
+                  onClick={() => onSelectEvent?.(event)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelectEvent?.(event);
+                    }
+                  }}
+                >
+                  <span className="mono gantt-seq">#{event.sequence}</span>
+                  <PhaseIcon
+                    className={`timeline-phase-${event.phase}`}
+                    size={12}
+                    label={t(`phase.${event.phase}`, locale)}
+                  />
+                  <div className="timeline-track" aria-hidden="true">
+                    <div
+                      className="timeline-bar"
+                      style={{ width: barWidth, background: `var(--phase-${event.phase})` }}
+                    />
+                  </div>
+                  <span className="gantt-title" title={event.title}>
+                    {event.title}
+                  </span>
+                  <span className="mono gantt-time">{fmtOffset(event.durationMs)}</span>
+                  <span className="mono gantt-status">{fmtDuration(event.durationMs)}</span>
+                  <StatusIcon size={12} label={t(`status.${event.status}`, locale)} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      {!compact && shown.length < total && <p className="hint">…</p>}
+    </div>
+  );
+}
+
+type PanelTab = 'summary' | 'raw';
+
+/**
+ * 替换被删除 `EventInspector` 的 compact 事件面板（REQ-114）：
+ * Summary + Raw 两个页签，正文按需拉取（eventDetailCache 100 项 LRU）。
+ */
+function CompareEventPanel({
+  sessionKey,
+  event,
+  locale,
+  onClose,
+  onOpenTranscript,
+  onOpenTokens,
+}: {
+  sessionKey: string;
+  event: TraceEventSlim;
+  locale: Locale;
+  onClose: () => void;
+  onOpenTranscript: (event: TraceEventSlim) => void;
+  onOpenTokens: (event: TraceEventSlim) => void;
+}): React.JSX.Element {
+  const [tab, setTab] = useState<PanelTab>('summary');
+  const [detail, setDetail] = useState<TraceEvent | TraceEventRaw | null>(null);
+  const [raw, setRaw] = useState<string | null>(null);
+  const [rawLoading, setRawLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cacheKey = `${sessionKey}:${event.id}`;
+
+  useEffect(() => {
+    setDetail(null);
+    setRaw(null);
+    setError(null);
+    const cached = eventDetailCache.get(cacheKey);
+    if (cached !== undefined) {
+      setDetail(cached);
+      return;
+    }
+    void api
+      .eventDetail(sessionKey, event.id)
+      .then((loaded) => {
+        eventDetailCache.set(cacheKey, loaded);
+        setDetail(loaded);
+      })
+      .catch((err: unknown) => {
+        console.error('[compare] 事件正文加载失败:', err);
+        setError(err instanceof Error ? err.message : String(err));
+      });
+  }, [sessionKey, event.id, cacheKey]);
+
+  useEffect(() => {
+    if (tab !== 'raw' || event === null || raw !== null || rawLoading) {
+      return;
+    }
+    setRawLoading(true);
+    void api
+      .eventDetail(sessionKey, event.id, true)
+      .then((loaded) => {
+        setRaw((loaded as TraceEventRaw).raw ?? null);
+        setRawLoading(false);
+      })
+      .catch((err: unknown) => {
+        console.error('[compare] raw 拉取失败:', err);
+        setRawLoading(false);
+        setError(err instanceof Error ? err.message : String(err));
+      });
+  }, [tab, raw, rawLoading, sessionKey, event.id]);
+
+  const retry = (): void => {
+    setError(null);
+    setDetail(null);
+    void api
+      .eventDetail(sessionKey, event.id)
+      .then((loaded) => {
+        eventDetailCache.set(cacheKey, loaded);
+        setDetail(loaded);
+      })
+      .catch((err: unknown) => {
+        console.error('[compare] 重试失败:', err);
+        setError(err instanceof Error ? err.message : String(err));
+      });
+  };
+
+  const tabs: Array<{ id: PanelTab; label: string }> = [
+    { id: 'summary', label: 'Summary' },
+    { id: 'raw', label: t('event.raw', locale) },
+  ];
+
+  return (
+    <div className="compare-event-panel">
+      <header className="inspector-header">
+        <span className="mono">#{event.sequence}</span>
+        <span className="compare-event-panel-title" title={event.title}>
+          {event.title}
+        </span>
+        <button
+          type="button"
+          className="ui-icon-btn ui-btn-sm"
+          aria-label={t('a11y.close', locale)}
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </header>
+      <div className="inspector-tabs">
+        <Tabs
+          variant="underline"
+          activeId={tab}
+          onChange={(id) => setTab(id as PanelTab)}
+          items={tabs}
+        />
+      </div>
+      <div className="inspector-body">
+        {error !== null && (
+          <ErrorState code="EVENT_DETAIL_FAILED" message={error} onRetry={retry} />
+        )}
+        {error === null && detail === null && <Skeleton variant="block" count={2} />}
+        {error === null && detail !== null && tab === 'summary' && (
+          <div>
+            <p className="meta">
+              {event.kind} · {event.phase} · {event.status} · {event.durationMs}ms
+            </p>
+            <p>
+              {event.actor} · {event.tool ?? '—'}
+            </p>
+            {event.error !== null && (
+              <section>
+                <h5>{t('event.error', locale)}</h5>
+                <pre className="mono">{event.error}</pre>
+              </section>
+            )}
+            <div className="inspector-actions">
+              <button type="button" className="btn" onClick={() => onOpenTranscript(event)}>
+                {t('transcript.title', locale)}
+              </button>
+              <button type="button" className="btn" onClick={() => onOpenTokens(event)}>
+                {t('token.title', locale)}
+              </button>
+            </div>
+          </div>
+        )}
+        {error === null && tab === 'raw' &&
+          (rawLoading ? (
+            <Skeleton variant="block" count={1} />
+          ) : raw === null ? (
+            <p className="hint">{t('common.empty', locale)}</p>
+          ) : (
+            <pre className="mono">{raw}</pre>
+          ))}
+      </div>
+    </div>
+  );
+}
+
 export interface CompareTimelineProps {
   result: CompareResult;
   locale: Locale;
@@ -85,8 +412,8 @@ export interface CompareTimelineProps {
 /**
  * 建议 8 + REQ-114/115：Compare 时间线。
  * - 左右各自独立的时间/序列模式切换
- * - 事件可点选 → 右侧 compact Inspector（复用 EventInspector 的 Summary + Raw）
- * - 无 200 事件硬上限：默认虚拟滚动（TraceTimeline 内置），FPS 不达标回退分页
+ * - 事件可点选 → 右侧 compact 事件面板（Summary + Raw）
+ * - 无 200 事件硬上限：默认虚拟滚动，FPS 不达标回退分页
  */
 export function CompareTimeline({
   result,
@@ -160,16 +487,14 @@ export function CompareTimeline({
           </span>
           {' '}{name}
         </h4>
-        <TraceTimeline
+        <CompareMiniTimeline
           events={shown}
           total={total}
-          hasMore={false}
-          onLoadMore={() => undefined}
-          onSelectEvent={(event) => setSelected({ side, event })}
-          selectedEventId={selected?.event.id ?? null}
           locale={locale}
-          layoutMode={mode}
-          onLayoutModeChange={onModeChange}
+          mode={mode}
+          onModeChange={onModeChange}
+          selectedEventId={selected?.event.id ?? null}
+          onSelectEvent={(event) => setSelected({ side, event })}
         />
         <footer className="compare-timeline-foot">
           <span className="mono compare-timeline-count">
@@ -225,21 +550,13 @@ export function CompareTimeline({
         {renderSide('right', rightEvents, result.right.eventTotal, rightName, rightMode, setRightMode)}
         {selected !== null && selectedSession !== null && (
           <div className="timeline-inspector-panel" role="complementary">
-            <EventInspector
+            <CompareEventPanel
               sessionKey={selectedSession.id}
               event={selected.event}
               locale={locale}
-              fontPx={13}
-              width={0}
-              collapsed={false}
-              fillParent
-              initialTab="summary"
-              visibleTabs={['summary', 'raw']}
-              onResize={() => undefined}
-              onToggleCollapse={() => setSelected(null)}
+              onClose={() => setSelected(null)}
               onOpenTranscript={setTranscript}
               onOpenTokens={setTokenEvent}
-              onClose={() => setSelected(null)}
             />
           </div>
         )}

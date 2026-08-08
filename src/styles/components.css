@@ -1,6 +1,6 @@
 /* components.css — 组件样式聚合入口（REQ-001 第 4 层）。
  * 按功能域拆分到 components/，顺序即原单文件级联顺序：
- * ui → overlay → compare → agent-overview → misc → session → inspector → timeline
+ * ui → overlay → compare → agent-overview → misc → session → inspector → timeline → trajectory
  */
 @import './components/ui.css';
 @import './components/overlay.css';
@@ -10,3 +10,4 @@
 @import './components/session.css';
 @import './components/inspector.css';
 @import './components/timeline.css';
+@import './components/trajectory.css';

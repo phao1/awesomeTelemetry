@@ -108,17 +108,30 @@ const ACTION_PHASE: Record<string, TracePhase> = {
 
 type Certainty = 'explicit' | 'meta' | 'propagate';
 
+/**
+ * fix-adapter-turn-semantics A8：新增两个 kind 后，switch 必须**穷举**全部
+ * TraceKind 成员，禁止引入 default 兜底来压过编译器（trace-model delta 的
+ * "Exhaustive handling" 场景）。
+ * - compact：上下文恢复，是明确的 understand 活动（explicit）。
+ * - reasoning：不是独立活动，走 propagate，在 Pass 3 继承同周期 llm 的阶段。
+ */
 function certaintyOf(event: TraceEvent): Certainty {
   switch (event.kind) {
-    case 'system':
-      return 'meta';
     case 'tool':
     case 'file_read':
     case 'file_write':
     case 'bash':
     case 'test':
+    case 'compact':
       return 'explicit';
-    default:
+    case 'system':
+      return 'meta';
+    case 'llm':
+    case 'agent':
+    case 'message':
+    case 'user_prompt':
+    case 'subagent_prompt':
+    case 'reasoning':
       return 'propagate';
   }
 }
@@ -138,6 +151,9 @@ function explicitPhaseOf(event: TraceEvent): TracePhase | null {
       return 'understand';
     case 'file_write':
       return 'implement';
+    case 'compact':
+      // fix-adapter-turn-semantics A8：compact 归 understand（上下文恢复）。
+      return 'understand';
     case 'tool': {
       const action = (event.tool ?? event.title ?? '').toLowerCase();
       // 跑 shell 的工具按命令内容判定（npm test → verify、git commit → report…），
@@ -170,6 +186,9 @@ const DEFAULT_PHASE: Partial<Record<TraceEvent['kind'], TracePhase>> = {
   system: 'understand',
   llm: 'implement',
   agent: 'implement',
+  // fix-adapter-turn-semantics A8：reasoning 默认与 llm 一致；
+  // 有同周期 llm 时由 Pass 3 覆盖为 llm 的阶段。
+  reasoning: 'implement',
 };
 
 /**
@@ -246,6 +265,29 @@ export function classifyEvents(events: TraceEvent[]): TraceEvent[] {
       }
     }
     result[i] = { ...result[i]!, phase };
+  }
+
+  // Pass 3（fix-adapter-turn-semantics A8）：reasoning 不是独立活动，
+  // 继承同一决策周期（turnKey）内 llm 事件的阶段。周期内无 llm、
+  // 或 turnKey 为 null（源格式无边界信号）时，保留 Pass 2 的传播结果。
+  const llmPhaseByTurnKey = new Map<string, TracePhase>();
+  for (const event of result) {
+    if (event.kind === 'llm' && event.turnKey !== null) {
+      if (!llmPhaseByTurnKey.has(event.turnKey)) {
+        llmPhaseByTurnKey.set(event.turnKey, event.phase);
+      }
+    }
+  }
+  if (llmPhaseByTurnKey.size > 0) {
+    for (let i = 0; i < result.length; i += 1) {
+      const event = result[i]!;
+      if (event.kind === 'reasoning' && event.turnKey !== null) {
+        const cyclePhase = llmPhaseByTurnKey.get(event.turnKey);
+        if (cyclePhase !== undefined) {
+          result[i] = { ...event, phase: cyclePhase };
+        }
+      }
+    }
   }
   return result;
 }

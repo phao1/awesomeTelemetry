@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SystemPromptSection, SYS_PROMPT_KEY, SYS_PROMPT_PREVIEW_LIMIT, SessionToolbar } from './SessionToolbar.js';
 import { makeEvent, makeSession } from './compare-test-fixtures.js';
@@ -116,5 +116,32 @@ describe('SystemPromptSection（REQ-103）', () => {
     expect(html()).toContain('session-toolbar');
     expect(html()).toContain('sys-prompt');
     unmount();
+  });
+
+  it('D14/6.15：渲染会话标签 chips 与返回按钮（onBack）', () => {
+    const session = makeSession('s1');
+    const onBack = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    act(() => {
+      createRoot(container).render(
+        <SessionToolbar
+          session={session}
+          events={[]}
+          locale="zh"
+          tags={['refactor', 'perf']}
+          onBack={onBack}
+        />,
+      );
+    });
+    expect(container.querySelectorAll('.session-toolbar-tags .session-row-tag').length).toBe(2);
+    expect(container.textContent).toContain('refactor');
+    const back = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.getAttribute('aria-label')?.includes('返回'),
+    ) as HTMLButtonElement;
+    expect(back).toBeDefined();
+    act(() => back.click());
+    expect(onBack).toHaveBeenCalledTimes(1);
+    container.remove();
   });
 });

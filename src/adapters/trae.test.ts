@@ -189,4 +189,12 @@ describe('Trae adapter（REQ-006）', () => {
       ).session.isSubagent,
     ).toBe(false);
   });
+
+  // fix-adapter-turn-semantics A4 trae 行：fixture 的每条 turn 自带 id —— 源格式的
+  // round/message 标识。规则由 fixture 派生，无活数据背书（A1：trae 43 事件）。
+  it('fix-adapter-turn-semantics A4：turnKey = 源 turn id', () => {
+    const r = normalizeTraeSample(sample(traeFixture.events), SRC);
+    expect(r.events.map((e) => e.turnKey)).toEqual(['t1', 't2', 't3', 't4']);
+    expect(r.turnKeySource).toBe('message_identity');
+  });
 });

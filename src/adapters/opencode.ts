@@ -172,6 +172,10 @@ function partToEvent(
     id: `${message.id}-${partIndex}`,
     sessionId: message.sessionID,
     sequence: 0,
+    // fix-adapter-turn-semantics A4：opencode/codearts/codeagent2 共用此路径。
+    // 边界信号 = 源记录自带的 message.id（一个 inference 的所有 part 共享同一 id）。
+    // 直接从源记录取，绝不从公开 id 字段（`${message.id}-${partIndex}`）反解。
+    turnKey: message.id ?? null,
     phase: 'understand' as const,
     title: '',
     startedAt,
@@ -265,6 +269,8 @@ function otelSpanToEvent(span: OpenCodeOtelSpan): EventWithRaw {
     id: `${name}-${span.startTime}`,
     sessionId: '',
     sequence: 0,
+    // OTel span 没有 message id，源格式在此路径上无边界信号 → null（A4 opencode 行）。
+    turnKey: null,
     kind: isTool ? 'tool' : 'llm',
     phase: 'understand',
     title: titleFromText(name),
@@ -386,7 +392,15 @@ export function createOpencodeAdapter(
         costSource: cost.costSource,
         durationSource: hasMeasured ? 'measured' : 'derived',
       };
-      return { session, events: classified, tokenSemantics: semantics };
+      return {
+        session,
+        events: classified,
+        tokenSemantics: semantics,
+        // fix-adapter-turn-semantics A5：opencode/codearts/codeagent2 均按源消息 id
+        // 分组（A4 表），OTel span 无 id 时退化为 null —— provenance 仍如实声明为
+        // message_identity。
+        turnKeySource: 'message_identity',
+      };
     },
   };
 }

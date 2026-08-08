@@ -101,6 +101,11 @@ export function normalizeWorkBuddySample(
       id: message.id ?? message.callId ?? `wb-${i}`,
       sessionId,
       sequence: 0,
+      // fix-adapter-turn-semantics A4 workbuddy 行：fixture 只有 callId（把一次
+      // function_call 与它的 result 配对）—— 这是工具调用标识，不是决策周期标识；
+      // 没有任何字段把 inference 与其工具活动归到同一周期。源格式不携带边界信号，
+      // 诚实的 null 优于错误 key（A3 规则 4）。
+      turnKey: null,
       kind,
       phase: 'understand',
       title: titleFromText(content !== '' ? content : tool),
@@ -158,7 +163,14 @@ export function normalizeWorkBuddySample(
     // 有 credit 时标 reported（厂商直接给金额）；无 credit 时为 unknown。
     costSource: costUsd > 0 ? ('reported' as const) : ('unknown' as const),
   };
-  return { session, events: classified, tokenSemantics: semantics };
+  return {
+    session,
+    events: classified,
+    tokenSemantics: semantics,
+    // fix-adapter-turn-semantics A5：workbuddy fixture 无边界信号（callId 只是工具
+    // 调用配对，不是决策周期），turnKey 全为 null。
+    turnKeySource: 'unavailable',
+  };
 }
 
 export const workbuddyAdapter: Adapter<{ id?: string; title?: string }, WorkBuddyRawMessage> = {

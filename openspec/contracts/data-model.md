@@ -22,6 +22,10 @@
 
 ## 1. Enums (full set, must not be extended)
 
+> fix-adapter-turn-semantics deliberately amended `TraceKind` exactly once,
+> adding `reasoning` and `compact` (rationale below). After this amendment the
+> enum is closed again; no further member may be added.
+
 ```ts
 /** Six phases. Classification algorithm: specs/metrics-analysis REQ-001. */
 export type TracePhase =
@@ -48,12 +52,24 @@ export type TraceKind =
   | 'system'
   | 'message'
   | 'user_prompt'
-  | 'subagent_prompt';
+  | 'subagent_prompt'
+  | 'reasoning'
+  | 'compact';
 
 export const TRACE_KINDS: readonly TraceKind[] = [
   'llm', 'tool', 'file_read', 'file_write', 'bash', 'test',
   'agent', 'system', 'message', 'user_prompt', 'subagent_prompt',
+  'reasoning', 'compact',
 ] as const;
+
+/**
+ * 新增两个成员的依据（fix-adapter-turn-semantics A2）。
+ * - `reasoning` — 模型思考与用户可见回复分开输出的记录。并入 `llm` 会让
+ *   回合卡片无法区分「推演」与「作答」，而这是阅读轨迹时最有用的区分。
+ * - `compact` — 客户端执行的上下文压缩 / 自动摘要。它既不是模型消息也不是
+ *   工具；轨迹带需要它作为独立的一条 band。
+ * 本 change 只新增这两个成员；其后枚举仍保持封闭，不得再扩展。
+ */
 
 /**
  * Unified status. Provider-native statuses are normalized by adapters:
@@ -128,6 +144,21 @@ export type CostSource = 'reported' | 'estimated' | 'unknown';
  * ⚠️ 与 G4.1 同类风险：把推导值当测量值用会系统性高估。
  */
 export type DurationSource = 'measured' | 'derived' | 'unknown';
+
+/**
+ * turn key 的来源声明（fix-adapter-turn-semantics A5）。adapter 必须声明它如何
+ * 产出 turn key；UI 读取它以写口径行，且**永远不得**从「key 恰好非 null」推断
+ * 可信度。
+ * - native_boundary：源格式显式标注了决策周期的起止
+ * - stream_structure：周期由源自身 item 流的形状推导（边界真实但非显式标记）
+ * - message_identity：按源自身的消息标识分组
+ * - unavailable：源中无边界信号，turnKey 为 null
+ */
+export type TurnKeySource =
+  | 'native_boundary'
+  | 'stream_structure'
+  | 'message_identity'
+  | 'unavailable';
 ```
 
 ---
@@ -234,6 +265,10 @@ export interface SessionIndexEntry {
   /** Whether a systemPrompt exists. Body is not returned here; use the detail
    * endpoint. */
   hasSystemPrompt: boolean;
+  /** Session annotations tags (add-trajectory-inspector D14). Empty when the
+   * session has no annotation row; the list query returns it via a single
+   * join, never a per-row query, and never a body column. */
+  tags: string[];
 }
 
 export interface TraceSession {
@@ -334,6 +369,43 @@ export interface SessionPromptContext {
 }
 ```
 
+### 3.2 Session annotations (add-trajectory-inspector)
+
+Persisted per-session tags and a free-text note (design D13). Served by
+`GET` / `PUT /api/sessions/:key/annotations` and aggregated by
+`GET /api/annotations/tags` (contracts/api.md §1.7).
+
+```ts
+export interface SessionAnnotations {
+  sessionKey: string;
+  tags: string[];
+  note: string | null;
+  updatedAt: string | null;
+}
+export interface SessionAnnotationsUpdate {
+  tags?: string[];
+  note?: string | null;
+}
+```
+
+| Rule | Value |
+|---|---|
+| `ANNOTATION_MAX_TAGS` | 32 |
+| `ANNOTATION_TAG_MAX_CHARS` | 64 |
+| `ANNOTATION_TAG_PATTERN` | `/^[\p{L}\p{N}_-]{1,64}$/u` |
+| `ANNOTATION_NOTE_MAX_CHARS` | 8192 |
+
+- Tags normalise: trim, lowercase, de-duplicate, sort ascending; stored as a
+  JSON array.
+- A violated bound returns `400 BAD_REQUEST` via the unified `ApiError`
+  envelope. Silent truncation is prohibited.
+- `GET` on an unannotated session returns `200` with `tags: []`, `note: null`,
+  `updatedAt: null` — not `404`.
+- `PUT` on an unknown key returns `404 SESSION_NOT_FOUND`.
+- `PUT` replaces per present key: an absent key leaves that field untouched,
+  `tags: []` clears tags, `note: null` clears the note.
+- `DELETE /api/sessions/:key` cascades via the FK.
+
 ---
 
 ## 4. Events
@@ -346,6 +418,28 @@ export interface TraceEventSlim {
   /** 1-based, unique and continuous within a session. Must be re-sequenced
    * after merging (G10.3). */
   sequence: number;
+  /**
+   * Decision-cycle identity. All events produced by one model inference and the
+   * tool activity it triggered share one key. Null means the source format carries
+   * no boundary signal; consumers then fall back to their own segmentation and must
+   * disclose that they did. (fix-adapter-turn-semantics A3)
+   *
+   * Normative rules:
+   * 1. `turnKey` is **opaque**. No consumer parses it, sorts by it, or derives an
+   *    index from it. Turn ordering comes from `sequence`.
+   * 2. `turnKey` is stable across rescans of unchanged source data.
+   * 3. `turnKey` is unique within a session and MUST NOT be reused across
+   *    sessions; prefix it with a session-scoped value when the source identifier
+   *    is not globally unique.
+   * 4. `null` is a first-class value, not an error. An adapter that cannot find a
+   *    boundary signal in its real source data returns `null` for every event,
+   *    and the reason is recorded in the adapter's provenance declaration.
+   * 5. A tool event and the `llm` / `reasoning` events of the inference that
+   *    requested it share one `turnKey`. Turn 0 material (system prompt, first
+   *    user message) carries the key of the cycle it precedes, or `null` when no
+   *    cycle follows.
+   */
+  turnKey: string | null;
   kind: TraceKind;
   phase: TracePhase;
   /** Single-line summary, shown directly in the UI. Max 200 chars; adapters
@@ -385,6 +479,69 @@ export interface TraceEventRaw extends TraceEvent {
 }
 ```
 
+### 4.1 Derived turn model (add-trajectory-inspector)
+
+> Types copied verbatim from `specs/trace-model/spec.md` (derived turn model).
+> Derivation is a pure function of the ordered event stream, the session, and
+> the adapter's declared turn-key provenance; it runs in a single pass and is
+> **never persisted and never computed on the server** (design D2/D3). A turn's
+> tool-call identity is the member event's `id` — there is **no `toolCallId`
+> field** and none is generated (deviation C7, design D5).
+
+```ts
+export type TurnSegmentationSource =
+  | 'turn_key'
+  | 'llm_boundary'
+  | 'user_prompt_boundary'
+  | 'sequence_fallback';
+
+export type TurnKind = 'init' | 'user' | 'cycle';
+
+export type MessageRole =
+  | 'system' | 'user' | 'assistant' | 'tool' | 'reasoning' | 'compact' | 'subagent';
+
+export interface TurnMessage {
+  eventId: string;
+  sequence: number;
+  role: MessageRole;
+  kind: TraceKind;
+  title: string;
+  tool: string | null;
+  startedAt: string;
+  durationMs: number;
+  status: TraceStatus;
+  tokens: TokenUsage | null;
+  hasInput: boolean;
+  hasOutput: boolean;
+  hasRaw: boolean;
+  error: string | null;
+}
+
+export type TurnBadge =
+  | 'init' | 'user' | 'tools' | 'stop' | 'error' | 'subagent' | 'compact' | 'running';
+
+export interface TraceTurn {
+  index: number;
+  kind: TurnKind;
+  startedAt: string;
+  durationMs: number;
+  tokens: TokenUsage;
+  model: string | null;
+  messageCount: number;
+  toolCount: number;
+  status: TraceStatus;
+  badges: TurnBadge[];
+  messages: TurnMessage[];
+}
+
+export interface TurnModel {
+  turns: TraceTurn[];
+  segmentationSource: TurnSegmentationSource;
+  complete: boolean;
+  omittedEventCount: number;
+}
+```
+
 ---
 
 ## 5. Aggregation units
@@ -396,6 +553,11 @@ export interface TraceRecord {
   events: TraceEvent[];
   metrics?: TraceMetrics;
   tokenSemantics: TokenSemantics;
+  /**
+   * turn key 的来源声明（fix-adapter-turn-semantics A5），与
+   * `tokenSemantics` 并列，adapter 必须声明。
+   */
+  turnKeySource: TurnKeySource;
 }
 
 /** Detail shape returned by the API. The events tier is decided by mode. */
@@ -1120,3 +1282,71 @@ expectTypeOf<ContextChangeKind>().toEqualTypeOf<
 expectTypeOf<ContextDiffSegmentKind>().toEqualTypeOf<
   'equal' | 'added' | 'removed'
 >();
+```
+
+Additional assertions added by fix-adapter-turn-semantics §1.7 — the two new
+kinds are closed members of `TraceKind`, `turnKey` exists on the slim tier with
+`null` as a valid value, and the provenance enum is closed:
+
+```ts
+// The two new kinds are first-class members
+expectTypeOf<TraceKind>().toEqualTypeOf<
+  'llm' | 'tool' | 'file_read' | 'file_write' | 'bash' | 'test'
+  | 'agent' | 'system' | 'message' | 'user_prompt' | 'subagent_prompt'
+  | 'reasoning' | 'compact'
+>();
+
+// turnKey exists and null is a valid value
+expectTypeOf<Pick<TraceEventSlim, 'turnKey'>>().toEqualTypeOf<{
+  turnKey: string | null;
+}>();
+
+// The provenance enum is closed
+expectTypeOf<TurnKeySource>().toEqualTypeOf<
+  'native_boundary' | 'stream_structure' | 'message_identity' | 'unavailable'
+>();
+```
+
+Additional assertions added by add-trajectory-inspector §1.3/§1.4/§1.9 — the
+derived turn enums are closed, every derived type compiles verbatim from the
+trace-model delta spec, the index entry carries `tags`, and **no `toolCallId`
+field exists** (identity comes from `event.id`, deviation C7 / design D5):
+
+```ts
+// The three derived turn enums are closed
+expectTypeOf<TurnSegmentationSource>().toEqualTypeOf<
+  'turn_key' | 'llm_boundary' | 'user_prompt_boundary' | 'sequence_fallback'
+>();
+expectTypeOf<TurnKind>().toEqualTypeOf<'init' | 'user' | 'cycle'>();
+expectTypeOf<MessageRole>().toEqualTypeOf<
+  'system' | 'user' | 'assistant' | 'tool' | 'reasoning' | 'compact' | 'subagent'
+>();
+expectTypeOf<TurnBadge>().toEqualTypeOf<
+  'init' | 'user' | 'tools' | 'stop' | 'error' | 'subagent' | 'compact' | 'running'
+>();
+
+// Turn identity comes from the member event id — never a toolCallId field
+expectTypeOf<Pick<TurnMessage, 'eventId'>>().toEqualTypeOf<{ eventId: string }>();
+expectTypeOf<TurnMessage>().not.toHaveProperty('toolCallId');
+expectTypeOf<TraceTurn>().not.toHaveProperty('toolCallId');
+
+// Turn model carries completeness explicitly
+expectTypeOf<Pick<TurnModel, 'complete' | 'omittedEventCount'>>().toEqualTypeOf<{
+  complete: boolean;
+  omittedEventCount: number;
+}>();
+
+// Index entries carry the tags array
+expectTypeOf<Pick<SessionIndexEntry, 'tags'>>().toEqualTypeOf<{ tags: string[] }>();
+
+// Annotation shapes compile verbatim from design D13
+expectTypeOf<Pick<SessionAnnotations, 'sessionKey' | 'tags' | 'note' | 'updatedAt'>>()
+  .toEqualTypeOf<{
+    sessionKey: string;
+    tags: string[];
+    note: string | null;
+    updatedAt: string | null;
+  }>();
+expectTypeOf<SessionAnnotationsUpdate>().toHaveProperty('tags');
+expectTypeOf<SessionAnnotationsUpdate>().toHaveProperty('note');
+```

@@ -1,0 +1,106 @@
+/goal Run task group §9 of openspec/changes/add-trajectory-inspector/tasks.md — full verification and sign-off. Keep working until every §9 task is either done and evidenced or explicitly reported as blocked. Do not mark a box optimistically.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/add-trajectory-inspector/proposal.md — boundary
+3. openspec/changes/add-trajectory-inspector/implementation-spec.md — FR map, the
+   16-row conflict register, acceptance criteria, and the edge-case table
+4. openspec/changes/add-trajectory-inspector/design.md — fixed decisions D1-D20,
+   including the file whitelist in D20
+5. openspec/changes/add-trajectory-inspector/specs/*/spec.md — the delta specs
+6. openspec/changes/add-trajectory-inspector/tasks.md — your task group
+7. openspec/contracts/{data-model,database,api,design-tokens,nfr}.md and
+   openspec/gotchas.md before each module edit
+
+Field names, table names, routes, enum values, limits, error codes, tokens, and UI
+states come from those files. Do not write any of them from memory.
+
+Prerequisite: the change fix-adapter-turn-semantics is landed. Confirm that
+src/core/trace-types.ts carries `turnKey`, `TurnKeySource`, and the `reasoning` and
+`compact` kinds. If it does not, STOP and report — this whole change reads that data.
+
+Source-spec note: tempspec0806/new_view.md and the reference screenshot are product
+input, NOT the contract. implementation-spec.md §3 lists 16 deliberate deviations
+(C1-C16). Restoring any of them to match the source is a regression, not a fix. Note
+especially C7: an earlier draft claimed no tool-call id exists. That was wrong —
+event.id carries the native call id. Display it verbatim; do not add a toolCallId field
+and do not generate one.
+
+Rules that apply to every window:
+- Touch only the files in design.md D20. If another file is truly required, STOP and
+  report the requirement id, the file, and the reason before editing.
+- No new runtime dependency. The project allows exactly four.
+- No hex/rgb/named colour literal in any new CSS or TSX. Read design tokens.
+- Colour never carries meaning alone: always pair it with an icon or text.
+- Selection is the accent group. Red is danger and means failure — never selection.
+- Unknown values render an em dash with a tooltip, never 0.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Never mock the logic under test and never loosen an assertion to make a test pass.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: Change A is not landed; a contract conflicts
+with the design; a required field/route/error/token is missing; you need a file outside
+D20; a performance budget cannot be met within the stated bounds; the session-list tag
+join degrades the measured list baseline; or turn segmentation would require inventing a
+boundary the data does not support.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisite: §1 through §8 are complete. Begin by reading tasks.md and listing every
+unchecked box from an earlier group — those are inputs to your report, not things to
+quietly finish.
+
+Your scope is tasks.md §9 only (9.1 through 9.14). This window verifies; it does not add
+features. If verification finds a defect, fix the implementation — never relax an
+assertion and never widen a bound to make a measurement pass.
+
+Gates, in order:
+  9.1  openspec validate add-trajectory-inspector --strict, zero warnings
+  9.2  typecheck, test, lint, build, perf:check
+  9.3  diff audit against the D20 whitelist; STOP and ask if a required file is outside it
+  9.4  package.json + package-lock.json diff proving no runtime dependency was added
+  9.5  grep every new CSS and TSX file for hex, rgb, and named colour literals — zero
+  9.6  AGENTS.md prohibition audit
+  9.7  confirm TraceTimeline and EventInspector have no remaining imports anywhere
+
+Live verification (9.8-9.12) is what tests cannot cover:
+
+  9.8  serve the production build on 127.0.0.1, open a real rescanned Codex session.
+       Record turn count, segmentationSource, the adapter's declared provenance,
+       first-paint duration, detail-open request count, and how turn 1 renders —
+       assistant card, nested call blocks, result cards. If the turn count still looks
+       like one turn per event, Change A did not take effect on this data; report it
+       rather than passing the gate.
+  9.9  open a real Claude session. Confirm NO fabricated user card appears after a tool
+       call and that tool results render inside their tool cards. This is the visible
+       proof of Change A's §3 repair.
+  9.10 open the one real codearts sub-agent session, confirm the hierarchy renders and
+       that switching agents issues exactly one batched key fetch.
+  9.11 annotate two sessions with overlapping tags, confirm OR filtering on the list,
+       restart the server, confirm annotations survived, delete one session, confirm its
+       annotation row is gone.
+  9.12 re-measure the session list against the 524-entry / 447.8KB / 5.33ms baseline with
+       the tag join active; record the delta.
+  9.13 append derivation time, ribbon computation time, first paint, scroll node counts,
+       and the list delta to PERF-BASELINE.md
+
+Your final report must list these as explicitly NOT implemented, with reasons:
+  - per-turn prefill / decode timing (no adapter emits it; proxy_requests is empty)
+  - environment / employee id / client version / plugin version session rows
+  - per-message comments (declined)
+  - a separate session-list page (the existing list gained a tag column and filter)
+It must also name every test file you deleted or rewrote in task 6.17.
+
+Report Delivered / Contract mapping / Verification / Needs confirmation exactly as
+AGENTS.md requires. tasks.md must reflect evidence, not optimism.

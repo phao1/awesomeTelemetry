@@ -38,13 +38,28 @@ export const LAYOUT_KEYS = {
   inspectorCollapsed: `${PREFIX}layout.inspectorCollapsed`,
   fontSize: `${PREFIX}fontSize`,
   paletteHintSeen: `${PREFIX}paletteHintSeen`,
+  /** add-trajectory-inspector D18：轨迹侧栏宽度（240–300，钳制）。 */
+  trajectoryRailWidth: `${PREFIX}trajectory.railWidth`,
+  /** add-trajectory-inspector D18：色带模式（time | token）。 */
+  trajectoryRibbonMode: `${PREFIX}trajectory.ribbonMode`,
 } as const;
 
 export const LAYOUT_RANGES = {
   railWidth: { min: 260, max: 480 },
   inspectorWidth: { min: 280, max: 900 },
   fontSize: { min: 8, max: 28 },
+  /** add-trajectory-inspector D18：轨迹侧栏 240–300。 */
+  trajectoryRailWidth: { min: 240, max: 300 },
 } as const;
+
+/** 色带模式取值（add-trajectory-inspector D10 / D18）。 */
+export type RibbonMode = 'time' | 'token';
+
+/** 被删除甘特的旧布局键（D18：读取时忽略并移除，不回写、不生效）。 */
+const LEGACY_TIMELINE_LAYOUT_KEYS = [
+  `${PREFIX}layout`,
+  `${LEGACY_PREFIX}layout`,
+] as const;
 
 export function loadNumber(
   key: string,
@@ -90,6 +105,35 @@ export function storeNumber(key: string, value: number): void {
 export function storeBool(key: string, value: boolean): void {
   try {
     localStorage.setItem(key, String(value));
+  } catch (err) {
+    console.error(`[layout] 写入 ${key} 失败:`, err);
+  }
+}
+
+/**
+ * add-trajectory-inspector D18：色带模式读取。
+ * - 先做旧键迁移（migrateLegacyKey），再忽略并移除被删除甘特的 `.layout` 键。
+ * - 非法值回落 'time'（缺省）；hash 优先于 localStorage，由调用方保证。
+ */
+export function loadRibbonMode(key: string, fallback: RibbonMode = 'time'): RibbonMode {
+  migrateLegacyKey(key);
+  try {
+    for (const legacy of LEGACY_TIMELINE_LAYOUT_KEYS) {
+      if (localStorage.getItem(legacy) !== null) {
+        localStorage.removeItem(legacy);
+      }
+    }
+    const raw = localStorage.getItem(key);
+    return raw === 'token' ? 'token' : raw === 'time' ? 'time' : fallback;
+  } catch (err) {
+    console.error(`[layout] 读取 ${key} 失败:`, err);
+    return fallback;
+  }
+}
+
+export function storeRibbonMode(key: string, value: RibbonMode): void {
+  try {
+    localStorage.setItem(key, value);
   } catch (err) {
     console.error(`[layout] 写入 ${key} 失败:`, err);
   }

@@ -35,6 +35,7 @@ function ev(partial: Partial<TraceEventSlim>): TraceEventSlim {
     id: `e${index}`,
     sessionId: 's1',
     sequence: index,
+    turnKey: null,
     kind: 'llm',
     phase: 'implement',
     title: '',

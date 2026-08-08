@@ -27,12 +27,24 @@ export type TraceKind =
   | 'system'
   | 'message'
   | 'user_prompt'
-  | 'subagent_prompt';
+  | 'subagent_prompt'
+  | 'reasoning'
+  | 'compact';
 
 export const TRACE_KINDS: readonly TraceKind[] = [
   'llm', 'tool', 'file_read', 'file_write', 'bash', 'test',
   'agent', 'system', 'message', 'user_prompt', 'subagent_prompt',
+  'reasoning', 'compact',
 ] as const;
+
+/**
+ * 新增两个成员的依据（fix-adapter-turn-semantics A2）。
+ * - `reasoning` — 模型思考与用户可见回复分开输出的记录。并入 `llm` 会让
+ *   回合卡片无法区分「推演」与「作答」，而这是阅读轨迹时最有用的区分。
+ * - `compact` — 客户端执行的上下文压缩 / 自动摘要。它既不是模型消息也不是
+ *   工具；轨迹带需要它作为独立的一条 band。
+ * 本 change 只新增这两个成员；其后枚举仍保持封闭，不得再扩展。
+ */
 
 /**
  * 统一状态。各 provider 的原生状态由 adapter 归一化：
@@ -153,6 +165,21 @@ export type CostSource = 'reported' | 'estimated' | 'unknown';
  */
 export type DurationSource = 'measured' | 'derived' | 'unknown';
 
+/**
+ * turn key 的来源声明（fix-adapter-turn-semantics A5）。adapter 必须声明它如何
+ * 产出 turn key；UI 读取它以写口径行，且**永远不得**从「key 恰好非 null」推断
+ * 可信度。
+ * - native_boundary：源格式显式标注了决策周期的起止
+ * - stream_structure：周期由源自身 item 流的形状推导（边界真实但非显式标记）
+ * - message_identity：按源自身的消息标识分组
+ * - unavailable：源中无边界信号，turnKey 为 null
+ */
+export type TurnKeySource =
+  | 'native_boundary'
+  | 'stream_structure'
+  | 'message_identity'
+  | 'unavailable';
+
 // ── §3 会话 ────────────────────────────────────────────────
 
 /**
@@ -183,6 +210,10 @@ export interface SessionIndexEntry {
   mergeGroupId: string | null;
   /** systemPrompt 是否存在。正文不在此返回，需走详情接口。 */
   hasSystemPrompt: boolean;
+  /** Session annotations tags (add-trajectory-inspector D14). Empty when the
+   * session has no annotation row; the list query returns it via a single
+   * join, never a per-row query, and never a body column. */
+  tags: string[];
 }
 
 export interface TraceSession {
@@ -278,6 +309,19 @@ export interface SessionPromptContext {
   fullSystemPrompt: string | null;
 }
 
+// ── §3.2 Session annotations (add-trajectory-inspector D13) ──
+
+export interface SessionAnnotations {
+  sessionKey: string;
+  tags: string[];
+  note: string | null;
+  updatedAt: string | null;
+}
+export interface SessionAnnotationsUpdate {
+  tags?: string[];
+  note?: string | null;
+}
+
 // ── §4 事件 ────────────────────────────────────────────────
 
 /** slim 档：Gantt 树渲染所需的全部字段，不含任何正文。 */
@@ -286,6 +330,28 @@ export interface TraceEventSlim {
   sessionId: string;
   /** 1-based，同 session 内唯一且连续。合并后必须重排（G10.3）。 */
   sequence: number;
+  /**
+   * Decision-cycle identity. All events produced by one model inference and the
+   * tool activity it triggered share one key. Null means the source format carries
+   * no boundary signal; consumers then fall back to their own segmentation and must
+   * disclose that they did. (fix-adapter-turn-semantics A3)
+   *
+   * Normative rules:
+   * 1. `turnKey` is **opaque**. No consumer parses it, sorts by it, or derives an
+   *    index from it. Turn ordering comes from `sequence`.
+   * 2. `turnKey` is stable across rescans of unchanged source data.
+   * 3. `turnKey` is unique within a session and MUST NOT be reused across
+   *    sessions; prefix it with a session-scoped value when the source identifier
+   *    is not globally unique.
+   * 4. `null` is a first-class value, not an error. An adapter that cannot find a
+   *    boundary signal in its real source data returns `null` for every event,
+   *    and the reason is recorded in the adapter's provenance declaration.
+   * 5. A tool event and the `llm` / `reasoning` events of the inference that
+   *    requested it share one `turnKey`. Turn 0 material (system prompt, first
+   *    user message) carries the key of the cycle it precedes, or `null` when no
+   *    cycle follows.
+   */
+  turnKey: string | null;
   kind: TraceKind;
   phase: TracePhase;
   /** 单行摘要，UI 直接展示。长度上限 200 字符，超出由 adapter 截断。 */
@@ -319,6 +385,64 @@ export interface TraceEventRaw extends TraceEvent {
   raw: string | null;
 }
 
+// ── §4.1 派生 turn 模型 (add-trajectory-inspector) ──
+// 类型从 specs/trace-model/spec.md 原样采用。派生是事件流、session 与
+// adapter 声明 turn-key provenance 的纯函数：单趟执行，**永不持久化、
+// 永不在服务端计算**（design D2/D3）。工具调用的身份是成员事件的 `id` —
+// **不存在 `toolCallId` 字段**，也不生成任何 id（deviation C7，design D5）。
+
+export type TurnSegmentationSource =
+  | 'turn_key'
+  | 'llm_boundary'
+  | 'user_prompt_boundary'
+  | 'sequence_fallback';
+
+export type TurnKind = 'init' | 'user' | 'cycle';
+
+export type MessageRole =
+  | 'system' | 'user' | 'assistant' | 'tool' | 'reasoning' | 'compact' | 'subagent';
+
+export interface TurnMessage {
+  eventId: string;
+  sequence: number;
+  role: MessageRole;
+  kind: TraceKind;
+  title: string;
+  tool: string | null;
+  startedAt: string;
+  durationMs: number;
+  status: TraceStatus;
+  tokens: TokenUsage | null;
+  hasInput: boolean;
+  hasOutput: boolean;
+  hasRaw: boolean;
+  error: string | null;
+}
+
+export type TurnBadge =
+  | 'init' | 'user' | 'tools' | 'stop' | 'error' | 'subagent' | 'compact' | 'running';
+
+export interface TraceTurn {
+  index: number;
+  kind: TurnKind;
+  startedAt: string;
+  durationMs: number;
+  tokens: TokenUsage;
+  model: string | null;
+  messageCount: number;
+  toolCount: number;
+  status: TraceStatus;
+  badges: TurnBadge[];
+  messages: TurnMessage[];
+}
+
+export interface TurnModel {
+  turns: TraceTurn[];
+  segmentationSource: TurnSegmentationSource;
+  complete: boolean;
+  omittedEventCount: number;
+}
+
 // ── §5 聚合单元 ────────────────────────────────────────────
 
 /** adapter 的输出、UI 消费的完整单元。 */
@@ -327,6 +451,11 @@ export interface TraceRecord {
   events: TraceEvent[];
   metrics?: TraceMetrics;
   tokenSemantics: TokenSemantics;
+  /**
+   * turn key 的来源声明（fix-adapter-turn-semantics A5），与
+   * `tokenSemantics` 并列，adapter 必须声明。
+   */
+  turnKeySource: TurnKeySource;
 }
 
 /** API 返回的详情形状。events 的档位由 mode 决定。 */

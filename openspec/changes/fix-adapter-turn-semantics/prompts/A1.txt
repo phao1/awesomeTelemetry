@@ -1,0 +1,80 @@
+/goal Freeze the contracts for openspec/changes/fix-adapter-turn-semantics/, then stop. Keep working until every task in §1 of that change's tasks.md is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/fix-adapter-turn-semantics/proposal.md — why this exists
+3. openspec/changes/fix-adapter-turn-semantics/design.md — fixed decisions A1-A12,
+   including the measured baseline in A1 and the file whitelist in A12
+4. openspec/changes/fix-adapter-turn-semantics/specs/*/spec.md — the delta specs
+5. openspec/changes/fix-adapter-turn-semantics/tasks.md — your task group
+6. openspec/contracts/{data-model,database,nfr}.md, openspec/specs/adapters/spec.md,
+   openspec/specs/trace-model/spec.md, and openspec/gotchas.md before each edit
+
+Field names, enum values, table names, and limits come from those files. Do not write
+any of them from memory.
+
+Context: this change repairs event semantics BEFORE any turn UI is built. Measured on
+the live database 2026-08-07: about 64% of Codex events are misclassified as `system`,
+Codex emits 6,492 phantom `llm` events from usage records, and every Claude tool result
+is emitted as a fabricated user message. design.md A1 has the full measurement.
+
+Rules that apply to every window:
+- Touch only the files in design.md A12. Expected-value updates in existing tests
+  elsewhere are the ONE permitted exception (design A9) — record every such file.
+- No new runtime dependency. The project allows exactly four.
+- Never loosen, widen, or delete an assertion to make a test pass. When a metric value
+  legitimately moved, RECOMPUTE the expectation from the corrected classification and
+  say so in a comment naming this change.
+- Never synthesise a turn key from timestamp proximity, event count, or a guess. A
+  correct `null` beats a wrong key, because a wrong key silently mis-slices every
+  downstream turn.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: a contract conflicts with the design; a source
+format turns out not to carry the signal design A4 assumes; the A1 measurement no longer
+matches the live database; you need a file outside A12; or the token-total invariant in
+A6 cannot be satisfied.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Your scope is tasks.md §1 only (1.1 through 1.9). Write no adapter code.
+
+Start with task 1.2: re-measure the design A1 baseline against
+agent-observe-data/observe.sqlite. If any number has moved materially, report it before
+continuing — the whole change is justified by those numbers and a stale measurement
+invalidates the rules built on it.
+
+Then amend three contracts:
+1. data-model.md — add `reasoning` and `compact` to TraceKind/TRACE_KINDS with the A2
+   rationale; add `turnKey: string | null` with all five A3 rules stated normatively;
+   add the TurnKeySource provenance enum.
+2. database.md — add `turn_key TEXT` and the schema v7 migration. The migration is
+   DESTRUCTIVE for derived data: it clears events, event_raw, metrics, and scan_state,
+   and preserves sessions, proxy_requests, frida_captures, and session_prompt_context.
+   Name both lists explicitly. Do NOT write it as "clear everything except …" — a later
+   change adds an annotations table that must survive by default.
+3. nfr.md — the one-time rescan cost.
+
+Then copy the enum, field, and provenance type verbatim into src/core/trace-types.ts and
+extend trace-types.test.ts with membership assertions for both new kinds and a
+null-is-valid assertion for turnKey.
+
+Task 1.8 matters more than it looks: run npm run typecheck and let the compiler enumerate
+every exhaustive switch over TraceKind. That list IS the work surface for windows A2-A5.
+Put it in your report verbatim. Do not silence any of those sites with a default branch.
+
+Definition of done: openspec validate fix-adapter-turn-semantics --strict passes,
+typecheck/test/lint pass, §1 boxes checked with evidence, and the exhaustive-switch site
+list is in your report.

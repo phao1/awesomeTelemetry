@@ -8,6 +8,7 @@ function makeRecord(eventCount: number): TraceRecord {
     id: `e${i}`,
     sessionId: 's1',
     sequence: i + 1,
+    turnKey: null,
     kind: 'llm',
     phase: 'implement',
     title: `event ${i} `.padEnd(80, 'x'),
@@ -35,6 +36,7 @@ function makeRecord(eventCount: number): TraceRecord {
     },
     events,
     tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+    turnKeySource: 'unavailable',
   };
 }
 

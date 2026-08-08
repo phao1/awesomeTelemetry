@@ -19,6 +19,8 @@ import {
   listProxyRequests,
   listSessions,
 } from './query-engine.js';
+import { SESSION_LIST_COLS } from './columns.js';
+import { readAnnotations, writeAnnotations } from './annotations.js';
 
 type Db = InstanceType<typeof Database>;
 
@@ -122,6 +124,20 @@ function newDb(): Db {
   const db = new Database(':memory:');
   initSchema(db);
   return db;
+}
+
+function explain(db: Db, sql: string, params: unknown[]): string {
+  const rows = db
+    .prepare(`EXPLAIN QUERY PLAN ${sql}`)
+    .all(...params) as Array<{ detail: string }>;
+  return rows.map((row) => row.detail).join('\n');
+}
+
+/** 镜像 query-engine 的 joined 投影：给主表列加 sessions. 前缀消歧。 */
+function qualifiedListCols(): string {
+  return SESSION_LIST_COLS.split(', ')
+    .map((col) => (col.startsWith('CASE') ? col : `sessions.${col}`))
+    .join(', ');
 }
 
 function insertProxyRow(
@@ -320,6 +336,9 @@ describe('REQ-006 会话列表查询', () => {
       status: 'error',
       title: 'fix build 2',
       startedAt: new Date(now - 3600_000).toISOString(),
+      // 2026-08-08 起 BASE_SESSION.updatedAt 的固定日期（08-01）落在 7d 窗口外，
+      // 使该组合过滤断言随日期漂移而失败——改为相对 now，断言本身不变。
+      updatedAt: new Date(now - 3600_000).toISOString(),
     });
     insertSession(db, 's-ok-claude', {
       provider: 'claude',
@@ -832,6 +851,164 @@ describe('design D4 前驱查询（§2.6/§2.7）', () => {
     // 10k 行场景下 exact-session 无候选（全部 parsed_session_id 为 NULL）
     const exact = findExactSessionPredecessor(db, 's1', 'anthropic_messages', target.id);
     expect(exact).toBeNull();
+    db.close();
+  });
+});
+
+describe('add-trajectory-inspector D14 —— 会话列表标签 join 与过滤（§2.9/§2.10）', () => {
+  const BASELINE_SESSION_COUNT = 524; // 与 nfr/PERF-BASELINE 参考规模一致
+
+  /** 524 会话 + 约 1/3 带注解的内存库，用于列表测量（列表查询不触 events）。 */
+  function baselineDb(): Db {
+    const db = newDb();
+    const insert = db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, status, cwd, source_path)
+       VALUES (?, 'codex', 'Codex', ?, ?, ?, 'success', '/tmp', ?)`,
+    );
+    const seed = db.transaction(() => {
+      for (let i = 0; i < BASELINE_SESSION_COUNT; i += 1) {
+        const started = `2026-08-01T${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}:00.000Z`;
+        insert.run(`s${i}`, `session ${i}`, started, started, `/tmp/${i}.jsonl`);
+      }
+    });
+    seed();
+    // ~1/3 会话带注解；标签跨会话重叠以命中 OR 路径
+    for (let i = 0; i < BASELINE_SESSION_COUNT; i += 3) {
+      writeAnnotations(db, `s${i}`, { tags: [`perf-${i % 5}`, `arch-${i % 7}`], note: null });
+    }
+    db.exec('ANALYZE');
+    return db;
+  }
+
+  function medianMs(runs: number, fn: () => unknown): number {
+    const samples: number[] = [];
+    for (let r = 0; r < runs; r += 1) {
+      const t0 = performance.now();
+      fn();
+      samples.push(performance.now() - t0);
+    }
+    samples.sort((a, b) => a - b);
+    return samples[Math.floor(samples.length / 2)] ?? 0;
+  }
+
+  it('列表行携带 tags 数组：未注解为空数组，注解为规范化数组；keys 路径同样带 tags', () => {
+    const db = newDb();
+    insertSession(db, 's1');
+    insertSession(db, 's2');
+    writeAnnotations(db, 's1', { tags: ['  Perf  ', 'perf', 'api'] });
+
+    const r = listSessions(db, { dataSource: 'scan', limit: 50 });
+    const byId = new Map(r.items.map((i) => [i.id, i]));
+    expect(byId.get('s1')?.tags).toEqual(['api', 'perf']);
+    expect(byId.get('s2')?.tags).toEqual([]);
+    // 列表投影不引入任何 body 列
+    for (const item of r.items) {
+      expect(item).not.toHaveProperty('systemPrompt');
+      expect(item).not.toHaveProperty('inputSummary');
+      expect(item).not.toHaveProperty('outputSummary');
+    }
+
+    const keys = listSessions(db, { dataSource: 'scan', keys: ['s1', 's2'] });
+    const keysById = new Map(keys.items.map((i) => [i.id, i.tags]));
+    expect(keysById.get('s1')).toEqual(['api', 'perf']);
+    expect(keysById.get('s2')).toEqual([]);
+    db.close();
+  });
+
+  it('OR 过滤：两标签命中任一携带方，total 与会话数一致；未命中不返回', () => {
+    const db = newDb();
+    insertSession(db, 's1');
+    insertSession(db, 's2');
+    insertSession(db, 's3');
+    insertSession(db, 's4');
+    writeAnnotations(db, 's1', { tags: ['perf'] });
+    writeAnnotations(db, 's2', { tags: ['refactor'] });
+    writeAnnotations(db, 's3', { tags: ['perf', 'other'] });
+
+    const r = listSessions(db, { dataSource: 'scan', tags: ['perf', 'refactor'] });
+    expect(new Set(r.items.map((i) => i.id))).toEqual(new Set(['s1', 's2', 's3']));
+    expect(r.total).toBe(3);
+    expect(r.hasMore).toBe(false);
+
+    const none = listSessions(db, { dataSource: 'scan', tags: ['missing-tag'] });
+    expect(none.items).toEqual([]);
+    expect(none.total).toBe(0);
+    db.close();
+  });
+
+  it('标签过滤与既有 provider / status / q 过滤可组合', () => {
+    const db = newDb();
+    insertSession(db, 's1', { provider: 'codex', status: 'success' });
+    insertSession(db, 's2', { provider: 'claude', status: 'error' });
+    writeAnnotations(db, 's1', { tags: ['perf'] });
+    writeAnnotations(db, 's2', { tags: ['perf'] });
+
+    const r = listSessions(db, {
+      dataSource: 'scan',
+      tags: ['perf'],
+      provider: ['codex'],
+      status: ['success'],
+    });
+    expect(r.items.map((i) => i.id)).toEqual(['s1']);
+    db.close();
+  });
+
+  it('EXPLAIN：注解读为主键查找；带 join 的列表无 USE TEMP B-TREE', () => {
+    const db = baselineDb();
+
+    const readPlan = explain(
+      db,
+      'SELECT session_id, tags_json, note, updated_at FROM session_annotations WHERE session_id = ?',
+      ['s0'],
+    );
+    // rowid 表的 PK 由 sqlite_autoindex_* 支撑，两种表述都是主键查找
+    expect(readPlan).toMatch(/SEARCH session_annotations USING (PRIMARY KEY|INDEX sqlite_autoindex_session_annotations_1)/);
+    expect(readPlan).not.toContain('TEMP B-TREE');
+
+    // 无过滤热路径：join 仍在，顺序仍来自 idx_sessions_ds_started
+    const hotPlan = explain(
+      db,
+      `SELECT ${qualifiedListCols()}, sa.tags_json AS tags_json FROM sessions ` +
+        'LEFT JOIN session_annotations AS sa ON sa.session_id = sessions.id ' +
+        'WHERE sessions.data_source = ? ORDER BY sessions.started_at DESC LIMIT ?',
+      ['scan', 50],
+    );
+    expect(hotPlan).toContain('idx_sessions_ds_started');
+    expect(hotPlan).not.toContain('TEMP B-TREE');
+
+    // 带标签过滤：EXISTS json_each 谓词，同样无临时 B 树
+    const filteredPlan = explain(
+      db,
+      `SELECT ${qualifiedListCols()}, sa.tags_json AS tags_json FROM sessions ` +
+        'LEFT JOIN session_annotations AS sa ON sa.session_id = sessions.id ' +
+        "WHERE sessions.data_source = ? AND EXISTS (SELECT 1 FROM json_each(sa.tags_json) AS je " +
+        'WHERE je.value IN (?, ?)) ORDER BY sessions.started_at DESC LIMIT ?',
+      ['scan', 'perf-0', 'arch-0', 50],
+    );
+    expect(filteredPlan).toContain('idx_sessions_ds_started');
+    expect(filteredPlan).not.toContain('TEMP B-TREE');
+    db.close();
+  });
+
+  it('§2.11 列表成本：524 基线规模下 join 前后对比，无实质退化', () => {
+    const db = baselineDb();
+    const beforeSql = `SELECT ${SESSION_LIST_COLS} FROM sessions ` +
+      'WHERE data_source = ? ORDER BY started_at DESC LIMIT ?';
+    const beforeStmt = db.prepare(beforeSql);
+
+    const beforeMs = medianMs(11, () => beforeStmt.all('scan', 500));
+    const afterMs = medianMs(11, () => listSessions(db, { dataSource: 'scan', limit: 500 }));
+    const filteredMs = medianMs(11, () =>
+      listSessions(db, { dataSource: 'scan', limit: 500, tags: ['perf-0', 'arch-3'] }),
+    );
+
+    // 记录 delta（供报告引用；本测试是回归护栏，不允许实质退化）
+    const delta = afterMs - beforeMs;
+    expect(delta).toBeLessThanOrEqual(beforeMs * 0.2 + 0.5);
+    expect(afterMs).toBeLessThan(5); // nfr §2 列表预算 < 5ms
+    expect(filteredMs).toBeLessThan(5);
+    // 顺带校验读取结果一致
+    expect(readAnnotations(db, 's0').tags.length).toBeGreaterThan(0);
     db.close();
   });
 });

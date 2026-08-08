@@ -8,6 +8,7 @@ function event(id: string, phase: string, startedAt: string, durationMs: number)
     id,
     sessionId: 's1',
     sequence: 1,
+    turnKey: null,
     kind: 'llm',
     phase: phase as TraceEventSlim['phase'],
     title: '',

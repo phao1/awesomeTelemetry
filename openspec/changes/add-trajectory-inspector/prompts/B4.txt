@@ -1,0 +1,107 @@
+/goal Implement task group §4 of openspec/changes/add-trajectory-inspector/tasks.md — the derived turn model. Keep working until every §4 task is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/add-trajectory-inspector/proposal.md — boundary
+3. openspec/changes/add-trajectory-inspector/implementation-spec.md — FR map, the
+   16-row conflict register, acceptance criteria, and the edge-case table
+4. openspec/changes/add-trajectory-inspector/design.md — fixed decisions D1-D20,
+   including the file whitelist in D20
+5. openspec/changes/add-trajectory-inspector/specs/*/spec.md — the delta specs
+6. openspec/changes/add-trajectory-inspector/tasks.md — your task group
+7. openspec/contracts/{data-model,database,api,design-tokens,nfr}.md and
+   openspec/gotchas.md before each module edit
+
+Field names, table names, routes, enum values, limits, error codes, tokens, and UI
+states come from those files. Do not write any of them from memory.
+
+Prerequisite: the change fix-adapter-turn-semantics is landed. Confirm that
+src/core/trace-types.ts carries `turnKey`, `TurnKeySource`, and the `reasoning` and
+`compact` kinds. If it does not, STOP and report — this whole change reads that data.
+
+Source-spec note: tempspec0806/new_view.md and the reference screenshot are product
+input, NOT the contract. implementation-spec.md §3 lists 16 deliberate deviations
+(C1-C16). Restoring any of them to match the source is a regression, not a fix. Note
+especially C7: an earlier draft claimed no tool-call id exists. That was wrong —
+event.id carries the native call id. Display it verbatim; do not add a toolCallId field
+and do not generate one.
+
+Rules that apply to every window:
+- Touch only the files in design.md D20. If another file is truly required, STOP and
+  report the requirement id, the file, and the reason before editing.
+- No new runtime dependency. The project allows exactly four.
+- No hex/rgb/named colour literal in any new CSS or TSX. Read design tokens.
+- Colour never carries meaning alone: always pair it with an icon or text.
+- Selection is the accent group. Red is danger and means failure — never selection.
+- Unknown values render an em dash with a tooltip, never 0.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Never mock the logic under test and never loosen an assertion to make a test pass.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: Change A is not landed; a contract conflicts
+with the design; a required field/route/error/token is missing; you need a file outside
+D20; a performance budget cannot be met within the stated bounds; the session-list tag
+join degrades the measured list baseline; or turn segmentation would require inventing a
+boundary the data does not support.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisite: §1 is complete — the derived turn types exist in src/core/trace-types.ts.
+If not, STOP and report.
+
+Your scope is tasks.md §4 only (4.1 through 4.12). Files: src/core/turn-model.ts and its
+test. Nothing else — no component, no route, no CSS.
+
+This is the load-bearing module. The ribbon, the turn list, and the analysis panel all
+read its output. Read design D3 and D4 and specs/trace-model/spec.md in full before
+writing a line; the algorithm is fully specified there.
+
+The product definition of a turn, stated by the user and normative here: a turn is one
+piece of thinking plus the actions that thinking took, AND a user input is also a turn.
+So there are three kinds — `init`, `user`, `cycle` — in ONE flat ordered list. All three
+count. There is deliberately no second layer grouping cycles under conversation rounds:
+a `user` turn is itself the round boundary, and nesting would add structure without
+adding information.
+
+The five things most likely to go wrong:
+
+0. A USER INPUT ALWAYS OPENS ITS OWN TURN, under every strategy, taking precedence over
+   that strategy's own boundary rule. It is never absorbed into the cycle that follows it
+   and never appended to the cycle before it. This is easy to get wrong in the `turn_key`
+   path specifically, where the key may not change at a user prompt — check the kind, not
+   only the key.
+
+1. TURN KEY FIRST, FALLBACK SECOND. If any event carries a non-null turnKey, segmentation
+   is `turn_key`. A null key ATTACHES to the open turn and never opens one — Change A
+   deliberately leaves keys null where a source has no boundary signal, and treating null
+   as a boundary would shatter those sessions into one turn per event.
+
+2. WALL-CLOCK DURATION. Last member end minus first member start, floored at 0. NOT the
+   sum of member durations. Write the test on a fixture where the two differ.
+
+3. INDICES ARE NEVER RENUMBERED. When there is no leading system/user run there is no
+   turn 0, and the first turn keeps index 1. Closing that gap hides real information.
+
+4. ONE TOOL EVENT FEEDS TWO PLACES (design D4). After Change A a tool event carries both
+   its arguments and its result. Its arguments belong to the assistant message as a call
+   block; its result is its own message ordered after. Model both from the one event —
+   do not duplicate the event and do not drop either side. Expose event.id as the call
+   identity WITHOUT parsing it.
+
+Also: reuse aggregateTokenUsage from src/core/metrics.ts. Do not re-derive per-adapter
+cache-read semantics locally — data-model §2 documents why that is a trap.
+
+Definition of done: §4 boxes checked with evidence including the 1,000-event benchmark
+under 20 ms, targeted core tests green, then
+npm run typecheck && npm run test && npm run lint all green.

@@ -4,6 +4,7 @@ import type { TraceEvent } from '../core/trace-types.js';
 import {
   aggregateTokenUsage,
   deriveDurations,
+  orderEventsByTime,
   pickPrimaryModel,
   titleFromText,
   DERIVED_DURATION_CAP_MS,
@@ -18,6 +19,7 @@ function ev(
     id,
     sessionId: 's1',
     sequence: 1,
+    turnKey: null,
     kind: 'llm',
     phase: 'implement',
     title: '',
@@ -36,6 +38,28 @@ function ev(
     ...partial,
   };
 }
+
+describe('orderEventsByTime（fix-adapter-turn-semantics A11）', () => {
+  it('同时间戳事件以源顺序为 tie-break，不按 sequence 重排', () => {
+    const out = orderEventsByTime([
+      ev('c', '2026-08-01T00:00:00.000Z', { sequence: 3 }),
+      ev('a', '2026-08-01T00:00:00.000Z', { sequence: 1 }),
+      ev('b', '2026-08-01T00:00:00.000Z', { sequence: 2 }),
+    ]);
+    // A11：同时间戳 = 同一条消息的多个 part，源顺序必须保留；
+    // sequence 由排序后的位置重新赋值（1-based 连续）。
+    expect(out.map((e) => e.id)).toEqual(['c', 'a', 'b']);
+    expect(out.map((e) => e.sequence)).toEqual([1, 2, 3]);
+  });
+
+  it('不同时间戳仍按时间排序', () => {
+    const out = orderEventsByTime([
+      ev('b', '2026-08-01T00:00:02.000Z'),
+      ev('a', '2026-08-01T00:00:01.000Z'),
+    ]);
+    expect(out.map((e) => e.id)).toEqual(['a', 'b']);
+  });
+});
 
 describe('deriveDurations（add-mission-control §1 P0-A）', () => {
   it('按时间排序后 durationMs = next − this，末事件为 0', () => {

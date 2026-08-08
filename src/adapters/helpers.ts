@@ -190,14 +190,23 @@ export function dedupeEventIds(events: TraceEvent[]): TraceEvent[] {
   });
 }
 
-/** 按 startedAt 稳定排序，保证 sequence 连续且 phase 两遍算法按时间序工作。 */
+/**
+ * 按 startedAt 排序，保证 sequence 连续且 phase 两遍算法按时间序工作。
+ * fix-adapter-turn-semantics A11：同时间戳的事件必须以**源顺序**为 tie-break，
+ * 而不是依赖稳定排序的附带行为——一条 Claude assistant 消息的所有 part 共享同一
+ * timestamp，若在此打乱，turnKey 分组与 sequence 的对应关系就被破坏。
+ */
 export function orderEventsByTime(events: TraceEvent[]): TraceEvent[] {
   return events
-    .slice()
-    .sort((a, b) =>
-      a.startedAt === b.startedAt ? a.sequence - b.sequence : a.startedAt < b.startedAt ? -1 : 1,
-    )
-    .map((event, index) => ({ ...event, sequence: index + 1 }));
+    .map((event, index) => ({ event, index }))
+    .sort((a, b) => {
+      if (a.event.startedAt !== b.event.startedAt) {
+        return a.event.startedAt < b.event.startedAt ? -1 : 1;
+      }
+      // A11：同时间戳 → 源顺序 tie-break（显式 index，不依赖稳定排序附带行为）。
+      return a.index - b.index;
+    })
+    .map(({ event }, index) => ({ ...event, sequence: index + 1 }));
 }
 
 /** OpenCode 系 subagent 标题检测（G9.3）。 */

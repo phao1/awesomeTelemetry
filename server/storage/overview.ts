@@ -28,6 +28,8 @@ const EVENT_AGG_SQL =
   // REQ-011 口径一致：先按会话算单会话指标（verificationCoverage / enteredDebug 为 0|1，
   // errorRate 为步骤失败占比，verificationCoverage 为 verify 事件/步骤数比例，
   // avgToolDurationMs 为会话内均值），再对会话求平均。
+  // fix-adapter-turn-semantics 5.9：compact 是基础设施事件，与 computeMetrics 同口径，
+  // 从 avgToolDurationMs 与 errorRate（分子分母）显式排除。
   `SELECT provider, source_agent, ` +
   `AVG(error_rate) AS error_rate, AVG(verification_coverage) AS verification_coverage, ` +
   `AVG(debug_entry_rate) AS debug_entry_rate, AVG(avg_tool_duration_ms) AS avg_tool_duration_ms, ` +
@@ -41,7 +43,7 @@ const EVENT_AGG_SQL =
    `    MAX(CASE WHEN e.phase = 'debug' THEN 1 ELSE 0 END) AS debug_entry_rate, ` +
    `    SUM(CASE WHEN e.status = 'error' AND e.kind IN (${STEP_KINDS_SQL}) THEN 1 ELSE 0 END) * 1.0 / ` +
    `      NULLIF(SUM(CASE WHEN e.kind IN (${STEP_KINDS_SQL}) THEN 1 ELSE 0 END), 0) AS error_rate, ` +
-   `    COALESCE(AVG(CASE WHEN e.tool IS NOT NULL THEN e.duration_ms END), 0) AS avg_tool_duration_ms ` +
+   `    COALESCE(AVG(CASE WHEN e.tool IS NOT NULL AND e.kind <> 'compact' THEN e.duration_ms END), 0) AS avg_tool_duration_ms ` +
   `  FROM events e JOIN sessions s ON s.id = e.session_id ` +
   `  WHERE s.data_source = ? ` +
   `  GROUP BY s.provider, s.source_agent, s.id ` +

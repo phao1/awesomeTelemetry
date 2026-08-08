@@ -63,4 +63,13 @@ describe('WorkBuddy adapter（REQ-009）', () => {
     expect((r.events[1] as unknown as { raw?: string }).raw).toContain('"callId"');
     expect(r.events[1]?.title).not.toContain('"callId"');
   });
+
+  // fix-adapter-turn-semantics A4 workbuddy 行：fixture 只有 callId（把一次
+  // function_call 与它的 result 配对）—— 这是工具调用标识，不是决策周期标识；
+  // 源格式不携带边界信号。fixture 派生：无活数据背书，禁止用时间邻近/事件计数合成。
+  it('fix-adapter-turn-semantics A4：fixture 无边界信号 → 全部 turnKey null + unavailable', () => {
+    const r = normalizeWorkBuddySample(sample(workbuddyFixture.events), SRC);
+    expect(r.events.map((e) => e.turnKey)).toEqual([null, null, null]);
+    expect(r.turnKeySource).toBe('unavailable');
+  });
 });

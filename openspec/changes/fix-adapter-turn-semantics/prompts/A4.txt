@@ -1,0 +1,88 @@
+/goal Implement task group §4 of openspec/changes/fix-adapter-turn-semantics/tasks.md — turn keys for codearts, opencode, trae, codeagent, codeagent2, qoder, and workbuddy. Keep working until every §4 task is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/fix-adapter-turn-semantics/proposal.md — why this exists
+3. openspec/changes/fix-adapter-turn-semantics/design.md — fixed decisions A1-A12,
+   including the measured baseline in A1 and the file whitelist in A12
+4. openspec/changes/fix-adapter-turn-semantics/specs/*/spec.md — the delta specs
+5. openspec/changes/fix-adapter-turn-semantics/tasks.md — your task group
+6. openspec/contracts/{data-model,database,nfr}.md, openspec/specs/adapters/spec.md,
+   openspec/specs/trace-model/spec.md, and openspec/gotchas.md before each edit
+
+Field names, enum values, table names, and limits come from those files. Do not write
+any of them from memory.
+
+Context: this change repairs event semantics BEFORE any turn UI is built. Measured on
+the live database 2026-08-07: about 64% of Codex events are misclassified as `system`,
+Codex emits 6,492 phantom `llm` events from usage records, and every Claude tool result
+is emitted as a fabricated user message. design.md A1 has the full measurement.
+
+Rules that apply to every window:
+- Touch only the files in design.md A12. Expected-value updates in existing tests
+  elsewhere are the ONE permitted exception (design A9) — record every such file.
+- No new runtime dependency. The project allows exactly four.
+- Never loosen, widen, or delete an assertion to make a test pass. When a metric value
+  legitimately moved, RECOMPUTE the expectation from the corrected classification and
+  say so in a comment naming this change.
+- Never synthesise a turn key from timestamp proximity, event count, or a guess. A
+  correct `null` beats a wrong key, because a wrong key silently mis-slices every
+  downstream turn.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: a contract conflicts with the design; a source
+format turns out not to carry the signal design A4 assumes; the A1 measurement no longer
+matches the live database; you need a file outside A12; or the token-total invariant in
+A6 cannot be satisfied.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisite: §1 is complete. If the event type lacks turnKey, STOP and report.
+
+Your scope is tasks.md §4 only (4.1 through 4.8). Files: the seven adapters and their
+tests, plus fixtures under src/adapters/__fixtures__/ (you may ADD a fixture; you must
+not delete or weaken one).
+
+Read this before you write anything. Only ONE of these seven has meaningful live data:
+codearts, with 155 events. opencode has 15, trae has 43, and codeagent / codeagent2 /
+qoder / workbuddy have zero. Your evidence base is each adapter's fixture file, and every
+one of the nine has one.
+
+That makes task 4.1 the real work: for each adapter, read its fixture and WRITE DOWN what
+boundary signal the source actually carries. Then implement only what the fixture
+supports.
+
+The failure mode to avoid: inventing a plausible-looking rule for an adapter you cannot
+verify, so that the field is non-null and looks finished. A turn key that is wrong is
+worse than null — null makes the consumer fall back and disclose that it did, while a
+wrong key silently mis-slices the whole trajectory and nobody finds out.
+
+So: where the fixture shows a message or round identifier, use it and declare
+`message_identity`. Where it shows nothing, return null for every event, declare
+`unavailable`, and say in the test name or a comment that this adapter carries no
+boundary signal in its fixture. That is a complete, correct outcome for this task — not
+a gap.
+
+codearts is the one with live evidence: event ids look like
+`msg_e5a6706dd001EO50ARXbYTFmlW-1`, so the key is the message id without the part
+ordinal. Obtain it from the source record, not by string-parsing the public id field.
+
+Tasks 4.6 and 4.7 are cross-cutting guards: one test proving no adapter synthesises a key
+from timestamp proximity or event count, one proving every adapter declares a provenance
+value. Both must exist.
+
+Definition of done: §4 boxes checked with evidence, every adapter's rule justified by its
+fixture in your report, targeted adapter tests green, then
+npm run typecheck && npm run test && npm run lint all green.

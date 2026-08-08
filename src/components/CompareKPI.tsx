@@ -17,7 +17,7 @@ import { classifyErrorText } from '../core/error-classifier.js';
 import { HBarChart } from './charts/HBarChart.js';
 import { Sparkline, type SparklineSeries } from './charts/Sparkline.js';
 import { BarMeter } from './ui/Misc.js';
-import { TraceTimeline } from './TraceTimeline.js';
+import { CompareMiniTimeline } from './CompareTimeline.js';
 import { IconChevronDown } from './icons/index.js';
 
 interface KpiItem {
@@ -177,7 +177,7 @@ function DrillDownErrors({
   );
 }
 
-/** REQ-100 DrillDownDuration：双 TraceTimeline compact（20 行上限）。 */
+/** REQ-100 DrillDownDuration：双自包含紧凑时间线（20 行上限）。 */
 function DrillDownDuration({
   leftEvents,
   rightEvents,
@@ -193,16 +193,12 @@ function DrillDownDuration({
         <span className="compare-side-mark" style={{ color: mark === 'L' ? 'var(--accent-fg)' : 'var(--attention-fg)' }}>{mark}</span>
         {t('compare.drilldown.duration', locale)}
       </h5>
-      <TraceTimeline
+      <CompareMiniTimeline
         events={events.slice(0, 20)}
         total={Math.min(20, events.length)}
-        hasMore={false}
-        onLoadMore={() => undefined}
-        onSelectEvent={() => undefined}
-        selectedEventId={null}
         locale={locale}
-        layoutMode="time"
-        semanticGroup={false}
+        mode="time"
+        compact
       />
     </div>
   );

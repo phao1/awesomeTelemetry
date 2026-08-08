@@ -47,6 +47,9 @@ export interface SessionListProps {
   onRangeChange: (range: SessionRange) => void;
   onProviderFilterChange: (providers: ProviderKey[]) => void;
   onStatusFilterChange: (statuses: TraceStatus[]) => void;
+  /** D14：会话列表标签过滤（OR 语义，自由文本可直输）。 */
+  tagFilter: string[];
+  onTagFilterChange: (tags: string[]) => void;
   /** 当前过滤条件下的总条数（服务端 total）。 */
   total: number;
   /** REQ-008：键盘浏览游标 + 全局 `/` 聚焦入口 */
@@ -117,6 +120,8 @@ export function SessionList({
   onRangeChange,
   onProviderFilterChange,
   onStatusFilterChange,
+  tagFilter,
+  onTagFilterChange,
   total,
   cursorIndex,
   searchInputRef,
@@ -127,6 +132,11 @@ export function SessionList({
 }: SessionListProps): React.JSX.Element {
   const [providerOpen, setProviderOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [tagOpen, setTagOpen] = useState(false);
+  const [tagVocab, setTagVocab] = useState<Array<{ tag: string; count: number }> | null>(null);
+  const [tagVocabLoading, setTagVocabLoading] = useState(false);
+  const [tagVocabError, setTagVocabError] = useState<string | null>(null);
+  const [tagInput, setTagInput] = useState('');
   // 建议 11：合并会话成员（点击 M 徽章懒加载，Popover 展示，不破坏虚拟滚动行高）
   const [mergeOpenFor, setMergeOpenFor] = useState<string | null>(null);
   const [groups, setGroups] = useState<SessionMergeGroupInfo[] | null>(null);
@@ -157,6 +167,40 @@ export function SessionList({
         setMembersError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => setMembersLoading(false));
+  };
+
+  /** D14：标签词表在过滤器打开时取一次，之后复用；绝不逐键请求。 */
+  const openTagFilter = (next: boolean): void => {
+    setTagOpen(next);
+    if (next && tagVocab === null && !tagVocabLoading) {
+      setTagVocabLoading(true);
+      setTagVocabError(null);
+      void api
+        .annotationTags()
+        .then((res) => setTagVocab(res.tags))
+        .catch((err: unknown) => {
+          console.error('[session-list] 标签词表加载失败:', err);
+          setTagVocabError(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => setTagVocabLoading(false));
+    }
+  };
+
+  const toggleTag = (tag: string): void => {
+    onTagFilterChange(
+      tagFilter.includes(tag) ? tagFilter.filter((value) => value !== tag) : [...tagFilter, tag],
+    );
+  };
+
+  const addTypedTag = (): void => {
+    const raw = tagInput.trim();
+    if (raw === '') {
+      return;
+    }
+    if (!tagFilter.includes(raw)) {
+      onTagFilterChange([...tagFilter, raw]);
+    }
+    setTagInput('');
   };
 
   // REQ-016（delta）：过滤全部服务端化——App 按 q/range/provider/status 拉取，
@@ -290,6 +334,81 @@ export function SessionList({
               })}
             </div>
           </Popover>
+          <Popover
+            open={tagOpen}
+            onOpenChange={openTagFilter}
+            trigger={(props) => (
+              <button type="button" className="btn ui-btn-sm" {...props}>
+                {t('trajectory.list.tags', locale)}
+                {filterBadge(tagFilter.length)}
+              </button>
+            )}
+          >
+            <div className="tag-filter-list">
+              <div className="annotations-tag-input-row">
+                <input
+                  type="text"
+                  className="annotations-tag-input"
+                  placeholder={t('trajectory.list.tagPlaceholder', locale)}
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      addTypedTag();
+                    }
+                  }}
+                />
+                <button type="button" className="btn ui-btn-sm" onClick={addTypedTag}>
+                  +
+                </button>
+              </div>
+              {tagVocabLoading && <Skeleton variant="row" count={3} />}
+              {tagVocabError !== null && !tagVocabLoading && (
+                <p className="hint">{tagVocabError}</p>
+              )}
+              {!tagVocabLoading && tagVocabError === null && (
+                <label className="session-filter-item">
+                  <input
+                    type="checkbox"
+                    checked={tagFilter.length === 0}
+                    onChange={() => onTagFilterChange([])}
+                  />
+                  <span className="tag-filter-entry-name">{t('session.all', locale)}</span>
+                </label>
+              )}
+              {[
+                ...(tagVocab ?? []).map((entry) => entry.tag),
+                ...tagFilter.filter(
+                  (tag) => !(tagVocab ?? []).some((entry) => entry.tag === tag),
+                ),
+              ].map((tag) => {
+                const checked = tagFilter.includes(tag);
+                const count = tagVocab?.find((entry) => entry.tag === tag)?.count;
+                return (
+                  <label key={tag} className="session-filter-item">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleTag(tag)}
+                    />
+                    <span className="tag-filter-entry-name" title={tag}>
+                      {tag}
+                    </span>
+                    {count !== undefined && (
+                      <span className="tag-filter-entry-count mono">{count}</span>
+                    )}
+                  </label>
+                );
+              })}
+              {!tagVocabLoading &&
+                tagVocabError === null &&
+                tagVocab !== null &&
+                tagVocab.length === 0 &&
+                tagFilter.length === 0 && (
+                  <p className="hint">{t('trajectory.list.noTags', locale)}</p>
+                )}
+            </div>
+          </Popover>
         </div>
       </div>
       {error !== null && error !== undefined && (
@@ -407,6 +526,20 @@ export function SessionList({
                     </div>
                     <div className="session-row-meta">
                       <ProviderBadge provider={session.provider} locale={locale} />
+                      {session.tags.length > 0 && (
+                        <span className="session-row-tags" aria-label={t('trajectory.list.tags', locale)}>
+                          {session.tags.slice(0, 2).map((tag) => (
+                            <span key={tag} className="session-row-tag" title={tag}>
+                              {tag}
+                            </span>
+                          ))}
+                          {session.tags.length > 2 && (
+                            <span className="session-row-tag" title={session.tags.join(', ')}>
+                              +{session.tags.length - 2}
+                            </span>
+                          )}
+                        </span>
+                      )}
                       <span className="mono session-row-id" title={session.id}>
                         {session.id}
                       </span>

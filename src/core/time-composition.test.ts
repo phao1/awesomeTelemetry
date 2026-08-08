@@ -13,6 +13,7 @@ function ev(partial: Partial<TraceEventSlim>): TraceEventSlim {
     id: `e${seq}`,
     sessionId: 's1',
     sequence: seq,
+    turnKey: null,
     kind: 'llm',
     phase: 'implement',
     title: '',

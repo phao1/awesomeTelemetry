@@ -121,4 +121,46 @@ describe('CodeArts adapter（REQ-005/G9.1 thin wrapper）', () => {
     expect((r.events[1] as unknown as { raw?: string }).raw).toContain('"tool"');
     expect(r.events[1]?.title).not.toContain('"tool"');
   });
+
+  // fix-adapter-turn-semantics A4 codearts 行：key = 源 message id（去掉 part 序号的
+  // 消息标识）。codearts 是七个里唯一有活数据的（A1：155 事件），但规则同样由 fixture
+  // 支撑，活数据形状见下一用例。
+  it('fix-adapter-turn-semantics A4：turnKey = 源 message id（从源记录取，不经公开 id 反解）', () => {
+    const r = codeartsAdapter.normalize(
+      { sourceAgent: 'CodeArts', session: codeartsFixture.session, events: codeartsFixture.events },
+      SRC,
+    );
+    // fixture：ca2-m1 → user_prompt；ca2-m2 → file_write
+    expect(r.events.map((e) => e.turnKey)).toEqual(['ca2-m1', 'ca2-m2']);
+    expect(r.turnKeySource).toBe('message_identity');
+  });
+
+  it('fix-adapter-turn-semantics A4：活数据形状 msg_…-N —— key 是去掉 part 序号的 message id', () => {
+    const events = [
+      {
+        id: 'msg_e5a6706dd001EO50ARXbYTFmlW',
+        role: 'assistant' as const,
+        sessionID: 'ca2-s1',
+        time: { created: 1754000000000 },
+        tokens: null,
+        content: [
+          { type: 'tool', tool: 'Write', state: { status: 'completed', title: 'write a.ts' } },
+          { type: 'text', text: 'ok' },
+        ],
+      },
+    ];
+    const r = codeartsAdapter.normalize(
+      { sourceAgent: 'CodeArts', session: codeartsFixture.session, events },
+      SRC,
+    );
+    // 公开 id 带 -0 / -1 part 序号；turnKey 是完整 message id，来自源记录而非字符串反解
+    expect(r.events.map((e) => e.id)).toEqual([
+      'msg_e5a6706dd001EO50ARXbYTFmlW-0',
+      'msg_e5a6706dd001EO50ARXbYTFmlW-1',
+    ]);
+    expect(r.events.map((e) => e.turnKey)).toEqual([
+      'msg_e5a6706dd001EO50ARXbYTFmlW',
+      'msg_e5a6706dd001EO50ARXbYTFmlW',
+    ]);
+  });
 });

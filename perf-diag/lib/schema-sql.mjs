@@ -1,8 +1,10 @@
 // 镜像 server/storage/schema.ts 的 SCHEMA_SQL / INDEX_SQL（Node 原生 TS 无法解析 .js 相对导入）。
 // 若 schema.ts 变更，这里必须同步；M12 的 perf 校验脚本可对比两份 DDL。
 
-// v6（add-request-context-diff）：与 server/storage/schema.ts 对齐。
-export const SCHEMA_VERSION = 6;
+// v7（fix-adapter-turn-semantics A10）：events 增 turn_key，与
+// server/storage/schema.ts 对齐。同步范围：v4 content_hash / 五新 metrics
+// 列、v5 session_prompt_context、v6 proxy 列、v7 turn_key。
+export const SCHEMA_VERSION = 7;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS _meta (
@@ -56,8 +58,10 @@ CREATE TABLE IF NOT EXISTS events (
   tokens_json    TEXT,
   error          TEXT,
   model          TEXT,
+  content_hash   TEXT    NOT NULL DEFAULT '',
   input_len      INTEGER NOT NULL DEFAULT 0,
   output_len     INTEGER NOT NULL DEFAULT 0,
+  turn_key       TEXT,
   PRIMARY KEY (session_id, id)
 ) WITHOUT ROWID;
 
@@ -83,7 +87,12 @@ CREATE TABLE IF NOT EXISTS metrics (
   calc_version          INTEGER NOT NULL DEFAULT 0,
   ttft_ms               REAL,
   e2e_ms                REAL,
-  repair_loop           INTEGER NOT NULL DEFAULT 0
+  repair_loop           INTEGER NOT NULL DEFAULT 0,
+  total_tool_duration_ms INTEGER NOT NULL DEFAULT 0,
+  llm_call_count         INTEGER NOT NULL DEFAULT 0,
+  user_interaction_rounds INTEGER NOT NULL DEFAULT 0,
+  has_unit_tests         INTEGER NOT NULL DEFAULT 0,
+  failed_command_count   INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS scan_state (

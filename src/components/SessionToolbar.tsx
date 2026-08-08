@@ -13,6 +13,10 @@ export interface SessionToolbarProps {
   session: TraceSession;
   events: TraceEventSlim[];
   locale: Locale;
+  /** D14：当前会话的标签（来自共享 SessionIndexEntry，零额外请求）。 */
+  tags?: string[];
+  /** 返回会话列表（detail 头部的 ← 返回，6.15）。 */
+  onBack?: () => void;
   onRescan?: () => void;
   onDelete?: () => void;
   onCopyId?: () => void;
@@ -158,6 +162,8 @@ export function SessionToolbar({
   session,
   events,
   locale,
+  tags = [],
+  onBack,
   onRescan,
   onDelete,
   onCopyId,
@@ -174,6 +180,8 @@ export function SessionToolbar({
       session,
       events: events as TraceEvent[],
       tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+      // v7 未持久化 provenance；B 阶段由 API 提供真实值
+      turnKeySource: 'unavailable',
     });
     const tokensPerStep = total > 0 ? session.tokenUsage.total / total : 0;
     return {
@@ -191,6 +199,17 @@ export function SessionToolbar({
   return (
     <>
       <header className="session-toolbar">
+        {onBack !== undefined && (
+          <button
+            type="button"
+            className="ui-icon-btn ui-btn-sm"
+            aria-label={t('trajectory.back', locale)}
+            title={t('trajectory.back', locale)}
+            onClick={onBack}
+          >
+            <span aria-hidden="true">←</span>
+          </button>
+        )}
         <div className="session-toolbar-main">
           <ProviderBadge provider={session.provider} locale={locale} />
           <h2 className="session-toolbar-title" title={session.title || session.id}>
@@ -237,6 +256,15 @@ export function SessionToolbar({
         <button type="button" className="btn session-toolbar-prompt" onClick={onPromptContext}>
           {t('prompt.open', locale)}
         </button>
+        {tags.length > 0 && (
+          <span className="session-toolbar-tags" aria-label={t('trajectory.list.tags', locale)}>
+            {tags.map((tag) => (
+              <span key={tag} className="session-row-tag" title={tag}>
+                {tag}
+              </span>
+            ))}
+          </span>
+        )}
         <DropdownMenu
           open={menuOpen}
           onOpenChange={setMenuOpen}

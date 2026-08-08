@@ -60,4 +60,13 @@ describe('Qoder adapter（REQ-008）', () => {
     expect((r.events[0] as unknown as { raw?: string }).raw).toContain('"role"');
     expect(r.events[0]?.inputSummary).not.toContain('"role"');
   });
+
+  // fix-adapter-turn-semantics A4 qoder 行：fixture 中每条记录只有各自唯一的 row.id，
+  // 没有任何字段把一次 inference 与它触发的工具活动分组，也没有 round/cycle 标记 —
+  // 源格式不携带边界信号。fixture 派生：无活数据背书，禁止用时间邻近/事件计数合成。
+  it('fix-adapter-turn-semantics A4：fixture 无边界信号 → 全部 turnKey null + unavailable', () => {
+    const r = normalizeQoderSample(sample(qoderFixture.events), SRC);
+    expect(r.events.map((e) => e.turnKey)).toEqual([null, null, null]);
+    expect(r.turnKeySource).toBe('unavailable');
+  });
 });

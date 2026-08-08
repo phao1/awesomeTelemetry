@@ -75,4 +75,16 @@ describe('CodeAgent2 adapter（REQ-005/G9.1 thin wrapper）', () => {
     expect((r.events[1] as unknown as { raw?: string }).raw).toContain('"tool"');
     expect(r.events[1]?.title).not.toContain('"tool"');
   });
+
+  // fix-adapter-turn-semantics A4 codeagent2 行：与 opencode 同源（fixture 派生，
+  // 无活数据），key = 源 message id。
+  it('fix-adapter-turn-semantics A4：turnKey = 源 message id（fixture 派生）', () => {
+    const r = codeagent2Adapter.normalize(
+      { sourceAgent: 'CodeMate', session: codeagent2Fixture.session, events: codeagent2Fixture.events },
+      SRC,
+    );
+    // fixture：cm-m1 → user_prompt；cm-m2 → file_read
+    expect(r.events.map((e) => e.turnKey)).toEqual(['cm-m1', 'cm-m2']);
+    expect(r.turnKeySource).toBe('message_identity');
+  });
 });

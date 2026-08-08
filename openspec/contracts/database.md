@@ -1,14 +1,17 @@
 # Contract: Database
 
 > **Authoritative source.** This is a fresh build; the schema starts at **v1**
-> and is currently at **v6** (add-request-context-diff: proxy capture-group
-> correlation + request-format classification; preceding versions:
-> add-mission-control model attribution + cost / duration sources + ttft/e2e
-> persistence + scan-time repair rollup, calibrate-tokens-and-compare-report
-> TraceMetrics five new fields, show-trae-prompt-context
-> `session_prompt_context`). All DDL must be adopted verbatim — no column
-> renames, no added or removed columns beyond this contract.
-> Corresponding source file: `server/storage/schema.ts`
+> and is currently at **v8** (add-trajectory-inspector: the additive
+> `session_annotations` table plus its index; preceding versions:
+> fix-adapter-turn-semantics `events.turn_key` plus the destructive v6→v7
+> reclassification rescan migration, add-request-context-diff proxy
+> capture-group correlation + request-format classification,
+> add-mission-control model attribution + cost / duration sources +
+> ttft/e2e persistence + scan-time repair rollup,
+> calibrate-tokens-and-compare-report TraceMetrics five new fields,
+> show-trae-prompt-context `session_prompt_context`). All DDL must be adopted
+> verbatim — no column renames, no added or removed columns beyond this
+> contract. Corresponding source file: `server/storage/schema.ts`
 >
 > Numbers marked "reference-implementation measured" come from the recreated
 > project's performance diagnostic report (524 sessions / 73,588 events /
@@ -66,7 +69,7 @@ export function initSchema(db: Database): void {
   db.prepare(
     "INSERT INTO _meta(key, value) VALUES('schema_version', ?) " +
     "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-  ).run(String(SCHEMA_VERSION));  // SCHEMA_VERSION = 5
+  ).run(String(SCHEMA_VERSION));  // SCHEMA_VERSION = 8
   db.exec('ANALYZE');
 }
 ```
@@ -95,6 +98,43 @@ run the migration chain implemented in `server/storage/schema.ts`
   parsed or backfilled during migration. Rollback uses the prior binary:
   SQLite ignores additive columns and indexes, and new proxy rows remain
   readable through the old explicit column lists.
+- **v6 → v7** (fix-adapter-turn-semantics A10): a **destructive
+  reclassification rescan**. In order:
+  1. `ALTER TABLE events ADD COLUMN turn_key TEXT` — idempotent; a
+     duplicate-column failure is tolerated, any other failure throws with
+     rebuild guidance.
+  2. Clear the derived event data by **named table**, never as "everything
+     except": `DELETE FROM events; DELETE FROM event_raw; DELETE FROM metrics;
+     DELETE FROM scan_state;`
+  3. Leave the preserved tables untouched: `sessions`, `proxy_requests`,
+     `frida_captures`, `session_prompt_context`. The deletion list is
+     enumerated explicitly so tables added by later changes (e.g. a
+     session-level annotations table from add-trajectory-inspector) survive by
+     default.
+  4. Set `detail_loaded = 0` on every session so the next open triggers a scan.
+  5. Record completion in `_meta` so a second run is a no-op.
+
+  No in-place reclassification is attempted: existing rows lack the
+  information needed to reconstruct turn keys. The rescan is safe because every
+  source file is still on disk and scanning is deterministic; startup after
+  upgrade is slower once (contracts/nfr.md §3 records the one-time cost).
+- **v7 → v8** (add-trajectory-inspector D15): **additive only** — create the
+  `session_annotations` table (§3.10) and its index (§4). No existing table,
+  column, index, or projection is modified, and no rescan is triggered.
+
+  **Change A's destructive v6→v7 migration must preserve this table.** That is
+  why Change A enumerates the tables it clears (`events`, `event_raw`,
+  `metrics`, `scan_state`) instead of writing an exclusion list: a table added
+  by a later change such as `session_annotations` is not on that named list and
+  therefore survives by default. Storage window task §2.4 must prove this by
+  running Change A's migration against a database that already holds
+  annotation rows and asserting the rows are still present afterwards.
+
+  The v7→v8 migration is idempotent (`CREATE TABLE IF NOT EXISTS` +
+  `CREATE INDEX IF NOT EXISTS`); a second run changes nothing and does not
+  fail. Migration failure throws with rebuild guidance — a silent catch is
+  prohibited. Rollback uses the prior binary: the new table and index are
+  simply unused.
 - Migration failure MUST throw with a "delete the DB and rescan" hint; the
   database is a rebuildable cache of local session files, and a half-migrated
   state is more dangerous than a rescan (decision: tasks.md "已做的决策" #3).
@@ -173,6 +213,7 @@ CREATE TABLE IF NOT EXISTS events (
   content_hash   TEXT    NOT NULL DEFAULT '',
   input_len      INTEGER NOT NULL DEFAULT 0,
   output_len     INTEGER NOT NULL DEFAULT 0,
+  turn_key       TEXT,
   PRIMARY KEY (session_id, id)
 ) WITHOUT ROWID;
 ```
@@ -182,6 +223,8 @@ CREATE TABLE IF NOT EXISTS events (
 > FNV-1a 64bit hex，覆盖全部可变列；同 (id, sequence) 内容变化时据此触发 UPDATE。
 > Duplicate event ids within a session get a `:{sequence}` suffix from the
 > adapter; they are unique before hitting the DB.
+> `turn_key`（fix-adapter-turn-semantics §1.5）：决策周期标识，nullable；
+> `null` 是一等值（源格式无边界信号），不是错误。由 adapter 填充。
 
 ### 3.4 `event_raw`
 
@@ -353,6 +396,32 @@ The `trae_db` source MUST store `completeness='dynamic_only'` and
 `full_system_prompt=NULL`. Reads use the primary-key index; no additional index
 is required.
 
+### 3.10 `session_annotations` (add-trajectory-inspector)
+
+One optional annotations row per stored session: tags (as a JSON array) plus a
+free-text note. Added by the additive v7→v8 migration (design D15); it is the
+only new table in schema v8 and it touches no existing table.
+
+```sql
+CREATE TABLE IF NOT EXISTS session_annotations (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  tags_json  TEXT NOT NULL DEFAULT '[]',
+  note       TEXT,
+  updated_at TEXT NOT NULL
+);
+```
+
+- `session_id` — session primary key; the FK cascade removes the annotation row
+  when the session is deleted.
+- `tags_json` — normalised tag array as JSON (`[]` when empty). Normalisation
+  (trim, lowercase, de-duplicate, sort ascending) and the four bounds
+  (`ANNOTATION_MAX_TAGS = 32`, `ANNOTATION_TAG_MAX_CHARS = 64`,
+  `ANNOTATION_TAG_PATTERN`, `ANNOTATION_NOTE_MAX_CHARS = 8192`) are defined in
+  `contracts/data-model.md` §3.2.
+- `updated_at` — ISO 8601 UTC string, written on every create/update.
+- Reads and writes use module-level cached prepared statements and explicit
+  column lists, never `SELECT *`; the read plan is a primary-key lookup.
+
 ## 4. Indexes (full set)
 
 ```sql
@@ -390,7 +459,17 @@ CREATE INDEX IF NOT EXISTS idx_proxy_group_format_model_id ON proxy_requests(cap
 CREATE INDEX IF NOT EXISTS idx_frida_captured_at     ON frida_captures(captured_at);
 CREATE INDEX IF NOT EXISTS idx_frida_session         ON frida_captures(session_id);
 CREATE INDEX IF NOT EXISTS idx_frida_capture_session ON frida_captures(capture_session_id);
+
+-- session_annotations (v8, add-trajectory-inspector D14/D15)
+CREATE INDEX IF NOT EXISTS idx_session_annotations_updated
+  ON session_annotations(updated_at);
 ```
+
+> `idx_session_annotations_updated` supports the tag-vocabulary ordering and
+> any updated-at sorting on the annotations table. Tag matching on the session
+> list uses a JSON-array containment predicate on the joined row — verify with
+> `EXPLAIN QUERY PLAN` that the session list's existing ordering plan gains no
+> temporary B-tree (storage window tasks §2.10, §2.11).
 
 > **Do not create single-column `idx_events_session_id` or
 > `idx_sessions_data_source`.** They are prefixes of the two composite indexes
@@ -422,6 +501,7 @@ export const SESSION_LIST_COLS = [
 export const EVENT_SLIM_COLS = [
   'session_id', 'id', 'sequence', 'kind', 'phase', 'title', 'started_at',
   'duration_ms', 'status', 'actor', 'tool', 'tokens_json', 'error', 'model',
+  'turn_key',
   "CASE WHEN input_summary  IS NOT NULL AND input_summary  != '' THEN 1 ELSE 0 END AS has_input",
   "CASE WHEN output_summary IS NOT NULL AND output_summary != '' THEN 1 ELSE 0 END AS has_output",
 ].join(', ');
