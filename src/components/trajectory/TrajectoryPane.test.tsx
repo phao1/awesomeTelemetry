@@ -167,7 +167,9 @@ describe('TrajectoryPane（D2 / D16）', () => {
 
   it('多成员组：agent 面板恰好一次批量 keys 拉取（AGENTS.md #6）', async () => {
     const fetchGroups = vi.fn(async () => ({
-      groups: [{ id: 'g1', primaryKey: 'main-1', title: 'g', sourceAgent: 'CodeArts', mergedKeys: ['main-1', 'sub-1'], reason: 'config' }],
+      // 真实组形状（/api/session-groups）：primaryKey 与 mergedKeys 分离，
+      // mergedKeys 不含 primaryKey（成员全集 = [primaryKey, ...mergedKeys]）。
+      groups: [{ id: 'g1', primaryKey: 'main-1', title: 'g', sourceAgent: 'CodeArts', mergedKeys: ['sub-1'], reason: 'config' }],
     }));
     const fetchMembers = vi.fn(async (keys: string[]) => ({
       items: keys.map((id) => ({

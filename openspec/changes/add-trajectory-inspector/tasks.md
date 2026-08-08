@@ -31,7 +31,7 @@ Do not commit or push unless the user separately asks.
 - [x] 1.7 Add §2.8 Role colours (six groups, three tiers, both themes, mandatory icons) and `--ribbon-active` from D19 to `openspec/contracts/design-tokens.md`.
 - [x] 1.8 Add the D20 budgets to `openspec/contracts/nfr.md`, including the session-list tag-join delta requirement.
 - [x] 1.9 Copy the new types verbatim into `src/core/trace-types.ts`; extend `src/core/trace-types.test.ts` with shape assertions and a negative assertion that no `toolCallId` field is introduced (identity comes from `event.id`, per D5).
-- [ ] 1.10 Run `openspec validate add-trajectory-inspector --strict` and `npm run typecheck`; do not proceed until both pass.
+- [x] 1.10 Run `openspec validate add-trajectory-inspector --strict` and `npm run typecheck`; do not proceed until both pass. (evidence: 由 §9.1/9.2 门槛证据覆盖 —— `openspec validate add-trajectory-inspector --strict` exit 0 无警告；`npm run typecheck` exit 0。此前该框未勾，本轮 §9 门槛产生完全相同证据后勾选)
 
 ## 2. Storage — schema v8, annotations, tag filter
 
@@ -165,17 +165,17 @@ Do not commit or push unless the user separately asks.
 
 **Depends on:** all groups
 
-- [ ] 9.1 Run `openspec validate add-trajectory-inspector --strict` with no warnings.
-- [ ] 9.2 Run `npm run typecheck && npm run test && npm run lint && npm run build && npm run perf:check`; fix implementation, never relax assertions.
-- [ ] 9.3 Audit the diff against the D20 whitelist; revert unrelated edits and stop for confirmation if any required file lies outside it.
-- [ ] 9.4 Prove no runtime dependency was added.
-- [ ] 9.5 Grep every new CSS and TSX file for hex, rgb, and named colour literals; the count must be zero.
-- [ ] 9.6 Audit all AGENTS.md prohibitions, in particular no `SELECT *`, no body leakage into the list projection, no prepare-in-loop, no frontend fetch-per-item, and no `ORDER BY LENGTH`.
-- [ ] 9.7 Confirm `TraceTimeline` and `EventInspector` have no remaining imports anywhere in the tree.
-- [ ] 9.8 Serve the production build on `127.0.0.1`, open a real rescanned Codex session, and record: turn count, `segmentationSource`, the adapter's declared provenance, first-paint duration, detail-open request count, and how turn 1 renders — assistant card, nested call blocks, result cards.
-- [ ] 9.9 Open a real Claude session and confirm no fabricated user card appears after a tool call and that tool results render inside their tool cards.
-- [ ] 9.10 Open the one real codearts sub-agent session, confirm the hierarchy renders, and confirm switching agents issues exactly one batched key fetch.
-- [ ] 9.11 Annotate two sessions with overlapping tags, confirm OR filtering on the list, restart the server, confirm the annotations survived, then delete one session and confirm its annotation row is gone.
-- [ ] 9.12 Re-measure the session list against the 524-entry baseline with the tag join active and record the delta.
-- [ ] 9.13 Append derivation time, ribbon computation time, first paint, scroll node counts, and the list delta to `PERF-BASELINE.md`.
-- [ ] 9.14 Mark only evidenced tasks complete and report Delivered / Contract mapping / Verification / Needs confirmation exactly as `AGENTS.md` requires, listing prefill/decode, deployment-only session fields, per-message comments, and the separate list page as explicitly not implemented, and naming every deleted test.
+- [x] 9.1 Run `openspec validate add-trajectory-inspector --strict` with no warnings. (evidence: `openspec validate add-trajectory-inspector --strict` → "Change 'add-trajectory-inspector' is valid", exit 0, no warnings)
+- [x] 9.2 Run `npm run typecheck && npm run test && npm run lint && npm run build && npm run perf:check`; fix implementation, never relax assertions. (evidence: typecheck 0; vitest 137 files / 1128 passed + 1 skipped; lint 0; build 0 (dist + server-dist); perf:check 全绿 —— listSessions(500) 0.424ms、worst detail 9.755ms、Overview 冷 51.48ms、事件循环 p99 0.00ms、Mission 冷 32.59ms。期间 3 处实现缺陷由活体验证发现并修复 —— AgentHierarchyPanel 组形状、trajectory.css 画布高度，断言未放宽)
+- [x] 9.3 Audit the diff against the D20 whitelist; revert unrelated edits and stop for confirmation if any required file lies outside it. (evidence: `git diff 71e7c9b..HEAD` 全量审计 —— 白名单内实现文件 + change 自身治理文档；白名单外仅 B2.1 机械 `tags:[]` 补齐（7 文件，bf63d0d）与 B6 授权比较视图重写（CompareKPI/CompareTimeline，因删除 TraceTimeline/EventInspector 必需，6.17）；`src/generated/local-samples.ts` 为机械打补丁而非重生成（生成脚本未更新，见报告 Needs confirmation）；无无关编辑，无必需文件落在白名单外)
+- [x] 9.4 Prove no runtime dependency was added. (evidence: `git diff 71e7c9b..HEAD -- package.json package-lock.json` 空；dependencies 仍恰为 better-sqlite3/chokidar/http-mitm-proxy/node-forge 四个)
+- [x] 9.5 Grep every new CSS and TSX file for hex, rgb, and named colour literals; the count must be zero. (evidence: 对 B 新增全部 css/tsx 文件 grep hex/rgb/命名色 = 0 命中（仅 `white-space` 属性误报，已排除）；tokens.test T2 同断言绿)
+- [x] 9.6 Audit all AGENTS.md prohibitions, in particular no `SELECT *`, no body leakage into the list projection, no prepare-in-loop, no frontend fetch-per-item, and no `ORDER BY LENGTH`. (evidence: 触碰文件无 `SELECT *`（注释除外）、SESSION_LIST_COLS 无 body 列、annotations.ts 模块级 cachedStmt 无循环 prepare、前端无 `.map(fetch)`/循环内 fetch（agent 切换恰 1 次批量 keys 拉取）、无 `ORDER BY LENGTH`；spawnSync/execFileSync 0)
+- [x] 9.7 Confirm `TraceTimeline` and `EventInspector` have no remaining imports anywhere in the tree. (evidence: `rg "import[^;]*(TraceTimeline|EventInspector)"` = 0；两组件文件已删；inspector-text 保留（SettingsModal/TokenTextModal 仍引用，6.1 允许）)
+- [x] 9.8 Serve the production build on `127.0.0.1`, open a real rescanned Codex session, and record: turn count, `segmentationSource`, the adapter's declared provenance, first-paint duration, detail-open request count, and how turn 1 renders — assistant card, nested call blocks, result cards. (evidence: 127.0.0.1:4173 + headless Chrome；`codex-d2eaa46703228f` 回合 597、口径行 = turn_key + stream structure、详情打开 3 请求（slim detail + session-groups + annotations，无逐回合/逐消息）、hash→turn 列表首屏 62ms、turn 1 = assistant 卡 + 2 嵌套 call block（展开后，id `#sequence`——ctc_/ctco_ 非 toolu_/call_/msg_ 形态）+ 2 tool result 卡)
+- [x] 9.9 Open a real Claude session and confirm no fabricated user card appears after a tool call and that tool results render inside their tool cards. (evidence: `claude-0be2a9071b490d` 465 回合；扫描 turn 0–7：tool call 后无伪造 user 卡，turn 1–5 = [assistant, tool, tool] 且 `toolu_…` id 原样、2/2 tool result 正文有内容；DB 交叉核对 claude user_prompt 修复后仅真实事件)
+- [x] 9.10 Open the one real codearts sub-agent session, confirm the hierarchy renders, and confirm switching agents issues exactly one batched key fetch. (evidence: `codearts-87fa32238de9b5` 层级 2 节点渲染；切换 subagent 恰好 1 次 `GET /api/sessions?keys=main,sub`（绝无逐成员）；修复 AgentHierarchyPanel 组形状缺陷后通过 —— 修复前主会话只渲染 1 节点且 0 次批量拉取)
+- [x] 9.11 Annotate two sessions with overlapping tags, confirm OR filtering on the list, restart the server, confirm the annotations survived, then delete one session and confirm its annotation row is gone. (evidence: 两会话写重叠 tag `e2e-run`；API + UI OR 过滤均返回两会话（today 范围）；重启后注解保留；DELETE 一会话 → 注解行级联清除（0 残留、404、另一会话注解完好、词汇表计数更新）；已强制重扫恢复会话)
+- [x] 9.12 Re-measure the session list against the 524-entry baseline with the tag join active and record the delta. (evidence: 524 合成库 + D15 注解表（52 行带注解）：join 0.642ms/205,730B（gzip 12.9KB）vs join-less 0.445ms/192,464B → 增量 +0.197ms；2-tag OR 0.237ms/26 行；EXPLAIN 无 TEMP B-TREE；相对 5.33ms 负面基线 −88%；增量已记 PERF-BASELINE)
+- [x] 9.13 Append derivation time, ribbon computation time, first paint, scroll node counts, and the list delta to `PERF-BASELINE.md`. (evidence: deriveTurns 1,000 事件 worst 0.175ms、computeRibbon 200 回合 worst 0.154ms、首屏 60–64ms、滚动节点 17→17（折叠虚拟化）/597（展开设计内）、列表 delta +0.197ms —— 已追加 PERF-BASELINE.md「add-trajectory-inspector perf:check 与活体验证」节)
+- [x] 9.14 Mark only evidenced tasks complete and report Delivered / Contract mapping / Verification / Needs confirmation exactly as `AGENTS.md` requires, listing prefill/decode, deployment-only session fields, per-message comments, and the separate list page as explicitly not implemented, and naming every deleted test. (evidence: 本 §9 全部勾选均带实测证据；报告见本轮最终回复；not-implemented 列表与 6.17 删除测试已列)

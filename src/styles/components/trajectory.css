@@ -16,6 +16,22 @@
   min-height: 0;
 }
 
+/*
+ * 活体验证（tasks.md §9.8/§9.13）：session.css 的 `.session-scroll .session-canvas`
+ * 是 `flex: none`（旧甘特语义：画布随内容撑开、外层 session-scroll 滚动）。
+ * turn 表面自带内部滚动容器 `.turn-list-scroll`（虚拟化），画布若不收敛高度，
+ * 列表会被撑到内容全高 —— 597 回合全量挂载、虚拟化永不触发（D20：>50 回合
+ * 虚拟化、滚动节点数稳定）。trajectory.css 最后加载，同特异性覆盖为有界 flex
+ * 子项：`.trajectory-pane` 拿到确定高度，`.turn-list-scroll` 成为唯一内部滚动
+ * 容器；展开的画像/画像层溢出仍由外层 .session-scroll 承接。
+ */
+.session-scroll .session-canvas {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .trajectory-body {
   display: flex;
   flex: 1;
@@ -36,7 +52,15 @@
 }
 
 .trajectory-area-pane {
+  /* SplitPane 的 pane 是 block（ui.css .ui-split-pane 未设 display）；
+   * 不转成 flex column，.trajectory-area（flex:1, min-height:0）就拿不到
+   * 确定高度，会被内容撑到全高 —— 9.8/9.13 活体验证实测 597 回合全量挂载、
+   * .turn-list-scroll 永不溢出。这里改为 flex column 让 turn 区域继承 pane
+   * 的有界高度，列表内部滚动 + 虚拟化才成立。 */
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .trajectory-rail {

@@ -46,7 +46,9 @@ function buildTree(
   sessionKey: string,
   turnCount: number | null,
 ): AgentNode[] {
-  if (group === null || group.mergedKeys.length <= 1) {
+  // 单 agent 会话 = 无合并组或组里除 primaryKey 外没有其它成员
+  // （mergedKeys 不含 primaryKey，`length === 0` 即无子 agent）。
+  if (group === null || group.mergedKeys.length === 0) {
     const member = members.find((m) => m.id === sessionKey);
     return [
       {
@@ -91,6 +93,16 @@ function buildTree(
 }
 
 /**
+ * D9：合并组成员 = primaryKey + mergedKeys（服务端 session-merge.ts 同样以
+ * `[primaryKey, ...mergedKeys]` 枚举成员，见 primaryKeyFor / getDetailForGroup）。
+ * `mergedKeys` 本身不含 primaryKey —— 这是 /api/session-groups 的真实形状，
+ * 组件查找组与批量拉取都必须按成员全集计算。
+ */
+function memberKeysOf(group: SessionMergeGroupInfo): string[] {
+  return [group.primaryKey, ...group.mergedKeys];
+}
+
+/**
  * D9 Agent 层级面板：合并组解析（GET /api/session-groups，实例级缓存）、
  * 成员一次批量拉取（≥2 成员时恰好一次 GET /api/sessions?keys=…，绝不逐成员
  * 拉取 —— AGENTS.md #6）、depth-5 树、accent 选中（danger 绝不表示选中）、
@@ -128,9 +140,13 @@ export function AgentHierarchyPanel({
       if (cancelled) {
         return;
       }
-      const group = groups.find((g) => g.mergedKeys.includes(sessionKey)) ?? null;
-      if (group !== null && group.mergedKeys.length > 1) {
-        const res = await fetchMembers(group.mergedKeys);
+      const group =
+        groups.find(
+          (g) => g.primaryKey === sessionKey || g.mergedKeys.includes(sessionKey),
+        ) ?? null;
+      const memberKeys = group === null ? [] : memberKeysOf(group);
+      if (group !== null && memberKeys.length > 1) {
+        const res = await fetchMembers(memberKeys);
         if (!cancelled) {
           setNodes(buildTree(group, res.items, sessionKey, turnCount));
         }

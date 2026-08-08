@@ -80,10 +80,16 @@ function indexEntry(id: string, over: Partial<SessionIndexEntry> = {}): SessionI
   };
 }
 
-function group(id: string, mergedKeys: string[]): SessionMergeGroupInfo {
+/**
+ * 服务端 /api/session-groups 的真实形状：primaryKey 与 mergedKeys 分离，
+ * mergedKeys 不含 primaryKey（成员全集 = [primaryKey, ...mergedKeys]）。
+ * 夹具必须按此形状构造 —— 否则测不出组查找/批量拉取的实况（9.10 活体验证
+ * 曾因夹具把 primaryKey 塞进 mergedKeys 而漏掉查找缺陷）。
+ */
+function group(primaryKey: string, mergedKeys: string[]): SessionMergeGroupInfo {
   return {
-    id,
-    primaryKey: mergedKeys[0]!,
+    id: `${primaryKey}:g`,
+    primaryKey,
     title: 'group',
     sourceAgent: 'CodeArts',
     mergedKeys,
@@ -92,8 +98,8 @@ function group(id: string, mergedKeys: string[]): SessionMergeGroupInfo {
 }
 
 describe('AgentHierarchyPanel（D9）', () => {
-  it('多成员组：恰好一次批量 keys 拉取（绝不逐成员），根 + 子节点渲染', async () => {
-    const groups: SessionMergeGroupInfo[] = [group('g1', ['main-1', 'sub-1', 'sub-2'])];
+  it('主 agent 会话命中组（primaryKey）：恰好一次批量 keys 拉取（绝不逐成员），根 + 子节点渲染', async () => {
+    const groups: SessionMergeGroupInfo[] = [group('main-1', ['sub-1', 'sub-2'])];
     const members = [indexEntry('main-1', { title: 'Main Agent' }), indexEntry('sub-1'), indexEntry('sub-2')];
     const fetchGroups = vi.fn(async () => ({ groups }));
     const fetchMembers = vi.fn(async (keys: string[]) => ({ items: members.filter((m) => keys.includes(m.id)) }));
@@ -123,6 +129,34 @@ describe('AgentHierarchyPanel（D9）', () => {
     unmount();
   });
 
+  it('子 agent 会话命中组（mergedKeys）：树同样渲染，子节点选中', async () => {
+    const groups: SessionMergeGroupInfo[] = [group('main-1', ['sub-1'])];
+    const members = [indexEntry('main-1'), indexEntry('sub-1')];
+    const fetchGroups = vi.fn(async () => ({ groups }));
+    const fetchMembers = vi.fn(async (keys: string[]) => ({ items: members.filter((m) => keys.includes(m.id)) }));
+    const { unmount } = mount(
+      <AgentHierarchyPanel
+        locale="zh"
+        sessionKey="sub-1"
+        session={session('sub-1')}
+        turnCount={2}
+        onSelectAgent={() => undefined}
+        fetchGroups={fetchGroups}
+        fetchMembers={fetchMembers}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchMembers).toHaveBeenCalledTimes(1);
+    expect(fetchMembers).toHaveBeenCalledWith(['main-1', 'sub-1']);
+    const nodes = document.querySelectorAll('.agent-node');
+    expect(nodes.length).toBe(2);
+    expect(nodes[0]!.classList.contains('agent-node-selected')).toBe(false);
+    expect(nodes[1]!.classList.contains('agent-node-selected')).toBe(true);
+    unmount();
+  });
+
   it('单 agent 会话：单一根节点，不发批量拉取（边例表）', async () => {
     const fetchGroups = vi.fn(async () => ({ groups: [] }));
     const fetchMembers = vi.fn(async () => ({ items: [] }));
@@ -147,7 +181,7 @@ describe('AgentHierarchyPanel（D9）', () => {
   });
 
   it('切换 agent：点击子节点回调 onSelectAgent（重载 turn 区域）', async () => {
-    const groups: SessionMergeGroupInfo[] = [group('g1', ['main-1', 'sub-1'])];
+    const groups: SessionMergeGroupInfo[] = [group('main-1', ['sub-1'])];
     const fetchGroups = vi.fn(async () => ({ groups }));
     const fetchMembers = vi.fn(async () => ({ items: [indexEntry('main-1'), indexEntry('sub-1')] }));
     const onSelectAgent = vi.fn();
@@ -165,6 +199,7 @@ describe('AgentHierarchyPanel（D9）', () => {
     await act(async () => {
       await Promise.resolve();
     });
+    expect(fetchMembers).toHaveBeenCalledWith(['main-1', 'sub-1']);
     const nodes = document.querySelectorAll('.agent-node');
     act(() => {
       (nodes[1] as HTMLButtonElement).click();
@@ -174,7 +209,7 @@ describe('AgentHierarchyPanel（D9）', () => {
   });
 
   it('未知子类型渲染 Unknown + 启发式 tooltip，不从标题猜测（design-system）', async () => {
-    const groups: SessionMergeGroupInfo[] = [group('g1', ['main-1', 'sub-1'])];
+    const groups: SessionMergeGroupInfo[] = [group('main-1', ['sub-1'])];
     const fetchGroups = vi.fn(async () => ({ groups }));
     const fetchMembers = vi.fn(async () => ({
       items: [indexEntry('main-1'), indexEntry('sub-1', { title: 'some vague title' })],
