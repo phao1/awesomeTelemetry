@@ -265,6 +265,10 @@ export interface SessionIndexEntry {
   /** Whether a systemPrompt exists. Body is not returned here; use the detail
    * endpoint. */
   hasSystemPrompt: boolean;
+  /** Session annotations tags (add-trajectory-inspector D14). Empty when the
+   * session has no annotation row; the list query returns it via a single
+   * join, never a per-row query, and never a body column. */
+  tags: string[];
 }
 
 export interface TraceSession {
@@ -365,6 +369,43 @@ export interface SessionPromptContext {
 }
 ```
 
+### 3.2 Session annotations (add-trajectory-inspector)
+
+Persisted per-session tags and a free-text note (design D13). Served by
+`GET` / `PUT /api/sessions/:key/annotations` and aggregated by
+`GET /api/annotations/tags` (contracts/api.md §1.7).
+
+```ts
+export interface SessionAnnotations {
+  sessionKey: string;
+  tags: string[];
+  note: string | null;
+  updatedAt: string | null;
+}
+export interface SessionAnnotationsUpdate {
+  tags?: string[];
+  note?: string | null;
+}
+```
+
+| Rule | Value |
+|---|---|
+| `ANNOTATION_MAX_TAGS` | 32 |
+| `ANNOTATION_TAG_MAX_CHARS` | 64 |
+| `ANNOTATION_TAG_PATTERN` | `/^[\p{L}\p{N}_-]{1,64}$/u` |
+| `ANNOTATION_NOTE_MAX_CHARS` | 8192 |
+
+- Tags normalise: trim, lowercase, de-duplicate, sort ascending; stored as a
+  JSON array.
+- A violated bound returns `400 BAD_REQUEST` via the unified `ApiError`
+  envelope. Silent truncation is prohibited.
+- `GET` on an unannotated session returns `200` with `tags: []`, `note: null`,
+  `updatedAt: null` — not `404`.
+- `PUT` on an unknown key returns `404 SESSION_NOT_FOUND`.
+- `PUT` replaces per present key: an absent key leaves that field untouched,
+  `tags: []` clears tags, `note: null` clears the note.
+- `DELETE /api/sessions/:key` cascades via the FK.
+
 ---
 
 ## 4. Events
@@ -435,6 +476,69 @@ export interface TraceEvent extends TraceEventSlim {
  * this. */
 export interface TraceEventRaw extends TraceEvent {
   raw: string | null;
+}
+```
+
+### 4.1 Derived turn model (add-trajectory-inspector)
+
+> Types copied verbatim from `specs/trace-model/spec.md` (derived turn model).
+> Derivation is a pure function of the ordered event stream, the session, and
+> the adapter's declared turn-key provenance; it runs in a single pass and is
+> **never persisted and never computed on the server** (design D2/D3). A turn's
+> tool-call identity is the member event's `id` — there is **no `toolCallId`
+> field** and none is generated (deviation C7, design D5).
+
+```ts
+export type TurnSegmentationSource =
+  | 'turn_key'
+  | 'llm_boundary'
+  | 'user_prompt_boundary'
+  | 'sequence_fallback';
+
+export type TurnKind = 'init' | 'user' | 'cycle';
+
+export type MessageRole =
+  | 'system' | 'user' | 'assistant' | 'tool' | 'reasoning' | 'compact' | 'subagent';
+
+export interface TurnMessage {
+  eventId: string;
+  sequence: number;
+  role: MessageRole;
+  kind: TraceKind;
+  title: string;
+  tool: string | null;
+  startedAt: string;
+  durationMs: number;
+  status: TraceStatus;
+  tokens: TokenUsage | null;
+  hasInput: boolean;
+  hasOutput: boolean;
+  hasRaw: boolean;
+  error: string | null;
+}
+
+export type TurnBadge =
+  | 'init' | 'user' | 'tools' | 'stop' | 'error' | 'subagent' | 'compact' | 'running';
+
+export interface TraceTurn {
+  index: number;
+  kind: TurnKind;
+  startedAt: string;
+  durationMs: number;
+  tokens: TokenUsage;
+  model: string | null;
+  messageCount: number;
+  toolCount: number;
+  status: TraceStatus;
+  badges: TurnBadge[];
+  messages: TurnMessage[];
+}
+
+export interface TurnModel {
+  turns: TraceTurn[];
+  segmentationSource: TurnSegmentationSource;
+  complete: boolean;
+  omittedEventCount: number;
 }
 ```
 
@@ -1201,4 +1305,48 @@ expectTypeOf<Pick<TraceEventSlim, 'turnKey'>>().toEqualTypeOf<{
 expectTypeOf<TurnKeySource>().toEqualTypeOf<
   'native_boundary' | 'stream_structure' | 'message_identity' | 'unavailable'
 >();
+```
+
+Additional assertions added by add-trajectory-inspector §1.3/§1.4/§1.9 — the
+derived turn enums are closed, every derived type compiles verbatim from the
+trace-model delta spec, the index entry carries `tags`, and **no `toolCallId`
+field exists** (identity comes from `event.id`, deviation C7 / design D5):
+
+```ts
+// The three derived turn enums are closed
+expectTypeOf<TurnSegmentationSource>().toEqualTypeOf<
+  'turn_key' | 'llm_boundary' | 'user_prompt_boundary' | 'sequence_fallback'
+>();
+expectTypeOf<TurnKind>().toEqualTypeOf<'init' | 'user' | 'cycle'>();
+expectTypeOf<MessageRole>().toEqualTypeOf<
+  'system' | 'user' | 'assistant' | 'tool' | 'reasoning' | 'compact' | 'subagent'
+>();
+expectTypeOf<TurnBadge>().toEqualTypeOf<
+  'init' | 'user' | 'tools' | 'stop' | 'error' | 'subagent' | 'compact' | 'running'
+>();
+
+// Turn identity comes from the member event id — never a toolCallId field
+expectTypeOf<Pick<TurnMessage, 'eventId'>>().toEqualTypeOf<{ eventId: string }>();
+expectTypeOf<TurnMessage>().not.toHaveProperty('toolCallId');
+expectTypeOf<TraceTurn>().not.toHaveProperty('toolCallId');
+
+// Turn model carries completeness explicitly
+expectTypeOf<Pick<TurnModel, 'complete' | 'omittedEventCount'>>().toEqualTypeOf<{
+  complete: boolean;
+  omittedEventCount: number;
+}>();
+
+// Index entries carry the tags array
+expectTypeOf<Pick<SessionIndexEntry, 'tags'>>().toEqualTypeOf<{ tags: string[] }>();
+
+// Annotation shapes compile verbatim from design D13
+expectTypeOf<Pick<SessionAnnotations, 'sessionKey' | 'tags' | 'note' | 'updatedAt'>>()
+  .toEqualTypeOf<{
+    sessionKey: string;
+    tags: string[];
+    note: string | null;
+    updatedAt: string | null;
+  }>();
+expectTypeOf<SessionAnnotationsUpdate>().toHaveProperty('tags');
+expectTypeOf<SessionAnnotationsUpdate>().toHaveProperty('note');
 ```

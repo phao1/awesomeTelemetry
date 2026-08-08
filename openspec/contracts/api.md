@@ -110,6 +110,7 @@ any events.**
 | `cursor` | string | — | last item's `startedAt` of the previous page |
 | `keys` | string | — | comma-separated key list for batched patches after SSE; max 200, more returns `BAD_REQUEST` |
 | `merged` | `'1' \| '0'` | `'1'` | whether to apply session merging (see `specs/session-merge`) |
+| `tags` | string | — | optional tag filter (add-trajectory-inspector D14); comma-separated multi-select with **OR** semantics matching the existing `provider` / `status` filters, max 32 values; more than 32 values or a value outside `ANNOTATION_TAG_PATTERN` (see `contracts/data-model.md` §3.2) returns `400 BAD_REQUEST` |
 
 ```ts
 // 200
@@ -123,8 +124,16 @@ interface SessionListResponse {
 
 > When `keys` is passed, `limit` / `cursor` / `total` are ignored; matching
 > items are returned directly and `hasMore` is always `false`. The same
-> applies to `q` / `range` / `provider` / `status` — the `keys` path ignores
-> all filters.
+> applies to `q` / `range` / `provider` / `status` / `tags` — the `keys` path
+> ignores all filters.
+
+Each list item carries `tags: string[]` (empty when unannotated); the tag
+array comes from one join evaluated once, never a per-row query, and no body
+column is added to the projection (D14). Tag matching uses a JSON-array
+containment predicate on the joined row; `EXPLAIN QUERY PLAN` must show no
+temporary B-tree (see `contracts/database.md` §4). The candidate list for the
+filter UI comes from `GET /api/annotations/tags` (§1.7), fetched once when the
+filter opens.
 
 **Budget**: 500 items < 60KB (gzipped), server < 5ms.
 
@@ -195,8 +204,8 @@ and referenced; inline `<script>var data=...</script>` is forbidden (G7.6).**
 
 ### 1.5 `DELETE /api/sessions/:key`
 
-Cascade-deletes `events` + `event_raw` + `metrics` + `sessions` + the matching
-`scan_state` row.
+Cascade-deletes `events` + `event_raw` + `metrics` + `session_annotations`
+(via its FK) + `sessions` + the matching `scan_state` row.
 
 ```ts
 // 200 → { deleted: true, key: string }
@@ -210,6 +219,73 @@ Force-rescans a single session, bypassing the `scan_state` gate
 ```ts
 // 200 → { key: string, eventCount: number, durationMs: number }
 ```
+
+### 1.7 Session annotations (add-trajectory-inspector)
+
+Per-session tags and free-text note, plus the tag vocabulary used by the
+session-list filter (design D13 / D14). Shape and bounds are defined in
+`contracts/data-model.md` §3.2. Routes follow the project convention
+`/api/sessions/:key/*` (deviation C4) and are registered so the existing
+`:key` routes are not shadowed.
+
+#### `GET /api/sessions/:key/annotations`
+
+```ts
+// 200 → SessionAnnotations
+{
+  "sessionKey": "codex-abc123def45678",
+  "tags": ["refactor", "perf"],
+  "note": "string | null",
+  "updatedAt": "2026-08-08T04:00:00.000Z | null"
+}
+// 404 → SESSION_NOT_FOUND
+```
+
+Behavior requirements:
+
+1. Unannotated session → `200` with `tags: []`, `note: null`, `updatedAt:
+   null` — **not `404`** — and reading creates no row.
+2. Unknown session key → `404 SESSION_NOT_FOUND`.
+
+**Budget**: < 20ms (primary-key lookup).
+
+#### `PUT /api/sessions/:key/annotations`
+
+```ts
+// request → SessionAnnotationsUpdate; absent keys leave that field untouched
+{ "tags": ["Refactor", "refactor", "  Résumé  "], "note": "string" | null }
+// 200 → the full SessionAnnotations after normalisation
+// 400 → BAD_REQUEST, 404 → SESSION_NOT_FOUND
+```
+
+Behavior requirements:
+
+1. Bounds: `ANNOTATION_MAX_TAGS = 32`, `ANNOTATION_TAG_MAX_CHARS = 64`,
+   `ANNOTATION_TAG_PATTERN` `/^[\p{L}\p{N}_-]{1,64}$/u`,
+   `ANNOTATION_NOTE_MAX_CHARS = 8192` (`contracts/data-model.md` §3.2). A
+   violated bound returns `400 BAD_REQUEST` via the unified `ApiError`
+   envelope; silent truncation is prohibited and nothing is persisted.
+2. Tags normalise: trim, lowercase, de-duplicate, sort ascending; stored as a
+   JSON array.
+3. Partial-update semantics: `tags: []` clears the tags, `note: null` clears
+   the note, an absent key leaves that field untouched.
+4. Unknown session key → `404 SESSION_NOT_FOUND`.
+5. Malformed body → `400 BAD_REQUEST`.
+6. `updatedAt` is refreshed on every successful write (ISO 8601 UTC).
+
+#### `GET /api/annotations/tags`
+
+Tag vocabulary with per-tag session counts, the candidate list for the
+session-list tag filter (D14). Fetched once when the filter opens, never per
+keystroke; a tag may also be typed directly.
+
+```ts
+// 200
+{ "tags": [{ "tag": "refactor", "count": 3 }, { "tag": "perf", "count": 1 }] }
+```
+
+Ordering: count descending, ties by tag ascending. Computed as **one** query,
+never one per session. **Budget**: < 20ms.
 
 ---
 

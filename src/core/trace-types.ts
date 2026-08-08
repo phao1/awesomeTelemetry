@@ -210,6 +210,10 @@ export interface SessionIndexEntry {
   mergeGroupId: string | null;
   /** systemPrompt 是否存在。正文不在此返回，需走详情接口。 */
   hasSystemPrompt: boolean;
+  /** Session annotations tags (add-trajectory-inspector D14). Empty when the
+   * session has no annotation row; the list query returns it via a single
+   * join, never a per-row query, and never a body column. */
+  tags: string[];
 }
 
 export interface TraceSession {
@@ -305,6 +309,19 @@ export interface SessionPromptContext {
   fullSystemPrompt: string | null;
 }
 
+// ── §3.2 Session annotations (add-trajectory-inspector D13) ──
+
+export interface SessionAnnotations {
+  sessionKey: string;
+  tags: string[];
+  note: string | null;
+  updatedAt: string | null;
+}
+export interface SessionAnnotationsUpdate {
+  tags?: string[];
+  note?: string | null;
+}
+
 // ── §4 事件 ────────────────────────────────────────────────
 
 /** slim 档：Gantt 树渲染所需的全部字段，不含任何正文。 */
@@ -366,6 +383,64 @@ export interface TraceEvent extends TraceEventSlim {
 /** raw 档：仅 GET /api/sessions/:key/events/:eventId?include=raw 返回。 */
 export interface TraceEventRaw extends TraceEvent {
   raw: string | null;
+}
+
+// ── §4.1 派生 turn 模型 (add-trajectory-inspector) ──
+// 类型从 specs/trace-model/spec.md 原样采用。派生是事件流、session 与
+// adapter 声明 turn-key provenance 的纯函数：单趟执行，**永不持久化、
+// 永不在服务端计算**（design D2/D3）。工具调用的身份是成员事件的 `id` —
+// **不存在 `toolCallId` 字段**，也不生成任何 id（deviation C7，design D5）。
+
+export type TurnSegmentationSource =
+  | 'turn_key'
+  | 'llm_boundary'
+  | 'user_prompt_boundary'
+  | 'sequence_fallback';
+
+export type TurnKind = 'init' | 'user' | 'cycle';
+
+export type MessageRole =
+  | 'system' | 'user' | 'assistant' | 'tool' | 'reasoning' | 'compact' | 'subagent';
+
+export interface TurnMessage {
+  eventId: string;
+  sequence: number;
+  role: MessageRole;
+  kind: TraceKind;
+  title: string;
+  tool: string | null;
+  startedAt: string;
+  durationMs: number;
+  status: TraceStatus;
+  tokens: TokenUsage | null;
+  hasInput: boolean;
+  hasOutput: boolean;
+  hasRaw: boolean;
+  error: string | null;
+}
+
+export type TurnBadge =
+  | 'init' | 'user' | 'tools' | 'stop' | 'error' | 'subagent' | 'compact' | 'running';
+
+export interface TraceTurn {
+  index: number;
+  kind: TurnKind;
+  startedAt: string;
+  durationMs: number;
+  tokens: TokenUsage;
+  model: string | null;
+  messageCount: number;
+  toolCount: number;
+  status: TraceStatus;
+  badges: TurnBadge[];
+  messages: TurnMessage[];
+}
+
+export interface TurnModel {
+  turns: TraceTurn[];
+  segmentationSource: TurnSegmentationSource;
+  complete: boolean;
+  omittedEventCount: number;
 }
 
 // ── §5 聚合单元 ────────────────────────────────────────────

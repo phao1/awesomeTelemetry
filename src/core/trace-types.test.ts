@@ -11,16 +11,26 @@ import type {
   ContextIndicator,
   ContextPairingConfidence,
   ContextRequestRef,
+  MessageRole,
   ProxyRequest,
   ProxyRequestListItem,
   RequestContextDiffResponse,
   RequestContextFormat,
+  SessionAnnotations,
+  SessionAnnotationsUpdate,
   SessionIndexEntry,
+  TraceTurn,
   TraceEventSlim,
   TraceKind,
   TracePhase,
   TraceRecord,
+  TokenUsage,
+  TurnBadge,
+  TurnKind,
   TurnKeySource,
+  TurnMessage,
+  TurnModel,
+  TurnSegmentationSource,
 } from './trace-types';
 
 // contracts/data-model.md §11 类型级验收（编译期即失败）
@@ -234,5 +244,113 @@ describe('REQ-004 EMPTY_TOKEN_USAGE', () => {
     expect(EMPTY_TOKEN_USAGE.cacheWrite).toBe(0);
     expect(EMPTY_TOKEN_USAGE.netInput).toBe(0);
     expect(EMPTY_TOKEN_USAGE.total).toBe(0);
+  });
+});
+
+// add-trajectory-inspector §1.3/§1.4/§1.9 — 派生 turn 类型与注解类型形状验收
+// （contracts/data-model.md §11 附加断言，编译期即失败）
+describe('add-trajectory-inspector 派生 turn 类型形状', () => {
+  it('TurnSegmentationSource 枚举封闭（trace-model delta spec 原样）', () => {
+    expectTypeOf<TurnSegmentationSource>().toEqualTypeOf<
+      'turn_key' | 'llm_boundary' | 'user_prompt_boundary' | 'sequence_fallback'
+    >();
+  });
+
+  it('TurnKind 枚举封闭', () => {
+    expectTypeOf<TurnKind>().toEqualTypeOf<'init' | 'user' | 'cycle'>();
+  });
+
+  it('MessageRole 枚举封闭（system/user/assistant/tool/reasoning/compact/subagent）', () => {
+    expectTypeOf<MessageRole>().toEqualTypeOf<
+      'system' | 'user' | 'assistant' | 'tool' | 'reasoning' | 'compact' | 'subagent'
+    >();
+  });
+
+  it('TurnBadge 枚举封闭（无 length 徽标）', () => {
+    expectTypeOf<TurnBadge>().toEqualTypeOf<
+      'init' | 'user' | 'tools' | 'stop' | 'error' | 'subagent' | 'compact' | 'running'
+    >();
+  });
+
+  it('TurnMessage 形状逐字段符合 trace-model delta spec', () => {
+    expectTypeOf<TurnMessage>().toHaveProperty('eventId');
+    expectTypeOf<TurnMessage>().toHaveProperty('sequence');
+    expectTypeOf<TurnMessage>().toHaveProperty('role');
+    expectTypeOf<TurnMessage>().toHaveProperty('kind');
+    expectTypeOf<TurnMessage>().toHaveProperty('title');
+    expectTypeOf<TurnMessage>().toHaveProperty('tool');
+    expectTypeOf<TurnMessage>().toHaveProperty('startedAt');
+    expectTypeOf<TurnMessage>().toHaveProperty('durationMs');
+    expectTypeOf<TurnMessage>().toHaveProperty('status');
+    expectTypeOf<TurnMessage>().toHaveProperty('tokens');
+    expectTypeOf<TurnMessage>().toHaveProperty('hasInput');
+    expectTypeOf<TurnMessage>().toHaveProperty('hasOutput');
+    expectTypeOf<TurnMessage>().toHaveProperty('hasRaw');
+    expectTypeOf<TurnMessage>().toHaveProperty('error');
+    // 事件身份来自成员事件 id（null 不是合法 eventId）
+    expectTypeOf<Pick<TurnMessage, 'eventId'>>().toEqualTypeOf<{ eventId: string }>();
+    expectTypeOf<Pick<TurnMessage, 'tool'>>().toEqualTypeOf<{ tool: string | null }>();
+    expectTypeOf<Pick<TurnMessage, 'tokens'>>().toEqualTypeOf<{ tokens: TokenUsage | null }>();
+  });
+
+  it('TraceTurn 形状逐字段符合 trace-model delta spec', () => {
+    expectTypeOf<TraceTurn>().toHaveProperty('index');
+    expectTypeOf<TraceTurn>().toHaveProperty('kind');
+    expectTypeOf<TraceTurn>().toHaveProperty('startedAt');
+    expectTypeOf<TraceTurn>().toHaveProperty('durationMs');
+    expectTypeOf<TraceTurn>().toHaveProperty('tokens');
+    expectTypeOf<TraceTurn>().toHaveProperty('model');
+    expectTypeOf<TraceTurn>().toHaveProperty('messageCount');
+    expectTypeOf<TraceTurn>().toHaveProperty('toolCount');
+    expectTypeOf<TraceTurn>().toHaveProperty('status');
+    expectTypeOf<TraceTurn>().toHaveProperty('badges');
+    expectTypeOf<TraceTurn>().toHaveProperty('messages');
+    expectTypeOf<Pick<TraceTurn, 'index'>>().toEqualTypeOf<{ index: number }>();
+    expectTypeOf<Pick<TraceTurn, 'model'>>().toEqualTypeOf<{ model: string | null }>();
+    expectTypeOf<Pick<TraceTurn, 'badges'>>().toEqualTypeOf<{ badges: TurnBadge[] }>();
+  });
+
+  it('TurnModel 携带 segmentationSource 与显式完整性', () => {
+    expectTypeOf<TurnModel>().toHaveProperty('turns');
+    expectTypeOf<TurnModel>().toHaveProperty('segmentationSource');
+    expectTypeOf<TurnModel>().toHaveProperty('complete');
+    expectTypeOf<TurnModel>().toHaveProperty('omittedEventCount');
+    expectTypeOf<Pick<TurnModel, 'complete' | 'omittedEventCount'>>().toEqualTypeOf<{
+      complete: boolean;
+      omittedEventCount: number;
+    }>();
+  });
+
+  it('C7 负向断言：不存在 toolCallId 字段，身份来自 event.id', () => {
+    expectTypeOf<TurnMessage>().not.toHaveProperty('toolCallId');
+    expectTypeOf<TraceTurn>().not.toHaveProperty('toolCallId');
+    expectTypeOf<TurnModel>().not.toHaveProperty('toolCallId');
+  });
+});
+
+describe('add-trajectory-inspector SessionIndexEntry.tags 与注解类型', () => {
+  it('SessionIndexEntry 携带 tags: string[]，且仍不含 systemPrompt 正文', () => {
+    expectTypeOf<Pick<SessionIndexEntry, 'tags'>>().toEqualTypeOf<{ tags: string[] }>();
+    expectTypeOf<SessionIndexEntry>().not.toHaveProperty('systemPrompt');
+  });
+
+  it('SessionAnnotations 形状逐字段符合 design D13', () => {
+    expectTypeOf<SessionAnnotations>().toHaveProperty('sessionKey');
+    expectTypeOf<SessionAnnotations>().toHaveProperty('tags');
+    expectTypeOf<SessionAnnotations>().toHaveProperty('note');
+    expectTypeOf<SessionAnnotations>().toHaveProperty('updatedAt');
+    expectTypeOf<SessionAnnotations>().toEqualTypeOf<{
+      sessionKey: string;
+      tags: string[];
+      note: string | null;
+      updatedAt: string | null;
+    }>();
+  });
+
+  it('SessionAnnotationsUpdate 两个字段均可选（D13 部分更新语义）', () => {
+    expectTypeOf<SessionAnnotationsUpdate>().toEqualTypeOf<{
+      tags?: string[];
+      note?: string | null;
+    }>();
   });
 });

@@ -1,11 +1,13 @@
 # Contract: Database
 
 > **Authoritative source.** This is a fresh build; the schema starts at **v1**
-> and is currently at **v7** (fix-adapter-turn-semantics: `events.turn_key` plus
-> the destructive v6→v7 reclassification rescan migration; preceding versions:
-> add-request-context-diff proxy capture-group correlation + request-format
-> classification, add-mission-control model attribution + cost / duration
-> sources + ttft/e2e persistence + scan-time repair rollup,
+> and is currently at **v8** (add-trajectory-inspector: the additive
+> `session_annotations` table plus its index; preceding versions:
+> fix-adapter-turn-semantics `events.turn_key` plus the destructive v6→v7
+> reclassification rescan migration, add-request-context-diff proxy
+> capture-group correlation + request-format classification,
+> add-mission-control model attribution + cost / duration sources +
+> ttft/e2e persistence + scan-time repair rollup,
 > calibrate-tokens-and-compare-report TraceMetrics five new fields,
 > show-trae-prompt-context `session_prompt_context`). All DDL must be adopted
 > verbatim — no column renames, no added or removed columns beyond this
@@ -67,7 +69,7 @@ export function initSchema(db: Database): void {
   db.prepare(
     "INSERT INTO _meta(key, value) VALUES('schema_version', ?) " +
     "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-  ).run(String(SCHEMA_VERSION));  // SCHEMA_VERSION = 7
+  ).run(String(SCHEMA_VERSION));  // SCHEMA_VERSION = 8
   db.exec('ANALYZE');
 }
 ```
@@ -116,6 +118,23 @@ run the migration chain implemented in `server/storage/schema.ts`
   information needed to reconstruct turn keys. The rescan is safe because every
   source file is still on disk and scanning is deterministic; startup after
   upgrade is slower once (contracts/nfr.md §3 records the one-time cost).
+- **v7 → v8** (add-trajectory-inspector D15): **additive only** — create the
+  `session_annotations` table (§3.10) and its index (§4). No existing table,
+  column, index, or projection is modified, and no rescan is triggered.
+
+  **Change A's destructive v6→v7 migration must preserve this table.** That is
+  why Change A enumerates the tables it clears (`events`, `event_raw`,
+  `metrics`, `scan_state`) instead of writing an exclusion list: a table added
+  by a later change such as `session_annotations` is not on that named list and
+  therefore survives by default. Storage window task §2.4 must prove this by
+  running Change A's migration against a database that already holds
+  annotation rows and asserting the rows are still present afterwards.
+
+  The v7→v8 migration is idempotent (`CREATE TABLE IF NOT EXISTS` +
+  `CREATE INDEX IF NOT EXISTS`); a second run changes nothing and does not
+  fail. Migration failure throws with rebuild guidance — a silent catch is
+  prohibited. Rollback uses the prior binary: the new table and index are
+  simply unused.
 - Migration failure MUST throw with a "delete the DB and rescan" hint; the
   database is a rebuildable cache of local session files, and a half-migrated
   state is more dangerous than a rescan (decision: tasks.md "已做的决策" #3).
@@ -377,6 +396,32 @@ The `trae_db` source MUST store `completeness='dynamic_only'` and
 `full_system_prompt=NULL`. Reads use the primary-key index; no additional index
 is required.
 
+### 3.10 `session_annotations` (add-trajectory-inspector)
+
+One optional annotations row per stored session: tags (as a JSON array) plus a
+free-text note. Added by the additive v7→v8 migration (design D15); it is the
+only new table in schema v8 and it touches no existing table.
+
+```sql
+CREATE TABLE IF NOT EXISTS session_annotations (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  tags_json  TEXT NOT NULL DEFAULT '[]',
+  note       TEXT,
+  updated_at TEXT NOT NULL
+);
+```
+
+- `session_id` — session primary key; the FK cascade removes the annotation row
+  when the session is deleted.
+- `tags_json` — normalised tag array as JSON (`[]` when empty). Normalisation
+  (trim, lowercase, de-duplicate, sort ascending) and the four bounds
+  (`ANNOTATION_MAX_TAGS = 32`, `ANNOTATION_TAG_MAX_CHARS = 64`,
+  `ANNOTATION_TAG_PATTERN`, `ANNOTATION_NOTE_MAX_CHARS = 8192`) are defined in
+  `contracts/data-model.md` §3.2.
+- `updated_at` — ISO 8601 UTC string, written on every create/update.
+- Reads and writes use module-level cached prepared statements and explicit
+  column lists, never `SELECT *`; the read plan is a primary-key lookup.
+
 ## 4. Indexes (full set)
 
 ```sql
@@ -414,7 +459,17 @@ CREATE INDEX IF NOT EXISTS idx_proxy_group_format_model_id ON proxy_requests(cap
 CREATE INDEX IF NOT EXISTS idx_frida_captured_at     ON frida_captures(captured_at);
 CREATE INDEX IF NOT EXISTS idx_frida_session         ON frida_captures(session_id);
 CREATE INDEX IF NOT EXISTS idx_frida_capture_session ON frida_captures(capture_session_id);
+
+-- session_annotations (v8, add-trajectory-inspector D14/D15)
+CREATE INDEX IF NOT EXISTS idx_session_annotations_updated
+  ON session_annotations(updated_at);
 ```
+
+> `idx_session_annotations_updated` supports the tag-vocabulary ordering and
+> any updated-at sorting on the annotations table. Tag matching on the session
+> list uses a JSON-array containment predicate on the joined row — verify with
+> `EXPLAIN QUERY PLAN` that the session list's existing ordering plan gains no
+> temporary B-tree (storage window tasks §2.10, §2.11).
 
 > **Do not create single-column `idx_events_session_id` or
 > `idx_sessions_data_source`.** They are prefixes of the two composite indexes

@@ -76,6 +76,28 @@ composite index and their `EXPLAIN QUERY PLAN` must not contain
 
 ---
 
+## 2.2 Trajectory budgets (add-trajectory-inspector D20)
+
+The turn surface derives and renders entirely on the client (design D2/D3);
+these are hard requirements at the same level as the §2 table:
+
+| Scenario | Budget | Verification |
+|---|---|---|
+| `deriveTurns` over 1,000 events | < 20 ms | `src/core/turn-model.test.ts` benchmark (tasks §4.11) |
+| `computeRibbon` over 200 turns | < 5 ms | `src/core/turn-ribbon.test.ts` benchmark (tasks §5.8) |
+| session detail first paint, 200-turn session | < 2 s | `PERF-BASELINE.md` entry, real-session measure (tasks §9.13) |
+| turn list scroll | 60 fps, stable DOM node count | node-count stability test (tasks §6.16); virtual scrolling above 50 turns via the existing `useVirtualList` |
+| ribbon mode switch | zero network, one React commit | component test asserting zero requests (tasks §6.16) |
+| card body / raw expansion | ≤ 1 request each, cached thereafter | 100-entry LRU; re-expansion issues no request (tasks §6.13) |
+| session list with tag join | within the existing 524-entry baseline (447.8KB / 5.33ms); record the delta | re-measure before/after the join (tasks §2.11, §9.12); a material degradation is reported rather than shipped (storage delta spec) |
+
+Derivation is O(events), runs once per detail load, and is never persisted or
+computed on the server. The ribbon renders at most 200 DOM segments (bucketing
+above `RIBBON_MAX_SEGMENTS = 200`, no turn dropped). Rendering a turn issues no
+request beyond the per-event body fetch.
+
+---
+
 ## 3. Startup behavior (hard requirement)
 
 | Requirement | Description |
@@ -87,6 +109,7 @@ composite index and their `EXPLAIN QUERY PLAN` must not contain
 | Server listen must not be blocked by prewarm | prewarm uses `void backgroundPrewarm(...)`, never `await` |
 | No child process spawns on the request path | Trae decryption only runs in 30s polling; the request path returns `pending: true` when not ready |
 | One-time rescan after schema v7 upgrade (fix-adapter-turn-semantics A10) | The v6→v7 migration clears derived event data (`events`, `event_raw`, `metrics`, `scan_state`) and marks every session `detail_loaded = 0`, so each session's next open triggers a full rescan. The cost is **one-time and bounded**: source files are untouched and scanning is deterministic, so the rescan reproduces the data exactly; startup after upgrade is slower once, and the change's final report records the measured wall-clock duration (tasks.md §6.7). Repeated initialisation against an already-migrated database is a no-op (completion recorded in `_meta`) and must not rescan again |
+| Schema v8 upgrade (add-trajectory-inspector D15) | **Additive only**: the v7→v8 migration creates the `session_annotations` table and its index and touches no existing table, so it triggers **no rescan and no one-time startup cost**. Change A's destructive v6→v7 migration enumerates the tables it clears (`events`, `event_raw`, `metrics`, `scan_state`) precisely so this table survives it by default (see `contracts/database.md` §2); the storage window proves it with a migration-preservation test (tasks §2.4) |
 
 ---
 

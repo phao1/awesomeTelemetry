@@ -1,0 +1,119 @@
+/goal Implement task group §6 of openspec/changes/add-trajectory-inspector/tasks.md — delete the event gantt and inspector, and build the turn surface, the context rail panels, and the session-list tag filter in their place. Keep working until every §6 task is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/add-trajectory-inspector/proposal.md — boundary
+3. openspec/changes/add-trajectory-inspector/implementation-spec.md — FR map, the
+   16-row conflict register, acceptance criteria, and the edge-case table
+4. openspec/changes/add-trajectory-inspector/design.md — fixed decisions D1-D20,
+   including the file whitelist in D20
+5. openspec/changes/add-trajectory-inspector/specs/*/spec.md — the delta specs
+6. openspec/changes/add-trajectory-inspector/tasks.md — your task group
+7. openspec/contracts/{data-model,database,api,design-tokens,nfr}.md and
+   openspec/gotchas.md before each module edit
+
+Field names, table names, routes, enum values, limits, error codes, tokens, and UI
+states come from those files. Do not write any of them from memory.
+
+Prerequisite: the change fix-adapter-turn-semantics is landed. Confirm that
+src/core/trace-types.ts carries `turnKey`, `TurnKeySource`, and the `reasoning` and
+`compact` kinds. If it does not, STOP and report — this whole change reads that data.
+
+Source-spec note: tempspec0806/new_view.md and the reference screenshot are product
+input, NOT the contract. implementation-spec.md §3 lists 16 deliberate deviations
+(C1-C16). Restoring any of them to match the source is a regression, not a fix. Note
+especially C7: an earlier draft claimed no tool-call id exists. That was wrong —
+event.id carries the native call id. Display it verbatim; do not add a toolCallId field
+and do not generate one.
+
+Rules that apply to every window:
+- Touch only the files in design.md D20. If another file is truly required, STOP and
+  report the requirement id, the file, and the reason before editing.
+- No new runtime dependency. The project allows exactly four.
+- No hex/rgb/named colour literal in any new CSS or TSX. Read design tokens.
+- Colour never carries meaning alone: always pair it with an icon or text.
+- Selection is the accent group. Red is danger and means failure — never selection.
+- Unknown values render an em dash with a tooltip, never 0.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Never mock the logic under test and never loosen an assertion to make a test pass.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: Change A is not landed; a contract conflicts
+with the design; a required field/route/error/token is missing; you need a file outside
+D20; a performance budget cannot be met within the stated bounds; the session-list tag
+join degrades the measured list baseline; or turn segmentation would require inventing a
+boundary the data does not support.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisites: §3, §4, §5, and §7 are all complete and green. If any is missing, STOP and
+report rather than stubbing around it.
+
+This is the largest window. Scope is tasks.md §6 only (6.1 through 6.18). Work in this
+order and run targeted tests after each step — do not write fourteen components and then
+start testing.
+
+  6.1-6.5   deletion + plumbing: remove TraceTimeline / EventInspector / layout hash key,
+            add hash and layout keys, i18n strings, tokens and CSS
+  6.6-6.7   TrajectoryPane + TrajectoryRail
+  6.8-6.9   AgentHierarchyPanel + AnnotationsPanel
+  6.10-6.11 TrajectoryStatBar + TurnRibbon
+  6.12-6.13 TurnList / TurnCard / MessageCard / ToolCallBlock
+  6.14-6.18 session-list tags, App wiring, tests, regression, gate
+
+What you are replacing, and what you are NOT (design D2): TraceTimeline and
+EventInspector are DELETED. SessionHeaderCard, PhaseRibbon, and PhaseTiles STAY — they
+answer "how did this session go", which the turn list does not answer. Do not delete them
+and do not duplicate session identity into the rail.
+
+The card structure is the part most likely to be built wrong (design D4, deviation C15).
+For a turn with two tool calls the correct rendering is:
+
+  [Assistant card]
+     reasoning section (collapsed by default)
+     reply text
+     ┌ tool call block: name, call id, arguments ┐   <- nested INSIDE the assistant card
+     └ tool call block: name, call id, arguments ┘
+  [Tool result card #1]
+  [Tool result card #2]
+
+Not two sibling "Tool Call" cards. A tool call is part of the assistant message; a tool
+result is a separate message. Both sides come from ONE event.
+
+The request budget is a hard contract (design D16). Opening a detail issues its existing
+slim request plus one annotations request. Expanding a card body issues one single-event
+request; switching to Raw issues one more; both cached in a 100-entry LRU. Ribbon mode
+switch, turn expand/collapse, and the analysis panel issue ZERO. Tests must assert exact
+counts — "roughly right" is not acceptable here.
+
+Five things the source spec and screenshot show that you must NOT do:
+- No red selection. Red is danger. Selection is accent. (C3)
+- No 💬 comment control on cards — explicitly declined. (C10)
+- No environment / employee id / client version / plugin version rows. (C8)
+- No prefill/decode unless session.durationSource === 'native'. Never estimate. (C6)
+- No colour literals. src/styles/tokens.test.ts enforces this and must stay green. (C1)
+
+Unknown values render an em dash with a tooltip. Rendering 0 for an unknown value
+violates frontend REQ-017. Every async surface implements all four states.
+
+Both locales get every trajectory.* string, including the FOUR segmentation criteria
+lines and the adapter-provenance line. The frontend must not write its own criteria
+wording.
+
+Task 6.17: some existing tests only exist to test the deleted components. Remove or
+rewrite exactly those, and list every one in your report. Do not delete a test that was
+covering something still alive.
+
+Definition of done: §6 boxes checked with evidence, targeted frontend tests green, then
+npm run typecheck && npm run test && npm run lint all green.

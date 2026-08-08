@@ -1,0 +1,91 @@
+/goal Implement task group §3 of openspec/changes/add-trajectory-inspector/tasks.md — the annotation routes, the tag vocabulary route, and the session-list tags parameter. Keep working until every §3 task is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/add-trajectory-inspector/proposal.md — boundary
+3. openspec/changes/add-trajectory-inspector/implementation-spec.md — FR map, the
+   16-row conflict register, acceptance criteria, and the edge-case table
+4. openspec/changes/add-trajectory-inspector/design.md — fixed decisions D1-D20,
+   including the file whitelist in D20
+5. openspec/changes/add-trajectory-inspector/specs/*/spec.md — the delta specs
+6. openspec/changes/add-trajectory-inspector/tasks.md — your task group
+7. openspec/contracts/{data-model,database,api,design-tokens,nfr}.md and
+   openspec/gotchas.md before each module edit
+
+Field names, table names, routes, enum values, limits, error codes, tokens, and UI
+states come from those files. Do not write any of them from memory.
+
+Prerequisite: the change fix-adapter-turn-semantics is landed. Confirm that
+src/core/trace-types.ts carries `turnKey`, `TurnKeySource`, and the `reasoning` and
+`compact` kinds. If it does not, STOP and report — this whole change reads that data.
+
+Source-spec note: tempspec0806/new_view.md and the reference screenshot are product
+input, NOT the contract. implementation-spec.md §3 lists 16 deliberate deviations
+(C1-C16). Restoring any of them to match the source is a regression, not a fix. Note
+especially C7: an earlier draft claimed no tool-call id exists. That was wrong —
+event.id carries the native call id. Display it verbatim; do not add a toolCallId field
+and do not generate one.
+
+Rules that apply to every window:
+- Touch only the files in design.md D20. If another file is truly required, STOP and
+  report the requirement id, the file, and the reason before editing.
+- No new runtime dependency. The project allows exactly four.
+- No hex/rgb/named colour literal in any new CSS or TSX. Read design tokens.
+- Colour never carries meaning alone: always pair it with an icon or text.
+- Selection is the accent group. Red is danger and means failure — never selection.
+- Unknown values render an em dash with a tooltip, never 0.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Never mock the logic under test and never loosen an assertion to make a test pass.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: Change A is not landed; a contract conflicts
+with the design; a required field/route/error/token is missing; you need a file outside
+D20; a performance budget cannot be met within the stated bounds; the session-list tag
+join degrades the measured list baseline; or turn segmentation would require inventing a
+boundary the data does not support.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisite: §2 is complete and green. If server/storage/annotations.ts does not exist,
+STOP and report.
+
+Your scope is tasks.md §3 only (3.1 through 3.9). Files: server/server.ts,
+server/server.test.ts, src/api/client.ts. Build no UI — that is B6.
+
+Routes, per the contract frozen in B1:
+  GET  /api/sessions/:key/annotations
+  PUT  /api/sessions/:key/annotations
+  GET  /api/annotations/tags
+Plus the `tags` query parameter on GET /api/sessions: comma-separated, OR semantics,
+max 32, invalid -> 400 BAD_REQUEST.
+
+Register the :key routes where the existing /api/sessions/:key routes will not shadow
+them — read how prompt-context and events/:eventId are ordered in server.ts and follow
+that pattern. Register /api/annotations/tags so it is not captured by a :key pattern.
+
+Non-negotiables:
+- All non-2xx responses use the unified ApiError envelope from contracts/api.md §0.3.
+- Storage bound errors -> 400 BAD_REQUEST. Unknown session key on PUT -> the existing
+  404 SESSION_NOT_FOUND code (look it up; do not invent one).
+- GET on an unannotated session returns 200 with the empty shape, NOT 404. A user who has
+  never tagged a session is not an error condition.
+- Never leak a stack trace, SQL text, or the raw body in an error response.
+- Everything goes through the existing gzip-aware sendJson.
+- OR semantics for tags, matching the existing provider/status filters. Not AND.
+
+Task 3.8: prove the session list and detail responses are unchanged apart from the added
+tags array. That regression test is what lets B6 trust the list.
+
+Definition of done: §3 boxes checked with evidence, targeted API tests green, then
+npm run typecheck && npm run test && npm run lint all green.

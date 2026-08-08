@@ -1,0 +1,98 @@
+/goal Implement task group §8 of openspec/changes/add-trajectory-inspector/tasks.md — the client-side trajectory analysis module and panel. Keep working until every §8 task is done and evidenced.
+
+Read first, in this exact order:
+1. AGENTS.md — document priority, ten prohibitions, five must-dos, output format
+2. openspec/changes/add-trajectory-inspector/proposal.md — boundary
+3. openspec/changes/add-trajectory-inspector/implementation-spec.md — FR map, the
+   16-row conflict register, acceptance criteria, and the edge-case table
+4. openspec/changes/add-trajectory-inspector/design.md — fixed decisions D1-D20,
+   including the file whitelist in D20
+5. openspec/changes/add-trajectory-inspector/specs/*/spec.md — the delta specs
+6. openspec/changes/add-trajectory-inspector/tasks.md — your task group
+7. openspec/contracts/{data-model,database,api,design-tokens,nfr}.md and
+   openspec/gotchas.md before each module edit
+
+Field names, table names, routes, enum values, limits, error codes, tokens, and UI
+states come from those files. Do not write any of them from memory.
+
+Prerequisite: the change fix-adapter-turn-semantics is landed. Confirm that
+src/core/trace-types.ts carries `turnKey`, `TurnKeySource`, and the `reasoning` and
+`compact` kinds. If it does not, STOP and report — this whole change reads that data.
+
+Source-spec note: tempspec0806/new_view.md and the reference screenshot are product
+input, NOT the contract. implementation-spec.md §3 lists 16 deliberate deviations
+(C1-C16). Restoring any of them to match the source is a regression, not a fix. Note
+especially C7: an earlier draft claimed no tool-call id exists. That was wrong —
+event.id carries the native call id. Display it verbatim; do not add a toolCallId field
+and do not generate one.
+
+Rules that apply to every window:
+- Touch only the files in design.md D20. If another file is truly required, STOP and
+  report the requirement id, the file, and the reason before editing.
+- No new runtime dependency. The project allows exactly four.
+- No hex/rgb/named colour literal in any new CSS or TSX. Read design tokens.
+- Colour never carries meaning alone: always pair it with an icon or text.
+- Selection is the accent group. Red is danger and means failure — never selection.
+- Unknown values render an em dash with a tooltip, never 0.
+- Tests live next to source as foo.ts + foo.test.ts, never in __tests__/.
+- Convert undefined to null before writing to the database.
+- Never mock the logic under test and never loosen an assertion to make a test pass.
+- Mark a tasks.md checkbox [x] only when the evidence for it exists.
+- Do not commit or push unless the user separately asks.
+
+Stop and ask — do not guess through — if: Change A is not landed; a contract conflicts
+with the design; a required field/route/error/token is missing; you need a file outside
+D20; a performance budget cannot be met within the stated bounds; the session-list tag
+join degrades the measured list baseline; or turn segmentation would require inventing a
+boundary the data does not support.
+
+Final response format:
+## Delivered
+- path — one-line result
+## Contract mapping
+- implements <requirement names>
+- not implemented: <task ids and reasons>
+## Verification
+- exact commands and pass counts
+## Needs confirmation
+- none, or precise blockers only
+
+Prerequisite: §4 is complete — src/core/turn-model.ts exists and its tests pass. If not,
+STOP and report. The panel (8.7) also needs B6's stat bar to mount it; if B6 has not
+landed, deliver 8.1-8.6 and 8.8 and leave 8.7 / 8.9 unchecked with an honest note.
+
+Your scope is tasks.md §8 only (8.1 through 8.10). Files: src/core/turn-analysis.ts and
+its test, plus TrajectoryAnalysisPanel.tsx and its test.
+
+Read implementation-spec.md §2 and specs/metrics-analysis/spec.md. The analysis is pure
+arithmetic over the already-loaded TurnModel: ZERO network requests, NO model call. The
+source spec's 分析 button implies a service, while §1.4 of that same spec forbids model
+calls; this change resolves it as client-side computation (C11). A test asserts the
+request count is zero.
+
+Determinism matters — humans compare these lists across runs:
+- tool usage orders by call count descending, ties by tool name ascending
+- both top-10 lists order descending, ties by turn index ascending
+
+Cache rate = cacheRead / (input + cacheRead), null when the denominator is 0. A null rate
+renders an em dash, never 0. Note this is NOT the source spec's cached/input formula —
+data-model §2 documents why (C14).
+
+The four anomaly thresholds are FIXED. Do not tune one to make a fixture pass:
+  slow turn   durationMs > 30_000                  danger
+  high input  tokens.input > 50_000                attention
+  tool error  a member with tool !== null errored  danger
+  low cache   cache rate non-null and < 0.5        attention
+
+Each entry carries { rule, turnIndex, detail }, and detail names the measured value and
+the threshold crossed. In the panel each entry gets an icon plus text, not colour alone.
+
+An incomplete turn model makes the analysis incomplete: banner shown, every total an em
+dash.
+
+Test the boundaries exactly: at the threshold no anomaly fires, one step past it one
+does. Also cover a null cache rate raising no low-cache anomaly, and a zero-turn session
+reporting empty rather than failing.
+
+Definition of done: §8 boxes checked with evidence, targeted tests green, then
+npm run typecheck && npm run test && npm run lint all green.
