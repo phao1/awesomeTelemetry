@@ -34,3 +34,8 @@ export const PROXY_LIST_COLS = [
   'parsed_session_id', 'parser_route', 'capture_group_id', 'request_format',
   'CASE WHEN system_prompt_len > 0 THEN 1 ELSE 0 END AS has_system_prompt',
 ].join(', ');
+
+/** session_annotations 读取列（contracts/database.md §3.10）。显式列，禁止 SELECT *。 */
+export const SESSION_ANNOTATION_COLS = [
+  'session_id', 'tags_json', 'note', 'updated_at',
+].join(', ');

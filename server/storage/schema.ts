@@ -26,8 +26,12 @@ import { cachedStmt } from './stmt-cache.js';
  * 清空四个派生表（events / event_raw / metrics / scan_state）并重置全部会话的
  * detail_loaded，强制下一轮打开时按新分类与 turnKey 重扫。sessions /
  * proxy_requests / frida_captures / session_prompt_context 保留不动。
+ * v8（add-trajectory-inspector D15）：**只增不改**——新增 session_annotations
+ * 表与其索引（contracts/database.md §3.10 / §4）。不触碰任何既有表、列、索引
+ * 或投影，不触发重扫；v7→v8 迁移幂等（CREATE TABLE IF NOT EXISTS +
+ * CREATE INDEX IF NOT EXISTS），失败抛带重建指引的错误，禁止静默 catch。
  */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -185,6 +189,16 @@ CREATE TABLE IF NOT EXISTS session_prompt_context (
   analysis_json      TEXT NOT NULL DEFAULT '{}',
   full_system_prompt TEXT
 ) WITHOUT ROWID;
+
+-- v8（add-trajectory-inspector D15，contracts/database.md §3.10 逐字采用）：
+-- 每个已存会话至多一行注解（tags 以 JSON 数组存储 + 自由文本 note）。
+-- 只增不改：不修改任何既有表；FK 级联在会话删除时移除注解行。
+CREATE TABLE IF NOT EXISTS session_annotations (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  tags_json  TEXT NOT NULL DEFAULT '[]',
+  note       TEXT,
+  updated_at TEXT NOT NULL
+);
 `;
 
 // contracts/database.md §4 索引（全集），逐字采用。
@@ -221,6 +235,11 @@ CREATE INDEX IF NOT EXISTS idx_proxy_group_format_model_id
 CREATE INDEX IF NOT EXISTS idx_frida_captured_at     ON frida_captures(captured_at);
 CREATE INDEX IF NOT EXISTS idx_frida_session         ON frida_captures(session_id);
 CREATE INDEX IF NOT EXISTS idx_frida_capture_session ON frida_captures(capture_session_id);
+
+-- v8（add-trajectory-inspector D14/D15，contracts/database.md §4）：标签词表
+-- 排序与 updated_at 排序。会话列表的标签匹配用 json_each 包含谓词，不靠此索引。
+CREATE INDEX IF NOT EXISTS idx_session_annotations_updated
+  ON session_annotations(updated_at);
 `;
 
 const SET_SCHEMA_VERSION_SQL =
@@ -347,6 +366,44 @@ function migrateV6ToV7(db: Database): void {
   }
 }
 
+/**
+ * v7 → v8 迁移（add-trajectory-inspector D15，contracts/database.md §2 逐字采用）。
+ *
+ * **只增不改**：创建 session_annotations 表与其索引，不触碰任何既有表、列、
+ * 索引或投影，不触发重扫。幂等（CREATE TABLE IF NOT EXISTS +
+ * CREATE INDEX IF NOT EXISTS）——第二次运行什么也不改、不报错。
+ *
+ * 失败一律抛带「删除 DB 后重扫」指引的错误，禁止静默 catch（任务 2.2 /
+ * 禁令 8 / G11.5 教训）：半迁移状态比重扫更危险，DB 是本地会话文件的
+ * 可重建缓存。回滚用旧二进制即可——新表与新索引只是不被使用。
+ */
+function migrateV7ToV8(db: Database): void {
+  const rebuildHint =
+    'The database is a rebuildable cache of local session files - delete it and rescan.';
+  for (const sql of [
+    // D15 / contracts/database.md §3.10
+    'CREATE TABLE IF NOT EXISTS session_annotations (' +
+      'session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,' +
+      "tags_json  TEXT NOT NULL DEFAULT '[]'," +
+      'note       TEXT,' +
+      'updated_at TEXT NOT NULL' +
+      ')',
+    // D15 / contracts/database.md §4
+    'CREATE INDEX IF NOT EXISTS idx_session_annotations_updated ' +
+      'ON session_annotations(updated_at)',
+  ]) {
+    try {
+      db.exec(sql);
+    } catch (error) {
+      throw new Error(
+        `schema v7→v8 migration failed on "${sql}": ` +
+          `${error instanceof Error ? error.message : String(error)}. ${rebuildHint}`,
+        { cause: error },
+      );
+    }
+  }
+}
+
 /** v4+（fix-session-detail-display §1.1）：events.content_hash 幂等补列。 */
 function ensureEventsContentHash(db: Database): void {
   try {
@@ -391,6 +448,9 @@ export function migrateSchema(db: Database, fromVersion: number): void {
   }
   if (fromVersion < 7) {
     migrateV6ToV7(db);
+  }
+  if (fromVersion < 8) {
+    migrateV7ToV8(db);
   }
   cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
 }

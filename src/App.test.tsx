@@ -25,6 +25,7 @@ function session(id: string, provider: 'codex' | 'claude', title: string): Sessi
     detailLoaded: false,
     mergeGroupId: null,
     hasSystemPrompt: false,
+    tags: [],
   };
 }
 

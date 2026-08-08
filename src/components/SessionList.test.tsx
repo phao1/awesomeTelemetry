@@ -29,6 +29,7 @@ function entry(id: string, title: string): SessionIndexEntry {
     detailLoaded: false,
     mergeGroupId: null,
     hasSystemPrompt: false,
+    tags: [],
   };
 }
 

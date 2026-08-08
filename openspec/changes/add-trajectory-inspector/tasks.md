@@ -37,19 +37,19 @@ Do not commit or push unless the user separately asks.
 
 **Depends on:** §1
 
-- [ ] 2.1 Add the `session_annotations` DDL and its index to `SCHEMA_SQL`; bump `SCHEMA_VERSION` to 8.
-- [ ] 2.2 Add the idempotent v7→v8 migration; it creates only the table and index and throws visible rebuild guidance on failure, never a silent catch.
-- [ ] 2.3 Add fresh-schema, v7 upgrade, repeated-init, and newer-version-refusal coverage to `server/storage/schema.test.ts`.
-- [ ] 2.4 Add a test proving Change A's destructive migration, run against a database that already holds annotations, leaves those rows intact.
-- [ ] 2.5 Add the annotation column constants to `server/storage/columns.ts`; never `SELECT *`.
-- [ ] 2.6 Create `server/storage/annotations.ts` with `readAnnotations`, `writeAnnotations`, and `listTagVocabulary`, all using module-level cached prepared statements.
-- [ ] 2.7 Implement tag normalisation exactly per D13 — trim, lowercase, de-duplicate, sort ascending — and enforce all four bounds by throwing a typed error, never truncating.
-- [ ] 2.8 Implement partial-update semantics: absent key untouched, empty array clears tags, null clears the note; convert `undefined` to `null` before writing.
-- [ ] 2.9 Extend the session-list query with an OR tag filter and a `tags` array on each row, joining `session_annotations` with no per-row query and no body column.
-- [ ] 2.10 Add `EXPLAIN QUERY PLAN` assertions: annotation read is a primary-key lookup; the session list with the tag join gains no `USE TEMP B-TREE`.
-- [ ] 2.11 Measure the session list before and after the join against the 524-entry baseline (447.8KB / 5.33ms) and record the delta; stop and report if it degrades materially.
-- [ ] 2.12 Add `server/storage/annotations.test.ts` covering empty read creating no row, round trip with normalisation, both partial updates, both clears, every bound violation, a unicode tag, cascade delete, tag vocabulary counts, and OR filtering across two tags.
-- [ ] 2.13 Run targeted storage tests, then `npm run typecheck && npm run test && npm run lint`.
+- [x] 2.1 Add the `session_annotations` DDL and its index to `SCHEMA_SQL`; bump `SCHEMA_VERSION` to 8.
+- [x] 2.2 Add the idempotent v7→v8 migration; it creates only the table and index and throws visible rebuild guidance on failure, never a silent catch.
+- [x] 2.3 Add fresh-schema, v7 upgrade, repeated-init, and newer-version-refusal coverage to `server/storage/schema.test.ts`.
+- [x] 2.4 Add a test proving Change A's destructive migration, run against a database that already holds annotations, leaves those rows intact.
+- [x] 2.5 Add the annotation column constants to `server/storage/columns.ts`; never `SELECT *`.
+- [x] 2.6 Create `server/storage/annotations.ts` with `readAnnotations`, `writeAnnotations`, and `listTagVocabulary`, all using module-level cached prepared statements.
+- [x] 2.7 Implement tag normalisation exactly per D13 — trim, lowercase, de-duplicate, sort ascending — and enforce all four bounds by throwing a typed error, never truncating.
+- [x] 2.8 Implement partial-update semantics: absent key untouched, empty array clears tags, null clears the note; convert `undefined` to `null` before writing.
+- [x] 2.9 Extend the session-list query with an OR tag filter and a `tags` array on each row, joining `session_annotations` with no per-row query and no body column.
+- [x] 2.10 Add `EXPLAIN QUERY PLAN` assertions: annotation read is a primary-key lookup; the session list with the tag join gains no `USE TEMP B-TREE`.
+- [x] 2.11 Measure the session list before and after the join against the 524-entry baseline (447.8KB / 5.33ms) and record the delta; stop and report if it degrades materially.
+- [x] 2.12 Add `server/storage/annotations.test.ts` covering empty read creating no row, round trip with normalisation, both partial updates, both clears, every bound violation, a unicode tag, cascade delete, tag vocabulary counts, and OR filtering across two tags.
+- [x] 2.13 Run targeted storage tests, then `npm run typecheck && npm run test && npm run lint`.
 
 ## 3. API — annotations and tag filtering
 
@@ -69,33 +69,33 @@ Do not commit or push unless the user separately asks.
 
 **Depends on:** §1 (parallel with §2, §5, §7)
 
-- [ ] 4.1 Create `src/core/turn-model.ts` with `deriveTurns(events, session, turnKeySource)`, pure, single pass, no I/O.
-- [ ] 4.2 Implement the D3 four-step strategy selection and expose `segmentationSource` on the result.
-- [ ] 4.3 Implement `turn_key` segmentation: a changed key opens a turn; a `null` key attaches to the open turn and never opens one.
-- [ ] 4.4 Implement the `llm_boundary`, `user_prompt_boundary`, and `sequence_fallback` paths; in fallback emit one turn for everything the user rule does not carve out, and do not chunk by count or time gap.
-- [ ] 4.5 Implement turn 0, including the case where it is absent; never shift indices to close the gap.
-- [ ] 4.5a Implement the user-input rule: a `user_prompt` after turn 0 always opens a turn of kind `user`, under every strategy, taking precedence over the strategy's own boundary rule; it is never absorbed into an adjacent turn.
-- [ ] 4.5b Count all three turn kinds in the turn total, and expose a separate round count derived from `init` plus `user` turns.
-- [ ] 4.6 Implement aggregation: wall-clock duration floored at 0, `aggregateTokenUsage` reuse, model resolution, message and tool counts, status precedence error → running → success.
-- [ ] 4.7 Implement the D8 badges including `compact`; do not add a `length` badge.
-- [ ] 4.8 Implement the D4 event-to-message mapping, including the tool-family kind set and the assistant/reasoning grouping; expose each tool message's `event.id` as its call identity without parsing it.
-- [ ] 4.9 Implement completeness from `hasMore` / `eventTotal`.
-- [ ] 4.10 Add `src/core/turn-model.test.ts` covering all four segmentation sources, interleaved null keys, turn 0 present and absent, a mid-session user prompt opening its own turn under each of the four strategies, a user prompt sandwiched between two cycles joining neither, wall-clock versus sum on a fixture where they differ, token aggregation against a hand-computed fixture, every badge, each status precedence, all three kinds counted, the round count, empty session, system-and-user-only session, and completeness propagation.
-- [ ] 4.11 Add a benchmark asserting 1,000 synthetic events derive in under 20 ms.
-- [ ] 4.12 Run targeted core tests, then `npm run typecheck && npm run test && npm run lint`.
+- [x] 4.1 Create `src/core/turn-model.ts` with `deriveTurns(events, session, turnKeySource)`, pure, single pass, no I/O.
+- [x] 4.2 Implement the D3 four-step strategy selection and expose `segmentationSource` on the result.
+- [x] 4.3 Implement `turn_key` segmentation: a changed key opens a turn; a `null` key attaches to the open turn and never opens one.
+- [x] 4.4 Implement the `llm_boundary`, `user_prompt_boundary`, and `sequence_fallback` paths; in fallback emit one turn for everything the user rule does not carve out, and do not chunk by count or time gap.
+- [x] 4.5 Implement turn 0, including the case where it is absent; never shift indices to close the gap.
+- [x] 4.5a Implement the user-input rule: a `user_prompt` after turn 0 always opens a turn of kind `user`, under every strategy, taking precedence over the strategy's own boundary rule; it is never absorbed into an adjacent turn.
+- [x] 4.5b Count all three turn kinds in the turn total, and expose a separate round count derived from `init` plus `user` turns.
+- [x] 4.6 Implement aggregation: wall-clock duration floored at 0, `aggregateTokenUsage` reuse, model resolution, message and tool counts, status precedence error → running → success.
+- [x] 4.7 Implement the D8 badges including `compact`; do not add a `length` badge.
+- [x] 4.8 Implement the D4 event-to-message mapping, including the tool-family kind set and the assistant/reasoning grouping; expose each tool message's `event.id` as its call identity without parsing it.
+- [x] 4.9 Implement completeness from `hasMore` / `eventTotal`.
+- [x] 4.10 Add `src/core/turn-model.test.ts` covering all four segmentation sources, interleaved null keys, turn 0 present and absent, a mid-session user prompt opening its own turn under each of the four strategies, a user prompt sandwiched between two cycles joining neither, wall-clock versus sum on a fixture where they differ, token aggregation against a hand-computed fixture, every badge, each status precedence, all three kinds counted, the round count, empty session, system-and-user-only session, and completeness propagation.
+- [x] 4.11 Add a benchmark asserting 1,000 synthetic events derive in under 20 ms.
+- [x] 4.12 Run targeted core tests, then `npm run typecheck && npm run test && npm run lint`.
 
 ## 5. Ribbon geometry
 
 **Depends on:** §1 (parallel with §2, §4, §7)
 
-- [ ] 5.1 Create `src/core/turn-ribbon.ts` with the exact D10 constants and `computeRibbon(turns, mode, containerWidthPx)`.
-- [ ] 5.2 Implement proportional widths for both modes with the minimum-width floor.
-- [ ] 5.3 Implement the zero-total case as equal widths with no division by zero.
-- [ ] 5.4 Implement bucketing above `RIBBON_MAX_SEGMENTS` into equal turn-count buckets carrying their turn range; drop no turn.
-- [ ] 5.5 Implement dominant-role selection with the six-role tie order from D10.
-- [ ] 5.6 Emit an accessible label per segment naming turn index or range, duration, and token total.
-- [ ] 5.7 Add `src/core/turn-ribbon.test.ts` covering proportionality in both modes, the floor, zero total, exactly 200 turns, 201, 500, a single turn, dominant-role ties across all six roles, and label content.
-- [ ] 5.8 Add a benchmark asserting 200 turns compute in under 5 ms.
+- [x] 5.1 Create `src/core/turn-ribbon.ts` with the exact D10 constants and `computeRibbon(turns, mode, containerWidthPx)`.
+- [x] 5.2 Implement proportional widths for both modes with the minimum-width floor.
+- [x] 5.3 Implement the zero-total case as equal widths with no division by zero.
+- [x] 5.4 Implement bucketing above `RIBBON_MAX_SEGMENTS` into equal turn-count buckets carrying their turn range; drop no turn.
+- [x] 5.5 Implement dominant-role selection with the six-role tie order from D10.
+- [x] 5.6 Emit an accessible label per segment naming turn index or range, duration, and token total.
+- [x] 5.7 Add `src/core/turn-ribbon.test.ts` covering proportionality in both modes, the floor, zero total, exactly 200 turns, 201, 500, a single turn, dominant-role ties across all six roles, and label content.
+- [x] 5.8 Add a benchmark asserting 200 turns compute in under 5 ms.
 - [ ] 5.9 Run targeted core tests, then `npm run typecheck && npm run test && npm run lint`.
 
 ## 6. Detail-view replacement and panels
@@ -125,19 +125,19 @@ Do not commit or push unless the user separately asks.
 
 **Depends on:** §1 (parallel with §2, §4, §5; integrated in §6)
 
-- [ ] 7.1 Create `renderers/index.ts` with the D11 registry types, `registerToolRenderer`, `resolveToolRenderer`, exact-lowercase matching, and the four shared bounds.
-- [ ] 7.2 Create `renderers/json-tree.tsx`: collapsible tree, depth 3, 5-element root array preview, non-JSON fallback to preformatted text.
-- [ ] 7.3 Create the `read` renderer per D11.
-- [ ] 7.4 Create the `bash` renderer, reusing `src/core/error-classifier.ts` for error lines rather than writing a second pattern list.
-- [ ] 7.5 Create the `todowrite` renderer with an icon plus label per status and a priority badge; a coloured dot alone is prohibited.
-- [ ] 7.6 Create the `grep` renderer with marked matches.
-- [ ] 7.7 Create the `glob` renderer.
-- [ ] 7.8 Create the `edit` renderer whose diff rows carry their `+` / `-` sign in addition to background colour.
-- [ ] 7.9 Create the `write` renderer.
-- [ ] 7.10 Make every renderer total: unparseable input returns `fallback`, never throws; the card then shows raw with a `raw` marker.
-- [ ] 7.11 Enforce `RENDER_MAX_CHARS` before parsing so an oversized body never enters a renderer.
-- [ ] 7.12 Add renderer tests: a happy path and a malformed path for each built-in, both bounds, registry override of a built-in, unmatched tool falling to default, and a null tool name.
-- [ ] 7.13 Run targeted renderer tests, then `npm run typecheck && npm run test && npm run lint`.
+- [x] 7.1 Create `renderers/index.ts` with the D11 registry types, `registerToolRenderer`, `resolveToolRenderer`, exact-lowercase matching, and the four shared bounds.
+- [x] 7.2 Create `renderers/json-tree.tsx`: collapsible tree, depth 3, 5-element root array preview, non-JSON fallback to preformatted text.
+- [x] 7.3 Create the `read` renderer per D11.
+- [x] 7.4 Create the `bash` renderer, reusing `src/core/error-classifier.ts` for error lines rather than writing a second pattern list.
+- [x] 7.5 Create the `todowrite` renderer with an icon plus label per status and a priority badge; a coloured dot alone is prohibited.
+- [x] 7.6 Create the `grep` renderer with marked matches.
+- [x] 7.7 Create the `glob` renderer.
+- [x] 7.8 Create the `edit` renderer whose diff rows carry their `+` / `-` sign in addition to background colour.
+- [x] 7.9 Create the `write` renderer.
+- [x] 7.10 Make every renderer total: unparseable input returns `fallback`, never throws; the card then shows raw with a `raw` marker.
+- [x] 7.11 Enforce `RENDER_MAX_CHARS` before parsing so an oversized body never enters a renderer.
+- [x] 7.12 Add renderer tests: a happy path and a malformed path for each built-in, both bounds, registry override of a built-in, unmatched tool falling to default, and a null tool name.
+- [x] 7.13 Run targeted renderer tests, then `npm run typecheck && npm run test && npm run lint`.
 
 ## 8. Trajectory analysis
 
