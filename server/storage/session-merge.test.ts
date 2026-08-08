@@ -67,6 +67,7 @@ function index(id: string, over: Partial<SessionIndexEntry> = {}): SessionIndexE
     detailLoaded: true,
     mergeGroupId: null,
     hasSystemPrompt: false,
+    tags: [],
     ...over,
   };
 }

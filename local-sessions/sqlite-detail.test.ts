@@ -176,6 +176,7 @@ describe('REQ-022 SQLite 类详情解析（T-11）', () => {
       detailLoaded: false,
       mergeGroupId: null,
       hasSystemPrompt: false,
+      tags: [],
     };
     upsertIndexEntries(db, [fakeEntry]);
 

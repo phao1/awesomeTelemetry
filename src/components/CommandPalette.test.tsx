@@ -24,6 +24,7 @@ const sessions: SessionIndexEntry[] = [
     detailLoaded: false,
     mergeGroupId: null,
     hasSystemPrompt: false,
+    tags: [],
   },
 ];
 

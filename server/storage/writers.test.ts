@@ -111,6 +111,7 @@ function makeIndexEntry(id: string): SessionIndexEntry {
     detailLoaded: false,
     mergeGroupId: null,
     hasSystemPrompt: false,
+    tags: [],
   };
 }
 
@@ -392,6 +393,7 @@ describe('REQ-011 事件差分写入', () => {
       detailLoaded: false,
       mergeGroupId: null,
       hasSystemPrompt: false,
+      tags: [],
     };
     upsertSessionFromIndex(db, entry);
     const row = db.prepare('SELECT detail_loaded FROM sessions WHERE id = ?').get('s1') as {

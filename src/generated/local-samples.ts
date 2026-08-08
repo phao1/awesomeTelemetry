@@ -20,7 +20,8 @@ export const localSamples: SessionIndexEntry[] = [
     "sourcePath": "fallback://codex-1",
     "detailLoaded": false,
     "mergeGroupId": null,
-    "hasSystemPrompt": false
+    "hasSystemPrompt": false,
+    "tags": []
   },
   {
     "id": "claude-fallback-1",
@@ -39,6 +40,7 @@ export const localSamples: SessionIndexEntry[] = [
     "sourcePath": "fallback://claude-1",
     "detailLoaded": false,
     "mergeGroupId": null,
-    "hasSystemPrompt": false
+    "hasSystemPrompt": false,
+    "tags": []
   }
 ];
