@@ -62,7 +62,7 @@ Do not commit or push unless the user separately asks.
 - [x] 3.7 Apply A11 stable ordering so same-timestamp parts of one message keep source order.
 - [x] 3.8 Add adapter tests for a tool-result row not producing a user prompt, result attachment by id, an unmatched result, an error result, a genuine prompt still emitted, turn-key grouping across an assistant message with two tool calls, and same-timestamp ordering stability.
 - [x] 3.9 Add a regression test asserting the `llm > tool > user_prompt > tool > user_prompt` pattern seen in live data no longer appears for a tool-result fixture.
-- [ ] 3.10 Run targeted adapter tests, then `npm run typecheck && npm run test && npm run lint`.
+- [x] 3.10 Run targeted adapter tests, then `npm run typecheck && npm run test && npm run lint`.
 
 ## 4. Remaining seven adapters
 
@@ -75,24 +75,24 @@ Do not commit or push unless the user separately asks.
 - [x] 4.5 Add a fixture test per adapter asserting the grouping its fixture actually supports, and stating in the test name or a comment that the rule is fixture-derived when no live data backs it.
 - [x] 4.6 Add a shared test asserting no adapter synthesises a turn key from timestamp proximity or event count.
 - [x] 4.7 Add a shared test asserting every adapter declares a turn-key provenance value.
-- [ ] 4.8 Run targeted adapter tests, then `npm run typecheck && npm run test && npm run lint`.
+- [x] 4.8 Run targeted adapter tests, then `npm run typecheck && npm run test && npm run lint`.
 
 ## 5. Storage, phase classification, and metric movement
 
 **Depends on:** §2, §3, §4
 
-- [ ] 5.1 Add `turn_key TEXT` to the events DDL and bump `SCHEMA_VERSION` to 7.
-- [ ] 5.2 Implement the A10 migration in order: add column, clear the four named tables, mark all sessions as detail-not-loaded, record completion; throw visible rebuild guidance on failure.
-- [ ] 5.3 Enumerate cleared tables explicitly so tables added by later changes are preserved by default.
-- [ ] 5.4 Add `turn_key` to the explicit column lists in `columns.ts` and to the slim projection; no wildcard select.
-- [ ] 5.5 Map `turnKey` through the writer and the query engine, preserving `null`.
-- [ ] 5.6 Add schema tests: fresh v7, v6 upgrade clearing exactly the four tables and preserving the rest, repeated init being a no-op, newer-version refusal, and migration failure throwing.
-- [ ] 5.7 Add a round-trip test proving `turn_key` survives write and read, including `null`.
-- [ ] 5.8 Add both new kinds to the phase classifier per A8, with reasoning inheriting its cycle's phase and compaction assigned understand.
-- [ ] 5.9 Exclude compaction events from average tool duration and error rate on both computation paths.
-- [ ] 5.10 Recompute every expected value that moved; never loosen an assertion.
-- [ ] 5.11 Re-run the metrics-consistency test between SQL aggregation and per-session computation; fix the implementation if it disagrees, never the tolerance.
-- [ ] 5.12 Run targeted storage and metrics tests, then `npm run typecheck && npm run test && npm run lint`.
+- [x] 5.1 Add `turn_key TEXT` to the events DDL and bump `SCHEMA_VERSION` to 7.
+- [x] 5.2 Implement the A10 migration in order: add column, clear the four named tables, mark all sessions as detail-not-loaded, record completion; throw visible rebuild guidance on failure.
+- [x] 5.3 Enumerate cleared tables explicitly so tables added by later changes are preserved by default.
+- [x] 5.4 Add `turn_key` to the explicit column lists in `columns.ts` and to the slim projection; no wildcard select.
+- [x] 5.5 Map `turnKey` through the writer and the query engine, preserving `null`.
+- [x] 5.6 Add schema tests: fresh v7, v6 upgrade clearing exactly the four tables and preserving the rest, repeated init being a no-op, newer-version refusal, and migration failure throwing.
+- [x] 5.7 Add a round-trip test proving `turn_key` survives write and read, including `null`.
+- [x] 5.8 Add both new kinds to the phase classifier per A8, with reasoning inheriting its cycle's phase and compaction assigned understand.
+- [x] 5.9 Exclude compaction events from average tool duration and error rate on both computation paths.
+- [x] 5.10 Recompute every expected value that moved; never loosen an assertion.
+- [x] 5.11 Re-run the metrics-consistency test between SQL aggregation and per-session computation; fix the implementation if it disagrees, never the tolerance.
+- [x] 5.12 Run targeted storage and metrics tests, then `npm run typecheck && npm run test && npm run lint`.
 
 ## 6. Verification and sign-off
 

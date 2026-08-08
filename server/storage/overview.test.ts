@@ -238,4 +238,32 @@ describe('REQ-009 Agent Overview 服务端聚合', () => {
     expect(claude?.debugEntryRate).toBe(1); // 单会话 0|1
     db.close();
   });
+
+  /**
+   * fix-adapter-turn-semantics 5.9：SQL 聚合路径与 computeMetrics 同口径——
+   * compact 是基础设施事件，即使携带 tool 名与 error 状态，也不得计入
+   * avgToolDurationMs / errorRate（分子分母都不算）。
+   */
+  it('compact 从 SQL 聚合的 avgToolDurationMs / errorRate 中排除', () => {
+    const db = newDb();
+    insertSession(db, 's1', { provider: 'codex', sourceAgent: 'Codex', eventCount: 2 });
+    insertEvent(db, {
+      sessionId: 's1', id: 'e1', sequence: 1, phase: 'implement',
+      status: 'success', tool: 'Read', durationMs: 100,
+    });
+    db.prepare(
+      `INSERT INTO events (session_id, id, sequence, kind, phase, title, started_at, duration_ms, status, actor, tool, input_summary, output_summary, tokens_json, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      's1', 'e2', 2, 'compact', 'understand', 'context_compacted',
+      '2026-08-01T00:00:00.000Z', 200, 'error', 'system', 'compact',
+      null, null, null, null,
+    );
+
+    const r = getAgentOverview(db, 'scan');
+    const row = rowMap(r.rows).get('codex/Codex');
+    expect(row?.avgToolDurationMs).toBeCloseTo(100); // compact 的 200ms 不计入
+    expect(row?.errorRate).toBeCloseTo(0); // compact 的 error 状态不计入
+    db.close();
+  });
 });

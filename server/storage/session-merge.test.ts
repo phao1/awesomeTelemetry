@@ -105,6 +105,8 @@ function detail(
       id: e.id,
       sessionId,
       sequence: e.sequence,
+      // fix-adapter-turn-semantics 5.5：slim 事件契约新增必填 turnKey。
+      turnKey: null,
       kind: 'llm',
       phase: 'implement',
       title: '',

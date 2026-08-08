@@ -9,6 +9,8 @@ function ev(over: Partial<TraceEvent> & { id: string }): TraceEvent {
     id,
     sessionId: 's1',
     sequence: 1,
+    // fix-adapter-turn-semantics 5.5：事件契约新增必填 turnKey（null 合法）。
+    turnKey: null,
     kind: 'llm',
     phase: 'understand',
     title: '',
@@ -118,5 +120,46 @@ describe('REQ-001 两遍分类', () => {
       ev({ id: 'e2', kind: 'tool', tool: 'TaskCreate', title: 'TaskCreate' }),
     ]);
     expect(events.map((e) => e.phase)).toEqual(['plan', 'plan']);
+  });
+
+  /**
+   * fix-adapter-turn-semantics A8：compact 是上下文恢复，直接归 understand
+   * （explicit，不是未知类型兜底）。
+   */
+  it('compact → understand', () => {
+    const events = classifyEvents([
+      ev({ id: 'e1', kind: 'compact', title: 'context_compacted', turnKey: 'c1' }),
+      ev({ id: 'e2', kind: 'llm', title: 'reply', turnKey: 'c1' }),
+    ]);
+    expect(events[0]?.phase).toBe('understand');
+  });
+
+  /**
+   * fix-adapter-turn-semantics A8：reasoning 不是独立活动，继承同一决策周期
+   * （turnKey）内 llm 事件的阶段——即使两遍传播会给它一个不同的最近 explicit。
+   * 本用例里两遍传播会把 reasoning 判成 verify（前邻），但周期 llm 是 implement，
+   * Pass 3 必须把 reasoning 拉回 implement。
+   */
+  it('reasoning 继承同周期 llm 的阶段（turnKey 分组），不引入自己的阶段', () => {
+    const events = classifyEvents([
+      ev({ id: 'e1', kind: 'tool', tool: 'Bash', title: 'npm test', inputSummary: 'npm test', turnKey: 'a' }),
+      ev({ id: 'e2', kind: 'reasoning', title: 'think', turnKey: 'b' }),
+      ev({ id: 'e3', kind: 'llm', title: 'assistant msg', turnKey: 'b' }),
+      ev({ id: 'e4', kind: 'file_write', tool: 'Write', title: 'write b.ts', turnKey: 'b' }),
+    ]);
+    // e2 与 e3 同周期（turnKey b）：reasoning 必须与 llm 同为 implement。
+    expect(events[1]?.phase).toBe('implement');
+    expect(events[2]?.phase).toBe('implement');
+  });
+
+  /** A8 兜底：turnKey 为 null（源无边界信号）或周期内无 llm 时，保留两遍传播结果。 */
+  it('reasoning 无同周期 llm 时保留两遍传播结果', () => {
+    const events = classifyEvents([
+      ev({ id: 'e1', kind: 'tool', tool: 'Grep', title: 'grep', turnKey: null }),
+      ev({ id: 'e2', kind: 'reasoning', title: 'think', turnKey: null }),
+      ev({ id: 'e3', kind: 'tool', tool: 'Write', title: 'write', turnKey: null }),
+    ]);
+    // 等距前后 explicit → reasoning 偏后（agent/message 分支之外的 kind 同样偏后）
+    expect(events[1]?.phase).toBe('implement');
   });
 });

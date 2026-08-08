@@ -10,6 +10,7 @@ export const SESSION_LIST_COLS = [
 export const EVENT_SLIM_COLS = [
   'session_id', 'id', 'sequence', 'kind', 'phase', 'title', 'started_at',
   'duration_ms', 'status', 'actor', 'tool', 'tokens_json', 'error', 'model',
+  'turn_key',
   "CASE WHEN input_summary  IS NOT NULL AND input_summary  != '' THEN 1 ELSE 0 END AS has_input",
   "CASE WHEN output_summary IS NOT NULL AND output_summary != '' THEN 1 ELSE 0 END AS has_output",
 ].join(', ');

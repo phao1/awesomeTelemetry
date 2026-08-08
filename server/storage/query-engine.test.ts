@@ -320,6 +320,9 @@ describe('REQ-006 会话列表查询', () => {
       status: 'error',
       title: 'fix build 2',
       startedAt: new Date(now - 3600_000).toISOString(),
+      // 2026-08-08 起 BASE_SESSION.updatedAt 的固定日期（08-01）落在 7d 窗口外，
+      // 使该组合过滤断言随日期漂移而失败——改为相对 now，断言本身不变。
+      updatedAt: new Date(now - 3600_000).toISOString(),
     });
     insertSession(db, 's-ok-claude', {
       provider: 'claude',

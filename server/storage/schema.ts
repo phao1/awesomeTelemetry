@@ -21,8 +21,13 @@ import { cachedStmt } from './stmt-cache.js';
  * request_format（封闭 phase-1 格式分类，NOT NULL DEFAULT 'unknown'），
  * 并新增两条复合 predecessor 索引（exact-session / capture-group 最近前驱查询）。
  * 历史行保持 capture_group_id = NULL、request_format = 'unknown'，不做启动回填。
+ * v7（fix-adapter-turn-semantics A10）：events 增 turn_key（决策周期标识，
+ * nullable；null 是一等值），并执行**破坏性重分类重扫**迁移：
+ * 清空四个派生表（events / event_raw / metrics / scan_state）并重置全部会话的
+ * detail_loaded，强制下一轮打开时按新分类与 turnKey 重扫。sessions /
+ * proxy_requests / frida_captures / session_prompt_context 保留不动。
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -80,6 +85,7 @@ CREATE TABLE IF NOT EXISTS events (
   content_hash   TEXT    NOT NULL DEFAULT '',
   input_len      INTEGER NOT NULL DEFAULT 0,
   output_len     INTEGER NOT NULL DEFAULT 0,
+  turn_key       TEXT,
   PRIMARY KEY (session_id, id)
 ) WITHOUT ROWID;
 
@@ -281,6 +287,66 @@ function isDuplicateColumn(error: unknown): boolean {
   return error instanceof Error && /duplicate column name/i.test(error.message);
 }
 
+/**
+ * v6 → v7 迁移（fix-adapter-turn-semantics A10，contracts/database.md §2 逐字采用）。
+ *
+ * 破坏性重分类重扫，严格按序：
+ *   1. ALTER TABLE events ADD COLUMN turn_key TEXT —— 幂等；重复列失败容忍，
+ *      其它失败抛错（带重建指引）。
+ *   2. 显式枚举清空四个派生表，**绝不用「除…以外全清」的排除式写法**：
+ *      后续 change 新增的表（如 add-trajectory-inspector 的
+ *      session_annotations）默认保留，不会被这条更早的迁移误删。
+ *   3. sessions / proxy_requests / frida_captures / session_prompt_context
+ *      保留，不做任何操作。
+ *   4. 全部会话 detail_loaded = 0 → 下次打开触发重扫。
+ *   5. 完成记录由 migrateSchema 结尾的 schema_version upsert 承担（写入 7），
+ *      第二次初始化时 current === SCHEMA_VERSION，不再进入本函数（no-op）。
+ *
+ * 失败一律抛带「删除 DB 后重扫」指引的错误：半迁移状态比重扫更危险，
+ * 禁止静默 catch（任务 5.2 / 禁令 8 / G11.5 教训）。
+ */
+function migrateV6ToV7(db: Database): void {
+  const rebuildHint =
+    'The database is a rebuildable cache of local session files - delete it and rescan.';
+  try {
+    db.exec('ALTER TABLE events ADD COLUMN turn_key TEXT');
+  } catch (error) {
+    if (!isDuplicateColumn(error)) {
+      throw new Error(
+        'schema v6→v7 migration failed on "ALTER TABLE events ADD COLUMN turn_key TEXT": ' +
+          `${error instanceof Error ? error.message : String(error)}. ${rebuildHint}`,
+        { cause: error },
+      );
+    }
+  }
+  // 5.3：被清空的四个派生表**逐一具名**（不是「除以下保留表外全清」的排除式写法）。
+  for (const sql of [
+    'DELETE FROM events',
+    'DELETE FROM event_raw',
+    'DELETE FROM metrics',
+    'DELETE FROM scan_state',
+  ]) {
+    try {
+      db.exec(sql);
+    } catch (error) {
+      throw new Error(
+        `schema v6→v7 migration failed on "${sql}": ` +
+          `${error instanceof Error ? error.message : String(error)}. ${rebuildHint}`,
+        { cause: error },
+      );
+    }
+  }
+  try {
+    db.exec('UPDATE sessions SET detail_loaded = 0');
+  } catch (error) {
+    throw new Error(
+      'schema v6→v7 migration failed on "UPDATE sessions SET detail_loaded = 0": ' +
+        `${error instanceof Error ? error.message : String(error)}. ${rebuildHint}`,
+      { cause: error },
+    );
+  }
+}
+
 /** v4+（fix-session-detail-display §1.1）：events.content_hash 幂等补列。 */
 function ensureEventsContentHash(db: Database): void {
   try {
@@ -322,6 +388,9 @@ export function migrateSchema(db: Database, fromVersion: number): void {
         }
       }
     }
+  }
+  if (fromVersion < 7) {
+    migrateV6ToV7(db);
   }
   cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
 }

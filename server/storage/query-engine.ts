@@ -240,6 +240,8 @@ function mapEvent(
     // §5.2：slim 档统一置 hasRaw = true，由下钻接口返回 null 表示实际不存在。
     hasRaw: true,
     model: row.model === undefined ? undefined : (row.model as string | null),
+    // fix-adapter-turn-semantics 5.5：turnKey 原样回读，null 是一等值。
+    turnKey: row.turn_key as string | null,
   };
   if (!full) {
     return slim;

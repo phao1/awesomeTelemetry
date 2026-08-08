@@ -8,6 +8,7 @@ import type {
   TraceMetrics,
   TraceSession,
 } from '../../src/core/trace-types.js';
+import { getSessionDetail } from './query-engine.js';
 import { initSchema } from './schema.js';
 import {
   deleteSession,
@@ -118,6 +119,8 @@ function makeEvent(id: string, sequence: number): TraceEvent {
     id,
     sessionId: 's1',
     sequence,
+    // fix-adapter-turn-semantics 5.5：事件契约新增必填 turnKey（null 合法）。
+    turnKey: null,
     kind: 'llm',
     phase: 'implement',
     title: `event ${id}`,
@@ -446,6 +449,27 @@ describe('REQ-012 undefined 写库前转 null', () => {
   });
 });
 
+describe('fix-adapter-turn-semantics 5.7 turn_key 往返', () => {
+  it('turn_key 写入并回读，含真实值与 null（null 是一等值）', () => {
+    const db = newDb();
+    upsertSessionFromTrace(db, makeSession('s-turn'));
+    upsertEvents(db, 's-turn', [
+      { ...makeEvent('e1', 1), turnKey: 'cycle-1' },
+      { ...makeEvent('e2', 2), turnKey: null },
+    ]);
+
+    const rows = db
+      .prepare('SELECT turn_key FROM events WHERE session_id = ? ORDER BY sequence')
+      .all('s-turn') as Array<{ turn_key: string | null }>;
+    expect(rows.map((r) => r.turn_key)).toEqual(['cycle-1', null]);
+
+    // 经查询引擎 slim 投影回读（EVENT_SLIM_COLS 显式含 turn_key，无通配符）
+    const detail = getSessionDetail(db, 's-turn', { mode: 'slim' });
+    expect(detail?.events.map((e) => e.turnKey)).toEqual(['cycle-1', null]);
+    db.close();
+  });
+});
+
 describe('add-mission-control §2：events 新列落库', () => {
   it('model / input_len / output_len 写入，input_len 为 inputSummary 的 UTF-8 字节数', () => {
     const db = newDb();
@@ -473,6 +497,7 @@ describe('add-mission-control §2：events 新列落库', () => {
       id: 'e1',
       sessionId: 's-model',
       sequence: 1,
+      turnKey: null,
       kind: 'llm',
       phase: 'implement',
       title: 't',
@@ -527,6 +552,7 @@ describe('add-mission-control §2：events 新列落库', () => {
         id: 'e1',
         sessionId: 's-nomodel',
         sequence: 1,
+        turnKey: null,
         kind: 'llm',
         phase: 'implement',
         title: 't',

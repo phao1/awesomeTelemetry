@@ -75,10 +75,15 @@ function mean(values: number[]): number {
 /** REQ-004：四维指标 + 基础指标。 */
 export function computeMetrics(record: TraceRecord): TraceMetrics {
   const events = record.events;
-  const toolEvents = events.filter((e) => e.tool !== null);
+  // fix-adapter-turn-semantics A8/5.9：compact 是基础设施事件，不是 agent 工作，
+  // 从 avgToolDurationMs 与 errorRate（分子分母）显式排除；与 overview.ts 的
+  // SQL 聚合路径同口径（consistency.test.ts REQ-011 锁定两路一致 ≤0.001）。
+  const toolEvents = events.filter((e) => e.tool !== null && e.kind !== 'compact');
+  // STEP_KINDS 本身不含 compact，errorRate 分母/分子天然排除；
+  // 下方显式追加过滤仅为防止未来 STEP_KINDS 改动破坏口径。
   const totalSteps = events.filter((e) => STEP_KINDS.has(e.kind)).length;
   const errorSteps = events.filter(
-    (e) => e.status === 'error' && STEP_KINDS.has(e.kind),
+    (e) => e.status === 'error' && STEP_KINDS.has(e.kind) && e.kind !== 'compact',
   ).length;
   const verifyEventCount = events.filter((e) => e.phase === 'verify').length;
 

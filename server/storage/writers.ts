@@ -76,6 +76,7 @@ const EVENT_COLS = [
   'session_id', 'id', 'sequence', 'kind', 'phase', 'title', 'started_at',
   'duration_ms', 'status', 'actor', 'tool', 'input_summary', 'output_summary',
   'tokens_json', 'error', 'model', 'content_hash', 'input_len', 'output_len',
+  'turn_key',
 ];
 
 const METRICS_COLS = [
@@ -236,6 +237,8 @@ export function upsertEvents(
         contentHash,
         Buffer.byteLength(event.inputSummary ?? '', 'utf8'),
         Buffer.byteLength(event.outputSummary ?? '', 'utf8'),
+        // fix-adapter-turn-semantics 5.5：turn_key 落库；undefined → null。
+        event.turnKey ?? null,
       );
     }
 

@@ -18,6 +18,8 @@ function makeRecord(
     id: `${id}-e${i}`,
     sessionId: id,
     sequence: i + 1,
+    // fix-adapter-turn-semantics 5.5：事件契约新增必填 turnKey（null 合法）。
+    turnKey: null,
     kind: (phase === 'verify' ? 'test' : 'tool') as TraceEvent['kind'],
     phase: phase as TraceEvent['phase'],
     title: `ev ${i}`,
@@ -56,6 +58,8 @@ function makeRecord(
     },
     events,
     tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+    // fix-adapter-turn-semantics A5：fixture 无边界信号，声明 unavailable。
+    turnKeySource: 'unavailable',
   };
 }
 
@@ -97,6 +101,7 @@ describe('REQ-004 computeMetrics', () => {
       id,
       sessionId: 'v4',
       sequence,
+      turnKey: null,
       kind,
       phase: kind === 'user_prompt' ? 'understand' : 'implement',
       title: 't',
@@ -157,6 +162,7 @@ describe('REQ-004 computeMetrics', () => {
       id,
       sessionId: 'repair',
       sequence,
+      turnKey: null,
       kind,
       phase: 'implement',
       title: 't',
@@ -195,13 +201,51 @@ describe('REQ-004 computeMetrics', () => {
     const record = makeRecord('s2', { phases: ['implement'], eventStatuses: ['error'] });
     record.events.push({
       id: 'user-err', sessionId: 's2', sequence: 2, kind: 'user_prompt', phase: 'understand',
-      title: 'q', startedAt: '2026-08-01T00:00:02.000Z', durationMs: 0,
+      title: 'q', turnKey: null, startedAt: '2026-08-01T00:00:02.000Z', durationMs: 0,
       status: 'error', actor: 'user', tool: null, tokens: null, error: 'x',
       hasInput: true, hasOutput: false, hasRaw: false, inputSummary: 'q', outputSummary: null,
     });
     const m = computeMetrics(record);
     expect(m.totalSteps).toBe(1);
     expect(m.errorRate).toBe(1); // 只有步骤错误计入分子分母
+  });
+
+  /**
+   * fix-adapter-turn-semantics A8/5.9：compact 是基础设施，不是 agent 工作——
+   * 从 avgToolDurationMs 与 errorRate（分子分母）显式排除。
+   * 即使 compact 事件携带 tool 名与 error 状态，也不得计入（与 overview.ts 的
+   * SQL 聚合路径同口径，consistency.test.ts REQ-011 锁定两路一致）。
+   */
+  it('compact 从 avgToolDurationMs 与 errorRate 中排除（即使带 tool 名和 error 状态）', () => {
+    const record = makeRecord('s-compact', { phases: ['implement'], eventStatuses: ['success'] });
+    record.events = [
+      {
+        id: 'c-tool', sessionId: 's-compact', sequence: 1, turnKey: 'c1',
+        kind: 'tool', phase: 'understand', title: 'Read', startedAt: '2026-08-01T00:00:00.000Z',
+        durationMs: 100, status: 'success', actor: 'assistant', tool: 'Read',
+        tokens: null, error: null, hasInput: false, hasOutput: false, hasRaw: false,
+        inputSummary: null, outputSummary: null,
+      },
+      {
+        id: 'c-compact', sessionId: 's-compact', sequence: 2, turnKey: 'c1',
+        kind: 'compact', phase: 'understand', title: 'context_compacted', startedAt: '2026-08-01T00:00:01.000Z',
+        durationMs: 200, status: 'error', actor: 'system', tool: 'compact',
+        tokens: null, error: null, hasInput: false, hasOutput: false, hasRaw: false,
+        inputSummary: null, outputSummary: null,
+      },
+      {
+        id: 'c-llm', sessionId: 's-compact', sequence: 3, turnKey: 'c1',
+        kind: 'llm', phase: 'implement', title: 'reply', startedAt: '2026-08-01T00:00:02.000Z',
+        durationMs: 0, status: 'success', actor: 'assistant', tool: null,
+        tokens: null, error: null, hasInput: false, hasOutput: false, hasRaw: false,
+        inputSummary: null, outputSummary: null,
+      },
+    ];
+    const m = computeMetrics(record);
+    expect(m.avgToolDurationMs).toBe(100); // compact 的 200ms 不计入
+    expect(m.errorRate).toBe(0); // compact 的 error 状态不计入分子/分母
+    expect(m.totalSteps).toBe(2); // tool + llm；compact 不是步骤
+    expect(m.durationByPhase.understand).toBe(300); // 阶段耗时仍统计（口径只影响 avg/errorRate）
   });
 });
 
