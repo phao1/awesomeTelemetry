@@ -24,6 +24,10 @@ export const codeAgentAdapter: Adapter<Record<string, never>, ClaudeRawRow> = {
         ...event,
         actor: event.actor === 'assistant' ? 'codeagent' : event.actor,
       })),
+      // fix-adapter-turn-semantics A4 codeagent 行：CodeAgent 3.0 复用 claude 格式，
+      // 边界信号 = assistant 行的 message.id（A4 claude 行），由 claude-code 的
+      // normalizeClaudeSample 填充，此处继承并如实声明 provenance。
+      turnKeySource: 'message_identity',
     };
   },
 };

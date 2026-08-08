@@ -32,49 +32,49 @@ Do not commit or push unless the user separately asks.
 
 **Depends on:** §1
 
-- [ ] 2.1 Map `custom_tool_call`, `custom_tool_call_output`, `mcp_tool_call_end`, `web_search_call`, `web_search_end`, `tool_search_call`, and `tool_search_output` to tool-family events with real tool names.
-- [ ] 2.2 Map `patch_apply_end` to `file_write`.
-- [ ] 2.3 Map `reasoning` and `agent_reasoning` to `reasoning`.
-- [ ] 2.4 Map `context_compacted` to `compact`.
-- [ ] 2.5 Make `turn_aborted` set a cancelled status on the affected cycle rather than emitting a bare system event.
-- [ ] 2.6 Stop emitting a standalone event for `token_count`; attach its usage to the cycle's assistant event, and emit a single carrier only when the cycle has no assistant message.
-- [ ] 2.7 Assert that per-session aggregated token usage is byte-identical to the pre-repair value on a fixture whose totals were computed independently of the adapter.
-- [ ] 2.8 Implement the A4 codex turn-key rule: a new cycle opens at a `response_item` whose immediately preceding `response_item` was a `function_call_output`; the key is the opening item's payload id; `event_msg` records attach to the open cycle. Declare `stream_structure` provenance. **`task_started` is not a boundary** — A1 conclusion 1.
-- [ ] 2.9 Map `response_item/message` with role `developer` or `system` to `system` rather than `llm`.
-- [ ] 2.10 Drop `event_msg/agent_message` when the same cycle carries a `response_item/message`; keep it only when the cycle has none.
-- [ ] 2.11 Stop emitting an event for `session_meta`; keep `turn_context` and `world_state` as system events and let `turn_context` inform session-level model and cwd fields.
-- [ ] 2.12 Pair tool calls with their outputs through the source call identifier, not adjacency; cover the `call_X` / `call_X:N` form seen in live data.
-- [ ] 2.13 Add adapter tests for every mapping in A6, the token-total invariant, turn-key grouping across a full cycle, an aborted turn, and a payload type not named in A6 still falling to `system`.
-- [ ] 2.14 Add a fixture built from the real 48-line rollout recorded in A1 and assert it yields exactly 9 cycles with the boundaries shown there, one assistant message for each of the two mirrored pairs, and the three developer-role messages classified as system.
-- [ ] 2.15 Add a regression test asserting `task_started` does not open a turn, using a fixture where its count differs from the cycle count.
-- [ ] 2.16 Run targeted adapter tests, then `npm run typecheck && npm run test && npm run lint`.
+- [x] 2.1 Map `custom_tool_call`, `custom_tool_call_output`, `mcp_tool_call_end`, `web_search_call`, `web_search_end`, `tool_search_call`, and `tool_search_output` to tool-family events with real tool names.
+- [x] 2.2 Map `patch_apply_end` to `file_write`.
+- [x] 2.3 Map `reasoning` and `agent_reasoning` to `reasoning`.
+- [x] 2.4 Map `context_compacted` to `compact`.
+- [x] 2.5 Make `turn_aborted` set a cancelled status on the affected cycle rather than emitting a bare system event.
+- [x] 2.6 Stop emitting a standalone event for `token_count`; attach its usage to the cycle's assistant event, and emit a single carrier only when the cycle has no assistant message.
+- [x] 2.7 Assert that per-session aggregated token usage is byte-identical to the pre-repair value on a fixture whose totals were computed independently of the adapter.
+- [x] 2.8 Implement the A4 codex turn-key rule: a new cycle opens at a `response_item` whose immediately preceding `response_item` was a `function_call_output`; the key is the opening item's payload id; `event_msg` records attach to the open cycle. Declare `stream_structure` provenance. **`task_started` is not a boundary** — A1 conclusion 1.
+- [x] 2.9 Map `response_item/message` with role `developer` or `system` to `system` rather than `llm`.
+- [x] 2.10 Drop `event_msg/agent_message` when the same cycle carries a `response_item/message`; keep it only when the cycle has none.
+- [x] 2.11 Stop emitting an event for `session_meta`; keep `turn_context` and `world_state` as system events and let `turn_context` inform session-level model and cwd fields.
+- [x] 2.12 Pair tool calls with their outputs through the source call identifier, not adjacency; cover the `call_X` / `call_X:N` form seen in live data.
+- [x] 2.13 Add adapter tests for every mapping in A6, the token-total invariant, turn-key grouping across a full cycle, an aborted turn, and a payload type not named in A6 still falling to `system`.
+- [x] 2.14 Add a fixture built from the real 48-line rollout recorded in A1 and assert it yields exactly 9 cycles with the boundaries shown there, one assistant message for each of the two mirrored pairs, and the three developer-role messages classified as system.
+- [x] 2.15 Add a regression test asserting `task_started` does not open a turn, using a fixture where its count differs from the cycle count.
+- [x] 2.16 Run targeted adapter tests, then `npm run typecheck && npm run test && npm run lint`.
 
 ## 3. Claude adapter repair
 
 **Depends on:** §1 (parallel with §2, §4)
 
-- [ ] 3.1 Detect whether a `type: 'user'` row's content is a tool-result block before deciding what to emit.
-- [ ] 3.2 Attach a tool result to the tool event whose id equals the block's tool-use id, setting the output side and `hasOutput: true`.
-- [ ] 3.3 Emit an unmatched tool result as a result-only tool event carrying the block's error flag as status; never drop it and never convert it back to a user message.
-- [ ] 3.4 Keep genuine user rows emitting `user_prompt`, with the existing system-injection filter unchanged.
-- [ ] 3.5 Implement the A4 claude turn-key rule: the assistant row's `message.id`, inherited by its `tool_use` parts and by the results that answer them; declare `message_identity` provenance.
-- [ ] 3.6 Make the assistant row's parts carry the message id in a way that does not depend on parsing `event.id`.
-- [ ] 3.7 Apply A11 stable ordering so same-timestamp parts of one message keep source order.
-- [ ] 3.8 Add adapter tests for a tool-result row not producing a user prompt, result attachment by id, an unmatched result, an error result, a genuine prompt still emitted, turn-key grouping across an assistant message with two tool calls, and same-timestamp ordering stability.
-- [ ] 3.9 Add a regression test asserting the `llm > tool > user_prompt > tool > user_prompt` pattern seen in live data no longer appears for a tool-result fixture.
+- [x] 3.1 Detect whether a `type: 'user'` row's content is a tool-result block before deciding what to emit.
+- [x] 3.2 Attach a tool result to the tool event whose id equals the block's tool-use id, setting the output side and `hasOutput: true`.
+- [x] 3.3 Emit an unmatched tool result as a result-only tool event carrying the block's error flag as status; never drop it and never convert it back to a user message.
+- [x] 3.4 Keep genuine user rows emitting `user_prompt`, with the existing system-injection filter unchanged.
+- [x] 3.5 Implement the A4 claude turn-key rule: the assistant row's `message.id`, inherited by its `tool_use` parts and by the results that answer them; declare `message_identity` provenance.
+- [x] 3.6 Make the assistant row's parts carry the message id in a way that does not depend on parsing `event.id`.
+- [x] 3.7 Apply A11 stable ordering so same-timestamp parts of one message keep source order.
+- [x] 3.8 Add adapter tests for a tool-result row not producing a user prompt, result attachment by id, an unmatched result, an error result, a genuine prompt still emitted, turn-key grouping across an assistant message with two tool calls, and same-timestamp ordering stability.
+- [x] 3.9 Add a regression test asserting the `llm > tool > user_prompt > tool > user_prompt` pattern seen in live data no longer appears for a tool-result fixture.
 - [ ] 3.10 Run targeted adapter tests, then `npm run typecheck && npm run test && npm run lint`.
 
 ## 4. Remaining seven adapters
 
 **Depends on:** §1 (parallel with §2, §3)
 
-- [ ] 4.1 For each of codearts, opencode, trae, codeagent, codeagent2, qoder, workbuddy: read its fixture and record what boundary signal, if any, the source actually carries.
-- [ ] 4.2 Implement the codearts rule from A4 (message id prefix of the event id, obtained without string-parsing the public id field) and declare `message_identity`.
-- [ ] 4.3 Implement opencode and trae rules if their fixtures expose a message or round identifier; otherwise return `null` and declare `unavailable`.
-- [ ] 4.4 Implement codeagent, codeagent2, qoder, and workbuddy rules from their fixtures; return `null` and declare `unavailable` where no signal exists.
-- [ ] 4.5 Add a fixture test per adapter asserting the grouping its fixture actually supports, and stating in the test name or a comment that the rule is fixture-derived when no live data backs it.
-- [ ] 4.6 Add a shared test asserting no adapter synthesises a turn key from timestamp proximity or event count.
-- [ ] 4.7 Add a shared test asserting every adapter declares a turn-key provenance value.
+- [x] 4.1 For each of codearts, opencode, trae, codeagent, codeagent2, qoder, workbuddy: read its fixture and record what boundary signal, if any, the source actually carries.
+- [x] 4.2 Implement the codearts rule from A4 (message id prefix of the event id, obtained without string-parsing the public id field) and declare `message_identity`.
+- [x] 4.3 Implement opencode and trae rules if their fixtures expose a message or round identifier; otherwise return `null` and declare `unavailable`.
+- [x] 4.4 Implement codeagent, codeagent2, qoder, and workbuddy rules from their fixtures; return `null` and declare `unavailable` where no signal exists.
+- [x] 4.5 Add a fixture test per adapter asserting the grouping its fixture actually supports, and stating in the test name or a comment that the rule is fixture-derived when no live data backs it.
+- [x] 4.6 Add a shared test asserting no adapter synthesises a turn key from timestamp proximity or event count.
+- [x] 4.7 Add a shared test asserting every adapter declares a turn-key provenance value.
 - [ ] 4.8 Run targeted adapter tests, then `npm run typecheck && npm run test && npm run lint`.
 
 ## 5. Storage, phase classification, and metric movement
