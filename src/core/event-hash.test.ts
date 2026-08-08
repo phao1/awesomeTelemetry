@@ -8,6 +8,7 @@ function event(over: Partial<TraceEvent> = {}): TraceEvent {
     id: 'e1',
     sessionId: 's1',
     sequence: 1,
+    turnKey: null,
     kind: 'tool',
     phase: 'implement',
     title: 'npm test',

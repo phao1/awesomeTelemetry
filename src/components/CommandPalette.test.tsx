@@ -37,6 +37,7 @@ function makeEvent(overrides: Partial<TraceEventSlim>): TraceEventSlim {
     id: 'e1',
     sessionId: 'codex-1',
     sequence: 1,
+    turnKey: null,
     kind: 'tool',
     phase: 'implement',
     status: 'success',

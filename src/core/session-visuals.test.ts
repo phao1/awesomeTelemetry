@@ -66,6 +66,7 @@ function event(over: Partial<TraceEventSlim>): TraceEventSlim {
     id: 'e',
     sessionId: 's',
     sequence: 1,
+    turnKey: null,
     kind: 'tool',
     phase: 'implement',
     title: 'step',

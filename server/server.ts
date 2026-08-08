@@ -840,6 +840,8 @@ export function createAgentObservabilityServer(
       session: detail.session,
       events: detail.events as TraceEvent[],
       tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+      // v7 未持久化 provenance；B 阶段由 API 提供真实值
+      turnKeySource: 'unavailable',
     });
     sendJson(
       res,
@@ -866,6 +868,8 @@ export function createAgentObservabilityServer(
       session: detail.session,
       events: detail.events as TraceEvent[],
       tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+      // v7 未持久化 provenance；B 阶段由 API 提供真实值
+      turnKeySource: 'unavailable',
     };
     const report = buildTraceReportHtml(record);
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -882,6 +886,8 @@ export function createAgentObservabilityServer(
       session: detail.session,
       events: detail.events as TraceEvent[],
       tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+      // v7 未持久化 provenance；B 阶段由 API 提供真实值
+      turnKeySource: 'unavailable',
     };
     const report = buildTraceReportHtml(record);
     if (report.externalDataJs === undefined) {
@@ -907,6 +913,8 @@ export function createAgentObservabilityServer(
       session: detail.session,
       events: detail.events as TraceEvent[],
       tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+      // v7 未持久化 provenance；B 阶段由 API 提供真实值
+      turnKeySource: 'unavailable',
     });
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     const locale = query.get('locale') === 'en' ? 'en' : 'zh';

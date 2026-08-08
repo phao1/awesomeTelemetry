@@ -152,13 +152,13 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       } satisfies TraceSession,
       events: [
         {
-          id: 'e1', sessionId: 's-1', sequence: 1, kind: 'llm', phase: 'implement',
+          id: 'e1', sessionId: 's-1', sequence: 1, turnKey: null, kind: 'llm', phase: 'implement',
           title: 'step one', startedAt: '2026-08-05T00:00:00.000Z', durationMs: 100,
           status: 'success', actor: 'assistant', tool: null, tokens: null, error: null,
           hasInput: true, hasOutput: false, hasRaw: false,
         },
         {
-          id: 'e2', sessionId: 's-1', sequence: 2, kind: 'llm', phase: 'debug',
+          id: 'e2', sessionId: 's-1', sequence: 2, turnKey: null, kind: 'llm', phase: 'debug',
           title: 'step two', startedAt: '2026-08-05T00:00:05.000Z', durationMs: 50,
           status: 'error', actor: 'assistant', tool: null, tokens: null, error: 'boom',
           hasInput: false, hasOutput: true, hasRaw: false,
@@ -220,7 +220,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     expect(container.querySelector('.inspector')).not.toBeNull();
 
     sessionDetail.events.push({
-      id: 'e3', sessionId: 's-1', sequence: 3, kind: 'llm', phase: 'implement',
+      id: 'e3', sessionId: 's-1', sequence: 3, turnKey: null, kind: 'llm', phase: 'implement',
       title: 'live update', startedAt: '2026-08-05T00:00:06.000Z', durationMs: 10,
       status: 'success', actor: 'assistant', tool: null, tokens: null, error: null,
       hasInput: false, hasOutput: true, hasRaw: false,

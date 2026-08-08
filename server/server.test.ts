@@ -125,6 +125,7 @@ function seedEvent(db: Db, sessionId: string, id: string, sequence: number): voi
       id,
       sessionId,
       sequence,
+      turnKey: null,
       kind: 'llm',
       phase: 'implement',
       title: 'event title',

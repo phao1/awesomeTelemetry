@@ -28,26 +28,26 @@ function makeRecord(): TraceRecord {
     },
     events: [
       {
-        id: 'e1', sessionId: 's1', sequence: 1, kind: 'user_prompt', phase: 'understand',
+        id: 'e1', sessionId: 's1', sequence: 1, turnKey: null, kind: 'user_prompt', phase: 'understand',
         title: 'q1', startedAt: '2026-08-01T00:00:00.000Z', durationMs: 0,
         status: 'success', actor: 'user', tool: null, tokens: null, error: null,
         hasInput: true, hasOutput: false, hasRaw: false, inputSummary: 'q1', outputSummary: null,
       },
       {
-        id: 'e2', sessionId: 's1', sequence: 2, kind: 'llm', phase: 'implement',
+        id: 'e2', sessionId: 's1', sequence: 2, turnKey: null, kind: 'llm', phase: 'implement',
         title: 'a1', startedAt: '2026-08-01T00:00:01.000Z', durationMs: 200,
         status: 'success', actor: 'assistant', tool: null,
         tokens: { input: 50, output: 30, reasoning: 5, cacheRead: 0, cacheWrite: 0, netInput: 50, total: 85 },
         error: null, hasInput: false, hasOutput: true, hasRaw: false, inputSummary: null, outputSummary: 'a1',
       },
       {
-        id: 'e3', sessionId: 's1', sequence: 3, kind: 'user_prompt', phase: 'understand',
+        id: 'e3', sessionId: 's1', sequence: 3, turnKey: null, kind: 'user_prompt', phase: 'understand',
         title: 'q2', startedAt: '2026-08-01T00:00:10.000Z', durationMs: 0,
         status: 'success', actor: 'user', tool: null, tokens: null, error: null,
         hasInput: true, hasOutput: false, hasRaw: false, inputSummary: 'q2', outputSummary: null,
       },
       {
-        id: 'e4', sessionId: 's1', sequence: 4, kind: 'llm', phase: 'implement',
+        id: 'e4', sessionId: 's1', sequence: 4, turnKey: null, kind: 'llm', phase: 'implement',
         title: 'a2', startedAt: '2026-08-01T00:00:12.000Z', durationMs: 300,
         status: 'success', actor: 'assistant', tool: null,
         tokens: { input: 50, output: 20, reasoning: 5, cacheRead: 0, cacheWrite: 0, netInput: 50, total: 75 },
@@ -55,6 +55,7 @@ function makeRecord(): TraceRecord {
       },
     ],
     tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+    turnKeySource: 'unavailable',
   };
 }
 
@@ -88,7 +89,7 @@ describe('REQ-006 speed metrics', () => {
   it('#13 零输出/零时长 llm 事件不参与 TPS/TPOT，但计入 pureInferenceMs', () => {
     const record = makeRecord();
     record.events.push({
-      id: 'e5', sessionId: 's1', sequence: 5, kind: 'llm', phase: 'implement',
+      id: 'e5', sessionId: 's1', sequence: 5, turnKey: null, kind: 'llm', phase: 'implement',
       title: 'empty', startedAt: '2026-08-01T00:00:13.000Z', durationMs: 0,
       status: 'error', actor: 'assistant', tool: null,
       tokens: { input: 10, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 10, total: 10 },
@@ -162,6 +163,7 @@ function carrierEvent(
   return {
     sessionId: 's1',
     sequence: 1,
+    turnKey: null,
     phase: 'implement',
     title: '',
     startedAt: '2026-08-01T00:00:00.000Z',

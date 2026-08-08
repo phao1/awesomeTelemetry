@@ -174,6 +174,8 @@ export function SessionToolbar({
       session,
       events: events as TraceEvent[],
       tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+      // v7 未持久化 provenance；B 阶段由 API 提供真实值
+      turnKeySource: 'unavailable',
     });
     const tokensPerStep = total > 0 ? session.tokenUsage.total / total : 0;
     return {

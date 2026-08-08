@@ -87,6 +87,8 @@ export function computeFindings(
     session,
     events: events as TraceEvent[],
     tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+    // v7 未持久化 provenance；B 阶段由 API 提供真实值
+    turnKeySource: 'unavailable',
   });
 
   // 1. 单阶段时间占比过高（> 50% 总时长）

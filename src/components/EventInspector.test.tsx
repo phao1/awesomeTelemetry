@@ -11,6 +11,7 @@ function makeEvent(over: Partial<TraceEventSlim> = {}): TraceEventSlim {
     id: 'e1',
     sessionId: 's1',
     sequence: 1,
+    turnKey: null,
     kind: 'llm',
     phase: 'implement',
     title: 'response',

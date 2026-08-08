@@ -9,7 +9,7 @@ import {
 
 function ev(id: string, cacheRead: number, cacheWrite = 0): TraceEvent {
   return {
-    id, sessionId: 's1', sequence: 1, kind: 'llm', phase: 'implement', title: '',
+    id, sessionId: 's1', sequence: 1, turnKey: null, kind: 'llm', phase: 'implement', title: '',
     startedAt: '2026-08-01T00:00:00.000Z', durationMs: 0, status: 'success',
     actor: 'assistant', tool: null,
     tokens: { input: 1, output: 2, reasoning: 1, cacheRead, cacheWrite, netInput: Math.max(0, 1 - cacheRead), total: 1 + 2 + 1 + cacheRead + cacheWrite },
@@ -27,6 +27,7 @@ const base: Omit<TraceRecord, 'events'> = {
     isSubagent: false,
   },
   tokenSemantics: { cacheRead: 'incremental', reasoning: 'incremental' },
+  turnKeySource: 'unavailable',
 };
 
 describe('REQ-007 token 分解', () => {
