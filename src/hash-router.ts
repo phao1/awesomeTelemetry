@@ -24,8 +24,6 @@ export interface HashState {
   turn?: number;
   /** 色带宽度模式（缺省 time，add-trajectory-inspector D10/D18）。 */
   ribbon?: RibbonMode;
-  /** 会话列表标签过滤（OR 语义，逗号分隔，add-trajectory-inspector D14）。 */
-  tags?: string[];
   left?: string;
   right?: string;
   /** Mission 视图时间窗（REQ-027：#/mission?range=7d）。 */
@@ -64,8 +62,6 @@ export function parseHash(hash: string): HashState | null {
         : undefined;
     const ribbonRaw = params.get('ribbon');
     const ribbon = ribbonRaw === 'token' ? 'token' : ribbonRaw === 'time' ? 'time' : undefined;
-    // D18：tags 与 provider/status 同构 —— 逗号分隔、非法值整体丢弃。
-    const tags = list('tags');
     const left = params.get('left');
     const right = params.get('right');
     const rangeRaw = params.get('range');
@@ -81,7 +77,6 @@ export function parseHash(hash: string): HashState | null {
       ...(time !== undefined ? { time } : {}),
       ...(turn !== undefined ? { turn } : {}),
       ...(ribbon !== undefined ? { ribbon } : {}),
-      ...(tags !== undefined && tags.length > 0 ? { tags } : {}),
       ...(left !== null ? { left } : {}),
       ...(right !== null ? { right } : {}),
       ...(range !== undefined ? { range } : {}),
@@ -116,9 +111,6 @@ export function serializeHash(state: HashState): string {
   }
   if (state.ribbon !== undefined) {
     params.set('ribbon', state.ribbon);
-  }
-  if (state.tags !== undefined && state.tags.length > 0) {
-    params.set('tags', state.tags.join(','));
   }
   if (state.left !== undefined) {
     params.set('left', state.left);

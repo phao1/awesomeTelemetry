@@ -35,7 +35,9 @@ group.
 ### REQ-005: Index merge
 `mergeSessionIndex(sessions)` SHALL replace same-group sessions with a single
 entry: `eventCount` summed, `startedAt` earliest, `updatedAt` latest,
-`mergeGroupId` set to the group id.
+`mergeGroupId` set to the group id. The returned list MUST retain
+`startedAt DESC` ordering; merged rows MUST NOT be appended after older
+standalone sessions.
 
 ### REQ-006: Detail merge
 `mergeSessionDetail(primaryKey, getSessionDetail)` SHALL merge member

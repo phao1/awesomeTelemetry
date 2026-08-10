@@ -867,6 +867,23 @@ describe('API 契约（contracts/api.md §8）', () => {
     const group = body.groups.find((g) => g.primaryKey === 'parent-1');
     expect(group?.mergedKeys).toContain('sub-1');
     expect(group?.reason).toBe('auto-subagent-time-window');
+
+    const members = await request(port, 'GET', '/api/sessions?keys=sub-1&merged=0');
+    expect(members.status).toBe(200);
+    const memberBody = JSON.parse(members.text) as { items: Array<{ id: string }> };
+    expect(memberBody.items.map((item) => item.id)).toEqual(['sub-1']);
+
+    const merged = await request(port, 'GET', '/api/sessions?keys=parent-1');
+    expect(merged.status).toBe(200);
+    const mergedBody = JSON.parse(merged.text) as {
+      items: Array<{ id: string; mergeGroupId: string | null; eventCount: number }>;
+    };
+    expect(mergedBody.items).toHaveLength(1);
+    expect(mergedBody.items[0]).toMatchObject({
+      id: 'parent-1',
+      mergeGroupId: 'parent-1:auto-subagents',
+      eventCount: 4,
+    });
   });
 
   it('建议 11：成员 key 详情返回成员自身（单独查看），primary 返回合并详情', async () => {

@@ -454,3 +454,12 @@ export function IconDeviceDesktop(props: IconProps): React.JSX.Element {
     </IconShell>
   );
 }
+
+/** 主题切换：一半填充的圆形，直观表达亮色/暗色对比。 */
+export function IconContrast(props: IconProps): React.JSX.Element {
+  return (
+    <IconShell {...props}>
+      <path fillRule="evenodd" d="M8 1.5a6.5 6.5 0 1 0 0 13A6.5 6.5 0 0 0 8 1.5Zm0 1.6v9.8a4.9 4.9 0 0 0 0-9.8Z" />
+    </IconShell>
+  );
+}

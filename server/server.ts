@@ -405,6 +405,10 @@ export function createAgentObservabilityServer(
         throw new HttpError(400, 'BAD_REQUEST', 'keys limit is 200');
       }
     }
+    const mergedRaw = query.get('merged');
+    if (mergedRaw !== null && mergedRaw !== '1' && mergedRaw !== '0') {
+      throw new HttpError(400, 'INVALID_ENUM', `merged must be 1|0, got ${mergedRaw}`);
+    }
     // api.md §1.1 / design D14：tags 多选过滤，OR 语义（与 provider/status 同款
     // IN 匹配）。逗号分隔、上限 32；超过上限或值不满足 ANNOTATION_TAG_PATTERN
     // → 400 BAD_REQUEST。过滤在 listSessions 的一次 join 里完成，绝无逐行查询。
@@ -433,7 +437,7 @@ export function createAgentObservabilityServer(
       cursor: query.get('cursor') ?? undefined,
       keys,
       tags,
-      groups: sessionGroups(),
+      groups: mergedRaw === '0' ? [] : sessionGroups(),
     });
     sendJson(res, 200, result, req);
   });

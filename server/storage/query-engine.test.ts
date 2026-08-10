@@ -236,6 +236,54 @@ describe('REQ-006 会话列表查询', () => {
     db.close();
   });
 
+  it('keys 成员查询保持原始成员；keys 主键查询补齐整组合并', () => {
+    const db = newDb();
+    insertSession(db, 'main-1', {
+      startedAt: '2026-08-01T00:00:00.000Z',
+      eventCount: 5,
+      tokenTotal: 50,
+    });
+    insertSession(db, 'sub-1', {
+      startedAt: '2026-08-01T00:00:10.000Z',
+      eventCount: 3,
+      tokenTotal: 30,
+    });
+    insertSession(db, 'sub-2', {
+      startedAt: '2026-08-01T00:00:20.000Z',
+      eventCount: 2,
+      tokenTotal: 20,
+    });
+    const groups = [{
+      id: 'g1',
+      primaryKey: 'main-1',
+      title: 'merged',
+      sourceAgent: 'CodeArts',
+      mergedKeys: ['sub-1', 'sub-2'],
+      reason: 'test',
+    }];
+
+    const members = listSessions(db, {
+      dataSource: 'scan',
+      keys: ['sub-1', 'sub-2'],
+      groups,
+    });
+    expect(members.items.map((item) => item.id)).toEqual(['sub-1', 'sub-2']);
+
+    const merged = listSessions(db, {
+      dataSource: 'scan',
+      keys: ['main-1'],
+      groups,
+    });
+    expect(merged.items).toHaveLength(1);
+    expect(merged.items[0]).toMatchObject({
+      id: 'main-1',
+      mergeGroupId: 'g1',
+      eventCount: 10,
+      tokenTotal: 100,
+    });
+    db.close();
+  });
+
   it('REQ-006 keys 模式返回匹配项，hasMore 恒 false', () => {
     const db = newDb();
     for (let i = 1; i <= 4; i += 1) insertSession(db, `s${i}`);

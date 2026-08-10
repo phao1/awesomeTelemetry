@@ -179,7 +179,11 @@ export function mergeSessionIndex(
       detailLoaded: members.every((m) => m.detailLoaded),
     });
   }
-  return [...standalone, ...merged];
+  // listSessions 的 SQL 已按 started_at DESC 排序；合并行不能统一追加到页尾，
+  // 否则刚发生的主任务会落到旧会话之后，并让 keyset cursor 取错末条时间。
+  return [...standalone, ...merged].sort((a, b) =>
+    a.startedAt === b.startedAt ? 0 : a.startedAt > b.startedAt ? -1 : 1,
+  );
 }
 
 /**

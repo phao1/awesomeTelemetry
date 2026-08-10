@@ -199,6 +199,19 @@ describe('REQ-005 索引合并', () => {
     const entries = [index('a'), index('b')];
     expect(mergeSessionIndex(entries, [])).toEqual(entries);
   });
+
+  it('合并后仍按 startedAt 倒序，不能把合并行追加到页尾', () => {
+    const result = mergeSessionIndex(
+      [
+        index('newer', { startedAt: '2026-08-01T00:10:00.000Z' }),
+        index('s-main', { startedAt: '2026-08-01T00:05:00.000Z' }),
+        index('s-sub-1', { startedAt: '2026-08-01T00:06:00.000Z' }),
+        index('older', { startedAt: '2026-08-01T00:01:00.000Z' }),
+      ],
+      [{ ...GROUP, mergedKeys: ['s-sub-1'] }],
+    );
+    expect(result.map((entry) => entry.id)).toEqual(['newer', 's-main', 'older']);
+  });
 });
 
 describe('REQ-006/007 详情合并', () => {

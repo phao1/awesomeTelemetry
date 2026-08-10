@@ -6,6 +6,7 @@ import {
   deriveDurations,
   orderEventsByTime,
   pickPrimaryModel,
+  rollupSessionStatus,
   titleFromText,
   DERIVED_DURATION_CAP_MS,
 } from './helpers.js';
@@ -58,6 +59,22 @@ describe('orderEventsByTime（fix-adapter-turn-semantics A11）', () => {
       ev('a', '2026-08-01T00:00:01.000Z'),
     ]);
     expect(out.map((e) => e.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('rollupSessionStatus（最终任务状态）', () => {
+  it('中间工具失败但最后恢复成功时，会话为 success', () => {
+    expect(rollupSessionStatus([
+      ev('failed-tool', '2026-08-01T00:00:00.000Z', { status: 'error' }),
+      ev('final-answer', '2026-08-01T00:00:01.000Z', { status: 'success' }),
+    ])).toBe('success');
+  });
+
+  it('忽略末尾 unknown，保留最后一个有意义的终态', () => {
+    expect(rollupSessionStatus([
+      ev('failed-final', '2026-08-01T00:00:00.000Z', { status: 'error' }),
+      ev('metadata', '2026-08-01T00:00:01.000Z', { status: 'unknown' }),
+    ])).toBe('error');
   });
 });
 

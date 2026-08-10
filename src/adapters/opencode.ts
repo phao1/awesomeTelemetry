@@ -27,11 +27,17 @@ import type { Adapter, RawSample } from './sample-loader.js';
 export interface OpenCodeDialect {
   provider: 'opencode' | 'codearts' | 'codeagent2';
   sourceAgent: string;
-  /** #6：true = total 含 reasoning（OpenCode 实测）；false = reasoning 是 output 子集（CodeArts/DeepSeek 实测）。 */
+  /**
+   * #6：源数据不带 native total 时的兼容默认值。
+   * 带 native total 时按当前会话的真实载荷判定，不能把 2026-08-04
+   * 某一模型的 CodeArts 口径硬编码到所有后续模型版本。
+   */
   reasoningInTotal: boolean;
 }
 
 export interface OpenCodeTokenData {
+  /** 厂商原生总量；存在时用于判定 reasoning 是否已包含在 output 中。 */
+  total?: number;
   input?: number;
   output?: number;
   reasoning?: number;
@@ -108,6 +114,53 @@ function toEventTokens(
       cacheRead +
       cacheWrite,
   };
+}
+
+/**
+ * CodeArts/OpenCode 的 reasoning 计入口径会随模型/版本变化：旧 CodeArts
+ * 样本的 native total 不含 reasoning，而 2026-08-09 deepseek-v4-pro 的
+ * 每条 native total 都包含 reasoning。优先用当前会话的原生等式判定；仅在
+ * total 缺失或证据冲突时使用 dialect 的兼容默认值。
+ */
+function inferReasoningInTotal(
+  messages: OpenCodeMessage[],
+  fallback: boolean,
+): boolean {
+  let includes = 0;
+  let excludes = 0;
+  for (const message of messages) {
+    const partTokens = (message.content ?? [])
+      .map((part) => part.tokens)
+      .filter((tokens): tokens is OpenCodeTokenData => tokens != null);
+    const carriers = partTokens.length > 0
+      ? partTokens
+      : message.tokens == null
+        ? []
+        : [message.tokens];
+    for (const tokens of carriers) {
+      if (tokens.total === undefined || (tokens.reasoning ?? 0) <= 0) {
+        continue;
+      }
+      const withoutReasoning =
+        (tokens.input ?? 0) +
+        (tokens.output ?? 0) +
+        (tokens.cache?.read ?? 0) +
+        (tokens.cache?.write ?? 0);
+      const withReasoning = withoutReasoning + (tokens.reasoning ?? 0);
+      if (tokens.total === withReasoning) {
+        includes += 1;
+      } else if (tokens.total === withoutReasoning) {
+        excludes += 1;
+      }
+    }
+  }
+  if (includes > 0 && excludes === 0) {
+    return true;
+  }
+  if (excludes > 0 && includes === 0) {
+    return false;
+  }
+  return fallback;
 }
 
 /** step 系 part：'step'（fixture 旧 schema）与真实 'step-start' / 'step-finish'。 */
@@ -306,6 +359,7 @@ export function createOpencodeAdapter(
       const otelSpans = sample.events.filter(
         (e): e is OpenCodeOtelSpan => 'startTime' in e,
       );
+      const reasoningInTotal = inferReasoningInTotal(messages, dialect.reasoningInTotal);
       const events: EventWithRaw[] = [];
       for (const message of messages) {
         const parts = message.content ?? [{ type: 'text' as const, text: '' }];
@@ -328,11 +382,11 @@ export function createOpencodeAdapter(
         for (const { part, partIndex } of kept) {
           const partTokens =
             part.tokens !== null && part.tokens !== undefined
-              ? toEventTokens(part.tokens, dialect.reasoningInTotal)
+              ? toEventTokens(part.tokens, reasoningInTotal)
               : null;
           const messageTokens =
             partIndex === carrierIndex
-              ? toEventTokens(message.tokens, dialect.reasoningInTotal)
+              ? toEventTokens(message.tokens, reasoningInTotal)
               : null;
           const event = partToEvent(
             message,
@@ -364,7 +418,7 @@ export function createOpencodeAdapter(
       const semantics = {
         cacheRead: 'incremental' as const,
         reasoning: 'incremental' as const,
-        reasoningInTotal: dialect.reasoningInTotal,
+        reasoningInTotal,
       };
       const sessionId = raw.id ?? messages[0]?.sessionID ?? `opencode-${sourcePath}`;
       const tokenUsage = aggregateTokenUsage(classified, semantics);

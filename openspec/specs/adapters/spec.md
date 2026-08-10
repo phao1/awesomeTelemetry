@@ -53,14 +53,18 @@ wrappers.
 - **THEN** `cacheRead` takes the sum (12016), not max
 - **AND** `total = input + output + reasoning + cacheRead + cacheWrite`
 
-> #6 was settled with real data (2026-08-04):
+> #6 was refined with real data (2026-08-04 and 2026-08-09):
 > - OpenCode `ses_0fdca2dc`: tokens.total = input+output+reasoning+cache,
 >   output excludes reasoning → `reasoningInTotal: true`
 > - CodeArts/DeepSeek `ses_1afaab585ffe`: tokens.total = input+output+cache
 >   (no reasoning), reasoning is a subset of output →
 >   `reasoningInTotal: false`, avoiding double counting
+> - CodeArts/deepseek-v4-pro (2026-08-09): every persisted native total equals
+>   input+output+reasoning+cache → `reasoningInTotal: true`
 > Adapters MUST declare their provider's accounting via
-> `TokenSemantics.reasoningInTotal`.
+> `TokenSemantics.reasoningInTotal`. When native `tokens.total` exists, the
+> OpenCode-family adapter MUST infer the value from the current normalized
+> record; the dialect value is only a compatibility fallback.
 
 ### REQ-006: Trae adapter
 `trae.ts` SHALL convert TraeRecord into TraceRecord:
@@ -107,6 +111,10 @@ wrappers.
 | running / in_progress / paused / pending | running |
 | canceled / cancelled / aborted / interrupted | cancelled |
 | anything else | unknown |
+
+Session rollup SHALL use the last non-unknown event status. Intermediate tool
+errors remain event-level stability evidence, but a later successful terminal
+event means the task session completed successfully.
 
 ### REQ-011: normalizeRawSample
 `normalizeRawSample(rawSample)` SHALL convert a `sourceAgent`-carrying

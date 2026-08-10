@@ -56,30 +56,27 @@ describe('REQ-024 hash 路由', () => {
     expect(serializeHash({ view: 'session', time: 'today' })).toBe('#/session?time=today');
   });
 
-  it('trajectory turn/ribbon/tags 往返（add-trajectory-inspector D18）', () => {
+  it('trajectory turn/ribbon 往返（add-trajectory-inspector D18）', () => {
     const hash = serializeHash({
       view: 'session',
       key: 'codex-abc',
       turn: 3,
       ribbon: 'token',
-      tags: ['refactor', 'perf'],
     });
-    expect(hash).toBe('#/session?key=codex-abc&turn=3&ribbon=token&tags=refactor%2Cperf');
+    expect(hash).toBe('#/session?key=codex-abc&turn=3&ribbon=token');
     expect(parseHash(hash)).toEqual({
       view: 'session',
       key: 'codex-abc',
       turn: 3,
       ribbon: 'token',
-      tags: ['refactor', 'perf'],
     });
   });
 
-  it('turn/ribbon/tags 非法值整体丢弃，不抛错（D18）', () => {
-    expect(parseHash('#/session?turn=-1&ribbon=grid&tags=')).toEqual({ view: 'session' });
+  it('turn/ribbon 非法值整体丢弃，不抛错（D18）', () => {
+    expect(parseHash('#/session?turn=-1&ribbon=grid')).toEqual({ view: 'session' });
     expect(parseHash('#/session?turn=abc')).toEqual({ view: 'session' });
     expect(parseHash('#/session?turn=7')).toEqual({ view: 'session', turn: 7 });
     expect(parseHash('#/session?ribbon=token')).toEqual({ view: 'session', ribbon: 'token' });
-    expect(parseHash('#/session?tags=a,b')).toEqual({ view: 'session', tags: ['a', 'b'] });
   });
 
   it('被删除甘特的 layout 键被忽略（D18：旧键不回写、不生效）', () => {

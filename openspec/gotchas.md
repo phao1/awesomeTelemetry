@@ -118,11 +118,16 @@
 - cacheRead/cacheWrite both count into total (#8: cache.write is the real cost
   of writing the prompt to cache on first processing)
 - Whether reasoning counts depends on the adapter's `reasoningInTotal`
-  declaration (#6, calibrated with real data 2026-08-04):
+  declaration (#6, calibrated with real data 2026-08-04 and 2026-08-09):
   - OpenCode (measured ses_0fdca2dc): total = input+output+reasoning+cache,
     output excludes reasoning → counts
-  - CodeArts/DeepSeek (measured ses_1afaab585ffe): total = input+output+cache,
-    reasoning is a subset of output → does not count (otherwise double counting)
+  - older CodeArts/DeepSeek (measured ses_1afaab585ffe): total =
+    input+output+cache, reasoning is a subset of output → does not count
+  - CodeArts/deepseek-v4-pro (measured 2026-08-09): native total =
+    input+output+reasoning+cache → counts
+- If OpenCode-family source tokens carry native `total`, infer the equation
+  from the current record. A provider-wide hardcode is stale as soon as a
+  model/version changes its output/reasoning accounting.
 
 ### G4.6 Total duration uses wall-clock, not the sum of durations
 - `totalDurationMs = lastEvent.startedAt - firstEvent.startedAt`

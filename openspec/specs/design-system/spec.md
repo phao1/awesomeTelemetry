@@ -144,15 +144,17 @@ color
 `IconExternalLink` · `IconTrash` · `IconClose` · `IconChevronRight` ·
 `IconChevronDown` · `IconKebab` · `IconPlus`
 
-**Other (5)**
+**Other (6)**
 
 `IconGear`(settings) · `IconGlobe`(language) · `IconSun` · `IconMoon` ·
-`IconDeviceDesktop`
+`IconDeviceDesktop` · `IconContrast`(theme)
 
-> Total 8+6+6+6+4+12+5 = **47**. This table is the item-by-item canonical
+> Total 8+6+6+6+4+12+6 = **48**. This table is the item-by-item canonical
 > list; `contracts/design-tokens.md` §9 T6 asserts the export name set is
-> exactly equal. The three theme icons MUST be independent; MUST NOT reuse
-> each other's paths.
+> exactly equal. The global header theme toggle SHALL use `IconContrast`
+> (single icon for all three states); `IconSun` / `IconMoon` /
+> `IconDeviceDesktop` remain part of the icon set and MUST keep independent
+> paths.
 
 #### Scenario: icons do not carry isolated meaning
 - **GIVEN** a Gantt row renders a phase

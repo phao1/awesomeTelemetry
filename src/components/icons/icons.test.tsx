@@ -55,14 +55,15 @@ const ICON_NAMES = [
   'IconSun',
   'IconMoon',
   'IconDeviceDesktop',
+  'IconContrast',
 ] as const;
 
 describe('REQ-004 图标集（T6 / T7）', () => {
-  it('T6: 导出名集合与清单严格相等，无多无少（= 47）', () => {
+  it('T6: 导出名集合与清单严格相等，无多无少（= 48）', () => {
     const exported = Object.keys(icons).filter((key) => key !== 'IconShell').sort();
     expect(exported).toEqual([...ICON_NAMES].sort());
-    expect(ICON_NAMES).toHaveLength(47);
-    expect(exported).toHaveLength(47);
+    expect(ICON_NAMES).toHaveLength(48);
+    expect(exported).toHaveLength(48);
   });
 
   it('T7: 每个图标含 viewBox="0 0 16 16"，无 fill="#"/stroke="#"', () => {

@@ -118,7 +118,7 @@ describe('SystemPromptSection（REQ-103）', () => {
     unmount();
   });
 
-  it('D14/6.15：渲染会话标签 chips 与返回按钮（onBack）', () => {
+  it('6.15：渲染返回按钮（onBack）', () => {
     const session = makeSession('s1');
     const onBack = vi.fn();
     const container = document.createElement('div');
@@ -129,13 +129,10 @@ describe('SystemPromptSection（REQ-103）', () => {
           session={session}
           events={[]}
           locale="zh"
-          tags={['refactor', 'perf']}
           onBack={onBack}
         />,
       );
     });
-    expect(container.querySelectorAll('.session-toolbar-tags .session-row-tag').length).toBe(2);
-    expect(container.textContent).toContain('refactor');
     const back = Array.from(container.querySelectorAll('button')).find((b) =>
       b.getAttribute('aria-label')?.includes('返回'),
     ) as HTMLButtonElement;

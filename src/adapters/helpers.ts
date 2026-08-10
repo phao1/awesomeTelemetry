@@ -44,23 +44,17 @@ export function normalizeStatus(raw: string | null | undefined): TraceStatus {
  * 早期各 adapter 直接取 `events.at(-1).status`，但会话最后一条往往是
  * token_count / system 这类没有状态的辅助事件，于是整个会话被判成 'unknown' ——
  * 实测 80 个会话里 73 个如此，直接让「准 / 稳」两个评测维度和状态筛选失去数据。
- * 改为按全量事件汇总：未结束的以末条为准，否则「有失败即失败，有成功即成功」。
+ * 改为从后向前取最后一个有意义的状态。工具调用可先失败、随后修复并成功完成；
+ * 这类中间错误继续保留在事件级稳定性指标中，但不能把最终完成的会话永久判错。
  */
 export function rollupSessionStatus(events: TraceEvent[]): TraceStatus {
-  const last = events.at(-1)?.status;
-  if (last === 'running' || last === 'cancelled') {
-    return last;
-  }
-  let sawSuccess = false;
-  for (const event of events) {
-    if (event.status === 'error') {
-      return 'error';
-    }
-    if (event.status === 'success') {
-      sawSuccess = true;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const status = events[index]!.status;
+    if (status !== 'unknown') {
+      return status;
     }
   }
-  return sawSuccess ? 'success' : 'unknown';
+  return 'unknown';
 }
 
 /**

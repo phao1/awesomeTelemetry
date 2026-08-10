@@ -182,14 +182,8 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('/api/sessions/s-1/annotations')) {
-          return okJson({ sessionKey: 's-1', tags: [], note: null, updatedAt: null });
-        }
         if (url.includes('/api/session-groups')) {
           return okJson({ groups: [] });
-        }
-        if (url.includes('/api/annotations/tags')) {
-          return okJson({ tags: [] });
         }
         if (url.includes('/api/sessions/s-1/events/')) {
           return okJson({ ...sessionDetail.events[0], inputSummary: null, outputSummary: 'step one' });
@@ -237,15 +231,11 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     expect(container.querySelectorAll('.message-card').length).toBeGreaterThan(0);
     expect(container.querySelector('.message-card-role-assistant')).not.toBeNull();
 
-    // D16：detail 打开 = slim + 1 次 annotations；不逐回合/逐消息拉取
+    // D16：detail 打开 = slim；不逐回合/逐消息拉取
     const fetchMock = vi.mocked(fetch);
-    const annotationsCalls = fetchMock.mock.calls.filter((call) =>
-      String(call[0]).includes('/api/sessions/s-1/annotations'),
-    );
-    expect(annotationsCalls).toHaveLength(1);
     const detailCalls = fetchMock.mock.calls.filter((call) => {
       const url = String(call[0]);
-      return url.includes('/api/sessions/s-1') && !url.includes('annotations') && !url.includes('events/');
+      return url.includes('/api/sessions/s-1') && !url.includes('events/');
     });
     expect(detailCalls).toHaveLength(1);
 

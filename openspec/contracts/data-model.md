@@ -196,10 +196,12 @@ export interface TokenUsage {
   /**
    * total = input + output + reasoning + cacheRead + cacheWrite.
    * ⚠️ Whether reasoning counts is declared by the adapter's
-   * `reasoningInTotal` (#6, calibrated with real data 2026-08-04):
-   * OpenCode's total includes reasoning (output excludes it);
-   * CodeArts/DeepSeek's total excludes reasoning (reasoning is a subset of
-   * output).
+   * `reasoningInTotal` (#6, calibrated with real data 2026-08-04 and
+   * 2026-08-09): the accounting can vary by model/version. OpenCode's measured
+   * total includes reasoning; older CodeArts/DeepSeek samples excluded it,
+   * while deepseek-v4-pro native totals include it. When a source record
+   * carries native `tokens.total`, the adapter MUST infer the current record's
+   * equation; provider defaults are only a fallback for records without it.
    */
   total: number;
 }
@@ -215,10 +217,12 @@ export interface TokenSemantics {
   cacheRead: 'cumulative' | 'incremental';
   reasoning: 'cumulative' | 'incremental';
   /**
-   * #6 (calibrated with real data 2026-08-04):
+   * #6 (calibrated with real data 2026-08-04 and 2026-08-09):
    * - OpenCode: tokens.total = input+output+reasoning+cache → true
-   * - CodeArts/CodeAgent2 (DeepSeek): tokens.total = input+output+cache,
-   *   reasoning is a subset of output → false
+   * - legacy CodeArts/CodeAgent2 fallback: tokens.total = input+output+cache
+   *   → false
+   * - when native tokens.total is present, infer true/false from that record;
+   *   deepseek-v4-pro measured on 2026-08-09 resolves to true
    * Default true (other providers usually have reasoning 0 or unverified).
    */
   reasoningInTotal?: boolean;

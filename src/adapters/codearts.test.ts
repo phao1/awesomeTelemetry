@@ -42,6 +42,37 @@ describe('CodeArts adapter（REQ-005/G9.1 thin wrapper）', () => {
     expect(r.session.tokenUsage.total).toBe(100 + 50 + 10); // 不含 reasoning
   });
 
+  it('#6 deepseek-v4-pro：native total 证明 reasoning 独立时必须计入 total', () => {
+    const events = [
+      {
+        id: 'm1',
+        role: 'assistant' as const,
+        sessionID: 'ca2-s1',
+        time: { created: 1754000000000 },
+        tokens: {
+          total: 190,
+          input: 100,
+          output: 50,
+          reasoning: 30,
+          cache: { read: 10, write: 0 },
+        },
+        content: [{ type: 'text', text: 'a' }],
+      },
+    ];
+    const r = codeartsAdapter.normalize(
+      { sourceAgent: 'CodeArts', session: codeartsFixture.session, events },
+      SRC,
+    );
+    expect(r.tokenSemantics.reasoningInTotal).toBe(true);
+    expect(r.session.tokenUsage).toMatchObject({
+      input: 100,
+      output: 50,
+      reasoning: 30,
+      cacheRead: 10,
+      total: 190,
+    });
+  });
+
   it('状态归一化四类映射', () => {
     const statuses = ['completed', 'failed', 'paused', 'canceled'];
     const events = statuses.map((status, i) => ({

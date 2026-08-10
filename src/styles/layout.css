@@ -297,6 +297,10 @@
   align-items: center;
 }
 
+.app-header .spacer {
+  flex: 1;
+}
+
 .view-tabs {
   display: flex;
   align-items: stretch;

@@ -422,15 +422,27 @@ export interface SessionListResult {
 /** REQ-006：keyset 分页（cursor = 上页末条 startedAt），返回项不含 systemPrompt 正文。 */
 export function listSessions(db: Database, opts: ListSessionsOptions): SessionListResult {
   if (opts.keys !== undefined && opts.keys.length > 0) {
+    const groups = opts.groups ?? [];
+    const requested = new Set(opts.keys);
+    const fetchKeys = new Set(opts.keys);
+    // SSE 对合并主键做局部 patch 时必须补齐整组，否则会把合并总量临时
+    // 覆盖成主会话自身。只请求成员 key 时则保持精确成员，不重新折叠。
+    const primaryGroups = groups.filter((group) => requested.has(group.primaryKey));
+    for (const group of primaryGroups) {
+      fetchKeys.add(group.primaryKey);
+      for (const key of group.mergedKeys) {
+        fetchKeys.add(key);
+      }
+    }
     const items: SessionIndexEntry[] = [];
     const stmt = cachedStmt(db, SESSION_BY_ID_SQL);
-    for (const key of opts.keys) {
+    for (const key of fetchKeys) {
       const row = stmt.get(key) as Record<string, unknown> | undefined;
       if (row !== undefined) {
         items.push(mapSessionIndex(row));
       }
     }
-    const merged = mergeSessionIndex(items, opts.groups ?? []);
+    const merged = mergeSessionIndex(items, primaryGroups);
     return { items: merged, nextCursor: null, hasMore: false, total: merged.length };
   }
 

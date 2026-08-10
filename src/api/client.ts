@@ -4,8 +4,6 @@ import type {
   ProxyRequest,
   ProxyRequestListItem,
   RequestContextDiffResponse,
-  SessionAnnotations,
-  SessionAnnotationsUpdate,
   SessionDetailResponse,
   SessionIndexEntry,
   SessionMergeGroupInfo,
@@ -111,8 +109,8 @@ export const api = {
     limit?: number;
     cursor?: string;
     keys?: string[];
-    /** D14：标签多选过滤，OR 语义；逗号分隔，上限 32。 */
-    tags?: string[];
+    /** false → merged=0，按 key 返回未合并的原始成员。 */
+    merged?: boolean;
   } = {}): Promise<SessionListResponse> {
     return fetchJson<SessionListResponse>(
       `/sessions${qs({
@@ -124,7 +122,7 @@ export const api = {
         limit: params.limit ?? 50,
         cursor: params.cursor,
         keys: params.keys?.join(','),
-        tags: params.tags,
+        merged: params.merged === undefined ? undefined : params.merged ? '1' : '0',
       })}`,
     );
   },
@@ -145,30 +143,6 @@ export const api = {
     return fetchJson<SessionPromptContext>(
       `/sessions/${encodeURIComponent(key)}/prompt-context`,
     );
-  },
-  /** api.md §1.7（D13）：读取会话注解；未注解会话返回空形状（200，非 404）。 */
-  sessionAnnotations(key: string): Promise<SessionAnnotations> {
-    return fetchJson<SessionAnnotations>(
-      `/sessions/${encodeURIComponent(key)}/annotations`,
-    );
-  },
-  /** api.md §1.7（D13）：部分更新注解；边界违反 / 畸形 body → ApiError 400。 */
-  saveSessionAnnotations(
-    key: string,
-    update: SessionAnnotationsUpdate,
-  ): Promise<SessionAnnotations> {
-    return fetchJson<SessionAnnotations>(
-      `/sessions/${encodeURIComponent(key)}/annotations`,
-      {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(update),
-      },
-    );
-  },
-  /** api.md §1.7（D14）：标签词表（count 降序、标签升序），过滤器打开时取一次。 */
-  annotationTags(): Promise<{ tags: Array<{ tag: string; count: number }> }> {
-    return fetchJson<{ tags: Array<{ tag: string; count: number }> }>('/annotations/tags');
   },
   eventDetail(key: string, eventId: string, includeRaw = false): Promise<TraceEvent | TraceEventRaw> {
     return fetchJson<TraceEvent | TraceEventRaw>(

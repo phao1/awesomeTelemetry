@@ -148,7 +148,6 @@ export default function App() {
   const [selectedTurn, setSelectedTurn] = useState<number | null>(
     () => INITIAL_HASH?.turn ?? null,
   );
-  const [tagFilter, setTagFilter] = useState<string[]>(() => INITIAL_HASH?.tags ?? []);
   /** 轨迹 rail（详情内右栏）折叠态；宽度由 SplitPane 自行持久化（D18）。 */
   const [trajectoryRailCollapsed, setTrajectoryRailCollapsed] = useState(false);
   const [fontPx, setFontPx] = useState(() =>
@@ -172,7 +171,6 @@ export default function App() {
     range: sessionRange,
     provider: providerFilter,
     status: statusFilter,
-    tags: tagFilter,
   });
   const [compareLeft, setCompareLeft] = useState(() => INITIAL_HASH?.left ?? '');
   const [compareRight, setCompareRight] = useState(() => INITIAL_HASH?.right ?? '');
@@ -242,7 +240,6 @@ export default function App() {
           cursor: mode === 'next' ? sessionCursorRef.current ?? undefined : undefined,
           provider: filters.provider.length > 0 ? filters.provider : undefined,
           status: filters.status.length > 0 ? filters.status : undefined,
-          tags: filters.tags.length > 0 ? filters.tags : undefined,
           q: filters.q.trim() !== '' ? filters.q.trim() : undefined,
           range: filters.range,
         });
@@ -283,9 +280,8 @@ export default function App() {
       range: sessionRange,
       provider: providerFilter,
       status: statusFilter,
-      tags: tagFilter,
     };
-  }, [sessionQ, sessionRange, providerFilter, statusFilter, tagFilter]);
+  }, [sessionQ, sessionRange, providerFilter, statusFilter]);
 
   // 过滤变更（含首帧）→ 防抖拉第一页，替换而非追加（分页下不做纯前端过滤）
   useEffect(() => {
@@ -293,7 +289,7 @@ export default function App() {
       void loadSessions('first');
     }, 250);
     return () => clearTimeout(timer);
-  }, [sessionQ, sessionRange, providerFilter, statusFilter, tagFilter, loadSessions]);
+  }, [sessionQ, sessionRange, providerFilter, statusFilter, loadSessions]);
 
   // REQ-004：SSE 局部 patch——失效缓存 + 一次 keys 批量补丁，不重拉全量
   useEffect(() => {
@@ -555,7 +551,6 @@ export default function App() {
       ...(phaseFilter.length < TRACE_PHASES.length ? { phase: phaseFilter } : {}),
       ...(providerFilter.length > 0 ? { provider: providerFilter } : {}),
       ...(statusFilter.length > 0 ? { status: statusFilter } : {}),
-      ...(tagFilter.length > 0 ? { tags: tagFilter } : {}),
       ...(sessionQ !== '' ? { q: sessionQ } : {}),
       ...(view === 'session' ? { time: sessionRange } : {}),
       ...(view === 'session' ? { ribbon: ribbonMode } : {}),
@@ -565,7 +560,7 @@ export default function App() {
       ...(view === 'mission' ? { range: missionRange } : {}),
     };
     history.replaceState(null, '', serializeHash(state));
-  }, [view, selectedKey, phaseFilter, providerFilter, statusFilter, tagFilter, sessionQ, sessionRange, ribbonMode, selectedTurn, compareLeft, compareRight, missionRange]);
+  }, [view, selectedKey, phaseFilter, providerFilter, statusFilter, sessionQ, sessionRange, ribbonMode, selectedTurn, compareLeft, compareRight, missionRange]);
 
   // REQ-024：hashchange → 解析并应用（脏 hash 回落默认视图，不抛错）
   useEffect(() => {
@@ -590,9 +585,6 @@ export default function App() {
       }
       if (state.status !== undefined) {
         setStatusFilter(state.status as TraceStatus[]);
-      }
-      if (state.tags !== undefined) {
-        setTagFilter(state.tags);
       }
       if (state.q !== undefined) {
         setSessionQ(state.q);
@@ -642,13 +634,13 @@ export default function App() {
         <button type="button" className="btn" onClick={() => setSettingsOpen(true)}>
           {t('settings.title', locale)}
         </button>
-        <LiveIndicator connected={live} locale={locale} />
         <LanguageToggle locale={locale} onChange={setLocale} />
         <ThemeToggle
           theme={theme.theme}
           effective={theme.effective}
           onCycle={theme.cycle}
         />
+        <LiveIndicator connected={live} locale={locale} />
       </AppHeader>
       <ViewTabs active={view} onChange={switchView} locale={locale} />
 
@@ -673,8 +665,6 @@ export default function App() {
             onRangeChange={setSessionRange}
             onProviderFilterChange={setProviderFilter}
             onStatusFilterChange={setStatusFilter}
-            tagFilter={tagFilter}
-            onTagFilterChange={setTagFilter}
             total={sessionTotal}
             cursorIndex={cursorIndex}
             searchInputRef={searchInputRef}
@@ -736,7 +726,6 @@ export default function App() {
                   session={detail.session}
                   events={detail.events as TraceEventSlim[]}
                   locale={locale}
-                  tags={sessions.find((s) => s.id === selectedKey)?.tags ?? []}
                   onBack={() => {
                     setSelectedKey(null);
                     setDetail(null);

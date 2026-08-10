@@ -208,7 +208,7 @@ describe('AgentHierarchyPanel（D9）', () => {
     unmount();
   });
 
-  it('未知子类型渲染 Unknown + 启发式 tooltip，不从标题猜测（design-system）', async () => {
+  it('已确认的成员渲染 Subagent + 类型未知 tooltip，不从标题猜具体类型', async () => {
     const groups: SessionMergeGroupInfo[] = [group('main-1', ['sub-1'])];
     const fetchGroups = vi.fn(async () => ({ groups }));
     const fetchMembers = vi.fn(async () => ({
@@ -230,7 +230,7 @@ describe('AgentHierarchyPanel（D9）', () => {
     });
     const nodes = document.querySelectorAll('.agent-node');
     const subType = nodes[1]!.querySelector('.agent-node-type');
-    expect(subType?.textContent).toContain('Unknown');
+    expect(subType?.textContent).toContain('Subagent');
     expect(subType?.getAttribute('title')).toContain('启发式');
     expect(html()).not.toContain('some vague title — type');
     unmount();

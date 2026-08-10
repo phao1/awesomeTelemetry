@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
-  SessionAnnotations,
-  SessionAnnotationsUpdate,
   SessionDetailResponse,
   SessionIndexEntry,
   SessionMergeGroupInfo,
@@ -111,8 +109,6 @@ function detail(events: TraceEventSlim[], over: Partial<SessionDetailResponse> =
 function renderPane(
   d: SessionDetailResponse,
   over: {
-    fetchAnnotations?: (key: string) => Promise<SessionAnnotations>;
-    saveAnnotations?: (key: string, update: SessionAnnotationsUpdate) => Promise<SessionAnnotations>;
     fetchGroups?: () => Promise<{ groups: SessionMergeGroupInfo[] }>;
     fetchMembers?: (keys: string[]) => Promise<{ items: SessionIndexEntry[] }>;
     onSelectedTurnChange?: (index: number | null) => void;
@@ -136,8 +132,6 @@ function renderPane(
         onSelectAgent={() => undefined}
         railCollapsed={false}
         onToggleRailCollapse={() => undefined}
-        fetchAnnotations={over.fetchAnnotations ?? (async () => ({ sessionKey: 's1', tags: [], note: null, updatedAt: null }))}
-        saveAnnotations={over.saveAnnotations}
         fetchGroups={over.fetchGroups ?? (async () => ({ groups: [] }))}
         fetchMembers={over.fetchMembers}
       />
@@ -147,16 +141,14 @@ function renderPane(
 }
 
 describe('TrajectoryPane（D2 / D16）', () => {
-  it('打开：1 次 annotations；单 agent 无批量拉取；回合行渲染（llm_boundary）', async () => {
-    const fetchAnnotations = vi.fn(async () => ({ sessionKey: 's1', tags: [], note: null, updatedAt: null }));
+  it('打开：单 agent 无批量拉取；回合行渲染（llm_boundary）', async () => {
     const fetchGroups = vi.fn(async () => ({ groups: [] }));
     const fetchMembers = vi.fn(async () => ({ items: [] }));
     const d = detail([event('e1', 1, 'llm'), event('e2', 2, 'llm')]);
-    const { html, unmount } = renderPane(d, { fetchAnnotations, fetchGroups, fetchMembers });
+    const { html, unmount } = renderPane(d, { fetchGroups, fetchMembers });
     await act(async () => {
       await Promise.resolve();
     });
-    expect(fetchAnnotations).toHaveBeenCalledTimes(1);
     expect(fetchGroups).toHaveBeenCalledTimes(1);
     expect(fetchMembers).not.toHaveBeenCalled();
     expect(document.querySelectorAll('.turn-row').length).toBe(2);
@@ -207,37 +199,37 @@ describe('TrajectoryPane（D2 / D16）', () => {
   });
 
   it('色带模式切换零请求（D16）', async () => {
-    const fetchAnnotations = vi.fn(async () => ({ sessionKey: 's1', tags: [], note: null, updatedAt: null }));
+    const fetchGroups = vi.fn(async () => ({ groups: [] }));
     const d = detail([event('e1', 1, 'llm')]);
-    const { unmount } = renderPane(d, { fetchAnnotations });
+    const { unmount } = renderPane(d, { fetchGroups });
     await act(async () => {
       await Promise.resolve();
     });
-    const before = fetchAnnotations.mock.calls.length;
+    const before = fetchGroups.mock.calls.length;
     act(() => {
       const tokenChip = Array.from(document.querySelectorAll('.trajectory-statbar button')).find(
         (b) => b.textContent === 'Token',
       ) as HTMLButtonElement;
       tokenChip.click();
     });
-    expect(fetchAnnotations.mock.calls.length).toBe(before);
+    expect(fetchGroups.mock.calls.length).toBe(before);
     unmount();
   });
 
   it('回合展开/折叠零请求（D16）；hash turn 回调', async () => {
-    const fetchAnnotations = vi.fn(async () => ({ sessionKey: 's1', tags: [], note: null, updatedAt: null }));
+    const fetchGroups = vi.fn(async () => ({ groups: [] }));
     const onSelectedTurnChange = vi.fn();
     const d = detail([event('e1', 1, 'llm'), event('e2', 2, 'llm')]);
-    const { unmount } = renderPane(d, { fetchAnnotations, onSelectedTurnChange });
+    const { unmount } = renderPane(d, { fetchGroups, onSelectedTurnChange });
     await act(async () => {
       await Promise.resolve();
     });
-    const before = fetchAnnotations.mock.calls.length;
+    const before = fetchGroups.mock.calls.length;
     act(() => {
       (document.querySelector('.turn-row') as HTMLButtonElement).click();
     });
     expect(onSelectedTurnChange).toHaveBeenCalledWith(1);
-    expect(fetchAnnotations.mock.calls.length).toBe(before);
+    expect(fetchGroups.mock.calls.length).toBe(before);
     expect(document.querySelector('.turn-card')).not.toBeNull();
     unmount();
   });

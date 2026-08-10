@@ -4,7 +4,7 @@ import { SplitPane } from '../ui/SplitPane.js';
 import { LAYOUT_KEYS, LAYOUT_RANGES, loadNumber } from '../../layout.js';
 
 export interface TrajectoryRailProps {
-  /** 上下文 rail 内容（AgentHierarchyPanel + AnnotationsPanel）。 */
+  /** 上下文 rail 内容（AgentHierarchyPanel）。 */
   rail: ReactNode;
   /** turn 区域（TrajectoryStatBar + TurnRibbon + TurnList…）。 */
   turnArea: ReactNode;

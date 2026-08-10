@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { Locale } from '../../i18n.js';
 import type {
-  SessionAnnotations,
-  SessionAnnotationsUpdate,
   SessionDetailResponse,
   SessionIndexEntry,
   SessionMergeGroupInfo,
@@ -18,7 +16,6 @@ import { TrajectoryStatBar } from './TrajectoryStatBar.js';
 import { TurnRibbon } from './TurnRibbon.js';
 import { TurnList } from './TurnList.js';
 import { AgentHierarchyPanel } from './AgentHierarchyPanel.js';
-import { AnnotationsPanel } from './AnnotationsPanel.js';
 import { TrajectoryAnalysisPanel } from './TrajectoryAnalysisPanel.js';
 
 export interface TrajectoryPaneProps {
@@ -38,8 +35,6 @@ export interface TrajectoryPaneProps {
   railCollapsed: boolean;
   onToggleRailCollapse: () => void;
   /** 测试注入（默认走 api；请求预算断言用）。 */
-  fetchAnnotations?: (key: string) => Promise<SessionAnnotations>;
-  saveAnnotations?: (key: string, update: SessionAnnotationsUpdate) => Promise<SessionAnnotations>;
   fetchGroups?: () => Promise<{ groups: SessionMergeGroupInfo[] }>;
   fetchMembers?: (keys: string[]) => Promise<{ items: SessionIndexEntry[] }>;
   loadDetail?: (key: string, eventId: string) => Promise<TraceEvent>;
@@ -47,11 +42,11 @@ export interface TrajectoryPaneProps {
 }
 
 /**
- * D2 TrajectoryPane：会话详情主区 —— 上下文 rail（Agent 层级 + 注解）与
+ * D2 TrajectoryPane：会话详情主区 —— 上下文 rail（Agent 层级）与
  * turn 区域（统计条 + 色带 + 回合列表 + 分析面板）。SessionHeaderCard /
  * PhaseRibbon / PhaseTiles 保留在其上方（由 App 渲染），这里不重复会话身份。
  *
- * D16 请求预算：detail 打开 = slim + 1 次 annotations；session-groups 按需；
+ * D16 请求预算：detail 打开 = slim；session-groups 按需；
  * ≥2 成员时 1 次批量 keys 拉取；卡正文 / Raw 各 ≤1 次（LRU 缓存）；
  * 色带切模式、回合展开/折叠、分析面板打开 = 0 请求。
  */
@@ -67,8 +62,6 @@ export function TrajectoryPane({
   onSelectAgent,
   railCollapsed,
   onToggleRailCollapse,
-  fetchAnnotations,
-  saveAnnotations,
   fetchGroups,
   fetchMembers,
   loadDetail,
@@ -124,12 +117,6 @@ export function TrajectoryPane({
         onSelectAgent={onSelectAgent}
         fetchGroups={fetchGroups}
         fetchMembers={fetchMembers}
-      />
-      <AnnotationsPanel
-        locale={locale}
-        sessionKey={sessionKey}
-        fetchAnnotations={fetchAnnotations}
-        saveAnnotations={saveAnnotations}
       />
     </>
   );

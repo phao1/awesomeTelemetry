@@ -1,4 +1,4 @@
-import { act, useState } from 'react';
+import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -52,8 +52,6 @@ const baseProps = {
   total: 0,
   onProviderFilterChange: () => undefined,
   onStatusFilterChange: () => undefined,
-  tagFilter: [] as string[],
-  onTagFilterChange: () => undefined,
   cursorIndex: -1,
   searchInputRef: { current: null } as React.RefObject<HTMLInputElement | null>,
 };
@@ -314,125 +312,13 @@ describe('REQ-016 会话列表', () => {
     });
     const members = container.querySelectorAll('.session-merge-member');
     expect(members.length).toBe(2);
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      expect.stringContaining('merged=0'),
+      expect.anything(),
+    );
     act(() => {
       (members[0] as HTMLButtonElement).click();
     });
     expect(selected).toEqual(['sub-1']);
-  });
-});
-
-describe('会话列表标签列与标签过滤（D14）', () => {
-  it('标签列：行内渲染标签 chips；无标签的行不渲染', () => {
-    const tagged = entry('t-1', 'tagged session');
-    tagged.tags = ['refactor', 'perf'];
-    const container = render(
-      <SessionList
-        items={[tagged, entry('t-2', 'plain')]}
-        selectedId={null}
-        onSelect={() => undefined}
-        locale="zh"
-        hasMore={false}
-        loading={false}
-        onLoadMore={() => undefined}
-        onRetry={() => undefined}
-        offlineSamples={false}
-        {...baseProps}
-        width={300}
-        collapsed={false}
-        onResize={() => undefined}
-        onToggleCollapse={() => undefined}
-      />,
-    );
-    const rows = container.querySelectorAll('.session-row');
-    expect(rows[0]!.querySelectorAll('.session-row-tag').length).toBeGreaterThan(0);
-    expect(rows[0]!.textContent).toContain('refactor');
-    expect(rows[0]!.textContent).toContain('perf');
-    expect(rows[1]!.querySelectorAll('.session-row-tag').length).toBe(0);
-  });
-
-  it('过滤器打开取一次词表；OR 多选回调；直输标签；逐键不请求', async () => {
-    let vocabCalls = 0;
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const text = String(url).includes('/api/annotations/tags')
-        ? (vocabCalls += 1, JSON.stringify({ tags: [{ tag: 'refactor', count: 3 }, { tag: 'perf', count: 1 }] }))
-        : JSON.stringify({ items: [], nextCursor: null, hasMore: false, total: 0 });
-      return {
-        ok: true,
-        text: async () => text,
-      };
-    }));
-    const filterCalls: string[][] = [];
-    const Harness = (): React.JSX.Element => {
-      const [tags, setTags] = useState<string[]>([]);
-      return (
-        <SessionList
-          items={[]}
-          selectedId={null}
-          onSelect={() => undefined}
-          locale="zh"
-          hasMore={false}
-          loading={false}
-          onLoadMore={() => undefined}
-          onRetry={() => undefined}
-          offlineSamples={false}
-          {...baseProps}
-          tagFilter={tags}
-          onTagFilterChange={(next) => {
-            filterCalls.push(next);
-            setTags(next);
-          }}
-          width={300}
-          collapsed={false}
-          onResize={() => undefined}
-          onToggleCollapse={() => undefined}
-        />
-      );
-    };
-    const container = render(<Harness />);
-    const tagsButton = (): HTMLButtonElement =>
-      Array.from(container.querySelectorAll('button')).find(
-        (b) => b.textContent?.startsWith('Tags') === true,
-      ) as HTMLButtonElement;
-    act(() => {
-      tagsButton().click();
-    });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
-    expect(vocabCalls).toBe(1);
-    // 选择 refactor（OR）
-    const checkboxes = container.querySelectorAll('.tag-filter-list input[type="checkbox"]');
-    act(() => {
-      (checkboxes[1] as HTMLInputElement).click();
-    });
-    expect(filterCalls.at(-1)).toEqual(['refactor']);
-    // 选择 perf → 累积为 OR 多选
-    act(() => {
-      (checkboxes[2] as HTMLInputElement).click();
-    });
-    expect(filterCalls.at(-1)).toEqual(['refactor', 'perf']);
-    // 直输标签（不来自词表）
-    const input = container.querySelector('.annotations-tag-input') as HTMLInputElement;
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-    act(() => {
-      setter?.call(input, 'urgent');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    });
-    expect(filterCalls.at(-1)).toEqual(['refactor', 'perf', 'urgent']);
-    // 逐键输入不触发词表请求
-    act(() => {
-      setter?.call(input, 'ur');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    expect(vocabCalls).toBe(1);
-    // 再次打开过滤器：词表缓存，不再请求
-    act(() => {
-      tagsButton().click();
-    });
-    act(() => {
-      tagsButton().click();
-    });
-    expect(vocabCalls).toBe(1);
   });
 });

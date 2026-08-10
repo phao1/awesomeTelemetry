@@ -37,7 +37,7 @@ interface AgentNode {
 const defaultFetchGroups = (): Promise<{ groups: SessionMergeGroupInfo[] }> =>
   api.sessionGroups();
 const defaultFetchMembers = (keys: string[]): Promise<{ items: SessionIndexEntry[] }> =>
-  api.listSessions({ keys });
+  api.listSessions({ keys, merged: false });
 
 /** D9：合并组是扁平列表；根 = primaryKey，其余成员为 depth 1 子节点。 */
 function buildTree(
@@ -81,8 +81,7 @@ function buildTree(
     nodes.push({
       key,
       title: member?.title ?? key,
-      // D9 + design-system：子 agent 类型标签来自 extractSubagentType；
-      // 列表行没有 input_summary 可提取，且「不从标题猜测」→ unknown + 启发式 tooltip。
+      // 合并关系已经证明这是子 agent；具体类型仍不从标题猜测。
       kind: 'subagent',
       depth: Math.min(5, 1),
       selected: key === sessionKey,
@@ -226,7 +225,9 @@ export function AgentHierarchyPanel({
               >
                 {node.kind === 'main'
                   ? t('trajectory.agent.main', locale)
-                  : t('trajectory.agent.unknown', locale)}
+                  : node.kind === 'subagent'
+                    ? t('trajectory.agent.subagent', locale)
+                    : t('trajectory.agent.unknown', locale)}
               </span>
               <span
                 className="agent-node-count mono"
