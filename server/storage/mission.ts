@@ -38,7 +38,7 @@ import { cachedStmt } from './stmt-cache.js';
 export interface MissionOptions {
   range: MissionRange;
   dataSource: DataSource;
-  /** 本地时区偏移分钟数，A4/A7/C3 分桶前在 SQL 里偏移。 */
+/** 本地时区偏移分钟数，A7 分桶前在 SQL 里偏移。 */
   tz: number;
   /** C1 采集健康的外部状态（providers/proxy/frida/health），由路由层注入。 */
   ctx?: MissionHealthContext;
@@ -264,40 +264,6 @@ function widgetSubagent(db: Database, opts: MissionOptions): MissionWidget<NonNu
   );
 }
 
-const HEATMAP_SQL =
-  // julianday 从正午起算且 1970-01-01T00:00Z = 2440587.5：
-  // minutesSinceEpoch = (JD - 2440587.5) * 1440 + tz；
-  // weekday = (floor(minutes/1440) + 3) % 7（1970-01-01 周四 → days=0 → 3=周一基准）
-  `SELECT (((CAST((julianday(started_at) - 2440587.5) * 1440 + ? AS INTEGER) / 1440) % 7 + 3) % 7) AS weekday, ` +
-  `(CAST((julianday(started_at) - 2440587.5) * 1440 + ? AS INTEGER) / 60) % 24 AS hour, COUNT(*) AS n ` +
-  `FROM sessions s WHERE s.data_source = ?{{RANGE}} GROUP BY weekday, hour`;
-
-/** A4 活跃热力图：⚠️ tz 偏移在 SQL 里做（分桶后无法再转换）。weekday 0=周一。 */
-function widgetHeatmap(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionUsage['heatmap']['data']>> {
-  const { sql, params } = sessionWhere(opts);
-  const rendered = HEATMAP_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', ''));
-  const rows = cachedStmt(db, rendered).all(opts.tz, opts.tz, opts.dataSource, ...params.slice(1)) as Array<{
-    weekday: number;
-    hour: number;
-    n: number;
-  }>;
-  const grid: number[][] = Array.from({ length: 7 }, () => new Array<number>(24).fill(0));
-  let peak = 0;
-  for (const row of rows) {
-    const weekday = ((row.weekday % 7) + 7) % 7;
-    const hour = ((row.hour % 24) + 24) % 24;
-    grid[weekday]![hour] = row.n;
-    if (row.n > peak) {
-      peak = row.n;
-    }
-  }
-  return availableWidget(
-    'heatmap',
-    'mission.criteria.heatmap',
-    { grid, peak },
-  );
-}
-
 const PROMPT_LENGTH_SQL =
   `SELECT e.input_summary AS input_summary ` +
   `FROM events e JOIN sessions s ON s.id = e.session_id ` +
@@ -359,7 +325,6 @@ async function computeUsage(db: Database, opts: MissionOptions): Promise<Mission
     toolTop: widgetToolTop(db, opts),
     skillTop: widgetSkillTop(db, opts),
     subagent: widgetSubagent(db, opts),
-    heatmap: widgetHeatmap(db, opts),
     promptHabits: widgetPromptHabits(db, opts),
     activity: widgetActivity(db, opts),
   };
@@ -496,45 +461,6 @@ function widgetTokenTrend(db: Database, opts: MissionOptions): MissionWidget<Non
       errorEvents: row.error_events as number,
       successRate: row.success_rate as number | null,
     })),
-  );
-}
-
-const API_CACHE_SQL =
-  `SELECT SUM(token_input) AS input, SUM(token_cache_read) AS cache_read, ` +
-  `SUM(token_cache_write) AS cache_write FROM sessions s WHERE s.data_source = ?{{RANGE}}`;
-
-const API_TTFT_SQL =
-  `SELECT m.ttft_ms AS ttft_ms FROM metrics m JOIN sessions s ON s.id = m.session_id ` +
-  `WHERE s.data_source = ?{{RANGE}} AND m.ttft_ms IS NOT NULL ORDER BY m.ttft_ms`;
-
-const API_PROXY_SQL =
-  `SELECT COUNT(*) AS calls, ` +
-  `SUM(CASE WHEN response_status >= 500 OR response_status = 429 THEN 1 ELSE 0 END) AS errors ` +
-  `FROM proxy_requests`;
-
-/** B6 API 质量：cache hit（纯 SQL）+ TTFT（metrics 持久化）+ proxy 通道计数。 */
-function widgetApiQuality(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['apiQuality']['data']>> {
-  const { sql, params } = sessionWhere(opts);
-  const cacheRow = cachedStmt(db, API_CACHE_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
-    .get(opts.dataSource, ...params.slice(1)) as { input: number; cache_read: number; cache_write: number };
-  const ttftRows = cachedStmt(db, API_TTFT_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
-    .all(opts.dataSource, ...params.slice(1)) as Array<{ ttft_ms: number }>;
-  const proxyRow = cachedStmt(db, API_PROXY_SQL).get() as { calls: number; errors: number };
-  const ttfts = ttftRows.map((r) => r.ttft_ms);
-  const denominator = cacheRow.input + cacheRow.cache_read + cacheRow.cache_write;
-  return availableWidget(
-    'apiQuality',
-    'mission.criteria.apiQuality',
-    {
-      cacheHitRate: denominator > 0 ? cacheRow.cache_read / denominator : null,
-      totalIn: cacheRow.input,
-      totalCacheRead: cacheRow.cache_read,
-      totalCacheWrite: cacheRow.cache_write,
-      ttftP50Ms: percentile(ttfts, 50),
-      ttftP95Ms: percentile(ttfts, 95),
-      proxyCalls: proxyRow.calls,
-      proxyErrorRate: proxyRow.calls > 0 ? proxyRow.errors / proxyRow.calls : null,
-    },
   );
 }
 
@@ -992,7 +918,6 @@ async function computeQuality(db: Database, opts: MissionOptions): Promise<Missi
     costEfficiency: widgetCostEfficiency(db, opts),
     toolFailure: widgetToolFailure(db, opts),
     tokenTrend: widgetTokenTrend(db, opts),
-    apiQuality: widgetApiQuality(db, opts),
     errorReasons: widgetErrorReasons(db, opts),
     riskyCommands: widgetRiskyCommands(db, opts),
     drift: widgetDrift(db, opts),
@@ -1082,70 +1007,10 @@ function widgetDualChannel(db: Database, _opts: MissionOptions): MissionWidget<N
   );
 }
 
-const CALENDAR_SQL =
-  `SELECT substr(datetime(s.started_at, ?), 1, 10) AS day, ` +
-  `COUNT(DISTINCT s.id) AS sessions, ` +
-  `MAX(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END) AS has_error ` +
-  `FROM sessions s WHERE s.data_source = ?{{RANGE}} GROUP BY day ORDER BY day`;
-
-/** C3 任务日历：按日会话数 + 有错标红；tz 偏移在 SQL 里做。 */
-function widgetCalendar(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionHealth['calendar']['data']>> {
-  const { sql, params } = sessionWhere(opts);
-  const rendered = CALENDAR_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', ''));
-  const rows = cachedStmt(db, rendered).all(`+${opts.tz} minutes`, opts.dataSource, ...params.slice(1)) as Array<{
-    day: string;
-    sessions: number;
-    has_error: number;
-  }>;
-  return availableWidget(
-    'calendar',
-    'mission.criteria.calendar',
-    rows.map((row) => ({
-      day: row.day,
-      sessions: row.sessions,
-      hasError: row.has_error === 1,
-    })),
-  );
-}
-
-/** C4 热会话（P2，B6 填数据）。 */
-const HOT_SESSIONS_SQL =
-  `SELECT id, title, provider, token_total, cost_usd, cost_source ` +
-  `FROM sessions s WHERE s.data_source = ?{{RANGE}} ` +
-  `ORDER BY cost_usd DESC, token_total DESC LIMIT 10`;
-
-/** C4 热会话：按 $ 排序 TOP 10（P0-C 后按 $；下钻复用 #/sessions?key=）。 */
-function widgetHotSessions(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionHealth['hotSessions']['data']>> {
-  const { sql, params } = sessionWhere(opts);
-  const rows = cachedStmt(db, HOT_SESSIONS_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
-    .all(opts.dataSource, ...params.slice(1)) as Array<{
-    id: string;
-    title: string;
-    provider: string;
-    token_total: number;
-    cost_usd: number;
-    cost_source: string;
-  }>;
-  return availableWidget(
-    'hotSessions',
-    'mission.criteria.hotSessions',
-    rows.map((row) => ({
-      id: row.id,
-      title: row.title,
-      provider: row.provider as NonNullable<MissionHealth['hotSessions']['data']>[number]['provider'],
-      tokenTotal: row.token_total,
-      costUsd: row.cost_usd,
-      costSource: row.cost_source as NonNullable<MissionHealth['hotSessions']['data']>[number]['costSource'],
-    })),
-  );
-}
-
 async function computeHealth(db: Database, opts: MissionOptions): Promise<MissionHealth> {
   return {
     collectors: widgetCollectors(db, opts),
     dualChannel: widgetDualChannel(db, opts),
-    calendar: widgetCalendar(db, opts),
-    hotSessions: widgetHotSessions(db, opts),
   };
 }
 

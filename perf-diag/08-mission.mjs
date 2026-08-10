@@ -31,14 +31,6 @@ try {
        WHERE s.data_source = ? AND e.kind = 'agent' AND s.started_at >= ?`,
       ['scan', rangeParam],
     ],
-    // A4 活跃热力图（tz 偏移在 SQL 里做）
-    [
-      `SELECT (((CAST((julianday(s.started_at) - 2440587.5) * 1440 + ? AS INTEGER) / 1440) % 7 + 3) % 7) AS weekday,
-              (CAST((julianday(s.started_at) - 2440587.5) * 1440 + ? AS INTEGER) / 60) % 24 AS hour,
-              COUNT(*) AS n FROM sessions s
-       WHERE s.data_source = ? AND s.started_at >= ? GROUP BY weekday, hour`,
-      [TZ, TZ, 'scan', rangeParam],
-    ],
     // A7 会话活跃曲线
     [
       `SELECT substr(datetime(s.started_at, ?), 1, 13) AS hour,
@@ -116,14 +108,6 @@ try {
     // C1 采集健康：scan_state 正向断言 + provider 计数
     [`SELECT COUNT(*) AS c FROM scan_state`, []],
     [`SELECT provider, COUNT(*) AS n FROM sessions WHERE data_source = ? GROUP BY provider`, ['scan']],
-    // C3 任务日历
-    [
-      `SELECT substr(datetime(s.started_at, ?), 1, 10) AS day,
-              COUNT(DISTINCT s.id) AS sessions,
-              MAX(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END) AS has_error
-       FROM sessions s WHERE s.data_source = ? AND s.started_at >= ? GROUP BY day`,
-      [`+${TZ} minutes`, 'scan', rangeParam],
-    ],
   ];
 
   // 冷路径：stamp + 全部 widget SQL
@@ -145,12 +129,10 @@ try {
   const worstWidget = Math.max(...widgetTimes);
   // 9.2：tier B 响应体 gzip < 120KB —— 用真实查询结果拼装代表性响应信封。
   const toolRows = db.prepare(widgetSqls[0][0]).all(...widgetSqls[0][1]);
-  const calendarRows = db.prepare(widgetSqls[widgetSqls.length - 1][0]).all(...widgetSqls[widgetSqls.length - 1][1]);
   const envelope = {
-    meta: { range: '7d', generatedAt: new Date().toISOString(), tz: TZ, widgetCount: 25, durationMs: 100, stamp: String(stamp.stamp), cached: false },
+    meta: { range: '7d', generatedAt: new Date().toISOString(), tz: TZ, widgetCount: 21, durationMs: 100, stamp: String(stamp.stamp), cached: false },
     usage: { toolTop: { id: 'toolTop', criteria: 'mission.criteria.toolTop', available: true, unavailableReason: null, data: toolRows } },
     quality: { closure: { id: 'closure', criteria: 'mission.criteria.closure', available: true, unavailableReason: null, data: { sessions: 524 } } },
-    health: { calendar: { id: 'calendar', criteria: 'mission.criteria.calendar', available: true, unavailableReason: null, data: calendarRows } },
   };
   const gzipBytes = gzipSync(Buffer.from(JSON.stringify(envelope))).length;
   console.log(`mission 冷启（stamp + ${widgetSqls.length} 条 widget SQL）: ${coldMs.toFixed(2)} ms, stamp=${String(stamp.stamp).slice(0, 19)}`);

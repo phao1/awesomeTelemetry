@@ -24,7 +24,6 @@ function makeResponse(): MissionResponse {
     toolTop: widget('toolTop', true),
     skillTop: widget('skillTop', false),
     subagent: widget('subagent', false),
-    heatmap: widget('heatmap', false),
     promptHabits: widget('promptHabits', false),
     activity: widget('activity', false),
   };
@@ -33,7 +32,6 @@ function makeResponse(): MissionResponse {
     costEfficiency: widget('costEfficiency', false),
     toolFailure: widget('toolFailure', false),
     tokenTrend: widget('tokenTrend', false),
-    apiQuality: widget('apiQuality', false),
     errorReasons: widget('errorReasons', false),
     riskyCommands: widget('riskyCommands', false),
     drift: widget('drift', false),
@@ -48,15 +46,13 @@ function makeResponse(): MissionResponse {
   const health = {
     collectors: widget('collectors', false),
     dualChannel: widget('dualChannel', false),
-    calendar: widget('calendar', false),
-    hotSessions: widget('hotSessions', false),
   };
   return {
     meta: {
       range: '7d',
       generatedAt: '2026-08-05T01:02:03.000Z',
       tz: 480,
-      widgetCount: 25,
+      widgetCount: 21,
       durationMs: 42,
       stamp: '2026-08-05T00:00:00.000Z',
       cached: false,
@@ -83,11 +79,11 @@ describe('MissionControl（REQ-027）', () => {
       });
       expect(load).toHaveBeenCalledTimes(1);
       const text = host.textContent ?? '';
-      expect(text).toContain('25'); // widgetCount
+      expect(text).toContain('21'); // widgetCount
       expect(text).toContain('events.tool 按调用数聚合 TOP 10'); // 8.7：criteria 经 i18n 字典渲染
       expect(text).toContain('该指标当前不可用'); // unavailable EmptyState
-      // REQ-117：A/B/C 标签页移除后，25 个 widget 一次性按角色分组全量呈现
-      expect(host.querySelectorAll('.mission-widget').length).toBe(25);
+      // REQ-117：A/B/C 标签页移除后，21 个 widget 一次性按角色分组全量呈现
+      expect(host.querySelectorAll('.mission-widget').length).toBe(21);
       expect(host.querySelector('.mission-chips')).toBeNull();
       expect(host.querySelector('[role="tablist"]')).toBeNull();
     } finally {

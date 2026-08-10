@@ -64,8 +64,8 @@ describe('getMission 信封', () => {
       ...Object.values(r.quality),
       ...Object.values(r.health),
     ];
-    expect(widgets.length).toBe(25);
-    expect(r.meta.widgetCount).toBe(25);
+    expect(widgets.length).toBe(21);
+    expect(r.meta.widgetCount).toBe(21);
     expect(typeof r.meta.stamp).toBe('string');
     expect(r.meta.range).toBe('all');
     expect(r.meta.tz).toBe(480);
@@ -132,7 +132,6 @@ describe('getMission 信封', () => {
     const r7 = await getMission(db, { range: '7d', dataSource: 'scan', tz: 0 });
     expect(r7.meta.range).toBe('7d');
     expect(r7.usage.toolTop.data!.find((row) => row.tool === 'Bash')?.calls).toBe(1);
-    expect(r7.health.calendar.data!.length).toBe(1); // 只有 recent 一天
     const r30 = await getMission(db, { range: '30d', dataSource: 'scan', tz: 0 });
     expect(r30.usage.toolTop.data!.find((row) => row.tool === 'Bash')?.calls).toBe(1);
     const rAll = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
@@ -225,13 +224,6 @@ describe('逐 widget 口径断言（design.md §10 R8：防 SQL 改写悄悄漂�
     expect(data.find((row) => row.name === '0')?.count).toBe(1);
   });
 
-  it('C3 任务日历：按日会话数与 hasError 精确匹配', async () => {
-    seedP1Fixture();
-    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
-    const data = r.health.calendar.data!;
-    expect(data.find((row) => row.day === '2026-08-01')).toMatchObject({ sessions: 2, hasError: true });
-  });
-
   it('C1 采集健康：scan_state 0 行告警数据 + 外部状态注入', async () => {
     seedP1Fixture();
     const r = await getMission(db, {
@@ -253,21 +245,16 @@ describe('逐 widget 口径断言（design.md §10 R8：防 SQL 改写悄悄漂�
     expect(data.schemaVersion).toBe(SCHEMA_VERSION);
   });
 
-  it('A4 热力图与 A7 活跃曲线：tz=0 时按 UTC 分桶', async () => {
+  it('A7 活跃曲线：tz=0 时按 UTC 分桶', async () => {
     seedP1Fixture();
     const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
-    const heat = r.usage.heatmap.data!;
-    // 2026-08-01 是周六：UTC 02:00 / 03:30 → weekday 5
-    expect(heat.grid[5]![2]).toBe(1);
-    expect(heat.grid[5]![3]).toBe(1);
-    expect(heat.peak).toBe(1);
     const activity = r.usage.activity.data!;
     expect(activity.find((p) => p.hour === '2026-08-01T02:00:00')).toMatchObject({ sessions: 1, messages: 3 });
     expect(activity.find((p) => p.hour === '2026-08-01T03:00:00')).toMatchObject({ sessions: 1, messages: 5 });
   });
 });
 
-describe('P2 逐 widget 口径断言（B1/B3/B5/B6/B11/B12/B13/B15/F1-3+/C2/C4）', () => {
+describe('P2 逐 widget 口径断言（B1/B3/B5/B11/B12/B13/B15/F1-3+/C2）', () => {
   function seedP2Fixture(): void {
     const insertSession = db.prepare(
       `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, status,
@@ -350,17 +337,6 @@ describe('P2 逐 widget 口径断言（B1/B3/B5/B6/B11/B12/B13/B15/F1-3+/C2/C4�
     expect(c.perTurnUsd).toBeCloseTo(0.03 / 8);
   });
 
-  it('B6 apiQuality：cacheHit + ttft 分位数来自 metrics 持久化', async () => {
-    seedP2Fixture();
-    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
-    const a = r.quality.apiQuality.data!;
-    expect(a.totalIn).toBe(300);
-    expect(a.totalCacheRead).toBe(30);
-    expect(a.cacheHitRate).toBeCloseTo(30 / (300 + 30 + 6));
-    expect(a.ttftP50Ms).toBe(120);
-    expect(a.ttftP95Ms).toBe(3000);
-  });
-
   it('F1-3+ parallelism：Σdurations/wall > 1.2 判定并行', async () => {
     seedP2Fixture();
     // s1: Σdur = 6000, wall = 600000 → 0.01；补一个高并行会话
@@ -404,14 +380,6 @@ describe('P2 逐 widget 口径断言（B1/B3/B5/B6/B11/B12/B13/B15/F1-3+/C2/C4�
     expect(cp.compactions).toBe(0); // 1000→4000 是上升
   });
 
-  it('C4 hotSessions：按 costUsd 排序且 unknown 显示 —', async () => {
-    seedP2Fixture();
-    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
-    const rows = r.health.hotSessions.data!;
-    expect(rows[0]!.id).toBe('s2');
-    expect(rows.map((row) => row.id)).toEqual(['s2', 's1', 's3']);
-    expect(rows.find((row) => row.id === 's3')!.costSource).toBe('unknown');
-  });
 });
 
 describe('P3 逐 widget 口径断言（B7/B8/B9/B10/A2/A6）', () => {

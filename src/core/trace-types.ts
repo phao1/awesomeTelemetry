@@ -939,8 +939,6 @@ export interface MissionUsage {
   toolTop: MissionWidget<MissionToolRow[]>;
   skillTop: MissionWidget<NamedCount[]>;
   subagent: MissionWidget<{ rows: NamedCount[]; avgPerSession: number; sessionsWithSubagent: number }>;
-  /** 7×24 网格，heat[weekday][hour]，weekday 0=周一。 */
-  heatmap: MissionWidget<{ grid: number[][]; peak: number }>;
   promptHabits: MissionWidget<{ n: number; p50: number; p95: number; max: number }>;
   activity: MissionWidget<MissionHourPoint[]>;
 }
@@ -969,16 +967,6 @@ export interface MissionQuality {
   }>;
   toolFailure: MissionWidget<Array<{ tool: string; rate: number; errors: number; attempts: number }>>;
   tokenTrend: MissionWidget<MissionDayPoint[]>;
-  apiQuality: MissionWidget<{
-    cacheHitRate: number | null;
-    totalIn: number;
-    totalCacheRead: number;
-    totalCacheWrite: number;
-    ttftP50Ms: number | null;
-    ttftP95Ms: number | null;
-    proxyCalls: number;
-    proxyErrorRate: number | null;
-  }>;
   errorReasons: MissionWidget<NamedCount[]>;
   riskyCommands: MissionWidget<Array<{ pattern: string; hits: number; sessionId: string; preview: string }>>;
   drift: MissionWidget<MissionDayPoint[]>;
@@ -1042,15 +1030,6 @@ export interface MissionHealth {
     proxyOnly: number;
     hints: string[];
   }>;
-  calendar: MissionWidget<Array<{ day: string; sessions: number; hasError: boolean }>>;
-  hotSessions: MissionWidget<Array<{
-    id: string;
-    title: string;
-    provider: ProviderKey;
-    tokenTotal: number;
-    costUsd: number;
-    costSource: CostSource;
-  }>>;
 }
 
 export interface MissionResponse {

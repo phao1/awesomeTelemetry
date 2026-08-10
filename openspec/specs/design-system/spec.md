@@ -295,8 +295,8 @@ settings. The list MUST be virtualized (sessions can reach hundreds).
 
 ### REQ-010: Chart type selection & criteria line (add-mission-control)
 
-The Mission view's widgets SHALL follow Tengu Lab's chart-type rule, promoted
-to a hard requirement:
+The Mission view's widgets SHALL follow the chart-type rule below (promoted
+from the reference implementation to a hard requirement):
 
 | Data shape | Chart |
 |------------|-------|

@@ -534,7 +534,7 @@ area (NOT three columns) with A/B/C section chip navigation:
 | Data loading | `GET /api/mission?range=&dataSource=&tz=` — the whole view is **exactly 1 request** (REQ-003 / G11.9). No per-session fetches. |
 | meta row | `generated <time> · N widgets · xxxms` — expose the server-side duration, which doubles as the nfr budget readout. |
 | range | 7d / 30d / all, reflected in the hash (`#/mission?range=7d`). |
-| refresh | Manual refresh button + SSE `sessions_changed` stamp invalidation. **Explicitly no polling** — Tengu's 60s auto-refresh is rejected (REQ-023 / nfr §2 30s-window budget). |
+| refresh | Manual refresh button + SSE `sessions_changed` stamp invalidation. **Explicitly no polling** — timer-based 60s auto-refresh is rejected (REQ-023 / nfr §2 30s-window budget). |
 | criteria line | Every widget MUST render the server-provided `criteria` line below its title (design-system REQ-010); the frontend MUST NOT write its own criteria text. |
 | unavailable widgets | `available=false` renders `EmptyState` + `unavailableReason` (REQ-022 four states + REQ-017 "null shows —, never 0"). |
 | tz | The frontend passes its local `-new Date().getTimezoneOffset()` as `tz`; time bucketing happens server-side (A4/A7/C3). |

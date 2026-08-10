@@ -15,9 +15,7 @@ import type {
 import { api } from '../api/client.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 import { HBarChart } from './charts/HBarChart.js';
-import { HeatmapGrid } from './charts/HeatmapGrid.js';
 import { Histogram } from './charts/Histogram.js';
-import { CalendarGrid } from './charts/CalendarGrid.js';
 import { ComboBarLine } from './charts/ComboBarLine.js';
 import { StackedAreaChart } from './charts/StackedAreaChart.js';
 
@@ -48,14 +46,14 @@ export function redirectLegacyMissionHash(hash: string): string | null {
 export const ROLE_GROUPS: Record<MissionRole, string[]> = {
   manager: [
     'activity', 'costEfficiency', 'toolFailure', 'errorReasons',
-    'closure', 'apiQuality', 'tokenTrend', 'drift', 'riskyCommands',
+    'closure', 'tokenTrend', 'drift', 'riskyCommands',
     'depth', 'heavyScenes',
   ],
   engineer: [
     'toolTop', 'skillTop', 'subagent', 'promptHabits',
     'toolEcology', 'scenes', 'parallelism', 'contextPressure', 'models',
   ],
-  ops: ['heatmap', 'collectors', 'dualChannel', 'calendar', 'hotSessions'],
+  ops: ['collectors', 'dualChannel'],
 };
 
 export const ROLE_ORDER: readonly MissionRole[] = ['manager', 'engineer', 'ops'];
@@ -67,8 +65,6 @@ export interface MissionControlProps {
   /** SSE sessions_changed 外部失效计数（REQ-027：stamp 失效 + 手动刷新，不轮询）。 */
   invalidateKey?: number;
   initialRange?: MissionRange;
-  /** 热会话下钻：复用 #/sessions?key= hash 路由（REQ-027）。 */
-  onOpenSession?: (key: string) => void;
 }
 
 function entries(
@@ -127,12 +123,10 @@ function WidgetData({
   id,
   data,
   locale,
-  onOpenSession,
 }: {
   id: string;
   data: unknown;
   locale: Locale;
-  onOpenSession?: (key: string) => void;
 }): React.JSX.Element {
   switch (id) {
     case 'toolTop': {
@@ -153,10 +147,6 @@ function WidgetData({
     case 'subagent': {
       const data2 = data as NonNullable<MissionUsage['subagent']['data']>;
       return <NamedCountList rows={data2.rows} />;
-    }
-    case 'heatmap': {
-      const heat = data as NonNullable<MissionUsage['heatmap']['data']>;
-      return <HeatmapGrid grid={heat.grid} peak={heat.peak} />;
     }
     case 'activity': {
       const points = data as MissionHourPoint[];
@@ -215,10 +205,6 @@ function WidgetData({
           </div>
         </div>
       );
-    }
-    case 'calendar': {
-      const days = data as NonNullable<MissionHealth['calendar']['data']>;
-      return <CalendarGrid days={days} />;
     }
     case 'tokenTrend':
     case 'drift': {
@@ -283,20 +269,6 @@ function WidgetData({
         />
       );
     }
-    case 'apiQuality': {
-      const a = data as NonNullable<MissionQuality['apiQuality']['data']>;
-      return (
-        <KeyValueTable
-          data={{
-            cacheHit: fmtPct(a.cacheHitRate),
-            ttftP50: a.ttftP50Ms === null ? '—' : fmtDur(a.ttftP50Ms),
-            ttftP95: a.ttftP95Ms === null ? '—' : fmtDur(a.ttftP95Ms),
-            proxyCalls: a.proxyCalls,
-            proxyErr: fmtPct(a.proxyErrorRate),
-          }}
-        />
-      );
-    }
     case 'parallelism': {
       const p = data as NonNullable<MissionQuality['parallelism']['data']>;
       return (
@@ -355,27 +327,6 @@ function WidgetData({
         />
       );
     }
-    case 'hotSessions': {
-      const rows = data as NonNullable<MissionHealth['hotSessions']['data']>;
-      return (
-        <div className="mission-kv">
-          {rows.map((row) => (
-            <button
-              key={row.id}
-              type="button"
-              className="mission-hot-row"
-              onClick={() => onOpenSession?.(row.id)}
-              title={row.id}
-            >
-              <span className="mission-kv-key">{row.title || row.id}</span>
-              <span className="mission-kv-value mono">
-                {row.costSource === 'unknown' ? '—' : `$${row.costUsd.toFixed(4)}`} · {fmtNum(row.tokenTotal)}
-              </span>
-            </button>
-          ))}
-        </div>
-      );
-    }
     case 'scenes':
     case 'heavyScenes': {
       const s = data as { rows: Array<{ scene: string; count: number; tokenSum: number }> };
@@ -432,12 +383,10 @@ function WidgetPanel({
   id,
   widget,
   locale,
-  onOpenSession,
 }: {
   id: string;
   widget: MissionWidget<unknown>;
   locale: Locale;
-  onOpenSession?: (key: string) => void;
 }): React.JSX.Element {
   const reasonKey = `mission.unavailable.${widget.unavailableReason ?? ''}` as I18nKey;
   const reason =
@@ -465,7 +414,7 @@ function WidgetPanel({
       )}
       {widget.available && widget.data !== null ? (
         <div className="mission-widget-body">
-          <WidgetData id={id} data={widget.data} locale={locale} onOpenSession={onOpenSession} />
+          <WidgetData id={id} data={widget.data} locale={locale} />
         </div>
       ) : (
         <EmptyState
@@ -488,7 +437,6 @@ export function MissionControl({
   load,
   invalidateKey = 0,
   initialRange = '7d',
-  onOpenSession,
 }: MissionControlProps): React.JSX.Element {
   const defaultLoad = useCallback((range: MissionRange) => api.mission({ range }), []);
   const loader = load ?? defaultLoad;
@@ -670,7 +618,7 @@ export function MissionControl({
                 <h3 className="mission-role-title">{t(`mission.role.${role}`, locale)}</h3>
                 <div className="mission-grid">
                   {widgets.map(({ id, widget }) => (
-                    <WidgetPanel key={id} id={id} widget={widget} locale={locale} onOpenSession={onOpenSession} />
+                    <WidgetPanel key={id} id={id} widget={widget} locale={locale} />
                   ))}
                 </div>
               </section>
