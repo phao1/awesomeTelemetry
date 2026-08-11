@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -50,6 +50,25 @@ describe('file watcher（session-scanning REQ-017）', () => {
     await waitFor(() => changes.length > 0);
     await watcher.close();
     expect(changes[0]).toBe('trae');
+  });
+
+  it('poll provider 在注册前展开默认 ~ 路径', async () => {
+    const dir = mkdtempSync(join(homedir(), '.watch-poll-home-'));
+    dirs.push(dir);
+    const changes: ProviderKey[] = [];
+    const watcher = startFileWatcher(
+      [provider({
+        key: 'codearts',
+        path: `~/${basename(dir)}`,
+        sourceKind: 'sqlite',
+        pollIntervalMs: 15,
+      })],
+      (key) => { changes.push(key); },
+    );
+    await watcher.ready;
+    await waitFor(() => changes.length > 0);
+    await watcher.close();
+    expect(changes[0]).toBe('codearts');
   });
 
   it('chokidar provider 忽略初始文件，并在变化稳定后防抖触发', async () => {

@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { watch, type FSWatcher } from 'chokidar';
 
 import type { ProviderConfig, ProviderKey } from '../../src/core/trace-types.js';
+import { expandLocalSessionPath } from '../../local-sessions/config.js';
 
 export interface FileWatcherHandle {
   /** chokidar providers have completed their initial, ignored discovery pass. */
@@ -48,7 +49,8 @@ export function startFileWatcher(
   };
 
   for (const provider of providers) {
-    if (!provider.enabled || !existsSync(provider.path)) continue;
+    const providerPath = expandLocalSessionPath(provider.path);
+    if (!provider.enabled || !existsSync(providerPath)) continue;
     if (provider.watchStrategy === 'poll') {
       const intervalMs = provider.pollIntervalMs > 0 ? provider.pollIntervalMs : 30_000;
       const timer = setInterval(() => { void run(provider.key); }, intervalMs);
@@ -57,7 +59,7 @@ export function startFileWatcher(
       continue;
     }
 
-    const watcher = watch(provider.path, {
+    const watcher = watch(providerPath, {
       ignoreInitial: true,
       ignored: /(^|[/\\])\../,
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
