@@ -98,7 +98,7 @@
 
 .agent-timing-label {
   fill: var(--fg-muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 
 .agent-timing-grid {
