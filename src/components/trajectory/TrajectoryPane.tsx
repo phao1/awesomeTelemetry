@@ -9,6 +9,7 @@ import type {
   TraceEventRaw,
   TraceEventSlim,
 } from '../../core/trace-types.js';
+import { deriveAgentGraph, MAIN_AGENT_ID } from '../../core/agent-graph.js';
 import { deriveTurns, turnKeySourceForProvider } from '../../core/turn-model.js';
 import type { RibbonMode } from '../../core/turn-ribbon.js';
 import { TrajectoryRail } from './TrajectoryRail.js';
@@ -16,6 +17,8 @@ import { TrajectoryStatBar } from './TrajectoryStatBar.js';
 import { TurnRibbon } from './TurnRibbon.js';
 import { TurnList } from './TurnList.js';
 import { AgentHierarchyPanel } from './AgentHierarchyPanel.js';
+import { AgentInteractionPanel } from './AgentInteractionPanel.js';
+import { AgentTimingOverview } from './AgentTimingOverview.js';
 import { TrajectoryAnalysisPanel } from './TrajectoryAnalysisPanel.js';
 
 export interface TrajectoryPaneProps {
@@ -75,12 +78,26 @@ export function TrajectoryPane({
     () => deriveTurns(detail.events as TraceEventSlim[], detail, turnKeySource),
     [detail, turnKeySource],
   );
+  const agentGraph = useMemo(
+    () =>
+      deriveAgentGraph({
+        session: detail.session,
+        events: detail.events as TraceEventSlim[],
+        turns: model,
+      }),
+    [detail, model],
+  );
 
   /** 双向高亮：列表滚动写回 top-most visible 回合（rAF 节流在 TurnList）。 */
   const [activeTurnIndex, setActiveTurnIndex] = useState<number | null>(0);
   const [analysisOpen, setAnalysisOpen] = useState(false);
   /** 色带激活 / findings 定位目标（TurnList 滚动 + 展开，零请求）。 */
   const [focusTurnIndex, setFocusTurnIndex] = useState<number | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(MAIN_AGENT_ID);
+
+  useEffect(() => {
+    setSelectedAgentId(MAIN_AGENT_ID);
+  }, [sessionKey]);
 
   // findings / 命令面板：focusEventId → 其所在回合。
   useEffect(() => {
@@ -107,6 +124,16 @@ export function TrajectoryPane({
 
   const turnCount = model.complete ? model.turns.length : null;
 
+  const focusEvent = (eventId: string): void => {
+    const index = model.turns.findIndex((turn) =>
+      turn.messages.some((message) => message.eventId === eventId),
+    );
+    if (index >= 0) {
+      setFocusTurnIndex(index);
+      setActiveTurnIndex(index);
+    }
+  };
+
   const rail = (
     <>
       <AgentHierarchyPanel
@@ -117,6 +144,13 @@ export function TrajectoryPane({
         onSelectAgent={onSelectAgent}
         fetchGroups={fetchGroups}
         fetchMembers={fetchMembers}
+      />
+      <AgentInteractionPanel
+        locale={locale}
+        graph={agentGraph}
+        selectedNodeId={selectedAgentId}
+        onSelectNode={setSelectedAgentId}
+        onFocusEvent={focusEvent}
       />
     </>
   );
@@ -135,6 +169,13 @@ export function TrajectoryPane({
         turnKeySource={turnKeySource}
       />
       {analysisOpen && <TrajectoryAnalysisPanel model={model} locale={locale} />}
+      <AgentTimingOverview
+        locale={locale}
+        graph={agentGraph}
+        selectedNodeId={selectedAgentId}
+        activeTurnIndex={activeTurnIndex}
+        onFocusEvent={focusEvent}
+      />
       <TurnRibbon
         model={model}
         mode={ribbonMode}
