@@ -1,0 +1,121 @@
+/* In-session agent interaction + DSH-style timing overview (grok_dev). */
+
+.agent-interact-nodes {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.agent-interact-node {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-interact-node:hover {
+  background: var(--canvas-raised);
+}
+
+.agent-interact-node-selected {
+  background: var(--accent-subtle);
+  border-left: var(--gantt-group-border) solid var(--accent-emphasis);
+}
+
+.agent-interact-edges {
+  margin: 0;
+  padding: 0 0 0 var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.agent-edge {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-default);
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-edge:hover {
+  background: var(--canvas-raised);
+}
+
+.agent-edge-kind {
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agent-edge-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-timing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--canvas-subtle);
+  flex: 0 0 auto;
+}
+
+.agent-timing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.agent-timing-svg {
+  display: block;
+  width: 100%;
+}
+
+.agent-timing-label {
+  fill: var(--fg-muted);
+  font-size: 10px;
+}
+
+.agent-timing-grid {
+  stroke: var(--border-muted);
+  stroke-width: 1;
+}
+
+.agent-timing-bar {
+  cursor: pointer;
+}
+
+.agent-timing-bar-active {
+  stroke: var(--accent-emphasis);
+  stroke-width: 1;
+}
+
+.agent-timing-bar-error {
+  stroke: var(--danger-fg);
+  stroke-width: 1;
+}
