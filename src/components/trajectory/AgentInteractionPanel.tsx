@@ -3,6 +3,7 @@ import { t } from '../../i18n.js';
 import type { AgentEdgeKind, AgentGraph, AgentGraphNode } from '../../core/agent-graph.js';
 import { MAIN_AGENT_ID } from '../../core/agent-graph.js';
 import { IconUnderstand, IconWarning } from '../icons/index.js';
+import { ti } from './interact-i18n.js';
 
 export interface AgentInteractionPanelProps {
   locale: Locale;
@@ -18,12 +19,12 @@ function fmtDur(ms: number): string {
 
 function edgeVerb(kind: AgentEdgeKind, locale: Locale): string {
   if (kind === 'spawn') {
-    return t('trajectory.interact.spawn', locale);
+    return ti('spawn', locale);
   }
   if (kind === 'handoff') {
-    return t('trajectory.interact.handoff', locale);
+    return ti('handoff', locale);
   }
-  return t('trajectory.interact.return', locale);
+  return ti('return', locale);
 }
 
 function nodeTitle(node: AgentGraphNode): string {
@@ -46,7 +47,7 @@ export function AgentInteractionPanel({
   onSelectNode,
   onFocusEvent,
 }: AgentInteractionPanelProps): React.JSX.Element {
-  const title = t('trajectory.interact.title', locale);
+  const title = ti('title', locale);
   const selected = selectedNodeId ?? MAIN_AGENT_ID;
 
   return (
@@ -57,8 +58,8 @@ export function AgentInteractionPanel({
       </h3>
       <p className="trajectory-criteria">
         {graph.singleAgent
-          ? t('trajectory.interact.single', locale)
-          : t('trajectory.interact.summary', locale)
+          ? ti('single', locale)
+          : ti('summary', locale)
               .replace('{agents}', String(graph.nodes.length))
               .replace('{edges}', String(graph.edges.length))
               .replace('{ratio}', graph.parallelismRatio.toFixed(2))}
@@ -121,7 +122,7 @@ export function AgentInteractionPanel({
       )}
       <p className="trajectory-criteria">
         <IconWarning size={12} />
-        {t('trajectory.interact.criteria', locale)}
+        {ti('criteria', locale)}
       </p>
     </section>
   );

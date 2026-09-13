@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Locale } from '../../i18n.js';
-import { t } from '../../i18n.js';
 import type { AgentGraph, AgentLaneSpan } from '../../core/agent-graph.js';
+import { ti } from './interact-i18n.js';
 
 export interface AgentTimingOverviewProps {
   locale: Locale;
@@ -88,15 +88,12 @@ export function AgentTimingOverview({
     <section
       ref={hostRef}
       className="agent-timing"
-      aria-label={t('trajectory.timing.title', locale)}
+      aria-label={ti('timing', locale)}
     >
       <header className="agent-timing-head">
-        <span>{t('trajectory.timing.title', locale)}</span>
+        <span>{ti('timing', locale)}</span>
         <span className="mono">
-          {t('trajectory.timing.parallel', locale).replace(
-            '{ratio}',
-            graph.parallelismRatio.toFixed(2),
-          )}
+          {ti('parallel', locale).replace('{ratio}', graph.parallelismRatio.toFixed(2))}
         </span>
       </header>
       <svg
