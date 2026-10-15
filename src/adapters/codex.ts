@@ -45,8 +45,9 @@ export interface CodexRawPayload {
   call_id?: string;
   arguments?: string;
   input?: string;
-  output?: string;
+  output?: unknown;
   text?: string;
+  summary?: Array<{ type?: string; text?: string }>;
   content?: Array<{ type?: string; text?: string; [key: string]: unknown }> | string;
   info?: {
     total_token_usage?: CodexTokenUsageInfo;
@@ -184,7 +185,19 @@ function agentMessageText(payload: CodexRawPayload): string {
 
 /** 工具结果文本的错误探测：沿用现状（输出头 200 字符内命中 error/failed）。 */
 function isErrorOutput(output: string): boolean {
+  const exits = [...output.matchAll(/(?:"?exit_code"?\s*[:=]\s*|Process exited with code\s+)(-?\d+)/gi)];
+  if (exits.length > 0) return exits.some((match) => Number(match[1]) !== 0);
   return /error|failed/i.test(output.slice(0, 200));
+}
+
+/** Native content arrays are transport wrappers, not JSON to show as prose. */
+function codexOutputText(value: unknown, depth = 0): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  if (depth > 6) return JSON.stringify(value);
+  if (Array.isArray(value)) return value.map((part) => codexOutputText(part, depth + 1)).join('\n\n');
+  if (typeof value === 'object' && 'text' in value && typeof value.text === 'string') return value.text;
+  return JSON.stringify(value, null, 2);
 }
 
 /** 把多次 token_count 的 last_token_usage 增量合并为一个 TokenUsage（增量相加）。 */
@@ -222,6 +235,14 @@ function emitCycleEvents(
   syntheticId: { next: number },
 ): EventWithRaw[] {
   const events: EventWithRaw[] = [];
+  const toolResults = new Map<string, string>();
+  for (const row of cycle.rows) {
+    const type = row.payload?.type;
+    const callId = row.payload?.call_id;
+    if (row.timestamp && callId && (type === 'function_call_output' || type === 'custom_tool_call_output')) {
+      toolResults.set(callId.replace(/:\d+$/, ''), row.timestamp);
+    }
+  }
   /** carrier（无 assistant 消息的周期）要携带的原始 token_count 行。 */
   let carrierRaw: string | null = null;
   let carrierTimestamp: string | null = null;
@@ -341,7 +362,7 @@ function emitCycleEvents(
 
     // ── response_item / reasoning ──
     if (rowType === 'response_item' && type === 'reasoning') {
-      const text = contentText(payload);
+      const text = contentText(payload) || (payload.summary ?? []).map((part) => part.text ?? '').join('\n');
       events.push({
         ...base,
         kind: 'reasoning',
@@ -358,11 +379,14 @@ function emitCycleEvents(
     if (type === 'function_call' || type === 'custom_tool_call') {
       const name = payload.name ?? type;
       const input = type === 'custom_tool_call' ? payload.input : payload.arguments;
+      const resultAt = payload.call_id ? toolResults.get(payload.call_id.replace(/:\d+$/, '')) : undefined;
+      const pairedMs = resultAt ? Date.parse(resultAt) - Date.parse(timestamp) : 0;
       events.push({
         ...base,
         kind: 'tool',
         title: titleFromText(name),
         tool: name,
+        durationMs: Number.isFinite(pairedMs) && pairedMs > 0 ? pairedMs : 0,
         hasInput: input !== undefined && input !== '',
         hasRaw: true,
         inputSummary: input ?? null,
@@ -373,7 +397,7 @@ function emitCycleEvents(
 
     // ── 工具结果（response_item 侧）：按 call_id 配对（A6 / 2.12），不按相邻。
     if (type === 'function_call_output' || type === 'custom_tool_call_output') {
-      const output = payload.output ?? '';
+      const output = codexOutputText(payload.output);
       const name = cycleToolName(cycle.rows, payload.call_id) ?? (type === 'custom_tool_call_output' ? 'custom_tool_call_output' : 'function_call_output');
       events.push({
         ...base,
@@ -381,9 +405,10 @@ function emitCycleEvents(
         title: titleFromText(name),
         tool: name,
         status: isErrorOutput(output) ? 'error' : status,
+        error: isErrorOutput(output) ? output.slice(0, 500) : null,
         hasOutput: output.length > 0,
         hasRaw: true,
-        outputSummary: output.length > 0 ? titleFromText(output, 5000) : null,
+        outputSummary: output.length > 0 ? output.slice(0, 5000) : null,
         raw: JSON.stringify(row),
       } as EventWithRaw);
       continue;

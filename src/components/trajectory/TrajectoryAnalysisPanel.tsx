@@ -10,6 +10,7 @@ import { IconError, IconSuccess, IconWarning } from '../icons/index.js';
 export interface TrajectoryAnalysisPanelProps {
   model: TurnModel;
   locale: Locale;
+  onActivate?: (index: number) => void;
 }
 
 const ANOMALY_LABEL: Record<AnomalyRule, string> = {
@@ -35,6 +36,7 @@ function pct(value: number | null): string {
 export function TrajectoryAnalysisPanel({
   model,
   locale,
+  onActivate,
 }: TrajectoryAnalysisPanelProps): React.JSX.Element {
   const analysis = useMemo(() => analyzeTurns(model), [model]);
   const incomplete = !analysis.complete;
@@ -48,10 +50,10 @@ export function TrajectoryAnalysisPanel({
         className={`anomaly-row anomaly-row-${anomaly.severity}`}
       >
         <Icon size={12} />
-        <span className="anomaly-row-detail">
+        <button type="button" className="anomaly-row-detail" onClick={() => onActivate?.(anomaly.turnIndex)}>
           {t('trajectory.analysis.turnIndex', locale).replace('{index}', String(anomaly.turnIndex))} ·{' '}
           {t(ANOMALY_LABEL[anomaly.rule] as never, locale).replace('{detail}', anomaly.detail)}
-        </span>
+        </button>
       </li>
     );
   };
@@ -108,7 +110,7 @@ export function TrajectoryAnalysisPanel({
       </div>
 
       <div className="trajectory-analysis-section">
-        <h4>{t('trajectory.analysis.toolUsage', locale)}</h4>
+        <h4>{t('trajectory.analysis.toolUsage', locale)} · {t('trajectory.toolRecords', locale)}</h4>
         {analysis.toolUsage.length === 0 ? (
           <p className="hint">{t('common.empty', locale)}</p>
         ) : (
@@ -130,6 +132,7 @@ export function TrajectoryAnalysisPanel({
             value: fmtMs(row.value),
           }))}
           locale={locale}
+          onActivate={onActivate}
         />
       </div>
 
@@ -141,6 +144,7 @@ export function TrajectoryAnalysisPanel({
             value: row.value.toLocaleString(),
           }))}
           locale={locale}
+          onActivate={onActivate}
         />
       </div>
 
@@ -152,6 +156,7 @@ export function TrajectoryAnalysisPanel({
             value: pct(point.rate),
           }))}
           locale={locale}
+          onActivate={onActivate}
         />
       </div>
 
@@ -175,9 +180,11 @@ export function TrajectoryAnalysisPanel({
 function AnalysisTopTable({
   rows,
   locale,
+  onActivate,
 }: {
   rows: Array<{ index: number; value: string }>;
   locale: Locale;
+  onActivate?: (index: number) => void;
 }): React.JSX.Element {
   return (
     <table className="trajectory-analysis-table">
@@ -191,7 +198,7 @@ function AnalysisTopTable({
         {rows.map((row) => (
           <tr key={row.index}>
             <td className="mono">
-              {t('trajectory.analysis.turnIndex', locale).replace('{index}', String(row.index))}
+              <button type="button" className="timeline-chip" onClick={() => onActivate?.(row.index)}>{t('trajectory.analysis.turnIndex', locale).replace('{index}', String(row.index))}</button>
             </td>
             <td className="mono">{row.value}</td>
           </tr>

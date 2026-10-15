@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { Locale } from '../../i18n.js';
 import { t } from '../../i18n.js';
@@ -9,8 +9,8 @@ import type {
   TraceTurn,
   TurnModel,
 } from '../../core/trace-types.js';
-import { useVirtualList } from '../../hooks/useVirtualList.js';
 import { TurnCard } from './TurnCard.js';
+import { useVirtualList } from '../../hooks/useVirtualList.js';
 import {
   IconChevronDown,
   IconCommand,
@@ -36,6 +36,11 @@ export interface TurnListProps {
   onActiveTurnChange?: (index: number | null) => void;
   /** 色带激活 / findings 定位：滚动到该回合并展开（零请求）。 */
   focusTurnIndex?: number | null;
+  focusRequest?: number;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  loadMoreError?: string | null;
+  onLoadMore?: () => void;
   loadDetail?: (key: string, eventId: string) => Promise<TraceEvent>;
   loadRaw?: (key: string, eventId: string) => Promise<TraceEventRaw>;
 }
@@ -64,163 +69,150 @@ function fmtDur(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms.toFixed(0)}ms`;
 }
 
-/**
- * D12 TurnList：索引序回合列表，折叠行高固定（--row-lg），>50 回合虚拟滚动
- * （复用 useVirtualList）；展开的回合脱离高度虚拟化、按自然高度渲染
- * （D20）。incompleteness banner 常驻，命名被省略的事件数（D17）。
- */
-export function TurnList({
-  model,
-  sessionKey,
-  locale,
-  durationSource,
-  expandedIndex,
-  onToggleTurn,
-  onActiveTurnChange,
-  focusTurnIndex = null,
-  loadDetail,
-  loadRaw,
-}: TurnListProps): React.JSX.Element {
-  const virtualize = model.turns.length > VIRTUAL_THRESHOLD && expandedIndex === null;
-  const { containerRef, range, onScroll: hookOnScroll } = useVirtualList(
-    virtualize ? model.turns.length : 0,
-    ROW_HEIGHT,
-  );
-  const [expandedHeight, setExpandedHeight] = useState<number | null>(null);
-  const rafRef = useRef(0);
-
-  const itemHeight = useCallback(
-    (index: number): number =>
-      index === expandedIndex ? (expandedHeight ?? ROW_HEIGHT) : ROW_HEIGHT,
-    [expandedIndex, expandedHeight],
-  );
-
-  /** top-most fully visible 回合：第一行 top >= scrollTop（两种路径同一公式）。 */
-  const topMostVisibleIndex = useCallback(
-    (scrollTop: number): number => {
-      const count = model.turns.length;
-      if (count === 0) {
-        return -1;
-      }
-      let offset = 0;
-      for (let index = 0; index < count; index += 1) {
-        const height = itemHeight(index);
-        if (offset + height > scrollTop) {
-          return index;
-        }
-        offset += height;
-      }
-      return count - 1;
-    },
-    [model.turns.length, itemHeight],
-  );
-
-  const onScroll = useCallback(
-    (event: React.UIEvent<HTMLDivElement>): void => {
-      hookOnScroll(event);
-      const top = event.currentTarget.scrollTop;
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(() => {
-        const index = topMostVisibleIndex(top);
-        onActiveTurnChange?.(index < 0 ? null : index);
-      });
-    },
-    [hookOnScroll, topMostVisibleIndex, onActiveTurnChange],
-  );
-
-  // 色带激活 / findings 定位：滚动到目标回合并展开（零请求，D16）。
-  useEffect(() => {
-    if (focusTurnIndex === null) {
-      return;
+/** Window collapsed rows around a single naturally sized expanded turn. */
+export function computeTurnWindow(
+  count: number, scrollTop: number, viewport: number,
+  expandedPosition: number, expandedHeight: number,
+): { start: number; end: number; total: number; offset: (position: number) => number } {
+  const extra = expandedPosition < 0 ? 0 : expandedHeight;
+  const offset = (position: number): number => position * ROW_HEIGHT +
+    (expandedPosition >= 0 && position > expandedPosition ? extra : 0);
+  // Binary search handles a very tall expanded turn without losing subsequent rows.
+  const locate = (pixel: number): number => {
+    let low = 0;
+    let high = count;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (offset(mid + 1) <= pixel) low = mid + 1;
+      else high = mid;
     }
-    onToggleTurn(focusTurnIndex);
-    const raf = requestAnimationFrame(() => {
-      const el = containerRef.current;
-      if (el === null) {
-        return;
-      }
-      let offset = 0;
-      for (let index = 0; index < focusTurnIndex; index += 1) {
-        offset += itemHeight(index);
-      }
-      el.scrollTop = offset;
-    });
-    return () => cancelAnimationFrame(raf);
-    // 仅 focusTurnIndex 驱动；避免展开态变化重触发。
-  }, [focusTurnIndex]);
+    return low;
+  };
+  return {
+    start: Math.max(0, locate(scrollTop) - 10),
+    end: Math.min(count, locate(scrollTop + viewport) + 11),
+    total: count * ROW_HEIGHT + extra,
+    offset,
+  };
+}
 
-  const expandedRef = useCallback(
-    (el: HTMLDivElement | null): void => {
-      if (el !== null) {
-        const height = el.getBoundingClientRect().height;
-        if (height > 0) {
-          setExpandedHeight(height);
-        }
-      }
-    },
-    [expandedIndex],
+export function TurnList({
+  model, sessionKey, locale, durationSource, expandedIndex, onToggleTurn,
+  onActiveTurnChange, focusTurnIndex = null, focusRequest = 0, loadDetail, loadRaw,
+  hasMore = false, loadingMore = false, loadMoreError = null, onLoadMore,
+}: TurnListProps): React.JSX.Element {
+  const virtualize = model.turns.length > VIRTUAL_THRESHOLD;
+  const { containerRef, range, onScroll: collapsedOnScroll } = useVirtualList(
+    virtualize ? model.turns.length : 0, ROW_HEIGHT,
   );
+  const expandedElement = useRef<HTMLDivElement | null>(null);
+  const [expandedHeight, setExpandedHeight] = useState(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewport, setViewport] = useState(600);
+  const rafRef = useRef(0);
+  const expandedPosition = model.turns.findIndex((turn) => turn.index === expandedIndex);
+  const window = expandedPosition < 0
+    ? { start: range.startIndex, end: range.endIndex, total: range.totalHeight, offset: (position: number) => position * ROW_HEIGHT }
+    : computeTurnWindow(model.turns.length, scrollTop, viewport, expandedPosition, expandedHeight);
 
-  const rows =
-    virtualize
-      ? model.turns.slice(range.startIndex, range.endIndex)
-      : model.turns;
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = (): void => setViewport(el.clientHeight || 600);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(el);
+    return () => observer?.disconnect();
+  }, []);
+
+  // Re-measure when an event body, tool renderer or Raw pane changes height.
+  useLayoutEffect(() => {
+    setExpandedHeight(0);
+    const el = expandedElement.current;
+    if (!el) return;
+    const measure = (): void => setExpandedHeight(el.getBoundingClientRect().height);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(el);
+    return () => observer?.disconnect();
+  }, [expandedIndex, sessionKey]);
+
+  const scrollToPosition = (position: number): void => {
+    const el = containerRef.current;
+    if (!el) return;
+    // Called after choosing a turn: all preceding rows are now collapsed.
+    const top = Math.max(0, position * ROW_HEIGHT);
+    el.scrollTop = top;
+    setScrollTop(el.scrollTop);
+    onActiveTurnChange?.(model.turns[position]?.index ?? null);
+  };
+
+  useLayoutEffect(() => {
+    if (expandedPosition >= 0) scrollToPosition(expandedPosition);
+    // Selection changes should reveal its header; body measurements must not reset reading.
+  }, [expandedIndex, sessionKey]);
+
+  useEffect(() => {
+    if (focusTurnIndex === null) return;
+    const position = model.turns.findIndex((turn) => turn.index === focusTurnIndex);
+    if (position < 0) return;
+    if (expandedIndex !== focusTurnIndex) onToggleTurn(focusTurnIndex);
+    else scrollToPosition(position);
+  }, [focusTurnIndex, focusRequest]);
+
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+
+  const onScroll = (event: React.UIEvent<HTMLDivElement>): void => {
+    collapsedOnScroll(event);
+    const el = event.currentTarget;
+    const top = el.scrollTop;
+    if (hasMore && !loadingMore && loadMoreError === null && el.scrollHeight - top - el.clientHeight < ROW_HEIGHT * 5) {
+      onLoadMore?.();
+    }
+    setScrollTop(top);
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      const current = computeTurnWindow(model.turns.length, top, 0, expandedPosition, expandedHeight);
+      const position = Math.min(model.turns.length - 1, current.start + 10);
+      // At the beginning the overscan clamps; derive the actual containing row.
+      let visible = Math.max(0, position);
+      while (visible > 0 && current.offset(visible) > top) visible -= 1;
+      while (visible + 1 < model.turns.length && current.offset(visible + 1) <= top) visible += 1;
+      onActiveTurnChange?.(model.turns[visible]?.index ?? null);
+    });
+  };
+
+  const positions = virtualize
+    ? Array.from({ length: Math.max(0, window.end - window.start) }, (_, i) => window.start + i)
+    : model.turns.map((_, i) => i);
+  // Keep the expanded card mounted while scrolling away, preserving body state and cache.
+  if (virtualize && expandedPosition >= 0 && !positions.includes(expandedPosition)) {
+    positions.push(expandedPosition);
+    positions.sort((a, b) => a - b);
+  }
+  const row = (position: number): React.JSX.Element => {
+    const turn = model.turns[position]!;
+    return <TurnRow key={turn.index} turn={turn} locale={locale}
+      expanded={turn.index === expandedIndex} onToggle={() => onToggleTurn(turn.index)}
+      expandedRef={turn.index === expandedIndex ? (el) => { expandedElement.current = el; } : undefined}
+      sessionKey={sessionKey} durationSource={durationSource} loadDetail={loadDetail} loadRaw={loadRaw} />;
+  };
 
   return (
     <div className="turn-list">
-      {!model.complete && (
-        <div className="turn-list-banner" role="alert">
-          <IconWarning size={12} />
-          {t('trajectory.incomplete.banner', locale).replace('{n}', String(model.omittedEventCount))}
-        </div>
-      )}
-      <div
-        ref={containerRef}
-        className="turn-list-scroll"
-        role="list"
-        aria-label={t('trajectory.pill.turns', locale)}
-        onScroll={onScroll}
-      >
-        {virtualize ? (
-          <div style={{ height: range.totalHeight, position: 'relative' }}>
-            <div style={{ transform: `translateY(${range.offsetY}px)` }}>
-              {rows.map((turn) => (
-                <TurnRow
-                  key={turn.index}
-                  turn={turn}
-                  locale={locale}
-                  expanded={turn.index === expandedIndex}
-                  onToggle={() => onToggleTurn(turn.index)}
-                  expandedRef={turn.index === expandedIndex ? expandedRef : undefined}
-                  sessionKey={sessionKey}
-                  durationSource={durationSource}
-                  loadDetail={loadDetail}
-                  loadRaw={loadRaw}
-                />
-              ))}
-            </div>
-          </div>
-        ) : (
-          rows.map((turn) => (
-            <TurnRow
-              key={turn.index}
-              turn={turn}
-              locale={locale}
-              expanded={turn.index === expandedIndex}
-              onToggle={() => onToggleTurn(turn.index)}
-              expandedRef={turn.index === expandedIndex ? expandedRef : undefined}
-              sessionKey={sessionKey}
-              durationSource={durationSource}
-              loadDetail={loadDetail}
-              loadRaw={loadRaw}
-            />
-          ))
-        )}
-        {model.turns.length === 0 && (
-          <p className="hint" style={{ padding: 'var(--space-3)' }}>
-            {t('trajectory.turn.empty', locale)}
-          </p>
-        )}
+      {!model.complete && <div className="turn-list-banner" role="alert"><IconWarning size={12} />
+        <span>{t('trajectory.incomplete.banner', locale).replace('{n}', String(model.omittedEventCount))}</span>
+        {hasMore && onLoadMore && <button type="button" className="btn ui-btn-sm" disabled={loadingMore}
+          onClick={onLoadMore}>{t(loadingMore ? 'trajectory.loadingMore' : 'trajectory.loadMore', locale)}</button>}
+        {loadMoreError && <span>{loadMoreError}</span>}
+      </div>}
+      <div ref={containerRef} className="turn-list-scroll" role="list" tabIndex={0}
+        aria-label={t('trajectory.pill.turns', locale)} onScroll={onScroll}>
+        {virtualize ? <div style={{ height: window.total, position: 'relative' }}>
+          {positions.map((position) => <div key={model.turns[position]!.index}
+            style={{ position: 'absolute', top: window.offset(position), width: '100%' }}>{row(position)}</div>)}
+        </div> : positions.map(row)}
+        {!model.turns.length && <p className="hint" style={{ padding: 'var(--space-3)' }}>{t('trajectory.turn.empty', locale)}</p>}
       </div>
     </div>
   );
@@ -255,6 +247,7 @@ function TurnRow({
         aria-expanded={expanded}
         onClick={onToggle}
       >
+        <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
         <span className="turn-row-index mono">
           {t('trajectory.turn.title', locale).replace('{index}', String(turn.index))}
         </span>
@@ -278,7 +271,7 @@ function TurnRow({
         </span>
         <span className="turn-row-tokens mono">
           {t('trajectory.pill.input', locale)} {turn.tokens.input.toLocaleString()} ·{' '}
-          {t('trajectory.pill.cacheRate', locale)} {turn.tokens.cacheRead.toLocaleString()} ·{' '}
+          {t('trajectory.cachedTokens', locale)} {turn.tokens.cacheRead.toLocaleString()} ·{' '}
           {t('trajectory.pill.output', locale)} {turn.tokens.output.toLocaleString()}
         </span>
         <span className="turn-row-duration mono">{fmtDur(turn.durationMs)}</span>

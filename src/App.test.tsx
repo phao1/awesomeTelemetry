@@ -215,12 +215,16 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     expect(container.querySelector('.session-toolbar')).not.toBeNull();
     expect(container.querySelector('.session-toolbar-title')?.textContent).toContain('fix build');
     expect(container.querySelector('.session-findings-panel')).not.toBeNull();
-    // 被删除的时间线/检查器换成 turn 表面：统计条 + 色带 + 回合列表
+    // 只有一条等宽回合导航，统计与分析收在列表下方。
     expect(container.querySelector('.gantt-wrap')).toBeNull();
     expect(container.querySelector('.timeline-phase-axis')).toBeNull();
     expect(container.querySelector('.trajectory-pane')).not.toBeNull();
     expect(container.querySelector('.trajectory-statbar')).not.toBeNull();
-    expect(container.querySelector('.turn-ribbon')).not.toBeNull();
+    expect(container.querySelectorAll('.trajectory-overview')).toHaveLength(1);
+    expect(container.querySelector('.turn-navigator')).not.toBeNull();
+    expect(container.querySelector('.turn-ribbon')).toBeNull();
+    expect(container.querySelector('.turn-navigation')).toBeNull();
+    expect(container.querySelector('.session-signals')).toBeNull();
     expect(container.querySelector('.turn-list')).not.toBeNull();
     // llm_boundary：两个 llm 事件 → 两个回合行
     expect(container.querySelectorAll('.turn-row').length).toBe(2);

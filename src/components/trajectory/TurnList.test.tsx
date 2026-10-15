@@ -1,10 +1,10 @@
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { TraceEvent, TraceTurn, TurnMessage, TurnModel } from '../../core/trace-types.js';
 import { eventDetailCache } from '../../cache/caches.js';
-import { TurnList } from './TurnList.js';
+import { computeTurnWindow, TurnList } from './TurnList.js';
 import { groupMessages } from './TurnCard.js';
 
 const containers: HTMLDivElement[] = [];
@@ -220,4 +220,70 @@ describe('TurnList（D12）', () => {
       expect(assistantItem.toolCalls.map((m) => m.eventId)).toEqual(['toolu_1']);
     }
   });
+});
+
+describe('Turn reading navigation', () => {
+  it('keeps rows after a tall expanded turn reachable and windowed', () => {
+    const middle = computeTurnWindow(200, 5000, 600, 10, 10000);
+    expect(middle.start).toBe(0);
+    expect(middle.end).toBeLessThan(35);
+    expect(middle.total).toBe(18800);
+    expect(middle.offset(11)).toBe(10484);
+    const after = computeTurnWindow(200, 14400, 600, 10, 10000);
+    expect(after.start).toBe(90);
+    expect(after.end - after.start).toBeLessThan(40);
+    expect(after.offset(100)).toBe(14400);
+  });
+
+  it('expanding one of 200 turns does not mount all collapsed rows or fetch bodies', () => {
+    const turns = Array.from({ length: 200 }, (_, i) => turn(i, [message(`e${i}`, 'assistant', i)]));
+    const loadDetail = vi.fn(async () => fullUnusedEvent());
+    function fullUnusedEvent(): TraceEvent { throw new Error('Unexpected body fetch'); }
+    const { unmount } = mount(<TurnList model={model(turns)} sessionKey="virtual" locale="en"
+      expandedIndex={100} onToggleTurn={() => undefined} loadDetail={loadDetail} />);
+    expect(document.querySelectorAll('.turn-row').length).toBeLessThan(45);
+    expect(document.querySelector('.turn-row-on')?.textContent).toContain('Turn 100');
+    expect(loadDetail).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('keeps the reading list free of a second navigation row and toggles a turn in place', () => {
+    const m = model([turn(0, [message('a', 'user', 1)]), turn(1, [message('b', 'assistant', 2)]), turn(2, [message('c', 'tool', 3)])]);
+    function Reader(): React.JSX.Element {
+      const [selected, setSelected] = useState<number | null>(null);
+      return <TurnList model={m} sessionKey="nav" locale="en" expandedIndex={selected}
+        onToggleTurn={(index) => setSelected((prev) => prev === index ? null : index)} />;
+    }
+    const { unmount } = mount(<Reader />);
+    expect(document.querySelector('.turn-navigation')).toBeNull();
+    act(() => (document.querySelectorAll('.turn-row')[0] as HTMLButtonElement).click());
+    expect(document.querySelector('.turn-row-on')?.textContent).toContain('Turn 0');
+    act(() => (document.querySelectorAll('.turn-row')[0] as HTMLButtonElement).click());
+    expect(document.querySelector('.turn-row-on')).toBeNull();
+    unmount();
+  });
+});
+
+it('真实 Codex 形态：两张工具卡可读，五类无正文记录收进运行记录且不预取', async () => {
+  const messages = [
+    message('opaque', 'reasoning', 1, { title: '', hasRaw: true }),
+    message('call', 'tool', 2, { tool: 'exec', hasInput: true }),
+    message('usage', 'system', 3, { title: '' }),
+    message('lifecycle', 'system', 4, { title: 'item_completed' }),
+    message('result', 'tool', 5, { tool: 'exec', hasOutput: true }),
+    message('tokens', 'assistant', 6, { title: 'token_count' }),
+  ];
+  const loadDetail = vi.fn(async (_key: string, id: string) => ({ id, inputSummary: 'run the check' } as TraceEvent));
+  const { unmount } = mount(<TurnList model={model([turn(12, messages)])} sessionKey="real-shape" locale="zh" expandedIndex={12}
+    onToggleTurn={() => undefined} loadDetail={loadDetail} />);
+  expect(document.querySelectorAll('.turn-card > .message-card').length).toBe(2);
+  expect((document.querySelector('.turn-metadata') as HTMLDetailsElement).open).toBe(false);
+  expect(document.querySelector('.turn-metadata')!.textContent).toContain('4 条运行记录');
+  expect(loadDetail).not.toHaveBeenCalled();
+  act(() => (document.querySelector('.turn-card > .message-card .message-card-toggle') as HTMLButtonElement).click());
+  await act(async () => { await Promise.resolve(); });
+  expect(loadDetail).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('.turn-card > .message-card')!.textContent).toContain('run the check');
+  expect(document.querySelector('.turn-card > .message-card')!.textContent).not.toContain('无结果记录');
+  unmount();
 });

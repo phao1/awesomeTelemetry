@@ -6,7 +6,7 @@ import { LAYOUT_KEYS, LAYOUT_RANGES, loadNumber } from '../../layout.js';
 export interface TrajectoryRailProps {
   /** 上下文 rail 内容（AgentHierarchyPanel）。 */
   rail: ReactNode;
-  /** turn 区域（TrajectoryStatBar + TurnRibbon + TurnList…）。 */
+  /** 阅读区域（TurnList）；合并概览位于 rail 上方。 */
   turnArea: ReactNode;
   /** 用户主动折叠（[ 键 / rail 头按钮）。 */
   collapsed: boolean;
@@ -51,7 +51,7 @@ export function TrajectoryRail({
   );
 
   return (
-    <div className="trajectory-body">
+    <div className={`trajectory-body ${railCollapsed ? 'trajectory-body-collapsed' : ''}`}>
       <SplitPane
         direction="horizontal"
         initialSize={railCollapsed ? 0 : initialWidth}

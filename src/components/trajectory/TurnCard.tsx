@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import type { Locale } from '../../i18n.js';
 import { t } from '../../i18n.js';
 import type { DurationSource, TraceEvent, TraceEventRaw, TraceTurn, TurnMessage } from '../../core/trace-types.js';
+import { SLOW_TURN_THRESHOLD_MS } from '../../core/turn-analysis.js';
 import { MessageCard } from './MessageCard.js';
 
 export interface TurnCardProps {
@@ -67,20 +68,10 @@ export function TurnCard({
   loadDetail,
   loadRaw,
 }: TurnCardProps): React.JSX.Element {
-  const items = useMemo(() => groupMessages(turn.messages), [turn.messages]);
-  const meta = useMemo(() => {
-    let input = 0;
-    let cacheRead = 0;
-    let output = 0;
-    for (const message of turn.messages) {
-      if (message.tokens !== null) {
-        input += message.tokens.input;
-        cacheRead += message.tokens.cacheRead;
-        output += message.tokens.output;
-      }
-    }
-    return { input, cacheRead, output };
-  }, [turn.messages]);
+  const isMetadata = (m: TurnMessage): boolean => !m.hasInput && !m.hasOutput && m.error === null && m.status !== 'error' &&
+    (m.role === 'system' || m.role === 'reasoning' || (m.role === 'assistant' && m.title === 'token_count'));
+  const metadata = turn.messages.filter(isMetadata);
+  const items = useMemo(() => groupMessages(turn.messages.filter((m) => !isMetadata(m))), [turn.messages]);
 
   return (
     <div
@@ -88,13 +79,16 @@ export function TurnCard({
       role="region"
       aria-label={t('trajectory.turn.title', locale).replace('{index}', String(turn.index))}
     >
-      <div className="trajectory-turn-meta mono">
-        {t('trajectory.pill.input', locale)} {meta.input.toLocaleString()} ·{' '}
-        {t('trajectory.pill.cacheRate', locale)} {meta.cacheRead.toLocaleString()} ·{' '}
-        {t('trajectory.pill.output', locale)} {meta.output.toLocaleString()} ·{' '}
-        {t('trajectory.turn.messages', locale).replace('{n}', String(turn.messageCount))}
+      <div className="trajectory-turn-meta">
+        <span>{t('trajectory.turn.execution', locale)}</span>
+        <span className="mono">{t('trajectory.toolCounts', locale)
+          .replace('{calls}', String(turn.messages.filter((m) => m.role === 'tool' && m.hasInput).length))
+          .replace('{results}', String(turn.messages.filter((m) => m.role === 'tool' && m.hasOutput && !m.hasInput).length))}</span>
+        <span className="hint">{t(durationSource === 'derived' ? 'trajectory.timing.derived' : 'trajectory.timing.recorded', locale)}</span>
       </div>
-      {items.length === 0 && (
+      {durationSource === 'derived' && turn.durationMs >= SLOW_TURN_THRESHOLD_MS && !turn.messages.some((m) => m.role === 'tool' && m.hasInput) &&
+        <p className="trajectory-unattributed-gap">{t('trajectory.unattributedGap', locale)}</p>}
+      {items.length === 0 && metadata.length === 0 && (
         <p className="turn-card-empty">{t('trajectory.turn.empty', locale)}</p>
       )}
       {items.map((item, index) =>
@@ -115,12 +109,19 @@ export function TurnCard({
             locale={locale}
             sessionKey={sessionKey}
             message={item.message}
+            initialView={item.message.role === 'tool' && item.message.hasInput && !item.message.hasOutput ? 'input' : 'rendered'}
             durationSource={durationSource}
             loadDetail={loadDetail}
             loadRaw={loadRaw}
           />
         ),
       )}
+      {metadata.length > 0 && <details className="turn-metadata">
+        <summary>{t('trajectory.metadata', locale).replace('{n}', String(metadata.length))}</summary>
+        <p className="hint">{t('trajectory.metadata.explanation', locale)}</p>
+        {metadata.map((message) => <MessageCard key={message.eventId} locale={locale} sessionKey={sessionKey}
+          message={message} loadDetail={loadDetail} loadRaw={loadRaw} />)}
+      </details>}
     </div>
   );
 }

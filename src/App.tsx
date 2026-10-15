@@ -1,7 +1,6 @@
 import {
   startTransition,
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -14,10 +13,8 @@ import type {
   SessionIndexEntry,
   SessionRange,
   TraceEventSlim,
-  TracePhase,
   TraceStatus,
 } from './core/trace-types.js';
-import { TRACE_PHASES } from './core/trace-types.js';
 import {
   errorMessage,
   getStoredLocale,
@@ -35,12 +32,7 @@ import { LiveIndicator } from './components/LiveIndicator.js';
 import { SessionList } from './components/SessionList.js';
 import { SessionToolbar } from './components/SessionToolbar.js';
 import { SessionFindings } from './components/SessionFindings.js';
-import { PhaseRibbon } from './components/PhaseRibbon.js';
 import { SessionVisuals } from './components/SessionVisuals.js';
-import { PhaseTiles } from './components/PhaseTiles.js';
-import { TimeCompositionBar } from './components/TimeCompositionBar.js';
-import { computeTimeComposition, type TimeSegmentKey } from './core/time-composition.js';
-import { computePhaseTrends } from './core/phase-trend.js';
 import { TrajectoryPane } from './components/trajectory/TrajectoryPane.js';
 import { AgentOverview } from './components/AgentOverview.js';
 import { CompareBoard } from './components/CompareBoard.js';
@@ -67,10 +59,8 @@ import {
   LAYOUT_RANGES,
   loadBool,
   loadNumber,
-  loadRibbonMode,
   storeBool,
   storeNumber,
-  storeRibbonMode,
 } from './layout.js';
 import {
   installKeyboardShortcuts,
@@ -78,7 +68,7 @@ import {
   setEscapeFallback,
 } from './keyboard.js';
 import { HelpModal } from './components/HelpModal.js';
-import { parseHash, serializeHash, type HashState, type RibbonMode } from './hash-router.js';
+import { parseHash, serializeHash, type HashState } from './hash-router.js';
 import type { CommandPaletteProps } from './components/CommandPalette.js';
 import { computeFindings, type Finding } from './core/session-findings.js';
 
@@ -115,18 +105,6 @@ export default function App() {
   const [detail, setDetail] = useState<SessionDetailResponse | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [phaseFilter, setPhaseFilter] = useState<TracePhase[]>(() => {
-    const phases = INITIAL_HASH?.phase;
-    if (phases === undefined) {
-      return [...TRACE_PHASES];
-    }
-    const valid = phases.filter((phase): phase is TracePhase =>
-      (TRACE_PHASES as readonly string[]).includes(phase),
-    );
-    return valid.length > 0 ? valid : [...TRACE_PHASES];
-  });
-  const deferredPhaseFilter = useDeferredValue(phaseFilter); // REQ-002
-  const [timeSegFilter, setTimeSegFilter] = useState<TimeSegmentKey | null>(null);
   // fix-session-detail-display delta：会话列表服务端过滤 + 甘特布局模式
   const [sessionQ, setSessionQ] = useState(() => INITIAL_HASH?.q ?? '');
   const [sessionRange, setSessionRange] = useState<SessionRange>(
@@ -141,15 +119,14 @@ export default function App() {
   const [railCollapsed, setRailCollapsed] = useState(() =>
     loadBool(LAYOUT_KEYS.railCollapsed, false),
   );
-  // add-trajectory-inspector D18：色带模式（hash 优先于 localStorage）。
-  const [ribbonMode, setRibbonMode] = useState<RibbonMode>(
-    () => INITIAL_HASH?.ribbon ?? loadRibbonMode(LAYOUT_KEYS.trajectoryRibbonMode),
-  );
   const [selectedTurn, setSelectedTurn] = useState<number | null>(
     () => INITIAL_HASH?.turn ?? null,
   );
   /** 轨迹 rail（详情内右栏）折叠态；宽度由 SplitPane 自行持久化（D18）。 */
-  const [trajectoryRailCollapsed, setTrajectoryRailCollapsed] = useState(false);
+  const [trajectoryRailCollapsed, setTrajectoryRailCollapsed] = useState(true);
+  const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
+  const [moreEventsError, setMoreEventsError] = useState<string | null>(null);
+  const eventPageRequest = useRef<object | null>(null);
   const [fontPx, setFontPx] = useState(() =>
     loadNumber(LAYOUT_KEYS.fontSize, BASE_FONT_PX, LAYOUT_RANGES.fontSize),
   ); // REQ-012：8–28px
@@ -205,9 +182,6 @@ export default function App() {
   useEffect(() => {
     storeBool(LAYOUT_KEYS.railCollapsed, railCollapsed);
   }, [railCollapsed]);
-  useEffect(() => {
-    storeRibbonMode(LAYOUT_KEYS.trajectoryRibbonMode, ribbonMode);
-  }, [ribbonMode]);
   useEffect(() => {
     storeNumber(LAYOUT_KEYS.fontSize, fontPx);
     // A− / A+ 此前只作为 prop 传给 EventInspector，对其余界面完全无效。
@@ -354,6 +328,9 @@ export default function App() {
   const selectSession = useCallback(
     (key: string) => {
       selectedKeyRef.current = key;
+      eventPageRequest.current = null;
+      setLoadingMoreEvents(false);
+      setMoreEventsError(null);
       setSelectedKey(key);
       const cached = recordCache.get(`${key}:slim`);
       if (cached !== undefined) {
@@ -386,37 +363,39 @@ export default function App() {
     [],
   );
 
-  const timeComposition = useMemo(
-    () => computeTimeComposition((detail?.events ?? []) as TraceEventSlim[]),
-    [detail],
-  );
-  const phaseCounts = useMemo(() => {
-    const counts = Object.fromEntries(
-      TRACE_PHASES.map((phase) => [phase, 0]),
-    ) as Record<TracePhase, number>;
-    for (const e of detail?.events ?? []) {
-      counts[e.phase as TracePhase] += 1;
-    }
-    return counts;
-  }, [detail]);
-  const phaseTrends = useMemo(
-    () => computePhaseTrends((detail?.events ?? []) as TraceEventSlim[]),
-    [detail],
-  );
-  const visibleEvents = useMemo(() => {
-    if (detail === null) {
-      return [];
-    }
-    let events = detail.events.filter((e) => deferredPhaseFilter.includes(e.phase as TracePhase));
-    if (timeSegFilter !== null) {
-      const segment = timeComposition.segments.find((s) => s.key === timeSegFilter);
-      if (segment !== undefined) {
-        const ids = new Set(segment.eventIds);
-        events = events.filter((e) => ids.has(e.id));
+  const loadMoreEvents = useCallback(() => {
+    if (detail === null || !detail.hasMore || selectedKey === null || eventPageRequest.current !== null) return;
+    const key = selectedKey;
+    const base = detail;
+    const request = {};
+    eventPageRequest.current = request;
+    setLoadingMoreEvents(true);
+    setMoreEventsError(null);
+    void api.sessionDetail(key, 'slim', base.events.length, 2000).then((page) => {
+      if (selectedKeyRef.current !== key || eventPageRequest.current !== request) return;
+      if (page.eventOffset !== base.events.length || (page.hasMore && page.events.length === 0)) {
+        throw new Error('Invalid event page: unexpected offset or empty continuation');
       }
-    }
-    return events;
-  }, [detail, deferredPhaseFilter, timeSegFilter, timeComposition]);
+      setDetail((current) => {
+        if (current !== base) return current;
+        const merged: SessionDetailResponse = {
+          ...base, events: [...base.events, ...page.events],
+          eventTotal: page.eventTotal, hasMore: page.hasMore,
+        };
+        recordCache.set(`${key}:slim`, merged);
+        return merged;
+      });
+    }).catch((err: unknown) => {
+      if (selectedKeyRef.current === key && eventPageRequest.current === request) {
+        setMoreEventsError(formatError(err, localeRef.current));
+      }
+    }).finally(() => {
+      if (eventPageRequest.current === request) {
+        eventPageRequest.current = null;
+        setLoadingMoreEvents(false);
+      }
+    });
+  }, [detail, selectedKey]);
 
   // ui-design-v2 §3.1：会话诊断（L1）——只依赖已有 slim 数据。
   const findingsResult = useMemo(
@@ -425,17 +404,15 @@ export default function App() {
   );
   const activateFinding = useCallback(
     (finding: Finding) => {
-      if (finding.evidence.eventIds.length > 0 && detail !== null) {
+      if (detail !== null) {
         const targetIds = new Set(finding.evidence.eventIds);
-        const target = detail.events.find((e) => targetIds.has(e.id));
+        const target = detail.events.find((e) => targetIds.has(e.id)) ??
+          detail.events.find((e) => e.phase === finding.evidence.phase);
         if (target !== undefined) {
           // 甘特与 Inspector 已删除：定位到目标事件所在的回合。
           setFocusEventId(target.id);
           return;
         }
-      }
-      if (finding.evidence.phase !== undefined) {
-        setPhaseFilter([finding.evidence.phase]);
       }
     },
     [detail],
@@ -469,12 +446,6 @@ export default function App() {
     },
     [sessions, switchView],
   );
-
-  const togglePhase = useCallback((phase: TracePhase) => {
-    setPhaseFilter((prev) =>
-      prev.includes(phase) ? prev.filter((p) => p !== phase) : [...prev, phase],
-    );
-  }, []);
 
   const adjustFont = useCallback((delta: number) => {
     setFontPx((prev) => Math.min(28, Math.max(8, prev + delta)));
@@ -548,19 +519,17 @@ export default function App() {
     const state: HashState = {
       view,
       ...(selectedKey !== null ? { key: selectedKey } : {}),
-      ...(phaseFilter.length < TRACE_PHASES.length ? { phase: phaseFilter } : {}),
       ...(providerFilter.length > 0 ? { provider: providerFilter } : {}),
       ...(statusFilter.length > 0 ? { status: statusFilter } : {}),
       ...(sessionQ !== '' ? { q: sessionQ } : {}),
       ...(view === 'session' ? { time: sessionRange } : {}),
-      ...(view === 'session' ? { ribbon: ribbonMode } : {}),
       ...(view === 'session' && selectedTurn !== null ? { turn: selectedTurn } : {}),
       ...(compareLeft !== '' ? { left: compareLeft } : {}),
       ...(compareRight !== '' ? { right: compareRight } : {}),
       ...(view === 'mission' ? { range: missionRange } : {}),
     };
     history.replaceState(null, '', serializeHash(state));
-  }, [view, selectedKey, phaseFilter, providerFilter, statusFilter, sessionQ, sessionRange, ribbonMode, selectedTurn, compareLeft, compareRight, missionRange]);
+  }, [view, selectedKey, providerFilter, statusFilter, sessionQ, sessionRange, selectedTurn, compareLeft, compareRight, missionRange]);
 
   // REQ-024：hashchange → 解析并应用（脏 hash 回落默认视图，不抛错）
   useEffect(() => {
@@ -574,12 +543,6 @@ export default function App() {
       if (state.key !== undefined) {
         selectSession(state.key);
       }
-      if (state.phase !== undefined) {
-        const valid = state.phase.filter((phase): phase is TracePhase =>
-          (TRACE_PHASES as readonly string[]).includes(phase),
-        );
-        setPhaseFilter(valid.length > 0 ? valid : [...TRACE_PHASES]);
-      }
       if (state.provider !== undefined) {
         setProviderFilter(state.provider as ProviderKey[]);
       }
@@ -591,9 +554,6 @@ export default function App() {
       }
       if (state.time !== undefined) {
         setSessionRange(state.time);
-      }
-      if (state.ribbon !== undefined) {
-        setRibbonMode(state.ribbon);
       }
       if (state.turn !== undefined) {
         setSelectedTurn(state.turn);
@@ -786,31 +746,6 @@ export default function App() {
                     没有它时时间线只能分到「剩下的高度」——1280×800 下剩 0px，
                     且 overflow 一路 visible 到 document，滚都滚不到。 */}
                 <div className="session-scroll">
-                <div className="session-signals">
-                  <PhaseRibbon
-                    events={detail.events as TraceEventSlim[]}
-                    active={phaseFilter}
-                    onSelectOnly={(phase) => setPhaseFilter([phase])}
-                    locale={locale}
-                  />
-                  <TimeCompositionBar
-                    composition={timeComposition}
-                    locale={locale}
-                    active={timeSegFilter}
-                    onToggle={setTimeSegFilter}
-                  />
-                  <PhaseTiles
-                    active={phaseFilter}
-                    onToggle={togglePhase}
-                    locale={locale}
-                    counts={phaseCounts}
-                    visibleCount={visibleEvents.length}
-                    onSelectAll={() => setPhaseFilter([...TRACE_PHASES])}
-                    onClearAll={() => setPhaseFilter([])}
-                    findingPhases={[]}
-                    trends={phaseTrends}
-                  />
-                </div>
                 <div className="session-canvas">
                   {findingsResult !== null && (
                     <details className="session-findings-panel">
@@ -826,8 +761,6 @@ export default function App() {
                     locale={locale}
                     sessionKey={selectedKey ?? ''}
                     detail={detail}
-                    ribbonMode={ribbonMode}
-                    onRibbonModeChange={setRibbonMode}
                     selectedTurn={selectedTurn}
                     onSelectedTurnChange={setSelectedTurn}
                     focusEventId={focusEventId}
@@ -835,6 +768,10 @@ export default function App() {
                       setFocusEventId(null);
                       selectSession(key);
                     }}
+                    hasMoreEvents={detail.hasMore}
+                    loadingMoreEvents={loadingMoreEvents}
+                    moreEventsError={moreEventsError}
+                    onLoadMoreEvents={loadMoreEvents}
                     railCollapsed={trajectoryRailCollapsed}
                     onToggleRailCollapse={() => setTrajectoryRailCollapsed((prev) => !prev)}
                   />

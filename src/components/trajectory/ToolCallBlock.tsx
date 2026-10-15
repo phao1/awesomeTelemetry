@@ -94,7 +94,7 @@ export function ToolCallBlock({
           <span className="hint">{t('trajectory.card.loading', locale)}</span>
         </div>
       )}
-      {error === null && !loading && argsText === null && (
+      {error === null && !loading && argsText === null && message.hasInput && (
         <div className="tool-call-block-args">
           <span className="message-card-empty">{t('trajectory.toolResult.empty', locale)}</span>
         </div>

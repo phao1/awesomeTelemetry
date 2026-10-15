@@ -299,3 +299,27 @@ describe('MessageCard（D4 / D12）', () => {
     expect(isCallShapedId('not-a-call-id')).toBe(false);
   });
 });
+
+describe('Direct input and output inspection', () => {
+  it('opens input in one click, switches output without another request and keeps source separate', async () => {
+    const loadDetail = vi.fn(async () => fullEvent({ inputSummary: 'unique input payload', outputSummary: 'unique output payload' }));
+    const loadRaw = vi.fn();
+    const { unmount } = mount(<MessageCard locale="en" sessionKey="direct-io" message={toolMessage()} loadDetail={loadDetail} loadRaw={loadRaw} />);
+    const headerInput = document.querySelectorAll('.message-card-header button')[1] as HTMLButtonElement;
+    await act(async () => { headerInput.click(); });
+    expect(document.querySelector('.message-card-body')?.textContent).toContain('unique input payload');
+    expect(document.querySelector('.message-card-body')?.textContent).not.toContain('unique output payload');
+    const headerOutput = document.querySelectorAll('.message-card-header button')[2] as HTMLButtonElement;
+    await act(async () => { headerOutput.click(); });
+    expect(document.querySelector('.message-card-body')?.textContent).toContain('unique output payload');
+    expect(document.querySelector('.message-card-body')?.textContent).not.toContain('unique input payload');
+    expect(loadDetail).toHaveBeenCalledTimes(1);
+    expect(loadRaw).not.toHaveBeenCalled();
+    const source = Array.from(document.querySelectorAll('.message-card-view-control button')).find((b) => b.textContent === 'Input / output source') as HTMLButtonElement;
+    act(() => source.click());
+    expect(document.querySelector('.message-card-body')?.textContent).toContain('unique input payload');
+    expect(document.querySelector('.message-card-body')?.textContent).toContain('unique output payload');
+    expect(document.querySelectorAll('.message-card-body pre')).toHaveLength(2);
+    unmount();
+  });
+});

@@ -442,6 +442,17 @@ describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
     expect(r.events.every((e) => e.turnKey === key(r, 'fc-a'))).toBe(true);
   });
 
+  it('工具时长按 call_id 对应的结果时间计算，穿过交错的系统记录', () => {
+    const rows: CodexRawRow[] = [
+      row('response_item', { type: 'custom_tool_call', id: 'call-a', call_id: 'call_00_A', name: 'exec', input: 'run' }, '2026-08-01T00:00:00.000Z'),
+      row('event_msg', { type: 'item_completed' }, '2026-08-01T00:00:00.100Z'),
+      row('response_item', { type: 'custom_tool_call_output', id: 'out-a', call_id: 'call_00_A:2', output: 'done' }, '2026-08-01T00:00:02.500Z'),
+    ];
+    const r = normalizeCodexSample(sample(rows), SRC);
+    expect(r.events.find((event) => event.id === 'call-a')?.durationMs).toBe(2500);
+    expect(r.events.find((event) => event.id === 'out-a')?.durationMs).toBe(0);
+  });
+
   // ── §2.5 / §2.10 / §2.11 ──
   it('2.5 turn_aborted 令受影响周期的事件携带 cancelled 状态', () => {
     const rows: CodexRawRow[] = [
@@ -601,5 +612,34 @@ describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
     expect(r.events.filter((e) => e.title === 'token_count')).toHaveLength(6);
     expect(r.session.eventCount).toBe(43);
     expect(r.session.status).toBe('cancelled');
+  });
+});
+
+describe('Codex diagnostic evidence', () => {
+  it('preserves native content array newlines and detects explicit nonzero exit status', () => {
+    const r = normalizeCodexSample(sample([
+      row('response_item', { type: 'function_call', id: 'call', call_id: 'c', name: 'exec', arguments: 'check' }),
+      row('response_item', { type: 'function_call_output', id: 'result', call_id: 'c', output: [{ type: 'input_text', text: 'line 1\nline 2\nProcess exited with code 2' }] }),
+    ]), SRC);
+    const result = r.events.find((e) => e.id === 'result')!;
+    expect(result.outputSummary).toBe('line 1\nline 2\nProcess exited with code 2');
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('code 2');
+  });
+  it('does not flag a successful command merely because its output mentions errors', () => {
+    const r = normalizeCodexSample(sample([
+      row('response_item', { type: 'function_call_output', id: 'ok', output: '{"exit_code":0,"output":"0 errors, failed cases: 0"}' }),
+    ]), SRC);
+    expect(r.events[0]!.status).toBe('success');
+    expect(r.events[0]!.error).toBeNull();
+  });
+  it('uses plain reasoning summaries when present and leaves encrypted-only records bodyless', () => {
+    const r = normalizeCodexSample(sample([
+      row('response_item', { type: 'reasoning', id: 'plain', summary: [{ type: 'summary_text', text: 'Check the failing tool' }] }),
+      row('response_item', { type: 'reasoning', id: 'opaque', summary: [] }),
+    ]), SRC);
+    expect(r.events[0]!.outputSummary).toBe('Check the failing tool');
+    expect(r.events[1]!.hasOutput).toBe(false);
+    expect(r.events[1]!.outputSummary).toBeNull();
   });
 });

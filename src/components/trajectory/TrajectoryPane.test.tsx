@@ -122,8 +122,6 @@ function renderPane(
         locale="zh"
         sessionKey={d.session.id}
         detail={d}
-        ribbonMode="time"
-        onRibbonModeChange={() => undefined}
         selectedTurn={turn}
         onSelectedTurnChange={(index) => {
           setTurn(index);
@@ -198,7 +196,7 @@ describe('TrajectoryPane（D2 / D16）', () => {
     unmount();
   });
 
-  it('色带模式切换零请求（D16）', async () => {
+  it('只有一条回合导航，点击回合零请求并直接展开正文', async () => {
     const fetchGroups = vi.fn(async () => ({ groups: [] }));
     const d = detail([event('e1', 1, 'llm')]);
     const { unmount } = renderPane(d, { fetchGroups });
@@ -206,13 +204,15 @@ describe('TrajectoryPane（D2 / D16）', () => {
       await Promise.resolve();
     });
     const before = fetchGroups.mock.calls.length;
-    act(() => {
-      const tokenChip = Array.from(document.querySelectorAll('.trajectory-statbar button')).find(
-        (b) => b.textContent === 'Token',
-      ) as HTMLButtonElement;
-      tokenChip.click();
-    });
+    act(() => (document.querySelector('.turn-mark') as HTMLButtonElement).click());
     expect(fetchGroups.mock.calls.length).toBe(before);
+    expect(document.querySelectorAll('.trajectory-overview')).toHaveLength(1);
+    expect(document.querySelectorAll('.turn-navigator')).toHaveLength(1);
+    expect(document.querySelector('.turn-navigation')).toBeNull();
+    expect(document.querySelector('.trajectory-overview .session-signals')).toBeNull();
+    expect(document.querySelector('.turn-row-on')).not.toBeNull();
+    expect(document.querySelector('.trajectory-ribbon-disclosure')).toBeNull();
+    expect(document.querySelector('.turn-ribbon')).toBeNull();
     unmount();
   });
 

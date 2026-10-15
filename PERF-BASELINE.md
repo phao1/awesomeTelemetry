@@ -289,3 +289,21 @@ runs):
 > 9.755ms、eventDetail 0.005ms、Overview 冷 51.48ms / 命中 0.311ms、事件循环
 > p99 0.00ms、Mission 冷 32.59ms / 命中 0.046ms / 单 widget 最差 11.917ms /
 > gzip 313B —— 全部在预算内。
+
+## Sticky turn navigation verification (2026-10-15)
+
+`npm run perf:check` passed on the 524-session synthetic fixture after the
+single-row, equal-width turn navigator and Codex diagnostic rendering changes.
+The local source configuration was absent in the isolated worktree, so source
+file counts were unavailable.
+
+| Check | Result |
+|-------|--------|
+| Query plans | All three core queries used indexes; no temporary B-tree |
+| `listSessions(500)` median | 0.374 ms |
+| `worstDetailSlim(9,590)` median | 9.766 ms |
+| `eventDetail` median | 0.007 ms |
+| Overview cold / cache hit | 51.15 ms / 0.303 ms |
+| Differential append | 1 INSERT, 0.60 ms |
+| Event-loop p99 | 0.00 ms (budget < 50 ms) |
+| Mission cold / cache hit | 0.67 ms / 0.018 ms |

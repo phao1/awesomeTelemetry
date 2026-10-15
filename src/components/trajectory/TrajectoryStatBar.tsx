@@ -4,8 +4,7 @@ import type { Locale, I18nKey } from '../../i18n.js';
 import { t } from '../../i18n.js';
 import type { TraceSession, TurnKeySource, TurnModel } from '../../core/trace-types.js';
 import { computeCacheRate } from '../../core/turn-analysis.js';
-import type { RibbonMode } from '../../core/turn-ribbon.js';
-import { IconChevronDown, IconChevronRight, IconCost, IconSpeed } from '../icons/index.js';
+import { IconCost, IconSpeed } from '../icons/index.js';
 
 export interface TrajectoryStatBarProps {
   locale: Locale;
@@ -15,12 +14,6 @@ export interface TrajectoryStatBarProps {
   session: TraceSession;
   /** D2：stat bar 命名它描述的是哪个 agent。 */
   agentLabel: string;
-  /** D10/D18：色带模式（时间 / Token）。 */
-  ribbonMode: RibbonMode;
-  onRibbonModeChange: (mode: RibbonMode) => void;
-  /** D16：分析面板打开零请求；开关由 Pane 持有。 */
-  analysisOpen: boolean;
-  onToggleAnalysis: () => void;
   /** D3：adapter 声明的 turn-key provenance（口径行输入）。 */
   turnKeySource: TurnKeySource;
 }
@@ -62,7 +55,7 @@ function fmtTokens(n: number | null): string {
 }
 
 /**
- * D6 统计条：agent 作用域的 pills + agent 名称 + 口径行 + 色带模式 + 分析入口。
+ * D6 统计条：agent 作用域的 pills + agent 名称 + 口径行。
  * 未知值渲染 — 加 tooltip（REQ-017），禁止用 0 冒充。
  */
 export function TrajectoryStatBar({
@@ -70,10 +63,6 @@ export function TrajectoryStatBar({
   model,
   session,
   agentLabel,
-  ribbonMode,
-  onRibbonModeChange,
-  analysisOpen,
-  onToggleAnalysis,
   turnKeySource,
 }: TrajectoryStatBarProps): React.JSX.Element {
   const totals = useMemo(() => {
@@ -171,39 +160,10 @@ export function TrajectoryStatBar({
           incomplete ? t('trajectory.unavailable.incomplete', locale) : undefined,
         )}
         {pill(
-          t('trajectory.pill.tools', locale),
+          t('trajectory.toolRecords', locale),
           incomplete ? '—' : String(totals.tools),
           incomplete ? t('trajectory.unavailable.incomplete', locale) : undefined,
         )}
-        <span className="trajectory-statbar-controls">
-          <span className="timeline-mode" role="group" aria-label={t('trajectory.ribbon.modeGroup', locale)}>
-            <button
-              type="button"
-              className={`timeline-chip ${ribbonMode === 'time' ? 'timeline-chip-on' : ''}`}
-              aria-pressed={ribbonMode === 'time'}
-              onClick={() => onRibbonModeChange('time')}
-            >
-              {t('trajectory.ribbon.mode.time', locale)}
-            </button>
-            <button
-              type="button"
-              className={`timeline-chip ${ribbonMode === 'token' ? 'timeline-chip-on' : ''}`}
-              aria-pressed={ribbonMode === 'token'}
-              onClick={() => onRibbonModeChange('token')}
-            >
-              {t('trajectory.ribbon.mode.token', locale)}
-            </button>
-          </span>
-          <button
-            type="button"
-            className="btn ui-btn-sm"
-            aria-expanded={analysisOpen}
-            onClick={onToggleAnalysis}
-          >
-            {analysisOpen ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
-            {analysisOpen ? t('trajectory.analysis.close', locale) : t('trajectory.analysis.open', locale)}
-          </button>
-        </span>
       </div>
       {criteriaKey !== null && (
         <p className="trajectory-criteria">

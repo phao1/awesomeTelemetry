@@ -16,26 +16,64 @@
   min-height: 0;
 }
 
-/*
- * 活体验证（tasks.md §9.8/§9.13）：session.css 的 `.session-scroll .session-canvas`
- * 是 `flex: none`（旧甘特语义：画布随内容撑开、外层 session-scroll 滚动）。
- * turn 表面自带内部滚动容器 `.turn-list-scroll`（虚拟化），画布若不收敛高度，
- * 列表会被撑到内容全高 —— 597 回合全量挂载、虚拟化永不触发（D20：>50 回合
- * 虚拟化、滚动节点数稳定）。trajectory.css 最后加载，同特异性覆盖为有界 flex
- * 子项：`.trajectory-pane` 拿到确定高度，`.turn-list-scroll` 成为唯一内部滚动
- * 容器；展开的画像/画像层溢出仍由外层 .session-scroll 承接。
- */
+/* The session owns page scrolling. The trace has a bounded reading viewport,
+ * so analytics cannot squeeze its virtual list to zero height. */
 .session-scroll .session-canvas {
-  flex: 1 1 0;
+  flex: none;
   min-height: 0;
+}
+
+.session-canvas > .trajectory-pane {
+  flex: none;
+  height: max(75vh, calc(var(--space-10) * 15));
+}
+
+.trajectory-heading {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--canvas-default);
+  flex: none;
+}
+
+.trajectory-heading .hint {
+  flex: 1;
+}
+
+.app-trajectory-focus .view-body > .rail,
+.app-trajectory-focus .session-findings-panel,
+.app-trajectory-focus .session-visuals-panel,
+.app-trajectory-focus .session-collab-replay-panel {
+  display: none;
+}
+
+.app-trajectory-focus .session-canvas {
+  flex: 1;
+}
+
+.app-trajectory-focus .session-canvas > .trajectory-pane {
+  flex: 1;
+  height: auto;
+  min-height: calc(var(--space-10) * 12);
+}
+
+.app-trajectory-focus .trajectory-statbar .trajectory-pill {
+  flex-direction: row;
+  align-items: baseline;
 }
 
 .trajectory-body {
   display: flex;
   flex: 1;
   min-height: 0;
+}
+
+.trajectory-body > .ui-split {
+  flex: 1;
+  min-width: 0;
 }
 
 .trajectory-area {
@@ -171,7 +209,8 @@
 
 .trajectory-pill {
   display: inline-flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: baseline;
   gap: 1px;
   min-width: 0;
   padding: var(--space-1) var(--space-2);
@@ -196,6 +235,7 @@
 }
 
 .trajectory-criteria {
+  margin: 0;
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -297,6 +337,8 @@
   min-height: 0;
   overflow-y: auto;
   position: relative;
+  scrollbar-gutter: stable;
+  overflow-anchor: none;
 }
 
 .turn-row {
@@ -380,6 +422,9 @@
 }
 
 .turn-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border-default);
   background: var(--canvas-subtle);
@@ -567,8 +612,8 @@
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--fg-default);
-  max-height: 60vh;
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .message-card-reasoning {
@@ -653,8 +698,8 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--fg-default);
-  max-height: 60vh;
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 /* ---- TrajectoryAnalysisPanel ---- */
@@ -730,4 +775,156 @@
 
 .anomaly-row-detail {
   color: var(--fg-default);
+}
+
+/* Model and tool bodies share the turn scrollport; only code scrolls sideways. */
+.message-card-body,
+.tool-call-block-args {
+  font-size: var(--user-font-size, var(--text-base));
+  line-height: var(--user-line-height, var(--leading-base));
+}
+
+.message-card-body pre,
+.tool-call-block-args pre {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.message-card-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-card-io {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.message-card-io h4 {
+  margin: var(--space-2) 0 0;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 64rem) {
+  .turn-row-model,
+  .turn-row-tokens {
+    display: none;
+  }
+  .trajectory-heading .hint {
+    display: none;
+  }
+  .message-card-header {
+    flex-wrap: wrap;
+  }
+}
+
+.trajectory-body-collapsed .trajectory-rail-pane,
+.trajectory-body-collapsed .ui-split-handle {
+  display: none;
+}
+
+/* Investigation workspace: compact fixed context, one independent reading viewport. */
+.session-inspector .session-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.session-inspector .session-scroll .session-canvas {
+  flex: none;
+  min-height: calc(var(--space-10) * 9);
+}
+.session-inspector .session-canvas > .trajectory-pane {
+  flex: none;
+  height: max(100vh, calc(var(--space-10) * 14));
+}
+.session-inspector .session-toolbar {
+  min-height: var(--row-lg);
+  padding: var(--space-1) var(--space-2);
+}
+.session-inspector .session-toolbar-metric {
+  flex-direction: row;
+  gap: var(--space-1);
+  align-items: center;
+}
+.trajectory-overview {
+  flex: none;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--canvas-default);
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+.trajectory-extensions { flex: none; background: var(--canvas-default); border-top: 1px solid var(--border-muted); }
+.trajectory-extensions > summary { cursor: pointer; color: var(--fg-muted); font-size: var(--text-xs); padding: var(--space-1) var(--space-2); }
+.trajectory-extensions-actions { display: flex; gap: var(--space-1); padding: var(--space-1) var(--space-2); }
+.trajectory-statbar { padding: var(--space-1) var(--space-2); gap: var(--space-1); }
+.trajectory-statbar-row { gap: var(--space-1) var(--space-2); }
+.trajectory-statbar .trajectory-pill { flex-direction: row; align-items: baseline; gap: var(--space-1); }
+.trajectory-statbar .trajectory-criteria { font-size: var(--text-xs); margin: 0; }
+.trajectory-extensions .trajectory-analysis {
+  max-height: min(50vh, calc(var(--space-10) * 12));
+  overflow-y: auto;
+  border-top: 1px solid var(--border-default);
+}
+.turn-navigator { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: var(--space-1) var(--space-2); }
+.turn-navigator-count { flex: none; color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; }
+.turn-navigator-scroll { flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.turn-navigator-track { position: relative; height: var(--row-md); }
+.turn-mark {
+  position: absolute;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--row-md);
+  border: 1px solid var(--border-default);
+  border-top: calc(var(--space-1) / 2) solid var(--neutral-fg);
+  border-radius: var(--radius-sm);
+  padding: 0;
+  background: var(--canvas-subtle);
+  color: var(--fg-default);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+.turn-mark:hover { background: var(--canvas-raised); }
+.turn-mark[data-role="user"] { border-top-color: var(--role-user-fg); }
+.turn-mark[data-role="assistant"] { border-top-color: var(--role-assistant-fg); }
+.turn-mark[data-role="tool"] { border-top-color: var(--role-tool-fg); }
+.turn-mark[data-role="system"] { border-top-color: var(--role-system-fg); }
+.turn-mark-error { border-top-color: var(--danger-fg); }
+.turn-mark-active { outline: 1px solid var(--accent-fg); background: var(--accent-subtle); }
+.turn-mark:focus-visible { box-shadow: var(--focus-ring); }
+.trajectory-turn-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); }
+.trajectory-unattributed-gap { margin: 0; padding: var(--space-1) var(--space-2); color: var(--fg-muted); font-size: var(--text-sm); }
+.turn-metadata { border-top: 1px solid var(--border-muted); padding: var(--space-2); color: var(--fg-muted); font-size: var(--text-sm); }
+.turn-metadata > summary { cursor: pointer; }
+.turn-metadata .message-card { margin-top: var(--space-1); }
+.message-card-failed { border-color: var(--danger-fg); }
+.message-status-error { color: var(--danger-fg); display: inline-flex; gap: var(--space-1); align-items: center; }
+.message-error-summary { margin: 0; padding: var(--space-1) var(--space-2); color: var(--danger-fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-card-direction { color: var(--fg-muted); font-size: var(--text-xs); }
+.message-event-id { color: var(--fg-subtle); max-width: calc(var(--space-10) * 3); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+.message-card-toggle .gantt-title { display: block; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-body-prose { font-family: var(--font-ui); font-size: var(--user-font-size, var(--text-base)); line-height: var(--leading-lg); overflow-wrap: anywhere; }
+.event-body-prose p { margin: var(--space-1) 0 var(--space-2); white-space: pre-wrap; }
+.event-body-prose h4 { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-lg); }
+.event-body-prose code { font-family: var(--font-mono); background: var(--canvas-inset); padding: 0 var(--space-1); border-radius: var(--radius-sm); }
+.event-body-bullet { padding: var(--space-1) 0; }
+.event-body-code { background: var(--canvas-inset); padding: var(--space-2); border-radius: var(--radius-md); margin: 0; }
+.anomaly-row-detail { background: transparent; border: 0; color: inherit; text-align: left; cursor: pointer; padding: 0; }
+@media (max-width: 64rem) {
+  .message-event-id { display: none; }
 }
