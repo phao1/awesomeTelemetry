@@ -14,6 +14,7 @@ import type {
   SessionRange,
   TraceEventSlim,
   TraceStatus,
+  BusEvents,
 } from './core/trace-types.js';
 import {
   errorMessage,
@@ -34,9 +35,11 @@ import { SessionToolbar } from './components/SessionToolbar.js';
 import { SessionFindings } from './components/SessionFindings.js';
 import { SessionVisuals } from './components/SessionVisuals.js';
 import { TrajectoryPane } from './components/trajectory/TrajectoryPane.js';
+import { AgentCollabReplay } from './components/AgentCollabReplay.js';
 import { AgentOverview } from './components/AgentOverview.js';
 import { CompareBoard } from './components/CompareBoard.js';
 import { ProxyView } from './components/ProxyView.js';
+import { SessionCaptureLinksPanel } from './components/TraceLinksPanel.js';
 import { FridaView } from './components/FridaView.js';
 import { MissionControl, type MissionRange } from './components/MissionControl.js';
 import { SettingsModal } from './components/SettingsModal.js';
@@ -71,6 +74,14 @@ import { HelpModal } from './components/HelpModal.js';
 import { parseHash, serializeHash, type HashState } from './hash-router.js';
 import type { CommandPaletteProps } from './components/CommandPalette.js';
 import { computeFindings, type Finding } from './core/session-findings.js';
+// add-agent-team-observability §7.3 — team 视图 shell（App.tsx 是唯一 stateful shell）
+import { TeamShell } from './components/team/TeamShell.js';
+import {
+  DEFAULT_TEAM_HASH,
+  parseTeamHash,
+  serializeTeamViewHash,
+  type TeamHashState,
+} from './components/team/team-client.js';
 
 /** --ui-scale 的基准字号：fontPx 等于它时缩放为 1（同 tokens.css §3.1 的 --text-base）。 */
 const BASE_FONT_PX = 13;
@@ -83,7 +94,17 @@ interface PaletteModule {
 
 /** REQ-001：五视图 shell，App.tsx 是唯一 stateful shell。 */
 export default function App() {
-  const [view, setView] = useState<AppView>(() => INITIAL_HASH?.view ?? 'session');
+  // §7.3：team 视图与既有五视图平行；AppView 不含 'team'，故本地扩展
+  const isInitialTeam = window.location.hash.startsWith('#/team');
+  const [view, setView] = useState<AppView | 'team'>(() =>
+    isInitialTeam ? 'team' : (INITIAL_HASH?.view ?? 'session') as AppView | 'team',
+  );
+
+  const [teamHash, setTeamHash] = useState<TeamHashState>(() =>
+    isInitialTeam ? parseTeamHash(window.location.hash.replace(/^#\/team\/?/, '')) : DEFAULT_TEAM_HASH,
+  );
+  /** §7.8 team_runs_changed SSE 失效计数（只标失效不轮询）。 */
+  const [teamInvalidateKey, setTeamInvalidateKey] = useState(0);
   const [locale, setLocaleState] = useState<Locale>(() => getStoredLocale());
   const localeRef = useRef<Locale>(locale);
   const theme = useTheme();
@@ -124,6 +145,7 @@ export default function App() {
   );
   /** 轨迹 rail（详情内右栏）折叠态；宽度由 SplitPane 自行持久化（D18）。 */
   const [trajectoryRailCollapsed, setTrajectoryRailCollapsed] = useState(true);
+  const [trajectoryFocus, setTrajectoryFocus] = useState(false);
   const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
   const [moreEventsError, setMoreEventsError] = useState<string | null>(null);
   const eventPageRequest = useRef<object | null>(null);
@@ -157,6 +179,11 @@ export default function App() {
   );
   /** Mission 视图的 SSE 失效计数：sessions_changed 时 +1（REQ-027，只标失效不轮询）。 */
   const [missionInvalidateKey, setMissionInvalidateKey] = useState(0);
+  const [proxyLiveStatus, setProxyLiveStatus] = useState<BusEvents['proxy_status'] | null>(null);
+  const [proxyLiveUpdates, setProxyLiveUpdates] = useState<BusEvents['proxy_request'][]>([]);
+  const [proxyFocusedId, setProxyFocusedId] = useState<number | null>(null);
+  const [traceLinksVersion, setTraceLinksVersion] = useState(0);
+  const clearProxyFocus = useCallback(() => setProxyFocusedId(null), []);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectedKeyRef = useRef<string | null>(null);
 
@@ -172,7 +199,7 @@ export default function App() {
     setActiveLocale(locale);
   }, [locale]);
 
-  const switchView = useCallback((next: AppView) => {
+  const switchView = useCallback((next: AppView | 'team') => {
     startTransition(() => setView(next)); // REQ-002：视图切换用 startTransition
   }, []);
 
@@ -277,6 +304,17 @@ export default function App() {
       setScanning(false);
       setLastScanAt(new Date().toISOString());
     });
+    es.addEventListener('proxy_status', (event) => {
+      setProxyLiveStatus(JSON.parse((event as MessageEvent).data) as BusEvents['proxy_status']);
+    });
+    es.addEventListener('proxy_request', (event) => {
+      const update = JSON.parse((event as MessageEvent).data) as BusEvents['proxy_request'];
+      if (update.item !== undefined) startTransition(() => setProxyLiveUpdates(previous => [...previous.slice(-49), update]));
+    });
+    es.addEventListener('trace_links_changed', () => {
+      // Relation-only invalidation: no source-detail/body refetch and no polling.
+      setTraceLinksVersion(version => version + 1);
+    });
     es.addEventListener('sessions_changed', (event) => {
       const data = JSON.parse((event as MessageEvent).data) as { keys: string[] };
       setMissionInvalidateKey((k) => k + 1);
@@ -321,6 +359,10 @@ export default function App() {
           // 失败时保留现有列表，但必须记录错误（禁止空 catch）
           console.error('[sse] sessions_changed patch 失败:', err);
         });
+    });
+    // §7.8 team_runs_changed → 本地 patch/reconnect（TeamShell 内部处理增量）
+    es.addEventListener('team_runs_changed', () => {
+      setTeamInvalidateKey((k) => k + 1);
     });
     return () => es.close();
   }, []);
@@ -377,6 +419,7 @@ export default function App() {
         throw new Error('Invalid event page: unexpected offset or empty continuation');
       }
       setDetail((current) => {
+        // A live update may replace the detail while this page is in flight.
         if (current !== base) return current;
         const merged: SessionDetailResponse = {
           ...base, events: [...base.events, ...page.events],
@@ -516,6 +559,11 @@ export default function App() {
 
   // REQ-024（D3）：状态变 → 写 hash（replaceState 不触发 hashchange，避免循环）
   useEffect(() => {
+    // §7.3 team 视图用独立 hash 序列化（与既有 session/agent/compare/... 分开）
+    if (view === 'team') {
+      history.replaceState(null, '', serializeTeamViewHash(teamHash));
+      return;
+    }
     const state: HashState = {
       view,
       ...(selectedKey !== null ? { key: selectedKey } : {}),
@@ -529,11 +577,17 @@ export default function App() {
       ...(view === 'mission' ? { range: missionRange } : {}),
     };
     history.replaceState(null, '', serializeHash(state));
-  }, [view, selectedKey, providerFilter, statusFilter, sessionQ, sessionRange, selectedTurn, compareLeft, compareRight, missionRange]);
+  }, [view, selectedKey, providerFilter, statusFilter, sessionQ, sessionRange, selectedTurn, compareLeft, compareRight, missionRange, teamHash]);
 
   // REQ-024：hashchange → 解析并应用（脏 hash 回落默认视图，不抛错）
   useEffect(() => {
     const onHashChange = (): void => {
+      // §7.3 team 视图 hash 独立解析
+      if (window.location.hash.startsWith('#/team')) {
+        switchView('team');
+        setTeamHash(parseTeamHash(window.location.hash.replace(/^#\/team\/?/, '')));
+        return;
+      }
       const state = parseHash(window.location.hash);
       if (state === null) {
         switchView('session');
@@ -580,7 +634,7 @@ export default function App() {
   }, [switchView, selectSession]);
 
   return (
-    <div className="app">
+    <div className={`app ${trajectoryFocus && view === 'session' ? 'app-trajectory-focus' : ''}`}>
       <AppHeader locale={locale}>
         <button type="button" className="btn" onClick={() => adjustFont(-2)}>
           {t('common.fontSmall', locale)}
@@ -602,7 +656,10 @@ export default function App() {
         />
         <LiveIndicator connected={live} locale={locale} />
       </AppHeader>
-      <ViewTabs active={view} onChange={switchView} locale={locale} />
+      <ViewTabs active={view === 'team' ? 'session' : view} onChange={switchView} locale={locale} />
+      {/* §7.3 team 视图入口已移除（团队运行统一在任务列表中展示）。
+          team 视图保留用于团队任务详情：点击团队任务 → switchView('team')。
+          D15：Sessions(任务) | Agents | ...，AppShell 不含 team */}
 
       {view === 'session' && (
         <div className="view-body">
@@ -747,6 +804,8 @@ export default function App() {
                     且 overflow 一路 visible 到 document，滚都滚不到。 */}
                 <div className="session-scroll">
                 <div className="session-canvas">
+                  <SessionCaptureLinksPanel key={selectedKey ?? ''} sessionKey={selectedKey ?? ''} locale={locale} invalidateKey={traceLinksVersion}
+                    onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} />
                   {findingsResult !== null && (
                     <details className="session-findings-panel">
                       <summary>{t('session.findings', locale)}</summary>
@@ -772,6 +831,8 @@ export default function App() {
                     loadingMoreEvents={loadingMoreEvents}
                     moreEventsError={moreEventsError}
                     onLoadMoreEvents={loadMoreEvents}
+                    focused={trajectoryFocus}
+                    onToggleFocus={() => setTrajectoryFocus((prev) => !prev)}
                     railCollapsed={trajectoryRailCollapsed}
                     onToggleRailCollapse={() => setTrajectoryRailCollapsed((prev) => !prev)}
                   />
@@ -781,6 +842,16 @@ export default function App() {
                   <details className="session-visuals-panel">
                     <summary>{t('session.visuals', locale)}</summary>
                     <SessionVisuals detail={detail} locale={locale} />
+                  </details>
+                  {/* agent-collaboration-replay §5.1 / §8.3：Agent 协作回放章节，
+                      紧跟会话画像之后。runIds 为空时主组件返回 null，
+                      章节内容为空（spec §5.1.1 规则 2）。
+                      §8.3：内容区包 .collab-replay-body 支持垂直滚动 + sticky summary。 */}
+                  <details className="session-collab-replay-panel">
+                    <summary>{t('session.teamReplay.title', locale)}</summary>
+                    <div className="collab-replay-body">
+                      <AgentCollabReplay sessionKey={selectedKey ?? ''} locale={locale} />
+                    </div>
                   </details>
                 </div>
                 </div>
@@ -822,7 +893,9 @@ export default function App() {
       {view === 'proxy' && (
         <div className="view-body">
           <main className="main">
-            <ProxyView locale={locale} />
+            <ProxyView locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates}
+              sessions={sessions} focusedRequestId={proxyFocusedId} onFocusedRequestHandled={clearProxyFocus} traceInvalidateKey={traceLinksVersion}
+              onOpenSession={key => { switchView('session'); selectSession(key); }} />
           </main>
         </div>
       )}
@@ -839,6 +912,16 @@ export default function App() {
             locale={locale}
             initialRange={missionRange}
             invalidateKey={missionInvalidateKey}
+          />
+        </div>
+      )}
+      {view === 'team' && (
+        <div className="view-body">
+          <TeamShell
+            locale={locale}
+            teamHash={teamHash}
+            onTeamHashChange={setTeamHash}
+            invalidateKey={teamInvalidateKey}
           />
         </div>
       )}

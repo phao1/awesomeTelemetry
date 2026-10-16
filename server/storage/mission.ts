@@ -12,7 +12,7 @@ import type {
   MissionWidget,
 } from '../../src/core/trace-types.js';
 import { extractSubagentType } from '../../src/core/subagent-type.js';
-import { computeCostUsd, lookupContextWindow } from '../../src/core/pricing.js';
+import { computeCost, lookupContextWindow } from '../../src/core/pricing.js';
 import { classifyErrorText } from '../../src/core/error-classifier.js';
 import { classifyScene } from '../../src/core/scene-classifier.js';
 import { isGenuineUserPrompt } from '../../src/core/metrics.js';
@@ -712,7 +712,7 @@ function widgetModels(db: Database, opts: MissionOptions): MissionWidget<NonNull
     byModel.set(row.model, agg);
   }
   const out = [...byModel.entries()].map(([model, agg]) => {
-    const cost = computeCostUsd(
+    const cost = computeCost(
       { input: agg.input, output: agg.output, reasoning: 0, cacheRead: agg.cacheRead, cacheWrite: agg.cacheWrite, netInput: Math.max(0, agg.input - agg.cacheRead), total: 0 },
       model,
     );
@@ -723,8 +723,9 @@ function widgetModels(db: Database, opts: MissionOptions): MissionWidget<NonNull
       output: agg.output,
       cacheRead: agg.cacheRead,
       cacheWrite: agg.cacheWrite,
-      costUsd: cost.costUsd,
+      costUsd: cost.cost,
       costSource: cost.costSource,
+      costCurrency: cost.currency,
     };
   }).sort((a, b) => b.calls - a.calls);
   return availableWidget(

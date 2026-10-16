@@ -85,7 +85,7 @@ export function installKeyboardShortcuts(): void {
   }
   installed = true;
   document.addEventListener('keydown', (event) => {
-    if (event.isComposing) {
+    if (event.isComposing || event.defaultPrevented) {
       return;
     }
     if (event.key === 'Escape') {
@@ -98,8 +98,13 @@ export function installKeyboardShortcuts(): void {
       }
       return;
     }
-    if (isEditableTarget(event.target)) {
+    if (overlayStack.length > 0 || isEditableTarget(event.target)) {
+      // A modal/native control owns non-Escape keys. Never consume Enter for
+      // the background session list before the browser can activate its button.
       return; // 1.2：输入框聚焦时只放行 Esc
+    }
+    if ((event.key === 'Enter' || event.key === ' ') && event.target instanceof Element && event.target.closest('button,a[href],summary,[role="button"]') !== null) {
+      return; // Native activation also wins for toolbar controls outside overlays.
     }
     const spec: ShortcutSpec = {
       key: event.key,

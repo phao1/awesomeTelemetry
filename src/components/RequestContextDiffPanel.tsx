@@ -40,6 +40,8 @@ export interface RequestContextDiffPanelProps {
   loadedItems: ProxyRequestListItem[];
   /** 源动作：把抽屉重定向到指定请求（走现有 request-detail API）。 */
   onOpenRequest: (id: number) => void;
+  /** Metadata-only association change; mark stale without re-reading originals. */
+  invalidateKey?: number;
 }
 
 const COMPATIBLE_TONE: Record<ContextDiffCategory, 'accent' | 'success' | 'attention' | 'neutral'> = {
@@ -52,6 +54,7 @@ const COMPATIBLE_TONE: Record<ContextDiffCategory, 'accent' | 'success' | 'atten
 const CONFIDENCE_TONE: Record<string, 'accent' | 'success' | 'attention' | 'neutral'> = {
   exact: 'success',
   capture_group: 'attention',
+  linked_session: 'success',
   manual: 'accent',
 };
 
@@ -72,8 +75,12 @@ export function RequestContextDiffPanel({
   locale,
   loadedItems,
   onOpenRequest,
+  invalidateKey = 0,
 }: RequestContextDiffPanelProps): React.JSX.Element {
   const cacheRef = useRef<Map<string, RequestContextDiffResponse>>(new Map());
+  const generation = useRef(0);
+  const evidenceVersion = useRef(invalidateKey);
+  const [stale, setStale] = useState(false);
   const [status, setStatus] = useState<PanelStatus>('loading');
   const [data, setData] = useState<RequestContextDiffResponse | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
@@ -89,6 +96,8 @@ export function RequestContextDiffPanel({
 
   const load = useCallback(
     async (base: { mode: 'previous' } | { mode: 'id'; id: number }): Promise<void> => {
+      const token = ++generation.current;
+      setStale(false); setBaseRef(base);
       const key = `${targetId}:${base.mode === 'id' ? base.id : 'previous'}`;
       const cached = cacheRef.current.get(key);
       if (cached !== undefined) {
@@ -106,6 +115,7 @@ export function RequestContextDiffPanel({
           targetId,
           base.mode === 'id' ? base.id : undefined,
         );
+        if (token !== generation.current) return;
         cacheRef.current.set(key, result);
         // 逐出最旧插入（Map 保持插入顺序）。
         while (cacheRef.current.size > CACHE_LIMIT) {
@@ -121,6 +131,7 @@ export function RequestContextDiffPanel({
         setActiveCategory(DEFAULT_CATEGORY);
         setStatus('success');
       } catch (err) {
+        if (token !== generation.current) return;
         const code = err instanceof ApiError ? err.code : 'INTERNAL_ERROR';
         const message = err instanceof Error ? err.message : String(err);
         setErrorCode(code);
@@ -140,7 +151,16 @@ export function RequestContextDiffPanel({
   // 面板仅在 tab 激活时才挂载 → 首次激活即发起一次自动（previous）请求。
   useEffect(() => {
     void load({ mode: 'previous' });
+    return () => { generation.current += 1; };
   }, [load]);
+
+  useEffect(() => {
+    if (evidenceVersion.current === invalidateKey) return;
+    evidenceVersion.current = invalidateKey;
+    generation.current += 1;
+    cacheRef.current.clear();
+    setData(null); setStale(true);
+  }, [invalidateKey]);
 
   const retry = useCallback(() => {
     void load(baseRef);
@@ -166,7 +186,12 @@ export function RequestContextDiffPanel({
         </span>
       </div>
 
-      <div className="context-diff-body" style={{ fontSize: fontPx }}>
+      {stale && <div role="status">
+        <p className="hint">{t('trace.links.stale', locale)}</p>
+        <button className="btn" type="button" onClick={retry}>{t('common.refresh', locale)}</button>
+      </div>}
+
+      {!stale && <div className="context-diff-body" style={{ fontSize: fontPx }}>
         {status === 'loading' && <Skeleton variant="block" count={3} />}
 
         {status === 'error' && (
@@ -216,7 +241,7 @@ export function RequestContextDiffPanel({
             onOpenRequest={onOpenRequest}
           />
         )}
-      </div>
+      </div>}
     </div>
   );
 }

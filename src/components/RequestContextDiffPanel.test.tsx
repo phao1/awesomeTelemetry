@@ -76,7 +76,7 @@ function diffResponse(overrides: Partial<RequestContextDiffResponse> = {}): Requ
   const base: RequestContextDiffResponse = {
     base: ref(1),
     target: ref(2),
-    pairing: { confidence: 'capture_group', reason: 'same capture group', warnings: [] },
+    pairing: { confidence: 'linked_session', reason: 'nearest eligible capture in linked session synthetic', warnings: ['Capture order does not prove native model call adjacency'] },
     noChange: false,
     growth: {
       baseChars: 100,
@@ -195,6 +195,30 @@ describe('RequestContextDiffPanel §7', () => {
     vi.stubGlobal('fetch', vi.fn());
   });
 
+  it.each([false, true])('marks changed association evidence stale without reparsing; ignores old in-flight results=%s', async pending => {
+    let resolveOld!: (value: Response) => void;
+    const delayed = new Promise<Response>(resolve => { resolveOld = resolve; });
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(jsonErr(409, 'CONTEXT_DIFF_UNAVAILABLE', 'pairing_unavailable'));
+    if (pending) fetchMock.mockReturnValueOnce(delayed); else fetchMock.mockResolvedValueOnce(jsonOk(diffResponse()));
+    const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
+    const props = { targetId: 2, targetFormat: 'anthropic_messages' as const, locale: 'zh' as const, loadedItems: [listItem(1)], onOpenRequest: () => undefined };
+    await act(async () => { root.render(<RequestContextDiffPanel {...props} />); await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    if (!pending) expect(container.textContent).toContain('同一已关联会话内最近捕获');
+    await act(async () => { root.render(<RequestContextDiffPanel {...props} invalidateKey={1} />); });
+    if (pending) await act(async () => { resolveOld(jsonOk(diffResponse())); await delayed; });
+    expect(container.textContent).toContain('关联证据有更新');
+    expect(container.querySelector('.context-diff-summary')).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => { ([...container.querySelectorAll('button')].find(node => node.textContent === '刷新') as HTMLButtonElement).click(); });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain('没有可自动配对的基线');
+    expect(container.textContent).toContain('选择基线请求');
+    await act(async () => { root.unmount(); });
+  });
+
   it('首次激活加载自动配对；loading → success，置信度/增长/token 缺失渲染 —', async () => {
     const response = diffResponse();
     vi.mocked(fetch).mockResolvedValueOnce(jsonOk(response));
@@ -212,7 +236,8 @@ describe('RequestContextDiffPanel §7', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(container.textContent).toContain('配对置信度');
-    expect(container.textContent).toContain('同一代理运行内最近请求');
+    expect(container.textContent).toContain('同一已关联会话内最近捕获');
+    expect(container.textContent).toContain('native model call adjacency');
     expect(container.textContent).toContain('输入 token 增量');
     expect(container.textContent).toContain('—');
     expect(container.textContent).toContain('Messages');

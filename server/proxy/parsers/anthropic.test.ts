@@ -27,11 +27,12 @@ describe('REQ-009 Anthropic 解析（tasks §3.8）', () => {
     expect(parsed.outputTokens).toBeNull();
   });
 
-  it('非字符串 system（content blocks 数组）保持 null（分类由 shape 完成）', () => {
+  it('content blocks system retains original text under the approved fusion contract', () => {
     const parsed = parseAnthropicRequest({
       requestBody: JSON.stringify({ model: 'claude-3-5-sonnet', system: [{ type: 'text', text: 'sys' }], messages: [] }),
     });
-    expect(parsed.systemPrompt).toBeNull();
+    expect(parsed.systemPrompt).toBe('sys');
+    expect(parsed.systemPromptLen).toBe(3);
   });
 
   it('parseProxyRequest 对 anthropic 路由输出 anthropic_messages', () => {

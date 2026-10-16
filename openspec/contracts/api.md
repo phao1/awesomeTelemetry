@@ -1,5 +1,144 @@
 # Contract: HTTP API
 
+## Original capture access (fuse-agent-monitoring)
+
+### Capture metadata capacity diagnostic
+
+GET `/api/proxy/capacity` returns CaptureMetadataCapacity without original IO,
+recovery, checkpoint, DB write or upstream traffic. It remains available when
+capture recovery is pressure-blocked. Same loopback Host/Origin policy applies.
+Sizes are physical DB/WAL file lengths (in-memory fixtures use logical pages),
+not free disk space. Unreadable sizes return200 state=unavailable/reason=stat_error
+with null sizes, never invented zero/success. No paths or native SQLite errors.
+Limits are200,000,000 combined/20,000,000 WAL bytes; capture admission stops at
+180,000,000/8,000,000 bytes. limited explains database_limit or wal_limit, not
+automatic evidence deletion. checkedAt is ISO8601 UTC. This is an explicit
+diagnostic, no polling or per-request-list-row use. It does not certify other
+scan/external writers or physical ENOSPC behavior.
+
+The capacity Web drawer makes exactly one GET here plus one GET /api/proxy/storage
+only on open/explicit refresh.5s abort; independent partial failures, no polling,
+per-row calls or mutation. The original-store query can initialize owned files
+and resume already-confirmed pending deletion, unlike this metadata-only route;
+UI must disclose that distinction. Runtime changes mark snapshots stale locally,
+never refetch; late/unmounted responses cannot restore old snapshots. Display
+original quota remaining separately from database admission headroom, neither as
+physical free disk space or a guarantee of successful capture.
+
+Pressure may defer unindexed journals at startup; already committed request
+metadata/body reads and confirmed body cleanup remain available. Cleanup/storage
+reads initialize only the owned file store and pending deletion intents, not
+unrelated journal insertion. Start/restart retries deferred recovery after
+pressure relief. Other recovery corruption/conflicts still fail capture access.
+Runtime lastError uses bounded static CAPTURE_METADATA_LIMIT/UNAVAILABLE/
+QUEUE_FULL or CAPTURE_METADATA_SQLITE_FULL; no raw SQLite/filesystem messages.
+
+### Confirmed per-request original-body deletion
+
+GET `/api/proxy/requests/:id/original-deletion` returns OriginalDeletionJob or
+JSON null (no intent), without file IO. POST the same route with exactly
+`{expectedRequestId:string,confirm:true}` (max8KiB JSON, request ID1..1024 chars)
+confirms deletion of that request/response BODY, prompt and SQLite body/raw/prompt
+copies. Retain headers, metrics, identity/association metadata, scan/native
+sessions and external exports. This is not full request/header/forensic erasure.
+No global Clear route is added. Unknown request404, malformed/missing confirmation
+400 BAD_REQUEST. All existing loopback Host/Origin controls apply.
+
+POST requires fully stopped monitor/no pending cleanup, serializes starts and
+other deletion attempts, and awaits async file/state work; health/scan routes
+remain responsive. Returns200 OriginalDeletionJob, including explicit failed
+state/error (not success). Repeat the same confirmed POST explicitly retries a
+failed/pending job; completed is idempotent. During maintenance start/launch or
+another deletion returns409 PROXY_MAINTENANCE; running/starting/stopping also
+reject deletion with that code before intent. Identity/shared-ref/unsupported/
+directory conflicts409 CAPTURE_DELETE_CONFLICT with bounded static reason;
+retained-job capacity503 CAPTURE_DELETE_LIMIT; DB/intent/status write failures
+503 CAPTURE_DELETE_FAILED without raw SQL/filesystem messages. GET status enables
+recovery after the client disconnects. Default retention never invokes deletion.
+
+Intent, exact tombstone and clearing request_body/response_body/raw_request_body/
+raw_response_body/system_prompt (system_prompt_len=0) are one transaction.
+Once intent exists, body download404 PROXY_REQUEST_NOT_FOUND and protocol analysis
+409 CAPTURE_ORIGINALS_DELETED even if cleanup failed/files reappear. Context diff
+rejects either deleted source with422 CONTEXT_DIFF_UNSUPPORTED,
+details.reason='original_deleted'; no legacy-preview fallback. Fresh request
+detail returns null body/prompt fields. Previously delivered browser/export/native
+copies are outside API deletion scope. Original refs keep their observed capture
+status/size/digest; consult the deletion status for current availability.
+
+On startup, pending jobs resume before journal recovery/capture file admission;
+failed jobs remain explicit for retry. Startup/active HTTP cleanup is owned until
+shutdown finishes. Already confirmed intent authorizes this bounded continuation,
+not deleting unrelated files.
+
+The selected-request Web drawer reads this metadata status once on selection;
+refresh is explicit, not polling or per-row list requests. Show exact request
+identity, retained scope and an acknowledgement before the confirmed POST.
+Disable submission unless monitoring is known stopped and originals are supported.
+A200 failed job is not success. Abort status reads after5s and action waits after
+15s; timeout/disconnect means unconfirmed, not freed space. On submission or any
+known intent, clear local body/prompt/analysis/diff caches, invalidate in-flight
+callbacks and hide downloads. Reopening stale detail in the same view must not
+revive those copies. Headers/timing/association/native views remain available.
+Failure/retry requires explicit confirmation; status refresh alone never deletes.
+
+### Identity/correlation routes
+
+Association invalidation uses trace_links_changed with sessionKeys/proxyIds/truncated, coalesced200ms and capped200 keys per array. It is metadata-only, not a native session-content change; it must not trigger native detail/scanner reloads. Until incremental association patches/recovery are implemented, open relation panels show an explicit stale signal with an on-demand refresh action, not a polling loop.
+
+Open context-comparison panels must also invalidate cached association conclusions on this signal, hide stale automatic results and offer explicit refresh. In-flight results from before invalidation cannot restore a revoked conclusion. No automatic original-body analysis/refetch is triggered by a relation notification.
+
+All routes below require the same local Host/Origin policy as capture controls, including session-scoped routes and user decisions. Unknown scan session404 SESSION_NOT_FOUND, unknown proxy404 PROXY_REQUEST_NOT_FOUND; invalid owner/cursor/limit/state/note400 BAD_REQUEST, all unified ApiError. Only existing data_source=scan sessions are eligible. No body/raw/summary fields occur in identity/association pages.
+
+| Method | Route | Shape |
+|---|---|---|
+| GET | /api/sessions/:key/identities | TraceIdentityPage |
+| GET | /api/proxy/requests/:id/identities | TraceIdentityPage |
+| GET | /api/sessions/:key/capture-links | SessionCaptureLinkPage, active direct/confirmed/candidate links only |
+| GET | /api/proxy/requests/:id/trace-links | ProxyTraceLinkPage, including rejected/revoked decisions |
+| PUT | /api/proxy/requests/:id/trace-links/:key | body {state:'confirmed'|'rejected'|'revoked',note:string|null}; returns TraceAssociation |
+| GET | /api/proxy/requests/:id/trace-links/:key/decisions | {items:TraceAssociationDecision[],nextCursor:number|null,hasMore:boolean} |
+
+Pages default limit50/max100. Identity cursor is the last opaque identity id (lexicographic ascending). Session capture-link cursor is the last proxy numeric id (descending). Proxy trace-link cursor is the last session key (ascending). Decision cursor is the last sequence (ascending). Omitted cursor starts a page; nextCursor is null when hasMore=false. Invalid/unknown cursor values never widen the query. Paged reads do not trigger scanning, file reads, remote calls, automatic reparsing or state mutation. Missing manifests return parserVersion=null,empty items and complete=false/reasons=['not_collected'] rather than fabricated identities.
+
+PUT is explicit user confirmation/rejection/revocation, not automatic correlation. A nullable note up to1000 characters records user context. Each transition is atomic and append-only audited; retries with the identical state/note are idempotent. Automatic links may be downgraded if late identity evidence is ambiguous; user-confirmed/rejected/revoked links remain under user control. Session-level membership is not proof of a specific model/tool execution, and no derived duration or duplicate billing is added.
+
+Protocol analysis reads at most 2MiB encoded and 2MiB decoded per direction, supporting identity/gzip/br/deflate via asynchronous built-in zlib. Originals remain encoded/unchanged for download. Incomplete prefixes may be projected with completeness=false and explicit capture status; historical previews are marked legacy_preview. Integrity/read/decode/size failures do not silently fall back to previews. Invalid/unknown id uses BAD_REQUEST/PROXY_REQUEST_NOT_FOUND as above. Projection failures are described in completeness.reasons; missing data is never reported as zero or a successful terminal protocol.
+
+Context diff prefers complete original request files when present and reads at most 2MiB per source asynchronously. It verifies byte count/digest before normalization; missing, incomplete, changed, invalid UTF-8 or over-limit originals return CONTEXT_DIFF_UNSUPPORTED with a stable reason, never a silently substituted preview. Historical rows without file refs retain legacy preview behavior. Original files/downloads are unchanged. Parameter projections preserve metadata values (including credential-like keys); ordinary comparison bounds still apply. Reasons include capture_incomplete, source_unavailable, source_integrity_failed and invalid_utf8, in addition to existing normalization reasons.
+
+| Method | Route | Result |
+|---|---|---|
+| GET | `/api/proxy/storage` | CaptureStorageStatus for the local original-body store |
+| GET | `/api/proxy/requests/:id/capture` | ProxyCaptureBodies; absent historical refs are null |
+| GET | `/api/proxy/requests/:id/analysis` | On-demand ProxyProtocolAnalysis from original request/response files; no remote requests |
+| GET | `/api/proxy/requests/:id/body/:direction` | Original bytes as application/octet-stream, attachment; direction=request or response |
+
+Invalid id/direction returns400 BAD_REQUEST. Unknown request or unavailable body returns404 PROXY_REQUEST_NOT_FOUND using ApiError. Body download is streamed, supports incomplete captured prefixes, and includes `x-capture-status` plus `x-capture-sha256`; this explicitly identifies incomplete evidence. No content transformation/redaction or analysis-size limit applies. Ordinary list/detail requests do not fetch full files. Runtime options captureDirectory and captureStorage configure the local store; a user-facing configuration flow is a later task, not implicit global state.
+
+Original downloads also support a single byte `Range: bytes=start-end`,
+`bytes=start-` or `bytes=-suffixLength`, with inclusive offsets into the stored
+encoded prefix, not decoded text. Successful downloads advertise
+`accept-ranges: bytes` and a strong `etag` equal to the quoted full-prefix
+SHA-256. No Range returns200; a satisfiable Range returns206, exact
+`content-range: bytes start-end/total` and the segment content-length. Clamp an
+end past EOF; suffixes longer than the prefix select that entire prefix.
+`x-capture-sha256` always describes the entire retained prefix, not the segment;
+partial HTTP delivery does not change `x-capture-status` or imply complete capture.
+An exact strong If-Range match permits206; weak/nonmatching/date If-Range falls
+back to200/full bytes (no last-modified/date validator is supported). Malformed,
+over256-character, multiple or non-byte ranges return400 BAD_REQUEST. Valid
+nonoverlapping/zero-suffix ranges, including any range on an empty prefix,
+return416 RANGE_NOT_SATISFIABLE with ApiError and `content-range: bytes */total`.
+Host/Origin and confirmed deletion checks apply equally to full and segmented
+downloads. No multipart implementation, transformed representation, extra
+file copy, body-bearing list or unbounded allocation is introduced.
+
+Capture routes (`/api/proxy/*`, `/api/ca-cert`) require a loopback connection and a loopback Host; an Origin header, when present, must also name a loopback host. Untrusted Host/Origin returns400 BAD_REQUEST in the unified envelope. Same-machine development UI on another loopback port is allowed. The certificate endpoint returns only the actual proxy CA public certificate, never private keys.
+
+> Original-capture amendment (2026-10-15): monitoring detail/download/export preserve original observed values without masking, including request/response headers and bodies. Lists and incremental change signals stay metadata-only. The full body download is independent of semantic analysis limits. Capture storage config/status uses CaptureStorageConfig/CaptureStorageStatus from data-model; default 10GB quota and 100MiB per direction. Concrete routes and errors must be specified here before HTTP integration. Original file reads remain local and on demand.
+
+
 > **Authoritative source.** All endpoint paths, params, response shapes, and
 > status codes must be adopted verbatim. Type references:
 > `contracts/data-model.md`. Corresponding source files:
@@ -59,16 +198,35 @@ Example:
 | `EVENT_NOT_FOUND` | 404 | event id not in this session |
 | `PROMPT_CONTEXT_NOT_FOUND` | 404 | session exists but has no captured Prompt Context |
 | `PROXY_REQUEST_NOT_FOUND` | 404 | proxy request id does not exist |
+| `RANGE_NOT_SATISFIABLE` | 416 | byte range has no overlap with the retained original prefix |
 | `ROUTE_NOT_FOUND` | 404 | path not registered |
 | `PROVIDER_DISABLED` | 409 | provider disabled in config |
 | `SESSION_PARSE_FAILED` | 500 | session source parse failed (corrupt / not this provider's format, G5.6) |
 | `PROXY_ALREADY_RUNNING` | 409 | proxy already running |
 | `PROXY_NOT_RUNNING` | 409 | proxy not running |
+| `PROXY_STOP_FAILED` | 503 | cleanup did not finish; ownership retained, retry stop; never report idle |
+| `PROXY_MAINTENANCE` | 409 | stop monitor/await maintenance before deleting or starting |
+| `CAPTURE_ORIGINALS_DELETED` | 409 | confirmed body intent makes protocol source unavailable |
+| `CAPTURE_DELETE_CONFLICT` | 409 | exact identity/ref/directory/shared-owner conflict; static reason only |
+| `CAPTURE_DELETE_LIMIT` | 503 | retained deletion-job capacity reached, no new intent |
+| `CAPTURE_DELETE_FAILED` | 503 | deletion/DB state could not finish; inspect typed job before retry |
+| `SERVER_SHUTTING_DOWN` | 503 | server is draining; new work rejected |
+| `SSE_LIMIT_REACHED` | 503 | process-wide live subscriber limit reached; retry later |
+| `MONITOR_PROFILE_NOT_FOUND` | 404 | connection profile missing |
+| `MONITOR_PROFILE_CONFLICT` | 409 | expectedRevision differs; reload before editing/launching |
+| `MONITOR_PROFILE_BUSY` | 409 | profile writer lock is owned; retry, never delete another writer's lock |
+| `MONITOR_PROFILE_INVALID` | 400/500 | invalid request settings / unreadable or corrupt stored profile document |
+| `MONITOR_NOT_READY` | 503 | listener/CA not ready; no Agent was started |
 | `CONTEXT_DIFF_UNAVAILABLE` | 409 | target is valid but no trustworthy automatic predecessor exists |
 | `CONTEXT_DIFF_UNSUPPORTED` | 422 | target/base source cannot be normalized safely within phase-1 rules |
 | `FRIDA_TARGET_NOT_FOUND` | 409 | no Trae process or ai_agent.dll not loaded |
 | `TRAE_KEY_MISSING` | 412 | Trae SQLCipher key not extracted (G6.1) |
 | `SCAN_IN_PROGRESS` | 429 | a scan is already running |
+| `TEAM_RUN_NOT_FOUND` | 404 | team run id does not exist |
+| `TEAM_ACTIVITY_NOT_FOUND` | 404 | activity id not in this team run |
+| `TEAM_SOURCE_INCOMPLETE` | 409 | team source scan is incomplete; derived rows are partial |
+| `TEAM_BODY_UNAVAILABLE` | 409 | body/raw requested but not available for this activity |
+| `TEAM_COMPARE_INVALID` | 400 | compare input invalid (missing/equal run id or malformed manual basis) |
 | `INTERNAL_ERROR` | 500 | unclassified exception; `details` never contains a stack |
 | `DECRYPT_FAILED` | 500 | Python bridge decryption failed |
 
@@ -421,11 +579,76 @@ forbidden.**
 
 ## 4. Proxy
 
+### Connection profiles (fuse-agent-monitoring)
+
+On restart, capture list/detail requests await the shared asynchronous recovery
+of same-DB journals. Scan/static routes stay available; recovery faults use503
+ApiError INTERNAL_ERROR with static CAPTURE_RECOVERY_FAILED, retaining evidence.
+Recovered requests use existing response types: unknown completion/duration and
+usage remain null; transport interruption may report CAPTURE_PROCESS_LOST,
+processing closed, originals interrupted/missing independently. No implicit
+upstream replay or saved event before a successful final SQLite commit.
+One metadata-only proxy_status after a successful recovery batch corrects any
+earlier historical requestCount snapshot; do not emit per-record body events.
+Explicitly expired metadata is not reintroduced by journal recovery; an empty
+post-retention list is legitimate, not a capture success or freed-body-quota
+claim. Its body URLs return404 after row deletion, but original files remain
+on disk and charged to storage. No public response shape changes are needed.
+Absent upstream responseStatus is null for new records, correcting the old
+writer's synthetic0. Historical rows are not backfilled; clients already accept
+the contract's nullable responseStatus.
+
+Original body detail (`ProxyCaptureBodies`) may additionally contain
+`processing: CaptureProcessingResult`, independent of original-file status.
+Current MITM writes version1/status/error atomically with metadata; legacy
+records omit it instead of claiming success. Queue/worker/timeout/output-limit
+failures still permit original download and metadata persistence, are shown
+as degraded capture activity, and never substitute partial parsed usage as
+complete. This outcome is not included in metadata lists or chunk SSE.
+
+ProxyCaptureBodies may separately include transport: CaptureTransportResult.
+Its normally ended HTTP4xx/5xx, network error, observed timeout, client cancel
+and explicit interruption remain distinct from processing and file outcomes.
+statusCode is upstream-only; missing legacy transport is unknown. Client UI
+must not label network completed as Agent/protocol success. On-demand analysis
+retains independent protocol evidence and marks transport failures explicitly;
+neither repeated inspection nor error handling retries/replays upstream calls.
+
+Byte-worker results add optional contentDecoding (identity/gzip/br/deflate/
+unsupported per direction) and decode_error status. Body text fields are
+decoded bounded views when available; original links/digests/byte lengths
+always refer to observed encoded bytes, never re-encoded preview text. Decode
+failures are explicit findings, not empty-success bodies or rewritten files.
+
+Current MITM processing outcomes additionally include previewDroppedBytes;
+resource_limit/CAPTURE_PREVIEW_BUDGET_EXCEEDED marks semantic preview admission
+failure without asserting original loss. Proxy diagnostics may include the
+exact CaptureResourceStatus process-wide gauges/lifetime counters from the
+data-model contract; reads do not reset them or start capture. The events
+endpoint rejects excess subscribers with503 ApiError SSE_LIMIT_REACHED;
+already accepted slow subscribers are disconnected without changing capture.
+
+All routes below use the existing local-only proxy Host/Origin guard and unified ApiError. JSON request bodies are bounded at32KiB. There is no HTTP arbitrary-process launch endpoint.
+
+| Endpoint | Method | Body/result |
+|---|---|---|
+| `/api/proxy/profiles` | GET | `{ items: MonitorConnectionProfile[] }`, max32/256KiB, no per-profile file or process probes |
+| `/api/proxy/profiles` | POST | MonitorConnectionSettings →201 MonitorConnectionProfile |
+| `/api/proxy/profiles/:id` | PUT | `{ settings: MonitorConnectionSettings, expectedRevision: number }` →200 profile |
+| `/api/proxy/profiles/:id` | DELETE | `{ expectedRevision: number }` →200 `{ deleted: true }`; deletes only the app recipe, not original captures/config/Agent processes |
+| `/api/proxy/profiles/:id/plan` | GET | MonitorConnectionPlan; no proxy/Agent start; public CA may be initialized using the existing CA path |
+| `/api/proxy/profiles/:id/diagnostics` | GET | MonitorConnectionDiagnostics read-only timestamped snapshot, no CA generation/listener/Agent start or upstream test request; same local-only guard. CA faults are200 diagnostic findings, not a falsely successful connection. Missing/corrupt profiles still use404/500 ApiError. |
+| `/api/proxy/profiles/:id/start` | POST | `{ expectedRevision: number }` →200 MonitorConnectionPlan after actual listener readiness; no Agent start. Existing same-port running proxy can be reused, other-port/closing proxy returns409 PROXY_ALREADY_RUNNING. |
+
+Plan command is shell-quoted for POSIX and PowerShell and calls `agent-observe launch --server <loopback-control-url> --profile <uuid> --revision <n> -- <user-args>`. Copied commands pin the reviewed revision; later edits require regeneration, never silently launch a changed executable/project. The CLI obtains/starts the same listener through these APIs, checks CA digest, uses process-local environment/trust and inherits terminal stdio. It does not automatically stop a shared listener when its child exits. Proxy stop can disrupt still-connected Agents and must say so. Returned profile is the revision explicitly selected for launch; no implicit native session or verified Agent identity is created. A readiness wait is bounded at10s and never claims success solely from starting-state acceptance.
+
+`agent-observe diagnose --server <loopback-origin> --profile <uuid> --revision <n> [--json]` reads only the diagnostics endpoint through direct bounded loopback HTTP. It never starts the server/listener/Agent or opens a database. Revision mismatch is a conflict. Human output includes each issue's nextStep; JSON returns the same snapshot. Exit0 means report retrieved, not Agent readiness; exit2 means report contains an error finding; connection/validation failures exit nonzero with actionable control-server guidance. No polling or extra model traffic. CLI control fetch timeout12s; the explicit Web check aborts after5s with retry guidance and clears stale results. Runtime SSE changes invalidate a snapshot locally without another fetch.
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/proxy/start` | POST | body `{ port?: number }`; running → 409 `PROXY_ALREADY_RUNNING` |
-| `/api/proxy/stop` | POST | not running → 409 `PROXY_NOT_RUNNING` |
-| `/api/proxy/status` | GET | `{ running: boolean, starting: boolean, port: number \| null, requestCount: number, startedAt: string \| null }` (D4: `starting=true` during async startup) |
+| `/api/proxy/stop` | POST | async drain; concurrent stops share cleanup; idle → 409 `PROXY_NOT_RUNNING`; failure → 503 `PROXY_STOP_FAILED` |
+| `/api/proxy/status` | GET | `ProxyRuntimeStatus`; starting=true during async startup; diagnostics distinguish listening from observed traffic |
 | `/api/proxy/requests` | GET | list, `ProxyRequestListItem[]`, **excludes all 4 body columns and the systemPrompt body** |
 | `/api/proxy/requests/:id` | GET | full `ProxyRequest` incl. bodies |
 | `/api/proxy/requests/:id/context-diff` | GET | bounded evidence-grade request-context diff (see §4.1) |
@@ -434,9 +657,15 @@ forbidden.**
 `/api/proxy/requests` params: `limit` (default 50, max 500), `cursor`,
 `hostname`, `captureMethod`.
 
+The list pagination envelope is `{ items: ProxyRequestListItem[], nextCursor:
+string | null, hasMore: boolean }`; the table above describes its item type,
+not a top-level array. This clarifies the existing implementation/client shape.
+
+Stop first rejects new proxy work and closes acceptors, allows existing requests up to 5 seconds to finish, then interrupts remaining streams and flushes accepted original bytes/index writes. A successful response guarantees no owned listener/socket or capture write remains. The control waits at most 10 seconds; a timeout/failure retains cleanup ownership, blocks a new start and reports failed/cleanupPending, not idle. Start during stopping returns PROXY_ALREADY_RUNNING. Startup cancellation waits for any late-created transport to close before a restart. Activity SSE is coalesced over 200ms; lifecycle transitions are immediate and contain no body data. Shutdown of the HTTP server closes its own SSE clients/watcher, drains scans and proxy before its close callback permits the caller to close SQLite. CLI SIGINT/SIGTERM uses this cleanup before checkpoint/DB close. No automatic trust/proxy setting mutation.
+
 ### 4.1 `GET /api/proxy/requests/:id/context-diff` (add-request-context-diff)
 
-On-demand comparison of the desensitized request context of the target
+On-demand comparison of the original request context of the target
 request `:id` with an eligible base request. Query:
 
 ```ts
@@ -448,17 +677,25 @@ interface RequestContextDiffQuery {
 Semantics:
 
 - Omitted `base` is identical to `base=previous` (automatic pairing).
-- Automatic pairing precedence (design D4): nearest earlier supported request
-  with the same non-empty `parsed_session_id` and `request_format`, then
-  nearest earlier supported request in the same non-empty `capture_group_id`
-  with the same `request_format` and null-safe-equal `model`. Candidates with
-  conflicting non-empty known session IDs are rejected. Never pair by
-  timestamp alone.
+- Automatic pairing (fuse-agent-monitoring supersedes legacy design D4): the
+  target must have exactly one active `direct` or `confirmed` association.
+  Select the nearest earlier eligible captured request of the same format in
+  that linked scan session. The base must also have exactly one such owner;
+  candidate/rejected/revoked links never qualify. Compare observed UTC start
+  instants, then numeric id as a deterministic tie-break, not insertion order
+  alone. Label `linked_session`, give the session key in the reason and warn
+  that membership/capture order does not prove the immediately previous native
+  model call. Model changes remain comparable but produce a mismatch warning.
+  Legacy `parsed_session_id`, capture group, host/model/time/length are never
+  sufficient evidence. No unique owner/predecessor returns409 as below.
 - `base=<positive integer>` selects an explicit manual base; base→target
   order is preserved, confidence is `manual`, and identity mismatches are
   returned as warnings, never silently coerced.
-- The route reads exactly the target row and at most one base row; it never
-  scans a capture group/session and never selects raw body columns.
+- The route reads exactly the target body and at most one base body, plus a
+  fixed number of indexed association/metadata queries; no per-row body read,
+  capture-group body scan or raw-column selection. Manual comparison also
+  warns about absent/ambiguous/different linked-session membership; it never
+  creates or confirms an association.
 
 ```ts
 // 200 → RequestContextDiffResponse (contracts/data-model.md §7.1, verbatim
@@ -507,7 +744,203 @@ response < 1 MiB, two-row read (see `contracts/nfr.md` §2).
 
 ---
 
-## 7. Dev-only endpoints
+## 7. Team runs (add-agent-team-observability)
+
+All team responses are gzip-aware (§0.2), use `ApiError` (§0.3) for non-2xx,
+and call `markForegroundRequest()` on entry (§0.6). List/ledger use keyset
+pagination (§0.5) with an opaque `cursor`; snapshots and compare are single
+bounded reads. **No route reads a large source file, spawns a process, or
+computes a full run on the request path** (design D13). Every route rejects a
+violated bound with `400 BAD_REQUEST` — silent truncation is prohibited.
+
+### 7.1 `GET /api/team-runs`
+
+Keyset-paginated slim run list. **Never contains task/message/tool/reasoning/
+artifact body, goal full text, or a source file path** (design D18).
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `provider` | `ProviderKey` | — | comma-separated multi-select, `provider IN (...)` |
+| `status` | `TeamRunStatus` | — | comma-separated multi-select; invalid value → `400 INVALID_ENUM` |
+| `topology` | `TeamTopologyKind` | — | comma-separated multi-select; invalid value → `400 INVALID_ENUM` |
+| `q` | string | — | title / native run id case-insensitive substring (`LIKE` with `ESCAPE '\'`) |
+| `range` | `'today' \| '7d' \| '30d' \| 'all'` | — | `started_at >= since` activity filter; invalid value → `400 INVALID_ENUM` |
+| `completeness` | `CompletenessLevel` | — | comma-separated multi-select over any evidence dimension |
+| `limit` | number | 50 | max 500 |
+| `cursor` | string | — | opaque keyset cursor (encoded `started_at` + `id`); omitted on first page |
+
+```ts
+// 200
+interface TeamRunListResponse {
+  items: TeamRunSummary[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  total: number;          // total under current filters, from COUNT(*)
+}
+```
+
+Ordering: `started_at DESC, id ASC`. **Budget**: 500 runs < 10ms DB / < 80KB gzip.
+
+### 7.2 `GET /api/team-runs/:runId`
+
+One bounded `TeamRunSnapshot` (§data-model 12.3): summary, agents, agent edges,
+tasks, dependencies, current assignments, artifacts metadata, completeness,
+anomalies, metrics. **No activity, message, tool, raw, reasoning, or artifact
+body** (design D13). Uses a stamp cache; a cache hit returns `cached: true`.
+
+```ts
+// 200
+interface TeamRunSnapshotResponse {
+  snapshot: TeamRunSnapshot;
+  stamp: string;
+  cached: boolean;
+}
+// 404 → TEAM_RUN_NOT_FOUND
+// 409 → TEAM_SOURCE_INCOMPLETE (run exists but derived rows are partial)
+```
+
+**Budget**: 100 agents + 1,000 tasks < 100ms / < 750KB gzip; 1 request.
+
+### 7.3 `GET /api/team-runs/:runId/activities`
+
+Keyset-paginated slim ledger. **Never contains tool arguments/results, message
+text, raw, reasoning, or artifact content** (design D3).
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `agent` | string | — | canonical agent id |
+| `task` | string | — | canonical task id |
+| `kind` | `TeamActivityKind` | — | comma-separated multi-select; invalid value → `400 INVALID_ENUM` |
+| `status` | `TraceStatus` | — | comma-separated multi-select |
+| `from` / `to` | ISO string | — | `started_at` window bounds |
+| `limit` | number | 200 | max 500 |
+| `cursor` | string | — | opaque keyset cursor (encoded `started_at` + `native_sequence` + `id`) |
+
+```ts
+// 200
+interface TeamActivityListResponse {
+  items: TeamActivitySlim[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  total: number;
+  /** true when any returned row has orderConfidence === 'ambiguous'. */
+  hasAmbiguousOrder: boolean;
+}
+// 404 → TEAM_RUN_NOT_FOUND
+```
+
+Ordering (§data-model D8): native sequence within a source, then `started_at`
+across sources, then source priority, then canonical `id`; rows with
+`orderConfidence = 'ambiguous'` render an uncertainty marker. **Budget**: 200
+activities < 50ms / < 200KB gzip.
+
+### 7.4 `GET /api/team-runs/:runId/activities/:activityId`
+
+Single detail. `include=body` returns the desensitized body tier; `include=raw`
+returns the raw reference. Both require an explicit query flag; the default
+response is slim metadata only.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `include` | `'body' \| 'raw'` | explicit body tier control |
+
+```ts
+// 200
+interface TeamActivityBody {
+  input: string | null;
+  output: string | null;
+  message: string | null;
+  result: string | null;
+}
+
+interface TeamActivityDetailResponse {
+  activity: TeamActivitySlim;
+  body: TeamActivityBody | null;   // present only when include=body
+  raw: string | null;              // present only when include=raw
+}
+// 404 → TEAM_RUN_NOT_FOUND
+// 404 → TEAM_ACTIVITY_NOT_FOUND
+// 409 → TEAM_BODY_UNAVAILABLE (include requested but no body/raw row exists)
+```
+
+**Budget**: < 20ms, bounded by existing detail limits; cached in the bounded
+detail cache.
+
+### 7.5 `GET /api/team-runs/:runId/patch`
+
+Bounded SSE-patch payload: returns slim entities changed since `stamp`, plus
+deleted ids. When the change set exceeds the caps, `truncated` is set and the
+client performs one snapshot refresh (design D14).
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `stamp` | string | — | the run's previous stamp; required for an incremental patch |
+
+```ts
+// 200
+interface TeamPatchResponse {
+  runId: string;
+  stamp: string;                    // new stamp for the next patch
+  agents: TeamAgent[];
+  tasks: TeamTask[];
+  agentEdges: TeamAgentEdge[];
+  taskDependencies: TeamTaskDependency[];
+  assignments: TeamAssignment[];
+  messages: TeamCommunication[];
+  artifacts: TeamArtifact[];
+  metrics: TeamMetrics | null;      // non-null when aggregates changed
+  deletedAgentIds: string[];
+  deletedTaskIds: string[];
+  deletedMessageIds: string[];
+  deletedActivityIds: string[];
+  truncated: boolean;
+}
+// 404 → TEAM_RUN_NOT_FOUND
+```
+
+No activity ids are broadcast over SSE; the ledger invalidates pages
+intersecting the changed run/time stamp. **Budget**: 1 request, bounded by the
+SSE cap (contract default 200 ids per list).
+
+### 7.6 `POST /api/team-compare`
+
+Compares exactly two team runs. An `unmatched` / `unknown` result is a
+**successful descriptive response**, not an error; only malformed or
+bounded-invalid input is rejected (design D10 / D13).
+
+```ts
+// request
+interface TeamCompareRequest {
+  leftRunId: string;
+  rightRunId: string;
+  /** true = the user declares the runs comparable; detected differences are
+   * still preserved and reported. */
+  manualBasis?: boolean;
+}
+// 200 → TeamComparison (contracts/data-model.md §12.4)
+// 400 → TEAM_COMPARE_INVALID (missing id, left === right, or malformed manualBasis)
+// 400 → BAD_REQUEST (body not parseable)
+// 404 → TEAM_RUN_NOT_FOUND (either run id does not exist)
+```
+
+**Budget**: < 300ms cold / < 20ms stamp-cache hit / 1 request / < 250KB gzip;
+no per-agent/task/session loop (design D17, storage REQ-020).
+
+### 7.7 `DELETE /api/team-runs/:runId`
+
+Explicit local derived-team deletion only. Deletes team-owned graph, ledger,
+detail, and metric rows via the FK cascade; **does not** delete linked sessions
+or source files (design D11 / D18). The confirmation says linked sessions and
+sources are untouched.
+
+```ts
+// 200 → { deleted: true, runId: string }
+// 404 → TEAM_RUN_NOT_FOUND
+```
+
+---
+
+## 8. Dev-only endpoints
 
 The following are wired **only** in `local-sessions/vite-plugin.ts`; production
 `server.ts` does not expose them (G10.2). Requests to a production instance
@@ -525,7 +958,7 @@ return 404 `ROUTE_NOT_FOUND`:
 
 ---
 
-## 8. Contract tests
+## 9. Contract tests
 
 The following tests must exist in `server/server.test.ts` as executable API
 contract acceptance:
@@ -600,6 +1033,76 @@ describe('API contract', () => {
     const bad = await getRaw('/api/mission?range=99d');
     expect(bad.status).toBe(400);
     expect(bad.body.error.code).toBe('INVALID_ENUM');
+  });
+
+  it('team run list never leaks body or source paths', async () => {
+    const r = await get('/api/team-runs?limit=10');
+    for (const item of r.items) {
+      expect(item).not.toHaveProperty('body');
+      expect(item).not.toHaveProperty('sourcePath');
+      expect(item).not.toHaveProperty('goal');
+    }
+    expect(typeof r.nextCursor === 'string' || r.nextCursor === null).toBe(true);
+    expect(typeof r.hasMore).toBe('boolean');
+  });
+
+  it('team run snapshot contains no activity/message/body fields', async () => {
+    const r = await get(`/api/team-runs/${runId}`);
+    const s = r.snapshot;
+    for (const a of s.agents) {
+      expect(a).not.toHaveProperty('body');
+    }
+    for (const t of s.tasks) {
+      expect(t).not.toHaveProperty('body');
+    }
+    expect(s).not.toHaveProperty('activities');
+    expect(s).not.toHaveProperty('messages');
+    expect(typeof r.stamp).toBe('string');
+    expect(typeof r.cached).toBe('boolean');
+  });
+
+  it('team activity ledger returns slim rows with no body fields', async () => {
+    const r = await get(`/api/team-runs/${runId}/activities?limit=200`);
+    for (const item of r.items) {
+      expect(item).not.toHaveProperty('input');
+      expect(item).not.toHaveProperty('output');
+      expect(item).not.toHaveProperty('raw');
+      expect(item).not.toHaveProperty('toolArguments');
+      expect(item).not.toHaveProperty('toolResult');
+    }
+    expect(typeof r.hasAmbiguousOrder).toBe('boolean');
+  });
+
+  it('team activity detail defaults to slim and gates body/raw behind include', async () => {
+    const slim = await get(`/api/team-runs/${runId}/activities/${activityId}`);
+    expect(slim.body).toBeUndefined();
+    expect(slim.raw).toBeUndefined();
+  });
+
+  it('team compare never returns body text and reports unmatched as success', async () => {
+    const r = await post('/api/team-compare', { leftRunId, rightRunId });
+    expect(r.dimensions).toBeDefined();
+    expect(r.metrics).toBeDefined();
+    expect(r).not.toHaveProperty('bodies');
+    // matched rows carry no body payload
+    for (const row of r.metrics) {
+      expect(row).not.toHaveProperty('body');
+      expect(row).not.toHaveProperty('raw');
+    }
+  });
+
+  it('team routes use the unified error envelope', async () => {
+    const missing = await getRaw('/api/team-runs/does-not-exist');
+    expect(missing.status).toBe(404);
+    expect(missing.body.error.code).toBe('TEAM_RUN_NOT_FOUND');
+
+    const missingActivity = await getRaw(`/api/team-runs/${runId}/activities/does-not-exist`);
+    expect(missingActivity.status).toBe(404);
+    expect(missingActivity.body.error.code).toBe('TEAM_ACTIVITY_NOT_FOUND');
+
+    const badCompare = await post('/api/team-compare', { leftRunId: runId, rightRunId: runId });
+    expect(badCompare.status).toBe(400);
+    expect(badCompare.body.error.code).toBe('TEAM_COMPARE_INVALID');
   });
 });
 ```

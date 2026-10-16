@@ -46,11 +46,35 @@
   flex-direction: column;
 }
 
+.capture-capacity-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.capture-capacity-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-1) var(--space-2);
+}
+
+.capture-capacity-grid dt { color: var(--fg-muted); }
+.capture-capacity-grid dd { margin: 0; overflow-wrap: anywhere; }
+
 .proxy-filters {
   display: flex;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   flex: 0 0 auto;
+}
+
+.proxy-detail-tabs {
+  flex-wrap: wrap;
+}
+
+.proxy-detail-tabs .ui-tab {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .proxy-table {
@@ -730,4 +754,23 @@
 
 .mission-hot-row:hover {
   background: var(--canvas-subtle);
+}
+
+/* Connection recipes: absolute paths must remain inspectable in the drawer. */
+.monitor-setup label {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.monitor-setup label > .ui-input,
+.monitor-setup label > .ui-select,
+.monitor-setup textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.monitor-setup .monitor-bypass {
+  display: flex;
+  align-items: flex-start;
 }

@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { createServer as createHttpServer } from 'node:http';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -33,17 +35,108 @@ afterEach(() => {
   }
 });
 
+describe('built CLI signal cleanup', () => {
+  it.skipIf(process.platform === 'win32').each(['SIGINT', 'SIGTERM'] as const)('drains a real HTTP request before checkpoint/database close on %s', async signal => {
+    const dbPath = join(tempDir(), 'shutdown.sqlite');
+    const script = `
+      import http from 'node:http';
+      import Database from 'better-sqlite3';
+      import { registerCliShutdown } from './server-dist/cli.js';
+      const db = new Database(process.argv[1]);
+      db.pragma('journal_mode = WAL');
+      db.exec('CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID');
+      let finish;
+      const server = http.createServer((_req, res) => {
+        res.writeHead(200); res.write('prefix');
+        finish = () => { db.prepare('INSERT INTO _meta (key, value) VALUES (?, ?)').run('probe', 'drained'); res.end('suffix'); };
+      });
+      registerCliShutdown(server, db);
+      process.on('${signal}', () => setTimeout(() => finish(), 30));
+      server.listen(0, '127.0.0.1', () => {
+        http.get({ host: '127.0.0.1', port: server.address().port, agent: false }, response => {
+          response.once('data', () => console.log('PROBE_READY')); response.resume();
+        }).on('error', error => { console.error(error.code); process.exitCode = 1; });
+      });
+    `;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script, dbPath], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '';
+    const ready = new Promise<void>((resolve, reject) => {
+      child.stdout.on('data', chunk => { stdout += String(chunk); if (stdout.includes('PROBE_READY')) resolve(); });
+      child.stderr.on('data', chunk => { stderr += String(chunk); });
+      child.once('error', reject);
+      child.once('exit', () => { if (!stdout.includes('PROBE_READY')) reject(new Error('CLI probe exited before readiness: ' + stderr)); });
+    });
+    const exited = new Promise<number | null>((resolve, reject) => { child.once('close', code => resolve(code)); child.once('error', reject); });
+    try {
+      await ready;
+      child.kill(signal);
+      expect(await exited).toBe(0);
+      expect(stderr).toBe('');
+      expect(stdout).toContain('capture writes flushed and database closed');
+      const db = new Database(dbPath, { readonly: true });
+      expect(db.prepare('SELECT value FROM _meta WHERE key = ?').get('probe')).toEqual({ value: 'drained' });
+      expect(db.pragma('quick_check', { simple: true })).toBe('ok');
+      db.close();
+    } finally { if (child.exitCode === null) child.kill('SIGKILL'); }
+  });
+});
+
+describe('built CLI read-only diagnostic failure paths', () => {
+  const runDiagnostic = (port: number, cwd: string) => new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, [join(process.cwd(), 'bin', 'agent-observe.js'), 'diagnose', '--server', `http://127.0.0.1:${port}`, '--profile', '00000000-0000-4000-8000-000000000001', '--revision', '1', '--json'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += String(chunk); }); child.stderr.on('data', chunk => { stderr += String(chunk); });
+    child.once('error', reject); child.once('close', code => resolve({ code, stdout, stderr }));
+  });
+
+  it('gives actionable control-server guidance on refusal without creating a DB or starting an Agent', async () => {
+    const probe = createNetServer(); await new Promise<void>(resolve => probe.listen(0, '127.0.0.1', resolve));
+    const port = (probe.address() as { port: number }).port; await new Promise<void>(resolve => probe.close(() => resolve()));
+    const cwd = tempDir();
+    const result = await runDiagnostic(port, cwd);
+    expect(result.code).toBe(1); expect(result.stdout).toBe(''); expect(result.stderr).toContain('Start/check the observability Web server');
+    const fs = await import('node:fs/promises'); expect(await fs.readdir(cwd)).toEqual([]);
+  });
+
+  it('bounds a real stalled local response at twelve seconds and leaves the directory unchanged', async () => {
+    let requests = 0;
+    const server = createHttpServer(req => { requests += 1; req.resume(); });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const cwd = tempDir(); const start = performance.now();
+    try {
+      const result = await runDiagnostic((server.address() as { port: number }).port, cwd);
+      const elapsed = performance.now() - start;
+      expect(elapsed).toBeGreaterThanOrEqual(12000); expect(elapsed).toBeLessThan(14000);
+      expect(result.code).toBe(1); expect(result.stdout).toBe(''); expect(result.stderr).toContain('timed out'); expect(result.stderr).toContain('Check the local Web server/status and retry');
+      expect(requests).toBe(1);
+      const fs = await import('node:fs/promises'); expect(await fs.readdir(cwd)).toEqual([]);
+    } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  });
+});
+
 describe('REQ-001 parseCliArgs', () => {
-  it('默认值：prewarmRecent=0、host=127.0.0.1、open=true、retention=30', () => {
+  it('defaults preserve original records, with 10GB quota and 100MiB per body', () => {
     const opts = parseCliArgs([]);
     expect(opts.host).toBe('127.0.0.1');
     expect(opts.port).toBe(4173);
     expect(opts.open).toBe(true);
     expect(opts.prewarmRecent).toBe(0);
-    expect(opts.proxyRetentionDays).toBe(30);
+    expect(opts.proxyRetentionDays).toBe(0);
+    expect(opts.captureQuotaBytes).toBe(10_000_000_000);
+    expect(opts.captureMaxBodyBytes).toBe(104_857_600);
     expect(opts.proxyPort).toBe(7779);
     expect(opts.enableProxy).toBe(false);
     expect(opts.noGzip).toBe(false);
+  });
+
+  it('parses configurable original storage budgets and directory', () => {
+    expect(parseCliArgs(['--capture-directory', '/tmp/originals', '--capture-quota-gb=20', '--capture-max-body-mib', '200'])).toMatchObject({
+      captureDirectory: '/tmp/originals', captureQuotaBytes: 20_000_000_000, captureMaxBodyBytes: 209_715_200,
+    });
+  });
+
+  it.each(['0', '-1', 'NaN', 'Infinity', '99999999999999999'])('rejects invalid original quota %s', value => {
+    expect(() => parseCliArgs(['--capture-quota-gb', value])).toThrow();
   });
 
   it('解析全部 flag（含 = 与空格两种形式）', () => {

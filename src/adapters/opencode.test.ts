@@ -63,6 +63,14 @@ describe('OpenCode adapter（REQ-005）', () => {
     expect(r.session.tokenUsage.total).toBe(2 + 2 + 3 + 40 + 2);
   });
 
+  it('fusion 9.2 retains the calibrated 6016+4000+2000 incremental cache total', () => {
+    const events = [6016, 4000, 2000].map((read, i) => msg({ id: 'cache-step-' + i, role: 'assistant', tokens: { input: 1, output: 2, reasoning: 1, cache: { read, write: 0 } } }));
+    const r = normalizeOpenCode(sample(events), SRC);
+    expect(r.session.tokenUsage.cacheRead).toBe(12016);
+    expect(r.session.tokenUsage.total).toBe(12028);
+    expect(r.tokenSemantics.cacheRead).toBe('incremental');
+  });
+
   it('#5 多 part 消息的 token 只计一次（step 或最后一个 part 挂载）', () => {
     const events = [
       msg({

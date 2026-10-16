@@ -70,6 +70,17 @@ function renderApp(): HTMLDivElement {
   return container;
 }
 
+/** team 测试专用：返回 container + unmount，确保组件正确卸载避免 hash 残留。 */
+function renderAppWithUnmount(): { container: HTMLDivElement; unmount: () => void } {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  act(() => {
+    root.render(<App />);
+  });
+  return { container, unmount: () => act(() => { root.unmount(); }) };
+}
+
 beforeEach(() => {
   EventSourceStub.instances.length = 0;
   vi.stubGlobal('fetch', vi.fn(async () => ({
@@ -188,6 +199,9 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
         if (url.includes('/api/sessions/s-1/events/')) {
           return okJson({ ...sessionDetail.events[0], inputSummary: null, outputSummary: 'step one' });
         }
+        if (url.includes('/api/sessions/s-1/team-run')) {
+          return okJson({ runIds: [] });
+        }
         if (url.includes('/api/sessions/s-1')) {
           return okJson(sessionDetail);
         }
@@ -215,16 +229,17 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     expect(container.querySelector('.session-toolbar')).not.toBeNull();
     expect(container.querySelector('.session-toolbar-title')?.textContent).toContain('fix build');
     expect(container.querySelector('.session-findings-panel')).not.toBeNull();
-    // 只有一条等宽回合导航，统计与分析收在列表下方。
+    // 单行等宽回合导航；统计与分析在正文下方按需展开。
     expect(container.querySelector('.gantt-wrap')).toBeNull();
     expect(container.querySelector('.timeline-phase-axis')).toBeNull();
     expect(container.querySelector('.trajectory-pane')).not.toBeNull();
     expect(container.querySelector('.trajectory-statbar')).not.toBeNull();
     expect(container.querySelectorAll('.trajectory-overview')).toHaveLength(1);
-    expect(container.querySelector('.turn-navigator')).not.toBeNull();
-    expect(container.querySelector('.turn-ribbon')).toBeNull();
+    expect(container.querySelector('.trajectory-overview .session-signals')).toBeNull();
     expect(container.querySelector('.turn-navigation')).toBeNull();
-    expect(container.querySelector('.session-signals')).toBeNull();
+    expect(container.querySelector('.session-summary')).toBeNull();
+    expect(container.querySelector('.turn-ribbon')).toBeNull();
+    expect(container.querySelector('.turn-navigator')).not.toBeNull();
     expect(container.querySelector('.turn-list')).not.toBeNull();
     // llm_boundary：两个 llm 事件 → 两个回合行
     expect(container.querySelectorAll('.turn-row').length).toBe(2);
@@ -239,9 +254,17 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     const fetchMock = vi.mocked(fetch);
     const detailCalls = fetchMock.mock.calls.filter((call) => {
       const url = String(call[0]);
-      return url.includes('/api/sessions/s-1') && !url.includes('events/');
+      return url.includes('/api/sessions/s-1') && !url.includes('events/') && !url.includes('team-run');
     });
     expect(detailCalls).toHaveLength(1);
+
+    const callsBeforeLinks = fetchMock.mock.calls.length;
+    await act(async () => {
+      EventSourceStub.instances.at(-1)?.emit('trace_links_changed', { sessionKeys: ['s-1'], proxyIds: [1], truncated: false });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(fetchMock.mock.calls).toHaveLength(callsBeforeLinks);
+    expect(container.querySelectorAll('.turn-row')).toHaveLength(2);
 
     sessionDetail.events.push({
       id: 'e3', sessionId: 's-1', sequence: 3, turnKey: null, kind: 'llm', phase: 'implement',
@@ -397,5 +420,199 @@ describe('Compare 端到端（UI-TASKS 2 回归）', () => {
     expect(container.textContent).not.toContain('NaN');
     expect(container.querySelector('.ui-error-boundary')).toBeNull();
     container.remove();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// add-agent-team-observability §7.3 / §7.8 — team 视图入口 + URL restore + SSE
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('team 视图入口 + URL restore + SSE（§7.3 / §7.8）', () => {
+  let originalHash: string;
+
+  beforeEach(() => {
+    originalHash = window.location.hash;
+    // 强制清理前一个测试可能残留的 DOM 和 hash（team 测试对 hash 敏感）
+    document.body.innerHTML = '';
+    history.replaceState(null, '', '#');
+    // 覆盖 fetch mock 处理 team + session + health API
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/team-runs')) {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ items: [], nextCursor: null, hasMore: false, total: 0 }),
+          } as unknown as Response;
+        }
+        if (url.includes('/api/health')) {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ ok: true, dbSizeBytes: 1, walSizeBytes: 1, sessionCount: 0, eventCount: 0 }),
+          } as unknown as Response;
+        }
+        if (url.includes('/api/sessions')) {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ items: THREE_SESSIONS, nextCursor: null, hasMore: false, total: 3 }),
+          } as unknown as Response;
+        }
+        return { ok: true, status: 200, text: async () => JSON.stringify({}) } as unknown as Response;
+      }),
+    );
+  });
+
+  afterEach(() => {
+    window.location.hash = originalHash;
+  });
+
+  it('§7.3 team nav 按钮已移除（UI 架构调整：Teams 页签移除，Sessions 改名为任务）', async () => {
+    const { container, unmount } = renderAppWithUnmount();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    // 不应存在独立的 team 导航按钮
+    const teamBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('团队'),
+    );
+    expect(teamBtn).toBeUndefined();
+    act(() => { unmount(); });
+  });
+
+  it('§7.3 URL restore: #/team → team 视图', async () => {
+    // 方案 A：先渲染 App（默认 session 视图），再用 hashchange 事件触发 team 视图。
+    // 避免依赖 isInitialTeam（首帧 hash），防止 INITIAL_HASH 模块级常量被前序 compare 测试污染。
+    const { container, unmount } = renderAppWithUnmount();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    // 用 hashchange 事件触发 team 视图，避免 INITIAL_HASH 污染
+    act(() => {
+      history.replaceState(null, '', '#/team');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    expect(container.querySelector('.team-shell')).not.toBeNull();
+    act(() => { unmount(); });
+  });
+
+  it('§7.8 team_runs_changed SSE → team 刷新（/api/team-runs 请求增加）', async () => {
+    const fetchCalls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        fetchCalls.push(url.split('?')[0] ?? url);
+        if (url.includes('/api/team-runs')) {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ items: [], nextCursor: null, hasMore: false, total: 0 }),
+          } as unknown as Response;
+        }
+        if (url.includes('/api/health')) {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ ok: true, dbSizeBytes: 1, walSizeBytes: 1, sessionCount: 0, eventCount: 0 }),
+          } as unknown as Response;
+        }
+        if (url.includes('/api/sessions')) {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ items: THREE_SESSIONS, nextCursor: null, hasMore: false, total: 3 }),
+          } as unknown as Response;
+        }
+        return { ok: true, status: 200, text: async () => JSON.stringify({}) } as unknown as Response;
+      }),
+    );
+    // 方案 A：先渲染 App（默认 session 视图），再用 hashchange 事件触发 team 视图。
+    // 避免依赖 isInitialTeam（首帧 hash），防止 INITIAL_HASH 模块级常量被前序 compare 测试污染。
+    const { container, unmount } = renderAppWithUnmount();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    // 用 hashchange 事件触发 team 视图（Teams 按钮已移除）
+    act(() => {
+      history.replaceState(null, '', '#/team');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    expect(container.querySelector('.team-shell')).not.toBeNull();
+    const listCallsBefore = fetchCalls.filter((c) => c === '/api/team-runs').length;
+    expect(listCallsBefore).toBeGreaterThan(0);
+    // 触发 team_runs_changed SSE 事件
+    await act(async () => {
+      EventSourceStub.instances.at(-1)?.emit('team_runs_changed', { runIds: [] });
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    const listCallsAfter = fetchCalls.filter((c) => c === '/api/team-runs').length;
+    expect(listCallsAfter).toBeGreaterThan(listCallsBefore);
+    act(() => { unmount(); });
+  });
+});
+
+describe('Trajectory event pagination', () => {
+  it('appends slim pages, prevents duplicate requests, and retries without losing loaded turns', async () => {
+    const event = (sequence: number): TraceEventSlim => ({
+      id: `paged-${sequence}`, sessionId: 'page-only', sequence, turnKey: `turn-${sequence}`,
+      kind: 'llm', phase: 'implement', title: `page ${sequence}`,
+      startedAt: '2026-08-05T00:00:00.000Z', durationMs: 10,
+      status: 'success', actor: 'assistant', tool: null, tokens: null, error: null,
+      hasInput: false, hasOutput: true, hasRaw: false,
+    });
+    const first: SessionDetailResponse = {
+      session: {
+        ...THREE_SESSIONS[0]!, id: 'page-only', systemPrompt: null, isSubagent: false,
+        tokenUsage: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 0, total: 0 },
+        totalDurationMs: 30,
+      },
+      events: [event(1)], mode: 'slim', eventTotal: 2, eventOffset: 0,
+      eventLimit: 1, hasMore: true, pending: false,
+    };
+    const json = (body: unknown): Response => ({ ok: true, status: 200, text: async () => JSON.stringify(body) }) as Response;
+    let attempts = 0;
+    let finish: ((response: Response) => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/sessions/page-only?')) {
+        if (!url.includes('offset=')) return json(first);
+        attempts += 1;
+        if (attempts === 1) throw new Error('temporary page failure');
+        return new Promise<Response>((resolve) => { finish = resolve; });
+      }
+      if (url.includes('/api/sessions?')) return json({ items: [{ ...THREE_SESSIONS[0]!, id: 'page-only' }], hasMore: false, total: 1, nextCursor: null });
+      if (url.includes('/api/session-groups')) return json({ groups: [] });
+      if (url.includes('/api/health')) return json({ ok: true, dbSizeBytes: 1, walSizeBytes: 1 });
+      return json({});
+    }));
+    const { container, unmount } = renderAppWithUnmount();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    act(() => (container.querySelector('.session-row') as HTMLElement).click());
+    await act(async () => { await Promise.resolve(); });
+    const more = (): HTMLButtonElement => container.querySelector('.turn-list-banner button')!;
+    expect(container.querySelectorAll('.turn-row')).toHaveLength(1);
+    await act(async () => { more().click(); });
+    expect(container.querySelector('.turn-list-banner')?.textContent).toContain('temporary page failure');
+    expect(container.querySelectorAll('.turn-row')).toHaveLength(1);
+    await act(async () => { more().click(); more().click(); });
+    expect(attempts).toBe(2);
+    expect(more().disabled).toBe(true);
+    await act(async () => { finish!(json({ ...first, events: [event(2)], eventOffset: 1, hasMore: false })); });
+    expect(container.querySelectorAll('.turn-row')).toHaveLength(2);
+    expect(container.querySelector('.turn-list-banner')).toBeNull();
+    const pages = vi.mocked(fetch).mock.calls.map((call) => String(call[0])).filter((url) => url.includes('offset='));
+    expect(pages).toHaveLength(2);
+    expect(pages.every((url) => url.includes('mode=slim') && url.includes('offset=1') && url.includes('limit=2000'))).toBe(true);
+    unmount();
   });
 });

@@ -1,7 +1,10 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { EMPTY_TOKEN_USAGE, PROVIDER_KEYS, TRACE_KINDS, TRACE_PHASES } from './trace-types';
+import { EMPTY_TOKEN_USAGE, PROVIDER_KEYS, TEAM_TOPOLOGY_KINDS, TRACE_KINDS, TRACE_PHASES } from './trace-types';
+import type { CaptureMetadataCapacity, MonitorConnectionDiagnostics, MonitorDiagnosticCode, OriginalDeletionJob } from './trace-types';
 import type {
+  ComparisonMatch,
+  CompletenessLevel,
   ContextCategoryDiff,
   ContextChangeEntry,
   ContextChangeKind,
@@ -11,7 +14,10 @@ import type {
   ContextIndicator,
   ContextPairingConfidence,
   ContextRequestRef,
+  EvidenceConfidence,
+  EvidenceDimension,
   MessageRole,
+  PriceCurrency,
   ProxyRequest,
   ProxyRequestListItem,
   RequestContextDiffResponse,
@@ -19,6 +25,26 @@ import type {
   SessionAnnotations,
   SessionAnnotationsUpdate,
   SessionIndexEntry,
+  TeamActivityKind,
+  TeamActivitySlim,
+  TeamAgent,
+  TeamAgentEdgeKind,
+  TeamAgentState,
+  TeamArtifact,
+  TeamCommunication,
+  TeamCostMetrics,
+  TeamMetricDimension,
+  TeamMetricDirection,
+  TeamMetricValue,
+  TeamMessageCategory,
+  TeamMessageMode,
+  TeamOrderConfidence,
+  TeamRoundSegmentationSource,
+  TeamRunStatus,
+  TeamRunSummary,
+  TeamTask,
+  TeamTaskStatus,
+  TeamTopologyKind,
   TraceTurn,
   TraceEventSlim,
   TraceKind,
@@ -32,6 +58,18 @@ import type {
   TurnModel,
   TurnSegmentationSource,
 } from './trace-types';
+
+it('keeps original deletion file-job states explicit and projections metadata-only', () => {
+  expectTypeOf<OriginalDeletionJob['state']>().toEqualTypeOf<'pending' | 'failed' | 'complete'>();
+  expectTypeOf<OriginalDeletionJob['completedAt']>().toEqualTypeOf<string | null>();
+  expectTypeOf<keyof OriginalDeletionJob>().toEqualTypeOf<'id' | 'proxyId' | 'requestId' | 'state' | 'error' | 'createdAt' | 'updatedAt' | 'completedAt'>();
+});
+
+it('keeps metadata pressure unknown distinct from measured zero and hides filesystem paths', () => {
+  expectTypeOf<CaptureMetadataCapacity['databaseBytes']>().toEqualTypeOf<number | null>();
+  expectTypeOf<CaptureMetadataCapacity['state']>().toEqualTypeOf<'ready' | 'limited' | 'unavailable'>();
+  expectTypeOf<keyof CaptureMetadataCapacity>().toEqualTypeOf<'databaseBytes' | 'walBytes' | 'combinedLimitBytes' | 'walLimitBytes' | 'combinedAdmissionBytes' | 'walAdmissionBytes' | 'state' | 'reason' | 'checkedAt'>();
+});
 
 // contracts/data-model.md §11 类型级验收（编译期即失败）
 describe('REQ-001 枚举全集不得遗漏', () => {
@@ -150,7 +188,7 @@ describe('REQ-001 RequestContextFormat 封闭枚举（add-request-context-diff D
 describe('REQ-001 Request-context diff 公共类型逐字采用（add-request-context-diff D10）', () => {
   it('REQ-001 四个 diff 枚举封闭且全集一致', () => {
     expectTypeOf<ContextPairingConfidence>().toEqualTypeOf<
-      'exact' | 'capture_group' | 'manual'
+      'exact' | 'capture_group' | 'linked_session' | 'manual'
     >();
     expectTypeOf<ContextDiffCategory>().toEqualTypeOf<
       'system' | 'messages' | 'tools' | 'parameters'
@@ -353,4 +391,188 @@ describe('add-trajectory-inspector SessionIndexEntry.tags 与注解类型', () =
       note?: string | null;
     }>();
   });
+});
+
+// add-agent-team-observability §12.5 — team 类型级验收（编译期即失败）
+// （contracts/data-model.md §12.5 断言原样，追加不覆盖既有断言）
+describe('add-agent-team-observability 12 个闭合 team 枚举', () => {
+  it('TeamTopologyKind 枚举全集不得增减', () => {
+    expectTypeOf<TeamTopologyKind>().toEqualTypeOf<
+      'two_level' | 'three_level' | 'deep_tree' | 'peer_graph' | 'hybrid' | 'unknown'
+    >();
+  });
+
+  it('EvidenceConfidence 枚举全集不得增减', () => {
+    expectTypeOf<EvidenceConfidence>().toEqualTypeOf<
+      'native' | 'correlated' | 'inferred' | 'unavailable'
+    >();
+  });
+
+  it('EvidenceDimension 枚举全集不得增减（九维）', () => {
+    expectTypeOf<EvidenceDimension>().toEqualTypeOf<
+      'topology' | 'tasks' | 'communication' | 'timing' | 'tools' | 'outputs'
+      | 'tokens' | 'cost' | 'verification'
+    >();
+  });
+
+  it('CompletenessLevel 枚举全集不得增减', () => {
+    expectTypeOf<CompletenessLevel>().toEqualTypeOf<
+      'complete' | 'partial' | 'unavailable' | 'conflicted'
+    >();
+  });
+
+  it('TeamRunStatus 枚举全集不得增减', () => {
+    expectTypeOf<TeamRunStatus>().toEqualTypeOf<
+      'planned' | 'running' | 'blocked' | 'success' | 'error' | 'cancelled' | 'unknown'
+    >();
+  });
+
+  it('TeamAgentState 枚举全集不得增减', () => {
+    expectTypeOf<TeamAgentState>().toEqualTypeOf<
+      'created' | 'ready' | 'busy' | 'blocked' | 'idle' | 'failed' | 'replaced'
+      | 'cancelled' | 'completed' | 'unknown'
+    >();
+  });
+
+  it('TeamTaskStatus 枚举全集不得增减', () => {
+    expectTypeOf<TeamTaskStatus>().toEqualTypeOf<
+      'pending' | 'ready' | 'claimed' | 'running' | 'blocked' | 'completed'
+      | 'failed' | 'cancelled' | 'unknown'
+    >();
+  });
+
+  it('TeamAgentEdgeKind 枚举全集不得增减', () => {
+    expectTypeOf<TeamAgentEdgeKind>().toEqualTypeOf<
+      'created' | 'supervises' | 'coordinates' | 'reviews' | 'replaces' | 'peer'
+    >();
+  });
+
+  it('TeamActivityKind 枚举全集不得增减', () => {
+    expectTypeOf<TeamActivityKind>().toEqualTypeOf<
+      'agent_lifecycle' | 'task_created' | 'task_dependency' | 'task_assignment'
+      | 'task_status' | 'round' | 'message_sent' | 'message_received' | 'tool_call'
+      | 'tool_result' | 'artifact' | 'verification' | 'handoff' | 'error' | 'recovery'
+      | 'integration' | 'unknown'
+    >();
+  });
+
+  it('TeamMessageMode 枚举全集不得增减', () => {
+    expectTypeOf<TeamMessageMode>().toEqualTypeOf<
+      'direct' | 'leader_mediated' | 'broadcast' | 'unknown'
+    >();
+  });
+
+  it('TeamMessageCategory 枚举全集不得增减', () => {
+    expectTypeOf<TeamMessageCategory>().toEqualTypeOf<
+      'assignment' | 'coordination' | 'question' | 'answer' | 'handoff' | 'status'
+      | 'blocker' | 'review' | 'correction' | 'result' | 'system' | 'unknown'
+    >();
+  });
+
+  it('ComparisonMatch 枚举全集不得增减', () => {
+    expectTypeOf<ComparisonMatch>().toEqualTypeOf<
+      'matched' | 'partially_matched' | 'unmatched' | 'unknown'
+    >();
+  });
+});
+
+describe('add-agent-team-observability 补充枚举封闭', () => {
+  it('TeamOrderConfidence 枚举封闭', () => {
+    expectTypeOf<TeamOrderConfidence>().toEqualTypeOf<'native' | 'ambiguous'>();
+  });
+
+  it('TeamRoundSegmentationSource 枚举封闭', () => {
+    expectTypeOf<TeamRoundSegmentationSource>().toEqualTypeOf<
+      'native_round' | 'session_turn' | 'turn_model' | 'unavailable'
+    >();
+  });
+
+  it('TeamMetricDimension 枚举封闭（五维）', () => {
+    expectTypeOf<TeamMetricDimension>().toEqualTypeOf<
+      'speed' | 'accuracy' | 'stability' | 'cost' | 'collaboration'
+    >();
+  });
+
+  it('TeamMetricDirection 枚举封闭', () => {
+    expectTypeOf<TeamMetricDirection>().toEqualTypeOf<
+      'higher_better' | 'lower_better' | 'descriptive'
+    >();
+  });
+
+  it('TEAM_TOPOLOGY_KINDS 长度 6 且逐元素与契约一致', () => {
+    expect(TEAM_TOPOLOGY_KINDS).toHaveLength(6);
+    expect(TEAM_TOPOLOGY_KINDS).toEqual([
+      'two_level', 'three_level', 'deep_tree', 'peer_graph', 'hybrid', 'unknown',
+    ] as const);
+  });
+});
+
+describe('add-agent-team-observability slim 类型绝不携带 body 字段', () => {
+  it('TeamRunSummary 绝不含 raw / goal 正文', () => {
+    expectTypeOf<TeamRunSummary>().not.toHaveProperty('raw');
+    expectTypeOf<TeamRunSummary>().not.toHaveProperty('goal');
+  });
+
+  it('TeamCommunication 绝不含 body / message 正文', () => {
+    expectTypeOf<TeamCommunication>().not.toHaveProperty('body');
+    expectTypeOf<TeamCommunication>().not.toHaveProperty('message');
+  });
+
+  it('TeamActivitySlim 绝不含 raw / inputSummary / outputSummary / tool / reasoning 正文', () => {
+    expectTypeOf<TeamActivitySlim>().not.toHaveProperty('raw');
+    expectTypeOf<TeamActivitySlim>().not.toHaveProperty('inputSummary');
+    expectTypeOf<TeamActivitySlim>().not.toHaveProperty('outputSummary');
+    expectTypeOf<TeamActivitySlim>().not.toHaveProperty('toolInput');
+    expectTypeOf<TeamActivitySlim>().not.toHaveProperty('toolOutput');
+    expectTypeOf<TeamActivitySlim>().not.toHaveProperty('reasoning');
+  });
+
+  it('TeamTask 绝不含 description / result 正文', () => {
+    expectTypeOf<TeamTask>().not.toHaveProperty('description');
+    expectTypeOf<TeamTask>().not.toHaveProperty('result');
+  });
+
+  it('TeamArtifact 绝不含 content 正文', () => {
+    expectTypeOf<TeamArtifact>().not.toHaveProperty('content');
+  });
+});
+
+describe('add-agent-team-observability required id 存在且非空', () => {
+  it('TeamRunSummary id 必填', () => {
+    expectTypeOf<Pick<TeamRunSummary, 'id'>>().toEqualTypeOf<{ id: string }>();
+  });
+
+  it('TeamAgent id / runId 必填', () => {
+    expectTypeOf<Pick<TeamAgent, 'id' | 'runId'>>().toEqualTypeOf<{ id: string; runId: string }>();
+  });
+
+  it('TeamTask id / runId 必填', () => {
+    expectTypeOf<Pick<TeamTask, 'id' | 'runId'>>().toEqualTypeOf<{ id: string; runId: string }>();
+  });
+
+  it('TeamCommunication id / runId 必填', () => {
+    expectTypeOf<Pick<TeamCommunication, 'id' | 'runId'>>().toEqualTypeOf<{ id: string; runId: string }>();
+  });
+
+  it('TeamActivitySlim id / runId 必填', () => {
+    expectTypeOf<Pick<TeamActivitySlim, 'id' | 'runId'>>().toEqualTypeOf<{ id: string; runId: string }>();
+  });
+});
+
+describe('add-agent-team-observability nullable 可用性（禁止 0 冒充）', () => {
+  it('cost 不可观测必须能表达 null', () => {
+    expectTypeOf<Pick<TeamRunSummary, 'costCurrency'>>().toEqualTypeOf<{ costCurrency: PriceCurrency | null }>();
+    expectTypeOf<Pick<TeamCostMetrics, 'costCurrency'>>().toEqualTypeOf<{ costCurrency: PriceCurrency | null }>();
+  });
+
+  it('指标 value 不可用必须能表达 null', () => {
+    expectTypeOf<Pick<TeamMetricValue, 'value'>>().toEqualTypeOf<{ value: number | null }>();
+  });
+});
+
+it('keeps connection diagnostics evidence metadata-only with explicitly unverified runtime trust', () => {
+  expectTypeOf<keyof MonitorConnectionDiagnostics>().toEqualTypeOf<'profileId' | 'profileRevision' | 'checkedAt' | 'expectedPort' | 'listener' | 'ca' | 'trust' | 'traffic' | 'status' | 'issues'>();
+  expectTypeOf<MonitorConnectionDiagnostics['trust']['runtimeVerified']>().toEqualTypeOf<false>();
+  expectTypeOf<MonitorConnectionDiagnostics['traffic']['scope']>().toEqualTypeOf<'shared_listener'>();
+  expectTypeOf<MonitorConnectionDiagnostics['issues'][number]['code']>().toEqualTypeOf<MonitorDiagnosticCode>();
 });

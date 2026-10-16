@@ -1,5 +1,18 @@
 # Spec: Frontend
 
+Monitoring detail includes a lazy protocol-analysis tab: model/protocol terminal state, native usage and accounting basis, declarations, public reasoning/text, proposed tool calls and observed request tool-result history. Analysis is not fetched from lists or until that tab is opened. Display incomplete/legacy/over-limit reasons, unknown counters as unavailable, and observed history/proposals as such (not invented executions). Render observed strings as React text, never HTML.
+
+Capture-metadata and lazy analysis reads SHALL have independent loading/error
+and explicit retry controls, owned cancellation and5s timeout. Retry only the
+chosen local read; never resend the model request or fetch unrelated bodies.
+Clear the prior error before retry, ignore late aborted/unmounted/deleted-body
+results and prevent overlapping retries. A successful metadata/analysis retry
+must not leave a stale error or infinite loading indicator. Locale changes do
+not refetch otherwise-valid evidence. Deletion availability guards remain in
+force and analysis stays lazy until explicitly selected.
+
+Monitor lifecycle diagnostics distinguish waiting_for_traffic from capturing and stopping from idle. Show per-run observed/active/pending/persisted/interrupted counters independently of the historical total; activity SSE patches them without status polling or list reload. A failed stop with cleanupPending blocks start and permits retry stop. A stopped-state response is authoritative, never set optimistically before cleanup succeeds. Legacy status payloads remain readable but do not certify Agent readiness.
+
 > React 19 SPA. Source files: `src/`
 >
 > Visuals and atomic components: `specs/design-system/spec.md`; numeric
@@ -136,7 +149,9 @@ R, range 8-28px. MUST NOT affect chrome (header, tabs, side rails, status
 bar).
 
 ### REQ-013: scan/proxy shown separately
-Scan sessions and proxy captures are independent views; never mixed.
+Scan sessions and proxy captures retain independent originals/views. A lazy associated-Trace entry MAY link them using explicitly labelled direct/candidate/user-confirmed evidence. It MUST NOT overwrite source sessions, infer execution from a model proposal or count another charged copy.
+
+Associated requests with a system prompt SHALL offer explicit request-context inspection. Prompt selection is request-specific, not the longest prompt in a time window. Context Diff SHALL distinguish linked_session automatic comparison from manual comparison, retain the manual picker when automatic pairing is unavailable and explain that captured-order membership is not proven native turn adjacency. Historical exact/capture_group labels may remain readable but MUST NOT authorize new automatic pairing.
 
 ### REQ-014: Bundled fallback
 `src/generated/local-samples.ts` (machine-generated) provides fallback samples
@@ -369,6 +384,62 @@ each on screen; row structure reuses `TraceTimeline`.
 
 ### REQ-020: Proxy view
 
+A lazy capacity drawer SHALL explicitly load one CaptureMetadataCapacity and one
+CaptureStorageStatus on opening/manual refresh only, with5s abort and independent
+loading/error/unknown states. Never poll or fetch per capture row. Clear previous
+snapshots on refresh, cancel unmounted/late responses and mark snapshots stale
+on relevant runtime changes without a network request. Show exact original
+used/quota/remaining/pending/active/body/pending limits separately from physical
+DB/WAL lengths, admission thresholds/hard budgets and server checkedAt. Quota
+remaining=max(0,quota-used), not filesystem free space. Unknown is not0/ready;
+below admission is not Agent/capture/full-disk certification. Explain static
+SQLite-full/pressure errors and next steps; no auto-clear/vacuum/checkpoint/start.
+Storage status may resume previously confirmed pending deletion, which SHALL
+be disclosed; opening never creates a deletion intent. New text is bilingual,
+keyboard-reachable and uses semantic headings/live/error regions.
+
+Selected capture details SHALL load one metadata-only original-deletion status,
+not per-row/list queries. Explicit bilingual body deletion requires a stopped
+monitor, valid retained refs, visible exact request ID/scope warning and a
+separate acknowledgement before POST. Show pending/failed/complete and explicit
+status refresh/retry without polling or treating HTTP200/unknown response as
+successful cleanup. Headers/timing/native data remain. Submission or confirmed
+intent immediately hides cached body/prompt/download/analysis/diff content;
+cancel late callbacks and unmount cached diff. Reopening the same selected ID
+within this view cannot revive an uncertain/confirmed body's old snapshot.
+Loading/failed availability must not masquerade as available/deleted success.
+Use semantic keyboard-reachable controls, labelled acknowledgement and live
+status; do not wire global Clear to this per-request operation.
+
+A lazy Agent connection drawer SHALL fetch one bounded profile list only on opening. Users explicitly save/select a CLI/project recipe, inspect pinned-revision POSIX/PowerShell commands and start its proxy listener through the shared API. No browser action launches a shell/Agent. Show existing-process, shared-listener, NO_PROXY, runtime-trust and unverified-transport boundaries. Dirty/changed profiles cannot generate a stale launch command; conflicted/corrupt configuration exposes reload/review actions without overwriting files. New text is bilingual and rendered inertly. Windows remains platform-unverified until tested.
+
+The explicit connection check SHALL render the shared backend diagnostic snapshot: expected/actual port, public CA availability/digest/expiry, unverified selected-runtime trust and unchecked OS trust, current shared-listener traffic and actionable findings. Activity/status SSE invalidates a previous snapshot locally without polling. Display checkedAt and a stale warning rather than upgrading unknown Agent identity/trust to success. Abort after5s with retry guidance, clear previous evidence before refresh, reject stale recipe revisions and abort owned requests on unmount. Dirty/changed recipes cannot check old settings; never fetch diagnostics for every list item.
+
+Original-capture amendment: request/response details SHALL fetch ProxyCaptureBodies on demand, display actual retained byte count and completeness status, mark bounded previews, and provide direct original download links. Response headers (including multiple values) SHALL be inspectable. Opening the list MUST NOT fetch any full body file.
+
+When recorded, display CaptureProcessingResult separately from original
+completeness: an executed parser job is not protocol/full-chain success, and
+queue/worker/timeout/result-limit failure is not Agent failure or original
+loss. Retained original download/offline inspection remains available; never
+automatically retry a model request. Legacy outcomes remain absent/unknown.
+
+When contentDecoding identifies a non-identity view, explicitly distinguish
+bounded decoded body text from original encoded download bytes/digests.
+decode_error includes encoding/UTF-8/framing limits, not automatic Agent failure.
+
+Render optional process-wide resource gauges and lifetime preview-limit,
+processing-admission-reject and slow-SSE-disconnect counters from diagnostics;
+absence in legacy snapshots is unknown. Resource snapshots do not introduce
+polling. resource_limit and previewDroppedBytes explicitly describe missing
+semantic previews, not lost originals; original status/downloads stay separate.
+
+When recorded, render the independent network outcome, native/static error,
+actual upstream status (null as unknown) and request/response end flags.
+Network completed MUST NOT be labelled Agent/protocol success; HTTP failure
+can still have complete originals and an executed parser. A broken stream's
+retained prefix is not labelled a complete response, even with status200 or a
+protocol terminal marker. Legacy missing transport remains absent/unknown.
+
 **① Control strip**
 - Status indicator: `stopped` / `running :8888` / `starting`
 - Primary buttons: start / stop (stop is destructive, needs confirmation)
@@ -377,8 +448,8 @@ each on screen; row structure reuses `TraceTimeline`.
 - Request count + clear button (destructive, confirmation)
 
 Backend endpoints `POST /api/proxy/start`, `POST /api/proxy/stop`
-(defined in `contracts/api.md` §4, **currently not implemented**; see
-`UI-TASKS.md` T-12).
+are implemented shared controls (defined in `contracts/api.md` §4); stop waits
+for real cleanup and startup acceptance is not Agent readiness.
 
 **② Request list**: dense table, virtual scroll. Columns: method (colored
 badge) · URL (ellipsized middle, keeping host and tail) · status code (2xx
@@ -386,8 +457,9 @@ success / 3xx neutral / 4xx attention / 5xx danger) · duration · size · time.
 Filterable by method/status/hostname.
 
 **③ Detail drawer**: slides in from the right on row click, tabs `Request` /
-`Response` / `Headers` / `Timing`, body `--font-mono` + copy button,
-desensitized fields marked with a "desensitized" `Badge`.
+`Response` / `Headers` / `Timing`, with lazy protocol/evidence/context tabs.
+Bodies render original retained content as text, with bounded-preview and
+completeness labels and original download; monitoring does not redact fields.
 
 #### Scenario: empty state when proxy never started
 - **GIVEN** the proxy never started and the request list is empty

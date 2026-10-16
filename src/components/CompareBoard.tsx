@@ -415,11 +415,11 @@ export function CompareBoard({
   const [activeAnchor, setActiveAnchor] = useState('compare-verdict');
   const scrollRef = useRef<HTMLElement | null>(null);
   const leftComposition = useMemo(
-    () => computeTimeComposition((result?.left.events ?? []) as TraceEventSlim[]),
+    () => computeTimeComposition((result?.left?.events ?? []) as TraceEventSlim[]),
     [result],
   );
   const rightComposition = useMemo(
-    () => computeTimeComposition((result?.right.events ?? []) as TraceEventSlim[]),
+    () => computeTimeComposition((result?.right?.events ?? []) as TraceEventSlim[]),
     [result],
   );
 

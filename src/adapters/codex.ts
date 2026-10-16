@@ -18,8 +18,9 @@ import {
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
-import { computeCostUsd } from '../core/pricing.js';
+import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
+import { collectCodexIdentities } from './native-identities.js';
 
 /**
  * Codex `event_msg` / `token_count` 的用量结构。
@@ -185,6 +186,7 @@ function agentMessageText(payload: CodexRawPayload): string {
 
 /** 工具结果文本的错误探测：沿用现状（输出头 200 字符内命中 error/failed）。 */
 function isErrorOutput(output: string): boolean {
+  // An explicit successful exit is stronger evidence than words in command output.
   const exits = [...output.matchAll(/(?:"?exit_code"?\s*[:=]\s*|Process exited with code\s+)(-?\d+)/gi)];
   if (exits.length > 0) return exits.some((match) => Number(match[1]) !== 0);
   return /error|failed/i.test(output.slice(0, 200));
@@ -386,6 +388,8 @@ function emitCycleEvents(
         kind: 'tool',
         title: titleFromText(name),
         tool: name,
+        // A matched result gives the tool's call-to-result log interval.
+        // Unmatched calls keep the ordinary adjacent-event fallback.
         durationMs: Number.isFinite(pairedMs) && pairedMs > 0 ? pairedMs : 0,
         hasInput: input !== undefined && input !== '',
         hasRaw: true,
@@ -798,7 +802,8 @@ export function normalizeCodexSample(
   // 而累计快照正是 Codex 自身向用户展示的口径。快照缺失时才退回逐事件求和。
   const tokenUsage = finalTotalUsage ?? aggregateTokenUsage(classified, semantics);
   const primaryModel = pickPrimaryModel(classified);
-  const cost = computeCostUsd(tokenUsage, primaryModel);
+  // codex.ts:110 已论证 reasoning ⊂ output（reasoningInTotal=false），不叠加。
+  const cost = computeCost(tokenUsage, primaryModel);
   const session: TraceSession = {
     id: sessionId,
     provider: 'codex',
@@ -811,7 +816,7 @@ export function normalizeCodexSample(
     messageCount: rows.length,
     eventCount: classified.length,
     tokenUsage,
-    costUsd: cost.costUsd,
+    costUsd: cost.cost,
     systemPrompt: null,
     dataSource: 'scan',
     sourcePath,
@@ -819,11 +824,13 @@ export function normalizeCodexSample(
     isSubagent: false,
     primaryModel,
     costSource: cost.costSource,
+    costCurrency: cost.currency,
     durationSource: 'derived',
   };
   return {
     session,
     events: classified,
+    nativeIdentities: collectCodexIdentities(rows),
     tokenSemantics: semantics,
     // A5：周期边界由 response_item 流自身的形状推导，源格式没有显式标注。
     turnKeySource: 'stream_structure',

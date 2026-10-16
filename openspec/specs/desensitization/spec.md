@@ -4,8 +4,7 @@
 
 ## Purpose
 
-Regex-desensitize request bodies, response bodies, and file contents from scan
-and proxy captures so sensitive data never lands in the DB or the UI.
+Provide legacy optional redaction utilities. User-approved monitoring bypasses these utilities and preserves original observed data. Monitoring capture behavior is defined by proxy-capture REQ-004 and contracts/data-model.md.
 
 ## Requirements
 
@@ -39,18 +38,11 @@ return the full rule set.
 ### REQ-005: Config endpoints
 `GET` / `PUT /api/desensitization/rules`; PUT MUST write atomically.
 
-### REQ-006: raw retention off by default
-The `keepRawBodies` config defaults to `false`. `raw_request_body` /
-`raw_response_body` are only written when it is `true`.
-
-> v4 defaulted to double-storing, doubling storage and putting plaintext in the
-> DB, contradicting the purpose of desensitization. v5 makes it an explicit
-> opt-in and the UI must show a clear warning.
+### REQ-006: Monitoring preserves originals
+Monitoring SHALL bypass automatic redaction and retain original data per proxy-capture REQ-004. Legacy keepRawBodies remains available only for legacy callers; it does not disable original capture in the fusion monitoring path.
 
 ### REQ-007: Performance constraint
-Desensitization runs on the synchronous path before MITM writes to the DB.
-Single call MUST be < 5ms @ 100KB text. Over budget, MUST skip and record;
-MUST NOT block request forwarding.
+Monitoring SHALL NOT run regex redaction on forwarding callbacks. Original files are streamed asynchronously within the file-store budgets; legacy opt-in callers retain their existing utility behavior.
 
 ## Gotchas
 - G8.2: aws_secret_key disabled by default

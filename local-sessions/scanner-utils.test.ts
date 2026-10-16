@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import Database from 'better-sqlite3';
 
@@ -13,6 +13,7 @@ import { codeagentFixture } from '../src/adapters/__fixtures__/codeagent.js';
 import { qoderFixture } from '../src/adapters/__fixtures__/qoder.js';
 import { workbuddyFixture } from '../src/adapters/__fixtures__/workbuddy.js';
 import { initSchema } from '../server/storage/schema.js';
+import { normalizeClaudeSample } from '../src/adapters/claude-code.js';
 import { claudeScanner } from './claude.js';
 import { codeagentScanner } from './codeagent.js';
 import { codexScanner } from './codex.js';
@@ -23,10 +24,28 @@ import {
   buildIndexEntry,
   cleanupDuplicateSessionRows,
   upsertIndexEntries,
+  storeTraceRecord,
   type ScannerContext,
 } from './scanner-utils.js';
 
 type Db = InstanceType<typeof Database>;
+
+describe('atomic native source storage', () => {
+  it('rolls back session/events/raw/metrics when identity persistence fails and never notifies success', () => {
+    const db = newDb();
+    try {
+      db.exec("CREATE TRIGGER reject_manifest BEFORE INSERT ON trace_identity_sources BEGIN SELECT RAISE(ABORT, 'synthetic identity write failure'); END");
+      const record = normalizeClaudeSample(claudeFixture, '/synthetic/native.jsonl');
+      const notify = vi.fn();
+      expect(() => storeTraceRecord(db, record, '/synthetic/native.jsonl', 'synthetic-key', notify)).toThrow('synthetic identity write failure');
+      expect(db.prepare('SELECT COUNT(*) AS count FROM sessions').get()).toEqual({ count: 0 });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM events').get()).toEqual({ count: 0 });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM event_raw').get()).toEqual({ count: 0 });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM metrics').get()).toEqual({ count: 0 });
+      expect(notify).not.toHaveBeenCalled();
+    } finally { db.close(); }
+  });
+});
 
 const tempDirs: string[] = [];
 

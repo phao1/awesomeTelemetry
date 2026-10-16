@@ -134,6 +134,8 @@ MUST NOT regex-split the whole file string.
 independent timeout per provider (default 30s). Timed-out providers MUST be
 skipped and recorded, MUST NOT block others.
 
+The resource owner SHALL retain each actual scan promise until settled, including a task whose timeout wrapper already returned. Closing HTTP/SQLite waits for these tasks; a timeout is not cancellation of database work. Startup background prewarm is tracked similarly without delaying listen.
+
 ### REQ-012: Trae decryption is async
 Trae's Python bridge MUST use `spawn` + Promise, MUST NOT use `spawnSync`.
 

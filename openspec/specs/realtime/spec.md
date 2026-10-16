@@ -12,6 +12,9 @@ not triggers for the frontend to refetch everything.**
 
 ## Requirements
 
+### REQ-009: Association invalidation coalescing
+trace_links_changed SHALL merge session/proxy keys for200ms, cap each array at200 and mark overflow as truncated. Timer must unref and be cleared on broadcaster shutdown. This relation-only signal MUST NOT refetch full native session details or original bodies.
+
 ### REQ-001: TypedEventBus
 The system SHALL provide a `TypedEventBus` whose events and payloads map
 exactly to `BusEvents` in `contracts/data-model.md` §10. MUST NOT define events
@@ -54,6 +57,14 @@ concatenated server-side on a **100ms window** before emitting
 - send a comment-line heartbeat every 30s (`: ping\n\n`) to prevent
   proxy-layer timeouts
 - return a cleanup function
+
+Process-wide client/frame/pending-byte/drain limits follow contracts/nfr.md.
+Excess subscribers get503 ApiError SSE_LIMIT_REACHED before registration.
+Slow/error/overflow clients are disconnected individually, with a lifetime
+slowSseDisconnects counter; never accumulate an unbounded application queue
+or block capture/healthy subscribers. Drain clears its owned deadline, and
+close/error/shutdown clean up listeners/timers exactly once. Disconnect is not
+a claim that reconnect/resume has recovered missed events (B9 remains open).
 
 ### REQ-006: Event forwarding
 The SSE broadcaster SHALL subscribe to all `BusEvents` and forward them to all

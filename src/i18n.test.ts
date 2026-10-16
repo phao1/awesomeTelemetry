@@ -8,8 +8,18 @@ describe('REQ-010 i18n', () => {
   });
 
   it('t() 返回对应语言文案', () => {
-    expect(t('view.session', 'zh')).toBe('会话');
-    expect(t('view.session', 'en')).toBe('Sessions');
+    // UI 架构调整：Sessions 页签改名为「任务」/「Tasks」
+    expect(t('view.session', 'zh')).toBe('任务');
+    expect(t('view.session', 'en')).toBe('Tasks');
+  });
+
+  it('keeps original quota, metadata pressure, free disk and prior confirmed cleanup distinctions bilingual', () => {
+    for (const locale of ['zh', 'en'] as const) {
+      expect(t('proxy.capacity.title', locale)).not.toBe('');
+      expect(t('proxy.capacity.remaining', locale)).not.toBe(t('proxy.capacity.combinedAdmission', locale));
+      expect(t('proxy.capacity.pendingDeletion', locale)).not.toBe('');
+      expect(t('proxy.capacity.sqliteFull', locale)).toContain('SQLITE_FULL');
+    }
   });
 
   it('错误码映射', () => {

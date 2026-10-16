@@ -18,8 +18,9 @@ import {
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
-import { computeCostUsd } from '../core/pricing.js';
+import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
+import { collectClaudeIdentities } from './native-identities.js';
 
 export interface ClaudeContentPart {
   type: string;
@@ -330,7 +331,9 @@ export function normalizeClaudeSample(
   const semantics = { cacheRead: 'incremental' as const, reasoning: 'incremental' as const };
   const tokenUsage = aggregateTokenUsage(classified, semantics);
   const primaryModel = pickPrimaryModel(classified);
-  const cost = computeCostUsd(tokenUsage, primaryModel);
+  // Claude 的 reasoning 已含在 output 里（reasoningInTotal 未声明 → 默认口径），
+  // 不叠加，否则双计。
+  const cost = computeCost(tokenUsage, primaryModel);
   const session: TraceSession = {
     id: sessionId,
     provider: 'claude',
@@ -343,7 +346,7 @@ export function normalizeClaudeSample(
     messageCount,
     eventCount: classified.length,
     tokenUsage,
-    costUsd: cost.costUsd,
+    costUsd: cost.cost,
     systemPrompt: null,
     dataSource: 'scan',
     sourcePath,
@@ -351,11 +354,13 @@ export function normalizeClaudeSample(
     isSubagent: false,
     primaryModel,
     costSource: cost.costSource,
+    costCurrency: cost.currency,
     durationSource: 'derived',
   };
   return {
     session,
     events: classified,
+    nativeIdentities: collectClaudeIdentities(rows),
     tokenSemantics: semantics,
     // A5：按源自身的消息标识（assistant message.id）分组 → message_identity。
     turnKeySource: 'message_identity',

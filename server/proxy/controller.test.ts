@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import Database from 'better-sqlite3';
 
-import type { BusEvents } from '../../src/core/trace-types.js';
+import type { BusEvents, ProxyCaptureActivity } from '../../src/core/trace-types.js';
 import { initSchema } from '../storage/schema.js';
 import { ProxyRuntime, type ProxyRuntimeDeps } from './controller.js';
 import type { MitmProxyOptions, ProxyServerLike } from './mitm-proxy.js';
@@ -59,6 +59,118 @@ function anthropicParsed() {
 }
 
 describe('ProxyRuntime captureGroupId 生命周期（design D2 / tasks §3.1-§3.2）', () => {
+  it('excludes start and concurrent maintenance synchronously, releasing ownership on success and failure', async () => {
+    const { db, runtime } = setup({}); let release!: () => void;
+    try {
+      const work = runtime.withStoppedMonitor(() => new Promise<void>(resolve => { release = resolve; }));
+      expect(() => runtime.start({})).toThrow('cleanup');
+      await expect(runtime.withStoppedMonitor(async () => {})).rejects.toMatchObject({ code: 'PROXY_MAINTENANCE' });
+      release(); await work;
+      await expect(runtime.withStoppedMonitor(async () => { throw new Error('controlled failure'); })).rejects.toThrow('controlled failure');
+      expect(await runtime.withStoppedMonitor(async () => 'released')).toBe('released');
+    } finally { release?.(); db.close(); }
+  });
+  it('bounds readiness waits without polling or releasing a pending startup', async () => {
+    let release!: (proxy: ProxyServerLike) => void;
+    const { db, runtime } = setup({ createProxy: () => new Promise(resolve => { release = resolve; }) });
+    runtime.start({ port: 19010 });
+    await waitFor(() => release !== undefined);
+    await expect(runtime.waitUntilReady(10)).rejects.toMatchObject({ code: 'MONITOR_NOT_READY' });
+    expect(runtime.status()).toMatchObject({ starting: true, running: false, port: 19010 });
+    release(fakeProxy());
+    expect((await runtime.waitUntilReady()).running).toBe(true);
+    await runtime.stop(); db.close();
+  });
+
+  it('rejects a cancelled readiness wait rather than authorizing launch into another run', async () => {
+    let release!: (proxy: ProxyServerLike) => void;
+    const { db, runtime } = setup({ createProxy: () => new Promise(resolve => { release = resolve; }) });
+    runtime.start({ port: 19011 });
+    await waitFor(() => release !== undefined);
+    const ready = runtime.waitUntilReady();
+    const stopped = runtime.stop();
+    release(fakeProxy());
+    await expect(ready).rejects.toMatchObject({ code: 'MONITOR_NOT_READY' });
+    await stopped;
+    expect(runtime.status().diagnostics?.phase).toBe('idle');
+    db.close();
+  });
+  it('coalesces activity, does not poll status and ignores a closed run after restart', async () => {
+    const created: MitmProxyOptions[] = [];
+    const { db, runtime, emit } = setup({ createProxy: async options => { created.push(options); return fakeProxy(); } });
+    runtime.start({ port: 19008 });
+    await waitFor(() => runtime.status().running);
+    const before = emit.mock.calls.length;
+    const activity: ProxyCaptureActivity = { listening: true, observedRequests: 10, activeRequests: 2, pendingWrites: 1, persistedRequests: 7, interruptedRequests: 0, captureErrors: 0, lastRequestAt: '2026-10-16T00:00:00.000Z', lastError: null };
+    for (let i = 0; i < 20; i += 1) created[0]!.onActivity!({ ...activity, observedRequests: i + 1 });
+    expect(emit).toHaveBeenCalledTimes(before);
+    await waitFor(() => emit.mock.calls.length > before);
+    expect(emit).toHaveBeenCalledTimes(before + 1);
+    expect(emit.mock.calls.at(-1)?.[0].diagnostics?.observedRequests).toBe(20);
+    await runtime.stop();
+    runtime.start({ port: 19009 });
+    await waitFor(() => runtime.status().running);
+    created[0]!.onActivity!({ ...activity, captureErrors: 3, lastError: 'OLD_RUN_ERROR' });
+    expect(runtime.status().diagnostics).toMatchObject({ observedRequests: 0, captureErrors: 0, lastError: null });
+    await runtime.stop();
+    db.close();
+  });
+  it('a cancelled successful startup is closed before a replacement startup is allowed', async () => {
+    const pending: Array<(proxy: ProxyServerLike) => void> = [];
+    const { db, runtime } = setup({ createProxy: () => new Promise(resolve => pending.push(resolve)) });
+    const old = fakeProxy(), current = fakeProxy();
+    old.close = vi.fn(); current.close = vi.fn();
+    runtime.start({ port: 19001 });
+    await waitFor(() => pending.length === 1);
+    const stopped = runtime.stop();
+    expect(runtime.status().diagnostics).toMatchObject({ phase: 'stopping', cleanupPending: true });
+    expect(() => runtime.start({ port: 19002 })).toThrow('代理已在运行或正在启动');
+    pending[0]!(old);
+    await stopped;
+    expect(old.close).toHaveBeenCalledOnce();
+    expect(runtime.status()).toMatchObject({ starting: false, running: false, port: null });
+    runtime.start({ port: 19002 });
+    await waitFor(() => pending.length === 2);
+    pending[1]!(current);
+    await waitFor(() => runtime.status().running);
+    expect(runtime.status().port).toBe(19002);
+    await runtime.stop();
+    expect(current.close).toHaveBeenCalledOnce();
+    db.close();
+  });
+
+  it('a cancelled failed startup is settled before a new run and cannot overwrite it', async () => {
+    let rejectOld: (error: Error) => void = () => { throw new Error('not initialized'); };
+    let call = 0;
+    const { db, runtime, emit } = setup({ createProxy: () => {
+      call += 1;
+      return call === 1 ? new Promise((_resolve, reject) => { rejectOld = reject; }) : Promise.resolve(fakeProxy());
+    } });
+    runtime.start({ port: 19003 });
+    await waitFor(() => call === 1);
+    const stopped = runtime.stop();
+    expect(() => runtime.start({ port: 19004 })).toThrow();
+    rejectOld(new Error('old bind failed'));
+    await stopped;
+    runtime.start({ port: 19004 });
+    await waitFor(() => runtime.status().running);
+    const count = emit.mock.calls.length;
+    await Promise.resolve();
+    expect(runtime.status()).toMatchObject({ running: true, port: 19004 });
+    expect(emit).toHaveBeenCalledTimes(count);
+    await runtime.stop(); db.close();
+  });
+
+  it('passes committed capture notifications into the actual proxy creation options', async () => {
+    const notify = vi.fn();
+    let created: MitmProxyOptions | undefined;
+    const { db, runtime } = setup({ notify, createProxy: async options => { created = options; return fakeProxy(); } });
+    runtime.start({ port: 19005 });
+    await waitFor(() => runtime.status().running);
+    created!.notify!(42);
+    expect(notify).toHaveBeenCalledWith(42);
+    await runtime.stop(); db.close();
+  });
   it('同一次成功 run 内所有行共享同一个 captureGroupId，stop 后清理', async () => {
     const created: MitmProxyOptions[] = [];
     const { db, runtime } = setup({
@@ -107,7 +219,7 @@ describe('ProxyRuntime captureGroupId 生命周期（design D2 / tasks §3.1-§3
       expect(row.capture_group_id).toBe(groupId);
     }
 
-    runtime.stop();
+    await runtime.stop();
     expect(runtime.currentCaptureGroupId).toBeNull();
     db.close();
   });
@@ -116,7 +228,7 @@ describe('ProxyRuntime captureGroupId 生命周期（design D2 / tasks §3.1-§3
     const seq = ['00000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000cc'];
     const created: MitmProxyOptions[] = [];
     let i = 0;
-    const { runtime } = setup({
+    const { runtime, db } = setup({
       uuid: () => seq[i] ?? 'fallback',
       createProxy: async (opts) => {
         created.push(opts);
@@ -129,14 +241,15 @@ describe('ProxyRuntime captureGroupId 生命周期（design D2 / tasks §3.1-§3
     const first = created[0]?.captureGroupId ?? null;
     expect(first).toBe(seq[0]);
 
-    runtime.stop();
+    await runtime.stop();
     i += 1;
     runtime.start({ port: 0 });
     await waitFor(() => runtime.status().running);
     const second = created[1]?.captureGroupId ?? null;
     expect(second).toBe(seq[1]);
     expect(second).not.toBe(first);
-    runtime.stop();
+    await runtime.stop();
+    db.close();
   });
 
   it('启动失败清理 captureGroupId：不暴露为活跃，失败组的 ID 不进入任何行', async () => {
@@ -191,6 +304,29 @@ describe('ProxyRuntime captureGroupId 生命周期（design D2 / tasks §3.1-§3
       .all() as Array<{ capture_group_id: string | null }>;
     expect(rows).toHaveLength(1);
     expect(rows[0]?.capture_group_id).toBe('00000000-0000-4000-8000-0000000000ee');
+    await runtime.stop();
+    db.close();
+  });
+
+  it('concurrent stops await one real cleanup; a deadline retains ownership and blocks restart', async () => {
+    let release!: () => void;
+    const proxy = fakeProxy();
+    proxy.shutdown = vi.fn(() => new Promise<void>(resolve => { release = resolve; }));
+    const { runtime, db } = setup({ createProxy: async () => proxy, stopTimeoutMs: 20 });
+    runtime.start({ port: 19006 });
+    await waitFor(() => runtime.status().running);
+    expect(runtime.status().diagnostics).toMatchObject({ phase: 'waiting_for_traffic', observedRequests: 0 });
+    const first = runtime.stop();
+    expect(runtime.stop()).toBe(first);
+    await expect(first).rejects.toMatchObject({ code: 'PROXY_STOP_FAILED' });
+    expect(runtime.status().diagnostics).toMatchObject({ phase: 'failed', cleanupPending: true, lastError: 'PROXY_STOP_FAILED' });
+    expect(() => runtime.start({})).toThrow();
+    expect(proxy.shutdown).toHaveBeenCalledOnce();
+    const retried = runtime.stop();
+    release();
+    await retried;
+    expect(runtime.status().diagnostics).toMatchObject({ phase: 'idle', cleanupPending: false });
+    expect(proxy.shutdown).toHaveBeenCalledOnce();
     db.close();
   });
 });

@@ -2,7 +2,22 @@ import type {
   AgentOverviewRow,
   MissionResponse,
   ProxyRequest,
+  ProxyRuntimeStatus,
+  MonitorConnectionProfile,
+  MonitorConnectionSettings,
+  MonitorConnectionPlan,
+  MonitorConnectionDiagnostics,
   ProxyRequestListItem,
+  ProxyCaptureBodies,
+  ProxyProtocolAnalysis,
+  ProxyTraceLinkPage,
+  SessionCaptureLinkPage,
+  TraceAssociation,
+  TraceAssociationDecision,
+  TraceIdentityPage,
+  CaptureStorageStatus,
+  CaptureMetadataCapacity,
+  OriginalDeletionJob,
   RequestContextDiffResponse,
   SessionDetailResponse,
   SessionIndexEntry,
@@ -173,33 +188,83 @@ export const api = {
   }> {
     return fetchJson(`/proxy/requests${qs({ limit: params.limit ?? 50, cursor: params.cursor })}`);
   },
-  proxyStatus(): Promise<{
-    running: boolean;
-    starting: boolean;
-    port: number | null;
-    requestCount: number;
-    startedAt: string | null;
-  }> {
+  proxyStatus(): Promise<ProxyRuntimeStatus> {
     return fetchJson('/proxy/status');
   },
-  proxyStart(port?: number): Promise<{
-    running: boolean;
-    starting: boolean;
-    port: number | null;
-    requestCount: number;
-    startedAt: string | null;
-  }> {
+  monitorProfiles(): Promise<{ items: MonitorConnectionProfile[] }> {
+    return fetchJson('/proxy/profiles');
+  },
+  monitorCreateProfile(settings: MonitorConnectionSettings): Promise<MonitorConnectionProfile> {
+    return fetchJson('/proxy/profiles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) });
+  },
+  monitorUpdateProfile(id: string, settings: MonitorConnectionSettings, expectedRevision: number): Promise<MonitorConnectionProfile> {
+    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ settings, expectedRevision }) });
+  },
+  monitorDeleteProfile(id: string, expectedRevision: number): Promise<{ deleted: true }> {
+    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision }) });
+  },
+  monitorConnectionPlan(id: string): Promise<MonitorConnectionPlan> {
+    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/plan`);
+  },
+  monitorConnectionDiagnostics(id: string, signal?: AbortSignal): Promise<MonitorConnectionDiagnostics> {
+    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/diagnostics`, { signal });
+  },
+  monitorStartProfile(id: string, expectedRevision: number): Promise<MonitorConnectionPlan> {
+    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision }) });
+  },
+  proxyStart(port?: number): Promise<ProxyRuntimeStatus> {
     return fetchJson('/proxy/start', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ port }),
     });
   },
-  proxyStop(): Promise<unknown> {
+  proxyStop(): Promise<ProxyRuntimeStatus> {
     return fetchJson('/proxy/stop', { method: 'POST' });
   },
   proxyRequest(id: number): Promise<ProxyRequest> {
     return fetchJson(`/proxy/requests/${id}`);
+  },
+  proxyCapture(id: number, signal?: AbortSignal): Promise<ProxyCaptureBodies> {
+    return fetchJson(`/proxy/requests/${id}/capture`, { signal });
+  },
+  proxyAnalysis(id: number, signal?: AbortSignal): Promise<ProxyProtocolAnalysis> {
+    return fetchJson(`/proxy/requests/${id}/analysis`, { signal });
+  },
+  proxyIdentities(id: number, cursor?: string): Promise<TraceIdentityPage> {
+    return fetchJson(`/proxy/requests/${id}/identities${qs({ cursor })}`);
+  },
+  sessionIdentities(key: string, cursor?: string): Promise<TraceIdentityPage> {
+    return fetchJson(`/sessions/${encodeURIComponent(key)}/identities${qs({ cursor })}`);
+  },
+  sessionCaptureLinks(key: string, cursor?: number): Promise<SessionCaptureLinkPage> {
+    return fetchJson(`/sessions/${encodeURIComponent(key)}/capture-links${qs({ cursor })}`);
+  },
+  proxyTraceLinks(id: number, cursor?: string): Promise<ProxyTraceLinkPage> {
+    return fetchJson(`/proxy/requests/${id}/trace-links${qs({ cursor })}`);
+  },
+  decideTraceLink(id: number, key: string, state: TraceAssociationDecision['state'], note: string | null = null): Promise<TraceAssociation> {
+    return fetchJson(`/proxy/requests/${id}/trace-links/${encodeURIComponent(key)}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ state, note }),
+    });
+  },
+  traceLinkDecisions(id: number, key: string, cursor?: number): Promise<{ items: TraceAssociationDecision[]; nextCursor: number | null; hasMore: boolean }> {
+    return fetchJson(`/proxy/requests/${id}/trace-links/${encodeURIComponent(key)}/decisions${qs({ cursor })}`);
+  },
+  proxyStorage(signal?: AbortSignal): Promise<CaptureStorageStatus> {
+    return fetchJson('/proxy/storage', { signal });
+  },
+  proxyCapacity(signal?: AbortSignal): Promise<CaptureMetadataCapacity> {
+    return fetchJson('/proxy/capacity', { signal });
+  },
+  originalDeletion(id: number, signal?: AbortSignal): Promise<OriginalDeletionJob | null> {
+    return fetchJson(`/proxy/requests/${id}/original-deletion`, { signal });
+  },
+  deleteOriginals(id: number, expectedRequestId: string, signal?: AbortSignal): Promise<OriginalDeletionJob> {
+    return fetchJson(`/proxy/requests/${id}/original-deletion`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ expectedRequestId, confirm: true }), signal,
+    });
   },
   /**
    * design D10 / §6.3：bounded evidence-grade request-context diff。

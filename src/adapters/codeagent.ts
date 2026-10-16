@@ -1,6 +1,7 @@
 // G9.2：CodeAgent 3.0 包装 claude-code：drop file-history-snapshot 行，relabel actor。
 import { normalizeClaudeSample, type ClaudeRawRow } from './claude-code.js';
 import type { Adapter, RawSample } from './sample-loader.js';
+import { collectClaudeIdentities } from './native-identities.js';
 
 function isSnapshotRow(row: ClaudeRawRow): boolean {
   if (row.isSnapshot === true || row.subtype === 'file-history-snapshot') {
@@ -19,6 +20,7 @@ export const codeAgentAdapter: Adapter<Record<string, never>, ClaudeRawRow> = {
     const record = normalizeClaudeSample({ ...sample, events: filtered }, sourcePath);
     return {
       ...record,
+      nativeIdentities: collectClaudeIdentities(filtered, 'codeagent'),
       session: { ...record.session, provider: 'codeagent', sourceAgent: 'CodeAgent' },
       events: record.events.map((event) => ({
         ...event,

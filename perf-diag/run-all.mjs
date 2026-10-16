@@ -1,4 +1,4 @@
-// perf:check 入口：顺序执行 7 个诊断脚本并输出分节结果。
+// perf:check entry: run storage, query and actual forwarding diagnostics serially.
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -13,6 +13,7 @@ const scripts = [
   '06-diff-write.mjs',
   '07-event-loop.mjs',
   '08-mission.mjs',
+  '09-capture-ab.mjs',
 ];
 
 async function runScript(script) {

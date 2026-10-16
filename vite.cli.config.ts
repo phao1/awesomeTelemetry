@@ -1,16 +1,17 @@
 import { defineConfig } from 'vite';
 
-// 第三阶段：把 server/cli.ts 打成单文件 server-dist/cli.js
+// Third stage: CLI and actual Node worker entries; shared chunks stay beside them.
 // 原生模块与重依赖不打包，由 pack-binary 复制 node_modules
 export default defineConfig({
   build: {
-    ssr: 'server/cli.ts',
+    ssr: true,
     outDir: 'server-dist',
     target: 'node20',
     sourcemap: true,
     rollupOptions: {
+      input: { cli: 'server/cli.ts', 'capture-worker': 'server/proxy/capture-worker.ts' },
       external: ['better-sqlite3', 'chokidar', 'http-mitm-proxy', 'node-forge'],
-      output: { entryFileNames: 'cli.js', format: 'es' },
+      output: { entryFileNames: '[name].js', format: 'es' },
     },
   },
 });

@@ -1,5 +1,6 @@
 # ===== 依赖与构建产物 =====
 node_modules/
+/node_modules
 dist/
 dist-binary/
 server-dist/
@@ -26,6 +27,9 @@ config/*.local.json
 proxy-certs/
 captured-prompts/
 captures/
+capture-bodies/
+proxy-ca/
+.agent-observe/
 compare/
 *.pem
 *.key
@@ -61,3 +65,5 @@ agent-observability-dev-kit.zip
 # ===== 性能诊断产物 =====
 prof/
 *.cpuprofile
+reports/capture-ab-*.json
+/reports/

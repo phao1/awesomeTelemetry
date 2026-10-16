@@ -1,0 +1,2815 @@
+/*
+ * Team Observability 样式 — add-agent-team-observability §7.10
+ * 仅使用 design tokens（tokens.css），无字面量颜色 / 字面量 px（T2/T3 强制）。
+ * 覆盖 .team-shell / .team-rail / .team-main / 七视图 panel / summary header /
+ * compare panel / state banners / filters。
+ */
+
+/* ===== §7.3 Shell 布局 ===== */
+
+.team-shell {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.team-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-3);
+  gap: var(--space-2);
+  overflow: auto;
+}
+
+/* ===== §7.5 Rail（TeamRunList） ===== */
+
+.team-rail {
+  width: var(--rail-width);
+  border-right: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  gap: var(--space-2);
+  background: var(--canvas-subtle);
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.team-rail-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.team-rail-title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+}
+
+.team-rail-total {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-rail-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* ===== §7.6 Run 行（虚拟化，44px 行高） ===== */
+
+.team-row-cell {
+  min-width: 0;
+}
+
+.team-row {
+  height: var(--row-lg);
+  padding: var(--space-1) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+  overflow: hidden;
+}
+
+.team-row:hover {
+  background: var(--canvas-raised);
+}
+
+.team-row-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.team-row-title {
+  font-size: var(--text-base);
+  color: var(--fg-default);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.team-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  min-width: 0;
+}
+
+.team-row-topo {
+  color: var(--fg-subtle);
+}
+
+/* ===== §7.5 Filters ===== */
+
+.team-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+.team-range-row {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.team-filter-row {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ===== §7.11 六状态提示条 ===== */
+
+.team-state-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  flex: 0 0 auto;
+}
+
+.team-state-partial {
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+  border: 1px solid var(--attention-emphasis);
+}
+
+.team-state-unavailable {
+  background: var(--neutral-subtle);
+  color: var(--neutral-fg);
+  border: 1px solid var(--border-default);
+}
+
+.team-state-invalid {
+  background: var(--danger-subtle);
+  color: var(--danger-fg);
+  border: 1px solid var(--danger-emphasis);
+}
+
+.team-state-deleted {
+  background: var(--neutral-subtle);
+  color: var(--neutral-fg);
+  border: 1px solid var(--border-default);
+}
+
+/* ===== Load more ===== */
+
+.team-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.team-load-more:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--fg-default);
+}
+
+.team-load-more:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ===== §7.3 Team nav 按钮（App.tsx ViewTabs 旁） ===== */
+
+.team-nav-btn {
+  height: var(--tabs-height);
+  padding: 0 var(--space-3);
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.team-nav-btn:hover {
+  color: var(--fg-default);
+}
+
+.team-nav-btn-on {
+  color: var(--accent-fg);
+  border-bottom-color: var(--accent-emphasis);
+}
+
+/* ===== §7.6 Summary Header ===== */
+
+.team-summary-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--canvas-default);
+  flex: 0 0 auto;
+}
+
+.team-summary-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.team-summary-title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-summary-topo {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  padding: 0 var(--space-2);
+}
+
+.team-summary-status {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-on-emphasis);
+  background: var(--neutral-emphasis);
+  border-radius: var(--radius-full);
+  padding: 0 var(--space-2);
+}
+
+.team-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-summary-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-summary-completeness {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.team-completeness-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+}
+
+.team-completeness-dim {
+  color: var(--fg-muted);
+}
+
+.team-completeness-level {
+  font-weight: var(--weight-semibold);
+}
+
+.team-completeness-complete {
+  color: var(--success-fg);
+}
+
+.team-completeness-partial {
+  color: var(--attention-fg);
+}
+
+.team-completeness-unavailable {
+  color: var(--neutral-fg);
+}
+
+.team-completeness-conflicted {
+  color: var(--danger-fg);
+}
+
+/* ===== §7.6 Anomalies ===== */
+
+.team-summary-anomalies {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-anomaly {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.team-anomaly-info {
+  background: var(--accent-subtle);
+  color: var(--fg-default);
+}
+
+.team-anomaly-warning {
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+}
+
+.team-anomaly-kind {
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+.team-anomaly-message {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ===== §7.11 Panel 状态包装 ===== */
+
+.team-panel-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.team-panel-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.team-panel-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-2) 0;
+}
+
+.team-panel-hint {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  margin: 0 0 var(--space-2) 0;
+}
+
+/* ===== §7.7 Topology Panel ===== */
+
+.team-topology-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-topo-node {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+}
+
+.team-topo-node:hover {
+  background: var(--canvas-raised);
+}
+
+.team-topo-node-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-topo-role {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--accent-fg);
+  flex: 0 0 auto;
+}
+
+.team-topo-name {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-topo-class {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-topo-edges {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+.team-topo-edge {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+}
+
+.team-topo-edge-created {
+  color: var(--success-fg);
+}
+
+.team-topo-edge-supervises {
+  color: var(--accent-fg);
+}
+
+.team-topo-edge-coordinates {
+  color: var(--phase-plan);
+}
+
+.team-topo-edge-reviews {
+  color: var(--attention-fg);
+}
+
+.team-topo-edge-replaces {
+  color: var(--danger-fg);
+}
+
+.team-topo-edge-peer {
+  color: var(--neutral-fg);
+}
+
+/* ===== §7.7 Tasks Panel ===== */
+
+.team-tasks-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-task-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+}
+
+.team-task-row:hover {
+  background: var(--canvas-raised);
+}
+
+.team-task-row-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-task-status-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.team-task-status-pending {
+  background: var(--neutral-fg);
+}
+
+.team-task-status-ready {
+  background: var(--attention-fg);
+}
+
+.team-task-status-claimed {
+  background: var(--accent-fg);
+}
+
+.team-task-status-running {
+  background: var(--attention-fg);
+  animation: status-pulse var(--duration-slow) var(--ease-in-out) infinite;
+}
+
+.team-task-status-blocked {
+  background: var(--danger-fg);
+}
+
+.team-task-status-completed {
+  background: var(--success-fg);
+}
+
+.team-task-status-failed {
+  background: var(--danger-fg);
+}
+
+.team-task-status-cancelled {
+  background: var(--neutral-fg);
+}
+
+.team-task-status-unknown {
+  background: var(--neutral-fg);
+}
+
+.team-task-title {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-task-status {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-task-deps {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+.team-task-dep {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+}
+
+/* ===== §7.7 Timeline Panel ===== */
+
+.team-timeline-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-timeline-lane {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row-sm);
+}
+
+.team-timeline-lane-label {
+  flex: 0 0 auto;
+  min-width: calc(var(--rail-width) / 3);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-timeline-lane-label:hover {
+  border-color: var(--border-strong);
+}
+
+.team-timeline-lane-on {
+  border-color: var(--accent-emphasis);
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
+}
+
+.team-timeline-lane-track {
+  flex: 1;
+  min-width: 0;
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  position: relative;
+  overflow: hidden;
+}
+
+.team-timeline-lane-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  background: var(--accent-subtle);
+  border-radius: var(--radius-sm);
+}
+
+/* ===== §7.7 Communication Panel ===== */
+
+.team-communication-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-communication-empty {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  padding: var(--space-3);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+/* ===== §7.7 Ledger Panel ===== */
+
+.team-ledger-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-ledger-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-ledger-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+  font-size: var(--text-xs);
+}
+
+.team-ledger-row:hover {
+  background: var(--canvas-raised);
+}
+
+.team-ledger-row-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-ledger-row-ambiguous {
+  border-left-style: dashed;
+  border-left-color: var(--attention-emphasis);
+}
+
+.team-ledger-kind {
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+  flex: 0 0 auto;
+}
+
+.team-ledger-status {
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-ledger-time {
+  color: var(--fg-subtle);
+  flex: 0 0 auto;
+}
+
+.team-ledger-ambiguous-marker {
+  color: var(--attention-fg);
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+/* ===== §7.4 Inspector Panel ===== */
+
+.team-inspector-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--canvas-default);
+}
+
+.team-inspector-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.team-inspector-kind {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+}
+
+.team-inspector-id {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-inspector-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-inspector-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-inspector-body-actions {
+  display: flex;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+.team-inspector-body-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.team-body-dl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.team-body-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-body-row dt {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-body-row dd {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+}
+
+.team-body-row pre {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  overflow: auto;
+  max-height: calc(var(--row-lg) * 4);
+}
+
+.team-body-raw {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  overflow: auto;
+  font-size: var(--text-xs);
+  max-height: calc(var(--row-lg) * 8);
+}
+
+/* ===== §7.8 Compare Panel ===== */
+
+.team-compare-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-compare-selectors {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.team-compare-selector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-compare-label {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-compare-manual {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.team-compare-manual input {
+  accent-color: var(--accent-emphasis);
+}
+
+.team-compare-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-compare-basis {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  flex-wrap: wrap;
+}
+
+.team-compare-basis-matched {
+  background: var(--success-subtle);
+  border: 1px solid var(--success-emphasis);
+}
+
+.team-compare-basis-partially_matched {
+  background: var(--attention-subtle);
+  border: 1px solid var(--attention-emphasis);
+}
+
+.team-compare-basis-unmatched {
+  background: var(--danger-subtle);
+  border: 1px solid var(--danger-emphasis);
+}
+
+.team-compare-basis-unknown {
+  background: var(--neutral-subtle);
+  border: 1px solid var(--border-default);
+}
+
+.team-compare-basis-match {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+}
+
+.team-compare-basis-manual {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.team-compare-basis-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex-basis: 100%;
+}
+
+.team-compare-dimension {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-compare-dimension h4 {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+  margin: 0;
+}
+
+.team-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.team-compare-table th {
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--fg-muted);
+  font-weight: var(--weight-semibold);
+}
+
+.team-compare-table td {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--fg-default);
+}
+
+.team-compare-row-material {
+  background: var(--canvas-subtle);
+}
+
+.team-compare-strengths,
+.team-compare-weaknesses,
+.team-compare-tradeoffs,
+.team-compare-caveats {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+}
+
+.team-compare-strengths {
+  background: var(--success-subtle);
+}
+
+.team-compare-weaknesses {
+  background: var(--danger-subtle);
+}
+
+.team-compare-tradeoffs {
+  background: var(--attention-subtle);
+}
+
+.team-compare-caveats {
+  background: var(--neutral-subtle);
+}
+
+.team-compare-strengths h4,
+.team-compare-weaknesses h4,
+.team-compare-tradeoffs h4,
+.team-compare-caveats h4 {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.team-compare-strengths h4 {
+  color: var(--success-fg);
+}
+
+.team-compare-weaknesses h4 {
+  color: var(--danger-fg);
+}
+
+.team-compare-tradeoffs h4 {
+  color: var(--attention-fg);
+}
+
+.team-compare-caveats h4 {
+  color: var(--neutral-fg);
+}
+
+.team-compare-strengths ul,
+.team-compare-weaknesses ul,
+.team-compare-tradeoffs ul,
+.team-compare-caveats ul {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* ===== §7.8 Patching banner ===== */
+
+.team-patching-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+  font-size: var(--text-xs);
+  flex: 0 0 auto;
+}
+
+/* ===== §7.3 Run actions ===== */
+
+.team-run-actions {
+  display: flex;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-muted);
+  flex: 0 0 auto;
+}
+
+/* ==========================================================================
+   §8.1–8.14 新增 class（add-agent-team-observability task 8）
+   仅追加，不修改上方既有 class。所有颜色/间距用 tokens.css var(--*)。
+   ========================================================================== */
+
+/* ===== §8.1 TopologyView ===== */
+
+.team-topology-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-topology-view-flat {
+  gap: var(--space-1);
+}
+
+.team-topology-degrade {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--attention-subtle);
+  border: 1px solid var(--attention-emphasis);
+  color: var(--attention-fg);
+  font-size: var(--text-xs);
+  flex-wrap: wrap;
+}
+
+.team-topology-degrade-icon {
+  flex: 0 0 auto;
+  font-size: var(--text-md);
+}
+
+.team-topology-degrade-text {
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+.team-topology-degrade-hint {
+  color: var(--fg-muted);
+  flex: 1 1 100%;
+}
+
+.team-topology-flat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-topology-levels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-topology-level {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-topology-level-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+  padding-left: var(--space-2);
+}
+
+.team-topology-level-nodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-left: var(--space-2);
+  border-left: calc(var(--space-1) / 2) solid var(--border-muted);
+}
+
+.team-topology-level-0 .team-topology-level-nodes {
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-topology-level-1 .team-topology-level-nodes {
+  border-left-color: var(--phase-plan);
+}
+
+.team-topology-level-2 .team-topology-level-nodes {
+  border-left-color: var(--phase-implement);
+}
+
+/* 节点 state dot + label（无 color-only meaning） */
+.team-topo-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-topo-state-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  display: inline-block;
+}
+
+.team-topo-state-created { background: var(--neutral-fg); }
+.team-topo-state-ready { background: var(--attention-fg); }
+.team-topo-state-busy { background: var(--accent-fg); }
+.team-topo-state-blocked { background: var(--danger-fg); }
+.team-topo-state-idle { background: var(--neutral-fg); }
+.team-topo-state-failed { background: var(--danger-fg); }
+.team-topo-state-replaced { background: var(--done-fg); }
+.team-topo-state-cancelled { background: var(--neutral-fg); }
+.team-topo-state-completed { background: var(--success-fg); }
+.team-topo-state-unknown { background: var(--neutral-fg); }
+
+/* 节点 focus-visible 轮廓（§8.14） */
+.team-topo-node:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--space-1);
+}
+
+/* 边 chip */
+.team-topo-edges {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+}
+
+.team-topo-edges-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-topo-edges-structural {
+  background: var(--canvas-subtle);
+}
+
+.team-topo-edges-overlay {
+  background: var(--neutral-subtle);
+}
+
+.team-topo-edge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  background: var(--canvas-default);
+}
+
+.team-topo-edge-kind {
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+.team-topo-edge-arrow {
+  color: var(--fg-subtle);
+  flex: 0 0 auto;
+}
+
+.team-topo-edge-from,
+.team-topo-edge-to {
+  color: var(--fg-default);
+  flex: 0 0 auto;
+}
+
+.team-topo-edge-conf {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  flex: 0 0 auto;
+}
+
+/* 边 kind 色（token，无 color-only meaning——有文字 label 辅助） */
+.team-topo-edge-created .team-topo-edge-kind { color: var(--success-fg); }
+.team-topo-edge-supervises .team-topo-edge-kind { color: var(--accent-fg); }
+.team-topo-edge-coordinates .team-topo-edge-kind { color: var(--phase-plan); }
+.team-topo-edge-reviews .team-topo-edge-kind { color: var(--attention-fg); }
+.team-topo-edge-replaces .team-topo-edge-kind { color: var(--danger-fg); }
+.team-topo-edge-peer .team-topo-edge-kind { color: var(--neutral-fg); }
+
+/* ===== §8.2 TaskDagView ===== */
+
+.team-taskdag-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-taskdag-degrade {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--danger-subtle);
+  border: 1px solid var(--danger-emphasis);
+  color: var(--danger-fg);
+  font-size: var(--text-xs);
+  flex-wrap: wrap;
+}
+
+.team-taskdag-degrade-icon {
+  flex: 0 0 auto;
+  font-size: var(--text-md);
+}
+
+.team-taskdag-degrade-text {
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+.team-taskdag-degrade-detail {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 1 1 100%;
+}
+
+.team-taskdag-flat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-taskdag-levels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-taskdag-level {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-taskdag-level-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+  padding-left: var(--space-2);
+}
+
+.team-taskdag-level-nodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-left: var(--space-2);
+  border-left: calc(var(--space-1) / 2) solid var(--border-muted);
+}
+
+.team-taskdag-level-0 .team-taskdag-level-nodes {
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-taskdag-level-1 .team-taskdag-level-nodes {
+  border-left-color: var(--phase-plan);
+}
+
+.team-taskdag-level-2 .team-taskdag-level-nodes {
+  border-left-color: var(--phase-implement);
+}
+
+/* task 节点 */
+.team-task-node {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+  background: var(--canvas-default);
+  border: 1px solid var(--border-muted);
+  font-size: var(--text-xs);
+  max-width: 100%;
+}
+
+.team-task-node:hover {
+  background: var(--canvas-raised);
+}
+
+.team-task-node-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+  border-color: var(--accent-emphasis);
+}
+
+.team-task-node-critical {
+  border-color: var(--attention-emphasis);
+  background: var(--attention-subtle);
+}
+
+.team-task-node:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--space-1);
+}
+
+.team-task-node-title {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-task-node-status {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-task-node-owner {
+  font-size: var(--text-xs);
+  color: var(--fg-secondary);
+  flex: 0 0 auto;
+}
+
+.team-task-node-deps {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.team-task-node-critical-badge {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+/* 依赖列表 */
+.team-taskdag-deps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--canvas-subtle);
+}
+
+.team-taskdag-deps-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-taskdag-dep {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  background: var(--canvas-default);
+}
+
+.team-taskdag-dep-upstream,
+.team-taskdag-dep-downstream {
+  color: var(--fg-default);
+  flex: 0 0 auto;
+  max-width: calc(var(--rail-width) * 2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-taskdag-dep-arrow {
+  color: var(--accent-fg);
+  flex: 0 0 auto;
+}
+
+/* ===== §8.3 TeamTimeline ===== */
+
+.team-timeline-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+  min-height: 0;
+}
+
+.team-timeline-axis {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.team-timeline-lanes {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 覆盖既有 .team-timeline-lane（不修改，仅追加新 class） */
+.team-timeline-view .team-timeline-lane {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.team-timeline-lane-on {
+  background: var(--accent-subtle);
+}
+
+.team-timeline-lane-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+  min-width: calc(var(--rail-width) / 2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-timeline-lane-label:hover {
+  border-color: var(--border-strong);
+}
+
+.team-timeline-lane-label-on {
+  border-color: var(--accent-emphasis);
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
+}
+
+.team-timeline-lane-name {
+  font-weight: var(--weight-semibold);
+}
+
+.team-timeline-lane-state {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.team-timeline-lane-state-created,
+.team-timeline-lane-state-idle,
+.team-timeline-lane-state-cancelled,
+.team-timeline-lane-state-unknown { color: var(--neutral-fg); }
+
+.team-timeline-lane-state-ready,
+.team-timeline-lane-state-busy { color: var(--accent-fg); }
+
+.team-timeline-lane-state-blocked,
+.team-timeline-lane-state-failed { color: var(--danger-fg); }
+
+.team-timeline-lane-state-completed { color: var(--success-fg); }
+
+.team-timeline-lane-state-replaced { color: var(--done-fg); }
+
+.team-timeline-lane-conc {
+  color: var(--fg-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.team-timeline-lane-track {
+  flex: 1;
+  min-width: 0;
+  height: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  position: relative;
+  overflow: hidden;
+}
+
+.team-timeline-lane-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: var(--text-xs);
+  color: var(--fg-secondary);
+}
+
+/* 活动条 */
+.team-timeline-activity {
+  position: absolute;
+  top: var(--space-1);
+  height: calc(var(--space-4) - var(--space-2));
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  border: 1px solid var(--accent-emphasis);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  min-width: var(--space-2);
+}
+
+.team-timeline-activity:hover {
+  background: var(--accent-emphasis);
+}
+
+.team-timeline-activity-on {
+  background: var(--accent-emphasis);
+  border-color: var(--accent-fg);
+  box-shadow: 0 0 0 calc(var(--space-1) / 2) var(--accent-fg);
+}
+
+.team-timeline-activity:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--space-1);
+}
+
+.team-timeline-activity-open {
+  border-right-style: dashed;
+}
+
+.team-timeline-activity-ambiguous {
+  border-left-style: dashed;
+  border-left-color: var(--attention-emphasis);
+}
+
+.team-timeline-activity-kind {
+  font-size: var(--text-xs);
+  color: var(--fg-on-emphasis);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 var(--space-1);
+}
+
+.team-timeline-activity-ambiguous-marker {
+  color: var(--attention-fg);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-xs);
+}
+
+/* 活动 kind 色（token，有文字 label 辅助） */
+.team-timeline-activity-agent_lifecycle { background: var(--neutral-subtle); border-color: var(--neutral-emphasis); }
+.team-timeline-activity-task_created,
+.team-timeline-activity-task_dependency,
+.team-timeline-activity-task_assignment,
+.team-timeline-activity-task_status { background: var(--phase-plan-subtle); border-color: var(--phase-plan); }
+.team-timeline-activity-round { background: var(--phase-understand-subtle); border-color: var(--phase-understand); }
+.team-timeline-activity-message_sent,
+.team-timeline-activity-message_received { background: var(--phase-implement-subtle); border-color: var(--phase-implement); }
+.team-timeline-activity-tool_call,
+.team-timeline-activity-tool_result { background: var(--phase-debug-subtle); border-color: var(--phase-debug); }
+.team-timeline-activity-artifact { background: var(--phase-report-subtle); border-color: var(--phase-report); }
+.team-timeline-activity-verification { background: var(--phase-verify-subtle); border-color: var(--phase-verify); }
+.team-timeline-activity-handoff { background: var(--done-subtle); border-color: var(--done-emphasis); }
+.team-timeline-activity-error { background: var(--danger-subtle); border-color: var(--danger-emphasis); }
+.team-timeline-activity-recovery { background: var(--success-subtle); border-color: var(--success-emphasis); }
+.team-timeline-activity-integration { background: var(--attention-subtle); border-color: var(--attention-emphasis); }
+.team-timeline-activity-unknown { background: var(--neutral-subtle); border-color: var(--neutral-emphasis); }
+
+.team-timeline-omitted {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  background: var(--neutral-subtle);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+/* ===== §8.6 CommunicationView ===== */
+
+.team-comm-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+  min-height: 0;
+}
+
+.team-comm-graph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--canvas-subtle);
+  flex: 0 0 auto;
+}
+
+.team-comm-graph-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-comm-edge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  background: var(--canvas-default);
+}
+
+.team-comm-edge-from,
+.team-comm-edge-to {
+  color: var(--fg-default);
+  flex: 0 0 auto;
+}
+
+.team-comm-edge-arrow {
+  color: var(--accent-fg);
+  flex: 0 0 auto;
+}
+
+.team-comm-edge-count {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.team-comm-edge-modes,
+.team-comm-edge-categories {
+  color: var(--fg-secondary);
+  font-size: var(--text-xs);
+  flex: 0 0 auto;
+}
+
+.team-comm-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  min-height: 0;
+}
+
+.team-comm-table-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-comm-table-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.team-comm-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+  font-size: var(--text-xs);
+  background: var(--canvas-default);
+}
+
+.team-comm-row:hover {
+  background: var(--canvas-raised);
+}
+
+.team-comm-row-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-comm-row:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--space-1);
+}
+
+.team-comm-mode-badge {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  flex: 0 0 auto;
+}
+
+.team-comm-mode-direct { background: var(--success-subtle); color: var(--success-fg); }
+.team-comm-mode-leader_mediated { background: var(--accent-subtle); color: var(--accent-fg); }
+.team-comm-mode-broadcast { background: var(--phase-plan-subtle); color: var(--phase-plan); }
+.team-comm-mode-unknown { background: var(--neutral-subtle); color: var(--neutral-fg); }
+
+.team-comm-category-badge {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-comm-sender,
+.team-comm-recipients {
+  color: var(--fg-default);
+  flex: 0 0 auto;
+  max-width: calc(var(--rail-width) * 2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-comm-arrow {
+  color: var(--fg-subtle);
+  flex: 0 0 auto;
+}
+
+.team-comm-latency {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.team-comm-reply {
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.team-comm-time {
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* ===== §8.7 EntityInspector ===== */
+
+.team-inspector-entity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-inspector-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.team-inspector-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.team-inspector-field-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.team-inspector-field-value {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  margin: 0;
+  word-break: break-all;
+}
+
+.team-inspector-provenance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-subtle);
+}
+
+.team-inspector-provenance-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-inspector-provenance-empty {
+  font-size: var(--text-xs);
+  color: var(--fg-secondary);
+  padding: var(--space-1) 0;
+}
+
+.team-inspector-evidence-list {
+  margin: 0;
+  padding-left: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-inspector-evidence-id {
+  font-size: var(--text-xs);
+}
+
+.team-inspector-body-loading {
+  padding: var(--space-2);
+}
+
+.team-inspector-body-dl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.team-inspector-body-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-inspector-body-row dt {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-inspector-body-row dd {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+}
+
+.team-inspector-body-row pre {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  overflow: auto;
+  max-height: calc(var(--row-lg) * 4);
+}
+
+.team-inspector-body-raw {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  overflow: auto;
+  font-size: var(--text-xs);
+  max-height: calc(var(--row-lg) * 8);
+}
+
+/* ===== §8.14 reduced motion ===== */
+
+@media (prefers-reduced-motion: reduce) {
+  .team-task-status-running {
+    animation: none;
+  }
+  .team-timeline-activity {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   §9 TeamCompareView（add-agent-team-observability task 9）
+   只追加新 class，不修改任何现有 class（任务约束）。
+   只用 var(--*) tokens，无字面量颜色；1px 描边除外（T3 允许）。
+   ========================================================================== */
+
+.team-compare-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* §9.1 选择器区 */
+
+.team-compare-view-selectors {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.team-compare-view-selector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  position: relative;
+  min-width: var(--verdict-dim-min);
+}
+
+.team-compare-view-label {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-compare-view-input {
+  width: 100%;
+}
+
+.team-compare-view-listbox {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  background: var(--canvas-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-dropdown);
+  max-height: calc(var(--row-lg) * 6);
+  overflow-y: auto;
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.team-compare-view-option:hover {
+  background: var(--canvas-subtle);
+}
+
+.team-compare-view-option-on {
+  background: var(--accent-subtle);
+}
+
+.team-compare-view-option-id {
+  color: var(--fg-muted);
+  min-width: var(--seq-col-width);
+}
+
+.team-compare-view-option-title {
+  color: var(--fg-default);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-compare-view-no-runs {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  padding: var(--space-2);
+  background: var(--canvas-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-dropdown);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.team-compare-view-manual {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.team-compare-view-manual input {
+  accent-color: var(--accent-emphasis);
+}
+
+.team-compare-view-run-btn {
+  flex: 0 0 auto;
+}
+
+.team-compare-view-run-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.team-compare-view-same-id {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+  font-size: var(--text-xs);
+}
+
+/* §9.7 状态 */
+
+.team-compare-view-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-compare-view-partial-banner {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+  font-size: var(--text-xs);
+}
+
+/* §9.2 basis 横幅 */
+
+.team-compare-view-basis {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+}
+
+.team-compare-view-basis-matched {
+  background: var(--success-subtle);
+  border-color: var(--success-emphasis);
+}
+
+.team-compare-view-basis-partially_matched {
+  background: var(--attention-subtle);
+  border-color: var(--attention-emphasis);
+}
+
+.team-compare-view-basis-unmatched {
+  background: var(--danger-subtle);
+  border-color: var(--danger-emphasis);
+}
+
+.team-compare-view-basis-unknown {
+  background: var(--neutral-subtle);
+  border-color: var(--border-default);
+}
+
+.team-compare-view-basis-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.team-compare-view-basis-match {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+}
+
+.team-compare-view-basis-manual {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.team-compare-view-basis-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.team-compare-view-basis-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  border: 1px solid var(--border-muted);
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-basis-field-name {
+  color: var(--fg-muted);
+}
+
+.team-compare-view-basis-field-state {
+  font-weight: var(--weight-semibold);
+}
+
+.team-compare-view-basis-field-yes .team-compare-view-basis-field-state {
+  color: var(--success-fg);
+}
+
+.team-compare-view-basis-field-no .team-compare-view-basis-field-state {
+  color: var(--danger-fg);
+}
+
+.team-compare-view-basis-field-unknown .team-compare-view-basis-field-state {
+  color: var(--fg-subtle);
+}
+
+.team-compare-view-basis-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-compare-view-basis-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+}
+
+.team-compare-view-basis-hint-unmatched {
+  color: var(--danger-fg);
+}
+
+.team-compare-view-basis-hint-unknown {
+  color: var(--fg-muted);
+}
+
+/* §9.4 五维指标区 */
+
+.team-compare-view-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-compare-view-dimensions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-compare-view-dimension {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-compare-view-dimension-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+}
+
+.team-compare-view-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-table-caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.team-compare-view-table th {
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--fg-muted);
+  font-weight: var(--weight-semibold);
+}
+
+.team-compare-view-table td,
+.team-compare-view-table th[scope="row"] {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--fg-default);
+  font-weight: var(--weight-normal);
+}
+
+.team-compare-view-metric-id {
+  text-align: left;
+  white-space: nowrap;
+}
+
+.team-compare-view-cell {
+  white-space: nowrap;
+}
+
+.team-compare-view-row-material {
+  background: var(--canvas-subtle);
+}
+
+/* direction tag */
+
+.team-compare-view-direction-tag {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-direction-higher_better {
+  background: var(--success-subtle);
+  color: var(--success-fg);
+}
+
+.team-compare-view-direction-lower_better {
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+}
+
+.team-compare-view-direction-descriptive {
+  background: var(--neutral-subtle);
+  color: var(--neutral-fg);
+}
+
+/* material tag */
+
+.team-compare-view-material-tag {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-material-yes {
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.team-compare-view-material-no {
+  background: var(--neutral-subtle);
+  color: var(--neutral-fg);
+}
+
+/* completeness tag */
+
+.team-compare-view-completeness-tag {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-completeness-complete {
+  background: var(--success-subtle);
+  color: var(--success-fg);
+}
+
+.team-compare-view-completeness-partial {
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+}
+
+.team-compare-view-completeness-unavailable {
+  background: var(--neutral-subtle);
+  color: var(--neutral-fg);
+}
+
+.team-compare-view-completeness-conflicted {
+  background: var(--danger-subtle);
+  color: var(--danger-fg);
+}
+
+.team-compare-view-criteria {
+
+  color: var(--fg-muted);
+}
+
+.team-compare-view-evidence {
+  color: var(--fg-muted);
+}
+
+/* §9.5 verdicts */
+
+.team-compare-view-verdicts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-compare-view-strengths,
+.team-compare-view-weaknesses,
+.team-compare-view-tradeoffs,
+.team-compare-view-caveats {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+}
+
+.team-compare-view-strengths {
+  background: var(--success-subtle);
+}
+
+.team-compare-view-weaknesses {
+  background: var(--danger-subtle);
+}
+
+.team-compare-view-tradeoffs {
+  background: var(--attention-subtle);
+}
+
+.team-compare-view-caveats {
+  background: var(--neutral-subtle);
+}
+
+.team-compare-view-verdict-title {
+  margin: 0 0 var(--space-1) 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.team-compare-view-strengths .team-compare-view-verdict-title {
+  color: var(--success-fg);
+}
+
+.team-compare-view-weaknesses .team-compare-view-verdict-title {
+  color: var(--danger-fg);
+}
+
+.team-compare-view-tradeoffs .team-compare-view-verdict-title {
+  color: var(--attention-fg);
+}
+
+.team-compare-view-caveats .team-compare-view-verdict-title {
+  color: var(--neutral-fg);
+}
+
+.team-compare-view-verdict-list {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* §9.6 no-winner/no-score note */
+
+.team-compare-view-no-verdict {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  border: 1px solid var(--border-muted);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+/* ===== §8 UI 优化：Agent 协作回放章节 =====
+ * spec §8.3（章节滚动 + sticky summary）+ §8.4（样式一致性，复用 session-visuals-panel token）
+ * design §3.3 + §3.4。仅使用 design tokens，无字面量颜色 / 字面量 px（T2/T3 强制）。
+ */
+
+/* --- §8.4 章节外框：与 .session-visuals-panel 逐行对齐（session.css:567-589） --- */
+
+.session-collab-replay-panel {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-subtle);
+}
+
+.session-collab-replay-panel > summary {
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--fg-default);
+  user-select: none;
+}
+
+.session-collab-replay-panel > summary:hover {
+  color: var(--accent-fg);
+}
+
+.session-collab-replay-panel[open] > summary {
+  border-bottom: 1px solid var(--border-default);
+}
+
+/* --- §8.3 章节滚动 + sticky summary --- */
+
+/* summary 在内容区滚动时保持可见可点击折叠（spec §8.3.1 规则 4） */
+.session-collab-replay-panel > summary {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--canvas-subtle);
+}
+
+/* 内容区垂直滚动：max-height 70vh 保证不超出视口（spec §8.3.1 规则 1-2）。
+   降级（spec §8.3.3 异常 1）：父容器 flex 拉伸导致 max-height 不生效时，
+   内容仍可整页滚动，不丢失内容。 */
+.session-collab-replay-panel[open] .collab-replay-body {
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3);
+}
+
+/* 拓扑区域水平滚动：节点宽度按文本扩展不压缩（spec §8.3.1 规则 3） */
+.collab-topology-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* --- §8.4 控件 token 复用（design §3.4.3 表格） --- */
+
+/* 主容器 */
+.agent-collab-replay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* 拓扑图 SVG */
+.collab-topology-graph {
+  display: block;
+  max-width: 100%;
+}
+
+.collab-topology-graph .collab-edge {
+  fill: none;
+  stroke: var(--border-default);
+  stroke-width: 1;
+}
+
+.collab-topology-graph .collab-edge-supervises {
+  stroke: var(--accent-fg);
+}
+
+.collab-topology-graph .collab-edge-created {
+  stroke: var(--success-fg);
+}
+
+.collab-topology-graph .collab-edge-selected {
+  stroke-width: 2;
+  stroke: var(--accent-emphasis);
+}
+
+.collab-topology-graph .collab-edge-dimmed {
+  opacity: 0.4;
+}
+
+.collab-topology-graph .collab-edge-degraded {
+  stroke-dasharray: 4 2;
+  stroke: var(--danger-fg);
+}
+
+.collab-topology-graph .collab-edge-count {
+  font-size: var(--text-xs);
+  fill: var(--fg-muted);
+  font-family: var(--font-mono);
+}
+
+.collab-topology-graph .collab-node {
+  cursor: pointer;
+}
+
+.collab-topology-graph .collab-node-name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.collab-topology-graph .collab-node-role {
+  font-size: var(--text-xs);
+}
+
+.collab-topology-graph .collab-node-selected .collab-node-card {
+  stroke-width: 2;
+}
+
+.collab-topology-graph .collab-legend-label {
+  font-size: var(--text-xs);
+}
+
+/* 回放控制条 */
+.collab-replay-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+}
+
+.collab-replay-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.collab-replay-nav {
+  justify-content: flex-start;
+}
+
+.collab-replay-info {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  flex-wrap: wrap;
+}
+
+.collab-replay-prev,
+.collab-replay-next,
+.collab-replay-skip-empty {
+  height: var(--control-height-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.collab-replay-prev:hover:not(:disabled),
+.collab-replay-next:hover:not(:disabled),
+.collab-replay-skip-empty:hover:not(:disabled) {
+  background: var(--canvas-raised);
+}
+
+.collab-replay-prev:disabled,
+.collab-replay-next:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.collab-replay-skip-empty {
+  border-color: var(--attention-fg);
+  color: var(--attention-fg);
+}
+
+.collab-replay-progress {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.collab-replay-task-title {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  font-weight: var(--weight-medium);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collab-replay-sep {
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.collab-replay-task-status {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  flex: 0 0 auto;
+}
+
+.collab-task-status-completed {
+  color: var(--success-fg);
+}
+
+.collab-task-status-running,
+.collab-task-status-ready,
+.collab-task-status-claimed {
+  color: var(--attention-fg);
+}
+
+.collab-task-status-failed,
+.collab-task-status-blocked {
+  color: var(--danger-fg);
+}
+
+.collab-task-status-pending,
+.collab-task-status-cancelled,
+.collab-task-status-unknown {
+  color: var(--neutral-fg);
+}
+
+.collab-replay-activity-count {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+/* 分段进度条（spec §8.2.1 规则 4-6，design §3.2.3） */
+.collab-replay-segments {
+  display: flex;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.collab-replay-seg {
+  height: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--border-default);
+  cursor: pointer;
+}
+
+/* 已完成：accent-emphasis */
+.collab-replay-seg-completed {
+  background: var(--accent-emphasis);
+}
+
+/* 当前：accent-emphasis + 加粗（outline 模拟 2px）+ 高度 +2px */
+.collab-replay-seg-current {
+  background: var(--accent-emphasis);
+  height: calc(var(--space-2) + var(--space-1) / 2);
+  outline: 1px solid var(--accent-emphasis);
+}
+
+/* 未开始：border-default（默认） */
+.collab-replay-seg-pending {
+  background: var(--border-default);
+}
+
+/* 无活动：border-muted + 高度 -2px */
+.collab-replay-seg-empty {
+  background: var(--border-muted);
+  height: calc(var(--space-2) - var(--space-1) / 2);
+}
+
+.collab-replay-seg:hover {
+  opacity: 0.8;
+}
+
+/* 活动面板聚合展示（spec §8.5，design §3.5） */
+.collab-activity-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.collab-activity-group {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+}
+
+.collab-activity-group > summary {
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.collab-activity-group > summary:hover {
+  background: var(--canvas-raised);
+}
+
+/* 无活动 agent：不可展开（无 summary 点击效果） */
+.collab-activity-group-empty > summary {
+  cursor: default;
+  color: var(--fg-muted);
+}
+
+.collab-activity-group-empty > summary:hover {
+  background: transparent;
+}
+
+.collab-activity-group-name {
+  font-weight: var(--weight-medium);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.collab-activity-group-count {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.collab-activity-group-summary {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.collab-activity-ambiguous-mark {
+  color: var(--attention-fg);
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+/* 展开明细 */
+.collab-activity-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-top: 1px solid var(--border-muted);
+}
+
+.collab-activity-detail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+}
+
+.collab-activity-detail-time {
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.collab-activity-detail-kind {
+  flex: 0 0 auto;
+}
+
+.collab-activity-detail-status {
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}

@@ -6,14 +6,26 @@
 // 数据回调必须回调 (null, chunk) 透传，否则请求/响应流会被吞掉。
 import type { Database } from 'better-sqlite3';
 import { Proxy } from 'http-mitm-proxy';
-import type { IncomingMessage, IncomingHttpHeaders, ServerResponse } from 'node:http';
+import type { IncomingMessage, IncomingHttpHeaders, ServerResponse, ClientRequest } from 'node:http';
+import { StringDecoder } from 'node:string_decoder';
+import { setImmediate as yieldImmediate } from 'node:timers/promises';
+import type { Agent as HttpsAgent } from 'node:https';
 
-import type { CaptureMethod } from '../../src/core/trace-types.js';
-import { desensitize, type DesensitizeOptions } from '../desensitization/engine.js';
-import { parseProxyRequest } from './parser-router.js';
+import type { CaptureMethod, CaptureProcessingResult, CaptureTransportResult, ProxyCaptureActivity } from '../../src/core/trace-types.js';
+import type { DesensitizeOptions } from '../desensitization/engine.js';
 import { writeProxyRequest } from './proxy-writer.js';
+import { CaptureCapacityError } from './capture-capacity.js';
 import { RequestContext } from './request-context.js';
-import { parseSseChunk } from './sse-accumulator.js';
+import type { CaptureBodyStore, CaptureBodyWriter } from './body-store.js';
+import { writeCaptureBodies, writeCaptureProcessing, writeCaptureTransport } from './capture-storage.js';
+import { createIdentityCollector } from '../../src/adapters/native-identities.js';
+import { CaptureProcessor, CaptureProcessingError } from './capture-processor.js';
+import { writeNativeIdentities } from '../storage/trace-links.js';
+import { TransportLifecycle } from './transport-lifecycle.js';
+import { captureResources, type CaptureResources } from './capture-resources.js';
+import { contentEncoding } from './body-decoder.js';
+import { observedNetworkCode, transportResult } from './transport-result.js';
+import { CaptureJournal, committedCaptureId, retryCaptureCommit, type CaptureJournalTicket } from './capture-journal.js';
 
 export interface MitmProxyOptions {
   db: Database;
@@ -21,8 +33,16 @@ export interface MitmProxyOptions {
   keepRawBodies?: boolean;
   desensitizeOptions?: DesensitizeOptions;
   notify?: (id: number) => void;
+  notifySession?: (key: string, proxyId: number) => void;
   /** design D2：本次成功 proxy run 的不透明 UUID，写入该 run 捕获的每一行。 */
   captureGroupId?: string;
+  bodyStore?: CaptureBodyStore;
+  caDirectory?: string;
+  httpsAgent?: HttpsAgent;
+  onActivity?: (activity: ProxyCaptureActivity) => void;
+  /** Caller-owned processor for explicit bounds/fault testing; never a mock parser. */
+  processor?: CaptureProcessor;
+  resources?: CaptureResources;
 }
 
 /**
@@ -36,6 +56,7 @@ interface MitmHandlerContext {
   clientToProxyRequest: IncomingMessage;
   proxyToClientResponse: ServerResponse;
   serverToProxyResponse?: IncomingMessage;
+  proxyToServerRequest?: ClientRequest;
   tags?: Record<string, unknown>;
 }
 
@@ -51,14 +72,27 @@ export interface ProxyServerLike {
   onResponseData(cb: (ctx: MitmHandlerContext, chunk: Buffer, callback: MitmDataCallback) => void): void;
   onResponseEnd(cb: (ctx: MitmHandlerContext, callback: MitmRequestCallback) => void): void;
   onError(cb: (ctx: MitmHandlerContext | null, err?: Error | null, errorKind?: string) => void): void;
-  listen(opts: { port: number; host?: string }, cb: () => void): void;
+  listen(opts: { port: number; host?: string; sslCaDir?: string; httpsAgent?: HttpsAgent }, cb: (error?: Error | null) => void): void;
   close(): void;
+  shutdown?(options?: { graceMs?: number }): Promise<void>;
+  captureActivity?(): ProxyCaptureActivity;
+}
+
+export interface ManagedProxyServer extends ProxyServerLike {
+  shutdown(options?: { graceMs?: number }): Promise<void>;
+  captureActivity(): ProxyCaptureActivity;
 }
 
 /** 每个 ctx 的捕获状态，存于 ctx.tags[TAG]。 */
 interface CaptureState {
   requestCtx: RequestContext;
   finalized: boolean;
+  requestEnded: boolean;
+  responseEnded: boolean;
+  finalization: Promise<void> | null;
+  requestWriter: CaptureBodyWriter | null;
+  responseWriter: CaptureBodyWriter | null;
+  journal: CaptureJournalTicket | null;
 }
 
 const CAPTURE_TAG = 'awesomeTelemetryCapture';
@@ -82,10 +116,91 @@ function responseContentType(headers: IncomingHttpHeaders | undefined): string |
 }
 
 /** REQ-001：MITM 捕获接线（D-002 修复：真实 v1.1.0 生命周期回调）。 */
-export async function createMitmProxy(opts: MitmProxyOptions): Promise<ProxyServerLike> {
-  const proxy = new Proxy() as unknown as ProxyServerLike;
-
+export async function createMitmProxy(opts: MitmProxyOptions): Promise<ManagedProxyServer> {
+  const journal = opts.bodyStore === undefined ? null : await CaptureJournal.open(opts.db, opts.bodyStore);
+  const engine = new Proxy();
+  const resources = opts.resources ?? captureResources;
+  const processor = opts.processor ?? new CaptureProcessor({ resources });
+  const proxy = engine as unknown as ManagedProxyServer;
+  let rejectStartup: ((error: Error) => void) | null = null;
+  const transport = new TransportLifecycle(engine, opts.httpsAgent === undefined, error => {
+    if (rejectStartup !== null) { rejectStartup(error); rejectStartup = null; }
+    else captureError('PROXY_LISTENER_ERROR');
+  });
+  const active = new Set<MitmHandlerContext>();
+  const writes = new Set<Promise<void>>();
+  const activity: ProxyCaptureActivity = {
+    listening: false, observedRequests: 0, activeRequests: 0, pendingWrites: 0,
+    persistedRequests: 0, interruptedRequests: 0, captureErrors: 0,
+    lastRequestAt: null, lastError: null,
+  };
+  const publish = (): void => {
+    activity.activeRequests = active.size;
+    activity.pendingWrites = writes.size;
+    opts.onActivity?.({ ...activity });
+  };
+  const captureError = (code: string): void => {
+    activity.captureErrors += 1;
+    activity.lastError = code.slice(0, 1024);
+    publish();
+  };
+  const settle = (ctx: MitmHandlerContext, reason?: string, code?: string | null): Promise<void> => {
+    const state = readCaptureState(ctx);
+    if (state === null) return Promise.resolve();
+    if (state.finalization !== null) return state.finalization;
+    state.finalized = true;
+    state.requestCtx.markTransportEnd();
+    const outcome = transportResult({ requestEnded: state.requestEnded, responseEnded: state.responseEnded,
+      statusCode: ctx.serverToProxyResponse?.statusCode, reason: code === 'UPSTREAM_ABORTED' ? code : reason, code });
+    const task = finalizeCapture(opts, ctx, processor, outcome, reason).then(problem => {
+      activity.persistedRequests += 1;
+      if (reason !== undefined) activity.interruptedRequests += 1;
+      if (problem !== null) captureError(reason ?? problem);
+    }).catch((error: unknown) => {
+      // No payload or arbitrary upstream error text in application logs/status.
+      const sqliteFull = typeof error === 'object' && error !== null && 'code' in error && error.code === 'SQLITE_FULL';
+      captureError(error instanceof CaptureCapacityError ? error.code : sqliteFull ? 'CAPTURE_METADATA_SQLITE_FULL' : 'CAPTURE_WRITE_FAILED');
+      console.error('mitm capture write failed: CAPTURE_WRITE_FAILED');
+    }).finally(() => { state.requestCtx.releasePreviews(); writes.delete(task); publish(); });
+    state.finalization = task;
+    writes.add(task);
+    publish();
+    return task;
+  };
+  const cancel = (ctx: MitmHandlerContext, reason: string, code?: string | null): void => {
+    void settle(ctx, reason, code);
+    ctx.proxyToServerRequest?.destroy();
+    ctx.serverToProxyResponse?.destroy();
+    // The engine's generic fallback appends error text to already-started
+    // responses. Abort instead, preserving the observed upstream prefix.
+    if (ctx.proxyToClientResponse.headersSent) ctx.proxyToClientResponse.destroy();
+  };
+  let shutdown: Promise<void> | null = null;
+  proxy.captureActivity = () => ({ ...activity, activeRequests: active.size, pendingWrites: writes.size });
+  proxy.shutdown = (options = {}) => {
+    if (shutdown !== null) return shutdown;
+    const grace = options.graceMs ?? 5000;
+    if (!Number.isFinite(grace) || grace < 0) return Promise.reject(new RangeError('Invalid shutdown grace'));
+    transport.beginStop();
+    activity.listening = false;
+    publish();
+    shutdown = (async () => {
+      const deadline = Date.now() + grace;
+      while (active.size > 0 && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, Math.min(10, Math.max(1, deadline - Date.now()))));
+      }
+      for (const ctx of active) cancel(ctx, 'PROXY_STOPPED');
+      const closing = transport.finishStop();
+      await Promise.all([...writes, closing]);
+      if (opts.processor === undefined) await processor.close();
+      publish();
+    })().catch(error => { shutdown = null; throw error; });
+    return shutdown;
+  };
+  // Compatibility only. Owners must await shutdown() before closing SQLite.
+  proxy.close = () => { void proxy.shutdown({ graceMs: 0 }).catch(() => captureError('PROXY_STOP_FAILED')); };
   proxy.onRequest((ctx, callback) => {
+    if (transport.stopping) { callback(new Error('PROXY_STOPPED')); return; }
     try {
       counter += 1;
       const hostname = (ctx.clientToProxyRequest.headers?.host ?? '').split(':')[0] ?? '';
@@ -96,73 +211,135 @@ export async function createMitmProxy(opts: MitmProxyOptions): Promise<ProxyServ
           hostname,
           headers: (ctx.clientToProxyRequest.headers as Record<string, string>) ?? {},
         },
-        counter,
+        counter, resources,
       );
-      ctx.tags = { ...(ctx.tags ?? {}), [CAPTURE_TAG]: { requestCtx, finalized: false } satisfies CaptureState };
+      let admit!: () => void, rejectAdmission!: (error: unknown) => void;
+      const admission = new Promise<void>((resolve, reject) => { admit = resolve; rejectAdmission = reject; });
+      const requestWriter = opts.bodyStore?.begin(admission) ?? null, responseWriter = opts.bodyStore?.begin(admission) ?? null;
+      const ticket = journal === null || requestWriter === null || responseWriter === null ? null : journal.begin({
+        requestId: requestCtx.requestId, method: requestCtx.method, url: requestCtx.url, hostname: requestCtx.hostname, requestHeaders: requestCtx.headers,
+        startedAt: requestCtx.startedAt, captureGroupId: opts.captureGroupId ?? null, requestBodyId: requestWriter.id, responseBodyId: responseWriter.id,
+        requestEnded: false, responseEnded: false, responseStatus: null, responseHeaders: {}, completedAt: null, durationMs: null, transport: null, requestRef: null, responseRef: null,
+      });
+      if (ticket === null) admit();
+      else void ticket.ready.then(admit, error => { rejectAdmission(error); captureError(error instanceof CaptureCapacityError ? error.code : 'CAPTURE_JOURNAL_FAILED'); });
+      ctx.tags = { ...(ctx.tags ?? {}), [CAPTURE_TAG]: {
+        requestCtx, finalized: false, requestEnded: false, responseEnded: false, finalization: null,
+        requestWriter, responseWriter, journal: ticket,
+      } satisfies CaptureState };
+      active.add(ctx);
+      activity.observedRequests += 1;
+      activity.lastRequestAt = requestCtx.startedAt;
+      ctx.clientToProxyRequest.once('aborted', () => cancel(ctx, 'CLIENT_DISCONNECTED'));
+      ctx.clientToProxyRequest.once('close', () => {
+        if (!ctx.clientToProxyRequest.complete && !readCaptureState(ctx)?.finalized) cancel(ctx, 'CLIENT_DISCONNECTED');
+      });
+      ctx.proxyToClientResponse.once('finish', () => { if (readCaptureState(ctx)?.requestEnded || readCaptureState(ctx)?.finalized) active.delete(ctx); publish(); });
+      ctx.proxyToClientResponse.once('close', () => {
+        if (!readCaptureState(ctx)?.finalized && !ctx.proxyToClientResponse.writableFinished) cancel(ctx, 'CLIENT_DISCONNECTED');
+        if (readCaptureState(ctx)?.requestEnded || readCaptureState(ctx)?.finalized) active.delete(ctx);
+        publish();
+      });
+      publish();
     } catch (err) {
       // 捕获初始化失败不阻断转发（HTTP 转发优先，捕获尽力而为）。
-      console.error(`mitm capture init failed: ${err instanceof Error ? err.message : String(err)}`);
+      void err;
+      captureError('CAPTURE_INIT_FAILED');
+      console.error('mitm capture init failed: CAPTURE_INIT_FAILED');
     }
     callback();
   });
 
   proxy.onRequestData((ctx, chunk, callback) => {
     const state = readCaptureState(ctx);
-    if (state !== null) {
-      state.requestCtx.body += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    if (state !== null && !state.finalized) {
+      state.requestWriter?.append(chunk);
+      state.requestCtx.appendRequestBytes(chunk);
     }
     // v1.1.0：必须透传 chunk，否则请求体被吞、上游请求不完整。
     callback(null, chunk);
   });
 
-  proxy.onRequestEnd((_ctx, callback) => {
+  proxy.onRequestEnd((ctx, callback) => {
+    const state = readCaptureState(ctx);
+    if (state !== null && !state.finalized) {
+      state.requestEnded = true;
+      void state.journal?.update({ requestEnded: true }).catch(() => captureError('CAPTURE_JOURNAL_FAILED'));
+      state.requestCtx.finishRequestBody();
+      if (state.responseEnded) void settle(ctx);
+      if (ctx.proxyToClientResponse.writableFinished) { active.delete(ctx); publish(); }
+    }
     callback();
   });
 
-  proxy.onResponse((_ctx, callback) => {
+  proxy.onResponse((ctx, callback) => {
+    const state = readCaptureState(ctx);
+    if (state !== null && !state.finalized) {
+      const responseHeaders = Object.fromEntries(Object.entries(ctx.serverToProxyResponse?.headers ?? {}).filter(([, value]) => value !== undefined)) as Record<string, string | string[]>;
+      void state.journal?.update({ responseStatus: ctx.serverToProxyResponse?.statusCode ?? null, responseHeaders }).catch(() => captureError('CAPTURE_JOURNAL_FAILED'));
+    }
+    ctx.serverToProxyResponse?.once('aborted', () => cancel(ctx, 'UPSTREAM_ERROR', 'UPSTREAM_ABORTED'));
     callback();
   });
 
   proxy.onResponseData((ctx, chunk, callback) => {
     const state = readCaptureState(ctx);
-    if (state !== null) {
-      state.requestCtx.appendChunk(typeof chunk === 'string' ? chunk : chunk.toString('utf8'));
+    if (state !== null && !state.finalized) {
+      state.responseWriter?.append(chunk);
+      state.requestCtx.appendResponseBytes(chunk);
     }
     callback(null, chunk);
   });
 
   proxy.onResponseEnd((ctx, callback) => {
-    try {
-      finalizeCapture(opts, ctx);
-    } catch (err) {
-      // 捕获/存储失败不阻断响应流；错误必须可见（不静默吞）。
-      console.error(`mitm capture write failed: ${err instanceof Error ? err.message : String(err)}`);
+    const state = readCaptureState(ctx);
+    if (state !== null && !state.finalized) {
+      state.responseEnded = true;
+      void state.journal?.update({ responseEnded: true }).catch(() => captureError('CAPTURE_JOURNAL_FAILED'));
+      if (state.requestEnded) void settle(ctx);
     }
     callback();
   });
 
   proxy.onError((ctx, err, errorKind) => {
+    if (ctx === null && rejectStartup !== null) {
+      const reject = rejectStartup;
+      rejectStartup = null;
+      reject(err ?? new Error(errorKind ?? 'Proxy failed to listen'));
+      return;
+    }
     // v1.1.0：onError(ctx, err, errorKind) —— 上游连接失败/响应中断等。
     // 有捕获状态时写出已捕获的部分行，避免请求静默丢失（finalized 防重复写）。
     if (ctx !== null) {
       const state = readCaptureState(ctx);
-      if (state !== null && !state.finalized) {
-        try {
-          finalizeCapture(opts, ctx);
-        } catch (writeErr) {
-          console.error(`mitm capture write failed on error: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`);
-        }
-      }
+      if (state !== null && !state.finalized) cancel(ctx,
+        errorKind?.startsWith('CLIENT_TO_PROXY_') || errorKind?.startsWith('PROXY_TO_CLIENT_') ? 'CLIENT_DISCONNECTED' : 'UPSTREAM_ERROR', observedNetworkCode(err));
+    } else {
+      captureError('PROXY_TRANSPORT_ERROR');
     }
-    const detail = err?.message ?? errorKind ?? 'unknown';
-    console.error(`mitm proxy error: ${detail}`);
+    if (ctx?.proxyToClientResponse.headersSent && !ctx.proxyToClientResponse.writableFinished) ctx.proxyToClientResponse.destroy();
+    console.error('mitm proxy error: PROXY_TRANSPORT_ERROR');
   });
 
-  await new Promise<void>((resolve) => {
+  try { await new Promise<void>((resolve, reject) => {
+    rejectStartup = reject;
     // 显式绑定 127.0.0.1：默认 'localhost' 在部分 macOS 上解析为 ::1，
     // 与项目统一的 127.0.0.1 客户端约定不一致。
-    proxy.listen({ port: opts.port ?? 8080, host: '127.0.0.1' }, () => resolve());
-  });
+    proxy.listen({ port: opts.port ?? 7779, host: '127.0.0.1', sslCaDir: opts.caDirectory, httpsAgent: opts.httpsAgent }, (error) => {
+      rejectStartup = null;
+      if (error !== null && error !== undefined) {
+        reject(error);
+      } else resolve();
+    });
+  }); } catch (error) {
+    transport.beginStop();
+    await transport.finishStop();
+    if (opts.processor === undefined) await processor.close();
+    throw error;
+  }
+  transport.track(engine.httpServer, engine.wsServer);
+  activity.listening = true;
+  publish();
   return proxy;
 }
 
@@ -171,38 +348,70 @@ export async function createMitmProxy(opts: MitmProxyOptions): Promise<ProxyServ
  * 请求体来自 onRequestData 累积（ctx.body），响应体来自 onResponseData
  * 累积（chunks / streamedBody），状态码与 content-type 取自真实上游响应。
  */
-function finalizeCapture(opts: MitmProxyOptions, ctx: MitmHandlerContext): void {
+async function finalizeCapture(opts: MitmProxyOptions, ctx: MitmHandlerContext, processor: CaptureProcessor, transport: CaptureTransportResult, reason?: string): Promise<string | null> {
   const state = readCaptureState(ctx);
-  if (state === null || state.finalized) {
-    return;
-  }
-  state.finalized = true;
+  if (state === null) return null;
   const requestCtx = state.requestCtx;
+  requestCtx.finishRequestBody();
+  requestCtx.finishResponseBody();
+  const { completedAt, durationMs } = requestCtx.markTransportEnd();
+  let journalFailed = false;
+  const updateJournal = async (patch: Parameters<CaptureJournalTicket['update']>[0]): Promise<void> => {
+    try { await state.journal?.update(patch); } catch { journalFailed = true; }
+  };
+  await updateJournal({ transport, responseStatus: transport.statusCode, requestEnded: transport.requestEnded, responseEnded: transport.responseEnded, completedAt, durationMs });
+  const [requestRef, responseRef] = await Promise.all([
+    state.requestWriter?.finish(!transport.requestEnded, reason) ?? Promise.resolve(null),
+    state.responseWriter?.finish(!transport.responseEnded, reason) ?? Promise.resolve(null),
+  ]);
+  await updateJournal({ requestRef, responseRef });
   const hostname = requestCtx.hostname;
   const responseHeaders = ctx.serverToProxyResponse?.headers;
   const contentType = responseContentType(responseHeaders);
-  const isStreaming = (contentType ?? '').includes('text/event-stream');
+  const isStreaming = (contentType ?? '').toLowerCase().includes('text/event-stream');
   const responseBody = requestCtx.chunks.length > 0 ? requestCtx.streamedBody : null;
-  const parsed = parseProxyRequest({
-    hostname,
-    url: requestCtx.url,
-    requestBody: requestCtx.body,
-    responseBody,
-    isStreaming,
-    sseEvents: isStreaming && responseBody !== null ? parseSseChunk(responseBody) : undefined,
-  });
-  const status = ctx.serverToProxyResponse?.statusCode;
-  if (status !== undefined) {
-    // 成功路径：真实上游状态码；错误兜底路径（无响应）保持 null，
-    // writer 对缺失状态按既定行为写 0。
-    requestCtx.responseStatus = status;
+  const responseHeaderValues = Object.fromEntries(Object.entries(responseHeaders ?? {}).filter(([, value]) => value !== undefined)) as Record<string, string | string[]>;
+  let projection;
+  try {
+    if (requestCtx.previewResourceLimited) throw new CaptureProcessingError('resource_limit');
+    const pending = processor.submit({ hostname, url: requestCtx.url, requestBody: '', responseBody: null, isStreaming, ...requestCtx.takeBytePreviews(),
+      requestHeaders: requestCtx.headers, responseHeaders: responseHeaderValues,
+      previewTruncated: requestCtx.requestPreviewTruncated || requestCtx.responsePreviewTruncated || !transport.requestEnded || !transport.responseEnded,
+      requestTruncated: requestCtx.requestPreviewTruncated || !transport.requestEnded, responseTruncated: requestCtx.responsePreviewTruncated || !transport.responseEnded });
+    requestCtx.releaseRawPreviews();
+    projection = await pending;
+  } catch (error) {
+    const failure = error instanceof CaptureProcessingError ? error : new CaptureProcessingError('worker_error');
+    const errorCode = failure.status === 'resource_limit' ? 'CAPTURE_PREVIEW_BUDGET_EXCEEDED' : failure.message;
+    const collector = createIdentityCollector(); collector.omit(errorCode);
+    projection = { parsed: { parserRoute: 'unknown', requestFormat: 'unknown' as const, model: null, systemPrompt: null, systemPromptLen: 0, inputTokens: null, outputTokens: null },
+      identities: collector.finish(), processing: { version: 1 as const, status: failure.status, error: errorCode } };
   }
-  // REQ-004：存储前脱敏
+  const { parsed, identities } = projection;
+  const encodingOf = (headers: Record<string, string | string[]>): string | undefined => {
+    const value = Object.entries(headers).find(([key]) => key.toLowerCase() === 'content-encoding')?.[1];
+    return Array.isArray(value) ? value.join(',') : value;
+  };
+  const processing: CaptureProcessingResult = { ...projection.processing, previewDroppedBytes: requestCtx.previewDroppedBytes,
+    contentDecoding: projection.processing.contentDecoding ?? { request: contentEncoding(encodingOf(requestCtx.headers)), response: contentEncoding(encodingOf(responseHeaderValues)) } };
+  // Frozen upstream evidence, not a later local synthetic504 or error callback.
+  requestCtx.responseStatus = transport.statusCode;
+  // User-approved REQ-004: preserve original observed content without redaction.
   const keepRaw = opts.keepRawBodies ?? false;
-  const desensitizedRequestBody = requestCtx.body === '' ? null : desensitize(requestCtx.body, opts.desensitizeOptions);
-  const desensitizedResponseBody =
-    requestCtx.chunks.length > 0 ? desensitize(requestCtx.streamedBody, opts.desensitizeOptions) : null;
-  writeProxyRequest({
+  const preview = (text: string): string => new StringDecoder('utf8').write(Buffer.from(text).subarray(0, 64 * 1024));
+  const fallbackText = (headers: Record<string, string | string[]>, text: string | null): string | null => {
+    const encoding = headers['content-encoding'];
+    return encoding !== undefined && encoding !== 'identity' ? null : text === null || text === '' ? null : preview(text);
+  };
+  const decoded = 'previews' in projection ? projection.previews : undefined;
+  const desensitizedRequestBody = decoded === undefined ? fallbackText(requestCtx.headers, requestCtx.body) : decoded.request;
+  const desensitizedResponseBody = decoded === undefined ? fallbackText(responseHeaderValues, responseBody) : decoded.response;
+  // Never commit metadata in the forwarding callback or as a parser fallback.
+  await yieldImmediate();
+  const affected: string[] = [];
+  const id = await retryCaptureCommit(opts.db, () => opts.db.transaction(() => {
+    if (state.journal !== null) { const existing = committedCaptureId(opts.db, state.journal.entry); if (existing !== null) return existing; }
+    const inserted = writeProxyRequest({
     db: opts.db,
     ctx: requestCtx,
     parsed: parsed ?? {
@@ -220,7 +429,23 @@ function finalizeCapture(opts: MitmProxyOptions, ctx: MitmHandlerContext): void 
     isStreaming,
     captureMethod: 'mitm' as CaptureMethod,
     desensitizeOptions: { ...opts.desensitizeOptions, keepRawBodies: keepRaw },
-    notify: opts.notify,
+    completedAt,
     captureGroupId: opts.captureGroupId,
   });
+    if (opts.bodyStore !== undefined) {
+      writeCaptureBodies(opts.db, inserted, {
+        request: requestRef, response: responseRef,
+        requestPreviewTruncated: decoded?.requestTruncated ?? (requestCtx.requestPreviewTruncated || requestCtx.displayPreviewsTruncated.request),
+        responsePreviewTruncated: decoded?.responseTruncated ?? (requestCtx.responsePreviewTruncated || requestCtx.displayPreviewsTruncated.response),
+        responseHeaders: responseHeaderValues, processing,
+      });
+    } else writeCaptureProcessing(opts.db, inserted, processing);
+    writeCaptureTransport(opts.db, inserted, transport);
+    affected.push(...writeNativeIdentities(opts.db, { source: 'proxy', key: String(inserted) }, identities, completedAt));
+    return inserted;
+  })(), true);
+  try { await state.journal?.remove(); } catch { journalFailed = true; }
+  for (const key of affected) opts.notifySession?.(key, id);
+  opts.notify?.(id);
+  return journalFailed ? 'CAPTURE_JOURNAL_FAILED' : processing.error ?? ([requestRef, responseRef].some(ref => ref !== null && ref.status !== 'complete') ? 'CAPTURE_INCOMPLETE' : null);
 }

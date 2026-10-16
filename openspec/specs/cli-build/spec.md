@@ -13,6 +13,10 @@ distribution.
 ### CLI
 
 ### REQ-001: CLI flags
+
+`agent-observe diagnose --server <loopback-http-origin> --profile <uuid> --revision <n> [--json]` SHALL retrieve the same read-only connection snapshot as Web, before opening any DB/config/scanner. It SHALL not start a listener/Agent or send test/model traffic. Include actionable next steps in human output, preserve the same findings in JSON, refuse stale revisions and give local-server retry guidance on failure. Exit0 means retrieval without error findings, not Agent certification; exit2 means an error finding; request/validation failure exits nonzero. See api.md §4 for bounds.
+
+`agent-observe launch --server <loopback-http-origin> --profile <uuid> --revision <n> -- [agent arguments...]` is the explicit process-scoped terminal launcher. It pins the reviewed recipe revision, starts/awaits the same monitor listener through its local API, validates the actual CA digest, appends child-only trust/proxy environment, then spawns the Agent directly with inherited terminal stdio in its selected project. It does not open an observability DB, spawn another web server, edit Agent configuration, start a shell, change models/credentials/permissions or stop a shared proxy on child exit. Existing remote/daemon attachment modes are outside this local-process profile. Codex standalone support must be confirmed by bounded --help before adding --no-daemon; never disable a transport. Process/child signal and exit cleanup touches only launcher-owned temporary public CA bundles.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--host <host>` | `127.0.0.1` | bind address (**not localhost**, G3.1) |
@@ -23,7 +27,10 @@ distribution.
 | `--proxy-port <port>` | `7779` | MITM port |
 | `--enable-proxy` | false | start MITM on launch |
 | `--prewarm-recent <n>` | **`0`** | prewarm the most recent N sessions; 0 = fully on demand |
-| `--proxy-retention-days <n>` | `30` | proxy_requests retention days; 0 = never purge |
+| `--proxy-retention-days <n>` | `0` | explicit proxy metadata retention days; 0 = never purge; never implicitly deletes original files |
+| `--capture-directory <path>` | auto | independent original body directory |
+| `--capture-quota-gb <n>` | `10` | original body file quota in decimal GB; positive fractional values supported |
+| `--capture-max-body-mib <n>` | `100` | per-direction body limit in MiB; positive fractional values supported |
 | `--no-gzip` | on by default | disable response compression (debug only) |
 
 #### Scenario: prewarm default and warning
@@ -33,6 +40,10 @@ distribution.
 - **AND** the default MUST be 0
 
 ### REQ-002: CLI entry
+
+SIGINT/SIGTERM SHALL asynchronously close the shared HTTP server (including its proxy/watcher/own SSE and in-flight work), await startup background prewarm, then checkpoint and close SQLite. Do not force process.exit before writes drain. Failed cleanup retains ownership/database and gives an actionable retry message; startup bind failure also cleans acquired resources. Unix signal integration is tested separately from Windows, which remains platform-unverified.
+
+`--enable-proxy` SHALL actually invoke the shared proxy start control after HTTP startup, using --proxy-port and the configured original body store. A starting-state acceptance is not reported as fully connected Agent traffic.
 `bin/agent-observe.js` (`#!/usr/bin/env node`) → imports `runCli` from
 `server-dist/cli.js` → `createAgentObservabilityServer()` → listen →
 optionally open the browser (open / `cmd /c start` / xdg-open).
@@ -65,6 +76,10 @@ failure:
 5. print a startup summary: `schemaVersion` / session count / DB and WAL sizes
    / per-provider status
 
+Pass the same explicit `--proxy-retention-days` to the shared server's lazy
+journal recovery. Uncommitted expired identities are marked before body IO,
+not reinserted then bulk-deleted on an HTTP path (storage REQ-017/019).
+
 ### Build
 
 ### REQ-005: Three-stage build
@@ -72,8 +87,10 @@ failure:
 
 1. **typecheck** `tsc -b` (tsconfig references both app and node sub-configs)
 2. **frontend SPA** `vite build` → `dist/`
-3. **server bundle** `vite build --config vite.cli.config.ts` →
-   `server-dist/cli.js` (`ssr: 'server/cli.ts'`)
+3. **server entries** `vite build --config vite.cli.config.ts` →
+   `server-dist/cli.js`, `capture-worker.js` and required shared `assets/`
+   chunks, built for Node20. Both entries/chunks must ship together; workers
+   never depend on source TS execution. The normal CLI entry/path is unchanged.
 
 External deps are not bundled: `better-sqlite3`, `chokidar`, `http-mitm-proxy`,
 `node-forge`. Order cannot change.
@@ -95,6 +112,10 @@ Supports `--claude-source=` / `--opencode-db=` flags or env vars.
 `scripts/pack-binary.mjs` SHALL copy `server-dist/` + `dist/` + `bin/` +
 native node_modules + package.json to `dist-binary/` and generate platform
 launchers.
+
+Copy the complete server-dist tree including the actual worker and its shared
+chunks. Verify the copied worker executes protocol parsing outside the source
+checkout, not merely that a worker filename exists.
 
 The Windows launcher MUST be `.ps1` (UTF-8); MUST NOT use `.bat` (garbles under
 Chinese paths).

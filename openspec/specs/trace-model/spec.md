@@ -13,6 +13,9 @@ sources normalize into one shape.
 
 ## Requirements
 
+### REQ-009: Native identity provenance
+TraceRecord MAY carry nativeIdentities only when explicit source fields were observed. Preserve namespace/kind/value/scope/sourcePath; do not promote filenames, generated IDs or inferred turnKey to native IDs. Repeated native fields may share one evidence entry with the first source locator. Multiple conflicting session IDs remain visible and ambiguous. Response/message/tool identities alone cannot automatically merge sessions. Identity extraction completeness is independent of token/duration completeness.
+
 ### REQ-001: Single source of type definitions
 All types MUST adopt `contracts/data-model.md` verbatim. No module MUST define
 its own structurally identical types with different field names.

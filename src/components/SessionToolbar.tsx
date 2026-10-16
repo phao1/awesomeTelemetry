@@ -1,4 +1,4 @@
-import { formatCostUsd } from '../core/pricing.js';
+import { formatCost } from '../core/pricing.js';
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -246,7 +246,7 @@ export function SessionToolbar({
               <IconCost size={12} /> {t('metric.cost', locale)}
             </span>
             <span className="mono">
-              {session.tokenUsage.total.toLocaleString()} tok · {formatCostUsd(session.costUsd, session.costSource)}
+              {session.tokenUsage.total.toLocaleString()} tok · {formatCost(session.costUsd, session.costSource, session.costCurrency)}
             </span>
           </div>
         </div>

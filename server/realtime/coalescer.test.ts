@@ -5,7 +5,35 @@ import {
   clearPendingSessionChanges,
   queueProxyStreamChunk,
   queueSessionChange,
+  queueTraceLinkChange,
+  clearPendingTraceLinkChanges,
 } from './coalescer.js';
+
+describe('REQ-009 relation invalidation', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { clearPendingTraceLinkChanges(); vi.useRealTimers(); });
+  it('coalesces repeated association keys and bounds both arrays', async () => {
+    const events: Array<{ sessionKeys: string[]; proxyIds: number[]; truncated: boolean }> = [];
+    const unsubscribe = eventBus.on('trace_links_changed', payload => events.push(payload));
+    for (let index = 0; index < 524; index += 1) queueTraceLinkChange('session-' + index, index + 1);
+    await vi.advanceTimersByTimeAsync(199);
+    expect(events).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ truncated: true });
+    expect(events[0]?.sessionKeys).toHaveLength(200);
+    expect(events[0]?.proxyIds).toHaveLength(200);
+    unsubscribe();
+  });
+  it('clears pending association notifications on shutdown', async () => {
+    const received = vi.fn();
+    const unsubscribe = eventBus.on('trace_links_changed', received);
+    queueTraceLinkChange('session', 1); clearPendingTraceLinkChanges();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(received).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+});
 
 describe('REQ-003 会话变更合并', () => {
   beforeEach(() => {
