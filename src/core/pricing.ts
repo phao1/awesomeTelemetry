@@ -1,4 +1,6 @@
-import type { CostSource, TokenUsage } from './trace-types.js';
+import type { CostSource, PriceCurrency, TokenUsage } from './trace-types.js';
+
+export type { PriceCurrency };
 
 /**
  * add-mission-control §1 P0-C：模型定价与上下文窗口。
@@ -12,8 +14,22 @@ import type { CostSource, TokenUsage } from './trace-types.js';
  * claude-api skill（cached 2026-06-24）的 Anthropic 模型，其他厂商留空走
  * costSource='unknown' 显示 —。
  */
+/**
+ * 计价币种。
+ *
+ * 加这个字段是因为「只支持 USD」会逼人造汇率：国内网关（DeepSeek / 智谱 / 通义…）
+ * 的账单是 CNY/token，要录进只认 USD 的表就得自己折一个汇率进去，而汇率既没有
+ * 出处、又天天变 —— 正好违反本文件顶部「没有出处的价格不要写」那条规矩。
+ * 于是让价格带上自己的币种，原样录入、原样展示，不做任何换算。
+ * 类型定义在 trace-types.ts（数据模型的权威来源），这里只做转出。
+ */
+export const CURRENCY_SYMBOL: Record<PriceCurrency, string> = {
+  USD: '$',
+  CNY: '¥',
+};
+
 export interface ModelPrice {
-  /** USD / 1M tokens */
+  /** 价格 / 1M tokens，单位是 `currency` 声明的币种。 */
   input: number;
   output: number;
   cacheRead: number;
@@ -22,6 +38,8 @@ export interface ModelPrice {
   contextWindow: number;
   /** 价格出处：URL 或文档名 + 抓取日期。必填。 */
   source: string;
+  /** 缺省 USD（内置表全是 USD，老的覆盖层文件不写这个字段也照常工作）。 */
+  currency?: PriceCurrency;
 }
 
 const ANTHROPIC_SRC = 'anthropic claude-api skill, models table cached 2026-06-24';
@@ -92,25 +110,55 @@ export function lookupContextWindow(model: string | null | undefined): number | 
   return lookupModelPrice(model)?.contextWindow ?? null;
 }
 
+export interface CostOptions {
+  /**
+   * reasoning 是不是**独立于 output 之外**、另算一份钱的量。
+   *
+   * 取值与 adapter 的 `tokenSemantics.reasoningInTotal` 同源：
+   * - `true`（CodeArts / DeepSeek 系）：`output` 字段里**不含** reasoning，
+   *   而账单把两者合起来按输出价计费 —— 必须叠加，否则少算。
+   * - `false`（Codex 系，reasoning ⊂ output）：叠加就成了双计。
+   *
+   * 2026-08-09 实测：CodeArts 一次会话 output 49,812 + reasoning 12,211 = 62,023，
+   * 网关账单 64,789 量级；只按 output 计价会漏掉 23% 的输出费用。
+   * 缺省 false —— 不传就维持老行为，不会让既有调用方悄悄涨价。
+   */
+  reasoningBilledAsOutput?: boolean;
+}
+
+export interface CostResult {
+  /** 金额，单位见 `currency`。 */
+  cost: number;
+  costSource: CostSource;
+  currency: PriceCurrency;
+}
+
 /**
  * 按 token 明细与模型估算成本。
- * 未知模型返回 { costUsd: 0, costSource: 'unknown' } —— 调用方**必须**据
+ * 未知模型返回 { cost: 0, costSource: 'unknown' } —— 调用方**必须**据
  * costSource 渲染 `—` 而不是 $0.0000（specs/frontend REQ-017/018）。
  */
-export function computeCostUsd(
+export function computeCost(
   tokens: TokenUsage,
   model: string | null | undefined,
-): { costUsd: number; costSource: CostSource } {
+  options: CostOptions = {},
+): CostResult {
   const price = lookupModelPrice(model);
   if (price === null) {
-    return { costUsd: 0, costSource: 'unknown' };
+    return { cost: 0, costSource: 'unknown', currency: 'USD' };
   }
+  const billedOutput =
+    tokens.output + (options.reasoningBilledAsOutput === true ? tokens.reasoning : 0);
   const perMillion =
     tokens.input * price.input +
-    tokens.output * price.output +
+    billedOutput * price.output +
     tokens.cacheRead * price.cacheRead +
     tokens.cacheWrite * price.cacheWrite;
-  return { costUsd: perMillion / 1_000_000, costSource: 'estimated' };
+  return {
+    cost: perMillion / 1_000_000,
+    costSource: 'estimated',
+    currency: price.currency ?? 'USD',
+  };
 }
 
 /**
@@ -120,12 +168,13 @@ export function computeCostUsd(
  * 直接渲染成 `$0.0000` 会让用户以为「这次真的没花钱」。
  * 不可知就显示 `—`，这也是本文件顶部注释里「宁可留空也不编价格」的下半句。
  */
-export function formatCostUsd(
-  costUsd: number,
+export function formatCost(
+  cost: number,
   costSource: CostSource | null | undefined,
+  currency: PriceCurrency | null | undefined = 'USD',
   digits = 4,
 ): string {
   return costSource === 'unknown' || costSource === null || costSource === undefined
     ? '—'
-    : `$${costUsd.toFixed(digits)}`;
+    : `${CURRENCY_SYMBOL[currency ?? 'USD']}${cost.toFixed(digits)}`;
 }

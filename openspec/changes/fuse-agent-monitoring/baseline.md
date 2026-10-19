@@ -1,0 +1,121 @@
+# Fusion baseline and edit manifest
+
+User approved implementation and contract changes on 2026-10-15. Base commit: d5da6af.
+The following current project files are copied into the fusion worktree without modifying their source checkout. This preserves the existing team, scanner, metrics, pricing, frontend and schema work as the starting product baseline.
+Excluded: .claude/launch.json (machine launch configuration), unrelated scripts/research and local data. Reference code is independently implemented with synthetic fixtures.
+
+## Baseline file whitelist
+
+- `PERF-BASELINE.md`
+- `config/model-pricing.example.json`
+- `eslint.config.js`
+- `local-sessions/config.ts`
+- `local-sessions/trae-prompt-context.test.ts`
+- `local-sessions/trae-prompt-context.ts`
+- `local-sessions/trae.ts`
+- `openspec/contracts/api.md`
+- `openspec/contracts/data-model.md`
+- `openspec/contracts/database.md`
+- `openspec/contracts/nfr.md`
+- `openspec/gotchas.md`
+- `server/cli.ts`
+- `server/http/error-envelope.ts`
+- `server/realtime/coalescer.ts`
+- `server/realtime/sse.ts`
+- `server/server.test.ts`
+- `server/server.ts`
+- `server/storage/columns.ts`
+- `server/storage/mission.ts`
+- `server/storage/query-engine.ts`
+- `server/storage/retention.test.ts`
+- `server/storage/schema.test.ts`
+- `server/storage/schema.ts`
+- `server/storage/writers.ts`
+- `src/App.test.tsx`
+- `src/App.tsx`
+- `src/adapters/claude-code.ts`
+- `src/adapters/codex.ts`
+- `src/adapters/opencode.ts`
+- `src/adapters/trae.ts`
+- `src/components/CompareBoard.tsx`
+- `src/components/CompareKPI.tsx`
+- `src/components/SessionToolbar.tsx`
+- `src/core/metrics.test.ts`
+- `src/core/metrics.ts`
+- `src/core/phase-classifier.test.ts`
+- `src/core/phase-classifier.ts`
+- `src/core/pricing.test.ts`
+- `src/core/pricing.ts`
+- `src/core/trace-types.test.ts`
+- `src/core/trace-types.ts`
+- `src/i18n.test.ts`
+- `src/i18n.ts`
+- `local-sessions/team-scanner.test.ts`
+- `local-sessions/team-scanner.ts`
+- `openspec/changes/add-agent-team-observability/.openspec.yaml`
+- `openspec/changes/add-agent-team-observability/design.md`
+- `openspec/changes/add-agent-team-observability/proposal.md`
+- `openspec/changes/add-agent-team-observability/specs/adapters/spec.md`
+- `openspec/changes/add-agent-team-observability/specs/agent-team-observability/spec.md`
+- `openspec/changes/add-agent-team-observability/specs/frontend/spec.md`
+- `openspec/changes/add-agent-team-observability/specs/metrics-analysis/spec.md`
+- `openspec/changes/add-agent-team-observability/specs/realtime/spec.md`
+- `openspec/changes/add-agent-team-observability/specs/storage/spec.md`
+- `openspec/changes/add-agent-team-observability/specs/trace-model/spec.md`
+- `openspec/changes/add-agent-team-observability/tasks.md`
+- `openspec/research/fixtures/codearts-team-minimal.json`
+- `openspec/research/fixtures/codearts-team-real-shape.json`
+- `openspec/research/fixtures/codex-team-minimal.jsonl`
+- `openspec/research/fixtures/codex-team-real-shape.jsonl`
+- `server/storage/migrations/003-v9-to-v10.ts`
+- `server/storage/team-storage.test.ts`
+- `server/storage/team-storage.ts`
+- `server/team-routes.test.ts`
+- `src/adapters/team-codearts.test.ts`
+- `src/adapters/team-codearts.ts`
+- `src/adapters/team-codex.test.ts`
+- `src/adapters/team-codex.ts`
+- `src/api/team-run-by-session.ts`
+- `src/components/AgentCollabReplay.test.tsx`
+- `src/components/AgentCollabReplay.tsx`
+- `src/components/agent-collab/AgentActivityPanel.test.tsx`
+- `src/components/agent-collab/AgentActivityPanel.tsx`
+- `src/components/agent-collab/TaskReplayControls.test.tsx`
+- `src/components/agent-collab/TaskReplayControls.tsx`
+- `src/components/agent-collab/TopologyGraph.test.tsx`
+- `src/components/agent-collab/TopologyGraph.tsx`
+- `src/components/agent-collab/derive-states.test.ts`
+- `src/components/agent-collab/derive-states.ts`
+- `src/components/agent-collab/topology-layout.test.ts`
+- `src/components/agent-collab/topology-layout.ts`
+- `src/components/team/CommunicationView.test.tsx`
+- `src/components/team/CommunicationView.tsx`
+- `src/components/team/EntityInspector.test.tsx`
+- `src/components/team/EntityInspector.tsx`
+- `src/components/team/TaskDagView.test.tsx`
+- `src/components/team/TaskDagView.tsx`
+- `src/components/team/TeamCompareView.test.tsx`
+- `src/components/team/TeamCompareView.tsx`
+- `src/components/team/TeamRunList.test.tsx`
+- `src/components/team/TeamRunList.tsx`
+- `src/components/team/TeamShell.test.tsx`
+- `src/components/team/TeamShell.tsx`
+- `src/components/team/TeamTimeline.test.tsx`
+- `src/components/team/TeamTimeline.tsx`
+- `src/components/team/TopologyView.test.tsx`
+- `src/components/team/TopologyView.tsx`
+- `src/components/team/team-client.test.ts`
+- `src/components/team/team-client.ts`
+- `src/core/team-compare.test.ts`
+- `src/core/team-compare.ts`
+- `src/core/team-dag.test.ts`
+- `src/core/team-dag.ts`
+- `src/core/team-metrics.test.ts`
+- `src/core/team-metrics.ts`
+- `src/core/team-topology.test.ts`
+- `src/core/team-topology.ts`
+- `src/styles/components/team.css`
+
+## Approved capture policy
+
+No redaction. Preserve request/response headers and bodies, prompts and tool data as observed. SQLite stores metadata and bounded previews; original bodies stream to a separate local store. Default total body budget: 10,000,000,000 bytes (10 GB), configurable. Default per-direction body limit: 100 MiB, configurable. On exhaustion, retain existing data and report that new body capture stopped; do not silently truncate or delete evidence. Analysis/context-diff limits are independent of capture limits. User approved contract additions without per-field reapproval.

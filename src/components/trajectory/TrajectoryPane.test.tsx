@@ -8,11 +8,14 @@ import type {
   SessionIndexEntry,
   SessionMergeGroupInfo,
   TraceEventSlim,
+  TraceEvent,
+  TraceEventRaw,
   TraceSession,
   TurnKeySource,
   TurnModel,
 } from '../../core/trace-types.js';
 import { eventDetailCache } from '../../cache/caches.js';
+import { codeartsAdapter } from '../../adapters/codearts.js';
 import { TrajectoryPane } from './TrajectoryPane.js';
 import { segmentationCriteriaKey } from './TrajectoryStatBar.js';
 
@@ -112,6 +115,8 @@ function renderPane(
     fetchGroups?: () => Promise<{ groups: SessionMergeGroupInfo[] }>;
     fetchMembers?: (keys: string[]) => Promise<{ items: SessionIndexEntry[] }>;
     onSelectedTurnChange?: (index: number | null) => void;
+    loadDetail?: (key: string, eventId: string) => Promise<TraceEvent>;
+    loadRaw?: (key: string, eventId: string) => Promise<TraceEventRaw>;
   } = {},
 ): { unmount: () => void; html: () => string } {
   const Harness = (): React.JSX.Element => {
@@ -132,6 +137,8 @@ function renderPane(
         onToggleRailCollapse={() => undefined}
         fetchGroups={over.fetchGroups ?? (async () => ({ groups: [] }))}
         fetchMembers={over.fetchMembers}
+        loadDetail={over.loadDetail}
+        loadRaw={over.loadRaw}
       />
     );
   };
@@ -139,6 +146,75 @@ function renderPane(
 }
 
 describe('TrajectoryPane（D2 / D16）', () => {
+  it('WB-005: real CodeArts step-finish normalization retains usage and Raw without a fabricated Subagent', async () => {
+    const part={type:'step-finish',tokens:{total:100,input:90,output:10,cache:{read:0,write:0}}};
+    const record=codeartsAdapter.normalize({sourceAgent:'CodeArts',session:{id:'native-step',title:'synthetic step evidence'},events:[
+      {id:'native-user',role:'user',sessionID:'native-step',time:{created:1754000000000},content:[{type:'text',text:'read observation.txt'}]},
+      {id:'native-assistant',role:'assistant',sessionID:'native-step',time:{created:1754000010000},content:[part]},
+    ]},'/tmp/synthetic-codearts.sqlite');
+    const step=record.events.find(event=>event.kind==='agent')!;
+    expect(step.actor).toBe('subagent'); // Existing legacy adapter, not delegation evidence.
+    expect(step.tokens?.total).toBe(100);
+    const load=vi.fn(async()=>step);
+    const raw=vi.fn(async()=>({...step,raw:JSON.stringify(part)}));
+    const {unmount}=renderPane(detail(record.events,{session:record.session}),{loadDetail:load,loadRaw:raw});
+    try {
+      await act(async()=>{await Promise.resolve();});
+      expect(Array.from(document.querySelectorAll('.turn-row')).some(row=>row.textContent?.includes('Subagent'))).toBe(false);
+      const stepTurn=document.querySelectorAll<HTMLButtonElement>('.turn-row')[1]!;
+      act(()=>stepTurn.click());
+      const metadata=document.querySelector<HTMLDetailsElement>('.turn-metadata')!;
+      act(()=>metadata.querySelector('summary')!.click());
+      const card=metadata.querySelector<HTMLElement>('.message-card')!;
+      expect(card.querySelector('.message-card-role-marker')?.textContent).toContain('Agent 记录');
+      expect(card.textContent).toContain('agent step: success');
+      act(()=>card.querySelector<HTMLButtonElement>('.message-card-toggle')!.click());
+      expect(card.textContent).toContain('不单独证明子 Agent');
+      expect(load).not.toHaveBeenCalled();expect(raw).not.toHaveBeenCalled();
+      const rawButton=Array.from(card.querySelectorAll<HTMLButtonElement>('button')).find(button=>button.textContent==='Raw')!;
+      await act(async()=>{rawButton.click();await Promise.resolve();});
+      expect(raw).toHaveBeenCalledExactlyOnceWith(record.session.id,step.id);
+      expect(card.querySelector('pre')?.textContent).toBe(JSON.stringify(part));
+      expect(record.session.tokenUsage.total).toBe(100);
+    } finally {act(()=>unmount());}
+  });
+
+  it('WB-002: error navigation reveals its Turn and only the selected event evidence, then reopens from cache', async () => {
+    const failed = event('failed',2,'tool',{status:'error',error:'SYNTHETIC_READ_FAILED',hasInput:true,hasOutput:true,hasRaw:true});
+    const load = vi.fn(async () => ({...failed,inputSummary:'SYNTHETIC_ARGS',outputSummary:'SYNTHETIC_RESULT'}));
+    const raw = vi.fn(async () => ({...failed,inputSummary:'SYNTHETIC_ARGS',outputSummary:'SYNTHETIC_RESULT',raw:'EXACT_ORIGINAL'}));
+    const {unmount}=renderPane(detail([event('model',1,'llm'),failed,event('unrelated',3,'llm')]),{loadDetail:load,loadRaw:raw});
+    try {
+      await act(async()=>{await Promise.resolve();}); expect(load).not.toHaveBeenCalled();
+      const next=Array.from(document.querySelectorAll<HTMLButtonElement>('.investigation-controls button')).find(button=>button.textContent==='下一条错误')!;
+      await act(async()=>{next.focus();next.click();await Promise.resolve();});
+      expect(document.querySelector('.turn-row-on')).not.toBeNull();
+      expect(document.querySelector('.trajectory-turn-meta')?.textContent).toContain('1 次调用 · 1 条结果');
+      expect(document.querySelector('.record-inspector')?.textContent).toContain('SYNTHETIC_RESULT');
+      expect(load).toHaveBeenCalledExactlyOnceWith('s1','failed'); expect(raw).not.toHaveBeenCalled();
+      const close=document.querySelector<HTMLButtonElement>('[aria-label="关闭记录证据"]')!;
+      act(()=>close.click()); expect(document.querySelector('.record-inspector')).toBeNull(); expect(document.activeElement).toBe(next);
+      await act(async()=>{next.click();await Promise.resolve();}); expect(load).toHaveBeenCalledTimes(1);
+      const rawButton=Array.from(document.querySelectorAll<HTMLButtonElement>('.record-inspector button')).find(button=>button.textContent==='Raw')!;
+      await act(async()=>{rawButton.click();await Promise.resolve();}); expect(raw).toHaveBeenCalledExactlyOnceWith('s1','failed');
+      expect(document.querySelector('.record-inspector')?.textContent).toContain('EXACT_ORIGINAL');
+    } finally {act(()=>unmount());}
+  });
+  it('WB-002: jumping to an error near the end of600Turns retains bounded row mounting', async () => {
+    const events=Array.from({length:600},(_,i)=>event(`long-${i}`,i+1,'llm',{
+      startedAt:new Date(Date.UTC(2026,9,17,0,0,i)).toISOString(),...(i===599?{status:'error' as const,error:'SYNTHETIC_LAST_ERROR'}:{}),
+    }));
+    const load=vi.fn(async()=>({...events[599]!,inputSummary:null,outputSummary:null}));
+    const {unmount}=renderPane(detail(events),{loadDetail:load});
+    try {
+      await act(async()=>{await Promise.resolve();});
+      expect(document.querySelectorAll('.turn-row').length).toBeLessThan(50);
+      await act(async()=>{Array.from(document.querySelectorAll<HTMLButtonElement>('.investigation-controls button')).find(button=>button.textContent==='下一条错误')!.click();await Promise.resolve();});
+      expect(document.querySelectorAll('.turn-row').length).toBeLessThan(50);
+      expect(document.querySelector('.record-inspector')?.textContent).toContain('long-599');
+      expect(load).not.toHaveBeenCalled();
+    } finally {act(()=>unmount());}
+  });
   it('打开：单 agent 无批量拉取；回合行渲染（llm_boundary）', async () => {
     const fetchGroups = vi.fn(async () => ({ groups: [] }));
     const fetchMembers = vi.fn(async () => ({ items: [] }));
@@ -150,6 +226,7 @@ describe('TrajectoryPane（D2 / D16）', () => {
     expect(fetchGroups).toHaveBeenCalledTimes(1);
     expect(fetchMembers).not.toHaveBeenCalled();
     expect(document.querySelectorAll('.turn-row').length).toBe(2);
+    expect(document.querySelector('.turn-mark-active')?.textContent).toBe('1');
     // llm_boundary 口径行
     expect(html()).toContain('回合按模型推理事件推断');
     unmount();

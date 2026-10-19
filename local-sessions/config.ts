@@ -224,7 +224,13 @@ export function loadModelPricingOverrides(configRoot = process.cwd()): Record<st
         continue;
       }
       if (typeof value === 'object' && value !== null && typeof (value as ModelPrice).source === 'string') {
-        merged[key] = value as ModelPrice;
+        const price = value as ModelPrice;
+        // currency 是手写 JSON，拼错了不能让它一路流到 CURRENCY_SYMBOL 查表变 undefined；
+        // 认不出的值按缺省 USD 处理（价格数字照用，只是符号退回 $）。
+        merged[key] =
+          price.currency === 'CNY' || price.currency === 'USD'
+            ? price
+            : { ...price, currency: 'USD' };
       }
     }
   }
@@ -238,4 +244,55 @@ export function saveUserConfig(config: LocalSessionConfig, targetPath?: string):
   const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tmp, JSON.stringify(config, null, 2), 'utf8');
   renameSync(tmp, target);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// §4.15 team 源默认配置（自动发现，无需手动配置）。
+//
+// CodeArts agent-team 目录：~/.codeartsdoer/agent-team/（contact.json +
+// team-task.json + 可选 opencode.db）。Codex sessions 目录：~/.codex/sessions/
+// （fork 森林分组为 runs）。两者均通过 expandLocalSessionPath 展开 ~ 语法。
+// ══════════════════════════════════════════════════════════════════════════
+
+/** CodeArts agent-team 默认根目录（~/.codeartsdoer/agent-team）。 */
+export function defaultCodeArtsAgentTeamRoot(): string {
+  return process.env.CODEARTS_AGENT_TEAM_HOME
+    ? process.env.CODEARTS_AGENT_TEAM_HOME
+    : '~/.codeartsdoer/agent-team';
+}
+
+/** CodeArts opencode.db 默认路径（~/.codeartsdoer/codearts-data/opencode.db）。 */
+export function defaultCodeArtsOpencodeDb(): string {
+  return process.env.CODEARTS_HOME
+    ? join(process.env.CODEARTS_HOME, 'opencode.db')
+    : '~/.codeartsdoer/codearts-data/opencode.db';
+}
+
+/** Codex sessions 默认目录（~/.codex/sessions）。 */
+export function defaultCodexSessionsRoot(): string {
+  return process.env.CODEX_HOME
+    ? join(process.env.CODEX_HOME, 'sessions')
+    : '~/.codex/sessions';
+}
+
+/**
+ * §4.15 默认 team 源配置（自动发现，无需手动配置）。
+ * 返回 CodeArts + Codex 两个源的默认配置。调用方按需过滤掉不存在的路径。
+ */
+export function defaultTeamSources(): Array<{
+  provider: 'codearts' | 'codex';
+  root: string;
+  auxiliary?: string[];
+}> {
+  return [
+    {
+      provider: 'codearts',
+      root: defaultCodeArtsAgentTeamRoot(),
+      auxiliary: [defaultCodeArtsOpencodeDb()],
+    },
+    {
+      provider: 'codex',
+      root: defaultCodexSessionsRoot(),
+    },
+  ];
 }

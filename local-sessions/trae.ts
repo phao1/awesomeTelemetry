@@ -7,6 +7,7 @@ import { commitScanState, shouldRescan, sqliteFingerprint } from '../server/watc
 import { decryptTraeDb } from './trae-bridge.js';
 import {
   buildTraePromptContextDraft,
+  extractTraeCwd,
   extractTraeUserEnvelope,
   type TraePromptContextDraft,
 } from './trae-prompt-context.js';
@@ -528,6 +529,10 @@ export function readTraeDb(dbPath: string): TraeDbSession[] {
             agentType: turnPrompt?.agentType ?? meta.agent_type ?? undefined,
             agentName: turnPrompt?.agentName ?? meta.agent_name ?? undefined,
           });
+      // 模型名与 cwd 只能从注入的 reminder / turn context 里拿：Trae 的表结构
+      // 没有这两列。取不到就留空，不猜。
+      const modelName = promptContext?.modelConfig.modelName ?? null;
+      const cwd = extractTraeCwd(promptMessage?.raw ?? null);
       return {
         session: {
           id: meta.id,
@@ -536,6 +541,8 @@ export function readTraeDb(dbPath: string): TraeDbSession[] {
           endTime: meta.end_time ?? undefined,
           agentType: meta.agent_type ?? undefined,
           agentName: meta.agent_name ?? undefined,
+          ...(modelName === null ? {} : { modelName }),
+          ...(cwd === null ? {} : { cwd }),
         },
         turns: turnsBySession.get(meta.id) ?? [],
         ...(promptContext === null ? {} : { promptContext }),

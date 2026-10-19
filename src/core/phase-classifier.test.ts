@@ -163,3 +163,71 @@ describe('REQ-001 两遍分类', () => {
     expect(events[1]?.phase).toBe('implement');
   });
 });
+
+describe('2026-08-11 校准审计：JVM 工具链与报错驱动的 debug', () => {
+  it('Maven/Gradle 的构建与跑测目标 → verify，但把服务跑起来不算', () => {
+    expect(classifyBashCommand('mvn compile -pl ruoyi-system -am -DskipTests -q')).toBe('verify');
+    expect(classifyBashCommand('mvn clean install -DskipTests -q 2>&1')).toBe('verify');
+    expect(classifyBashCommand('./gradlew test --info')).toBe('verify');
+    expect(classifyBashCommand('dotnet test')).toBe('verify');
+    // spring-boot:run 是「启动应用」，不是验证 —— 必须留在 implement/other。
+    expect(classifyBashCommand('mvn spring-boot:run -pl ruoyi-admin -DskipTests -q')).not.toBe('verify');
+  });
+
+  it('bash 判定读 inputSummary 里的真实命令，而不是 title 里的人类描述', () => {
+    // CodeArts 的真实形态：title 是模型写的描述，命令藏在 JSON 的 command 字段里。
+    const [classified] = classifyEvents([
+      ev({
+        id: 'b1',
+        kind: 'bash',
+        title: 'Compile project to verify changes',
+        inputSummary: JSON.stringify({
+          command: 'mvn compile -pl ruoyi-common,ruoyi-system -am -DskipTests -q 2>&1',
+          description: 'Compile project to verify changes',
+        }),
+      }),
+    ]);
+    expect(classified!.phase).toBe('verify');
+  });
+
+  it('inputSummary 是被截断的 JSON 时退回原串，仍能匹配到命令子串', () => {
+    const [classified] = classifyEvents([
+      ev({
+        id: 'b2',
+        kind: 'bash',
+        title: 'Clean build all modules',
+        inputSummary: '{"command":"mvn clean install -DskipTests -q 2>&1","descrip',
+      }),
+    ]);
+    expect(classified!.phase).toBe('verify');
+  });
+
+  it('用户贴回异常栈 → 该消息成为 debug 锚点，后续步骤继承 debug', () => {
+    const classified = classifyEvents([
+      ev({
+        id: 'u1',
+        kind: 'user_prompt',
+        actor: 'user',
+        title: 'Handler dispatch failed: java.lang.NoSuchMethodError',
+        inputSummary:
+          "Handler dispatch failed: java.lang.NoSuchMethodError: 'boolean com.ruoyi.system.service.ISysUserService.validatePasswordHistory(java.lang.Long, java.lang.String)'",
+      }),
+      ev({ id: 'l1', sequence: 2, kind: 'llm', title: '这是 classpath 缓存问题' }),
+    ]);
+    expect(classified[0]!.phase).toBe('debug');
+    expect(classified[1]!.phase).toBe('debug');
+  });
+
+  it('普通用户消息不因为出现 error 字样就判 debug', () => {
+    const [classified] = classifyEvents([
+      ev({
+        id: 'u2',
+        kind: 'user_prompt',
+        actor: 'user',
+        title: '启动这个项目',
+        inputSummary: '启动这个项目，顺便看看有没有 error 处理得不好的地方',
+      }),
+    ]);
+    expect(classified!.phase).not.toBe('debug');
+  });
+});

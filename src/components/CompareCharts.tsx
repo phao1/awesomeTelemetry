@@ -1,5 +1,5 @@
 import { ta } from '../i18n.js';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
@@ -7,17 +7,18 @@ import type { TraceEventSlim } from '../core/trace-types.js';
 import { TRACE_KINDS, TRACE_PHASES } from '../core/trace-types.js';
 import {
   compareSideStats,
+  compareActivity,
   eventKindCounts,
   phaseDurations,
 } from './compare-stats.js';
 import type { CompareResult } from './compare-types.js';
 import { TokenTextModal, type TokenClass } from './TokenTextModal.js';
 import { RadarChart as RadarChartBase } from './charts/RadarChart.js';
-import { DonutRing } from './charts/DonutChart.js';
-import type { ChartSlice, ChartTone } from './charts/types.js';
+import { CompareTokenUsage } from './CompareTokenUsage.js';
+import { scanTimingReason } from '../core/scan-timing.js';
+import type { ScanTimingMetric } from '../core/scan-timing.js';
 
-/** 建议 1-① + REQ-119：8 轴综合能力雷达图（速度/省Token/工具/LLM/写入/读取/稳定性/验证）。
- * 归一化在此完成，几何绘制委托给可复用的 `charts/RadarChart`。 */
+/** Recorded magnitudes, not capability scores. Missing axes are never zero-filled. */
 export function RadarChart({
   result,
   locale,
@@ -30,68 +31,52 @@ export function RadarChart({
   const speed = result.speed;
   const ls = compareSideStats(leftEvents, speed.left, result.left.session);
   const rs = compareSideStats(rightEvents, speed.right, result.right.session);
-  const lErr = leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.status === 'error').length / leftEvents.length;
-  const rErr = rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.status === 'error').length / rightEvents.length;
-  const lVerify = leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.phase === 'verify').length / leftEvents.length;
-  const rVerify = rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.phase === 'verify').length / rightEvents.length;
-  const avgTool = (events: TraceEventSlim[]): number => {
+  const la = compareActivity(result.left);
+  const ra = compareActivity(result.right);
+  const avgTool = (events: TraceEventSlim[]): number | null => {
     const tools = events.filter((e) => e.tool !== null);
-    return tools.length === 0 ? 0 : tools.reduce((sum, e) => sum + e.durationMs, 0) / tools.length;
+    return tools.length === 0 || tools.some(event=>!Number.isFinite(event.durationMs)||event.durationMs<0) ? null : tools.reduce((sum, e) => sum + e.durationMs, 0) / tools.length;
   };
-
-  const axes = useMemo(() => {
-    const defs: Array<{ label: string; lv: number; rv: number; lowerBetter: boolean }> = [
-      { label: t('metric.speed', locale), lv: speed.left.e2eMs ?? 0, rv: speed.right.e2eMs ?? 0, lowerBetter: true },
-      { label: t('session.tokens', locale), lv: result.left.session.tokenUsage.total, rv: result.right.session.tokenUsage.total, lowerBetter: true },
-      { label: t('compare.radar.tool', locale), lv: avgTool(leftEvents), rv: avgTool(rightEvents), lowerBetter: true },
-      { label: t('compare.radar.llm', locale), lv: speed.left.tps ?? 0, rv: speed.right.tps ?? 0, lowerBetter: false },
-      { label: t('compare.radar.write', locale), lv: ls.fileWrites, rv: rs.fileWrites, lowerBetter: false },
-      { label: t('compare.radar.read', locale), lv: ls.fileReads, rv: rs.fileReads, lowerBetter: false },
-      { label: t('compare.radar.stability', locale), lv: 1 - lErr, rv: 1 - rErr, lowerBetter: false },
-      { label: t('compare.radar.verify', locale), lv: lVerify, rv: rVerify, lowerBetter: false },
-    ];
-    return defs.map((d) => {
-      const max = Math.max(d.lv, d.rv, 0.001);
-      const norm = (v: number): number => (d.lowerBetter ? (max - v) / max : v / max);
-      return { ...d, l: norm(d.lv), r: norm(d.rv) };
-    });
-  }, [result, speed, ls, rs, lErr, rErr, lVerify, rVerify, locale]);
-
-  return (
-    <RadarChartBase
-      data={axes.map((axis) => ({ axis: axis.label, values: [axis.l, axis.r] }))}
+  const defs: Array<{label:string;lv:number|null;rv:number|null;timing?:ScanTimingMetric;eventDerived?:boolean;unit?:string}> = [
+    {label:t('compare.profile.wallClock',locale),lv:speed.left.e2eMs,rv:speed.right.e2eMs,timing:'e2e',unit:'ms'},
+    {label:t('session.tokens',locale),lv:result.left.pending?null:result.left.session.tokenUsage.total,rv:result.right.pending?null:result.right.session.tokenUsage.total},
+    {label:t('compare.profile.toolInterval',locale),lv:avgTool(leftEvents),rv:avgTool(rightEvents),timing:'eventDuration',eventDerived:true,unit:'ms'},
+    {label:'TPS',lv:speed.left.tps,rv:speed.right.tps,timing:'tps',eventDerived:true},
+    {label:t('compare.radar.write',locale),lv:ls.fileWrites,rv:rs.fileWrites,eventDerived:true},
+    {label:t('compare.radar.read',locale),lv:ls.fileReads,rv:rs.fileReads,eventDerived:true},
+    {label:t('compare.activity.errorSteps',locale),lv:la.errorRate,rv:ra.errorRate,eventDerived:true},
+    {label:t('compare.activity.verification',locale),lv:la.verification,rv:ra.verification,eventDerived:true},
+  ];
+  const finite=(value:number|null):number|null=>value!==null&&Number.isFinite(value)&&value>=0?value:null;
+  const axes=defs.map(def=>{
+    const lv=finite(def.eventDerived&&!la.complete?null:def.lv);
+    const rv=finite(def.eventDerived&&!ra.complete?null:def.rv);
+    const reason=def.eventDerived&&(!la.complete||!ra.complete)?'partial_evidence':def.timing?scanTimingReason(result.left,result.right,def.timing,lv,rv):lv===null||rv===null?'missing_value':null;
+    const max=lv===null||rv===null?null:Math.max(lv,rv);
+    return {...def,lv,rv,reason,max,l:max===null||max===0?0:lv!/max,r:max===null||max===0?0:rv!/max};
+  });
+  const available=axes.filter(axis=>axis.reason===null);
+  const omitted = axes.filter(axis => axis.reason !== null);
+  const fmt=(value:number|null,unit?:string):string=>value===null?'—':`${value.toLocaleString(locale,{maximumFractionDigits:3})}${unit?` ${unit}`:''}`;
+  return (<>
+    <p className="hint">{t('compare.profile.boundary',locale)}</p>
+    {omitted.length > 0 && <p role="status">{t('scan.timing.notComparable', locale)}: {omitted.map(axis => `${axis.label} (${t(`scan.timing.reason.${axis.reason!}`, locale)})`).join('; ')}</p>}
+    {available.length>=3?<RadarChartBase
+      data={available.map((axis) => ({ axis: axis.label, values: [axis.l, axis.r] }))}
       colors={['var(--accent-fg)', 'var(--attention-fg)']}
       fills={['var(--accent-subtle)', 'var(--attention-subtle)']}
       size={220}
-      ariaLabel={t('compare.radar', locale)}
-    />
-  );
+      ariaLabel={t('compare.profile.title', locale)}
+    />:<p>{t('compare.profile.tooFew',locale)}</p>}
+    <details className="compare-profile-values" open={available.length<3}><summary>{t('compare.profile.values',locale)} · L / R</summary>
+      <table className="ui-table ui-table-compact"><thead><tr><th scope="col">{t('compare.profile.metric',locale)}</th><th scope="col">L</th><th scope="col">R</th><th scope="col">{t('compare.profile.scale',locale)}</th></tr></thead>
+        <tbody>{axes.map(axis=><tr key={axis.label}><th scope="row">{axis.label}</th><td className="mono">{fmt(axis.lv,axis.unit)}</td><td className="mono">{fmt(axis.rv,axis.unit)}</td><td className="mono">{axis.reason===null?fmt(axis.max,axis.unit):'—'}</td></tr>)}</tbody>
+      </table>
+    </details>
+  </>);
 }
 
-const TOKEN_CLASSES = ['system', 'input', 'reasoning', 'output'] as const;
-const TOKEN_CLASS_TONE: Record<(typeof TOKEN_CLASSES)[number], ChartTone> = {
-  system: 'accent',
-  input: 'neutral',
-  reasoning: 'done',
-  output: 'success',
-};
-
-function sideTokenValues(result: CompareResult, side: 'left' | 'right'): Record<(typeof TOKEN_CLASSES)[number], number> {
-  const session = result[side].session;
-  const speed = result.speed[side];
-  return {
-    system: speed.systemPromptTokensEstimate ?? 0,
-    input: session.tokenUsage.input,
-    reasoning: session.tokenUsage.reasoning,
-    output: session.tokenUsage.output,
-  };
-}
-
-/**
- * 建议 1-② + REQ-101 + REQ-120：双环 Token 构成环形图（内环 L / 外环 R，
- * system/input/reasoning/output），段可点击打开 TokenTextModal。
- * 弧段几何委托给 `charts/DonutChart` 的 `DonutRing` 原语，不再重复实现。
- */
+/** Reuse the same native-total accounting as the speed-panel bars. */
 export function TokenDonutChart({
   result,
   locale,
@@ -101,75 +86,9 @@ export function TokenDonutChart({
   locale: Locale;
   onSegmentClick?: (side: 'left' | 'right', tokenClass: TokenClass) => void;
 }): React.JSX.Element {
-  const left = sideTokenValues(result, 'left');
-  const right = sideTokenValues(result, 'right');
-  const maxTotal = Math.max(
-    1,
-    TOKEN_CLASSES.reduce((s, k) => s + left[k], 0),
-    TOKEN_CLASSES.reduce((s, k) => s + right[k], 0),
-  );
-  // 双环共享同一刻度与同一弧长基准（保持与重构前逐像素一致）。
-  const CIRC = 2 * Math.PI * 50;
-  const slicesOf = (
-    values: Record<(typeof TOKEN_CLASSES)[number], number>,
-  ): ChartSlice[] =>
-    TOKEN_CLASSES.map((cls) => ({ label: cls, value: values[cls], tone: TOKEN_CLASS_TONE[cls] }));
-  const ring = (
-    values: Record<(typeof TOKEN_CLASSES)[number], number>,
-    r: number,
-    thickness: number,
-    side: 'left' | 'right',
-  ): React.JSX.Element => (
-    <DonutRing
-      slices={slicesOf(values)}
-      cx={120}
-      cy={110}
-      r={r}
-      thickness={thickness}
-      total={maxTotal}
-      circumference={CIRC}
-      segmentClassName="compare-chart-donut-seg"
-      ariaLabelPrefix={side === 'left' ? 'L' : 'R'}
-      onSliceClick={
-        onSegmentClick === undefined
-          ? undefined
-          : (label) => onSegmentClick(side, label as TokenClass)
-      }
-    />
-  );
-
-  return (
-    <div className="compare-chart-donut">
-      <svg viewBox="0 0 240 220" width="100%" height={220} role="img" aria-label={t('compare.charts.tokenDonut', locale)}>
-        <circle cx={120} cy={110} r={50} fill="none" stroke="var(--canvas-subtle)" strokeWidth={12} />
-        {ring(left, 50, 12, 'left')}
-        <circle cx={120} cy={110} r={68} fill="none" stroke="var(--canvas-subtle)" strokeWidth={12} />
-        {ring(right, 68, 12, 'right')}
-        <text x={120} y={104} textAnchor="middle" fill="var(--fg-default)" fontSize={11} fontWeight={600}>
-          L
-        </text>
-        <text x={120} y={120} textAnchor="middle" fill="var(--fg-muted)" fontSize={8}>
-          {TOKEN_CLASSES.reduce((s, k) => s + left[k], 0).toLocaleString()}
-        </text>
-        <text x={120} y={150} textAnchor="middle" fill="var(--fg-muted)" fontSize={8}>
-          R
-        </text>
-        <text x={120} y={162} textAnchor="middle" fill="var(--fg-default)" fontSize={10} fontWeight={600}>
-          {TOKEN_CLASSES.reduce((s, k) => s + right[k], 0).toLocaleString()}
-        </text>
-      </svg>
-      <ul className="compare-chart-legend">
-        {TOKEN_CLASSES.map((cls) => (
-          <li key={cls}>
-            <span className="compare-chart-swatch" style={{ background: `var(--${TOKEN_CLASS_TONE[cls]}-emphasis)` }} />
-            <span>{t(`compare.charts.tokenClass.${cls}`, locale)}</span>
-            <span className="mono">{left[cls].toLocaleString()}</span>
-            <span className="mono">{right[cls].toLocaleString()}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+  return <CompareTokenUsage usage={{left:result.left.session.tokenUsage,right:result.right.session.tokenUsage}}
+    estimates={{left:result.speed.left.systemPromptTokensEstimate,right:result.speed.right.systemPromptTokensEstimate}}
+    pending={{left:result.left.pending,right:result.right.pending}} locale={locale} onInspectText={onSegmentClick}/>;
 }
 
 /** 建议 1-③：6 阶段双向耗时条形图（SVG 发散条，左 accent / 右 attention）。 */
@@ -275,7 +194,7 @@ export function CompareCharts({
     <>
       <div className="compare-charts">
         <div className="compare-chart">
-          <h4>{t('compare.radar', locale)}</h4>
+          <h4>{t('compare.profile.title', locale)}</h4>
           <RadarChart result={result} locale={locale} />
           <p className="compare-chart-criteria">{t('compare.charts.criteria.radar', locale)}</p>
         </div>

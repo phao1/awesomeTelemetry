@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TraceEvent, TraceRecord } from './trace-types.js';
-import { cleanPromptText, computeMetrics, isGenuineUserPrompt } from './metrics.js';
+import { cleanPromptText, computeMetrics, isGenuineUserPrompt, METRICS_CALC_VERSION } from './metrics.js';
 
 function makeRecord(
   id: string,
@@ -64,6 +64,15 @@ function makeRecord(
 }
 
 describe('REQ-004 computeMetrics', () => {
+  it('publishes scan interpretation epoch6 without changing legacy numeric metrics', () => {
+    expect(METRICS_CALC_VERSION).toBe(6);
+    const record = makeRecord('epoch');
+    const result = computeMetrics(record);
+    expect(result.calcVersion).toBe(6);
+    expect(result.totalToolDurationMs).toBe(100);
+    expect(result.e2eMs).toBe(10_000);
+    expect(result.ttftMs).toBeNull();
+  });
   it('计算四维指标与基础指标', () => {
     const record = makeRecord('s1', {
       phases: ['implement', 'implement', 'verify'],
@@ -85,7 +94,7 @@ describe('REQ-004 computeMetrics', () => {
     expect(m.avgToolDurationMs).toBeCloseTo(350 / 3);
     expect(m.tokensPerStep).toBeCloseTo(16);
     expect(m.costUsd).toBe(0.5);
-    expect(m.calcVersion).toBe(4); // v4（calibrate-tokens §4）：TraceMetrics 五新字段
+    expect(m.calcVersion).toBe(6); // Fusion interpretation epoch; numeric metrics unchanged.
     expect(m.e2eMs).toBe(10_000);
   });
 
@@ -257,5 +266,92 @@ describe('REQ-010 user_prompt 过滤', () => {
   it('清理标签', () => {
     expect(cleanPromptText('<user_query> optimize </user_query>')).toBe('optimize');
     expect(cleanPromptText('<system-reminder>meta</system-reminder>real')).toBe('real');
+  });
+});
+
+describe('2026-08-11 校准审计：用户轮次与跑测判定', () => {
+  const evt = (
+    id: string,
+    sequence: number,
+    kind: TraceEvent['kind'],
+    over: Partial<TraceEvent> = {},
+  ): TraceEvent => ({
+    id,
+    sessionId: 'calib',
+    sequence,
+    turnKey: null,
+    kind,
+    phase: 'implement',
+    title: 't',
+    startedAt: `2026-08-01T00:00:${String(sequence).padStart(2, '0')}.000Z`,
+    durationMs: 0,
+    status: 'success',
+    actor: kind === 'user_prompt' ? 'user' : 'assistant',
+    tool: null,
+    tokens: null,
+    error: null,
+    hasInput: false,
+    hasOutput: false,
+    hasRaw: false,
+    inputSummary: null,
+    outputSummary: null,
+    ...over,
+  });
+
+  it('闭标签形态的系统注入也要被过滤（Trae 落库形态）', () => {
+    // Trae 的注入正文被截去开头，只剩闭标签 —— 旧正则只认开标签，全部漏网。
+    expect(
+      isGenuineUserPrompt(
+        'intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY as your first action.\n</system-reminder>\n\nSearch the codebase for…',
+      ),
+    ).toBe(false);
+  });
+
+  it('userInteractionRounds 只数真人轮次', () => {
+    const record = makeRecord('rounds', { phases: ['implement'] });
+    record.events = [
+      evt('u1', 1, 'user_prompt', {
+        title: '请帮我开发一个需求',
+        inputSummary: '请帮我开发一个需求，优化用户管理的重置密码功能',
+      }),
+      // CodeArts 形态：开标签在最前面
+      evt('u2', 2, 'user_prompt', {
+        title: '<system-reminder>重要提示：你必须使用简体中文回复',
+        inputSummary: '<system-reminder>重要提示：你必须使用简体中文回复</system-reminder>',
+      }),
+      // Trae 形态：title 被截断，闭标签只出现在 inputSummary 里
+      evt('u3', 3, 'user_prompt', {
+        title: 'intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY',
+        inputSummary:
+          'intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY as your first action.\n</system-reminder>\n\nFind the build configuration files',
+      }),
+      evt('u4', 4, 'user_prompt', { title: '启动这个项目', inputSummary: '启动这个项目' }),
+    ];
+    expect(computeMetrics(record).userInteractionRounds).toBe(2);
+  });
+
+  it('hasUnitTests 读命令文本；只构建不跑测不算', () => {
+    const build = makeRecord('build', { phases: ['implement'] });
+    build.events = [
+      evt('b1', 1, 'bash', {
+        phase: 'verify',
+        title: 'Clean build all modules',
+        inputSummary: JSON.stringify({
+          command: 'mvn clean install -DskipTests -q 2>&1',
+          description: 'Clean build all modules',
+        }),
+      }),
+    ];
+    expect(computeMetrics(build).hasUnitTests).toBe(false);
+
+    const tested = makeRecord('tested', { phases: ['implement'] });
+    tested.events = [
+      evt('b1', 1, 'bash', {
+        phase: 'verify',
+        title: 'Run the unit tests',
+        inputSummary: JSON.stringify({ command: 'mvn test -pl ruoyi-system' }),
+      }),
+    ];
+    expect(computeMetrics(tested).hasUnitTests).toBe(true);
   });
 });

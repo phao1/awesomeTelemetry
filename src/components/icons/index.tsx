@@ -298,13 +298,9 @@ export function IconStability(props: IconProps): React.JSX.Element {
   );
 }
 
+/** Retained public icon name; Token-use surfaces now use a non-currency stack glyph. */
 export function IconCost(props: IconProps): React.JSX.Element {
-  return (
-    <IconShell {...props}>
-      <path fillRule="evenodd" d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm0 1.6a4.9 4.9 0 1 1 0 9.8 4.9 4.9 0 0 1 0-9.8Z" />
-      <path d="M5.6 6.8h4.8v1.4H5.6zM5.6 9.2h4.8v1.4H5.6z" />
-    </IconShell>
-  );
+  return <IconShell {...props}><path d="M2 2h12v3H2zM2 6.5h12v3H2zM2 11h12v3H2z" /></IconShell>;
 }
 
 /** 操作（12） */

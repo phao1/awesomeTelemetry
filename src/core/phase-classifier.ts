@@ -8,8 +8,19 @@ import type { TraceEvent, TracePhase } from './trace-types.js';
 
 // `npm run test` / `pnpm test` / `yarn test:unit` 是最常见的跑测方式，
 // 只匹配字面量 `npm test` 会把绝大多数验证行为漏判成 implement。
-const VERIFY_CMD =
-  /((npm|pnpm|yarn|bun)( run)? (test|typecheck|lint)|vitest|jest|pytest|cargo test|go test|tsc|eslint|playwright test)/;
+//
+// 2026-08-11：此前整张表只覆盖 JS/Python/Go/Rust 工具链，Java 项目一个都命中不了 ——
+// 实测 CodeArts 在若依（Maven）项目里跑的 `mvn compile` / `mvn clean install` 全部
+// 落到 implement，verify 阶段颗粒无收，连带 verificationPresent / verificationCoverage
+// 恒为 0。JVM 侧按**目标**判定而不是按 `mvn` 二进制名判定，因为 `mvn spring-boot:run`
+// 是「把服务跑起来」不是「验证」，必须留在 implement。
+const JVM_VERIFY_CMD = /\b(mvn|mvnw|gradle|gradlew)\b[^\n;|&]*\b(compile|test|verify|install|package|check|build|assemble)\b/;
+const VERIFY_CMD = new RegExp(
+  '((npm|pnpm|yarn|bun)( run)? (test|typecheck|lint)' +
+    '|vitest|jest|pytest|cargo test|go test|tsc|eslint|playwright test' +
+    '|dotnet (test|build)|\\bctest\\b|\\brspec\\b|\\bphpunit\\b|make (test|check|lint))' +
+    `|${JVM_VERIFY_CMD.source}`,
+);
 const REPORT_CMD = /(^|\s)(git commit|git push|gh pr|git pr|gh issue)/;
 const UNDERSTAND_CMD = /(^|\s)(cat|ls|find|grep|rg|head|tail|less|more|jq|stat)/;
 const IMPLEMENT_CMD = /(^|\s)(rm|cp|mv|mkdir|touch|git add|sed|awk|echo)/;
@@ -20,6 +31,48 @@ export type BashCommandClass =
   | 'understand'
   | 'implement'
   | 'other';
+
+/**
+ * 取出事件真正执行的 shell 命令文本。
+ *
+ * 别用 `event.title`：多数 adapter 的 title 是模型给的**人类描述**，不是命令。
+ * 实测 CodeArts 的 bash 事件 title = "Compile project to verify changes"，
+ * 真正的 `mvn compile …` 藏在 inputSummary 的 `{"command":…,"description":…}` 里 ——
+ * 只看 title 会把每一条构建/跑测命令都误判成 implement。
+ *
+ * inputSummary 不是 JSON（Claude/Codex 直接放命令字符串）时原样返回；
+ * 两者都没有时才退回 title。
+ */
+export function commandTextOf(event: {
+  inputSummary?: string | null;
+  title?: string | null;
+}): string {
+  const raw = event.inputSummary ?? '';
+  const command = raw.trim().startsWith('{') ? parsedCommandField(raw) : null;
+  if (command !== null) {
+    return command;
+  }
+  return raw !== '' ? raw : event.title ?? '';
+}
+
+/**
+ * 从 `{"command":…,"description":…}` 里取 command。
+ * 解析失败返回 null —— inputSummary 常被截断成半截 JSON，调用方退回原串即可，
+ * 正则照样能在里面匹配到命令子串，所以这里**不需要**也不应该报错。
+ */
+function parsedCommandField(raw: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null;
+  }
+  const command = (parsed as { command?: unknown }).command;
+  return typeof command === 'string' && command !== '' ? command : null;
+}
 
 /** REQ-003：bash 命令按正则分四类。 */
 export function classifyBashCommand(cmd: string): BashCommandClass {
@@ -106,6 +159,37 @@ const ACTION_PHASE: Record<string, TracePhase> = {
   console: 'debug',
 };
 
+/**
+ * 用户把异常栈贴回来 —— 这是返工开始的最强信号，也是**真实调试轮次的绝大多数**。
+ *
+ * 原先 debug 只在「bash 失败后紧接着写文件」时触发，而智能体自己跑的命令往往
+ * 退出码为 0（服务起来了，报错在 HTTP 响应里），失败是用户手动测出来再贴回来的。
+ * 结果 enteredDebug / durationByPhase.debug 在真实数据里恒为 0。
+ *
+ * 判定刻意保守：只认**异常类名**（NoSuchMethodError / SQLSyntaxErrorException）、
+ * Python traceback 头、以及 `at com.foo.Bar(Baz.java:42)` 形式的栈帧。
+ * 不认裸词 "error"/"错误" —— 那会把「这里有个错别字」也判成调试。
+ * Exception/Error 后缀区分大小写，避免命中普通英文散文。
+ */
+const ERROR_REPORT =
+  /\b\w+(Exception|Error)\b|Traceback \(most recent call last\)|\bat [\w.$]+\([^\s)]*:\d+\)/;
+
+/** 用户消息是否在报错（贴异常栈 / traceback）。 */
+export function isErrorReportPrompt(text: string): boolean {
+  return ERROR_REPORT.test(text);
+}
+
+/**
+ * 取用户消息的判定文本。title 会被 adapter 截到 ~100 字符，异常类名常常正好
+ * 落在截断之外，所以优先用 inputSummary（完整正文）。
+ */
+export function promptTextOf(event: {
+  inputSummary?: string | null;
+  title?: string | null;
+}): string {
+  return event.inputSummary ?? event.title ?? '';
+}
+
 type Certainty = 'explicit' | 'meta' | 'propagate';
 
 /**
@@ -116,6 +200,11 @@ type Certainty = 'explicit' | 'meta' | 'propagate';
  * - reasoning：不是独立活动，走 propagate，在 Pass 3 继承同周期 llm 的阶段。
  */
 function certaintyOf(event: TraceEvent): Certainty {
+  // 贴了异常栈的用户消息是 debug 的显式锚点（见 ERROR_REPORT）：它必须能被
+  // 后续 propagate 事件继承，所以不能停留在 propagate。
+  if (event.kind === 'user_prompt' && isErrorReportPrompt(promptTextOf(event))) {
+    return 'explicit';
+  }
   switch (event.kind) {
     case 'tool':
     case 'file_read':
@@ -137,11 +226,16 @@ function certaintyOf(event: TraceEvent): Certainty {
 }
 
 function explicitPhaseOf(event: TraceEvent): TracePhase | null {
+  // certaintyOf 只把「贴了异常栈」的 user_prompt 判为 explicit，走到这里必然是它。
+  if (event.kind === 'user_prompt') {
+    return 'debug';
+  }
   switch (event.kind) {
     case 'test':
       return 'verify';
     case 'bash': {
-      const cls = classifyBashCommand(event.title);
+      // 与下方 SHELL_TOOLS 分支同口径：判定依据是命令文本，不是 title。
+      const cls = classifyBashCommand(commandTextOf(event));
       if (cls === 'other') {
         return 'implement';
       }
@@ -159,8 +253,7 @@ function explicitPhaseOf(event: TraceEvent): TracePhase | null {
       // 跑 shell 的工具按命令内容判定（npm test → verify、git commit → report…），
       // 只看工具名会把所有命令都判成 implement。
       if (SHELL_TOOLS.has(action)) {
-        const cmd = event.inputSummary ?? event.title;
-        const cls = classifyBashCommand(cmd);
+        const cls = classifyBashCommand(commandTextOf(event));
         return cls === 'other' ? 'implement' : cls;
       }
       for (const [name, phase] of Object.entries(ACTION_PHASE)) {

@@ -15,6 +15,8 @@ export interface DonutRingProps {
   tone?: ChartTone;
   /** 段点击回调（传入 slice.label）；缺省时段不可交互。 */
   onSliceClick?: (label: string) => void;
+  /** Omitted = all positive slices. Supplied labels may expose a real drill-down. */
+  interactiveLabels?: readonly string[];
   /** 交互段的 class。 */
   segmentClassName?: string;
   /** 交互段 aria-label 前缀，如 "L" / "R"。 */
@@ -35,6 +37,7 @@ export function DonutRing({
   circumference,
   tone = 'accent',
   onSliceClick,
+  interactiveLabels,
   segmentClassName,
   ariaLabelPrefix,
 }: DonutRingProps): React.JSX.Element {
@@ -43,7 +46,8 @@ export function DonutRing({
   let offset = 0;
   const segments = slices.map((slice) => {
     const length = (slice.value / sum) * circ;
-    const interactive = onSliceClick !== undefined && length > 0;
+    const interactive = onSliceClick !== undefined && length > 0
+      && (interactiveLabels === undefined || interactiveLabels.includes(slice.label));
     const activate = (): void => {
       if (interactive) {
         onSliceClick(slice.label);

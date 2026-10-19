@@ -1,6 +1,19 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { once } from 'node:events';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { access } from 'node:fs/promises';
+import { CaptureCapacityError, readCaptureCapacity } from './proxy/capture-capacity.js';
+import { parseBodyByteRange } from './proxy/body-range.js';
+import { CaptureReparser, CaptureReparseError } from './proxy/capture-reparse.js';
+import { CodexInspector, CodexSourceAccessError, codexInteger, type CodexSelector } from './codex/service.js';
+import { CodexInspectionError } from './codex/archive.js';
+import { liveCodexInventory } from './codex/source.js';
+import { TraceImportError } from './trace-import/format.js';
+import { TraceLogImporter, importId, importSequence, importPaging, requireImport } from './trace-import/service.js';
+import { listImports, listImportTurns } from './storage/trace-import.js';
 
 import type { Database } from 'better-sqlite3';
 
@@ -12,6 +25,12 @@ import type {
   SessionDetailResponse,
   TraceEvent,
   TraceRecord,
+  CaptureStorageConfig,
+  MonitorConnectionProfile,
+  ProxyProtocolAnalysis,
+  CaptureEvidenceExport,
+  CaptureComparisonResponse,
+  CaptureComparisonSide,
 } from '../src/core/trace-types.js';
 import {
   PROVIDER_KEYS,
@@ -24,7 +43,7 @@ import {
   mergeLocalSessionConfig,
   saveUserConfig,
 } from '../local-sessions/config.js';
-import { getProxyRequestById } from './storage/query-engine.js';
+import { getProxyRequestById, getProxyRequestListItemById } from './storage/query-engine.js';
 import { buildTraceReportHtml } from '../src/core/report-html.js';
 import { buildCompareReportHtml } from '../src/core/compare-report.js';
 import { DetailCache } from './storage/detail-cache.js';
@@ -50,6 +69,7 @@ import {
 } from './storage/annotations.js';
 import {
   buildSubagentMergeGroups,
+  getMergeGroup,
   loadSessionGroups,
   mergeSessionDetail,
   primaryKeyFor,
@@ -58,14 +78,15 @@ import {
 import { deleteSession } from './storage/writers.js';
 import { SCHEMA_VERSION } from './storage/schema.js';
 import { cachedStmt } from './storage/stmt-cache.js';
+import { OriginalDeletionQueue, OriginalDeletionError, getOriginalDeletionForProxy, PENDING_ORIGINAL_DELETION_SQL } from './proxy/original-deletions.js';
 import { addSseClient } from './realtime/sse.js';
-import { queueSessionChange } from './realtime/coalescer.js';
+import { queueSessionChange, queueTraceLinkChange } from './realtime/coalescer.js';
 import { eventBus } from './realtime/event-bus.js';
 import { markForegroundRequest } from './realtime/frontline.js';
 import { scanAndStoreDetail, scanLocalSessions, SessionParseError } from './watch/scan-scheduler.js';
 import { startFileWatcher } from './watch/file-watcher.js';
 import { Router } from './http/router.js';
-import { sendJson } from './http/send-json.js';
+import { sendJson, sendCompressedOrPlain } from './http/send-json.js';
 import { sendApiError, type ErrorCode } from './http/error-envelope.js';
 import { serveStatic } from './http/static.js';
 import { resolveRules } from './desensitization/rules.js';
@@ -77,6 +98,44 @@ import {
   ProxyStateError,
 } from './proxy/controller.js';
 import { runContextDiff, type ContextDiffErrorCode } from './proxy/context-diff-service.js';
+import { CaptureBodyStore } from './proxy/body-store.js';
+import { CaptureJournal } from './proxy/capture-journal.js';
+import { buildConnectionPlan, ConnectionProfileError, ConnectionProfileStore, validateExpectedRevision } from './proxy/connection-profiles.js';
+import { inspectConnection } from './proxy/connection-diagnostics.js';
+import { CaptureSelfTester, CaptureSelfTestError } from './proxy/capture-self-test.js';
+import { readCaptureBodies } from './proxy/capture-storage.js';
+import { readAnalysisBody } from './proxy/analysis-source.js';
+import { analyzeProtocol } from './proxy/protocol-analysis.js';
+import { assembleCaptureEvidenceExport, stringifyCaptureEvidenceExport, CaptureExportLimitError } from './proxy/capture-export.js';
+import { getLinkedExecution, LinkedExecutionLimitError } from './storage/linked-execution.js';
+import { getNativeSessionParents } from './storage/native-session-parents.js';
+import { getMonitorCapabilities } from './proxy/monitor-capabilities.js';
+import { parseProxyRequest } from './proxy/parser-router.js';
+import { decideTraceAssociation, listProxyTraceLinks, listSessionCaptureLinks, listTraceDecisions, listTraceIdentities, TraceLinkError } from './storage/trace-links.js';
+import { ensureInterceptCa } from './proxy/ca-manager.js';
+import {
+  deleteTeamRun,
+  getTeamActivityDetail,
+  getTeamCompareInputs,
+  getTeamPatch,
+  getTeamRunIdsBySessionKey,
+  getTeamRunSnapshot,
+  listTeamActivities,
+  listTeamRuns,
+  type ListTeamActivitiesOptions,
+  type ListTeamRunsOptions,
+} from './storage/team-storage.js';
+import { compareTeams } from '../src/core/team-compare.js';
+import type {
+  CompletenessLevel,
+  ComparisonMatch,
+  TeamActivityKind,
+  TeamComparisonBasis,
+  TeamRunSnapshot,
+  TeamRunStatus,
+  TeamTopologyKind,
+} from '../src/core/trace-types.js';
+import { TEAM_TOPOLOGY_KINDS } from '../src/core/trace-types.js';
 
 const DEV_ONLY_ROUTES = [
   '/api/cdp/start',
@@ -86,6 +145,8 @@ const DEV_ONLY_ROUTES = [
 ] as const;
 
 export interface AgentObservabilityServerOptions {
+  /** Explicit installed CLI entry for embedders; default is relative to this module. */
+  launcherCliPath?: string;
   db: Database;
   config: LocalSessionConfig;
   dbPath?: string;
@@ -95,6 +156,11 @@ export interface AgentObservabilityServerOptions {
   projectConfigPath?: string;
   userConfigPath?: string;
   rulesPath?: string;
+  captureDirectory?: string;
+  captureStorage?: Partial<CaptureStorageConfig>;
+  /** Current explicit metadata policy for uncommitted journal recovery; default0. */
+  proxyRetentionDays?: number;
+  caDirectory?: string;
 }
 
 interface DesensitizationOverride {
@@ -138,14 +204,24 @@ function intParam(value: string | null, fallback: number, max: number): number {
   return Math.min(Math.max(n, 1), max);
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, maxBytes = Number.MAX_SAFE_INTEGER): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let size = 0;
+    let oversized = false;
     req.on('data', (chunk: Buffer) => {
+      if (oversized) return;
+      size += chunk.byteLength;
+      if (size > maxBytes) {
+        oversized = true;
+        chunks.length = 0;
+        reject(new HttpError(400, 'BAD_REQUEST', 'Request body exceeds the configured route limit'));
+        return;
+      }
       chunks.push(chunk);
     });
     req.on('end', () => {
-      resolve(Buffer.concat(chunks).toString('utf8'));
+      if (!oversized) resolve(Buffer.concat(chunks).toString('utf8'));
     });
     req.on('error', reject);
   });
@@ -153,8 +229,9 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 async function readJsonBody(
   req: IncomingMessage,
+  maxBytes?: number,
 ): Promise<Record<string, unknown>> {
-  const text = await readBody(req);
+  const text = await readBody(req, maxBytes);
   if (text === '') {
     return {};
   }
@@ -196,6 +273,41 @@ export function createAgentObservabilityServer(
   const { db, config } = opts;
   const dbPath = opts.dbPath ?? '';
   const distDir = opts.distDir ?? join(process.cwd(), 'dist');
+  const caDirectory = opts.caDirectory ?? join(dirname(opts.userConfigPath ?? (dbPath || join(process.cwd(), '.agent-observe', 'state.sqlite'))), 'proxy-ca');
+  const connectionProfiles = new ConnectionProfileStore(join(dirname(opts.userConfigPath ?? (dbPath || join(process.cwd(), '.agent-observe', 'state.sqlite'))), 'monitor-profiles.json'));
+  let bodyStorePromise: Promise<CaptureBodyStore> | null = null;
+  let fileStorePromise: Promise<CaptureBodyStore> | null = null;
+  const captureDirectory = opts.captureDirectory ?? join(dirname(opts.userConfigPath ?? (dbPath || join(process.cwd(), '.agent-observe', 'state.sqlite'))), 'capture-bodies');
+  let startupRecovery: Promise<void> | null = null;
+  // Reading or explicitly deleting committed evidence must remain possible when
+  // admitting unrelated recovery metadata is blocked by database pressure.
+  const getFileStore = (): Promise<CaptureBodyStore> => {
+    fileStorePromise ??= CaptureBodyStore.create(captureDirectory, opts.captureStorage).then(async store => {
+      await new OriginalDeletionQueue(db, store).resumePending(); return store;
+    }).catch((error: unknown) => { fileStorePromise = null; throw error; });
+    return fileStorePromise;
+  };
+  const captureReparser = new CaptureReparser(db, getFileStore);
+  const codexInspector = new CodexInspector(db, getFileStore);
+  const traceImporter = new TraceLogImporter(db, getFileStore);
+  const getBodyStore = (): Promise<CaptureBodyStore> => {
+    if (bodyStorePromise === null) {
+      bodyStorePromise = getFileStore().then(async store => {
+        try {
+          const recovered = await (await CaptureJournal.open(db, store)).recover(db, opts.proxyRetentionDays ?? 0);
+          // One metadata-only status correction for the batch, including clients
+          // whose initial status snapshot arrived before recovery completed.
+          if (recovered > 0) eventBus.emit('proxy_status', proxyRuntime.status());
+        }
+        catch (error) { if (error instanceof CaptureCapacityError) throw error; throw new Error('CAPTURE_RECOVERY_FAILED', { cause: error }); }
+        return store;
+      }).catch((error: unknown) => {
+        bodyStorePromise = null;
+        throw error;
+      });
+    }
+    return bodyStorePromise;
+  };
   const rulesPath =
     opts.rulesPath ??
     (opts.userConfigPath !== undefined
@@ -256,6 +368,10 @@ export function createAgentObservabilityServer(
     queueSessionChange(primaryKey);
   };
   const startedAt = Date.now();
+  let closing = false;
+  const activeHandlers = new Set<Promise<void>>();
+  const scanTasks = new Set<Promise<unknown>>();
+  const ownSseClients = new Set<() => void>();
   let scanInProgress = false;
   const pendingAutomaticScans = new Set<ProviderKey>();
 
@@ -269,9 +385,14 @@ export function createAgentObservabilityServer(
     providers: provider === undefined ? undefined : [provider],
     notify: notifyMerged,
     emit: (event) => { eventBus.emit(event.type, event); },
+    trackTask: task => {
+      scanTasks.add(task);
+      void task.then(() => scanTasks.delete(task), () => scanTasks.delete(task));
+    },
   });
 
   const runAutomaticScan = async (provider: ProviderKey): Promise<void> => {
+    if (closing) return;
     if (scanInProgress) {
       pendingAutomaticScans.add(provider);
       return;
@@ -287,7 +408,7 @@ export function createAgentObservabilityServer(
     } finally {
       scanInProgress = false;
       const next = pendingAutomaticScans.values().next().value;
-      if (next !== undefined) {
+      if (!closing && next !== undefined) {
         pendingAutomaticScans.delete(next);
         void runAutomaticScan(next);
       }
@@ -296,10 +417,14 @@ export function createAgentObservabilityServer(
   // T-12（D4）：proxy/frida 运行时状态机，异步启动由 SSE 通知
   const proxyRuntime = new ProxyRuntime(db, (payload) => {
     eventBus.emit('proxy_status', payload);
-  });
+  }, { bodyStore: async () => {
+    await ensureInterceptCa(caDirectory);
+    return getBodyStore();
+  }, caDirectory, notifySession: queueTraceLinkChange });
   const fridaRuntime = new FridaRuntime((payload) => {
     eventBus.emit('frida_status', payload);
   });
+  const captureSelfTester = new CaptureSelfTester(db, proxyRuntime, getFileStore);
 
   /** REQ-015：惰性详情加载（compare/report 与 GET 详情同口径）。 */
   const ensureDetail = async (
@@ -345,6 +470,43 @@ export function createAgentObservabilityServer(
   };
 
   const router = new Router();
+
+  router.register('POST', '/api/trace-imports', async (req, res) => {
+    const controller = new AbortController(), cancel = (): void => controller.abort();
+    res.once('close', cancel);
+    try {
+      if (req.headers['content-type'] !== 'application/octet-stream') throw new TraceImportError('TRACE_IMPORT_INVALID');
+      if (Number(req.headers['content-length'] ?? 0) > 128 * 1024 * 1024) throw new TraceImportError('TRACE_IMPORT_LIMIT');
+      let filename: string;
+      try { if (typeof req.headers['x-trace-filename'] !== 'string') throw new Error(); filename = decodeURIComponent(req.headers['x-trace-filename']); }
+      catch { throw new TraceImportError('TRACE_IMPORT_INVALID'); }
+      const result = await proxyRuntime.withStoppedMonitor(() => traceImporter.import(req, filename, controller.signal));
+      sendJson(res, 200, result, req);
+    } finally { res.removeListener('close', cancel); if (!req.complete && !req.destroyed) req.resume(); }
+  });
+  router.register('GET', '/api/trace-imports', (req, res) => {
+    const page = importPaging(new URL(req.url ?? '/', 'http://127.0.0.1'), 1024);
+    sendJson(res, 200, listImports(db, page.offset, page.limit), req);
+  });
+  router.register('GET', '/api/trace-imports/:id/turns', (req, res, params) => {
+    const id = importId(params.id); requireImport(db, id);
+    const page = importPaging(new URL(req.url ?? '/', 'http://127.0.0.1'), 2000);
+    sendJson(res, 200, listImportTurns(db, id, page.offset, page.limit), req);
+  });
+  router.register('GET', '/api/trace-imports/:id/turns/:sequence', async (req, res, params) => {
+    const controller = new AbortController(), cancel = (): void => controller.abort(); res.once('close', cancel);
+    try { sendJson(res, 200, await traceImporter.detail(importId(params.id), importSequence(params.sequence), controller.signal), req); }
+    finally { res.removeListener('close', cancel); }
+  });
+  router.register('GET', '/api/trace-imports/:id/source', async (_req, res, params) => {
+    const id = importId(params.id), ref = requireImport(db, id).session.source;
+    const stream = (await getFileStore()).openRead(ref.id);
+    try { await once(stream, 'open'); } catch { stream.destroy(); throw new TraceImportError('TRACE_IMPORT_FAILED'); }
+    stream.on('error', () => res.destroy()); res.once('close', () => stream.destroy());
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'content-disposition': `attachment; filename="tracelog-${id.slice(0, 12)}.json"`,
+      'content-length': ref.bytes, etag: '"' + ref.sha256 + '"', 'x-trace-sha256': ref.sha256, 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' });
+    stream.pipe(res);
+  });
 
   router.register('GET', '/api/health', (_req, res) => {
     const dbSizeBytes = dbPath !== '' && existsSync(dbPath) ? statSync(dbPath).size : 0;
@@ -449,8 +611,13 @@ export function createAgentObservabilityServer(
     if (mode !== 'slim' && mode !== 'full') {
       throw new HttpError(400, 'INVALID_ENUM', `mode must be "slim" or "full", got ${mode}`);
     }
+    const offset = intParam(query.get('offset'), 0, Number.MAX_SAFE_INTEGER);
+    const limit = intParam(query.get('limit'), 2000, 5000);
+    // The session cache stores the canonical first page. Other page shapes must
+    // not reuse or replace it; existing SSE invalidation remains session-scoped.
+    const cacheable = offset === 0 && limit === 2000;
     const cacheKey = `${key}:${mode}`;
-    const cached = detailCache.get(cacheKey);
+    const cached = cacheable ? detailCache.get(cacheKey) : undefined;
     if (cached !== undefined) {
       sendJson(res, 200, cached, req);
       return;
@@ -468,8 +635,6 @@ export function createAgentObservabilityServer(
     // 哪怕库里已经存着几百条事件。
     const sourceGone = meta.source_path !== '' && !existsSync(meta.source_path);
 
-    const offset = intParam(query.get('offset'), 0, Number.MAX_SAFE_INTEGER);
-    const limit = intParam(query.get('limit'), 2000, 5000);
     let detail = getSessionDetail(db, key, { mode, offset, limit });
     if (detail === null) {
       throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
@@ -519,7 +684,7 @@ export function createAgentObservabilityServer(
         throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
       }
     }
-    detailCache.set(cacheKey, detail);
+    if (cacheable) detailCache.set(cacheKey, detail);
     sendJson(res, 200, detail, req);
   });
 
@@ -553,6 +718,21 @@ export function createAgentObservabilityServer(
       throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
     }
     sendJson(res, 200, readAnnotations(db, key), req);
+  });
+
+  // agent-collaboration-replay §2.1：按 session key 反查关联的 team run id 列表。
+  // 查 team_run_sessions junction（idx_team_run_sessions_session 索引）→ JOIN
+  // team_runs 取 id，按 started_at DESC 排序。session 不存在 → 404
+  // SESSION_NOT_FOUND；存在但无关联 team run → 200 + runIds: []（前端据此隐藏章节）。
+  // 与 annotations 同一约定：注册在 `:key` 泛化路由之后，Router 按精确段数匹配。
+  router.register('GET', '/api/sessions/:key/team-run', (req, res, params) => {
+    const key = params.key!;
+    const exists = cachedStmt(db, 'SELECT id FROM sessions WHERE id = ?').get(key);
+    if (exists === undefined) {
+      throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${key}`, { key });
+    }
+    const runIds = getTeamRunIdsBySessionKey(db, key);
+    sendJson(res, 200, { runIds }, req);
   });
 
   // PUT 部分更新：缺省键不动、tags:[] 清空、note:null 清空；每次成功写刷新
@@ -614,7 +794,18 @@ export function createAgentObservabilityServer(
   router.register('GET', '/api/sessions/:key/events/:eventId', (req, res, params) => {
     const query = parseQuery(req);
     const includeRaw = query.get('include') === 'raw';
-    const event = getEventDetail(db, params.key!, params.eventId!, includeRaw);
+    let event = getEventDetail(db, params.key!, params.eventId!, includeRaw);
+    // The primary session's timeline includes member events. Resolve their
+    // bodies within that same group while keeping member-only views scoped.
+    if (event === null) {
+      const group = getMergeGroup(params.key!, sessionGroups());
+      if (group !== null && group.primaryKey === params.key) {
+        for (const memberKey of group.mergedKeys) {
+          event = getEventDetail(db, memberKey, params.eventId!, includeRaw);
+          if (event !== null) break;
+        }
+      }
+    }
     if (event === null) {
       throw new HttpError(
         404,
@@ -760,7 +951,7 @@ export function createAgentObservabilityServer(
       }
       base = parsed;
     }
-    const result = await runContextDiff(db, { targetId, base });
+    const result = await runContextDiff(db, { targetId, base }, getFileStore);
     if (!result.ok) {
       // design D10 统一错误映射：400/404/409/422/500；details 不含 body/header/stack。
       const { code, message, details } = result.error;
@@ -771,13 +962,444 @@ export function createAgentObservabilityServer(
     sendJson(res, 200, result.value, req);
   });
 
+  router.register('GET', '/api/proxy/storage', async (req, res) => {
+    sendJson(res, 200, (await getFileStore()).status(), req);
+  });
+
+  router.register('GET', '/api/proxy/capacity', async (req, res) => {
+    sendJson(res, 200, await readCaptureCapacity(db), req);
+  });
+
+  router.register('GET', '/api/ca-cert', async (_req, res) => {
+    const pem = await ensureInterceptCa(caDirectory);
+    res.writeHead(200, {
+      'content-type': 'application/x-pem-file',
+      'content-disposition': 'attachment; filename="agent-observe-proxy-ca-cert.pem"',
+      'content-length': Buffer.byteLength(pem),
+    });
+    res.end(pem);
+  });
+
+  const captureRequestId = (value: string | undefined): number => {
+    const id = Number(value);
+    if (!Number.isSafeInteger(id) || id <= 0) throw new HttpError(400, 'BAD_REQUEST', 'id must be a positive safe integer');
+    const row = cachedStmt(db, 'SELECT id FROM proxy_requests WHERE id = ?').get(id);
+    if (row === undefined) throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', 'Proxy request not found');
+    return id;
+  };
+
+  const tracePage = (req: IncomingMessage): { limit: number; cursor?: string } => {
+    const query = parseQuery(req);
+    return { limit: query.has('limit') ? Number(query.get('limit')) : 50, cursor: query.get('cursor') ?? undefined };
+  };
+  const numericTracePage = (req: IncomingMessage): { limit: number; cursor?: number } => {
+    const options = tracePage(req);
+    if (options.cursor !== undefined && !/^(?:0|[1-9]\d*)$/.test(options.cursor)) throw new HttpError(400, 'BAD_REQUEST', 'Invalid numeric trace cursor');
+    return { limit: options.limit, cursor: options.cursor === undefined ? undefined : Number(options.cursor) };
+  };
+  router.register('GET', '/api/sessions/:key/identities', (req, res, params) => {
+    sendJson(res, 200, listTraceIdentities(db, { source: 'scan', key: params.key ?? '' }, tracePage(req)), req);
+  });
+  router.register('GET', '/api/proxy/requests/:id/identities', (req, res, params) => {
+    const id = captureRequestId(params.id);
+    sendJson(res, 200, listTraceIdentities(db, { source: 'proxy', key: String(id) }, tracePage(req)), req);
+  });
+  router.register('GET', '/api/sessions/:key/capture-links', (req, res, params) => {
+    sendJson(res, 200, listSessionCaptureLinks(db, params.key ?? '', numericTracePage(req)), req);
+  });
+  router.register('GET', '/api/proxy/requests/:id/trace-links', (req, res, params) => {
+    sendJson(res, 200, listProxyTraceLinks(db, captureRequestId(params.id), tracePage(req)), req);
+  });
+  router.register('PUT', '/api/proxy/requests/:id/trace-links/:key', async (req, res, params) => {
+    const id = captureRequestId(params.id);
+    const body = await readJsonBody(req, 16 * 1024);
+    if (Object.keys(body).some(key => key !== 'state' && key !== 'note') || !['confirmed', 'rejected', 'revoked'].includes(String(body.state)) ||
+      (body.note !== null && typeof body.note !== 'string')) throw new HttpError(400, 'BAD_REQUEST', 'Expected a user association state and nullable note');
+    const state = body.state as 'confirmed' | 'rejected' | 'revoked';
+    const result = decideTraceAssociation(db, id, params.key ?? '', state, body.note as string | null);
+    queueTraceLinkChange(result.sessionKey, result.proxyId);
+    sendJson(res, 200, result, req);
+  });
+  router.register('GET', '/api/proxy/requests/:id/trace-links/:key/decisions', (req, res, params) => {
+    sendJson(res, 200, listTraceDecisions(db, captureRequestId(params.id), params.key ?? '', numericTracePage(req)), req);
+  });
+
+  router.register('GET', '/api/proxy/requests/:id/capture', (req, res, params) => {
+    sendJson(res, 200, readCaptureBodies(db, captureRequestId(params.id)), req);
+  });
+
+  const codexRead = async (req: IncomingMessage, res: ServerResponse, selector: CodexSelector, sequence?: string): Promise<void> => {
+    const controller = new AbortController();
+    const abort = (): void => { if (!res.writableEnded) controller.abort(); };
+    res.once('close', abort);
+    try {
+      const query = parseQuery(req);
+      const result = await codexInspector.read(selector, sequence === undefined
+        ? { offset: codexInteger(query.get('offset'), 0, 4096), limit: codexInteger(query.get('limit'), 20, 20) }
+        : { selected: codexInteger(sequence, 0, 4095) }, controller.signal);
+      // An await must not resurrect a body whose durable deletion intent exists.
+      const row = cachedStmt(db, 'SELECT id FROM proxy_requests WHERE request_id=?').get(result.requestId) as { id: number } | undefined;
+      if (row !== undefined && getOriginalDeletionForProxy(db, row.id) !== null) throw new CodexSourceAccessError('CAPTURE_ORIGINALS_DELETED');
+      if (!controller.signal.aborted) {
+        if (Buffer.byteLength(JSON.stringify(result)) > 1024 * 1024) throw new CodexInspectionError('CODEX_INSPECTION_LIMIT');
+        res.setHeader('cache-control', 'no-store'); sendJson(res, 200, result, req);
+      }
+    } catch (error) {
+      if (error instanceof CodexSourceAccessError) throw new HttpError(error.code === 'BAD_REQUEST' ? 400 : error.code === 'CAPTURE_ORIGINALS_DELETED' ? 409 : 404, error.code, error.code);
+      if (error instanceof CodexInspectionError) throw new HttpError(error.code === 'CODEX_SOURCE_CHANGED' ? 409 : error.code === 'CODEX_SOURCE_UNAVAILABLE' ? 422 : 503, error.code, error.code);
+      throw error;
+    } finally { res.removeListener('close', abort); }
+  };
+  router.register('GET', '/api/proxy/live', (req, res) => { res.setHeader('cache-control', 'no-store'); sendJson(res, 200, liveCodexInventory(db), req); });
+  router.register('GET', '/api/proxy/requests/:id/codex-calls', (req, res, params) => codexRead(req, res, { id: captureRequestId(params.id) }));
+  router.register('GET', '/api/proxy/requests/:id/codex-calls/:sequence', (req, res, params) => codexRead(req, res, { id: captureRequestId(params.id) }, params.sequence));
+  router.register('GET', '/api/proxy/live/:requestId/codex-calls', (req, res, params) => codexRead(req, res, { requestId: params.requestId ?? '' }));
+  router.register('GET', '/api/proxy/live/:requestId/codex-calls/:sequence', (req, res, params) => codexRead(req, res, { requestId: params.requestId ?? '' }, params.sequence));
+
+  router.register('GET', '/api/proxy/requests/:id/original-deletion', (req, res, params) => {
+    sendJson(res, 200, getOriginalDeletionForProxy(db, captureRequestId(params.id)), req);
+  });
+  router.register('POST', '/api/proxy/requests/:id/original-deletion', async (req, res, params) => {
+    const id = captureRequestId(params.id), body = await readJsonBody(req, 8 * 1024);
+    if (Object.keys(body).some(key => key !== 'expectedRequestId' && key !== 'confirm') || body.confirm !== true ||
+      typeof body.expectedRequestId !== 'string' || body.expectedRequestId.length === 0 || body.expectedRequestId.length > 1024) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Explicit confirmation and exact expectedRequestId are required');
+    }
+    const expected = body.expectedRequestId;
+    const result = await proxyRuntime.withStoppedMonitor(async () => {
+      try {
+        const queue = new OriginalDeletionQueue(db, await getFileStore()), job = await queue.request(id, expected);
+        return await queue.run(job.id);
+      } catch (error) {
+        if (error instanceof OriginalDeletionError && error.code === 'CAPTURE_DELETE_LIMIT') throw new HttpError(503, 'CAPTURE_DELETE_LIMIT', 'Retained deletion-job capacity reached; no new intent was recorded');
+        if (error instanceof OriginalDeletionError && ['CAPTURE_DELETE_CONFLICT','CAPTURE_DELETE_SHARED_ORIGINAL','CAPTURE_DELETE_STORE_MISMATCH','CAPTURE_DELETE_INVALID_REF','CAPTURE_DELETE_BUSY'].includes(error.code)) {
+          throw new HttpError(409, 'CAPTURE_DELETE_CONFLICT', 'Body deletion conflicts with retained evidence', { reason: error.code });
+        }
+        throw new HttpError(503, 'CAPTURE_DELETE_FAILED', 'Body deletion could not finish; inspect deletion status before retrying');
+      }
+    });
+    sendJson(res, 200, result, req);
+  });
+
+  const readCaptureAnalysis = async (id: number): Promise<ProxyProtocolAnalysis> => {
+    if (getOriginalDeletionForProxy(db, id) !== null) throw new HttpError(409, 'CAPTURE_ORIGINALS_DELETED', 'Original bodies were explicitly deleted; retained metadata is not body evidence');
+    const request = getProxyRequestById(db, id)!;
+    const capture = readCaptureBodies(db, id);
+    if (request.method === 'WS' || capture.transport?.websocket !== undefined) {
+      const analysis = await analyzeProtocol({ format: 'unknown', requestBody: '', responseBody: null, streaming: false, transport: capture.transport });
+      analysis.state = 'unknown'; analysis.completeness = { complete: false, omittedCount: 1, reasons: ['websocket_connection_not_model_call'] };
+      return analysis;
+    }
+    const reasons: string[] = [];
+    const readDirection = async (direction: 'request' | 'response'): Promise<string | null> => {
+      const ref = capture[direction];
+      if (ref === null) {
+        reasons.push(direction + ':legacy_preview');
+        return direction === 'request' ? request.requestBody : request.responseBody;
+      }
+      const encoding = direction === 'request' ? request.requestHeaders['content-encoding'] : capture.responseHeaders['content-encoding'];
+      const source = await readAnalysisBody(await getFileStore(), ref, 2 * 1024 * 1024, {
+        allowIncomplete: true, contentEncoding: Array.isArray(encoding) ? encoding.join(',') : encoding,
+      });
+      if (getOriginalDeletionForProxy(db, id) !== null) throw new HttpError(409, 'CAPTURE_ORIGINALS_DELETED', 'Original bodies were explicitly deleted during analysis');
+      if (ref.status !== 'complete') reasons.push(direction + ':' + ref.status);
+      if (!source.ok) { reasons.push(direction + ':' + source.reason); return null; }
+      return source.body;
+    };
+    const [requestBody, responseBody] = await Promise.all([readDirection('request'), readDirection('response')]);
+    const format = request.requestFormat === 'unknown' && requestBody !== null && !request.ttnetEncrypted
+      ? parseProxyRequest({ hostname: request.hostname, url: request.url, requestBody }).requestFormat ?? 'unknown'
+      : request.requestFormat;
+    const analysis = await analyzeProtocol({ format, requestBody: requestBody ?? '', responseBody, streaming: request.isStreaming, transport: capture.transport });
+    if (getOriginalDeletionForProxy(db, id) !== null) throw new HttpError(409, 'CAPTURE_ORIGINALS_DELETED', 'Original bodies were explicitly deleted during analysis');
+    if (reasons.length > 0) {
+      analysis.completeness.complete = false;
+      analysis.completeness.reasons.push(...reasons);
+      if (capture.response !== null && capture.response.status !== 'complete' && analysis.state === 'completed') {
+        analysis.state = 'incomplete';
+      }
+    }
+    return analysis;
+  };
+
+  router.register('GET', '/api/proxy/requests/:id/analysis', async (req, res, params) => {
+    sendJson(res, 200, await readCaptureAnalysis(captureRequestId(params.id)), req);
+  });
+
+  const validateReparseRequest = (req: IncomingMessage, value: string | undefined): number => {
+    if (parseQuery(req).size !== 0 || typeof value !== 'string' || !/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Reparse requires one positive capture ID and no query parameters');
+    }
+    return captureRequestId(value);
+  };
+  const reparseError = (error: unknown): never => {
+    if (error instanceof HttpError) throw error;
+    if (error instanceof CaptureReparseError) {
+      const errors = {
+        BAD_REQUEST: 400, PROXY_REQUEST_NOT_FOUND: 404, CAPTURE_ORIGINALS_DELETED: 409,
+        CAPTURE_REPARSE_CONFLICT: 409, CAPTURE_REPARSE_UNSUPPORTED: 422,
+        CAPTURE_REPARSE_BUSY: 503, CAPTURE_REPARSE_FAILED: 503, CAPTURE_REPARSE_LIMIT: 503,
+      } as const;
+      const code = error.code as keyof typeof errors;
+      if (Object.hasOwn(errors, code)) throw new HttpError(errors[code], code, 'Local capture reparse is unavailable; inspect its status before retrying', error.reason === null ? undefined : { reason: error.reason });
+    }
+    throw new HttpError(503, 'CAPTURE_REPARSE_FAILED', 'Local capture reparse failed; no upstream request was replayed');
+  };
+  const sendReparse = (req: IncomingMessage, res: ServerResponse, value: unknown, maxBytes: number): void => {
+    const bytes = Buffer.from(JSON.stringify(value));
+    if (bytes.byteLength > maxBytes) throw new HttpError(503, 'CAPTURE_REPARSE_LIMIT', 'Capture reparse response exceeds its bounded projection');
+    sendCompressedOrPlain(res, 200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, bytes, req);
+  };
+  router.register('GET', '/api/proxy/requests/:id/reparse', (req, res, params) => {
+    const id = validateReparseRequest(req, params.id);
+    try { sendReparse(req, res, captureReparser.status(id), 16 * 1024); }
+    catch (error) { reparseError(error); }
+  });
+  router.register('POST', '/api/proxy/requests/:id/reparse', async (req, res, params) => {
+    const id = validateReparseRequest(req, params.id), body = await readJsonBody(req, 8 * 1024);
+    if (Object.keys(body).some(key => key !== 'expectedRequestId') || typeof body.expectedRequestId !== 'string' || body.expectedRequestId.length === 0 || body.expectedRequestId.length > 1024) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Exact expectedRequestId is required for local reparse');
+    }
+    try {
+      const result = await captureReparser.reparse(id, body.expectedRequestId);
+      // The service result crossed one last await boundary. No await after
+      // this metadata guard: a confirmed intent cannot leak old body analysis.
+      const current = (() => {
+        try { return captureReparser.status(id); }
+        catch (error) {
+          if (error instanceof CaptureReparseError && error.code === 'PROXY_REQUEST_NOT_FOUND') throw new HttpError(409, 'CAPTURE_REPARSE_CONFLICT', 'Capture source disappeared before the reparse response');
+          throw error;
+        }
+      })();
+      if (current.unavailableReason === 'originals_deleted') throw new HttpError(409, 'CAPTURE_ORIGINALS_DELETED', 'Original bodies were explicitly deleted during reparse');
+      if (current.state !== 'current' || current.requestId !== body.expectedRequestId || current.snapshot?.sourceFingerprint !== result.status.snapshot?.sourceFingerprint) {
+        throw new HttpError(409, 'CAPTURE_REPARSE_CONFLICT', 'Capture source changed before the reparse response');
+      }
+      sendReparse(req, res, result, 1024 * 1024);
+    }
+    catch (error) { reparseError(error); }
+  });
+
+  router.register('GET', '/api/proxy/requests/:id/comparison', async (req, res, params) => {
+    const query = parseQuery(req);
+    const validId = (value: string | null | undefined): value is string => typeof value === 'string' && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value));
+    const base = query.get('base');
+    if (!validId(params.id) || !validId(base) || query.getAll('base').length !== 1 || query.getAll('mode').length > 1 ||
+      [...query.keys()].some(key => key !== 'base' && key !== 'mode') || (query.has('mode') && query.get('mode') !== 'metadata') || Number(base) === Number(params.id)) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Comparison requires two distinct positive capture IDs and a valid mode');
+    }
+    const targetId = captureRequestId(params.id); const baseId = captureRequestId(base);
+    const metadataOnly = query.get('mode') === 'metadata';
+    const optionalAnalysis = async (id: number): Promise<ProxyProtocolAnalysis | null> => {
+      if (metadataOnly) return null;
+      try { return await readCaptureAnalysis(id); }
+      catch { return null; } // Report unavailable below; never expose internal source errors.
+    };
+    const [baseAnalysis, targetAnalysis] = await Promise.all([optionalAnalysis(baseId), optionalAnalysis(targetId)]);
+    // No await after both fresh deletion checks: body-derived summaries cannot
+    // return from an older asynchronous original read after confirmed intent.
+    const snapshot = db.transaction((): CaptureComparisonResponse => {
+      const side = (id: number, parsed: ProxyProtocolAnalysis | null): CaptureComparisonSide => {
+        const request = getProxyRequestListItemById(db, id);
+        if (request === null) throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', 'Proxy request not found');
+        const originalDeletion = getOriginalDeletionForProxy(db, id);
+        const capture = readCaptureBodies(db, id);
+        const { responseHeaders: _headers, ...evidence } = capture; void _headers;
+        const analysis = originalDeletion !== null || metadataOnly || parsed === null ? null : {
+          parserVersion: parsed.parserVersion, requestFormat: parsed.requestFormat, model: parsed.model, state: parsed.state,
+          stopReason: parsed.stopReason, usage: structuredClone(parsed.usage), completeness: structuredClone(parsed.completeness),
+          errorCount: parsed.errors.length, errorCodes: parsed.errors.slice(0, 32).map(error => error.code), errorCodesTruncated: parsed.errors.length > 32,
+        };
+        return { request, evidence, originalDeletion, analysis, analysisUnavailableReason: originalDeletion !== null ? 'original_deleted' :
+          metadataOnly ? 'metadata_only' : analysis === null ? 'analysis_unavailable' : null };
+      };
+      return { base: side(baseId, baseAnalysis), target: side(targetId, targetAnalysis), generatedAt: new Date().toISOString() };
+    })();
+    const bytes = Buffer.from(JSON.stringify(snapshot));
+    if (bytes.length > 1024 * 1024) throw new HttpError(503, 'CAPTURE_COMPARISON_LIMIT', 'Capture comparison exceeds its bounded projection');
+    sendCompressedOrPlain(res, 200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, bytes, req);
+  });
+
+  router.register('GET', '/api/sessions/:key/parents', (req, res, params) => {
+    const query = parseQuery(req);
+    if ([...query.keys()].some(key => key !== 'limit' && key !== 'cursor') || query.getAll('limit').length > 1 || query.getAll('cursor').length > 1 ||
+      (query.has('limit') && !/^[1-9]\d*$/.test(query.get('limit')!)) || (query.has('cursor') && !/^[a-f0-9]{64}$/.test(query.get('cursor')!))) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Invalid native parent reference page');
+    }
+    try {
+      sendJson(res, 200, getNativeSessionParents(db, params.key ?? '', { limit: Number(query.get('limit') ?? 20), cursor: query.get('cursor') ?? undefined }), req);
+    } catch (error) {
+      if (error instanceof LinkedExecutionLimitError) throw new HttpError(503, 'EXECUTION_METADATA_LIMIT', 'Native parent metadata cannot fit its bounded page');
+      throw error;
+    }
+  });
+
+  router.register('GET', '/api/proxy/requests/:id/export', async (req, res, params) => {
+    const id = captureRequestId(params.id);
+    const query = parseQuery(req);
+    if ([...query.keys()].some(key => key !== 'mode') || query.getAll('mode').length > 1 || (query.has('mode') && query.get('mode') !== 'metadata')) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Invalid capture export mode');
+    }
+    const metadataOnly = query.get('mode') === 'metadata';
+    let analysis: ProxyProtocolAnalysis | null = null;
+    let reason: CaptureEvidenceExport['analysisUnavailableReason'] = metadataOnly ? 'metadata_only' : null;
+    try { if (!metadataOnly) analysis = await readCaptureAnalysis(id); }
+    catch { reason = 'analysis_unavailable'; }
+    // From this fresh snapshot through serialization/send there is no await:
+    // an async analysis must not revive evidence removed by confirmed intent.
+    const snapshot = db.transaction(() => {
+      const item = getProxyRequestListItemById(db, id);
+      if (item === null) throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', 'Proxy request not found');
+      const { hasSystemPrompt: _hasSystemPrompt, ...requestMetadata } = item;
+      void _hasSystemPrompt;
+      const headers = cachedStmt(db, 'SELECT request_headers FROM proxy_requests WHERE id=?').get(id) as { request_headers: string };
+      const request = { ...requestMetadata, requestHeaders: JSON.parse(headers.request_headers) as CaptureEvidenceExport['request']['requestHeaders'] };
+      return assembleCaptureEvidenceExport({ request, capture: readCaptureBodies(db, id),
+        originalDeletion: getOriginalDeletionForProxy(db, id), analysis, analysisUnavailableReason: reason,
+        identities: listTraceIdentities(db, { source: 'proxy', key: String(id) }, { limit: 100 }),
+        traceLinks: listProxyTraceLinks(db, id, { limit: 100 }), schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString() });
+    })();
+    let encoded: string;
+    try { encoded = stringifyCaptureEvidenceExport(snapshot); }
+    catch (error) {
+      if (error instanceof CaptureExportLimitError) throw new HttpError(503, 'CAPTURE_EXPORT_LIMIT', 'Capture evidence export exceeds its bounded package size');
+      throw error;
+    }
+    sendCompressedOrPlain(res, 200, { 'content-type': 'application/json; charset=utf-8',
+      'content-disposition': `attachment; filename="capture-${id}.json"`, 'cache-control': 'no-store' }, Buffer.from(encoded), req);
+  });
+
+  router.register('GET', '/api/sessions/:key/execution', (req, res, params) => {
+    const query = parseQuery(req);
+    const defaults = { eventOffset: 0, eventLimit: 100, captureLimit: 20 };
+    const allowed = new Set(['eventOffset', 'eventLimit', 'captureCursor', 'captureLimit']);
+    for (const key of query.keys()) {
+      const value = query.get(key)!;
+      if (!allowed.has(key) || query.getAll(key).length !== 1 || !/^(0|[1-9]\d*)$/.test(value) || !Number.isSafeInteger(Number(value))) {
+        throw new HttpError(400, 'BAD_REQUEST', 'Invalid execution page query');
+      }
+    }
+    let page;
+    try { page = getLinkedExecution(db, params.key ?? '', {
+      eventOffset: Number(query.get('eventOffset') ?? defaults.eventOffset),
+      eventLimit: Number(query.get('eventLimit') ?? defaults.eventLimit),
+      captureCursor: query.has('captureCursor') ? Number(query.get('captureCursor')) : undefined,
+      captureLimit: Number(query.get('captureLimit') ?? defaults.captureLimit),
+    }); } catch (error) {
+      if (error instanceof LinkedExecutionLimitError) throw new HttpError(503, 'EXECUTION_METADATA_LIMIT', 'Execution metadata cannot fit its bounded page');
+      throw error;
+    }
+    sendJson(res, 200, page, req);
+  });
+
+  router.register('GET', '/api/proxy/requests/:id/body/:direction', async (req, res, params) => {
+    const id = captureRequestId(params.id);
+    const direction = params.direction;
+    if (direction !== 'request' && direction !== 'response') throw new HttpError(400, 'BAD_REQUEST', 'direction must be request or response');
+    if (getOriginalDeletionForProxy(db, id) !== null) throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', 'Original bodies were explicitly deleted');
+    const ref = readCaptureBodies(db, id)[direction];
+    if (ref === null) throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', 'Original body is unavailable');
+    const etag = '"' + ref.sha256 + '"';
+    const range = parseBodyByteRange(req.headers['if-range'] === undefined || req.headers['if-range'] === etag ? req.headers.range : undefined, ref.bytes);
+    if (range === 'invalid') throw new HttpError(400, 'BAD_REQUEST', 'Expected one valid byte range');
+    if (range === 'unsatisfiable') {
+      res.setHeader('content-range', `bytes */${ref.bytes}`);
+      throw new HttpError(416, 'RANGE_NOT_SATISFIABLE', 'Requested byte range does not overlap retained original bytes');
+    }
+    const stream = (await getFileStore()).openRead(ref.id, range ?? undefined);
+    try {
+      await once(stream, 'open');
+    } catch {
+      stream.destroy();
+      throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', 'Original body file is unavailable');
+    }
+    if (getOriginalDeletionForProxy(db, id) !== null) { stream.destroy(); throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', 'Original bodies were explicitly deleted'); }
+    stream.on('error', (error) => res.destroy(error));
+    res.once('close', () => stream.destroy());
+    res.writeHead(range === null ? 200 : 206, {
+      'content-type': 'application/octet-stream',
+      'content-disposition': `attachment; filename="${ref.id}.body"`,
+      'content-length': range === null ? ref.bytes : range.end - range.start + 1,
+      'accept-ranges': 'bytes',
+      etag,
+      ...(range === null ? {} : { 'content-range': `bytes ${range.start}-${range.end}/${ref.bytes}` }),
+      'x-capture-status': ref.status,
+      'x-capture-sha256': ref.sha256,
+    });
+    stream.pipe(res);
+  });
+
   router.register('GET', '/api/proxy/requests/:id', (req, res, params) => {
     const id = Number(params.id);
     const request = Number.isInteger(id) ? getProxyRequestById(db, id) : null;
     if (request === null) {
       throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', `No proxy request with id ${params.id}`);
     }
-    sendJson(res, 200, request, req);
+    sendJson(res, 200, getOriginalDeletionForProxy(db, id) === null ? request : {
+      ...request, requestBody: null, responseBody: null, rawRequestBody: null, rawResponseBody: null, systemPrompt: null,
+    }, req);
+  });
+
+  const connectionPlan = async (req: IncomingMessage, profile: MonitorConnectionProfile) => {
+    const pem = await ensureInterceptCa(caDirectory);
+    const host = req.socket.localAddress === '::1' ? '[::1]' : '127.0.0.1';
+    return buildConnectionPlan(profile, {
+      controlUrl: `http://${host}:${req.socket.localPort}`, nodePath: process.execPath,
+      cliPath: opts.launcherCliPath ?? fileURLToPath(new URL('../bin/agent-observe.js', import.meta.url)),
+      caSha256: createHash('sha256').update(pem, 'utf8').digest('hex'), status: proxyRuntime.status(),
+    });
+  };
+  router.register('GET', '/api/proxy/profiles', async (req, res) => {
+    sendJson(res, 200, { items: await connectionProfiles.list() }, req);
+  });
+  router.register('POST', '/api/proxy/profiles', async (req, res) => {
+    sendJson(res, 201, await connectionProfiles.create(await readJsonBody(req, 32 * 1024)), req);
+  });
+  router.register('PUT', '/api/proxy/profiles/:id', async (req, res, params) => {
+    const body = await readJsonBody(req, 32 * 1024);
+    sendJson(res, 200, await connectionProfiles.update(params.id ?? '', body.settings, body.expectedRevision), req);
+  });
+  router.register('DELETE', '/api/proxy/profiles/:id', async (req, res, params) => {
+    const body = await readJsonBody(req, 32 * 1024);
+    await connectionProfiles.remove(params.id ?? '', body.expectedRevision);
+    sendJson(res, 200, { deleted: true }, req);
+  });
+  router.register('GET', '/api/proxy/profiles/:id/plan', async (req, res, params) => {
+    sendJson(res, 200, await connectionPlan(req, await connectionProfiles.get(params.id ?? '')), req);
+  });
+  router.register('GET', '/api/proxy/profiles/:id/diagnostics', async (req, res, params) => {
+    const profile = await connectionProfiles.get(params.id ?? '');
+    sendJson(res, 200, await inspectConnection(profile, caDirectory, () => proxyRuntime.status()), req);
+  });
+  router.register('POST', '/api/proxy/profiles/:id/self-test', async (req, res, params) => {
+    const body = await readJsonBody(req, 32 * 1024);
+    if (parseQuery(req).size !== 0 || Object.keys(body).length !== 1 || !Number.isSafeInteger(body.expectedRevision) || Number(body.expectedRevision) < 1) throw new HttpError(400, 'BAD_REQUEST', 'Only a positive integer expectedRevision is accepted; no destination or process parameters');
+    const profile = await connectionProfiles.get(params.id ?? '');
+    if (validateExpectedRevision(body.expectedRevision) !== profile.revision) throw new ConnectionProfileError('MONITOR_PROFILE_CONFLICT', 'Connection profile changed; reload before testing', 409);
+    if (closing) throw new HttpError(503, 'SERVER_SHUTTING_DOWN', 'Server is draining');
+    const controller = new AbortController();
+    const abort = () => { if (!res.writableEnded) controller.abort(); };
+    res.once('close', abort);
+    try {
+      const report = await captureSelfTester.run(profile, controller.signal);
+      res.setHeader('cache-control', 'no-store'); sendJson(res, 200, report, req);
+    } finally { res.removeListener('close', abort); }
+  });
+  router.register('POST', '/api/proxy/profiles/:id/start', async (req, res, params) => {
+    const body = await readJsonBody(req, 32 * 1024);
+    const profile = await connectionProfiles.get(params.id ?? '');
+    if (validateExpectedRevision(body.expectedRevision) !== profile.revision) throw new ConnectionProfileError('MONITOR_PROFILE_CONFLICT', 'Connection profile changed; reload before launching', 409);
+    const current = proxyRuntime.status();
+    if (current.diagnostics?.cleanupPending || ((current.running || current.starting) && current.port !== profile.proxyPort)) throw new ProxyStateError('PROXY_ALREADY_RUNNING', 'A different or closing proxy owns the listener; stop it explicitly before switching ports');
+    if (!current.running && !current.starting) proxyRuntime.start({ port: profile.proxyPort });
+    await proxyRuntime.waitUntilReady();
+    sendJson(res, 200, await connectionPlan(req, profile), req);
+  });
+
+  router.register('GET', '/api/proxy/capabilities', (req, res) => {
+    if (parseQuery(req).size !== 0) throw new HttpError(400, 'BAD_REQUEST', 'Capability manifest does not accept query parameters');
+    const bytes = Buffer.from(JSON.stringify(getMonitorCapabilities()));
+    sendCompressedOrPlain(res, 200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, bytes, req);
   });
 
   router.register('GET', '/api/proxy/status', (_req, res) => {
@@ -798,8 +1420,8 @@ export function createAgentObservabilityServer(
     sendJson(res, 200, proxyRuntime.start({ port }), req);
   });
 
-  router.register('POST', '/api/proxy/stop', (_req, res) => {
-    sendJson(res, 200, proxyRuntime.stop(), _req);
+  router.register('POST', '/api/proxy/stop', async (_req, res) => {
+    sendJson(res, 200, await proxyRuntime.stop(), _req);
   });
 
   router.register('GET', '/api/frida/status', (_req, res) => {
@@ -918,7 +1540,7 @@ export function createAgentObservabilityServer(
     } finally {
       scanInProgress = false;
       const next = pendingAutomaticScans.values().next().value;
-      if (next !== undefined) {
+      if (!closing && next !== undefined) {
         pendingAutomaticScans.delete(next);
         void runAutomaticScan(next);
       }
@@ -960,6 +1582,323 @@ export function createAgentObservabilityServer(
       },
       req,
     );
+  });
+
+  // ── Team runs（add-agent-team-observability §6.1–6.10 / api.md §7） ──────
+  // 所有 team 路由：gzip 感知、ApiError 信封、markForegroundRequest（入口已统一）。
+  // 禁止 spawnSync / readFileSync 大文件 / 逐实体循环（design D13 / 禁令 4/6）。
+
+  const TEAM_RUN_STATUSES: readonly TeamRunStatus[] = [
+    'planned', 'running', 'blocked', 'success', 'error', 'cancelled', 'unknown',
+  ];
+  const TEAM_ACTIVITY_KINDS: readonly TeamActivityKind[] = [
+    'agent_lifecycle', 'task_created', 'task_dependency', 'task_assignment',
+    'task_status', 'round', 'message_sent', 'message_received', 'tool_call',
+    'tool_result', 'artifact', 'verification', 'handoff', 'error', 'recovery',
+    'integration', 'unknown',
+  ];
+  const COMPLETION_LEVELS: readonly CompletenessLevel[] = [
+    'complete', 'partial', 'unavailable', 'conflicted',
+  ];
+
+  /** 把逗号分隔的多选参数拆成数组，非法值 → INVALID_ENUM。 */
+  const multiSelect = (
+    raw: string | null,
+    allowed: readonly string[],
+    label: string,
+  ): string[] | undefined => {
+    if (raw === null || raw === '') {
+      return undefined;
+    }
+    const values = raw.split(',');
+    for (const value of values) {
+      if (!allowed.includes(value)) {
+        throw new HttpError(400, 'INVALID_ENUM', `Unknown ${label}: ${value}`);
+      }
+    }
+    return values;
+  };
+
+  /** §6.5–6.6 比较基准评估（design D10）：从两个 snapshot 的 summary 字段推导
+   *  goalMatch / modelMatch / completenessDelta 等。project/revision/environment/
+   *  template 在当前 snapshot 中不可观测 → null（禁止捏造，design D4）。 */
+  const evaluateTeamBasis = (
+    left: TeamRunSnapshot,
+    right: TeamRunSnapshot,
+    userDeclared: boolean,
+  ): TeamComparisonBasis => {
+    const reasons: string[] = [];
+    const leftGoal = left.summary.goalFingerprint;
+    const rightGoal = right.summary.goalFingerprint;
+    const goalMatch =
+      leftGoal === null || rightGoal === null
+        ? null
+        : leftGoal === rightGoal;
+    if (goalMatch === false) {
+      reasons.push('goal fingerprint differs');
+    }
+
+    // modelMatch：两侧 agent model 集合是否相同（null model 视为 unknown）。
+    const leftModels = new Set(
+      left.agents.map((a) => a.model).filter((m): m is string => m !== null),
+    );
+    const rightModels = new Set(
+      right.agents.map((a) => a.model).filter((m): m is string => m !== null),
+    );
+    const modelMatch =
+      leftModels.size === 0 || rightModels.size === 0
+        ? null
+        : leftModels.size === rightModels.size &&
+          [...leftModels].every((m) => rightModels.has(m));
+    if (modelMatch === false) {
+      reasons.push('agent model set differs');
+    }
+
+    // completenessDelta：任一维度 completeness 不同。
+    const dims = Object.keys(left.summary.completeness) as Array<
+      keyof typeof left.summary.completeness
+    >;
+    const completenessDelta = dims.some(
+      (d) => left.summary.completeness[d] !== right.summary.completeness[d],
+    );
+    if (completenessDelta) {
+      reasons.push('completeness differs on at least one evidence dimension');
+    }
+
+    // project / revision / environment / template 在当前 snapshot 中不可观测。
+    const projectMatch = null;
+    const revisionMatch = null;
+    const environmentMatch = null;
+    const templateMatch = null;
+
+    // 匹配规则（design D10）：
+    // matched：goal/criteria 与起始状态全同，所有 material 字段已知。
+    // partially_matched：goal 匹配但起始/model/environment 字段有差异或未知。
+    // unmatched：goal/project/criteria/起始状态实质不同。
+    // unknown：证据太不完整无法判定。
+    let match: ComparisonMatch;
+    if (
+      goalMatch === null ||
+      modelMatch === null ||
+      left.summary.completeness.topology === 'unavailable' ||
+      right.summary.completeness.topology === 'unavailable'
+    ) {
+      match = 'unknown';
+      reasons.push('evidence too incomplete to decide match');
+    } else if (goalMatch === false) {
+      match = 'unmatched';
+    } else if (
+      modelMatch === true &&
+      !completenessDelta &&
+      projectMatch === null &&
+      revisionMatch === null &&
+      environmentMatch === null &&
+      templateMatch === null
+    ) {
+      // goal 匹配且无已知字段冲突；未知字段保持 null 而非 false。
+      match = userDeclared ? 'matched' : 'partially_matched';
+      if (!userDeclared) {
+        reasons.push('goal matches but project/revision/environment/template are unknown');
+      }
+    } else {
+      match = 'partially_matched';
+    }
+
+    return {
+      match,
+      goalMatch,
+      criteriaMatch: null,
+      projectMatch,
+      revisionMatch,
+      environmentMatch,
+      modelMatch,
+      templateMatch,
+      completenessDelta,
+      userDeclared,
+      reasons,
+    };
+  };
+
+  /** §6.9 POST /api/team-compare：比较服务入口。 */
+  router.register('POST', '/api/team-compare', async (req, res) => {
+    const body = await readJsonBody(req);
+    const leftRunId = body.leftRunId;
+    const rightRunId = body.rightRunId;
+    if (typeof leftRunId !== 'string' || typeof rightRunId !== 'string') {
+      throw new HttpError(400, 'TEAM_COMPARE_INVALID', 'leftRunId and rightRunId are required');
+    }
+    if (leftRunId === rightRunId) {
+      throw new HttpError(400, 'TEAM_COMPARE_INVALID', 'leftRunId and rightRunId must differ');
+    }
+    const manualBasisRaw = body.manualBasis;
+    if (
+      manualBasisRaw !== undefined &&
+      typeof manualBasisRaw !== 'boolean'
+    ) {
+      throw new HttpError(400, 'TEAM_COMPARE_INVALID', 'manualBasis must be a boolean');
+    }
+    const manualBasis = manualBasisRaw === true;
+
+    const inputs = getTeamCompareInputs(db, leftRunId, rightRunId);
+    if (inputs.left === null) {
+      throw new HttpError(404, 'TEAM_RUN_NOT_FOUND', `No team run with id ${leftRunId}`, {
+        runId: leftRunId,
+      });
+    }
+    if (inputs.right === null) {
+      throw new HttpError(404, 'TEAM_RUN_NOT_FOUND', `No team run with id ${rightRunId}`, {
+        runId: rightRunId,
+      });
+    }
+
+    const basis = evaluateTeamBasis(inputs.left, inputs.right, manualBasis);
+    const comparison = compareTeams({
+      leftRunId,
+      rightRunId,
+      left: inputs.left.metrics,
+      right: inputs.right.metrics,
+      basis,
+      generatedAt: new Date().toISOString(),
+    });
+    sendJson(res, 200, comparison, req);
+  });
+
+  /** §6.1 GET /api/team-runs：keyset 分页 slim 列表。 */
+  router.register('GET', '/api/team-runs', (req, res) => {
+    const query = parseQuery(req);
+    const providers = multiSelect(query.get('provider'), PROVIDER_KEYS, 'provider');
+    const statuses = multiSelect(query.get('status'), TEAM_RUN_STATUSES, 'status');
+    const topologies = multiSelect(query.get('topology'), TEAM_TOPOLOGY_KINDS, 'topology');
+    const completeness = multiSelect(query.get('completeness'), COMPLETION_LEVELS, 'completeness');
+    const rangeRaw = query.get('range');
+    const range =
+      rangeRaw === null || rangeRaw === ''
+        ? undefined
+        : (rangeRaw as 'today' | '7d' | '30d' | 'all');
+    if (
+      range !== undefined &&
+      !(['today', '7d', '30d', 'all'] as readonly string[]).includes(range)
+    ) {
+      throw new HttpError(400, 'INVALID_ENUM', `range must be today|7d|30d|all, got ${rangeRaw}`);
+    }
+    const opts: ListTeamRunsOptions = {
+      provider: providers as ProviderKey[] | undefined,
+      status: statuses as TeamRunStatus[] | undefined,
+      topology: topologies as TeamTopologyKind[] | undefined,
+      q: query.get('q')?.trim() || undefined,
+      range,
+      completeness: completeness as CompletenessLevel[] | undefined,
+      limit: intParam(query.get('limit'), 50, 500),
+      cursor: query.get('cursor') ?? undefined,
+    };
+    sendJson(res, 200, listTeamRuns(db, opts), req);
+  });
+
+  /** §6.2 GET /api/team-runs/:runId：有界快照 + stamp 缓存。 */
+  router.register('GET', '/api/team-runs/:runId', (req, res, params) => {
+    const runId = params.runId!;
+    const snapshot = getTeamRunSnapshot(db, runId);
+    if (snapshot === null) {
+      throw new HttpError(404, 'TEAM_RUN_NOT_FOUND', `No team run with id ${runId}`, { runId });
+    }
+    // stamp 缓存：用 summary.stamp 作为缓存键；首次请求 cached=false。
+    // 这里不持久化缓存（进程内 stamp 已由 storage 层管理），仅返回 stamp 供客户端。
+    sendJson(
+      res,
+      200,
+      { snapshot, stamp: snapshot.summary.stamp, cached: false },
+      req,
+    );
+  });
+
+  /** §6.3 GET /api/team-runs/:runId/activities：keyset 分页 slim 账本。 */
+  router.register('GET', '/api/team-runs/:runId/activities', (req, res, params) => {
+    const runId = params.runId!;
+    const query = parseQuery(req);
+    // 先确认 run 存在（404 TEAM_RUN_NOT_FOUND）。
+    const snapshot = getTeamRunSnapshot(db, runId);
+    if (snapshot === null) {
+      throw new HttpError(404, 'TEAM_RUN_NOT_FOUND', `No team run with id ${runId}`, { runId });
+    }
+    const kinds = multiSelect(query.get('kind'), TEAM_ACTIVITY_KINDS, 'kind');
+    const statuses = multiSelect(query.get('status'), TRACE_STATUSES, 'status');
+    const fromRaw = query.get('from');
+    const toRaw = query.get('to');
+    const opts: ListTeamActivitiesOptions = {
+      agent: query.get('agent') ?? undefined,
+      task: query.get('task') ?? undefined,
+      kind: kinds as TeamActivityKind[] | undefined,
+      status: statuses as TraceStatus[] | undefined,
+      from: fromRaw ?? undefined,
+      to: toRaw ?? undefined,
+      limit: intParam(query.get('limit'), 200, 500),
+      cursor: query.get('cursor') ?? undefined,
+    };
+    sendJson(res, 200, listTeamActivities(db, runId, opts), req);
+  });
+
+  /** §6.3 GET /api/team-runs/:runId/activities/:activityId：单条详情，include 分层。 */
+  router.register(
+    'GET',
+    '/api/team-runs/:runId/activities/:activityId',
+    (req, res, params) => {
+      const runId = params.runId!;
+      const activityId = params.activityId!;
+      const query = parseQuery(req);
+      const includeRaw = query.get('include');
+      if (includeRaw !== null && includeRaw !== 'body' && includeRaw !== 'raw') {
+        throw new HttpError(400, 'BAD_REQUEST', `include must be body|raw, got ${includeRaw}`);
+      }
+      const include = includeRaw === 'body' || includeRaw === 'raw' ? includeRaw : undefined;
+      const result = getTeamActivityDetail(db, runId, activityId, include);
+      if (result === null) {
+        // run 或 activity 不存在。区分 404：先查 run。
+        const snapshot = getTeamRunSnapshot(db, runId);
+        if (snapshot === null) {
+          throw new HttpError(404, 'TEAM_RUN_NOT_FOUND', `No team run with id ${runId}`, { runId });
+        }
+        throw new HttpError(404, 'TEAM_ACTIVITY_NOT_FOUND', `No activity with id ${activityId}`, {
+          activityId,
+        });
+      }
+      // include 请求但 body/raw 行缺失 → TEAM_BODY_UNAVAILABLE。
+      if (include === 'body' && result.body === null) {
+        throw new HttpError(409, 'TEAM_BODY_UNAVAILABLE', `Body not available for activity ${activityId}`, {
+          activityId,
+        });
+      }
+      if (include === 'raw' && result.raw === null) {
+        throw new HttpError(409, 'TEAM_BODY_UNAVAILABLE', `Raw not available for activity ${activityId}`, {
+          activityId,
+        });
+      }
+      sendJson(res, 200, result, req);
+    },
+  );
+
+  /** §6.4 GET /api/team-runs/:runId/patch：有界 SSE 补丁。 */
+  router.register('GET', '/api/team-runs/:runId/patch', (req, res, params) => {
+    const runId = params.runId!;
+    const query = parseQuery(req);
+    const stamp = query.get('stamp');
+    if (stamp === null || stamp === '') {
+      throw new HttpError(400, 'BAD_REQUEST', 'stamp is required for an incremental patch');
+    }
+    const patch = getTeamPatch(db, runId, stamp);
+    if (patch === null) {
+      throw new HttpError(404, 'TEAM_RUN_NOT_FOUND', `No team run with id ${runId}`, { runId });
+    }
+    sendJson(res, 200, patch, req);
+  });
+
+  /** §6.10 DELETE /api/team-runs/:runId：显式删除派生 team run，不删 sessions/源文件。 */
+  router.register('DELETE', '/api/team-runs/:runId', (req, res, params) => {
+    const runId = params.runId!;
+    const deleted = deleteTeamRun(db, runId);
+    if (!deleted) {
+      throw new HttpError(404, 'TEAM_RUN_NOT_FOUND', `No team run with id ${runId}`, { runId });
+    }
+    sendJson(res, 200, { deleted: true, runId }, req);
   });
 
   router.register('GET', '/api/sessions/:key/report', async (req, res, params) => {
@@ -1026,18 +1965,39 @@ export function createAgentObservabilityServer(
   });
 
   router.register('GET', '/api/events', (req, res) => {
+    const query = parseQuery(req);
+    const requestId = query.get('requestId') ?? undefined;
+    const lastEventId = req.headers['last-event-id'];
+    const hasControl = (value: string): boolean => [...value].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+    if ([...query.keys()].some(key => key !== 'requestId') || query.getAll('requestId').length > 1 ||
+      (requestId !== undefined && (requestId.length === 0 || requestId.length > 1024 || hasControl(requestId))) ||
+      (lastEventId !== undefined && (typeof lastEventId !== 'string' || lastEventId.length > 128 || hasControl(lastEventId)))) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Invalid live subscription or resume cursor');
+    }
     // 头信息由 addSseClient 统一写入（REQ-005）
-    const cleanup = addSseClient(res);
-    req.on('close', cleanup);
+    const cleanup = addSseClient(res, { requestId, lastEventId });
+    ownSseClients.add(cleanup);
+    req.on('close', () => { cleanup(); ownSseClients.delete(cleanup); });
   });
 
   const server = createServer((req, res) => {
-    // REQ-007 / api.md §0.6：每个 /api/* 请求进入时标记前台请求
+    // Even rejected work follows the shared foreground/error-envelope chain.
     markForegroundRequest();
+    if (closing) {
+      sendApiError(res, 503, 'SERVER_SHUTTING_DOWN', 'Server is draining', undefined, req);
+      return;
+    }
+    // REQ-007 / api.md §0.6：每个 /api/* 请求进入时标记前台请求
     const method = req.method ?? 'GET';
     const rawUrl = req.url ?? '/';
     const pathname = rawUrl.split('?')[0] ?? '/';
-    const match = router.match(method, pathname);
+    let match: ReturnType<Router['match']>;
+    try {
+      match = router.match(method, pathname);
+    } catch (error) {
+      sendApiError(res, error instanceof URIError ? 400 : 500, error instanceof URIError ? 'BAD_REQUEST' : 'INTERNAL_ERROR', error instanceof URIError ? 'Malformed URL path encoding' : 'Route matching failed', undefined, req);
+      return;
+    }
     if (match === null) {
       if (!pathname.startsWith('/api')) {
         // T-01：所有 /api/* 路由之后挂静态兜底；/api/* 仍走统一 404 信封
@@ -1055,10 +2015,49 @@ export function createAgentObservabilityServer(
       );
       return;
     }
-    void (async () => {
+    const handler = (async () => {
       try {
+        if (pathname === '/api/events' || pathname.startsWith('/api/proxy/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents)$/.test(pathname)) {
+          if (pathname.startsWith('/api/trace-imports')) res.setHeader('cache-control', 'no-store');
+          const localHost = (host: string): boolean => host === 'localhost' || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host);
+          const remote = req.socket.remoteAddress ?? '';
+          if (!(remote === '::1' || remote.startsWith('127.') || remote.startsWith('::ffff:127.'))) {
+            throw new HttpError(400, 'BAD_REQUEST', 'Capture access requires a local connection');
+          }
+          let trusted = false;
+          try {
+            trusted = localHost(new URL(`http://${req.headers.host ?? ''}`).hostname);
+            if (req.headers.origin !== undefined) trusted &&= localHost(new URL(req.headers.origin).hostname);
+          } catch {
+            trusted = false;
+          }
+          if (!trusted) throw new HttpError(400, 'BAD_REQUEST', 'Untrusted capture Host or Origin');
+        }
+        if (pathname === '/api/proxy/requests' || pathname.startsWith('/api/proxy/requests/')) {
+          try { await startupRecovery; } catch (error) {
+            if (!(error instanceof CaptureCapacityError)) throw new HttpError(503, 'INTERNAL_ERROR', 'CAPTURE_RECOVERY_FAILED; original evidence was retained');
+            // Pressure defers unindexed journals; committed rows remain readable/
+            // explicitly cleanable. Starting retries recovery after pressure relief.
+          }
+        }
         await match.handler(req, res, match.params);
       } catch (err) {
+        if (err instanceof TraceImportError) {
+          const status = err.code === 'TRACE_IMPORT_INVALID' ? 400 : err.code === 'TRACE_IMPORT_LIMIT' ? 413 : err.code === 'TRACE_IMPORT_BUSY' ? 409 : err.code === 'TRACE_IMPORT_NOT_FOUND' ? 404 : 503;
+          sendApiError(res, status, err.code, err.code, undefined, req); return;
+        }
+        if (err instanceof CaptureSelfTestError) {
+          sendApiError(res, err.code === 'MONITOR_SELF_TEST_BUSY' || err.code === 'MONITOR_SELF_TEST_NOT_READY' ? 409 : 503, err.code, err.message, undefined, req);
+          return;
+        }
+        if (err instanceof ConnectionProfileError) {
+          sendApiError(res, err.status, err.code, err.message, undefined, req);
+          return;
+        }
+        if (err instanceof TraceLinkError) {
+          sendApiError(res, err.code === 'BAD_REQUEST' ? 400 : 404, err.code, err.message, undefined, req);
+          return;
+        }
         if (err instanceof HttpError) {
           sendApiError(res, err.status, err.code, err.message, err.details, req);
           return;
@@ -1070,7 +2069,7 @@ export function createAgentObservabilityServer(
         }
         // T-12（api.md §4/§5）：proxy/frida 状态冲突与目标未找到用专属错误码
         if (err instanceof ProxyStateError) {
-          sendApiError(res, 409, err.code, err.message, undefined, req);
+          sendApiError(res, err.code === 'PROXY_STOP_FAILED' ? 503 : 409, err.code, err.message, undefined, req);
           return;
         }
         if (err instanceof FridaTargetError) {
@@ -1088,12 +2087,65 @@ export function createAgentObservabilityServer(
         );
       }
     })();
+    activeHandlers.add(handler);
+    void handler.finally(() => activeHandlers.delete(handler));
+  });
+  server.once('listening', () => {
+    startupRecovery = (async () => {
+      if (cachedStmt(db, PENDING_ORIGINAL_DELETION_SQL).get() !== undefined) { await getBodyStore(); return; }
+      try { await access(join(captureDirectory, '.capture-journal')); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
+      await getBodyStore();
+    })();
+    void startupRecovery.catch(() => console.error('Capture recovery failed; original evidence retained'));
   });
   const fileWatcher = startFileWatcher(
     Object.values(config.providers).filter((provider): provider is NonNullable<typeof provider> => provider !== undefined),
     runAutomaticScan,
   );
-  server.once('close', () => { void fileWatcher.close(); });
+  // Keep the plain Node Server/return value, but make its close callback the
+  // ownership boundary: callers may close SQLite only after it succeeds.
+  const closeHttp = server.close.bind(server);
+  let shutdown: Promise<void> | null = null;
+  let httpClosed: Promise<void> | null = null;
+  server.close = (callback) => {
+    if (shutdown === null) {
+      closing = true;
+      pendingAutomaticScans.clear();
+      for (const cleanup of ownSseClients) cleanup();
+      ownSseClients.clear();
+      if (httpClosed === null) {
+        httpClosed = new Promise<void>((resolve, reject) => closeHttp(error => {
+          if (error !== undefined && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') reject(error); else resolve();
+        }));
+        void httpClosed.catch(() => {});
+      }
+      shutdown = (async () => {
+        await captureSelfTester.close();
+        await captureReparser.close();
+        await codexInspector.close();
+        await traceImporter.close();
+        const proxy = proxyRuntime.status();
+        const proxyStopped = proxy.running || proxy.starting || proxy.diagnostics?.cleanupPending ? proxyRuntime.stop() : Promise.resolve();
+        fridaRuntime.stop();
+        await Promise.all([proxyStopped, (async () => {
+          await fileWatcher.close();
+          // A handler may still be reading its request before starting a scan.
+          // Observe all registered scan tasks only after those handlers settle.
+          await Promise.all(activeHandlers);
+          await startupRecovery?.catch(() => {});
+          while (scanInProgress) await new Promise(resolve => setTimeout(resolve, 5));
+          await Promise.allSettled(scanTasks);
+          await httpClosed;
+        })()]);
+      })().catch(error => { shutdown = null; throw error; });
+    }
+    void shutdown.then(() => callback?.(), error => {
+      if (callback !== undefined) callback(error instanceof Error ? error : new Error('Server cleanup failed'));
+      else console.error('Server cleanup failed; SQLite must remain open');
+    });
+    return server;
+  };
   return server;
 }
 

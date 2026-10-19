@@ -57,8 +57,10 @@ function makeEvent(overrides: Partial<TraceEventSlim>): TraceEventSlim {
 }
 
 const containers: HTMLDivElement[] = [];
+const roots: Array<ReturnType<typeof createRoot>> = [];
 
 afterEach(() => {
+  act(() => { for (const root of roots.splice(0)) root.unmount(); });
   while (containers.length > 0) {
     containers.pop()?.remove();
   }
@@ -68,13 +70,30 @@ function render(node: React.JSX.Element): HTMLDivElement {
   const container = document.createElement('div');
   document.body.appendChild(container);
   containers.push(container);
+  const root = createRoot(container);
+  roots.push(root);
   act(() => {
-    createRoot(container).render(node);
+    root.render(node);
   });
   return container;
 }
 
 describe('REQ-025 命令面板', () => {
+  it('WB-001: opens ready to type, preserves focus while filtering and clearing', () => {
+    const container = render(<CommandPalette sessions={twoSessions} locale="zh" onClose={() => undefined} onAction={() => undefined} />);
+    const input = container.querySelector('input')!;
+    expect(document.activeElement).toBe(input);
+    typeInto(container, 'auth');
+    expect(rowsOf(container).map(row => row.textContent)).toHaveLength(1);
+    expect(rowsOf(container)[0]!.textContent).toContain('add auth');
+    expect(document.activeElement).toBe(input);
+    const clear = container.querySelector('[aria-label="清空搜索"]') as HTMLButtonElement;
+    expect(clear).not.toBeNull();
+    act(() => { clear.focus(); clear.click(); });
+    expect(input.value).toBe('');
+    expect(document.activeElement).toBe(input);
+  });
+
   it('复用共享 store：会话按标题模糊匹配，点击触发 session action 且不发请求', () => {
     const actions: PaletteAction[] = [];
     const container = render(

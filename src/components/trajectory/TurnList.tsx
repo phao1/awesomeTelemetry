@@ -43,6 +43,7 @@ export interface TurnListProps {
   onLoadMore?: () => void;
   loadDetail?: (key: string, eventId: string) => Promise<TraceEvent>;
   loadRaw?: (key: string, eventId: string) => Promise<TraceEventRaw>;
+  onInspect?: (eventId: string) => void;
 }
 
 /** 折叠行高 = --row-lg（G-DS-1：虚拟滚动 itemHeight 必须为常量）。 */
@@ -98,7 +99,7 @@ export function computeTurnWindow(
 
 export function TurnList({
   model, sessionKey, locale, durationSource, expandedIndex, onToggleTurn,
-  onActiveTurnChange, focusTurnIndex = null, focusRequest = 0, loadDetail, loadRaw,
+  onActiveTurnChange, focusTurnIndex = null, focusRequest = 0, loadDetail, loadRaw, onInspect,
   hasMore = false, loadingMore = false, loadMoreError = null, onLoadMore,
 }: TurnListProps): React.JSX.Element {
   const virtualize = model.turns.length > VIRTUAL_THRESHOLD;
@@ -195,7 +196,7 @@ export function TurnList({
     return <TurnRow key={turn.index} turn={turn} locale={locale}
       expanded={turn.index === expandedIndex} onToggle={() => onToggleTurn(turn.index)}
       expandedRef={turn.index === expandedIndex ? (el) => { expandedElement.current = el; } : undefined}
-      sessionKey={sessionKey} durationSource={durationSource} loadDetail={loadDetail} loadRaw={loadRaw} />;
+      sessionKey={sessionKey} durationSource={durationSource} loadDetail={loadDetail} loadRaw={loadRaw} onInspect={onInspect} />;
   };
 
   return (
@@ -228,6 +229,7 @@ function TurnRow({
   durationSource,
   loadDetail,
   loadRaw,
+  onInspect,
 }: {
   turn: TraceTurn;
   locale: Locale;
@@ -238,6 +240,7 @@ function TurnRow({
   durationSource?: DurationSource;
   loadDetail?: (key: string, eventId: string) => Promise<TraceEvent>;
   loadRaw?: (key: string, eventId: string) => Promise<TraceEventRaw>;
+  onInspect?: (eventId: string) => void;
 }): React.JSX.Element {
   return (
     <div className={expanded ? 'turn-row-cell-expanded' : 'turn-row-cell'}>
@@ -269,7 +272,7 @@ function TurnRow({
             );
           })}
         </span>
-        <span className="turn-row-tokens mono">
+        <span className="turn-row-tokens mono" title={`${t('trajectory.pill.input', locale)} ${turn.tokens.input.toLocaleString()} · ${t('trajectory.cachedTokens', locale)} ${turn.tokens.cacheRead.toLocaleString()} · ${t('trajectory.pill.output', locale)} ${turn.tokens.output.toLocaleString()}`}>
           {t('trajectory.pill.input', locale)} {turn.tokens.input.toLocaleString()} ·{' '}
           {t('trajectory.cachedTokens', locale)} {turn.tokens.cacheRead.toLocaleString()} ·{' '}
           {t('trajectory.pill.output', locale)} {turn.tokens.output.toLocaleString()}
@@ -286,6 +289,7 @@ function TurnRow({
             durationSource={durationSource}
             loadDetail={loadDetail}
             loadRaw={loadRaw}
+            onInspect={onInspect}
           />
         </div>
       )}

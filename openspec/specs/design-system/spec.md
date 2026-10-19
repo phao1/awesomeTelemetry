@@ -255,6 +255,14 @@ placeholder + wait for SSE, MUST NOT poll (existing REQ-009).
 SHALL support the following shortcuts. On conflict, input focus wins (only
 `Esc` works while an input is focused).
 
+An active overlay owns non-Escape keys: native button activation and its local
+keyboard handlers MUST NOT be consumed by background global navigation. Already
+defaultPrevented events remain with their component/native owner. Global
+shortcuts resume after overlays close; Esc still closes only the top overlay and
+IME composition remains untouched.
+Outside overlays, Enter/Space on focused native buttons/links/disclosure controls
+also belongs to native activation, not the background selected-session shortcut.
+
 | Key | Behavior |
 |-----|----------|
 | `⌘K` / `Ctrl+K` | open command palette |

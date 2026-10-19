@@ -1,6 +1,6 @@
 import type { Database } from 'better-sqlite3';
 
-import type { CaptureMethod } from '../../src/core/trace-types.js';
+import type { CaptureJournalEntry, CaptureMethod } from '../../src/core/trace-types.js';
 import { cachedStmt } from '../storage/stmt-cache.js';
 import type { ParsedRequest } from './parser-router.js';
 import type { RequestContext } from './request-context.js';
@@ -27,12 +27,14 @@ export interface ProxyWriteInput {
   notify?: (id: number) => void;
   /** design D2：一次成功 proxy run 的不透明 UUID；历史行/未接线调用为 null。 */
   captureGroupId?: string | null;
+  completedAt?: string;
 }
 
 /** REQ-004/005：写入 proxy_requests；keepRawBodies 默认 false 时不写 raw 列。 */
 export function writeProxyRequest(input: ProxyWriteInput): number {
   const keepRaw = shouldKeepRawBodies(input.desensitizeOptions);
-  const completed = input.ctx.completeRequest(input.ctx.responseStatus ?? 0);
+  const responseStatus = input.ctx.responseStatus;
+  const completed = input.ctx.completeRequest(input.ctx.responseStatus ?? 0, input.completedAt);
   const info = cachedStmt(input.db, INSERT_PROXY_SQL).run(
     input.ctx.requestId,
     input.ctx.method,
@@ -40,12 +42,12 @@ export function writeProxyRequest(input: ProxyWriteInput): number {
     input.ctx.hostname,
     JSON.stringify(input.ctx.headers),
     input.desensitizedRequestBody,
-    input.ctx.responseStatus,
+    responseStatus,
     input.desensitizedResponseBody,
     input.contentType,
     input.isStreaming ? 1 : 0,
     input.ctx.startedAt,
-    new Date().toISOString(),
+    input.completedAt ?? new Date().toISOString(),
     completed.durationMs,
     input.captureMethod,
     input.ctx.ttnetEncrypted ? 1 : 0,
@@ -64,4 +66,16 @@ export function writeProxyRequest(input: ProxyWriteInput): number {
   const id = Number(info.lastInsertRowid);
   input.notify?.(id);
   return id;
+}
+
+/** Recovery has no live monotonic clock or parser: unknown values stay NULL. */
+export function writeRecoveredCapture(db: Database, entry: CaptureJournalEntry): number {
+  const header = entry.responseHeaders['content-type'];
+  const contentType = typeof header === 'string' ? header : header?.[0] ?? null;
+  const info = cachedStmt(db, INSERT_PROXY_SQL).run(entry.requestId, entry.method, entry.url, entry.hostname,
+    JSON.stringify(entry.requestHeaders), null, entry.responseStatus, null,
+    contentType, (contentType ?? '').toLowerCase().includes('text/event-stream') ? 1 : 0,
+    entry.startedAt, entry.completedAt, entry.durationMs, 'mitm', Object.keys(entry.requestHeaders).some(key => key.toLowerCase().startsWith('x-tt-encrypt-')) ? 1 : 0,
+    null, 0, null, null, null, null, 'unknown', entry.captureGroupId, 'unknown', null, null);
+  return Number(info.lastInsertRowid);
 }

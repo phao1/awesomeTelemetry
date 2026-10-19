@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Worker } from 'node:worker_threads';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -18,13 +19,14 @@ afterEach(() => {
 });
 
 describe('REQ-008 pack-binary', () => {
-  it('生成 .ps1（UTF-8）与 .sh，不生成 .bat；复制 dist/server-dist/bin', () => {
+  it('生成 .ps1（UTF-8）与 .sh，不生成 .bat；复制 dist/server-dist/bin', async () => {
     const out = mkdtempSync(join(tmpdir(), 'pack-binary-'));
     tempDirs.push(out);
     packBinary({ root: process.cwd(), outDir: out, includeNodeModules: false });
 
     expect(existsSync(join(out, 'dist'))).toBe(true);
     expect(existsSync(join(out, 'server-dist', 'cli.js'))).toBe(true);
+    expect(existsSync(join(out, 'server-dist', 'capture-worker.js'))).toBe(true);
     expect(existsSync(join(out, 'bin', 'agent-observe.js'))).toBe(true);
     expect(existsSync(join(out, 'agent-observe.ps1'))).toBe(true);
     expect(existsSync(join(out, 'agent-observe.sh'))).toBe(true);
@@ -32,6 +34,13 @@ describe('REQ-008 pack-binary', () => {
     const ps1 = readFileSync(join(out, 'agent-observe.ps1'), 'utf8');
     expect(ps1).toContain('UTF-8');
     expect(ps1).toContain('agent-observe.js');
+    const worker = new Worker(join(out, 'server-dist', 'capture-worker.js'), { execArgv: [] });
+    try {
+      const result = new Promise<{ id: number; result: { parsed: { model: string }; workerThreadId: number } }>((resolve, reject) => { worker.once('message', resolve); worker.once('error', reject); });
+      worker.postMessage({ id: 1, input: { hostname: 'synthetic.invalid', url: '/v1/messages', requestBody: '{"model":"packaged-synthetic","messages":[]}', responseBody: null, requestHeaders: {}, responseHeaders: {}, isStreaming: false, previewTruncated: false } });
+      const reply = await result;
+      expect(reply.id).toBe(1); expect(reply.result.parsed.model).toBe('packaged-synthetic'); expect(reply.result.workerThreadId).toBeGreaterThan(0);
+    } finally { await worker.terminate(); }
   });
 
   it('缺少构建产物时抛错', () => {

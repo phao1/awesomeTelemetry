@@ -2,6 +2,8 @@ import type { TraceRecord } from './trace-types.js';
 import { computeMetrics } from './metrics.js';
 import { computeSpeedMetrics } from './speed-metrics.js';
 import { extractTokenText } from './token-breakdown.js';
+import { scanTimingCriteriaHtml } from './compare-report.js';
+import { scanTimingValue } from './scan-timing.js';
 
 const EXTERNAL_JSON_THRESHOLD = 100 * 1024;
 const DATA_FILE = 'report-data.js';
@@ -34,14 +36,15 @@ export function buildTraceReportHtml(
 
   const summary = `
     <h1>${escapeHtml(record.session.title || record.session.id)}</h1>
+    ${scanTimingCriteriaHtml(record, 'zh')}
     <dl>
       <dt>provider</dt><dd>${escapeHtml(record.session.provider)}</dd>
       <dt>status</dt><dd>${escapeHtml(record.session.status)}</dd>
       <dt>events</dt><dd>${record.events.length}</dd>
       <dt>tokens</dt><dd>${escapeHtml(extractTokenText(record.session.tokenUsage))}</dd>
-      <dt>e2e</dt><dd>${speed.e2eMs} ms</dd>
-      <dt>ttft</dt><dd>${speed.ttftMs ?? 'n/a'} ms</dd>
-      <dt>tps</dt><dd>${speed.tps === null ? 'n/a' : speed.tps.toFixed(2)}</dd>
+      <dt>e2e</dt><dd>${scanTimingValue(speed.e2eMs) ?? 'n/a'} ms</dd>
+      <dt>ttft</dt><dd>${scanTimingValue(speed.ttftMs) ?? 'n/a'} ms</dd>
+      <dt>tps</dt><dd>${scanTimingValue(speed.tps)?.toFixed(2) ?? 'n/a'}</dd>
       <dt>tokensPerStep</dt><dd>${metrics.tokensPerStep.toFixed(2)}</dd>
       <dt>errorRate</dt><dd>${metrics.errorRate.toFixed(3)}</dd>
       <dt>verification</dt><dd>${metrics.verificationPresent ? 'yes' : 'no'}</dd>

@@ -103,12 +103,6 @@
   width: 80vw;
 }
 
-.inspector-drawer {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
 
 .inspector-drawer .inspector-body {
   flex: 1;
@@ -124,10 +118,6 @@
   padding: 0 1px;
 }
 
-.inspector-title {
-  margin: 0 0 var(--space-1);
-  font-size: var(--text-md);
-}
 
 /* ---- fix-session-detail-display：会话视图 IA 重构（inspector 布局） ---- */
 .session-inspector {
@@ -254,8 +244,3 @@
 }
 
 /* 未选中事件时不预留版面（那部分宽度让给时间线） */
-.inspector-empty {
-  width: 0;
-  border-left: none;
-  overflow: hidden;
-}

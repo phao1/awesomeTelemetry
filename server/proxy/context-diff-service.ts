@@ -14,6 +14,7 @@ import type { Database } from 'better-sqlite3';
 
 import type {
   CaptureMethod,
+  CaptureBodyRef,
   ContextPairingConfidence,
   ContextRequestRef,
   RequestContextDiffResponse,
@@ -21,11 +22,12 @@ import type {
 } from '../../src/core/trace-types.js';
 
 import { cachedStmt } from '../storage/stmt-cache.js';
-import {
-  findCaptureGroupPredecessor,
-  findExactSessionPredecessor,
-  type ProxyPredecessor,
-} from '../storage/query-engine.js';
+import type { CaptureBodyStore } from './body-store.js';
+import { readCaptureBodies } from './capture-storage.js';
+import { getOriginalDeletionForProxy } from './original-deletions.js';
+import { readAnalysisBody, type AnalysisSourceReason } from './analysis-source.js';
+import type { ProxyPredecessor } from '../storage/query-engine.js';
+import { findLinkedCapturePredecessor, getUniqueLinkedSession } from '../storage/trace-links.js';
 import { diffContexts, enforceResponseBudget } from './context-diff.js';
 import {
   normalizeRequestContext,
@@ -74,51 +76,25 @@ interface AutomaticBase {
   row: ProxyPredecessor;
   confidence: ContextPairingConfidence;
   reason: string;
+  warnings: string[];
 }
 
 /**
- * design D4: exact parsed-session predecessor first, then capture-group
- * predecessor under null-safe model equality, rejecting conflicting known
- * session IDs. Unknown-format targets have no trustworthy predecessor.
+ * fuse-agent-monitoring: unique evidence-backed session membership first.
+ * Capture order is not a claim of immediately adjacent native model calls.
  */
 function selectAutomaticBase(
   db: Database,
   target: ProxyPredecessor,
   targetId: number,
 ): AutomaticBase | null {
-  if (target.requestFormat !== 'unknown') {
-    if (target.parsedSessionId !== null) {
-      const p = findExactSessionPredecessor(
-        db,
-        target.parsedSessionId,
-        target.requestFormat,
-        targetId,
-      );
-      if (p !== null) {
-        return { row: p, confidence: 'exact', reason: 'nearest earlier same parsed session and format' };
-      }
-    }
-    if (target.captureGroupId !== null) {
-      const p = findCaptureGroupPredecessor(
-        db,
-        target.captureGroupId,
-        target.requestFormat,
-        target.model,
-        targetId,
-      );
-      if (p !== null) {
-        if (
-          target.parsedSessionId !== null &&
-          p.parsedSessionId !== null &&
-          target.parsedSessionId !== p.parsedSessionId
-        ) {
-          return null; // conflicting known sessions: do not pair automatically.
-        }
-        return { row: p, confidence: 'capture_group', reason: 'nearest earlier same capture group, format and model' };
-      }
-    }
-  }
-  return null;
+  const previous = findLinkedCapturePredecessor(db, { id: targetId, requestFormat: target.requestFormat, startedAt: target.startedAt });
+  if (previous === null) return null;
+  const row = readDiffRow(db, previous.id);
+  if (row === null) return null;
+  return { row, confidence: 'linked_session',
+    reason: 'nearest earlier eligible capture in linked session ' + previous.sessionKey,
+    warnings: ['linked membership and capture order do not prove the immediately previous native model call', ...manualWarnings(row, target)] };
 }
 
 /** Manual pairing discloses identity mismatches instead of rejecting them. */
@@ -149,7 +125,7 @@ function manualWarnings(base: ProxyPredecessor, target: ProxyPredecessor): strin
 
 // ── provenance ref ───────────────────────────────────────────────────────────
 
-function toRequestRef(row: ProxyPredecessor): ContextRequestRef {
+function toRequestRef(row: ProxyPredecessor, original?: CaptureBodyRef): ContextRequestRef {
   const body = row.requestBody ?? '';
   return {
     id: row.id,
@@ -162,8 +138,8 @@ function toRequestRef(row: ProxyPredecessor): ContextRequestRef {
     requestFormat: row.requestFormat as Exclude<RequestContextFormat, 'unknown'>,
     parsedSessionId: row.parsedSessionId,
     captureGroupId: row.captureGroupId,
-    bodySha256: createHash('sha256').update(body, 'utf8').digest('hex'),
-    bodyBytes: Buffer.byteLength(body, 'utf8'),
+    bodySha256: original?.sha256 ?? createHash('sha256').update(body, 'utf8').digest('hex'),
+    bodyBytes: original?.bytes ?? Buffer.byteLength(body, 'utf8'),
   };
 }
 
@@ -206,7 +182,7 @@ function yieldTurn(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function unsupported(role: 'base' | 'target', reason: NormalizeErrorReason): ContextDiffServiceError {
+function unsupported(role: 'base' | 'target', reason: NormalizeErrorReason | AnalysisSourceReason): ContextDiffServiceError {
   return new ContextDiffServiceError(
     'CONTEXT_DIFF_UNSUPPORTED',
     `${role} source cannot be normalized safely within phase-1 rules`,
@@ -223,6 +199,7 @@ function unsupported(role: 'base' | 'target', reason: NormalizeErrorReason): Con
 export async function runContextDiff(
   db: Database,
   input: ContextDiffServiceInput,
+  getBodyStore?: () => Promise<CaptureBodyStore>,
 ): Promise<ContextDiffServiceResult> {
   const started = performance.now();
   try {
@@ -241,6 +218,7 @@ export async function runContextDiff(
     if (targetRow === null) {
       throw new ContextDiffServiceError('PROXY_REQUEST_NOT_FOUND', 'target request not found', { role: 'target' });
     }
+    if (getOriginalDeletionForProxy(db, targetId) !== null) throw unsupported('target', 'original_deleted');
 
     let baseRow: ProxyPredecessor;
     let confidence: ContextPairingConfidence;
@@ -259,7 +237,7 @@ export async function runContextDiff(
       baseRow = automatic.row;
       confidence = automatic.confidence;
       reason = automatic.reason;
-      warnings = [];
+      warnings = automatic.warnings;
     } else {
       const manualRow = readDiffRow(db, base);
       if (manualRow === null) {
@@ -269,8 +247,26 @@ export async function runContextDiff(
       confidence = 'manual';
       reason = 'manual';
       warnings = manualWarnings(baseRow, targetRow);
+      const baseSession = getUniqueLinkedSession(db, baseRow.id);
+      const targetSession = getUniqueLinkedSession(db, targetRow.id);
+      if (baseSession === null || targetSession === null) warnings.push('one or both requests lack unambiguous linked session membership');
+      else if (baseSession !== targetSession) warnings.push('linked session memberships differ');
     }
 
+    const originals = new Map<number, CaptureBodyRef>();
+    const resolveOriginal = async (row: ProxyPredecessor, role: 'base' | 'target'): Promise<ProxyPredecessor> => {
+      if (getOriginalDeletionForProxy(db, row.id) !== null) throw unsupported(role, 'original_deleted');
+      const capture = readCaptureBodies(db, row.id);
+      const ref = capture.request;
+      if (ref === null) return row; // historical records have no file references
+      if (getBodyStore === undefined) throw unsupported(role, 'source_unavailable');
+      const source = await readAnalysisBody(await getBodyStore(), ref, 2 * 1024 * 1024, { contentEncoding: capture.processing?.contentDecoding?.request });
+      if (!source.ok) throw unsupported(role, source.reason);
+      originals.set(row.id, ref);
+      return { ...row, requestBody: source.body };
+    };
+    baseRow = await resolveOriginal(baseRow, 'base');
+    const targetSourceRow = await resolveOriginal(targetRow, 'target');
     const baseNorm = normalizeRequestContext({
       format: baseRow.requestFormat,
       desensitizedBody: baseRow.requestBody ?? '',
@@ -282,7 +278,7 @@ export async function runContextDiff(
 
     const targetNorm = normalizeRequestContext({
       format: targetRow.requestFormat,
-      desensitizedBody: targetRow.requestBody ?? '',
+      desensitizedBody: targetSourceRow.requestBody ?? '',
     });
     if (!targetNorm.ok) {
       throw unsupported('target', targetNorm.reason);
@@ -297,8 +293,8 @@ export async function runContextDiff(
     });
 
     const response: RequestContextDiffResponse = {
-      base: toRequestRef(baseRow),
-      target: toRequestRef(targetRow),
+      base: toRequestRef(baseRow, originals.get(baseRow.id)),
+      target: toRequestRef(targetSourceRow, originals.get(targetSourceRow.id)),
       pairing: { confidence, reason, warnings },
       noChange: diff.noChange,
       growth: diff.growth,
@@ -309,6 +305,8 @@ export async function runContextDiff(
       durationMs: Math.round(performance.now() - started),
     };
     enforceResponseBudget(response);
+    if (getOriginalDeletionForProxy(db, baseRow.id) !== null) throw unsupported('base', 'original_deleted');
+    if (getOriginalDeletionForProxy(db, targetRow.id) !== null) throw unsupported('target', 'original_deleted');
     return { ok: true, value: response };
   } catch (err) {
     if (err instanceof ContextDiffServiceError) {

@@ -12,6 +12,24 @@ not triggers for the frontend to refetch everything.**
 
 ## Requirements
 
+### LIVE-CODEX-001: Selected source change hints
+WS messages SHALL queue opaque source IDs independently of the64KiB live text
+preview. Coalesce1s/max64 IDs, unref/clear owned timers; no payload parsing/SQL.
+Only a matching selected SSE receives hints, with no replay/default-feed body
+or metadata storm. A hint is not durable-written/completion evidence.
+
+### REQ-010: Bounded metadata resume and selected live preview
+The process SHALL journal bounded metadata cursors even with no subscribers,
+replay retained changes on Last-Event-ID and explicitly reset expired/restarted
+windows. No body chunks enter the journal/default metadata feed. A selected
+requestId subscription alone receives its live chunks and terminal flush/end,
+with explicit missing-history/unsupported-encoding disclosure. Bounds and exact
+wire shapes follow api.md/data-model.md/nfr.md; normal updates remain local
+patches, while reset allows one bounded metadata snapshot refresh.
+
+### REQ-009: Association invalidation coalescing
+trace_links_changed SHALL merge session/proxy keys for200ms, cap each array at200 and mark overflow as truncated. Timer must unref and be cleared on broadcaster shutdown. This relation-only signal MUST NOT refetch full native session details or original bodies.
+
 ### REQ-001: TypedEventBus
 The system SHALL provide a `TypedEventBus` whose events and payloads map
 exactly to `BusEvents` in `contracts/data-model.md` §10. MUST NOT define events
@@ -38,6 +56,9 @@ Per-session `session_updated` emission MUST NOT exist.
 - **THEN** MUST call `timer.unref()`, otherwise the CLI cannot exit normally
 
 ### REQ-004: Server-side throttling of streaming chunks
+Native WS connection previews reuse these events/window only after explicit
+selection. Prefixes include sequence/direction/kind; no durable-message replay,
+full payload SSE or per-message DB writes. End flushes the pending preview.
 When MITM captures SSE streams, chunks of the same `requestId` MUST be
 concatenated server-side on a **100ms window** before emitting
 `proxy_stream_chunk`. The frontend MUST NOT throttle again.
@@ -54,6 +75,14 @@ concatenated server-side on a **100ms window** before emitting
 - send a comment-line heartbeat every 30s (`: ping\n\n`) to prevent
   proxy-layer timeouts
 - return a cleanup function
+
+Process-wide client/frame/pending-byte/drain limits follow contracts/nfr.md.
+Excess subscribers get503 ApiError SSE_LIMIT_REACHED before registration.
+Slow/error/overflow clients are disconnected individually, with a lifetime
+slowSseDisconnects counter; never accumulate an unbounded application queue
+or block capture/healthy subscribers. Drain clears its owned deadline, and
+close/error/shutdown clean up listeners/timers exactly once. Disconnect is not
+a claim that reconnect/resume has recovered missed events (B9 remains open).
 
 ### REQ-006: Event forwarding
 The SSE broadcaster SHALL subscribe to all `BusEvents` and forward them to all

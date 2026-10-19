@@ -20,8 +20,9 @@ import {
   toIsoFromMs,
   wallClockDurationMs,
 } from './helpers.js';
-import { computeCostUsd } from '../core/pricing.js';
+import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
+import { collectNativeEventBindings, collectOpencodeIdentities, trackNativeEvent } from './native-identities.js';
 
 /** G9.1：CodeArts / CodeAgent2 复用 opencode，用 dialect 区分。 */
 export interface OpenCodeDialect {
@@ -77,6 +78,7 @@ export interface OpenCodeOtelSpan {
 export interface OpenCodeRawSample {
   session: {
     id?: string;
+    parentID?: string;
     title?: string;
     directory?: string;
     time?: { created?: number; updated?: number };
@@ -395,7 +397,7 @@ export function createOpencodeAdapter(
             partTokens ?? messageTokens,
           );
           if (event !== null) {
-            events.push(event);
+            events.push(trackNativeEvent(event, message, part));
           }
         }
       }
@@ -423,7 +425,11 @@ export function createOpencodeAdapter(
       const sessionId = raw.id ?? messages[0]?.sessionID ?? `opencode-${sourcePath}`;
       const tokenUsage = aggregateTokenUsage(classified, semantics);
       const primaryModel = pickPrimaryModel(classified);
-      const cost = computeCostUsd(tokenUsage, primaryModel);
+      // reasoningInTotal 为 true 时 output 字段不含 reasoning，而账单把两者合并
+      // 按输出价计费（2026-08-09 CodeArts/deepseek 实测），必须叠加。
+      const cost = computeCost(tokenUsage, primaryModel, {
+        reasoningBilledAsOutput: reasoningInTotal,
+      });
       const session: TraceSession = {
         id: sessionId,
         provider: dialect.provider as ProviderKey,
@@ -436,7 +442,7 @@ export function createOpencodeAdapter(
         messageCount: messages.length,
         eventCount: classified.length,
         tokenUsage,
-        costUsd: cost.costUsd,
+        costUsd: cost.cost,
         systemPrompt: null,
         dataSource: 'scan',
         sourcePath,
@@ -444,11 +450,13 @@ export function createOpencodeAdapter(
         isSubagent: isSubagentTitle(title),
         primaryModel,
         costSource: cost.costSource,
+        costCurrency: cost.currency,
         durationSource: hasMeasured ? 'measured' : 'derived',
       };
       return {
         session,
         events: classified,
+        nativeIdentities: collectOpencodeIdentities(raw, messages, dialect.provider, collectNativeEventBindings(classified)),
         tokenSemantics: semantics,
         // fix-adapter-turn-semantics A5：opencode/codearts/codeagent2 均按源消息 id
         // 分组（A4 表），OTel span 无 id 时退化为 null —— provenance 仍如实声明为

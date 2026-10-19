@@ -28,6 +28,32 @@ function row(
 }
 
 describe('Codex adapter（REQ-007 + fix-adapter-turn-semantics §2）', () => {
+  it('binds duplicate explicit call ids to their actual stored events without changing native values', () => {
+    const result = normalizeCodexSample(sample([
+      row('session_meta', { id: 'native-session' }),
+      row('response_item', { type: 'function_call', call_id: 'same-call', name: 'Read' }),
+      row('response_item', { type: 'function_call_output', call_id: 'same-call', output: 'ok' }),
+    ]), SRC);
+    expect(result.nativeIdentities?.items.filter(item => item.kind === 'tool_call').map(item => [item.value, item.eventId])).toEqual([
+      ['same-call', 'same-call'], ['same-call', 'same-call:2'],
+    ]);
+    expect(result.events.every(event => Object.getOwnPropertySymbols(event).length === 0)).toBe(true);
+  });
+  it('REQ-014 retains event-side native tool and turn ids without publishing synthetic event/turn keys as identity', () => {
+    const rows = [
+      row('session_meta', { id: 'native-thread' }),
+      row('event_msg', { type: 'task_started', turn_id: 'native-turn' }),
+      row('event_msg', { type: 'mcp_tool_call_end', call_id: 'native-call:3', invocation: { server: 'test', tool: 'Read' }, result: { Ok: 'ok' } }),
+    ];
+    const r = normalizeCodexSample(sample(rows), '/tmp/not-a-native-thread.jsonl');
+    expect(r.nativeIdentities?.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'session', value: 'native-thread', scope: null }),
+      expect.objectContaining({ kind: 'turn', value: 'native-turn', scope: 'native-thread' }),
+      expect.objectContaining({ kind: 'tool_call', value: 'native-call:3', scope: 'native-thread' }),
+    ]));
+    expect(r.nativeIdentities?.items.some(item => item.value.startsWith('codex-') || item.value.includes('not-a-native-thread'))).toBe(false);
+    expect(r.events.find(item => item.tool === 'Read')?.id).toBe('native-call:3');
+  });
   // ── 既有行为保持（期望值按修复后的分类重算，fix-adapter-turn-semantics A6）──
   it('fixture 完整 TraceRecord 快照（修复后 kind/turnKey 分布）', () => {
     const r = normalizeCodexSample(sample(codexFixture.events), SRC);

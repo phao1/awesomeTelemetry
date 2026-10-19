@@ -30,8 +30,19 @@ import { cachedStmt } from './stmt-cache.js';
  * 表与其索引（contracts/database.md §3.10 / §4）。不触碰任何既有表、列、索引
  * 或投影，不触发重扫；v7→v8 迁移幂等（CREATE TABLE IF NOT EXISTS +
  * CREATE INDEX IF NOT EXISTS），失败抛带重建指引的错误，禁止静默 catch。
+ * v9（2026-08-11 校准审计）：**只增不改**——sessions 增列 cost_currency。
+ * 定价表此前只认 USD，国内网关按 CNY/token 计费的模型（deepseek 等）压根录不进来，
+ * cost_usd 只能恒为 0；加币种后价格原样录入，展示端据此渲染 ¥ 而不是 $。
+ * 单条幂等 ADD COLUMN，默认 'USD'，历史行语义不变，不触发重扫。
+ * v10（add-agent-team-observability D11）：**只增不改**——新增 13 张 team 主表 +
+ * team_message_recipients（收件人归一化 junction）+ team_run_sessions（session
+ * 链接 junction）及其索引（contracts/database.md §3.11 / §3.12 / §4）。不触碰
+ * 任何既有表、列、索引或投影，不触发重扫；v9→v10 迁移幂等（CREATE TABLE IF NOT
+ * EXISTS + CREATE INDEX IF NOT EXISTS），失败抛带重建指引的错误，禁止静默 catch。
+ * team 表族内部 FK 级联；session 删除只清 junction 链接不清 team，team 删除只删
+ * team-owned 行绝不删 session。
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 19;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -66,7 +77,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   detail_loaded     INTEGER NOT NULL DEFAULT 0,
   primary_model     TEXT,
   cost_source       TEXT    NOT NULL DEFAULT 'unknown',
-  duration_source   TEXT    NOT NULL DEFAULT 'unknown'
+  duration_source   TEXT    NOT NULL DEFAULT 'unknown',
+  cost_currency     TEXT    NOT NULL DEFAULT 'USD'
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS events (
@@ -165,6 +177,130 @@ CREATE TABLE IF NOT EXISTS proxy_requests (
   raw_response_body TEXT
 );
 
+CREATE TABLE IF NOT EXISTS proxy_capture_processing (
+  proxy_id INTEGER PRIMARY KEY REFERENCES proxy_requests(id) ON DELETE CASCADE,
+  result_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS trace_log_imports (
+  id TEXT PRIMARY KEY,
+  imported_at TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  session_offset INTEGER NOT NULL,
+  session_length INTEGER NOT NULL,
+  session_sha256 TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS trace_log_turns (
+  import_id TEXT NOT NULL REFERENCES trace_log_imports(id) ON DELETE CASCADE,
+  sequence INTEGER NOT NULL,
+  metadata_json TEXT NOT NULL,
+  byte_offset INTEGER NOT NULL,
+  byte_length INTEGER NOT NULL,
+  body_sha256 TEXT NOT NULL,
+  PRIMARY KEY(import_id,sequence)
+);
+
+CREATE TABLE IF NOT EXISTS proxy_capture_transport (
+  proxy_id INTEGER PRIMARY KEY REFERENCES proxy_requests(id) ON DELETE CASCADE,
+  result_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS proxy_capture_analysis (
+  proxy_id INTEGER PRIMARY KEY REFERENCES proxy_requests(id) ON DELETE CASCADE,
+  parser_version INTEGER NOT NULL CHECK (parser_version > 0),
+  metric_version INTEGER NOT NULL CHECK (metric_version > 0),
+  source_fingerprint TEXT NOT NULL CHECK (length(source_fingerprint)=64 AND source_fingerprint NOT GLOB '*[^0-9a-f]*'),
+  parsed_at TEXT NOT NULL,
+  request_format TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('completed','incomplete','failed','unknown')),
+  usage_json TEXT NOT NULL CHECK (json_valid(usage_json)),
+  completeness_json TEXT NOT NULL CHECK (json_valid(completeness_json))
+);
+
+CREATE TABLE IF NOT EXISTS proxy_capture_tombstones (
+  request_id TEXT NOT NULL,
+  request_body_id TEXT NOT NULL,
+  response_body_id TEXT NOT NULL,
+  deleted_at TEXT NOT NULL,
+  PRIMARY KEY (request_id, request_body_id, response_body_id)
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS proxy_capture_bodies (
+  proxy_id INTEGER PRIMARY KEY REFERENCES proxy_requests(id) ON DELETE CASCADE,
+  request_ref TEXT,
+  response_ref TEXT,
+  request_preview_truncated INTEGER NOT NULL DEFAULT 0,
+  response_preview_truncated INTEGER NOT NULL DEFAULT 0,
+  response_headers TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS proxy_original_deletions (
+  id TEXT PRIMARY KEY,
+  proxy_id INTEGER NOT NULL UNIQUE,
+  request_id TEXT NOT NULL,
+  request_ref TEXT NOT NULL,
+  response_ref TEXT NOT NULL,
+  store_directory TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('pending','failed','complete')),
+  error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_original_deletions_pending ON proxy_original_deletions(state,created_at,id);
+CREATE INDEX IF NOT EXISTS idx_capture_request_original ON proxy_capture_bodies(CASE WHEN json_valid(request_ref) THEN json_extract(request_ref,'$.id') END,proxy_id);
+CREATE INDEX IF NOT EXISTS idx_capture_response_original ON proxy_capture_bodies(CASE WHEN json_valid(response_ref) THEN json_extract(response_ref,'$.id') END,proxy_id);
+
+CREATE TABLE IF NOT EXISTS trace_identity_sources (
+  id TEXT PRIMARY KEY,
+  session_key TEXT UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+  proxy_id INTEGER UNIQUE REFERENCES proxy_requests(id) ON DELETE CASCADE,
+  parser_version INTEGER NOT NULL,
+  complete INTEGER NOT NULL,
+  omitted_count INTEGER NOT NULL,
+  reasons_json TEXT NOT NULL,
+  content_sha256 TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK ((session_key IS NOT NULL) != (proxy_id IS NOT NULL))
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS trace_identities (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL REFERENCES trace_identity_sources(id) ON DELETE CASCADE,
+  namespace TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  scope TEXT,
+  event_id TEXT,
+  source_path TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_trace_identities_source ON trace_identities(source_id, id);
+CREATE INDEX IF NOT EXISTS idx_trace_identities_native ON trace_identities(namespace, kind, value, scope, source_id) WHERE kind='session' AND scope IS NULL;
+CREATE TABLE IF NOT EXISTS trace_associations (
+  id TEXT PRIMARY KEY,
+  session_key TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  proxy_id INTEGER NOT NULL REFERENCES proxy_requests(id) ON DELETE CASCADE,
+  state TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(session_key, proxy_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_trace_associations_session ON trace_associations(session_key, proxy_id DESC);
+CREATE INDEX IF NOT EXISTS idx_trace_associations_proxy ON trace_associations(proxy_id, session_key);
+CREATE TABLE IF NOT EXISTS trace_association_evidence (
+  association_id TEXT NOT NULL REFERENCES trace_associations(id) ON DELETE CASCADE,
+  identity_id TEXT NOT NULL REFERENCES trace_identities(id) ON DELETE CASCADE,
+  PRIMARY KEY (association_id, identity_id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS trace_association_decisions (
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  association_id TEXT NOT NULL REFERENCES trace_associations(id) ON DELETE CASCADE,
+  state TEXT NOT NULL,
+  note TEXT,
+  decided_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_trace_decisions_association ON trace_association_decisions(association_id, sequence);
+
 CREATE TABLE IF NOT EXISTS frida_captures (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
   pid                INTEGER NOT NULL,
@@ -199,11 +335,233 @@ CREATE TABLE IF NOT EXISTS session_annotations (
   note       TEXT,
   updated_at TEXT NOT NULL
 );
+
+-- v10（add-agent-team-observability D11，contracts/database.md §3.11 逐字采用）：
+-- 13 张 team 主表 + team_message_recipients（收件人归一化 junction）。
+-- 所有 team 表用确定性 canonical TEXT 主键（design D4）；时间戳为 ISO 8601 UTC；
+-- 布尔用 INTEGER 0/1；数组存 JSON TEXT。除 team_activity_bodies 外一律无 body 列。
+CREATE TABLE IF NOT EXISTS team_runs (
+  id                      TEXT    PRIMARY KEY,
+  provider                TEXT    NOT NULL,
+  native_run_id           TEXT    NOT NULL,
+  run_identity_confidence TEXT    NOT NULL DEFAULT 'native',
+  title                   TEXT    NOT NULL DEFAULT '',
+  goal_fingerprint        TEXT,
+  status                  TEXT    NOT NULL DEFAULT 'unknown',
+  started_at              TEXT,
+  ended_at                TEXT,
+  topology_kind           TEXT    NOT NULL DEFAULT 'unknown',
+  agent_count             INTEGER NOT NULL DEFAULT 0,
+  task_count              INTEGER NOT NULL DEFAULT 0,
+  communication_count     INTEGER NOT NULL DEFAULT 0,
+  activity_count          INTEGER NOT NULL DEFAULT 0,
+  round_count             INTEGER NOT NULL DEFAULT 0,
+  artifact_count          INTEGER NOT NULL DEFAULT 0,
+  token_available         INTEGER NOT NULL DEFAULT 0,
+  cost_available          INTEGER NOT NULL DEFAULT 0,
+  cost_currency           TEXT,
+  completeness_json       TEXT    NOT NULL DEFAULT '{}',
+  updated_at              TEXT    NOT NULL,
+  stamp                   TEXT    NOT NULL
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_agents (
+  id                TEXT    PRIMARY KEY,
+  run_id            TEXT    NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,
+  native_id         TEXT    NOT NULL,
+  display_name      TEXT    NOT NULL DEFAULT '',
+  role              TEXT    NOT NULL DEFAULT '',
+  role_class        TEXT    NOT NULL DEFAULT 'unknown',
+  model             TEXT,
+  state             TEXT    NOT NULL DEFAULT 'unknown',
+  created_at        TEXT,
+  ended_at          TEXT,
+  session_keys_json TEXT    NOT NULL DEFAULT '[]',
+  evidence_ids_json TEXT    NOT NULL DEFAULT '[]'
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_agent_edges (
+  id                TEXT    PRIMARY KEY,
+  run_id            TEXT    NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,
+  from_agent_id     TEXT    NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,
+  to_agent_id       TEXT    NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,
+  kind              TEXT    NOT NULL,
+  valid_from        TEXT,
+  valid_to          TEXT,
+  confidence        TEXT    NOT NULL DEFAULT 'native',
+  evidence_ids_json TEXT    NOT NULL DEFAULT '[]'
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_tasks (
+  id                    TEXT    PRIMARY KEY,
+  run_id                TEXT    NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,
+  native_id             TEXT    NOT NULL,
+  title                 TEXT    NOT NULL DEFAULT '',
+  description_available INTEGER NOT NULL DEFAULT 0,
+  priority              INTEGER,
+  status                TEXT    NOT NULL DEFAULT 'unknown',
+  created_at            TEXT,
+  started_at            TEXT,
+  completed_at          TEXT,
+  cancelled_at          TEXT,
+  failed_at             TEXT,
+  result_available      INTEGER NOT NULL DEFAULT 0,
+  evidence_ids_json     TEXT    NOT NULL DEFAULT '[]'
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_task_dependencies (
+  id                 TEXT    PRIMARY KEY,
+  run_id             TEXT    NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,
+  upstream_task_id   TEXT    NOT NULL REFERENCES team_tasks(id) ON DELETE CASCADE,
+  downstream_task_id TEXT    NOT NULL REFERENCES team_tasks(id) ON DELETE CASCADE,
+  valid_from         TEXT,
+  valid_to           TEXT,
+  confidence         TEXT    NOT NULL DEFAULT 'native',
+  evidence_ids_json  TEXT    NOT NULL DEFAULT '[]'
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_assignments (
+  id                TEXT    PRIMARY KEY,
+  run_id            TEXT    NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,
+  task_id           TEXT    NOT NULL REFERENCES team_tasks(id) ON DELETE CASCADE,
+  agent_id          TEXT    NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,
+  assigned_at       TEXT,
+  unassigned_at     TEXT,
+  assignment_kind   TEXT    NOT NULL DEFAULT 'assigned',
+  evidence_ids_json TEXT    NOT NULL DEFAULT '[]'
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_messages (
+  id                TEXT    PRIMARY KEY,
+  run_id            TEXT    NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,
+  sender_agent_id   TEXT    NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,
+  recipient_ids_json TEXT   NOT NULL DEFAULT '[]',
+  mode              TEXT    NOT NULL DEFAULT 'unknown',
+  category          TEXT    NOT NULL DEFAULT 'unknown',
+  task_id           TEXT,
+  correlation_id    TEXT,
+  reply_to_id       TEXT,
+  sent_at           TEXT,
+  received_at       TEXT,
+  body_available    INTEGER NOT NULL DEFAULT 0,
+  body_chars        INTEGER,
+  body_bytes        INTEGER,
+  content_hash      TEXT,
+  evidence_ids_json TEXT    NOT NULL DEFAULT '[]'
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_message_recipients (
+  message_id TEXT NOT NULL REFERENCES team_messages(id) ON DELETE CASCADE,
+  agent_id   TEXT NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,
+  PRIMARY KEY (message_id, agent_id)
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_activities (
+  id                TEXT    PRIMARY KEY,
+  run_id            TEXT    NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,
+  agent_id          TEXT,
+  task_id           TEXT,
+  round_id          TEXT,
+  kind              TEXT    NOT NULL,
+  status            TEXT    NOT NULL DEFAULT 'unknown',
+  started_at        TEXT,
+  ended_at          TEXT,
+  native_sequence   INTEGER,
+  session_key       TEXT,
+  event_id          TEXT,
+  turn_key          TEXT,
+  message_id        TEXT,
+  artifact_id       TEXT,
+  tokens_json       TEXT,
+  cost_usd          REAL,
+  cost_source       TEXT,
+  cost_currency     TEXT,
+  has_input         INTEGER NOT NULL DEFAULT 0,
+  has_output        INTEGER NOT NULL DEFAULT 0,
+  has_raw           INTEGER NOT NULL DEFAULT 0,
+  evidence_ids_json TEXT    NOT NULL DEFAULT '[]',
+  order_confidence  TEXT    NOT NULL DEFAULT 'native'
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_rounds (
+  id                      TEXT    PRIMARY KEY,
+  run_id                  TEXT    NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,
+  agent_id                TEXT    NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,
+  native_id               TEXT,
+  idx                     INTEGER NOT NULL DEFAULT 0,
+  segmentation_source     TEXT    NOT NULL DEFAULT 'unavailable',
+  started_at              TEXT,
+  ended_at                TEXT,
+  status                  TEXT    NOT NULL DEFAULT 'unknown',
+  task_ids_json           TEXT    NOT NULL DEFAULT '[]',
+  output_artifact_ids_json TEXT   NOT NULL DEFAULT '[]',
+  wall_clock_ms           INTEGER,
+  active_ms               INTEGER,
+  tokens_json             TEXT,
+  cost_usd                REAL,
+  tool_call_count         INTEGER NOT NULL DEFAULT 0,
+  message_count           INTEGER NOT NULL DEFAULT 0,
+  completeness            TEXT    NOT NULL DEFAULT 'unavailable'
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_artifacts (
+  id                      TEXT    PRIMARY KEY,
+  run_id                  TEXT    NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,
+  native_id               TEXT,
+  name                    TEXT    NOT NULL DEFAULT '',
+  kind                    TEXT    NOT NULL DEFAULT 'file',
+  path_redacted           TEXT,
+  content_hash            TEXT,
+  producer_agent_ids_json TEXT    NOT NULL DEFAULT '[]',
+  task_ids_json           TEXT    NOT NULL DEFAULT '[]',
+  created_at              TEXT,
+  accepted_at             TEXT,
+  has_content             INTEGER NOT NULL DEFAULT 0,
+  evidence_ids_json       TEXT    NOT NULL DEFAULT '[]'
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_evidence (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,
+  source_kind     TEXT NOT NULL,
+  source_locator  TEXT NOT NULL,
+  native_id       TEXT,
+  native_sequence INTEGER,
+  captured_at     TEXT NOT NULL,
+  confidence      TEXT NOT NULL DEFAULT 'native',
+  parser_version  TEXT NOT NULL
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_activity_bodies (
+  activity_id  TEXT PRIMARY KEY REFERENCES team_activities(id) ON DELETE CASCADE,
+  input_body   TEXT,
+  output_body  TEXT,
+  message_body TEXT,
+  result_body  TEXT,
+  raw_body     TEXT
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS team_metrics (
+  run_id       TEXT PRIMARY KEY REFERENCES team_runs(id) ON DELETE CASCADE,
+  calc_version INTEGER NOT NULL DEFAULT 0,
+  generated_at TEXT    NOT NULL,
+  metrics_json TEXT    NOT NULL DEFAULT '{}'
+) WITHOUT ROWID;
+
+-- v10（contracts/database.md §3.12）：run ↔ session 多对多成员关系 junction。
+-- session 删除清 junction 链接（team activity 的 session_key 变悬空「无轨迹」引用）
+-- 但不删 team run；team 删除删 team-owned 行绝不删 session。
+CREATE TABLE IF NOT EXISTS team_run_sessions (
+  run_id     TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  PRIMARY KEY (run_id, session_id)
+) WITHOUT ROWID;
 `;
 
 // contracts/database.md §4 索引（全集），逐字采用。
 // 注意：不建单列 idx_events_session_id / idx_sessions_data_source，复合索引已覆盖。
 export const INDEX_SQL = `
+CREATE INDEX IF NOT EXISTS idx_trace_log_imported ON trace_log_imports(imported_at DESC,id);
 CREATE INDEX IF NOT EXISTS idx_events_session_seq    ON events(session_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_events_session_phase  ON events(session_id, phase);
 CREATE INDEX IF NOT EXISTS idx_events_kind           ON events(kind);
@@ -225,6 +583,7 @@ CREATE INDEX IF NOT EXISTS idx_scan_state_session    ON scan_state(session_id);
 
 CREATE INDEX IF NOT EXISTS idx_proxy_started_len     ON proxy_requests(system_prompt_len DESC, started_at); -- TODO(D-002): §4 原为 (started_at, system_prompt_len DESC)，与 §5.3 期望计划矛盾，按期望计划调整列序
 CREATE INDEX IF NOT EXISTS idx_proxy_hostname        ON proxy_requests(hostname);
+CREATE INDEX IF NOT EXISTS idx_proxy_started_utc ON proxy_requests(julianday(started_at), id);
 CREATE INDEX IF NOT EXISTS idx_proxy_parsed_session  ON proxy_requests(parsed_session_id);
 -- v6（add-request-context-diff，design D4）：最近更早前驱查询的两条复合索引
 CREATE INDEX IF NOT EXISTS idx_proxy_session_format_id
@@ -240,6 +599,48 @@ CREATE INDEX IF NOT EXISTS idx_frida_capture_session ON frida_captures(capture_s
 -- 排序与 updated_at 排序。会话列表的标签匹配用 json_each 包含谓词，不靠此索引。
 CREATE INDEX IF NOT EXISTS idx_session_annotations_updated
   ON session_annotations(updated_at);
+
+-- v10（add-agent-team-observability D11，contracts/database.md §4 逐字采用）：
+-- 复合索引匹配实际谓词，杜绝临时 B-tree 排序。
+CREATE INDEX IF NOT EXISTS idx_team_activities_run_time
+  ON team_activities(run_id, started_at, native_sequence, id);
+CREATE INDEX IF NOT EXISTS idx_team_activities_run_agent
+  ON team_activities(run_id, agent_id, started_at, id);
+CREATE INDEX IF NOT EXISTS idx_team_activities_run_task
+  ON team_activities(run_id, task_id, started_at, id);
+
+CREATE INDEX IF NOT EXISTS idx_team_messages_run_sender
+  ON team_messages(run_id, sender_agent_id, sent_at);
+CREATE INDEX IF NOT EXISTS idx_team_message_recipients_agent
+  ON team_message_recipients(agent_id, message_id);
+
+CREATE INDEX IF NOT EXISTS idx_team_tasks_run_status
+  ON team_tasks(run_id, status, started_at);
+
+CREATE INDEX IF NOT EXISTS idx_team_edges_run_from_to
+  ON team_agent_edges(run_id, from_agent_id, to_agent_id, kind);
+
+CREATE INDEX IF NOT EXISTS idx_team_artifacts_run_created
+  ON team_artifacts(run_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_evidence_run
+  ON team_evidence(run_id, source_kind);
+
+CREATE INDEX IF NOT EXISTS idx_team_runs_provider_started
+  ON team_runs(provider, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_runs_status_started
+  ON team_runs(status, started_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_team_rounds_run_agent
+  ON team_rounds(run_id, agent_id, idx);
+CREATE INDEX IF NOT EXISTS idx_team_assignments_run_task
+  ON team_assignments(run_id, task_id, assigned_at);
+CREATE INDEX IF NOT EXISTS idx_team_assignments_run_agent
+  ON team_assignments(run_id, agent_id, assigned_at);
+CREATE INDEX IF NOT EXISTS idx_team_deps_run_up
+  ON team_task_dependencies(run_id, upstream_task_id);
+
+CREATE INDEX IF NOT EXISTS idx_team_run_sessions_session
+  ON team_run_sessions(session_id, run_id);
 `;
 
 const SET_SCHEMA_VERSION_SQL =
@@ -404,6 +805,289 @@ function migrateV7ToV8(db: Database): void {
   }
 }
 
+/**
+ * v8 → v9（2026-08-11 校准审计）：sessions.cost_currency 幂等补列。
+ * 历史行取默认值 'USD'，与加列前的隐含语义完全一致，无需回填、无需重扫。
+ */
+function migrateV8ToV9(db: Database): void {
+  try {
+    db.exec("ALTER TABLE sessions ADD COLUMN cost_currency TEXT NOT NULL DEFAULT 'USD'");
+  } catch (error) {
+    if (!isDuplicateColumn(error)) {
+      throw new Error(
+        'schema v8→v9 migration failed on ' +
+          '"ALTER TABLE sessions ADD COLUMN cost_currency": ' +
+          `${error instanceof Error ? error.message : String(error)}. ` +
+          'The database is a rebuildable cache — delete it and rescan.',
+        { cause: error },
+      );
+    }
+  }
+}
+
+/**
+ * v9 → v10（add-agent-team-observability D11，contracts/database.md §2 逐字采用）。
+ *
+ * **只增不改**：创建 13 张 team 主表 + team_message_recipients + team_run_sessions
+ * 及其索引，不触碰任何既有表、列、索引或投影，不触发重扫。幂等
+ * （CREATE TABLE IF NOT EXISTS + CREATE INDEX IF NOT EXISTS）——第二次运行什么也不改、
+ * 不报错。
+ *
+ * 失败一律抛带「删除 DB 后重扫」指引的错误，禁止静默 catch（任务 3.1 / 禁令 8 /
+ * G11.5 教训）：半迁移状态比重扫更危险，DB 是本地会话文件的可重建缓存。回滚用
+ * 旧二进制即可——新表与新索引只是不被使用；schema marker 绝不降级。
+ */
+function migrateV9ToV10(db: Database): void {
+  const rebuildHint =
+    'The database is a rebuildable cache of local session files - delete it and rescan.';
+  for (const sql of [
+    // contracts/database.md §3.11 与 §3.12 的表定义（与 SCHEMA_SQL 逐字一致，
+    // 此处重复仅为满足「迁移本身建表」的契约表述，幂等且无副作用）。
+    'CREATE TABLE IF NOT EXISTS team_runs (' +
+      'id TEXT PRIMARY KEY,' +
+      'provider TEXT NOT NULL,' +
+      'native_run_id TEXT NOT NULL,' +
+      "run_identity_confidence TEXT NOT NULL DEFAULT 'native'," +
+      "title TEXT NOT NULL DEFAULT ''," +
+      'goal_fingerprint TEXT,' +
+      "status TEXT NOT NULL DEFAULT 'unknown'," +
+      'started_at TEXT,' +
+      'ended_at TEXT,' +
+      "topology_kind TEXT NOT NULL DEFAULT 'unknown'," +
+      'agent_count INTEGER NOT NULL DEFAULT 0,' +
+      'task_count INTEGER NOT NULL DEFAULT 0,' +
+      'communication_count INTEGER NOT NULL DEFAULT 0,' +
+      'activity_count INTEGER NOT NULL DEFAULT 0,' +
+      'round_count INTEGER NOT NULL DEFAULT 0,' +
+      'artifact_count INTEGER NOT NULL DEFAULT 0,' +
+      'token_available INTEGER NOT NULL DEFAULT 0,' +
+      'cost_available INTEGER NOT NULL DEFAULT 0,' +
+      'cost_currency TEXT,' +
+      "completeness_json TEXT NOT NULL DEFAULT '{}'," +
+      'updated_at TEXT NOT NULL,' +
+      'stamp TEXT NOT NULL' +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_agents (' +
+      'id TEXT PRIMARY KEY,' +
+      'run_id TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'native_id TEXT NOT NULL,' +
+      "display_name TEXT NOT NULL DEFAULT ''," +
+      "role TEXT NOT NULL DEFAULT ''," +
+      "role_class TEXT NOT NULL DEFAULT 'unknown'," +
+      'model TEXT,' +
+      "state TEXT NOT NULL DEFAULT 'unknown'," +
+      'created_at TEXT,' +
+      'ended_at TEXT,' +
+      "session_keys_json TEXT NOT NULL DEFAULT '[]'," +
+      "evidence_ids_json TEXT NOT NULL DEFAULT '[]'" +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_agent_edges (' +
+      'id TEXT PRIMARY KEY,' +
+      'run_id TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'from_agent_id TEXT NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,' +
+      'to_agent_id TEXT NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,' +
+      'kind TEXT NOT NULL,' +
+      'valid_from TEXT,' +
+      'valid_to TEXT,' +
+      "confidence TEXT NOT NULL DEFAULT 'native'," +
+      "evidence_ids_json TEXT NOT NULL DEFAULT '[]'" +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_tasks (' +
+      'id TEXT PRIMARY KEY,' +
+      'run_id TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'native_id TEXT NOT NULL,' +
+      "title TEXT NOT NULL DEFAULT ''," +
+      'description_available INTEGER NOT NULL DEFAULT 0,' +
+      'priority INTEGER,' +
+      "status TEXT NOT NULL DEFAULT 'unknown'," +
+      'created_at TEXT,' +
+      'started_at TEXT,' +
+      'completed_at TEXT,' +
+      'cancelled_at TEXT,' +
+      'failed_at TEXT,' +
+      'result_available INTEGER NOT NULL DEFAULT 0,' +
+      "evidence_ids_json TEXT NOT NULL DEFAULT '[]'" +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_task_dependencies (' +
+      'id TEXT PRIMARY KEY,' +
+      'run_id TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'upstream_task_id TEXT NOT NULL REFERENCES team_tasks(id) ON DELETE CASCADE,' +
+      'downstream_task_id TEXT NOT NULL REFERENCES team_tasks(id) ON DELETE CASCADE,' +
+      'valid_from TEXT,' +
+      'valid_to TEXT,' +
+      "confidence TEXT NOT NULL DEFAULT 'native'," +
+      "evidence_ids_json TEXT NOT NULL DEFAULT '[]'" +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_assignments (' +
+      'id TEXT PRIMARY KEY,' +
+      'run_id TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'task_id TEXT NOT NULL REFERENCES team_tasks(id) ON DELETE CASCADE,' +
+      'agent_id TEXT NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,' +
+      'assigned_at TEXT,' +
+      'unassigned_at TEXT,' +
+      "assignment_kind TEXT NOT NULL DEFAULT 'assigned'," +
+      "evidence_ids_json TEXT NOT NULL DEFAULT '[]'" +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_messages (' +
+      'id TEXT PRIMARY KEY,' +
+      'run_id TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'sender_agent_id TEXT NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,' +
+      "recipient_ids_json TEXT NOT NULL DEFAULT '[]'," +
+      "mode TEXT NOT NULL DEFAULT 'unknown'," +
+      "category TEXT NOT NULL DEFAULT 'unknown'," +
+      'task_id TEXT,' +
+      'correlation_id TEXT,' +
+      'reply_to_id TEXT,' +
+      'sent_at TEXT,' +
+      'received_at TEXT,' +
+      'body_available INTEGER NOT NULL DEFAULT 0,' +
+      'body_chars INTEGER,' +
+      'body_bytes INTEGER,' +
+      'content_hash TEXT,' +
+      "evidence_ids_json TEXT NOT NULL DEFAULT '[]'" +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_message_recipients (' +
+      'message_id TEXT NOT NULL REFERENCES team_messages(id) ON DELETE CASCADE,' +
+      'agent_id TEXT NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,' +
+      'PRIMARY KEY (message_id, agent_id)' +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_activities (' +
+      'id TEXT PRIMARY KEY,' +
+      'run_id TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'agent_id TEXT,' +
+      'task_id TEXT,' +
+      'round_id TEXT,' +
+      'kind TEXT NOT NULL,' +
+      "status TEXT NOT NULL DEFAULT 'unknown'," +
+      'started_at TEXT,' +
+      'ended_at TEXT,' +
+      'native_sequence INTEGER,' +
+      'session_key TEXT,' +
+      'event_id TEXT,' +
+      'turn_key TEXT,' +
+      'message_id TEXT,' +
+      'artifact_id TEXT,' +
+      'tokens_json TEXT,' +
+      'cost_usd REAL,' +
+      'cost_source TEXT,' +
+      'cost_currency TEXT,' +
+      'has_input INTEGER NOT NULL DEFAULT 0,' +
+      'has_output INTEGER NOT NULL DEFAULT 0,' +
+      'has_raw INTEGER NOT NULL DEFAULT 0,' +
+      "evidence_ids_json TEXT NOT NULL DEFAULT '[]'," +
+      "order_confidence TEXT NOT NULL DEFAULT 'native'" +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_rounds (' +
+      'id TEXT PRIMARY KEY,' +
+      'run_id TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'agent_id TEXT NOT NULL REFERENCES team_agents(id) ON DELETE CASCADE,' +
+      'native_id TEXT,' +
+      'idx INTEGER NOT NULL DEFAULT 0,' +
+      "segmentation_source TEXT NOT NULL DEFAULT 'unavailable'," +
+      'started_at TEXT,' +
+      'ended_at TEXT,' +
+      "status TEXT NOT NULL DEFAULT 'unknown'," +
+      "task_ids_json TEXT NOT NULL DEFAULT '[]'," +
+      "output_artifact_ids_json TEXT NOT NULL DEFAULT '[]'," +
+      'wall_clock_ms INTEGER,' +
+      'active_ms INTEGER,' +
+      'tokens_json TEXT,' +
+      'cost_usd REAL,' +
+      'tool_call_count INTEGER NOT NULL DEFAULT 0,' +
+      'message_count INTEGER NOT NULL DEFAULT 0,' +
+      "completeness TEXT NOT NULL DEFAULT 'unavailable'" +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_artifacts (' +
+      'id TEXT PRIMARY KEY,' +
+      'run_id TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'native_id TEXT,' +
+      "name TEXT NOT NULL DEFAULT ''," +
+      "kind TEXT NOT NULL DEFAULT 'file'," +
+      'path_redacted TEXT,' +
+      'content_hash TEXT,' +
+      "producer_agent_ids_json TEXT NOT NULL DEFAULT '[]'," +
+      "task_ids_json TEXT NOT NULL DEFAULT '[]'," +
+      'created_at TEXT,' +
+      'accepted_at TEXT,' +
+      'has_content INTEGER NOT NULL DEFAULT 0,' +
+      "evidence_ids_json TEXT NOT NULL DEFAULT '[]'" +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_evidence (' +
+      'id TEXT PRIMARY KEY,' +
+      'run_id TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'source_kind TEXT NOT NULL,' +
+      'source_locator TEXT NOT NULL,' +
+      'native_id TEXT,' +
+      'native_sequence INTEGER,' +
+      'captured_at TEXT NOT NULL,' +
+      "confidence TEXT NOT NULL DEFAULT 'native'," +
+      'parser_version TEXT NOT NULL' +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_activity_bodies (' +
+      'activity_id TEXT PRIMARY KEY REFERENCES team_activities(id) ON DELETE CASCADE,' +
+      'input_body TEXT,' +
+      'output_body TEXT,' +
+      'message_body TEXT,' +
+      'result_body TEXT,' +
+      'raw_body TEXT' +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_metrics (' +
+      'run_id TEXT PRIMARY KEY REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'calc_version INTEGER NOT NULL DEFAULT 0,' +
+      'generated_at TEXT NOT NULL,' +
+      "metrics_json TEXT NOT NULL DEFAULT '{}'" +
+      ') WITHOUT ROWID',
+    'CREATE TABLE IF NOT EXISTS team_run_sessions (' +
+      'run_id TEXT NOT NULL REFERENCES team_runs(id) ON DELETE CASCADE,' +
+      'session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,' +
+      'PRIMARY KEY (run_id, session_id)' +
+      ') WITHOUT ROWID',
+    // contracts/database.md §4 的 v10 索引
+    'CREATE INDEX IF NOT EXISTS idx_team_activities_run_time ' +
+      'ON team_activities(run_id, started_at, native_sequence, id)',
+    'CREATE INDEX IF NOT EXISTS idx_team_activities_run_agent ' +
+      'ON team_activities(run_id, agent_id, started_at, id)',
+    'CREATE INDEX IF NOT EXISTS idx_team_activities_run_task ' +
+      'ON team_activities(run_id, task_id, started_at, id)',
+    'CREATE INDEX IF NOT EXISTS idx_team_messages_run_sender ' +
+      'ON team_messages(run_id, sender_agent_id, sent_at)',
+    'CREATE INDEX IF NOT EXISTS idx_team_message_recipients_agent ' +
+      'ON team_message_recipients(agent_id, message_id)',
+    'CREATE INDEX IF NOT EXISTS idx_team_tasks_run_status ' +
+      'ON team_tasks(run_id, status, started_at)',
+    'CREATE INDEX IF NOT EXISTS idx_team_edges_run_from_to ' +
+      'ON team_agent_edges(run_id, from_agent_id, to_agent_id, kind)',
+    'CREATE INDEX IF NOT EXISTS idx_team_artifacts_run_created ' +
+      'ON team_artifacts(run_id, created_at DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_team_evidence_run ' +
+      'ON team_evidence(run_id, source_kind)',
+    'CREATE INDEX IF NOT EXISTS idx_team_runs_provider_started ' +
+      'ON team_runs(provider, started_at DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_team_runs_status_started ' +
+      'ON team_runs(status, started_at DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_team_rounds_run_agent ' +
+      'ON team_rounds(run_id, agent_id, idx)',
+    'CREATE INDEX IF NOT EXISTS idx_team_assignments_run_task ' +
+      'ON team_assignments(run_id, task_id, assigned_at)',
+    'CREATE INDEX IF NOT EXISTS idx_team_assignments_run_agent ' +
+      'ON team_assignments(run_id, agent_id, assigned_at)',
+    'CREATE INDEX IF NOT EXISTS idx_team_deps_run_up ' +
+      'ON team_task_dependencies(run_id, upstream_task_id)',
+    'CREATE INDEX IF NOT EXISTS idx_team_run_sessions_session ' +
+      'ON team_run_sessions(session_id, run_id)',
+  ]) {
+    try {
+      db.exec(sql);
+    } catch (error) {
+      throw new Error(
+        `schema v9→v10 migration failed on "${sql}": ` +
+          `${error instanceof Error ? error.message : String(error)}. ${rebuildHint}`,
+        { cause: error },
+      );
+    }
+  }
+}
+
 /** v4+（fix-session-detail-display §1.1）：events.content_hash 幂等补列。 */
 function ensureEventsContentHash(db: Database): void {
   try {
@@ -452,6 +1136,24 @@ export function migrateSchema(db: Database, fromVersion: number): void {
   if (fromVersion < 8) {
     migrateV7ToV8(db);
   }
+  if (fromVersion < 9) {
+    migrateV8ToV9(db);
+  }
+  if (fromVersion < 10) {
+    migrateV9ToV10(db);
+  }
+  if (fromVersion < 17) {
+    // Only current session matching needs this native index. Retain every row
+    // but stop duplicating multi-kilobyte tool scopes in an unused wide index.
+    db.transaction(() => {
+      db.exec('DROP INDEX IF EXISTS idx_trace_identities_native');
+      db.exec("CREATE INDEX idx_trace_identities_native ON trace_identities(namespace, kind, value, scope, source_id) WHERE kind='session' AND scope IS NULL");
+      // Preserve the historical v17 index+version transaction and its rollback
+      // gate before applying later additive schema versions.
+      cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('17');
+    })();
+  }
+  if (fromVersion < 18) cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('18');
   cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
 }
 

@@ -9,7 +9,7 @@ export default defineConfig({
     port: 5173,
     // T-01：dev 模式下 /api 请求代理到生产后端（npm start 监听 4173）
     proxy: {
-      '/api': 'http://127.0.0.1:4173',
+      '/api': process.env.AWESOME_TELEMETRY_API_ORIGIN ?? 'http://127.0.0.1:4173',
     },
   },
   build: { outDir: 'dist', sourcemap: true },

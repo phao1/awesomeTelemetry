@@ -1,0 +1,161 @@
+{
+  "$comment": "脱敏 CodeArts Agent Team 非平凡真实形状 fixture。形状来源：~/.codeartsdoer/codearts-data/opencode.db 的 session/message/part/cag_session_extra 表 + ~/.codeartsdoer/agent-team/session/*/ 下的 contact.json/team-task.json。sessionID/messageID/callID 均为合成值；提示词正文、Scene 模板正文、个人绝对路径已替换为占位符。",
+  "dialect": "codearts-agent-team",
+  "dbSchemaVersion": "drizzle (opencode.db)",
+  "cag_session_extra": [
+    { "session_id": "ses_lead_0001", "type": "claw", "extra_info": null },
+    { "session_id": "ses_mate_0001", "type": "kernel", "extra_info": null }
+  ],
+  "sessions": [
+    {
+      "id": "ses_lead_0001",
+      "parent_id": null,
+      "type": null,
+      "title": "实现 Agent Team 可观测性变更",
+      "directory": "<redacted-home>/repo",
+      "time_created": 1786980474008,
+      "time_updated": 1786980712098
+    },
+    {
+      "id": "ses_mate_0001",
+      "parent_id": "ses_lead_0001",
+      "type": null,
+      "title": "证据调查与范围冻结 (@team-mate subagent)",
+      "directory": "<redacted-home>/repo",
+      "time_created": 1786980711999,
+      "time_updated": 1786980742722
+    }
+  ],
+  "messages": [
+    {
+      "id": "msg_lead_user_0001",
+      "session_id": "ses_lead_0001",
+      "time_created": 1786980474257,
+      "data": {
+        "role": "user",
+        "time": { "created": 1786980474257 },
+        "agent": "team-leader",
+        "model": { "providerID": "deepseek", "modelID": "deepseek-v4-pro" },
+        "summary": { "diffs": [] }
+      }
+    },
+    {
+      "id": "msg_lead_asst_0001",
+      "session_id": "ses_lead_0001",
+      "time_created": 1786980474319,
+      "data": {
+        "role": "assistant",
+        "time": { "created": 1786980474319 },
+        "agent": "team-leader",
+        "model": { "providerID": "deepseek", "modelID": "deepseek-v4-pro" },
+        "summary": { "diffs": [] }
+      }
+    }
+  ],
+  "parts": [
+    {
+      "id": "part_tool_getteamsetup",
+      "message_id": "msg_lead_asst_0001",
+      "session_id": "ses_lead_0001",
+      "data": {
+        "type": "tool",
+        "tool": "get-team-setup",
+        "callID": "call_00_getteamsetup_0001",
+        "state": {
+          "status": "completed",
+          "input": { "scene": "coding" },
+          "output": "<redacted: Scene/Role template prompt, proprietary>"
+        }
+      }
+    },
+    {
+      "id": "part_step_finish_0001",
+      "message_id": "msg_lead_asst_0001",
+      "session_id": "ses_lead_0001",
+      "data": {
+        "type": "step-finish",
+        "reason": "tool-calls",
+        "tokens": {
+          "total": 29777,
+          "input": 29293,
+          "output": 56,
+          "reasoning": 428,
+          "cache": { "write": 0, "read": 0 }
+        },
+        "cost": 0.013163535
+      }
+    },
+    {
+      "id": "part_tool_backgroundtask",
+      "message_id": "msg_lead_asst_0002",
+      "session_id": "ses_lead_0001",
+      "data": {
+        "type": "tool",
+        "tool": "background-task",
+        "callID": "call_00_backgroundtask_0001",
+        "state": {
+          "status": "completed",
+          "input": {
+            "description": "证据调查与范围冻结",
+            "prompt": "<redacted: full teammate task prompt>",
+            "run_in_background": true,
+            "subagent_type": "team-mate",
+            "agent_name": "member-1",
+            "assign_task_id": [1]
+          },
+          "output": "Background task launched.\n  Agent: member-1(team-mate)\n  <task_metadata>\n  session_id: ses_mate_0001\n  </task_metadata>"
+        }
+      }
+    },
+    {
+      "id": "part_tool_publishtask",
+      "message_id": "msg_lead_asst_0003",
+      "session_id": "ses_lead_0001",
+      "data": {
+        "type": "tool",
+        "tool": "publish-task",
+        "callID": "call_00_publishtask_0001",
+        "state": {
+          "status": "completed",
+          "input": {
+            "todos": [
+              { "id": 1, "content": "证据调查与范围冻结", "blocked_by": [], "target_files": ["openspec/research/agent-team-evidence.md"] },
+              { "id": 2, "content": "权威契约冻结", "blocked_by": [1], "target_files": ["openspec/contracts/data-model.md"] }
+            ]
+          },
+          "output": "<redacted: publish-task acknowledgment>"
+        }
+      }
+    },
+    {
+      "id": "part_tool_getmytask",
+      "message_id": "msg_mate_asst_0001",
+      "session_id": "ses_mate_0001",
+      "data": {
+        "type": "tool",
+        "tool": "get-my-task",
+        "callID": "call_00_getmytask_0001",
+        "state": {
+          "status": "completed",
+          "input": {},
+          "output": "You have 1 tasks as follows.\n[ { \"id\": 1, \"blocked_by\": [], \"content\": \"证据调查与范围冻结\", \"owner\": \"ses_mate_0001\" } ]"
+        }
+      }
+    },
+    {
+      "id": "part_tool_backgroundoutput",
+      "message_id": "msg_lead_asst_0004",
+      "session_id": "ses_lead_0001",
+      "data": {
+        "type": "tool",
+        "tool": "background-output",
+        "callID": "call_00_backgroundoutput_0001",
+        "state": {
+          "status": "completed",
+          "input": { "session_id": "ses_mate_0001", "block": true, "timeout": 1500 },
+          "output": "<redacted: teammate progress output>"
+        }
+      }
+    }
+  ]
+}

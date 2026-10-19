@@ -1,6 +1,7 @@
 import { extractOpenAiUsage, parseOpenAiRequest } from './parsers/openai.js';
 import { parseAnthropicRequest } from './parsers/anthropic.js';
 import { parseTraeTunnelRequest } from './parsers/trae-tunnel.js';
+import { parseResponsesRequest } from './parsers/responses.js';
 import { extractTokenUsageFromSse } from './sse-accumulator.js';
 import type { RequestContextFormat } from '../../src/core/trace-types.js';
 
@@ -94,6 +95,9 @@ export function classifyRequestFormat(input: {
   const body = input.body;
   const hasMessages = Array.isArray(body.messages);
   const path = pathFromRequestUrl(input.url);
+  // Explicit protocol paths take precedence over host aliases.
+  if (hasMessages && path?.endsWith('/chat/completions')) return 'openai_chat';
+  if (!hasMessages && path?.endsWith('/responses')) return 'openai_responses';
   const hasAnthropicToolSchema =
     Array.isArray(body.tools) &&
     body.tools.some((tool) => isRecord(tool) && 'input_schema' in tool);
@@ -151,25 +155,27 @@ export function parseProxyRequest(input: ParseInput): ParsedRequest {
     url: input.url,
     body: parsedBody,
   });
-  if (route === 'anthropic') {
-    return { parserRoute: 'anthropic', requestFormat, ...parseAnthropicRequest(input) };
-  }
-  if (route === 'trae-tunnel') {
+  if (route === 'trae-tunnel' && requestFormat === 'unknown') {
     return { parserRoute: 'trae-tunnel', requestFormat, ...parseTraeTunnelRequest(input) };
   }
-  const base =
-    route === 'openai'
-      ? parseOpenAiRequest(input)
-      : parseOpenAiRequest(input); // 未知 host 也按 openai 格式尽力解析
-  let usage = extractOpenAiUsage(input.responseBody);
+  const isAnthropic = requestFormat === 'anthropic_messages' || (requestFormat === 'unknown' && route === 'anthropic');
+  const base = isAnthropic ? parseAnthropicRequest(input)
+    : requestFormat === 'openai_responses' ? parseResponsesRequest(input) : parseOpenAiRequest(input);
+  let usage = isAnthropic || requestFormat === 'openai_responses'
+    ? { inputTokens: base.inputTokens, outputTokens: base.outputTokens }
+    : extractOpenAiUsage(input.responseBody);
   if (input.isStreaming === true && input.sseEvents !== undefined) {
     const fromSse = extractTokenUsageFromSse(input.sseEvents);
     if (fromSse !== null) {
-      usage = fromSse;
+      usage = {
+        inputTokens: fromSse.inputTokens ?? usage.inputTokens,
+        outputTokens: fromSse.outputTokens ?? usage.outputTokens,
+      };
     }
   }
   return {
-    parserRoute: route ?? 'openai',
+    parserRoute: isAnthropic ? 'anthropic' : requestFormat === 'openai_responses' ? 'openai'
+      : requestFormat === 'unknown' && route === null ? 'unknown' : 'openai',
     requestFormat,
     ...base,
     inputTokens: usage.inputTokens,

@@ -10,6 +10,9 @@ Each provider's raw data format differs; adapters normalize it into
 
 ## Requirements
 
+### REQ-014: Explicit native identity collection
+Claude-family collectors retain explicit sessionId/requestId/message.id/tool IDs; Codex retains session_meta native id/session_id, turn_id, message/item IDs, call_id and explicitly recorded parent thread IDs; OpenCode-family retains session.id/message.sessionID, native message and tool call IDs. Missing fields remain missing. Do not reinterpret Codex item IDs as Response IDs or Claude row UUIDs as user turns. Wrapper adapters keep their own provider session namespaces, not the wrapped provider's identity. Never change pre-existing normalized event IDs or token/duration semantics just to establish a link.
+
 ### REQ-001: sample-loader dispatch
 `sample-loader.ts` SHALL dispatch by `sourceAgent` to the matching adapter.
 Adding a provider = add adapter + register + update `PROVIDER_KEYS` + both i18n

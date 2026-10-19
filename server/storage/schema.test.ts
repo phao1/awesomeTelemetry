@@ -13,6 +13,7 @@ import {
   EXACT_SESSION_PREDECESSOR_SQL,
 } from './query-engine.js';
 import { SCHEMA_VERSION, initSchema } from './schema.js';
+import { listTraceIdentities, SESSION_IDENTITY_SQL, writeNativeIdentities } from './trace-links.js';
 
 type Db = InstanceType<typeof Database>;
 
@@ -24,9 +25,29 @@ const EXPECTED_TABLES = [
   'metrics',
   'scan_state',
   'proxy_requests',
+  'proxy_capture_processing',
+  'proxy_capture_transport',
+  'proxy_capture_analysis',
+  'proxy_capture_tombstones',
+  'proxy_original_deletions',
   'frida_captures',
   'session_prompt_context',
   'session_annotations',
+  'team_runs',
+  'team_agents',
+  'team_agent_edges',
+  'team_tasks',
+  'team_task_dependencies',
+  'team_assignments',
+  'team_messages',
+  'team_message_recipients',
+  'team_activities',
+  'team_rounds',
+  'team_artifacts',
+  'team_evidence',
+  'team_activity_bodies',
+  'team_metrics',
+  'team_run_sessions',
 ];
 
 const EXPECTED_INDEXES = [
@@ -44,6 +65,10 @@ const EXPECTED_INDEXES = [
   'idx_scan_state_provider',
   'idx_scan_state_session',
   'idx_proxy_started_len',
+  'idx_proxy_started_utc',
+  'idx_original_deletions_pending',
+  'idx_capture_request_original',
+  'idx_capture_response_original',
   'idx_proxy_hostname',
   'idx_proxy_parsed_session',
   'idx_proxy_session_format_id',
@@ -52,6 +77,22 @@ const EXPECTED_INDEXES = [
   'idx_frida_session',
   'idx_frida_capture_session',
   'idx_session_annotations_updated',
+  'idx_team_activities_run_time',
+  'idx_team_activities_run_agent',
+  'idx_team_activities_run_task',
+  'idx_team_messages_run_sender',
+  'idx_team_message_recipients_agent',
+  'idx_team_tasks_run_status',
+  'idx_team_edges_run_from_to',
+  'idx_team_artifacts_run_created',
+  'idx_team_evidence_run',
+  'idx_team_runs_provider_started',
+  'idx_team_runs_status_started',
+  'idx_team_rounds_run_agent',
+  'idx_team_assignments_run_task',
+  'idx_team_assignments_run_agent',
+  'idx_team_deps_run_up',
+  'idx_team_run_sessions_session',
 ];
 
 /** v5 的 proxy_requests DDL（v6 迁移前形态，无 capture_group_id / request_format）。 */
@@ -118,6 +159,100 @@ function explain(db: Db, sql: string, params: unknown[]): string {
     .all(...params) as Array<{ detail: string }>;
   return rows.map((row) => row.detail).join('\n');
 }
+
+describe('REQ-003 v17 bounded native lookup index', () => {
+  function legacyFixture(): Db {
+    const db = openWritable(join(tempDir(), 'native-v16.sqlite')), now = '2026-10-16T00:00:00.000Z';
+    db.prepare('INSERT INTO sessions(id,provider,source_agent,started_at,updated_at,source_path) VALUES(?,?,?,?,?,?)').run('kept-scan', 'codex', 'codex', now, now, 'synthetic:kept-scan');
+    writeNativeIdentities(db, { source: 'scan', key: 'kept-scan' }, { parserVersion: 1, completeness: { complete: true, omittedCount: 0, reasons: [] }, items: [
+      { namespace: 'agent:codex', kind: 'session', value: 'native-session', scope: null, eventId: null, sourcePath: 'synthetic.session' },
+      { namespace: 'protocol:openai', kind: 'tool_call', value: 'x'.repeat(1024), scope: 's'.repeat(1024), eventId: 'native-event', sourcePath: 'synthetic.tool' },
+    ] }, now);
+    db.exec('DROP INDEX idx_trace_identities_native; CREATE INDEX idx_trace_identities_native ON trace_identities(namespace,kind,value,scope,source_id)');
+    db.prepare('UPDATE _meta SET value=? WHERE key=?').run('16', 'schema_version');
+    return db;
+  }
+  it('atomically replaces only the legacy index and preserves every original identity and scan row', () => {
+    const db = legacyFixture();
+    try {
+      const before = listTraceIdentities(db, { source: 'scan', key: 'kept-scan' });
+      const source = db.prepare('SELECT parser_version,complete,omitted_count,reasons_json,content_sha256,updated_at FROM trace_identity_sources').all();
+      initSchema(db);
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: String(SCHEMA_VERSION) });
+      expect(listTraceIdentities(db, { source: 'scan', key: 'kept-scan' })).toEqual(before);
+      expect(db.prepare('SELECT parser_version,complete,omitted_count,reasons_json,content_sha256,updated_at FROM trace_identity_sources').all()).toEqual(source);
+      expect(db.prepare('SELECT id,source_path FROM sessions').all()).toEqual([{ id: 'kept-scan', source_path: 'synthetic:kept-scan' }]);
+      const index = db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE type='index' AND name='idx_trace_identities_native'").get() as { sql: string; rootpage: number };
+      expect(index.sql).toContain("WHERE kind='session' AND scope IS NULL");
+      expect(db.prepare("SELECT COUNT(*) AS n FROM trace_identities INDEXED BY idx_trace_identities_native WHERE kind='session' AND scope IS NULL").get()).toEqual({ n: 1 });
+      initSchema(db); initSchema(db);
+      expect(db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE type='index' AND name='idx_trace_identities_native'").get()).toEqual(index);
+      expect(listTraceIdentities(db, { source: 'scan', key: 'kept-scan' })).toEqual(before);
+    } finally { db.close(); }
+  });
+  it('rolls back index and version together on a real SQLite state-write failure, then safely retries', () => {
+    const db = legacyFixture();
+    try {
+      const before = listTraceIdentities(db, { source: 'scan', key: 'kept-scan' });
+      const old = db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get();
+      db.exec("CREATE TRIGGER reject_v17 BEFORE UPDATE ON _meta WHEN NEW.key='schema_version' AND NEW.value='17' BEGIN SELECT RAISE(ABORT,'synthetic-version-failure'); END");
+      expect(() => initSchema(db)).toThrow('synthetic-version-failure');
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '16' });
+      expect(db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get()).toEqual(old);
+      expect(listTraceIdentities(db, { source: 'scan', key: 'kept-scan' })).toEqual(before);
+      db.exec('DROP TRIGGER reject_v17'); initSchema(db);
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: String(SCHEMA_VERSION) });
+    } finally { db.close(); }
+  });
+  it('uses the partial index for exact session matching but retains all kinds through source pagination', () => {
+    const db = legacyFixture();
+    try {
+      initSchema(db);
+      const plan = JSON.stringify(db.prepare('EXPLAIN QUERY PLAN ' + SESSION_IDENTITY_SQL).all(JSON.stringify([['agent:codex', 'native-session']])));
+      expect(plan).toContain('idx_trace_identities_native'); expect(plan).not.toContain('SCAN i');
+      const page = listTraceIdentities(db, { source: 'scan', key: 'kept-scan' }); expect(page.items).toHaveLength(2); expect(page.items.some(item => item.kind === 'tool_call' && item.value.length === 1024 && item.scope?.length === 1024)).toBe(true);
+    } finally { db.close(); }
+  });
+});
+
+describe('REQ-023 additive schema18 analysis summary', () => {
+  function fixture(): Db {
+    const db = new Database(':memory:'); db.pragma('foreign_keys=ON'); initSchema(db);
+    db.exec("DROP TABLE IF EXISTS proxy_capture_analysis; UPDATE _meta SET value='17' WHERE key='schema_version'");
+    db.prepare('INSERT INTO proxy_requests(id,request_id,method,url,hostname,started_at,request_body,response_body) VALUES(?,?,?,?,?,?,?,?)')
+      .run(1, 'kept-capture', 'POST', '/synthetic', 'synthetic', '2026-10-16T00:00:00Z', 'kept-request', 'kept-response');
+    return db;
+  }
+  it('adds only the summary table to v17 and preserves original rows and the current partial index through repeated init', () => {
+    const db = fixture();
+    try {
+      const index = db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get();
+      const capture = db.prepare('SELECT id,request_id,request_body,response_body FROM proxy_requests').all();
+      initSchema(db);
+      expect(SCHEMA_VERSION).toBe(19);
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '19' });
+      expect((db.prepare('PRAGMA table_info(proxy_capture_analysis)').all() as Array<{ name: string }>).map(row => row.name)).toEqual(['proxy_id', 'parser_version', 'metric_version', 'source_fingerprint', 'parsed_at', 'request_format', 'state', 'usage_json', 'completeness_json']);
+      expect(db.prepare('SELECT COUNT(*) AS n FROM proxy_capture_analysis').get()).toEqual({ n: 0 });
+      initSchema(db); initSchema(db);
+      expect(db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get()).toEqual(index);
+      expect(db.prepare('SELECT id,request_id,request_body,response_body FROM proxy_requests').all()).toEqual(capture);
+    } finally { db.close(); }
+  });
+  it('preserves v17 version/index/sources when the v18 state write fails and safely retries the additive table', () => {
+    const db = fixture();
+    try {
+      const index = db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get();
+      db.exec("CREATE TRIGGER reject_v18 BEFORE UPDATE ON _meta WHEN NEW.key='schema_version' AND NEW.value='18' BEGIN SELECT RAISE(ABORT,'synthetic-v18-failure'); END");
+      expect(() => initSchema(db)).toThrow('synthetic-v18-failure');
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '17' });
+      expect(db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get()).toEqual(index);
+      expect(db.prepare('SELECT request_body,response_body FROM proxy_requests WHERE id=1').get()).toEqual({ request_body: 'kept-request', response_body: 'kept-response' });
+      db.exec('DROP TRIGGER reject_v18'); initSchema(db);
+      expect(db.prepare('SELECT COUNT(*) AS n FROM proxy_capture_analysis').get()).toEqual({ n: 0 });
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '19' });
+    } finally { db.close(); }
+  });
+});
 
 describe('REQ-003 建库幂等', () => {
   it('REQ-003 连续三次 initSchema 无副作用无报错', () => {
@@ -822,6 +957,112 @@ describe('REQ-003 schema v8 —— session_annotations（add-trajectory-inspecto
       message = error instanceof Error ? error.message : String(error);
     }
     expect(message).toContain('v7→v8 migration failed');
+    expect(message).toContain('views may not be indexed'); // 原错误未被静默吞掉
+    expect(message).toContain('delete it and rescan'); // 重建指引
+    db.close();
+  });
+});
+
+describe('REQ-003 schema v10 —— team table family（add-agent-team-observability D11）', () => {
+  function metaVersion(db: Db): string {
+    return (db
+      .prepare("SELECT value FROM _meta WHERE key = 'schema_version'")
+      .get() as { value: string }).value;
+  }
+
+  /** 把 v10 新库降级成 v9 形态：DROP 全部 team 表（索引随表一并消失），_meta 置 9。 */
+  function downgradeToV9(db: Db): void {
+    // 依赖顺序：先删引用方，再删被引用方（foreign_keys 默认关闭，顺序仅为语义清晰）。
+    for (const table of [
+      'team_run_sessions',
+      'team_metrics',
+      'team_activity_bodies',
+      'team_evidence',
+      'team_artifacts',
+      'team_rounds',
+      'team_activities',
+      'team_message_recipients',
+      'team_messages',
+      'team_assignments',
+      'team_task_dependencies',
+      'team_tasks',
+      'team_agent_edges',
+      'team_agents',
+      'team_runs',
+    ]) {
+      db.exec(`DROP TABLE IF EXISTS ${table}`);
+    }
+    db.prepare("UPDATE _meta SET value = '9' WHERE key = 'schema_version'").run();
+  }
+
+  it('v10 新库直建 team 表与索引，schema_version = 10', () => {
+    const db = createDb(join(tempDir(), 'fresh-v10.sqlite'));
+    initSchema(db);
+
+    for (const table of ['team_runs', 'team_agents', 'team_activities', 'team_metrics', 'team_run_sessions']) {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(table);
+      expect(row, `表 ${table} 应存在`).toBeTruthy();
+    }
+    // team_runs 结构逐字采用 D11：stamp 非空、completeness_json 默认 '{}'
+    const cols = db.prepare('PRAGMA table_info(team_runs)').all() as Array<{
+      name: string;
+      notnull: number;
+      dflt_value: string | null;
+    }>;
+    const byName = new Map(cols.map((c) => [c.name, c]));
+    expect(byName.get('stamp')?.notnull).toBe(1);
+    expect(byName.get('completeness_json')?.dflt_value).toBe("'{}'");
+    expect(metaVersion(db)).toBe(String(SCHEMA_VERSION));
+    db.close();
+  });
+
+  it('v9 升级：只增 team 表与索引、旧 session 行保留、重复 init 为 no-op', () => {
+    const db = createDb(join(tempDir(), 'migrate-v9-to-v10.sqlite'));
+    initSchema(db);
+    downgradeToV9(db);
+    db.prepare(
+      `INSERT INTO sessions (id, provider, source_agent, title, started_at, updated_at, status, source_path, cost_currency)
+       VALUES ('s1', 'codex', 'Codex', 'old', '2026-08-01T00:00:00.000Z', '2026-08-01T00:01:00.000Z', 'success', '/tmp/x.jsonl', 'USD')`,
+    ).run();
+
+    initSchema(db); // 触发 v9→v10 迁移
+
+    for (const table of ['team_runs', 'team_agents', 'team_activities', 'team_metrics', 'team_run_sessions']) {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(table);
+      expect(row, `表 ${table} 应存在`).toBeTruthy();
+    }
+    expect(metaVersion(db)).toBe(String(SCHEMA_VERSION));
+    // 旧 session 行保留（只增不改），cost_currency（v9 列）不受影响
+    const session = db
+      .prepare('SELECT id, cost_currency FROM sessions WHERE id = ?')
+      .get('s1') as { id: string; cost_currency: string };
+    expect(session).toEqual({ id: 's1', cost_currency: 'USD' });
+    // 幂等：重复 init 不报错、版本不变
+    expect(() => initSchema(db)).not.toThrow();
+    expect(metaVersion(db)).toBe(String(SCHEMA_VERSION));
+    db.close();
+  });
+
+  it('v9→v10 迁移失败：抛带重建指引的错误，不静默吞掉', () => {
+    const db = createDb(join(tempDir(), 'migrate-v10-fail.sqlite'));
+    initSchema(db);
+    downgradeToV9(db);
+    // 用同名 VIEW 占住 team_evidence：CREATE TABLE IF NOT EXISTS 变 no-op，
+    // 迁移循环里的 CREATE INDEX idx_team_evidence_run 必然失败（views may not be indexed），
+    // 模拟迁移中断且验证失败不被静默吞掉。
+    db.exec('CREATE VIEW team_evidence AS SELECT 1 AS x');
+
+    let message = '';
+    try {
+      initSchema(db);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain('v9→v10 migration failed');
     expect(message).toContain('views may not be indexed'); // 原错误未被静默吞掉
     expect(message).toContain('delete it and rescan'); // 重建指引
     db.close();

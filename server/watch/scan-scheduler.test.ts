@@ -90,6 +90,34 @@ function writeLine(dir: string, name: string, lines: unknown[]): void {
 }
 
 describe('REQ-011 provider 并行扫描', () => {
+  it('tracks the actual provider task beyond its timeout, until its database work settles', async () => {
+    const directory = tempDir();
+    const db = newDb();
+    const config = makeConfig(directory, directory);
+    config.providers.codex!.enabled = false;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const tracked: Promise<unknown>[] = [];
+    const delayed: ProviderScanner = {
+      ...claudeScanner,
+      async scanProvider() {
+        await gate;
+        db.prepare('INSERT INTO _meta (key, value) VALUES (?, ?)').run('lifecycle_probe', 'finished');
+        return { provider: 'claude', files: 0, scanned: 0, skipped: 0, eventCount: 0 };
+      },
+    };
+    const results = await scanLocalSessions({ db, config, timeoutMs: 10, scannerOverride: { claude: delayed }, trackTask: task => { tracked.push(task); } });
+    expect(results[0]?.error).toContain('timed out');
+    expect(tracked).toHaveLength(1);
+    let settled = false;
+    void tracked[0]!.then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    release();
+    await Promise.all(tracked);
+    expect(db.prepare('SELECT value FROM _meta WHERE key = ?').get('lifecycle_probe')).toEqual({ value: 'finished' });
+    db.close();
+  });
   it('两个 provider 并行扫描均入库', async () => {
     const claudeDir = tempDir();
     const codexDir = tempDir();

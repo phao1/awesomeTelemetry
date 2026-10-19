@@ -24,6 +24,7 @@ export interface TableProps<T> {
   expandedKey?: string | null;
   onToggleExpand?: (key: string) => void;
   renderExpand?: (row: T) => ReactNode;
+  expandLabel?: (row: T) => string;
 }
 
 /** REQ-005：Table。compact 密度、sticky 表头、可排序。 */
@@ -38,6 +39,7 @@ export function Table<T>({
   expandedKey,
   onToggleExpand,
   renderExpand,
+  expandLabel,
 }: TableProps<T>): React.JSX.Element {
   const classes = ['ui-table', `ui-table-${density}`, className ?? ''].filter(Boolean).join(' ');
   const expandable = renderExpand !== undefined && onToggleExpand !== undefined;
@@ -63,6 +65,7 @@ export function Table<T>({
             return (
               <th
                 key={column.key}
+                aria-sort={column.sortable ? (active ? (sort!.direction === 'asc' ? 'ascending' : 'descending') : 'none') : undefined}
                 style={{
                   textAlign: column.align ?? 'left',
                   width: column.width,
@@ -73,9 +76,6 @@ export function Table<T>({
                     type="button"
                     className="ui-table-sort"
                     onClick={() => onSort(column.key)}
-                    aria-sort={
-                      active ? (sort!.direction === 'asc' ? 'ascending' : 'descending') : 'none'
-                    }
                   >
                     {label}
                   </button>
@@ -95,7 +95,7 @@ export function Table<T>({
                 <button
                   type="button"
                   className="ui-table-sort"
-                  aria-label={ta('a11y.expandRow')}
+                  aria-label={expandLabel?.(row) ?? ta('a11y.expandRow')}
                   aria-expanded={expandedKey === rowKey(row)}
                   onClick={() => onToggleExpand!(rowKey(row))}
                 >

@@ -1,4 +1,6 @@
 import type { ParsedRequest } from '../parser-router.js';
+import { extractTokenUsageFromSse, parseSseChunk } from '../sse-accumulator.js';
+import { extractTextContent, extractOpenAiUsage } from './openai.js';
 
 interface AnthropicParsedBody {
   model?: unknown;
@@ -14,7 +16,8 @@ export function parseAnthropicRequest(input: {
   let outputTokens: number | null = null;
   let parsedBody: AnthropicParsedBody | null;
   try {
-    parsedBody = JSON.parse(input.requestBody) as AnthropicParsedBody;
+    const value: unknown = JSON.parse(input.requestBody);
+    parsedBody = typeof value === 'object' && value !== null && !Array.isArray(value) ? value as AnthropicParsedBody : null;
   } catch {
     parsedBody = null;
   }
@@ -23,19 +26,12 @@ export function parseAnthropicRequest(input: {
       ? parsedBody.model
       : (/"model"\s*:\s*"([^"]+)"/.exec(input.requestBody)?.[1] ?? null);
   const systemPrompt =
-    parsedBody !== null && typeof parsedBody.system === 'string'
-      ? parsedBody.system
+    parsedBody !== null ? extractTextContent(parsedBody.system)
       : (/"system"\s*:\s*"([^"]*)"/.exec(input.requestBody)?.[1] ?? null);
   if (input.responseBody !== null && input.responseBody !== undefined) {
-    try {
-      const parsed = JSON.parse(input.responseBody) as {
-        usage?: { input_tokens?: number; output_tokens?: number };
-      };
-      inputTokens = parsed.usage?.input_tokens ?? null;
-      outputTokens = parsed.usage?.output_tokens ?? null;
-    } catch {
-      // 保持 null
-    }
+    const usage = extractTokenUsageFromSse(parseSseChunk(input.responseBody)) ?? extractOpenAiUsage(input.responseBody);
+    inputTokens = usage.inputTokens;
+    outputTokens = usage.outputTokens;
   }
   return {
     model,

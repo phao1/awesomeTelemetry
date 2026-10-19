@@ -45,7 +45,7 @@ export function redirectLegacyMissionHash(hash: string): string | null {
  * 侧边栏仅做滚动导航（G-UI-8），MUST NOT 隐藏其他角色的 widget。 */
 export const ROLE_GROUPS: Record<MissionRole, string[]> = {
   manager: [
-    'activity', 'costEfficiency', 'toolFailure', 'errorReasons',
+    'activity', 'toolFailure', 'errorReasons',
     'closure', 'tokenTrend', 'drift', 'riskyCommands',
     'depth', 'heavyScenes',
   ],
@@ -77,7 +77,7 @@ function entries(
     out.push({ id, widget: widget as MissionWidget<unknown> });
   }
   for (const [id, widget] of Object.entries(quality)) {
-    out.push({ id, widget: widget as MissionWidget<unknown> });
+    if(id!=='costEfficiency')out.push({ id, widget: widget as MissionWidget<unknown> });
   }
   for (const [id, widget] of Object.entries(health)) {
     out.push({ id, widget: widget as MissionWidget<unknown> });
@@ -254,21 +254,6 @@ function WidgetData({
         />
       );
     }
-    case 'costEfficiency': {
-      const c = data as NonNullable<MissionQuality['costEfficiency']['data']>;
-      return (
-        <KeyValueTable
-          data={{
-            total: `$${c.totalUsd.toFixed(4)}`,
-            perTurn: c.perTurnUsd === null ? '—' : `$${c.perTurnUsd.toFixed(4)}`,
-            perOkTool: c.perOkToolUsd === null ? '—' : `$${c.perOkToolUsd.toFixed(4)}`,
-            perSession: c.perSessionUsd === null ? '—' : `$${c.perSessionUsd.toFixed(4)}`,
-            priced: c.pricedSessions,
-            unpriced: c.unpricedSessions,
-          }}
-        />
-      );
-    }
     case 'parallelism': {
       const p = data as NonNullable<MissionQuality['parallelism']['data']>;
       return (
@@ -309,7 +294,7 @@ function WidgetData({
             <div className="mission-kv-row" key={row.model}>
               <span className="mission-kv-key">{row.model} · {fmtNum(row.calls)}</span>
               <span className="mission-kv-value mono">
-                {row.costSource === 'unknown' ? '—' : `$${row.costUsd.toFixed(4)}`}
+                {t('mission.modelTokens',locale).replace('{input}',fmtNum(row.input)).replace('{output}',fmtNum(row.output)).replace('{cacheRead}',fmtNum(row.cacheRead)).replace('{cacheWrite}',fmtNum(row.cacheWrite))}
               </span>
             </div>
           ))}
@@ -600,7 +585,7 @@ export function MissionControl({
           <span className="mission-meta mono">
             {t('mission.meta', locale)
               .replace('{time}', meta.generatedAt.slice(11, 19))
-              .replace('{widgets}', String(meta.widgetCount))
+              .replace('{widgets}', String(byRole.reduce((sum,group)=>sum+group.widgets.length,0)))
               .replace('{ms}', String(meta.durationMs))
               .replace('{cached}', meta.cached ? t('mission.cached', locale) : t('mission.fresh', locale))}
             {stale ? ` · ${t('mission.stale', locale)}` : ''}

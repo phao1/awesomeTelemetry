@@ -13,6 +13,7 @@ export interface TurnCardProps {
   durationSource?: DurationSource;
   loadDetail?: (key: string, eventId: string) => Promise<TraceEvent>;
   loadRaw?: (key: string, eventId: string) => Promise<TraceEventRaw>;
+  onInspect?: (eventId: string) => void;
 }
 
 export type TurnCardItem =
@@ -67,6 +68,7 @@ export function TurnCard({
   durationSource,
   loadDetail,
   loadRaw,
+  onInspect,
 }: TurnCardProps): React.JSX.Element {
   const isMetadata = (m: TurnMessage): boolean => !m.hasInput && !m.hasOutput && m.error === null && m.status !== 'error' &&
     (m.role === 'system' || m.role === 'reasoning' || (m.role === 'assistant' && m.title === 'token_count'));
@@ -83,7 +85,7 @@ export function TurnCard({
         <span>{t('trajectory.turn.execution', locale)}</span>
         <span className="mono">{t('trajectory.toolCounts', locale)
           .replace('{calls}', String(turn.messages.filter((m) => m.role === 'tool' && m.hasInput).length))
-          .replace('{results}', String(turn.messages.filter((m) => m.role === 'tool' && m.hasOutput && !m.hasInput).length))}</span>
+          .replace('{results}', String(turn.messages.filter((m) => m.role === 'tool' && m.hasOutput).length))}</span>
         <span className="hint">{t(durationSource === 'derived' ? 'trajectory.timing.derived' : 'trajectory.timing.recorded', locale)}</span>
       </div>
       {durationSource === 'derived' && turn.durationMs >= SLOW_TURN_THRESHOLD_MS && !turn.messages.some((m) => m.role === 'tool' && m.hasInput) &&
@@ -102,6 +104,7 @@ export function TurnCard({
             durationSource={durationSource}
             loadDetail={loadDetail}
             loadRaw={loadRaw}
+            onInspect={onInspect}
           />
         ) : (
           <MessageCard
@@ -113,6 +116,7 @@ export function TurnCard({
             durationSource={durationSource}
             loadDetail={loadDetail}
             loadRaw={loadRaw}
+            onInspect={onInspect}
           />
         ),
       )}
@@ -120,7 +124,7 @@ export function TurnCard({
         <summary>{t('trajectory.metadata', locale).replace('{n}', String(metadata.length))}</summary>
         <p className="hint">{t('trajectory.metadata.explanation', locale)}</p>
         {metadata.map((message) => <MessageCard key={message.eventId} locale={locale} sessionKey={sessionKey}
-          message={message} loadDetail={loadDetail} loadRaw={loadRaw} />)}
+          message={message} loadDetail={loadDetail} loadRaw={loadRaw} onInspect={onInspect} />)}
       </details>}
     </div>
   );

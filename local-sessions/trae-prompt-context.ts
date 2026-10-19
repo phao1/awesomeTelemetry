@@ -179,6 +179,24 @@ export function parseTraeModelConfig(
   };
 }
 
+/**
+ * Trae 的库里没有 workspace / cwd 列，会话的工作目录只出现在注入的「终端状态」
+ * reminder 里：`… its shell type is zsh, cwd is /path/to/project`。
+ * 这是本地数据里唯一能证明 cwd 的地方，所以这里就按这行文本取。
+ *
+ * 取不到就返回 null —— 与其猜一个目录，不如让 sessions.cwd 保持空。
+ */
+export function extractTraeCwd(raw: string | null): string | null {
+  const envelope = extractTraeUserEnvelope(raw);
+  if (envelope === null) {
+    return null;
+  }
+  // 结尾可能紧跟换行、句号或标签，路径本身不含空白。
+  const match = /\bcwd\s+is\s+(\S+?)[.,\s]*$/m.exec(envelope) ?? /\bcwd\s+is\s+(\S+)/.exec(envelope);
+  const cwd = match?.[1] ?? null;
+  return cwd === null || cwd === '' ? null : cwd;
+}
+
 /** 数据库只能证明动态 reminder 与模型配置；完整静态 prompt 始终为 null。 */
 export function buildTraePromptContextDraft(input: {
   userMessageRaw: string | null;

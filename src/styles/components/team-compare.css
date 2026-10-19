@@ -1,0 +1,494 @@
+/* ==========================================================================
+   §9 TeamCompareView（add-agent-team-observability task 9）
+   只追加新 class，不修改任何现有 class（任务约束）。
+   只用 var(--*) tokens，无字面量颜色；1px 描边除外（T3 允许）。
+   ========================================================================== */
+
+.team-compare-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* §9.1 选择器区 */
+
+.team-compare-view-selectors {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.team-compare-view-selector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  position: relative;
+  min-width: var(--verdict-dim-min);
+}
+
+.team-compare-view-label {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-compare-view-input {
+  width: 100%;
+}
+
+.team-compare-view-listbox {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  background: var(--canvas-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-dropdown);
+  max-height: calc(var(--row-lg) * 6);
+  overflow-y: auto;
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.team-compare-view-option:hover {
+  background: var(--canvas-subtle);
+}
+
+.team-compare-view-option-on {
+  background: var(--accent-subtle);
+}
+
+.team-compare-view-option-id {
+  color: var(--fg-muted);
+  min-width: var(--seq-col-width);
+}
+
+.team-compare-view-option-title {
+  color: var(--fg-default);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-compare-view-no-runs {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  padding: var(--space-2);
+  background: var(--canvas-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-dropdown);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.team-compare-view-manual {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.team-compare-view-manual input {
+  accent-color: var(--accent-emphasis);
+}
+
+.team-compare-view-run-btn {
+  flex: 0 0 auto;
+}
+
+.team-compare-view-run-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.team-compare-view-same-id {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+  font-size: var(--text-xs);
+}
+
+/* §9.7 状态 */
+
+.team-compare-view-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-compare-view-partial-banner {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+  font-size: var(--text-xs);
+}
+
+/* §9.2 basis 横幅 */
+
+.team-compare-view-basis {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+}
+
+.team-compare-view-basis-matched {
+  background: var(--success-subtle);
+  border-color: var(--success-emphasis);
+}
+
+.team-compare-view-basis-partially_matched {
+  background: var(--attention-subtle);
+  border-color: var(--attention-emphasis);
+}
+
+.team-compare-view-basis-unmatched {
+  background: var(--danger-subtle);
+  border-color: var(--danger-emphasis);
+}
+
+.team-compare-view-basis-unknown {
+  background: var(--neutral-subtle);
+  border-color: var(--border-default);
+}
+
+.team-compare-view-basis-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.team-compare-view-basis-match {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+}
+
+.team-compare-view-basis-manual {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.team-compare-view-basis-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.team-compare-view-basis-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  border: 1px solid var(--border-muted);
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-basis-field-name {
+  color: var(--fg-muted);
+}
+
+.team-compare-view-basis-field-state {
+  font-weight: var(--weight-semibold);
+}
+
+.team-compare-view-basis-field-yes .team-compare-view-basis-field-state {
+  color: var(--success-fg);
+}
+
+.team-compare-view-basis-field-no .team-compare-view-basis-field-state {
+  color: var(--danger-fg);
+}
+
+.team-compare-view-basis-field-unknown .team-compare-view-basis-field-state {
+  color: var(--fg-subtle);
+}
+
+.team-compare-view-basis-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-compare-view-basis-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+}
+
+.team-compare-view-basis-hint-unmatched {
+  color: var(--danger-fg);
+}
+
+.team-compare-view-basis-hint-unknown {
+  color: var(--fg-muted);
+}
+
+/* §9.4 五维指标区 */
+
+.team-compare-view-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-compare-view-dimensions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-compare-view-dimension {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-compare-view-dimension-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+}
+
+.team-compare-view-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-table-caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.team-compare-view-table th {
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--fg-muted);
+  font-weight: var(--weight-semibold);
+}
+
+.team-compare-view-table td,
+.team-compare-view-table th[scope="row"] {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--fg-default);
+  font-weight: var(--weight-normal);
+}
+
+.team-compare-view-metric-id {
+  text-align: left;
+  white-space: nowrap;
+}
+
+.team-compare-view-cell {
+  white-space: nowrap;
+}
+
+.team-compare-view-row-material {
+  background: var(--canvas-subtle);
+}
+
+/* direction tag */
+
+.team-compare-view-direction-tag {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-direction-higher_better {
+  background: var(--success-subtle);
+  color: var(--success-fg);
+}
+
+.team-compare-view-direction-lower_better {
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+}
+
+.team-compare-view-direction-descriptive {
+  background: var(--neutral-subtle);
+  color: var(--neutral-fg);
+}
+
+/* material tag */
+
+.team-compare-view-material-tag {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-material-yes {
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.team-compare-view-material-no {
+  background: var(--neutral-subtle);
+  color: var(--neutral-fg);
+}
+
+/* completeness tag */
+
+.team-compare-view-completeness-tag {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.team-compare-view-completeness-complete {
+  background: var(--success-subtle);
+  color: var(--success-fg);
+}
+
+.team-compare-view-completeness-partial {
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+}
+
+.team-compare-view-completeness-unavailable {
+  background: var(--neutral-subtle);
+  color: var(--neutral-fg);
+}
+
+.team-compare-view-completeness-conflicted {
+  background: var(--danger-subtle);
+  color: var(--danger-fg);
+}
+
+.team-compare-view-criteria {
+
+  color: var(--fg-muted);
+}
+
+.team-compare-view-evidence {
+  color: var(--fg-muted);
+}
+
+/* §9.5 verdicts */
+
+.team-compare-view-verdicts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-compare-view-strengths,
+.team-compare-view-weaknesses,
+.team-compare-view-tradeoffs,
+.team-compare-view-caveats {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+}
+
+.team-compare-view-strengths {
+  background: var(--success-subtle);
+}
+
+.team-compare-view-weaknesses {
+  background: var(--danger-subtle);
+}
+
+.team-compare-view-tradeoffs {
+  background: var(--attention-subtle);
+}
+
+.team-compare-view-caveats {
+  background: var(--neutral-subtle);
+}
+
+.team-compare-view-verdict-title {
+  margin: 0 0 var(--space-1) 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.team-compare-view-strengths .team-compare-view-verdict-title {
+  color: var(--success-fg);
+}
+
+.team-compare-view-weaknesses .team-compare-view-verdict-title {
+  color: var(--danger-fg);
+}
+
+.team-compare-view-tradeoffs .team-compare-view-verdict-title {
+  color: var(--attention-fg);
+}
+
+.team-compare-view-caveats .team-compare-view-verdict-title {
+  color: var(--neutral-fg);
+}
+
+.team-compare-view-verdict-list {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* §9.6 no-winner/no-score note */
+
+.team-compare-view-no-verdict {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  border: 1px solid var(--border-muted);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  text-align: center;
+}

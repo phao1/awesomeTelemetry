@@ -10,6 +10,41 @@ speed metrics from TraceRecord, and generate HTML reports.
 
 ## Requirements
 
+### REQ-018: Legacy scan timing interpretation and comparison
+Keep legacy scan numbers and field names. Label TTFT as user-to-first-LLM-log
+start, TPS as arithmetic mean per valid LLM output/duration, TPOT as aggregated
+valid LLM duration/output, pureInferenceMs as legacy normalized LLM duration sum
+unless individually measured evidence exists. Show session durationSource and
+derived scheduling gaps; a measured declaration alone is not per-event proof.
+Scan epoch6 records this interpretation policy, independent of capture3/1.
+Missing/nonfinite/negative cannot win or become zero, equality or a radar score.
+Zero is displayable but cannot be a ratio denominator. Only same scan domains
+may compare; event metrics additionally require complete ready pages and known
+matching duration declarations/provider/sourceAgent. E2E is independent of
+event provenance and may describe observed session wall-clock only. Never
+present a wall-clock difference as causal model/Agent performance improvement;
+task/tool/config/quality equivalence remains unproven. Unknown/mixed bases keep
+side-by-side raw values but no automatic difference/winner/ratio. Reports follow
+the same labels; numerical metric algorithms are unchanged.
+
+### REQ-017: Versioned capture usage reparse
+Capture parser and native-usage accounting versions SHALL be separate from
+scan METRICS_CALC_VERSION. Reparse stores bounded numeric/status evidence on the
+same capture,not a new charged call or cross-source aggregation. Missing counters
+stay null,subsets/additive semantics stay explicit,changed parser/metric/source
+marks stored metadata stale without auto-recompute. Original scan metrics and
+transport times are not rewritten; no cost/Accuracy/causal improvement claim.
+
+### REQ-016: Evidence-backed selected-call diagnostics
+Pure diagnostics SHALL derive only from the explicitly selected capture pair
+under data-model.md's frozen view-model/rules. Slow network/meaningful content
+uses valid observed same-clock offsets and visible adjustable threshold, not
+pure model time. Repeated encoded-body candidates use retained complete SHA/
+bytes plus matching endpoint/protocol, not guessed native identity or charged
+call dedup. Keep unavailable evidence explicit. No IO, reparse, request mutation,
+automatic optimization, cost aggregation or Accuracy claim. Existing context
+growth, cache and observed tool-failure diagnostics keep their own evidence.
+
 ### REQ-001: Phase classifier (two-pass algorithm)
 `classifyEvents(events)` SHALL use a two-pass algorithm:
 - **Pass 1** — label each event's certainty: `explicit` (direct action

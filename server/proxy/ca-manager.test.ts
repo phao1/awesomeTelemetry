@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import forge from 'node-forge';
 
-import { ensureRootCa, getOrCreateDomainCert } from './ca-manager.js';
+import { ensureInterceptCa, ensureRootCa, getOrCreateDomainCert } from './ca-manager.js';
 
 const tempDirs: string[] = [];
 
@@ -20,6 +20,17 @@ afterEach(() => {
 });
 
 describe('REQ-002/G3.3 ca-manager（node-forge 兜底）', () => {
+  it('returns the actual proxy CA certificate and protects its private key', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'intercept-ca-')); tempDirs.push(dir);
+    const [first, second] = await Promise.all([ensureInterceptCa(dir), ensureInterceptCa(dir)]);
+    expect(first).toBe(second);
+    expect(first).toBe(readFileSync(join(dir, 'certs', 'ca.pem'), 'utf8'));
+    const cert = forge.pki.certificateFromPem(first);
+    expect(cert.getExtension('basicConstraints')).toMatchObject({ cA: true });
+    expect(first).not.toContain('PRIVATE KEY');
+    expect(statSync(join(dir, 'keys', 'ca.private.key')).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, 'keys')).mode & 0o777).toBe(0o700);
+  });
   it('首次生成并持久化 root CA，二次加载一致', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ca-manager-'));
     tempDirs.push(dir);

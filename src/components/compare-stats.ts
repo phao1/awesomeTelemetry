@@ -17,6 +17,23 @@ export const FAILED_COMMAND_KINDS = new Set([
   'bash', 'test', 'tool', 'file_write', 'file_read', 'agent',
 ]);
 
+/** Local view policy only; preserve source counts and persisted metric algorithms. */
+export function compareActivity(detail: SessionDetailResponse): {
+  complete: boolean; steps: number; verification: number | null;
+  errorRate: number | null; unknownStatuses: number;
+} {
+  const steps = detail.events.filter(event => STEP_KINDS.has(event.kind));
+  const complete = !detail.pending && !detail.hasMore && detail.eventOffset === 0
+    && detail.events.length >= detail.eventTotal;
+  const unknownStatuses = steps.filter(event => event.status === 'unknown').length;
+  const ready = complete && steps.length > 0;
+  return {
+    complete, steps: steps.length, unknownStatuses,
+    verification: ready ? detail.events.filter(event => event.phase === 'verify').length / steps.length : null,
+    errorRate: ready && unknownStatuses === 0 ? steps.filter(event => event.status === 'error').length / steps.length : null,
+  };
+}
+
 export interface CompareSideStats {
   llmCalls: number;
   totalLlmDuration: number;

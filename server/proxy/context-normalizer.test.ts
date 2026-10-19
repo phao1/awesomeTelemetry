@@ -304,8 +304,8 @@ describe('task 4.5 OpenAI Responses normalization', () => {
   });
 });
 
-describe('task 4.6 metadata filtering and secret exclusion', () => {
-  it('keeps only scalar metadata values and excludes secret keys', () => {
+describe('original metadata preservation', () => {
+  it('preserves scalar and nested metadata without credential-name filtering', () => {
     const result = ok(
       normalizeRequestContext({
         format: 'openai_chat',
@@ -325,11 +325,10 @@ describe('task 4.6 metadata filtering and secret exclusion', () => {
     );
     expect(result.parameters['metadata.user_id']).toBe('u-1');
     expect(result.parameters['metadata.org']).toBe('acme');
-    expect(result.parameters).not.toHaveProperty('metadata.api_key');
-    expect(result.parameters).not.toHaveProperty('metadata.token');
-    expect(result.parameters).not.toHaveProperty('metadata.cookie');
-    // non-scalar nested value must not enter parameters
-    expect(result.parameters).not.toHaveProperty('metadata.nested');
+    expect(result.parameters['metadata.api_key']).toBe('sk-secret');
+    expect(result.parameters['metadata.token']).toBe('abc');
+    expect(result.parameters['metadata.cookie']).toBe('sid=1');
+    expect(result.parameters['metadata.nested']).toEqual({ a: 1 });
   });
 
   it('never copies unknown top-level fields into parameters', () => {
