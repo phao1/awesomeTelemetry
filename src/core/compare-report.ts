@@ -119,8 +119,7 @@ function column(title: string, record: TraceRecord, locale: ReportLocale): strin
       <li>fast: e2e ${time(speed.e2eMs)}, llmCalls ${metrics.llmCallCount},
         totalToolDuration ${time(metrics.totalToolDurationMs)},
         avgLlmDuration ${time(speed.avgLlmDurationMs, 1)}</li>
-      <li>frugal: total ${tokens.total}, netInput ${tokens.netInput},
-        cost ${metrics.costUsd.toFixed(4)}</li>
+      <li>frugal: total ${tokens.total}, netInput ${tokens.netInput}</li>
       <li>quality: readWriteRatio ${readWriteRatio}, fileWrites ${fileWrites},
         codeConciseness ${codeConciseness} (totalSteps / fileWriteCount),
         verificationCoverage ${metrics.verificationCoverage.toFixed(3)},

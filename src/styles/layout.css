@@ -36,7 +36,7 @@
   position: relative;
   min-width: 0;
   overflow: hidden;
-  transition: width var(--duration-base) var(--ease-out);
+  transition: border-color var(--duration-base) var(--ease-out);
 }
 
 .rail-header {

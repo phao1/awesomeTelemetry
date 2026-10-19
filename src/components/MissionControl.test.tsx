@@ -79,11 +79,12 @@ describe('MissionControl（REQ-027）', () => {
       });
       expect(load).toHaveBeenCalledTimes(1);
       const text = host.textContent ?? '';
-      expect(text).toContain('21'); // widgetCount
+      expect(text).toContain('20'); // displayed count excludes monetary-only costEfficiency
       expect(text).toContain('events.tool 按调用数聚合 TOP 10'); // 8.7：criteria 经 i18n 字典渲染
       expect(text).toContain('该指标当前不可用'); // unavailable EmptyState
-      // REQ-117：A/B/C 标签页移除后，21 个 widget 一次性按角色分组全量呈现
-      expect(host.querySelectorAll('.mission-widget').length).toBe(21);
+      // User amendment: all 20 non-monetary widgets remain grouped and visible.
+      expect(host.querySelectorAll('.mission-widget').length).toBe(20);
+      expect(host.querySelector('#widget-costEfficiency')).toBeNull();
       expect(host.querySelector('.mission-chips')).toBeNull();
       expect(host.querySelector('[role="tablist"]')).toBeNull();
     } finally {
@@ -210,7 +211,7 @@ describe('MissionControl（REQ-027）', () => {
     }
   });
 
-  it('9.4 定价缺失路径：unknown 成本的模型显示 —，不渲染 $0.0000', async () => {
+  it('models retain Token components for known/unknown prices without money or pricing coverage', async () => {
     const base = makeResponse();
     const withModels: MissionResponse = {
       ...base,
@@ -253,12 +254,23 @@ describe('MissionControl（REQ-027）', () => {
       // REQ-117：models widget 不再需要切 B 标签页，角色分组下直接可见
       const text = host.textContent ?? '';
       expect(text).toContain('glm-4-plus');
-      expect(text).toContain('—');
-      expect(text).not.toContain('$0.0000');
+      expect(host.querySelector('#widget-models')?.textContent).toContain('输入 100');
+      expect(host.querySelector('#widget-models')?.textContent).toContain('输出 50');
+      expect(text).not.toMatch(/[$¥￥€£]\s*\d/);
+      expect(host.querySelector('#widget-costEfficiency')).toBeNull();
+      expect(load).toHaveBeenCalledTimes(1);
     } finally {
       act(() => root?.unmount());
       host.remove();
     }
+  });
+});
+
+describe('monetary-only Mission widgets',()=>{
+  it('omits populated cost efficiency, never mutates its source and counts only rendered widgets',async()=>{
+    const response=makeResponse();response.quality.costEfficiency={id:'costEfficiency',criteria:'MONEY_CRITERIA_SENTINEL',available:true,unavailableReason:null,data:{totalUsd:456789.1234,perTurnUsd:1,perOkToolUsd:2,perSessionUsd:3,turns:1,tools:1,pricedSessions:1,unpricedSessions:0}};
+    const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+    try {act(()=>root.render(<MissionControl locale="en" load={async()=>response}/>));await act(async()=>{await Promise.resolve();});expect(host.querySelector('#widget-costEfficiency')).toBeNull();expect(host.textContent).not.toContain('MONEY_CRITERIA_SENTINEL');expect(host.textContent).not.toContain('456789.1234');expect(host.querySelectorAll('.mission-widget')).toHaveLength(20);expect(response.quality.costEfficiency.data?.totalUsd).toBe(456789.1234);}finally{act(()=>root.unmount());host.remove();}
   });
 });
 

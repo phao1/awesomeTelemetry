@@ -58,7 +58,9 @@ describe('explicit selected capture comparison', () => {
     expect(contentRow.querySelector('details')?.open).toBe(false);
     expect(contentRow.querySelector('details')?.textContent).toContain('base.evidence.transport.timing.firstContentMs');
     expect(container.textContent).toContain('not a controlled experiment');
-    expect(container.textContent).toContain('Cost is unknown');
+    expect(container.textContent).not.toContain('Cost is unknown');
+    expect(container.textContent).not.toContain('Cost unknown');
+    expect(container.querySelector('[data-comparison-metric="inputTokens"]')?.textContent).toContain('100');
     expect(container.textContent).toContain('anthropic_additive_input'); expect(container.textContent).toContain('sse_event_dispatch');
     expect(container.querySelector('[data-comparison-metric="cacheWriteTokens"]')?.textContent).toContain('—');
     expect(fetcher.mock.calls.some(call => String(call[0]).includes('context-diff') || String(call[0]).includes('/body/'))).toBe(false);

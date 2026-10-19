@@ -90,8 +90,8 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
 }
 
 /** CA 证书是 PEM 文本，非 JSON（api.md §4：application/x-pem-file）。 */
-export async function fetchText(path: string): Promise<string> {
-  const res = await fetch(`${BASE}${path}`, { headers: { accept: 'application/x-pem-file' } });
+export async function fetchText(path: string, signal?: AbortSignal): Promise<string> {
+  const res = await fetch(`${BASE}${path}`, { headers: { accept: 'application/x-pem-file' }, signal });
   const text = await res.text();
   if (!res.ok) {
     const envelope = ((): { error?: { code?: string; message?: string } } | null => {
@@ -191,8 +191,8 @@ export const api = {
       { signal },
     );
   },
-  agentOverview(dataSource: 'scan' | 'proxy' = 'scan'): Promise<AgentOverviewResponse> {
-    return fetchJson<AgentOverviewResponse>(`/agent-overview${qs({ dataSource })}`);
+  agentOverview(dataSource: 'scan' | 'proxy' = 'scan', signal?: AbortSignal): Promise<AgentOverviewResponse> {
+    return fetchJson<AgentOverviewResponse>(`/agent-overview${qs({ dataSource })}`, { signal });
   },
   /** api.md §2.4：Mission 聚合，1 请求返回全部 A/B/C 三区 widget（G11.9）。 */
   mission(params: {
@@ -208,55 +208,56 @@ export const api = {
       })}`,
     );
   },
-  proxyRequests(params: { limit?: number; cursor?: string } = {}): Promise<{
+  proxyRequests(params: { limit?: number; cursor?: string } = {}, signal?: AbortSignal): Promise<{
     items: ProxyRequestListItem[];
     nextCursor: string | null;
     hasMore: boolean;
   }> {
-    return fetchJson(`/proxy/requests${qs({ limit: params.limit ?? 50, cursor: params.cursor })}`);
+    return fetchJson(`/proxy/requests${qs({ limit: params.limit ?? 50, cursor: params.cursor })}`, { signal, cache: 'no-store' });
   },
-  proxyStatus(): Promise<ProxyRuntimeStatus> {
-    return fetchJson('/proxy/status');
+  proxyStatus(signal?: AbortSignal): Promise<ProxyRuntimeStatus> {
+    return fetchJson('/proxy/status', { signal, cache: 'no-store' });
   },
   monitorCapabilities(signal?: AbortSignal): Promise<MonitorCapabilityReport> {
     return fetchJson('/proxy/capabilities', { signal, cache: 'no-store' });
   },
-  monitorProfiles(): Promise<{ items: MonitorConnectionProfile[] }> {
-    return fetchJson('/proxy/profiles');
+  monitorProfiles(signal?: AbortSignal): Promise<{ items: MonitorConnectionProfile[] }> {
+    return fetchJson('/proxy/profiles', { signal, cache: 'no-store' });
   },
-  monitorCreateProfile(settings: MonitorConnectionSettings): Promise<MonitorConnectionProfile> {
-    return fetchJson('/proxy/profiles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) });
+  monitorCreateProfile(settings: MonitorConnectionSettings, signal?: AbortSignal): Promise<MonitorConnectionProfile> {
+    return fetchJson('/proxy/profiles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings), signal });
   },
-  monitorUpdateProfile(id: string, settings: MonitorConnectionSettings, expectedRevision: number): Promise<MonitorConnectionProfile> {
-    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ settings, expectedRevision }) });
+  monitorUpdateProfile(id: string, settings: MonitorConnectionSettings, expectedRevision: number, signal?: AbortSignal): Promise<MonitorConnectionProfile> {
+    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ settings, expectedRevision }), signal });
   },
-  monitorDeleteProfile(id: string, expectedRevision: number): Promise<{ deleted: true }> {
-    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision }) });
+  monitorDeleteProfile(id: string, expectedRevision: number, signal?: AbortSignal): Promise<{ deleted: true }> {
+    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision }), signal });
   },
-  monitorConnectionPlan(id: string): Promise<MonitorConnectionPlan> {
-    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/plan`);
+  monitorConnectionPlan(id: string, signal?: AbortSignal): Promise<MonitorConnectionPlan> {
+    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/plan`, { signal, cache: 'no-store' });
   },
   monitorConnectionDiagnostics(id: string, signal?: AbortSignal): Promise<MonitorConnectionDiagnostics> {
-    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/diagnostics`, { signal });
+    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/diagnostics`, { signal, cache: 'no-store' });
   },
   monitorCaptureSelfTest(id: string, expectedRevision: number, signal?: AbortSignal): Promise<MonitorCaptureSelfTest> {
     return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/self-test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision }), signal, cache: 'no-store' });
   },
-  monitorStartProfile(id: string, expectedRevision: number): Promise<MonitorConnectionPlan> {
-    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision }) });
+  monitorStartProfile(id: string, expectedRevision: number, signal?: AbortSignal): Promise<MonitorConnectionPlan> {
+    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision }), signal });
   },
-  proxyStart(port?: number): Promise<ProxyRuntimeStatus> {
+  proxyStart(port?: number, signal?: AbortSignal): Promise<ProxyRuntimeStatus> {
     return fetchJson('/proxy/start', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ port }),
+      signal,
     });
   },
-  proxyStop(): Promise<ProxyRuntimeStatus> {
-    return fetchJson('/proxy/stop', { method: 'POST' });
+  proxyStop(signal?: AbortSignal): Promise<ProxyRuntimeStatus> {
+    return fetchJson('/proxy/stop', { method: 'POST', signal });
   },
-  proxyRequest(id: number): Promise<ProxyRequest> {
-    return fetchJson(`/proxy/requests/${id}`);
+  proxyRequest(id: number, signal?: AbortSignal): Promise<ProxyRequest> {
+    return fetchJson(`/proxy/requests/${id}`, { signal });
   },
   proxyCapture(id: number, signal?: AbortSignal): Promise<ProxyCaptureBodies> {
     return fetchJson(`/proxy/requests/${id}/capture`, { signal });
@@ -338,31 +339,29 @@ export const api = {
       `/proxy/requests/${targetId}/context-diff${qs({ base })}`,
     );
   },
-  clearProxyRequests(): Promise<unknown> {
-    return fetchJson('/proxy/requests', { method: 'DELETE' });
+  caCert(signal?: AbortSignal): Promise<string> {
+    return fetchText('/ca-cert', signal);
   },
-  caCert(): Promise<string> {
-    return fetchText('/ca-cert');
+  fridaStatus(signal?:AbortSignal): Promise<{ running: boolean; starting: boolean; pid: number | null }> {
+    return fetchJson('/frida/status',{signal});
   },
-  fridaStatus(): Promise<{ running: boolean; starting: boolean; pid: number | null }> {
-    return fetchJson('/frida/status');
-  },
-  fridaStart(pid?: number): Promise<{ running: boolean; starting: boolean; pid: number | null }> {
+  fridaStart(pid?: number,signal?:AbortSignal): Promise<{ running: boolean; starting: boolean; pid: number | null }> {
     return fetchJson('/frida/start', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ pid }),
+      signal,
     });
   },
-  fridaStop(): Promise<unknown> {
-    return fetchJson('/frida/stop', { method: 'POST' });
+  fridaStop(signal?:AbortSignal): Promise<unknown> {
+    return fetchJson('/frida/stop', { method: 'POST',signal });
   },
-  fridaCaptures(): Promise<{
+  fridaCaptures(signal?:AbortSignal): Promise<{
     items: Array<{ id: number; capturedAt: string; captureType: string; model: string | null }>;
     nextCursor: string | null;
     hasMore: boolean;
   }> {
-    return fetchJson('/frida/captures');
+    return fetchJson('/frida/captures',{signal});
   },
   health(): Promise<{
     ok: boolean;
@@ -375,14 +374,15 @@ export const api = {
   }> {
     return fetchJson('/health');
   },
-  configProviders(): Promise<unknown> {
-    return fetchJson('/config/providers');
+  configProviders(signal?:AbortSignal): Promise<unknown> {
+    return fetchJson('/config/providers',{signal});
   },
-  saveConfigProviders(body: unknown): Promise<unknown> {
+  saveConfigProviders(body: unknown,signal?:AbortSignal): Promise<unknown> {
     return fetchJson('/config/providers', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
+      signal,
     });
   },
   deleteSession(key: string): Promise<{ deleted: boolean; key: string }> {
@@ -398,7 +398,7 @@ export const api = {
       body: JSON.stringify({ provider, force }),
     });
   },
-  compare(leftKey: string, rightKey: string): Promise<{
+  compare(leftKey: string, rightKey: string, signal?: AbortSignal): Promise<{
     left: SessionDetailResponse;
     right: SessionDetailResponse;
     speed: { left: SpeedMetrics; right: SpeedMetrics };
@@ -407,6 +407,7 @@ export const api = {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ leftKey, rightKey }),
+      signal,
     });
   },
 };

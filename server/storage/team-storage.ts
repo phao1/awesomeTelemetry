@@ -1,3 +1,4 @@
+import { desensitizeChecked } from '../desensitization/engine.js';
 import type { Database } from 'better-sqlite3';
 
 import type {
@@ -1455,14 +1456,19 @@ export function listTeamActivities(
   }
   if (cursor !== null) {
     if (cursor.s === null) {
-      where.push('(started_at IS NULL AND id > ?)');
-      params.push(cursor.i);
+      if (cursor.n === null) {
+        where.push('(started_at IS NULL AND native_sequence IS NULL AND id > ?)');
+        params.push(cursor.i);
+      } else {
+        where.push('(started_at IS NULL AND (native_sequence < ? OR native_sequence IS NULL OR (native_sequence = ? AND id > ?)))');
+        params.push(cursor.n, cursor.n, cursor.i);
+      }
     } else if (cursor.n === null) {
-      where.push('(started_at < ? OR (started_at = ? AND native_sequence IS NULL AND id > ?))');
+      where.push('(started_at IS NULL OR started_at < ? OR (started_at = ? AND native_sequence IS NULL AND id > ?))');
       params.push(cursor.s, cursor.s, cursor.i);
     } else {
       where.push(
-        '(started_at < ? OR (started_at = ? AND native_sequence < ?) ' +
+        '(started_at IS NULL OR started_at < ? OR (started_at = ? AND (native_sequence < ? OR native_sequence IS NULL)) ' +
         'OR (started_at = ? AND native_sequence = ? AND id > ?))',
       );
       params.push(cursor.s, cursor.s, cursor.n, cursor.s, cursor.n, cursor.i);
@@ -1945,7 +1951,16 @@ export function evidenceToIngest(evidence: NormalizedTeamEvidence): TeamRunInges
     rounds: roundRows,
     artifacts: artifactRows,
     evidence: evidenceRows,
-    bodies: [],
+    bodies: (evidence.activityBodies ?? []).map(body => {
+      const clean = (value: string | null): string | null => {
+        if (value === null) return null;
+        const checked = desensitizeChecked(value);
+        return checked.skipped ? '[Evidence unavailable: redaction budget exceeded]' : checked.text;
+      };
+      return { activity_id: body.activity_id, input_body: clean(body.input_body),
+        output_body: clean(body.output_body), message_body: clean(body.message_body),
+        result_body: clean(body.result_body), raw_body: null };
+    }),
     metrics: null,
     session_ids: [...sessionIds],
     complete: true,

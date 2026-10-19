@@ -1,4 +1,6 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
+
+const activeTraps: HTMLElement[] = [];
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -10,7 +12,7 @@ const FOCUSABLE_SELECTOR = [
 ].join(',');
 
 /**
- * REQ-009：浮层焦点陷阱。打开时聚焦容器内首个可聚焦元素，
+ * REQ-009：浮层焦点陷阱。打开时聚焦指定目标（默认首个安全控件），
  * Tab/Shift+Tab 在容器内循环；Esc 交还调用方关闭。
  */
 export function useFocusTrap(
@@ -18,7 +20,10 @@ export function useFocusTrap(
   open: boolean,
   onEscape: () => void,
   restoreFocusRef?: RefObject<HTMLElement | null>,
+  initialFocusRef?: RefObject<HTMLElement | null>,
 ): void {
+  const escapeRef = useRef(onEscape);
+  useEffect(() => { escapeRef.current = onEscape; }, [onEscape]);
   useEffect(() => {
     if (!open) {
       return;
@@ -33,13 +38,17 @@ export function useFocusTrap(
       Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
         (el) => !el.hasAttribute('hidden') && el.getAttribute('aria-hidden') !== 'true',
       );
-    const first = focusables()[0];
-    first?.focus();
+    const list = focusables();
+    const requested = initialFocusRef?.current;
+    const initial = requested != null && list.includes(requested) ? requested : list[0];
+    activeTraps.push(container);
+    initial?.focus();
 
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || event.isComposing || activeTraps.at(-1) !== container) return;
       if (event.key === 'Escape') {
         event.preventDefault();
-        onEscape();
+        escapeRef.current();
         return;
       }
       if (event.key !== 'Tab') {
@@ -63,9 +72,11 @@ export function useFocusTrap(
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      if (previouslyFocused instanceof HTMLElement) {
+      const index = activeTraps.lastIndexOf(container);
+      if (index >= 0) activeTraps.splice(index, 1);
+      if (previouslyFocused instanceof HTMLElement && previouslyFocused.isConnected) {
         previouslyFocused.focus();
       }
     };
-  }, [containerRef, open, onEscape, restoreFocusRef]);
+  }, [containerRef, open, restoreFocusRef, initialFocusRef]);
 }

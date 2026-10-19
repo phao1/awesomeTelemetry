@@ -34,20 +34,22 @@ import { localSamples } from './generated/local-samples.js';
 import { LanguageToggle } from './components/LanguageToggle.js';
 import { LiveIndicator } from './components/LiveIndicator.js';
 import { SessionList } from './components/SessionList.js';
+import { SessionStart } from './components/SessionStart.js';
 import { SessionToolbar } from './components/SessionToolbar.js';
 import { SessionFindings } from './components/SessionFindings.js';
 import { SessionVisuals } from './components/SessionVisuals.js';
 import { TrajectoryPane } from './components/trajectory/TrajectoryPane.js';
 import { AgentCollabReplay } from './components/AgentCollabReplay.js';
-import { AgentOverview } from './components/AgentOverview.js';
+const AgentOverview = lazy(() => import('./components/AgentOverview.js').then(module => ({ default: module.AgentOverview })));
 const CompareBoard = lazy(() => import('./components/CompareBoard.js').then(module => ({ default: module.CompareBoard })));
-import { ProxyView } from './components/ProxyView.js';
+const ProxyView = lazy(() => import('./components/ProxyView.js').then(module => ({ default: module.ProxyView })));
 import type { LiveStreamEntry } from './components/ProxyLivePanel.js';
 const ProxyLivePanel = lazy(() => import('./components/ProxyLivePanel.js').then(module => ({ default: module.ProxyLivePanel })));
 import { SessionCaptureLinksPanel } from './components/TraceLinksPanel.js';
-import { FridaView } from './components/FridaView.js';
+const FridaView = lazy(() => import('./components/FridaView.js').then(module => ({ default: module.FridaView })));
 import { MissionControl, type MissionRange } from './components/MissionControl.js';
-import { SettingsModal } from './components/SettingsModal.js';
+const SettingsModal = lazy(() => import('./components/SettingsModal.js').then(module => ({ default: module.SettingsModal })));
+import { Modal } from './components/ui/Modal.js';
 
 /** 错误展示本地化：已知错误码按当前语言翻译，未知码回退原始 message。 */
 function formatError(err: unknown, locale: Locale): string {
@@ -60,6 +62,7 @@ function formatError(err: unknown, locale: Locale): string {
 import { PromptContextModal } from './components/PromptContextModal.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
 import { ErrorState, EmptyState } from './components/ui/States.js';
+import { ErrorBoundary } from './components/ui/ErrorBoundary.js';
 import { useTheme } from './theme.js';
 import { AppHeader, StatusBar, ViewTabs, type AppView } from './components/AppShell.js';
 import {
@@ -80,7 +83,7 @@ import { parseHash, serializeHash, type HashState } from './hash-router.js';
 import type { CommandPaletteProps } from './components/CommandPalette.js';
 import { computeFindings, type Finding } from './core/session-findings.js';
 // add-agent-team-observability §7.3 — team 视图 shell（App.tsx 是唯一 stateful shell）
-import { TeamShell } from './components/team/TeamShell.js';
+const TeamShell = lazy(() => import('./components/team/TeamShell.js').then(module => ({ default: module.TeamShell })));
 import {
   DEFAULT_TEAM_HASH,
   parseTeamHash,
@@ -124,7 +127,7 @@ export default function App() {
   } | null>(null);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
   const [hasMoreSessions, setHasMoreSessions] = useState(false);
-  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [offlineSamples, setOfflineSamples] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(() => INITIAL_HASH?.key ?? null);
@@ -138,6 +141,7 @@ export default function App() {
   );
   const [sessionTotal, setSessionTotal] = useState(0);
   const sessionCursorRef = useRef<string | null>(null);
+  const sessionListRequestRef = useRef(0);
   // REQ-026：布局偏好持久化（读取时范围校验）
   const [railWidth, setRailWidth] = useState(() =>
     loadNumber(LAYOUT_KEYS.railWidth, 300, LAYOUT_RANGES.railWidth),
@@ -160,6 +164,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [promptContextKey, setPromptContextKey] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteLoadError, setPaletteLoadError] = useState(false);
   const [PaletteComponent, setPaletteComponent] = useState<PaletteModule['CommandPalette'] | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [cursorIndex, setCursorIndex] = useState(0);
@@ -170,6 +175,7 @@ export default function App() {
     () => (INITIAL_HASH?.status as TraceStatus[]) ?? [],
   );
   const [focusEventId, setFocusEventId] = useState<string | null>(null);
+  const [focusEventRequest, setFocusEventRequest] = useState(0);
   const sessionFiltersRef = useRef({
     q: sessionQ,
     range: sessionRange,
@@ -192,7 +198,8 @@ export default function App() {
   const [traceLinksVersion, setTraceLinksVersion] = useState(0);
   const clearProxyFocus = useCallback(() => setProxyFocusedId(null), []);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const selectedKeyRef = useRef<string | null>(null);
+  const focusSearchOnExpand = useRef(false);
+  const selectedKeyRef = useRef<string | null>(selectedKey);
   const metadataEpochRef = useRef(0);
 
   const setLocale = useCallback((next: Locale) => {
@@ -241,6 +248,7 @@ export default function App() {
   const loadSessions = useCallback(
     async (mode: 'first' | 'next') => {
       const epoch = metadataEpochRef.current;
+      const request = ++sessionListRequestRef.current;
       const filters = sessionFiltersRef.current;
       setSessionsLoading(true);
       try {
@@ -253,7 +261,7 @@ export default function App() {
           q: filters.q.trim() !== '' ? filters.q.trim() : undefined,
           range: filters.range,
         });
-        if (metadataEpochRef.current !== epoch) return;
+        if (metadataEpochRef.current !== epoch || sessionListRequestRef.current !== request) return;
         startTransition(() => {
           setSessions((prev) => (mode === 'first' ? result.items : mergeSessionsPatch(prev, result.items)));
         });
@@ -263,7 +271,7 @@ export default function App() {
         setSessionsError(null);
         setOfflineSamples(false);
       } catch (err) {
-        if (metadataEpochRef.current !== epoch) return;
+        if (metadataEpochRef.current !== epoch || sessionListRequestRef.current !== request) return;
         console.error('[sessions] 列表加载失败:', err);
         setSessionsError(formatError(err, localeRef.current));
         // REQ-014：API 不可用时用本地样本兜底，状态栏显示「离线样本」
@@ -272,7 +280,7 @@ export default function App() {
         });
         setOfflineSamples(true);
       } finally {
-        if (metadataEpochRef.current === epoch) setSessionsLoading(false);
+        if (metadataEpochRef.current === epoch && sessionListRequestRef.current === request) setSessionsLoading(false);
       }
     },
     [],
@@ -297,6 +305,8 @@ export default function App() {
 
   // 过滤变更（含首帧）→ 防抖拉第一页，替换而非追加（分页下不做纯前端过滤）
   useEffect(() => {
+    sessionListRequestRef.current += 1;
+    setSessionsLoading(true);
     const timer = setTimeout(() => {
       void loadSessions('first');
     }, 250);
@@ -424,15 +434,19 @@ export default function App() {
   }, [loadSessions]);
 
   const selectSession = useCallback(
-    (key: string) => {
+    (key: string, targetEventId?:string) => {
       const epoch = metadataEpochRef.current;
+      if (selectedKeyRef.current !== key) {
+        setSelectedTurn(null);
+        setFocusEventId(null);
+      }
       selectedKeyRef.current = key;
       eventPageRequest.current = null;
       setLoadingMoreEvents(false);
       setMoreEventsError(null);
       setSelectedKey(key);
       const cached = recordCache.get(`${key}:slim`);
-      if (cached !== undefined) {
+      if (cached !== undefined && (targetEventId===undefined||cached.events.some(event=>event.id===targetEventId))) {
         setDetail(cached);
         setPending(false);
         setDetailError(null);
@@ -442,7 +456,7 @@ export default function App() {
       setPending(false);
       setDetailError(null);
       void api
-        .sessionDetail(key, 'slim')
+        .sessionDetail(key, 'slim',undefined,targetEventId===undefined?undefined:5000)
         .then((result) => {
           if (metadataEpochRef.current !== epoch || selectedKeyRef.current !== key) return;
           if (result.pending) {
@@ -513,6 +527,7 @@ export default function App() {
         if (target !== undefined) {
           // 甘特与 Inspector 已删除：定位到目标事件所在的回合。
           setFocusEventId(target.id);
+          setFocusEventRequest(value => value + 1);
           return;
         }
       }
@@ -521,29 +536,17 @@ export default function App() {
   );
 
   const startCompare = useCallback(
-    (left: ProviderKey, right: ProviderKey) => {
-      const pick = (provider: ProviderKey): string | null => {
+    (left: ProviderKey, right: ProviderKey, sourceAgents: readonly [string, string]) => {
+      const pick = (provider: ProviderKey, sourceAgent: string): string | null => {
         const candidates = sessions
-          .filter((s) => s.provider === provider)
-          .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+          .filter((s) => s.provider === provider && s.dataSource === 'scan' && s.sourceAgent === sourceAgent)
+          .sort((a, b) => b.startedAt.localeCompare(a.startedAt) || a.id.localeCompare(b.id));
         return candidates[0]?.id ?? null;
       };
-      let leftKey = pick(left);
-      let rightKey = pick(right);
-      // 同一 provider 选了两个 Agent 时，退化为该 provider 最近的两个不同会话。
-      if (left === right && leftKey !== null && rightKey !== null && leftKey === rightKey) {
-        const candidates = sessions
-          .filter((s) => s.provider === left)
-          .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
-        leftKey = candidates[0]?.id ?? null;
-        rightKey = candidates[1]?.id ?? candidates[0]?.id ?? null;
-      }
-      if (leftKey !== null) {
-        setCompareLeft(leftKey);
-      }
-      if (rightKey !== null) {
-        setCompareRight(rightKey);
-      }
+      const leftKey = pick(left, sourceAgents[0]);
+      const rightKey = pick(right, sourceAgents[1]);
+      setCompareLeft(leftKey ?? '');
+      setCompareRight(rightKey ?? '');
       switchView('compare');
     },
     [sessions, switchView],
@@ -570,6 +573,25 @@ export default function App() {
     return () => setEscapeFallback(null);
   }, []);
 
+  const openPalette = useCallback(() => {
+    setPaletteLoadError(false);
+    setPaletteOpen(true);
+    void import('./components/CommandPalette.js').then(module => {
+      setPaletteComponent(() => module.CommandPalette);
+    }).catch((error: unknown) => {
+      console.error('Command palette failed to load', error);
+      setPaletteOpen(false);
+      setPaletteLoadError(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!railCollapsed && view === 'session' && focusSearchOnExpand.current) {
+      focusSearchOnExpand.current = false;
+      searchInputRef.current?.focus();
+    }
+  }, [railCollapsed, view]);
+
   // REQ-008（D1）：单一全局监听 + 映射表
   useEffect(() => {
     const unsubs: Array<() => void> = [];
@@ -582,7 +604,11 @@ export default function App() {
     add({ key: '4' }, () => switchView('proxy'));
     add({ key: '5' }, () => switchView('frida'));
     add({ key: '6' }, () => switchView('mission'));
-    add({ key: '/' }, () => searchInputRef.current?.focus());
+    add({ key: '/' }, () => {
+      if (view !== 'session') return;
+      if (searchInputRef.current !== null) searchInputRef.current.focus();
+      else { focusSearchOnExpand.current = true; setRailCollapsed(false); }
+    });
     add({ key: 'j' }, () => {
       setCursorIndex((prev) => Math.min(sessions.length - 1, prev + 1));
     });
@@ -599,14 +625,8 @@ export default function App() {
     add({ key: ']' }, () => setTrajectoryRailCollapsed((prev) => !prev));
     add({ key: '\\', ctrlOrMeta: true }, () => theme.cycle());
     add({ key: 'k', ctrlOrMeta: true }, () => {
-      setPaletteOpen((prev) => {
-        if (!prev) {
-          void import('./components/CommandPalette.js').then((module) => {
-            setPaletteComponent(() => module.CommandPalette);
-          });
-        }
-        return !prev;
-      });
+      if (paletteOpen) setPaletteOpen(false);
+      else openPalette();
     });
     add({ key: '?' }, () => setHelpOpen((prev) => !prev));
     return () => {
@@ -614,7 +634,7 @@ export default function App() {
         unsubscribe();
       }
     };
-  }, [sessions, cursorIndex, selectSession, switchView, theme, setRailCollapsed]);
+  }, [sessions, cursorIndex, selectSession, switchView, theme, setRailCollapsed, paletteOpen, openPalette, view]);
 
   // REQ-024（D3）：状态变 → 写 hash（replaceState 不触发 hashchange，避免循环）
   useEffect(() => {
@@ -694,7 +714,7 @@ export default function App() {
 
   return (
     <div className={`app ${trajectoryFocus && view === 'session' ? 'app-trajectory-focus' : ''}`}>
-      <AppHeader locale={locale}>
+      <AppHeader locale={locale} onSearch={openPalette}>
         <button type="button" className="btn" onClick={() => adjustFont(-2)}>
           {t('common.fontSmall', locale)}
         </button>
@@ -716,13 +736,17 @@ export default function App() {
         <LiveIndicator connected={live} locale={locale} />
       </AppHeader>
       <ViewTabs active={view === 'team' ? 'session' : view} onChange={switchView} locale={locale} />
+      {paletteLoadError && <div className="workbench-error" role="alert">
+        <span>{t('workbench.searchUnavailable', locale)}</span>
+        <button type="button" className="btn" onClick={openPalette}>{t('common.retry', locale)}</button>
+      </div>}
       {liveReset > 0 && <p role="status">{locale === 'zh' ? '实时恢复窗口已重置，已刷新有界元数据；更早的流片段不可恢复，请查看已保存原文。' : 'Live recovery window reset. Bounded metadata refreshed; earlier stream fragments are unavailable. Inspect retained originals.'}</p>}
       {/* §7.3 team 视图入口已移除（团队运行统一在任务列表中展示）。
           team 视图保留用于团队任务详情：点击团队任务 → switchView('team')。
           D15：Sessions(任务) | Agents | ...，AppShell 不含 team */}
 
       {view === 'session' && (
-        <div className="view-body">
+        <div className="view-body session-view-body">
           <SessionList
             items={sessions}
             selectedId={selectedKey}
@@ -749,6 +773,7 @@ export default function App() {
             collapsed={railCollapsed}
             onResize={setRailWidth}
             onToggleCollapse={() => setRailCollapsed((prev) => !prev)}
+            onOpenTeams={() => switchView('team')}
           />
           <main className="main">
             {pending && <p className="hint">{t('pending.decrypting', locale)}</p>}
@@ -789,19 +814,20 @@ export default function App() {
             {detailError === null &&
               detail === null &&
               !pending && (
-                <EmptyState
-                  icon={<span aria-hidden="true" />}
-                  title={t('session.selectPrompt', locale)}
-                  /* 这里曾复用通用空态文案「暂无数据」——它说的是「没有数据」，
-                     而实际状态是「你还没选」，两句话互相矛盾。改成引导语。 */
-                  description={t('session.selectHint', locale)}
-                />
+                <SessionStart locale={locale} recent={sessions[0] ?? null} loading={sessionsLoading}
+                  filtered={sessionQ.trim() !== '' || sessionRange !== 'all' || providerFilter.length > 0 || statusFilter.length > 0}
+                  offlineSamples={offlineSamples}
+                  onClearFilters={() => { setSessionQ(''); setSessionRange('all'); setProviderFilter([]); setStatusFilter([]); }}
+                  onSelect={selectSession} onSearch={openPalette} onCapture={() => switchView('proxy')}
+                  onTeams={() => switchView('team')} onSettings={() => setSettingsOpen(true)} />
               )}
             {detail !== null && detail.events.length > 0 && (
               <div className="session-inspector">
                 <SessionToolbar
                   session={detail.session}
                   events={detail.events as TraceEventSlim[]}
+                  eventTotal={detail.eventTotal}
+                  hasMore={detail.hasMore}
                   locale={locale}
                   onBack={() => {
                     setSelectedKey(null);
@@ -884,6 +910,7 @@ export default function App() {
                     selectedTurn={selectedTurn}
                     onSelectedTurnChange={setSelectedTurn}
                     focusEventId={focusEventId}
+                    focusEventRequest={focusEventRequest}
                     onSelectAgent={(key) => {
                       setFocusEventId(null);
                       selectSession(key);
@@ -924,15 +951,22 @@ export default function App() {
       {view === 'agent' && (
         <div className="view-body">
           <main className="main">
+            <ErrorBoundary label={t('view.agent',locale)}>
+            <Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}>
             <AgentOverview
               locale={locale}
               sessions={sessions}
               onCompareProviders={startCompare}
+              onBrowseSessions={(provider) => {
+                setSessionQ('');setSessionRange('all');setProviderFilter(provider === undefined ? [] : [provider]);setStatusFilter([]);switchView('session');
+              }}
               onSelectSession={(key) => {
                 switchView('session');
                 selectSession(key);
               }}
             />
+            </Suspense>
+            </ErrorBoundary>
           </main>
         </div>
       )}
@@ -948,6 +982,12 @@ export default function App() {
               rightKey={compareRight}
               onLeftChange={setCompareLeft}
               onRightChange={setCompareRight}
+              onOpenRun={(key,eventId)=>{
+                switchView('session');selectSession(key,eventId);
+                if(eventId!==undefined){setFocusEventId(eventId);setFocusEventRequest(value=>value+1);}
+              }}
+              onOpenCalls={()=>switchView('proxy')}
+              onBrowseRuns={()=>{setSessionQ('');setSessionRange('all');setProviderFilter([]);setStatusFilter([]);switchView('session');}}
             />
             </Suspense>
           </main>
@@ -956,20 +996,26 @@ export default function App() {
       {view === 'proxy' && (
         <div className="view-body">
           <main className="main">
+            <ErrorBoundary label={t('view.proxy',locale)}>
             <Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}>
-              <ProxyLivePanel streams={proxyStreams} locale={locale} invalidateKey={traceLinksVersion}
-                onOpenSession={key => { switchView('session'); selectSession(key); }} />
-            </Suspense>
             <ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates}
               sessions={sessions} focusedRequestId={proxyFocusedId} onFocusedRequestHandled={clearProxyFocus} traceInvalidateKey={traceLinksVersion}
+              livePreview={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><ProxyLivePanel streams={proxyStreams} locale={locale} invalidateKey={traceLinksVersion}
+                onOpenSession={key => { switchView('session'); selectSession(key); }} /></Suspense>}
               onOpenSession={key => { switchView('session'); selectSession(key); }} />
+            </Suspense>
+            </ErrorBoundary>
           </main>
         </div>
       )}
       {view === 'frida' && (
         <div className="view-body">
           <main className="main">
-            <FridaView locale={locale} />
+            <ErrorBoundary label={t('view.frida',locale)}>
+            <Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}>
+              <FridaView locale={locale} />
+            </Suspense>
+            </ErrorBoundary>
           </main>
         </div>
       )}
@@ -984,17 +1030,28 @@ export default function App() {
       )}
       {view === 'team' && (
         <div className="view-body">
+          <ErrorBoundary label={t('team.runListTitle',locale)}>
+          <Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}>
           <TeamShell
             locale={locale}
             teamHash={teamHash}
             onTeamHashChange={setTeamHash}
             invalidateKey={teamInvalidateKey}
           />
+          </Suspense>
+          </ErrorBoundary>
         </div>
       )}
 
       {settingsOpen && (
-        <SettingsModal locale={locale} onClose={() => setSettingsOpen(false)} />
+        <ErrorBoundary label={t('settings.title',locale)} fallback={()=>
+          <Modal title={t('settings.title',locale)} onClose={()=>setSettingsOpen(false)}>
+            <p role="alert">{t('state.error',locale)} · {t('settings.codeFailed',locale)}</p>
+          </Modal>}>
+          <Suspense fallback={<Modal title={t('settings.title',locale)} onClose={()=>setSettingsOpen(false)}><p role="status">{t('common.loading',locale)}</p></Modal>}>
+            <SettingsModal locale={locale} onClose={() => setSettingsOpen(false)} />
+          </Suspense>
+        </ErrorBoundary>
       )}
       {promptContextKey !== null && (
         <PromptContextModal
@@ -1024,6 +1081,7 @@ export default function App() {
             } else if (action.type === 'goto') {
               // REQ-112：定位到目标事件所在的回合（focusEventId 驱动 TrajectoryPane 展开滚动）。
               setFocusEventId(action.eventId);
+              setFocusEventRequest(value => value + 1);
             } else if (action.type === 'filter') {
               // REQ-113：再次选择同一 provider 取消过滤。
               setProviderFilter((prev) =>

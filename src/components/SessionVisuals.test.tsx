@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionDetailResponse, TraceEventSlim } from '../core/trace-types.js';
 import { SessionVisuals } from './SessionVisuals.js';
@@ -28,13 +28,53 @@ afterEach(() => {
 function detailWith(events: TraceEventSlim[], totalDurationMs = 5000): SessionDetailResponse {
   return {
     ...makeResult().left,
-    session: makeSession('s1', { totalDurationMs }),
+    session: makeSession('s1', { totalDurationMs, eventCount:events.length }),
     events,
+    eventTotal: events.length,
     mode: 'slim',
   } as SessionDetailResponse;
 }
 
 describe('REQ-121 SessionVisuals（Heatmap + Radar）', () => {
+  it.each(['zh','en'] as const)('WB-003: exposes a log profile and original figures, not capability or context-length scores (%s)',locale=>{
+    const events=[makeEvent({id:'one',tokens:makeSession('s').tokenUsage})];
+    const detail=detailWith(events);detail.session.eventCount=events.length;detail.session.durationSource='derived';
+    const fetcher=vi.spyOn(globalThis,'fetch');
+    const {unmount}=mount(<SessionVisuals detail={detail} locale={locale}/>);
+    try {
+      const radar=document.querySelector('.session-radar')!;
+      expect(radar.querySelector('h4')?.textContent).toContain(locale==='zh'?'日志概况':'Log profile');
+      expect(radar.querySelector('h4')?.textContent).not.toMatch(/能力|Capability/);
+      expect(radar.textContent).toContain(locale==='zh'?'累计 Token':'Total tokens');
+      expect(radar.textContent).toContain(locale==='zh'?'非能力或质量评分':'not capability or quality scores');
+      const originals=radar.querySelector('.session-radar-originals');
+      expect(originals?.textContent).toContain('210');
+      expect(originals?.textContent).toContain(locale==='zh'?'原始值':'Original values');
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally {unmount();fetcher.mockRestore();}
+  });
+
+  it('WB-003: partial pages cannot produce token-per-event, tool-share or error-score axes',()=>{
+    const detail=detailWith([makeEvent({tokens:makeSession('s').tokenUsage})]);
+    detail.hasMore=true;detail.eventTotal=10;detail.session.eventCount=1;detail.session.durationSource='derived';
+    const {unmount}=mount(<SessionVisuals detail={detail} locale="en"/>);
+    try {
+      const labels=Array.from(document.querySelectorAll('.session-radar svg text')).map(e=>e.textContent);
+      expect(labels).not.toContain('Inverse tokens/event');
+      expect(labels).not.toContain('Tool event share');
+      expect(labels).not.toContain('1 − error event share');
+      expect(document.querySelector('.session-radar')?.textContent).toContain('Loaded 1 / 10');
+    } finally {unmount();}
+  });
+
+  it('WB-003: unknown step statuses do not form a full no-error score',()=>{
+    const detail=detailWith([makeEvent({status:'unknown'})]);detail.session.eventCount=1;
+    const {unmount}=mount(<SessionVisuals detail={detail} locale="en"/>);
+    try {
+      expect(Array.from(document.querySelectorAll('.session-radar svg text')).map(e=>e.textContent)).not.toContain('1 − error event share');
+      expect(document.querySelector('.session-radar [role="status"]')?.textContent).toContain('unknown statuses');
+    } finally {unmount();}
+  });
   it('omits unknown timing axes instead of plotting fabricated zero scores', () => {
     const { unmount } = mount(<SessionVisuals detail={detailWith([makeEvent({ id: 'unknown', tokens: null })])} locale="en" />);
     const radar = document.querySelector('.session-radar')!;
@@ -48,7 +88,9 @@ describe('REQ-121 SessionVisuals（Heatmap + Radar）', () => {
     const detail = detailWith([makeEvent({ id: 'a', tokens: makeSession('s').tokenUsage })]);
     detail.session.durationSource = 'measured'; detail.hasMore = true;
     const { unmount } = mount(<SessionVisuals detail={detail} locale="zh" />);
-    expect(document.querySelector('.session-radar')!.querySelectorAll('line')).toHaveLength(6);
+    expect(document.querySelector('.session-radar')!.querySelectorAll('line')).toHaveLength(3);
+    const labels=Array.from(document.querySelectorAll('.session-radar svg text')).map(e=>e.textContent);
+    expect(labels).toEqual(['墙钟反向刻度','累计 Token','会话时长']);
     unmount();
   });
 

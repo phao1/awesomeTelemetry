@@ -10,6 +10,7 @@ import { readJsonlFrom } from '../server/watch/jsonl-reader.js';
 import type { FileFingerprint } from '../src/core/trace-types.js';
 import {
   canonicalRunId,
+  TEAM_PARSER_VERSION,
   parseCodeArtsTeam,
   redactLocator,
   type CodeArtsCagSessionExtraRow,
@@ -75,6 +76,7 @@ export interface TeamScanResult {
  */
 function teamDirectoryFingerprint(paths: string[]): FileFingerprint {
   const hasher = createHash('sha256');
+  hasher.update(TEAM_PARSER_VERSION);
   let size = 0;
   let mtimeMs = 0;
   const existing = paths.filter((p) => existsSync(p));
@@ -202,22 +204,22 @@ function discoverCodeArtsRuns(agentTeamRoot: string): Array<{ nativeRunId: strin
 /** 读取并组装一个 CodeArts run 的 raw（agent-team 目录 + opencode.db）。 */
 function readCodeArtsRawForRun(
   agentTeamRoot: string,
-  dbPath: string | null,
   nativeRunId: string,
   locator: string,
+  db: ReturnType<typeof readCodeArtsDb> | undefined,
 ): CodeArtsTeamRaw {
   const sessionDir = join(agentTeamRoot, 'session', nativeRunId);
   const contact = readJsonObject(join(sessionDir, 'contact.json')) as unknown;
   const teamTask = readJsonArray(join(sessionDir, 'team-task.json')) as unknown;
-  const db =
-    dbPath !== null && existsSync(dbPath) ? readCodeArtsDb(dbPath) : undefined;
+  const contacts = (contact ?? {}) as CodeArtsTeamRaw['contact'];
+  const memberIds = new Set([nativeRunId, ...Object.values(contacts).map(member => member.sessionID)]);
   return {
-    contact: (contact ?? {}) as CodeArtsTeamRaw['contact'],
+    contact: contacts,
     teamTask: teamTask as CodeArtsTeamRaw['teamTask'],
-    sessions: db?.sessions,
+    sessions: db?.sessions.filter(session => memberIds.has(session.id)),
     messages: db?.messages,
     parts: db?.parts,
-    cagSessionExtra: db?.cagSessionExtra,
+    cagSessionExtra: db?.cagSessionExtra.filter(session => memberIds.has(session.session_id)),
     sourceLocator: locator,
   };
 }
@@ -418,11 +420,24 @@ async function scanCodeArtsSource(
     return { provider: 'codearts', runs: 0, skipped: true };
   }
   const dbPath = auxiliary.find((p) => p.endsWith('.db')) ?? null;
+  const resolveEvent = ctx.db.prepare(`SELECT DISTINCT ti.event_id
+    FROM trace_identities ti JOIN trace_identity_sources src ON src.id=ti.source_id
+    JOIN events e ON e.session_id=src.session_key AND e.id=ti.event_id
+    WHERE src.session_key=? AND ti.namespace='agent:codearts' AND ti.kind='tool_call'
+      AND ti.scope=? AND ti.value=? AND ti.event_id IS NOT NULL AND src.complete=1`);
+  const sessionKeyOf = (nativeId: string): string | null => dbPath === null ? null : deriveSessionKey('codearts', dbPath, nativeId);
+  const sourceDb = dbPath !== null && existsSync(dbPath) ? readCodeArtsDb(dbPath) : undefined;
   const runs = discoverCodeArtsRuns(agentTeamRoot);
   let count = 0;
   for (const run of runs) {
-    const raw = readCodeArtsRawForRun(agentTeamRoot, dbPath, run.nativeRunId, run.locator);
-    const evidence = parseCodeArtsTeam(raw);
+    const raw = readCodeArtsRawForRun(agentTeamRoot, run.nativeRunId, run.locator, sourceDb);
+    const evidence = parseCodeArtsTeam(raw, { sessionKeyOf, eventIdOf(part) {
+      const key = sessionKeyOf(part.session_id);
+      const callId = part.data?.callID;
+      if (key === null || typeof callId !== 'string' || callId === '') return null;
+      const matches = resolveEvent.all(key, part.session_id, callId) as Array<{event_id: string}>;
+      return matches.length === 1 ? matches[0]!.event_id : null;
+    } });
     fillCodeArtsSessionKeys(evidence, dbPath);
     const { runId } = ctx.sink.ingestRun(evidence);
     collectAffected(runId);

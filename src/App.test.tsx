@@ -3,9 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionIndexEntry } from './core/trace-types.js';
+import {PROVIDER_KEYS} from './core/trace-types.js';
 import type { SessionDetailResponse, TraceEvent, TraceEventSlim, TraceSession } from './core/trace-types.js';
 import App from './App.js';
 import { recordCache, eventDetailCache } from './cache/caches.js';
+import { LAYOUT_KEYS } from './layout.js';
+import { makeSession, makeResult } from './components/compare-test-fixtures.js';
+import { makeEvent, makeMessage } from './components/trajectory/investigation-test-fixtures.js';
 
 function session(id: string, provider: 'codex' | 'claude', title: string): SessionIndexEntry {
   return {
@@ -36,6 +40,130 @@ const THREE_SESSIONS = [
   session('s-3', 'codex', 'debug login'),
 ];
 
+describe('WB-007 lazy Agent overview entry',()=>{
+  it('loads capture metadata only on entry and active sources only on explicit live expansion, never row bodies', async () => {
+    const previousUrl = window.location.href;
+    const paths: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);paths.push(path);
+      const body = path.endsWith('/proxy/status') ? { running: false, starting: false, port: null, startedAt: null, requestCount: 0 }
+        : path.startsWith('/api/proxy/requests?') ? { items: [], nextCursor: null, hasMore: false }
+        : path.endsWith('/proxy/live') ? { items: [] }
+        : path.includes('/sessions?') ? { items: THREE_SESSIONS, nextCursor: null, hasMore: false, total: 3 } : { groups: [] };
+      return { ok: true, text: async () => JSON.stringify(body) };
+    }));
+    const { container, unmount } = renderAppWithUnmount();
+    try {
+      await act(async () => { await Promise.resolve(); });expect(paths.filter(path => path.includes('/proxy/'))).toHaveLength(0);
+      const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(node => /^(代理|Proxy)$/.test(node.textContent ?? ''))!;
+      expect(tab).toBeDefined();act(() => tab.click());
+      await act(async () => { await import('./components/ProxyView.js');await Promise.resolve(); });
+      expect(paths.filter(path => path.includes('/proxy/')).sort()).toEqual(['/api/proxy/requests?limit=50', '/api/proxy/status']);
+      const live = container.querySelector<HTMLDetailsElement>('.capture-live')!;expect(live.open).toBe(false);
+      await act(async () => { live.open = true;live.dispatchEvent(new Event('toggle'));await import('./components/ProxyLivePanel.js'); });
+      expect(paths.filter(path => path.endsWith('/proxy/live'))).toHaveLength(1);
+      expect(paths.some(path => /\/requests\/\d+/.test(path))).toBe(false);
+      expect(EventSourceStub.instances).toHaveLength(1); // The shared shell SSE only; no selected-body subscription.
+    } finally { unmount();history.replaceState(null, '', previousUrl); }
+  });
+  it.each([true, false])('WB-003 exact source-group preselection, matching second group=%s; no substitution or stale compare key', async matching => {
+    const previousUrl = window.location.href;
+    const previousMode = localStorage.getItem('awesome-telemetry.agentViewMode');
+    localStorage.setItem('awesome-telemetry.agentViewMode', 'table');
+    const indexed = [
+      { ...session('s-1', 'codex', 'Group A original'), sourceAgent: 'Group A' },
+      { ...session('s-2', 'codex', 'Group B original'), sourceAgent: 'Group B' },
+      { ...session('s-3', 'codex', 'Newer but unrelated'), sourceAgent: 'Unrelated' },
+    ];
+    const group = (sourceAgent: string) => ({ provider: 'codex', sourceAgent, sessionCount: 1, eventCount: 10,
+      tokenInput: 10, tokenOutput: 20, tokenTotal: 30, costUsd: 0, pricedSessionCount: 0, avgWallClockMs: 1000,
+      latestUpdatedAt: '2026-10-18T00:00:00.000Z', avgToolDurationMs: null, errorRate: null, verificationCoverage: null,
+      debugEntryRate: null, durationByPhase: { understand: 0, plan: 0, implement: 0, debug: 0, verify: 0, report: 0 } });
+    const pairs: Array<{ leftKey: string; rightKey: string }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === '/api/compare') { pairs.push(JSON.parse(String(init?.body)) as { leftKey: string; rightKey: string });return new Promise<never>(() => undefined); }
+      const body = path.includes('/agent-overview') ? { rows: [group('Group A'), group(matching ? 'Group B' : 'Not loaded')], stamp: '2026-10-18T00:00:00.000Z', cached: false }
+        : path.includes('/sessions?') ? { items: indexed, total: indexed.length, hasMore: false, nextCursor: null } : { groups: [] };
+      return { ok: true, text: async () => JSON.stringify(body) };
+    }));
+    const { container, unmount } = renderAppWithUnmount();
+    try {
+      await act(async () => { await Promise.resolve();history.replaceState(null, '', '#/compare?left=s-3&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/CompareBoard.js'); });
+      await act(async () => { for (let i = 0; i < 30 && pairs.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 10)); });
+      expect(pairs).toEqual([{ leftKey: 's-3', rightKey: 's-2' }]);
+      act(() => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button => /Agent 概览|Agent Overview/.test(button.textContent ?? ''))!.click());
+      await act(async () => { for (let i = 0; i < 30 && !container.querySelector('.overview tbody input'); i++) await new Promise(resolve => setTimeout(resolve, 10)); });
+      const boxes = container.querySelectorAll<HTMLInputElement>('.overview tbody input');
+      act(() => boxes[0]!.click());act(() => boxes[1]!.click());
+      await act(async () => { container.querySelector<HTMLButtonElement>('.compare-float-btn')!.click();await Promise.resolve(); });
+      expect(window.location.hash).toContain('left=s-1');
+      if (matching) {
+        expect(pairs).toEqual([{ leftKey: 's-3', rightKey: 's-2' }, { leftKey: 's-1', rightKey: 's-2' }]);
+      } else {
+        expect(pairs).toHaveLength(1);expect(window.location.hash).not.toContain('right=');
+        expect(container.querySelector('.compare-float-btn')).toBeNull();
+      }
+    } finally {
+      unmount();history.replaceState(null, '', previousUrl);
+      if (previousMode === null) localStorage.removeItem('awesome-telemetry.agentViewMode');else localStorage.setItem('awesome-telemetry.agentViewMode', previousMode);
+    }
+  });
+  it('lazy settings remains a closable dialog, reads config once on opening and never saves on close',async()=>{
+    const paths:Array<{path:string;method:string}>=[];vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const path=String(input);paths.push({path,method:init?.method??'GET'});
+      const body=path.endsWith('/config/providers')?{providers:Object.fromEntries(PROVIDER_KEYS.map(key=>[key,{key,enabled:true,path:'/synthetic/'+key,label:key,sourceKind:'jsonl',watchStrategy:'chokidar',pollIntervalMs:0}])),traeKeyPath:null,prewarmRecent:0}
+        :path.includes('/sessions?')?{items:THREE_SESSIONS,nextCursor:null,hasMore:false,total:3}:{};
+      return {ok:true,text:async()=>JSON.stringify(body)};
+    }));const {container,unmount}=renderAppWithUnmount();
+    try {
+      await act(async()=>{await Promise.resolve();});expect(paths.some(item=>item.path.endsWith('/config/providers'))).toBe(false);
+      const trigger=[...container.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='设置')!;act(()=>{trigger.focus();trigger.click();});
+      await act(async()=>{for(let i=0;i<30&&!container.querySelector('[data-provider-path]');i++)await new Promise(resolve=>setTimeout(resolve,10));});
+      expect(container.querySelector('[role="dialog"]')).not.toBeNull();expect(container.querySelector('[data-provider-path="codex"]')).not.toBeNull();
+      act(()=>container.querySelector<HTMLButtonElement>('[role="dialog"] [aria-label="关闭"]')!.click());expect(container.querySelector('[role="dialog"]')).toBeNull();expect(document.activeElement).toBe(trigger);
+      expect(paths.filter(item=>item.path.endsWith('/config/providers'))).toEqual([{path:'/api/config/providers',method:'GET'}]);
+    } finally {unmount();}
+  });
+  it('lazy Frida navigation reads status/history once and performs no start/stop or detail calls',async()=>{
+    const paths:string[]=[];vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{
+      const path=String(input);paths.push(path);
+      const body=path.endsWith('/frida/status')?{running:false,starting:false,pid:null}
+        :path.endsWith('/frida/captures')?{items:[],nextCursor:null,hasMore:false}
+        :path.includes('/sessions?')?{items:THREE_SESSIONS,nextCursor:null,hasMore:false,total:3}:{};
+      return {ok:true,text:async()=>JSON.stringify(body)};
+    }));const {container,unmount}=renderAppWithUnmount();
+    try {
+      await act(async()=>{await Promise.resolve();});expect(paths.filter(path=>path.includes('/frida/'))).toHaveLength(0);
+      const tab=[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>button.textContent==='Frida')!;act(()=>tab.click());
+      await act(async()=>{for(let i=0;i<30&&!paths.some(path=>path.endsWith('/frida/status'));i++)await new Promise(resolve=>setTimeout(resolve,10));});
+      expect(paths.filter(path=>path.includes('/frida/')).sort()).toEqual(['/api/frida/captures','/api/frida/status']);
+      expect(container.querySelector('[data-frida-ack]')).not.toBeNull();expect(container.querySelector('[role="tablist"]')).not.toBeNull();
+    } finally {unmount();}
+  });
+  it('keeps navigation available and issues one aggregate read, never a detail fan-out',async()=>{
+    const paths:string[]=[];
+    vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{
+      const path=String(input);paths.push(path);
+      const body=path.includes('/agent-overview')?{rows:[],stamp:'2026-10-18T00:00:00.000Z',cached:false}
+        :path.includes('/sessions?')?{items:THREE_SESSIONS,nextCursor:null,hasMore:false,total:3}
+        :path.includes('/session-groups')?[]:{};
+      return {ok:true,text:async()=>JSON.stringify(body)};
+    }));
+    const {container,unmount}=renderAppWithUnmount();
+    try {
+      await act(async()=>{await Promise.resolve();});
+      expect(paths.filter(path=>path.includes('/agent-overview'))).toHaveLength(0);
+      const tab=[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>/Agent 概览|Agent Overview/.test(button.textContent??''))!;
+      expect(tab).toBeDefined();act(()=>tab.click());
+      await act(async()=>{for(let i=0;i<30&&!paths.some(path=>path.includes('/agent-overview'));i++)await new Promise(resolve=>setTimeout(resolve,10));});
+      expect(paths.filter(path=>path.includes('/agent-overview'))).toHaveLength(1);
+      expect(paths.filter(path=>/\/sessions\/[^?]/.test(path))).toHaveLength(0);
+      expect(container.querySelector('[role="tablist"]')).not.toBeNull();
+    } finally {unmount();}
+  });
+});
+
 /** jsdom 无 EventSource：补最小桩（SSE 订阅能力，不 mock 被测逻辑）。 */
 class EventSourceStub {
   static readonly instances: EventSourceStub[] = [];
@@ -62,12 +190,14 @@ class EventSourceStub {
   }
 }
 
+const appRoots = new Set<ReturnType<typeof createRoot>>();
+
 function renderApp(): HTMLDivElement {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  act(() => {
-    createRoot(container).render(<App />);
-  });
+  const root = createRoot(container);
+  appRoots.add(root);
+  act(() => { root.render(<App />); });
   return container;
 }
 
@@ -76,10 +206,11 @@ function renderAppWithUnmount(): { container: HTMLDivElement; unmount: () => voi
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
+  appRoots.add(root);
   act(() => {
     root.render(<App />);
   });
-  return { container, unmount: () => act(() => { root.unmount(); }) };
+  return { container, unmount: () => act(() => { root.unmount(); appRoots.delete(root); }) };
 }
 
 beforeEach(() => {
@@ -93,11 +224,172 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  act(() => { for (const root of appRoots) root.unmount(); appRoots.clear(); });
   vi.unstubAllGlobals();
   document.body.innerHTML = '';
 });
 
 describe('REQ-015 共享会话 store（G7.6）', () => {
+  it('WB-003: comparison evidence beyond the cached first page opens its exact record through one bounded selected read',async()=>{
+    const previousUrl=window.location.href;
+    const first={...makeEvent(makeMessage('first-page',1,{role:'assistant',kind:'llm',tool:null,hasInput:false,hasOutput:false,hasRaw:false})),sessionId:'s-1'};
+    const target={...makeEvent(makeMessage('beyond-first-page',3001,{role:'tool',kind:'tool',tool:'read',hasInput:false,hasOutput:false,hasRaw:false,status:'error',error:'SYNTHETIC_SELECTED_ERROR'})),sessionId:'s-1'};
+    const cached:SessionDetailResponse={session:makeSession('s-1',{eventCount:6000}),events:[first],mode:'slim',eventTotal:6000,eventOffset:0,eventLimit:2000,hasMore:true,pending:false};
+    const selected:SessionDetailResponse={...cached,events:[first,target],eventLimit:5000};
+    const pair=makeResult({left:selected,right:{...makeResult().right,session:makeSession('s-2')}});
+    const fallback=fetch;
+    const fetcher=vi.fn((input:RequestInfo|URL,init?:RequestInit)=>{
+      const path=String(input);
+      if(path==='/api/compare')return Promise.resolve({ok:true,text:async()=>JSON.stringify(pair)}as Response);
+      if(path.includes('/api/session-groups'))return Promise.resolve({ok:true,text:async()=>JSON.stringify({groups:[]})}as Response);
+      if(path.includes('/api/sessions/s-1?'))return Promise.resolve({ok:true,text:async()=>JSON.stringify(selected)}as Response);
+      return fallback(input,init);
+    });
+    vi.stubGlobal('fetch',fetcher);recordCache.clear();eventDetailCache.clear();recordCache.set('s-1:slim',cached);
+    const {container,unmount}=renderAppWithUnmount();
+    try {
+      await act(async()=>{history.replaceState(null,'','#/compare?left=s-1&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/CompareBoard.js');});
+      await act(async()=>{for(let i=0;i<30&&!container.querySelector('.cmp-run-evidence');i++)await new Promise(resolve=>setTimeout(resolve,10));});
+      const left=container.querySelector('.cmp-evidence-side')!;
+      act(()=>left.querySelector('summary')!.click());
+      await act(async()=>{left.querySelector<HTMLButtonElement>('.cmp-evidence-errors button')!.click();for(let i=0;i<10;i++)await Promise.resolve();});
+      expect(fetcher.mock.calls.filter(([path])=>String(path).includes('/api/sessions/s-1?')&&String(path).includes('limit=5000'))).toHaveLength(1);
+      expect(container.querySelector('.session-toolbar-id')?.textContent).toBe('s-1');
+      expect(container.querySelector('.record-inspector')?.textContent).toContain('beyond-first-page');
+      expect(container.querySelector('.record-inspector')?.textContent).toContain('SYNTHETIC_SELECTED_ERROR');
+    } finally {unmount();recordCache.clear();eventDetailCache.clear();history.replaceState(null,'',previousUrl);}
+  });
+  it('WB-002: switching runs clears the previous Turn and event focus, even when event IDs repeat', async () => {
+    const previousUrl=window.location.href;
+    const detailFor=(id:string):SessionDetailResponse=>({session:makeSession(id,{eventCount:2}),
+      events:[1,2].map(sequence=>({...makeEvent(makeMessage(`shared-${sequence}`,sequence,{role:'assistant',kind:'llm',tool:null,hasInput:false,hasOutput:false,hasRaw:false})),sessionId:id})),
+      mode:'slim',eventTotal:2,eventOffset:0,eventLimit:2000,hasMore:false,pending:false});
+    const original=fetch;
+    vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>{
+      const path=String(input);
+      if(path.includes('/api/session-groups')) return Promise.resolve({ok:true,text:async()=>JSON.stringify({groups:[]})} as Response);
+      if(path.includes('/api/sessions/s-1?')||path.includes('/api/sessions/s-2?')) return Promise.resolve({ok:true,text:async()=>JSON.stringify(detailFor(path.includes('s-1?')?'s-1':'s-2'))} as Response);
+      return original(input,init);
+    }));
+    recordCache.clear(); eventDetailCache.clear();
+    const {container,unmount}=renderAppWithUnmount();
+    try {
+      await act(async()=>{await new Promise(resolve=>setTimeout(resolve,350));});
+      await act(async()=>{(container.querySelectorAll('.session-row')[0] as HTMLElement).click();await Promise.resolve();});
+      await act(async()=>{(container.querySelector('.app-header-search') as HTMLButtonElement).click();await import('./components/CommandPalette.js');});
+      const input=container.querySelector('[role="dialog"] input') as HTMLInputElement;
+      act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'/goto 2');input.dispatchEvent(new Event('input',{bubbles:true}));});
+      await act(async()=>{(container.querySelector('.palette-row') as HTMLButtonElement).click();await Promise.resolve();});
+      expect(container.querySelector('.record-inspector')).not.toBeNull();
+      expect(window.location.hash).toContain('turn=2');
+      act(()=>(container.querySelector('[aria-label="关闭记录证据"]') as HTMLButtonElement).click());
+      await act(async()=>{(container.querySelector('.app-header-search') as HTMLButtonElement).click();await Promise.resolve();});
+      const repeat=container.querySelector('[role="dialog"] input') as HTMLInputElement;
+      act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(repeat,'/goto 2');repeat.dispatchEvent(new Event('input',{bubbles:true}));});
+      await act(async()=>{(container.querySelector('.palette-row') as HTMLButtonElement).click();await Promise.resolve();});
+      expect(container.querySelector('.record-inspector')).not.toBeNull();
+      await act(async()=>{(container.querySelectorAll('.session-row')[1] as HTMLElement).click();await Promise.resolve();});
+      expect(container.querySelector('.session-toolbar-id')?.textContent).toBe('s-2');
+      expect(container.querySelector('.record-inspector')).toBeNull();
+      expect(container.querySelector('.turn-row-on')).toBeNull();
+      expect(window.location.hash).not.toContain('turn=');
+    } finally {unmount();history.replaceState(null,'',previousUrl);}
+  });
+  it('WB-002: first paint is loading, not an empty successful list', () => {
+    const { container, unmount } = renderAppWithUnmount();
+    try {
+      expect(container.querySelector('.rail .ui-empty')).toBeNull();
+      expect(container.querySelector('.rail [role="status"]')).not.toBeNull();
+    } finally { unmount(); }
+  });
+
+  it('WB-002: slash can reopen a collapsed list and focus its search field', () => {
+    const previous = localStorage.getItem(LAYOUT_KEYS.railCollapsed);
+    localStorage.setItem(LAYOUT_KEYS.railCollapsed, 'true');
+    const { container, unmount } = renderAppWithUnmount();
+    try {
+      expect(container.querySelector('.session-filters input')).toBeNull();
+      act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })));
+      expect(document.activeElement).toBe(container.querySelector('.session-filters input'));
+      expect(container.querySelector('.session-filters input')).not.toBeNull();
+    } finally {
+      unmount();
+      if (previous === null) localStorage.removeItem(LAYOUT_KEYS.railCollapsed);
+      else localStorage.setItem(LAYOUT_KEYS.railCollapsed, previous);
+    }
+  });
+
+  it('WB-002: a late old search response cannot replace a newer result or its URL scope', async () => {
+    type Result = { ok: boolean; text: () => Promise<string> };
+    const result = (items: SessionIndexEntry[]): Result => ({ ok: true, text: async () => JSON.stringify({ items, total: items.length, hasMore: false, nextCursor: null }) });
+    let finishOld: ((value: Result) => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn((input: unknown) => {
+      const path = String(input);
+      if (path.includes('/api/sessions?') && !path.includes('q=')) return new Promise<Result>(resolve => { finishOld = resolve; });
+      if (path.includes('/api/sessions?') && path.includes('q=LATEST')) return Promise.resolve(result([{ ...THREE_SESSIONS[1]!, title: 'LATEST query result' }]));
+      return Promise.resolve({ ok: true, text: async () => '{}' });
+    }));
+    const { container, unmount } = renderAppWithUnmount();
+    try {
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+      expect(finishOld).toBeDefined();
+      const search = container.querySelector('.session-filters input') as HTMLInputElement;
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'LATEST');
+        search.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+      expect(container.querySelector('.session-row-title')?.textContent).toBe('LATEST query result');
+      await act(async () => { finishOld!(result([{ ...THREE_SESSIONS[0]!, title: 'STALE initial query' }])); });
+      expect(container.textContent).not.toContain('STALE initial query');
+      expect(container.querySelector('.session-row-title')?.textContent).toBe('LATEST query result');
+      expect(window.location.hash).toContain('q=LATEST');
+      expect(container.querySelector('[role="listbox"]')?.getAttribute('aria-busy')).toBe('false');
+    } finally { unmount(); }
+  });
+
+  it('WB-002: the Tasks-scoped Team link reaches existing runs while global navigation stays at six views', async () => {
+    const previousUrl = window.location.href;
+    const originalFetch = fetch;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input).includes('/api/team-runs')
+      ? Promise.resolve({ ok: true, text: async () => JSON.stringify({ items: [], total: 0, hasMore: false, nextCursor: null }) } as Response)
+      : originalFetch(input, init)));
+    const { container, unmount } = renderAppWithUnmount();
+    try {
+      const entry = container.querySelector('.rail a[href="#/team"]') as HTMLAnchorElement;
+      expect(entry).not.toBeNull();
+      expect(container.querySelectorAll('.view-tabs [role="tab"]')).toHaveLength(6);
+      expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/api/team-runs'))).toHaveLength(0);
+      await act(async () => { entry.click(); await import('./components/team/TeamShell.js'); });
+      expect(container.querySelector('.team-shell')).not.toBeNull();
+      expect(window.location.hash).toMatch(/^#\/team/);
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+      expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/api/team-runs'))).toHaveLength(1);
+      expect(vi.mocked(fetch).mock.calls.some(([input]) => /\/api\/team-runs\/[^/?]+/.test(String(input)))).toBe(false);
+    } finally { unmount(); history.replaceState(null, '', previousUrl); }
+  });
+
+  it('WB-001: visible global search opens the real lazy palette without detail fan-out and restores focus', async () => {
+    const { container, unmount } = renderAppWithUnmount();
+    try {
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+      const before = vi.mocked(fetch).mock.calls.length;
+      const trigger = container.querySelector('.app-header-search') as HTMLButtonElement;
+      expect(trigger).not.toBeNull();
+      await act(async () => {
+        trigger.focus(); trigger.click();
+        await import('./components/CommandPalette.js');
+      });
+      const dialog = container.querySelector('[role="dialog"]')!;
+      expect(dialog).not.toBeNull();
+      expect(document.activeElement).toBe(dialog.querySelector('input[type="search"]'));
+      expect(vi.mocked(fetch).mock.calls.length).toBe(before);
+      act(() => (dialog.querySelector('[aria-label="关闭"]') as HTMLButtonElement).click());
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    } finally { unmount(); }
+  });
+
   it('metadata reset invalidates caches and refreshes one bounded page, never original bodies', async () => {
     const { container, unmount } = renderAppWithUnmount();
     try {

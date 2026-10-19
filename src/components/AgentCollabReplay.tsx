@@ -28,7 +28,8 @@
  * 无新 runtime dependency：纯 React + 复用已实现子面板。
  */
 
-import { useEffect, useState } from 'react';
+import '../styles/components/agent-collab.css';
+import { lazy, Suspense, useEffect, useState } from 'react';
 
 import type { TeamActivitySlim, TeamRunSnapshot } from '../core/trace-types.js';
 import type { Locale } from '../i18n.js';
@@ -38,6 +39,9 @@ import { teamApi } from './team/team-client.js';
 import { TopologyGraph } from './agent-collab/TopologyGraph.js';
 import { TaskReplayControls } from './agent-collab/TaskReplayControls.js';
 import { AgentActivityPanel } from './agent-collab/AgentActivityPanel.js';
+const StageReplay = lazy(() => import('./agent-collab/StageReplay.js').then(module => ({ default: module.StageReplay })));
+import { TeamWorkbench } from './team/TeamWorkbench.js';
+import type { TeamSelection } from './team/team-client.js';
 import {
   countActivitiesPerTask,
   deriveAgentStates,
@@ -57,7 +61,7 @@ export interface AgentCollabReplayProps {
  * activities 一次性拉取（limit=500），hasMore 则翻页合并。
  * 最多 10 页 = 5000 条，避免无限循环。
  */
-async function fetchAllActivities(runId: string): Promise<TeamActivitySlim[]> {
+async function fetchAllActivities(runId: string): Promise<{ items: TeamActivitySlim[]; hasMore: boolean }> {
   const all: TeamActivitySlim[] = [];
   let cursor: string | null = null;
   const MAX_PAGES = 10;
@@ -68,11 +72,11 @@ async function fetchAllActivities(runId: string): Promise<TeamActivitySlim[]> {
     });
     all.push(...res.items);
     if (!res.hasMore || res.nextCursor === null) {
-      break;
+      return { items: all, hasMore: res.hasMore };
     }
     cursor = res.nextCursor;
   }
-  return all;
+  return { items: all, hasMore: true };
 }
 
 // ── task 排序：startedAt 升序，null 排最后 ───────────────────
@@ -97,6 +101,9 @@ export function AgentCollabReplay({
   const [loading, setLoading] = useState(false);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const [activityCoverage, setActivityCoverage] = useState<'complete' | 'partial' | 'unavailable'>('unavailable');
+  const [selection, setSelection] = useState<TeamSelection | null>(null);
+  const [retry, setRetry] = useState(0);
 
   // 1. session key → team run ids
   useEffect(() => {
@@ -123,7 +130,7 @@ export function AgentCollabReplay({
     return () => {
       cancelled = true;
     };
-  }, [sessionKey]);
+  }, [sessionKey, retry]);
 
   // 2. runIds[0] → snapshot + activities（并行，分别处理错误）
   const selectedRunId = runIds?.[0] ?? null;
@@ -138,6 +145,8 @@ export function AgentCollabReplay({
     setSnapshot(null);
     setActivities([]);
     setTaskCursor(0);
+    setSelection(null);
+    setActivityCoverage('unavailable');
 
     // 用 allSettled 区分 snapshot 错误与 activities 错误（spec §5.2.3 / §5.4.3）
     Promise.allSettled([
@@ -155,7 +164,8 @@ export function AgentCollabReplay({
           setSnapshotError(reason instanceof Error ? reason.message : String(reason));
         }
         if (actResult.status === 'fulfilled') {
-          setActivities(actResult.value);
+          setActivities(actResult.value.items);
+          setActivityCoverage(actResult.value.hasMore ? 'partial' : 'complete');
         } else {
           const reason = actResult.reason;
           setActivityError(reason instanceof Error ? reason.message : String(reason));
@@ -211,6 +221,7 @@ export function AgentCollabReplay({
         onRetry={() => {
           // 重置 runIds 触发完整重新拉取
           setRunIds(null);
+          setRetry(value => value + 1);
         }}
       />
     );
@@ -273,16 +284,32 @@ export function AgentCollabReplay({
 
   return (
     <div className="agent-collab-replay">
+      <Suspense fallback={<Skeleton />}><StageReplay snapshot={snapshot} activities={activities} coverage={activityCoverage} onSelect={setSelection} locale={locale} /></Suspense>
+      <details className="collab-secondary"><summary>{locale === 'zh' ? '当前快照 · 成员与任务概览' : 'Current snapshot · members and tasks'}</summary>
+      <TeamWorkbench snapshot={snapshot} activities={activities} activityCoverage={activityCoverage}
+        selection={selection} onSelect={next => {
+          setSelection(next);
+          if (next?.kind === 'task') {
+            const index = sortedTasks.findIndex(task => task.id === next.id);
+            if (index >= 0) setTaskCursor(index);
+          }
+        }} locale={locale} />
+      </details>
+      <details className="collab-secondary">
+      <summary>{locale === 'zh' ? '关系图 · 辅助查看结构' : 'Relationship graph · structural reference'}</summary>
       <TopologyGraph
         agents={snapshot.agents}
         edges={snapshot.agentEdges}
         activeAgentIds={activeAgentIds}
         agentStates={agentStates}
-        selectedAgentId={null}
-        onSelectAgent={() => {}}
+        selectedAgentId={selection?.kind === 'agent' ? selection.id : null}
+        onSelectAgent={id => setSelection(id === null ? null : { kind: 'agent', id })}
         edgeMessageCounts={edgeMessageCounts}
         locale={locale}
       />
+      </details>
+      <details className="collab-secondary">
+      <summary>{locale === 'zh' ? '逐任务执行回放 · 已加载活动' : 'Task-by-task replay · loaded activities'}</summary>
       <TaskReplayControls
         tasks={sortedTasks}
         cursor={safeCursor}
@@ -292,7 +319,7 @@ export function AgentCollabReplay({
         onNext={() =>
           setTaskCursor((c) => Math.min(Math.max(0, sortedTasks.length - 1), c + 1))
         }
-        onJump={setTaskCursor}
+        onJump={index => { setTaskCursor(index); const task = sortedTasks[index]; if (task) setSelection({ kind: 'task', id: task.id }); }}
         onSkipEmpty={handleSkipEmpty}
         locale={locale}
       />
@@ -303,6 +330,7 @@ export function AgentCollabReplay({
           onRetry={() => {
             // 重置 runIds 触发完整重新拉取
             setRunIds(null);
+            setRetry(value => value + 1);
           }}
         />
       ) : (
@@ -315,6 +343,7 @@ export function AgentCollabReplay({
           locale={locale}
         />
       )}
+      </details>
     </div>
   );
 }

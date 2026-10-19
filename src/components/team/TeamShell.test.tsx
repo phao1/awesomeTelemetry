@@ -290,6 +290,7 @@ function errJson(code: string, message: string, status: number): Response {
 
 interface FetchMockOpts {
   runs?: TeamRunSummary[];
+  comparison?: TeamComparison;
   snapshot?: (runId: string) => TeamRunSnapshot;
   activities?: TeamActivitySlim[];
   patch?: Record<string, unknown>;
@@ -310,7 +311,7 @@ function teamFetchMock(opts: FetchMockOpts = {}) {
 
     // POST /api/team-compare
     if (method === 'POST' && path === '/api/team-compare') {
-      return okJson({
+      return okJson(opts.comparison ?? {
         leftRunId: 'a',
         rightRunId: 'b',
         basis: {
@@ -502,6 +503,76 @@ describe('TeamShell 打开 run', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('TeamShell 七视图切换', () => {
+  it('removes money from the reachable inline comparison while retaining Tokens and unchanged API evidence', async () => {
+    const id = nextRunId();
+    const comparison: TeamComparison = {
+      leftRunId: id,
+      rightRunId: `${id}-right`,
+      basis: {
+        match: 'matched', goalMatch: true, criteriaMatch: null, projectMatch: null,
+        revisionMatch: null, environmentMatch: null, modelMatch: null,
+        templateMatch: null, completenessDelta: null, userDeclared: false, reasons: [],
+      },
+      dimensions: [{
+        dimension: 'cost',
+        rows: ['totalCostUsd', 'costGini', 'totalInputTokens'].map((metricId, index) => ({
+          metricId, dimension: 'cost', criteria: 'native evidence', direction: 'descriptive',
+          left: makeMetricValue({ value: index === 2 ? 12345 : 456789.1234, available: true, complete: true }),
+          right: makeMetricValue({ value: index === 2 ? 23456 : 987654.5678, available: true, complete: true }),
+          delta: null, relativeDelta: null, material: false, completeness: 'complete', evidenceIds: [],
+        })),
+      }],
+      strengths: ['totalCostUsd decreased 20%', 'wallClockMs decreased 10%'],
+      weaknesses: ['费用增加 30%'], tradeoffs: ['更快但更贵'],
+      caveats: ['cost dimension unavailable in at least one run', 'timing is partial'],
+      generatedAt: '2026-10-18T00:00:00.000Z',
+    };
+    const before = JSON.stringify(comparison);
+    const fetchMock = teamFetchMock({ runs: [makeRun(id)], comparison });
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = render(<TeamShellHarness invalidateKey={0} initialHash={{
+      ...DEFAULT_TEAM_HASH, runId: id, panel: 'compare',
+      compareLeft: id, compareRight: comparison.rightRunId,
+    }} />);
+    await wait(350);
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>('.team-compare-panel button'))
+      .find(candidate => candidate.textContent === '运行对比');
+    expect(button).toBeDefined();
+    act(() => button!.click());
+    await wait(50);
+    const panel = container.querySelector('.team-compare-result');
+    expect(panel).not.toBeNull();
+    expect(panel!.textContent).toContain('Token 用量');
+    expect(panel!.textContent).toContain('totalInputTokens');
+    expect(panel!.textContent).toContain('12345');
+    expect(panel!.textContent).toContain('23456');
+    expect(panel!.textContent).toContain('wallClockMs decreased 10%');
+    expect(panel!.textContent).toContain('timing is partial');
+    for (const excluded of ['totalCostUsd', 'costGini', '456789.1234', '987654.5678', '费用增加', '更贵', 'cost dimension']) {
+      expect(panel!.textContent).not.toContain(excluded);
+    }
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input) === '/api/team-compare' && init?.method === 'POST')).toHaveLength(1);
+    expect(JSON.stringify(comparison)).toBe(before);
+  });
+
+  it('keeps unavailable communication distinct from measured zero in the summary and retains folded source metadata', async () => {
+    const id = nextRunId();
+    const summary = makeRun(id);
+    summary.completeness = { ...summary.completeness, communication: 'unavailable' };
+    summary.counts.communications = 0;
+    vi.stubGlobal('fetch', teamFetchMock({ runs: [summary], snapshot: () => makeSnapshot(id, { summary, completeness: summary.completeness }) }));
+    const { container } = render(<TeamShellHarness invalidateKey={0} />);
+    await wait(350);
+    act(() => (container.querySelector('.team-row') as HTMLElement).click());
+    await wait(50);
+    expect(container.querySelector('.team-summary-meta')!.textContent).toContain('通信: 不可用');
+    expect(container.querySelector('.team-summary-meta')!.textContent).not.toContain('0 通信');
+    const source = container.querySelector('.team-summary-header details') as HTMLDetailsElement;
+    expect(source.open).toBe(false);
+    expect(source.textContent).toContain(summary.nativeRunId);
+    expect(source.textContent).toContain('运行身份置信度');
+  });
+
   it('七 tab 齐全 + 切换 panel', async () => {
     const r1 = nextRunId();
     vi.stubGlobal('fetch', teamFetchMock({ runs: [makeRun(r1)] }));
@@ -512,7 +583,9 @@ describe('TeamShell 七视图切换', () => {
     const tabs = container.querySelectorAll('[role="tab"]');
     expect(tabs).toHaveLength(7);
     const labels = Array.from(tabs).map((t) => t.textContent);
-    expect(labels).toEqual(['拓扑', '任务', '时间线', '通信', '账本', '检查器', '对比']);
+    expect(labels).toEqual(['团队概览', '任务', '时间线', '通信', '账本', '检查器', '对比']);
+    expect(container.querySelector('.team-workbench')).not.toBeNull();
+    expect(container.querySelector('.team-workbench .tw-member')).not.toBeNull();
 
     // 切到 tasks
     act(() => (tabs[1] as HTMLElement).click());
@@ -544,6 +617,11 @@ describe('TeamShell 七视图切换', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('TeamShell selection 共享高亮', () => {
+  it('omits monetary availability/currency even when source cost evidence exists, preserving Token availability',async()=>{
+    const id=nextRunId();const summary=makeRun(id,{costAvailable:true,costCurrency:'USD'});
+    vi.stubGlobal('fetch',teamFetchMock({runs:[summary],snapshot:()=>makeSnapshot(id,{summary})}));const {container}=render(<TeamShellHarness invalidateKey={0}/>);await wait(350);act(()=>(container.querySelector('.team-row') as HTMLElement).click());await wait(50);
+    const header=container.querySelector('.team-summary-header')!;expect(header).not.toBeNull();expect(header.textContent).not.toContain('USD');expect(header.textContent).not.toContain('成本');expect(header.querySelector('.team-summary-provenance')?.textContent).toContain('Token');expect(summary.costCurrency).toBe('USD');
+  });
   it('topology 选择 agent → 切 tasks → selection 保留（不发请求）', async () => {
     const r1 = nextRunId();
     const fetchCalls: string[] = [];
@@ -853,5 +931,18 @@ describe('TeamShell 删除 run', () => {
     const withDeleted = hashChanges.find((h) => h.deletedRunId !== null);
     expect(withDeleted).toBeDefined();
     expect(withDeleted?.deletedRunId).toBe(r1);
+  });
+});
+
+
+describe('narrow run-list switching',()=>{
+  it('reuses the existing list and closes it when a run is selected',async()=>{
+    const id=nextRunId();vi.stubGlobal('fetch',teamFetchMock({runs:[makeRun(id)],snapshot:()=>makeSnapshot(id)}));
+    const {container}=render(<TeamShellHarness invalidateKey={0}/>);await wait(350);
+    const toggle=container.querySelector<HTMLButtonElement>('.team-mobile-runs-toggle')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');act(()=>toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');expect(container.querySelectorAll('.team-rail')).toHaveLength(1);
+    act(()=>(container.querySelector('.team-row') as HTMLElement).click());await wait(50);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');expect(container.querySelector('.team-summary-title')).not.toBeNull();
   });
 });

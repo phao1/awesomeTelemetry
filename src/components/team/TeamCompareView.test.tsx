@@ -156,6 +156,7 @@ function makeComparison(over: Partial<TeamComparison> = {}): TeamComparison {
   ];
   const costRows = [
     makeRow('totalCostUsd', 'cost', 0.5, 0.7, { direction: 'lower_better' }),
+    makeRow('totalInputTokens', 'cost', 1000, 2000, { direction: 'descriptive' }),
   ];
   const collabRows = [
     makeRow('directRatio', 'collaboration', null, null, { direction: 'descriptive' }),
@@ -172,8 +173,8 @@ function makeComparison(over: Partial<TeamComparison> = {}): TeamComparison {
       makeDimension('collaboration', collabRows),
     ],
     strengths: ['右运行 wall-clock 减少 20%'],
-    weaknesses: ['右运行成本增加 40%'],
-    tradeoffs: ['更快但更贵'],
+    weaknesses: ['右运行失败次数增加 40%'],
+    tradeoffs: ['更快但工具错误更多'],
     caveats: ['协作维度不可用'],
     generatedAt: new Date().toISOString(),
     ...over,
@@ -508,6 +509,13 @@ describe('§9.2 basis 横幅', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('§9.4 五维指标区', () => {
+  it('keeps Team Token rows but removes monetary values, distributions and generated verdicts without changing evidence',()=>{
+    const comparison=makeComparison({dimensions:[makeDimension('cost',[makeRow('totalCostUsd','cost',456789.1234,987654.5678),makeRow('costGini','cost',0.1,0.5),makeRow('totalInputTokens','cost',12345,23456)])],strengths:['totalCostUsd decreased 20%','wallClockMs decreased 10%'],weaknesses:['费用增加 30%'],tradeoffs:['更快但更贵'],caveats:['cost dimension unavailable in at least one run','timing is partial']});
+    const c=render(<TeamCompareView {...baseProps({comparison,state:'success',locale:'en'})}/>);
+    expect(c.textContent).toContain('totalInputTokens');expect(c.textContent).toContain('12345');expect(c.textContent).toContain('23456');
+    expect(c.textContent).not.toContain('totalCostUsd');expect(c.textContent).not.toContain('costGini');expect(c.textContent).not.toContain('456789.1234');expect(c.textContent).not.toContain('费用增加');expect(c.textContent).not.toContain('更贵');expect(c.textContent).not.toContain('cost dimension');
+    expect(c.textContent).toContain('wallClockMs decreased 10%');expect(c.textContent).toContain('timing is partial');expect(comparison.dimensions[0]?.rows).toHaveLength(3);
+  });
   it('渲染 5 个 dimension table，顺序 speed/accuracy/stability/cost/collaboration', () => {
     const comparison = makeComparison();
     const c = render(
@@ -518,7 +526,7 @@ describe('§9.4 五维指标区', () => {
     const dims = c.querySelectorAll('.team-compare-view-dimension');
     expect(dims).toHaveLength(5);
     const titles = Array.from(dims).map((d) => d.querySelector('.team-compare-view-dimension-title')!.textContent);
-    expect(titles).toEqual(['速度', '准确性', '稳定性', '成本', '协作']);
+    expect(titles).toEqual(['速度', '准确性', '稳定性', 'Token 用量', '协作']);
   });
 
   it('每个 table 有 caption（a11y）', () => {
@@ -669,7 +677,7 @@ describe('§9.4 五维指标区', () => {
     );
     const dims = c.querySelectorAll('.team-compare-view-dimension-title');
     const titles = Array.from(dims).map((d) => d.textContent);
-    expect(titles).toEqual(['Speed', 'Accuracy', 'Stability', 'Cost', 'Collaboration']);
+    expect(titles).toEqual(['Speed', 'Accuracy', 'Stability', 'Token usage', 'Collaboration']);
   });
 
   it('数值单元格有 aria-label 描述语义', () => {
@@ -832,7 +840,7 @@ describe('§9.6 禁用 winner/score', () => {
     const comparison = makeComparison({
       dimensions: [
         makeDimension('cost', [
-          makeRow('totalCostUsd', 'cost', null, null, { direction: 'lower_better' }),
+          makeRow('totalInputTokens', 'cost', null, null, { direction: 'descriptive' }),
         ]),
         makeDimension('speed', []),
         makeDimension('accuracy', []),
@@ -1278,7 +1286,7 @@ describe('§9.4 维度顺序容错', () => {
       />,
     );
     const titles = Array.from(c.querySelectorAll('.team-compare-view-dimension-title')).map((e) => e.textContent);
-    expect(titles).toEqual(['速度', '准确性', '稳定性', '成本', '协作']);
+    expect(titles).toEqual(['速度', '准确性', '稳定性', 'Token 用量', '协作']);
   });
 
   it('服务端缺一个维度 → 只渲染返回的（不伪造）', () => {

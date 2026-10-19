@@ -33,6 +33,19 @@ afterEach(() => {
 });
 
 describe('CompareDimensions（L2 三维对比）', () => {
+  it('WB-003: incomplete activity stays unavailable rather than winning with partial counts or missing-as-no',()=>{
+    const result=makeResult();result.left.hasMore=true;result.left.eventTotal=5000;
+    const {unmount}=mount(<CompareDimensions result={result} locale="en"/>);
+    try {
+      const card=document.querySelectorAll('.compare-dim-card')[2]!;
+      const values=Array.from(card.querySelectorAll('.compare-dim-row-value'));
+      expect(values.length).toBeGreaterThan(0);
+      for(let i=0;i<values.length;i+=2)expect(values[i]?.textContent).toBe('—');
+      expect(card.textContent).toContain('Recorded activity');
+      expect(card.innerHTML).not.toContain('var(--success-emphasis)');
+      expect(card.innerHTML).not.toContain('var(--danger-emphasis)');
+    } finally {unmount();}
+  });
   it('unknown event basis leaves raw timing rows visible without difference bars', () => {
     const { unmount } = mount(<CompareDimensions result={makeResult()} locale="en" />);
     const rows = Array.from(document.querySelectorAll('.compare-dim-card:first-child .compare-dim-row'));

@@ -1,4 +1,3 @@
-import { formatCost } from '../core/pricing.js';
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -14,6 +13,9 @@ import { IconAccuracy, IconChevronDown, IconChevronRight, IconCost, IconKebab, I
 export interface SessionToolbarProps {
   session: TraceSession;
   events: TraceEventSlim[];
+  /** Authoritative pagination metadata when supplied by the detail response. */
+  eventTotal?: number;
+  hasMore?: boolean;
   locale: Locale;
   /** 返回会话列表（detail 头部的 ← 返回，6.15）。 */
   onBack?: () => void;
@@ -162,6 +164,8 @@ export function SystemPromptSection({
 export function SessionToolbar({
   session,
   events,
+  eventTotal = session.eventCount,
+  hasMore = events.length < eventTotal,
   locale,
   onBack,
   onRescan,
@@ -172,10 +176,12 @@ export function SessionToolbar({
 }: SessionToolbarProps): React.JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
   const metrics = useMemo(() => {
-    const total = events.length || 1;
-    const errorEvents = events.filter((e) => e.status === 'error').length;
-    const testEvents = events.filter((e) => e.kind === 'test').length;
-    const debugEvents = events.filter((e) => e.phase === 'debug').length;
+    // metrics-analysis REQ-004 / data-model §TraceDimensionMetrics. These are
+    // observed event ratios, not correctness/stability scores. No body reads.
+    const steps = events.filter((e) => ['llm','tool','file_read','file_write','bash','test','agent'].includes(e.kind));
+    const errorSteps = steps.filter((e) => e.status === 'error').length;
+    const verifyEvents = events.filter((e) => e.phase === 'verify').length;
+    const ready = !hasMore && events.length >= eventTotal && steps.length > 0;
     const speed = computeSpeedMetrics({
       session,
       events: events as TraceEvent[],
@@ -183,18 +189,19 @@ export function SessionToolbar({
       // v7 未持久化 provenance；B 阶段由 API 提供真实值
       turnKeySource: 'unavailable',
     });
-    const tokensPerStep = total > 0 ? session.tokenUsage.total / total : 0;
     return {
       speed,
-      verification: total > 0 ? testEvents / total : null,
-      errorRate: total > 0 ? errorEvents / total : null,
-      debugRate: total > 0 ? debugEvents / total : null,
-      tokensPerStep,
-      hasData: total > 1,
+      verification: ready ? verifyEvents / steps.length : null,
+      errorRate: ready ? errorSteps / steps.length : null,
+      stepCount: steps.length,
+      verifyEvents,
+      errorSteps,
+      unknownStatuses: steps.filter((e) => e.status === 'unknown').length,
+      hasData: events.length > 0,
     };
-  }, [session, events]);
+  }, [session, events, eventTotal, hasMore]);
 
-  const pct = (v: number | null): string => (v === null ? '—' : `${(v * 100).toFixed(0)}%`);
+  const pct = (v: number | null): string => v === null ? '—' : v > 0 && v < 0.01 ? '<1%' : `${(v * 100).toFixed(0)}%`;
 
   return (
     <>
@@ -234,13 +241,13 @@ export function SessionToolbar({
           </div>
           <div className="session-toolbar-metric">
             <span className="session-toolbar-metric-label">
-              <IconAccuracy size={12} /> {t('metric.accuracy', locale)}
+              <IconAccuracy size={12} /> {t('session.metric.verification', locale)}
             </span>
             <span className="mono">{pct(metrics.verification)}</span>
           </div>
           <div className="session-toolbar-metric">
             <span className="session-toolbar-metric-label">
-              <IconStability size={12} /> {t('metric.stability', locale)}
+              <IconStability size={12} /> {t('session.metric.errors', locale)}
             </span>
             <span className="mono">{pct(metrics.errorRate)}</span>
           </div>
@@ -249,7 +256,7 @@ export function SessionToolbar({
               <IconCost size={12} /> {t('metric.cost', locale)}
             </span>
             <span className="mono">
-              {session.tokenUsage.total.toLocaleString()} tok · {formatCost(session.costUsd, session.costSource, session.costCurrency)}
+              {session.tokenUsage.total.toLocaleString()} tok
             </span>
           </div>
         </div>
@@ -272,7 +279,17 @@ export function SessionToolbar({
           ]}
         />
       </header>
-      <ScanTimingCriteria left={session} partial={events.length < session.eventCount} locale={locale} />
+      <section className="session-metric-criteria">
+        <details>
+          <summary>{t('session.metric.scope',locale)} · {t('session.metric.loaded',locale).replace('{loaded}',String(events.length)).replace('{total}',String(eventTotal))}</summary>
+          <p>{t('session.metric.verificationFormula',locale)}: <span className="mono">{metrics.verifyEvents} / {metrics.stepCount}</span></p>
+          <p>{t('session.metric.errorFormula',locale)}: <span className="mono">{metrics.errorSteps} / {metrics.stepCount}</span></p>
+          <p>{t('session.metric.steps',locale)}</p>
+          <p>{t('session.metric.unknownStatuses',locale).replace('{n}',String(metrics.unknownStatuses))}</p>
+        </details>
+        {(hasMore || events.length < eventTotal || metrics.stepCount === 0) && <p role="status">{t(hasMore || events.length < eventTotal ? 'session.metric.partial' : 'session.metric.noSteps',locale)}</p>}
+      </section>
+      <ScanTimingCriteria left={session} partial={hasMore || events.length < eventTotal} locale={locale} compact />
       <SystemPromptSection session={session} locale={locale} />
     </>
   );

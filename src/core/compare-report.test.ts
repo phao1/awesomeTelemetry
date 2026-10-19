@@ -29,6 +29,11 @@ function record(id: string): TraceRecord {
 }
 
 describe('REQ-009 对比报告', () => {
+  it('exports Token components but no monetary summary in either locale and preserves input records',()=>{
+    const left=record('left');left.session.costUsd=456789.1234;
+    for(const locale of ['zh','en'] as const){const html=buildCompareReportHtml(left,record('right'),locale);expect(html).not.toContain('456789.1234');expect(html).not.toMatch(/\bcost\s+[\d$]/);expect(html).toContain('cacheWrite: 2');expect(html).toContain('total: 40');}
+    expect(left.session.costUsd).toBe(456789.1234);
+  });
   it('labels legacy scan formulas and derived session declaration without claiming measured tools', () => {
     const left = record('derived'); left.session.durationSource = 'derived';
     const html = buildCompareReportHtml(left, record('unknown'), 'en');

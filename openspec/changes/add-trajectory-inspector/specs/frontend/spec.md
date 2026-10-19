@@ -68,6 +68,14 @@ the turn's messages in event order.
 Each message SHALL render as a card marked with its role using a role token, a role icon,
 and the role name. Colour SHALL NOT be the only carrier of the role.
 
+#### Scenario: Generic Agent bookkeeping
+- **GIVEN** a generic kind=agent event such as CodeArts step-finish usage metadata
+- **WHEN** its Turn and message are rendered
+- **THEN** the event uses the existing neutral system role with an Agent-record
+  label, retains metadata/usage/error/Raw and does not create a Subagent badge
+- **AND** legacy actor/title text alone never establishes a delegation link;
+  explicit subagent_prompt messages and evidence-backed session hierarchy remain
+
 #### Scenario: Assistant card
 - **WHEN** an assistant message renders
 - **THEN** it shows the role marker, duration, and output tokens

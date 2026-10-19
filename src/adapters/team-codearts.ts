@@ -1,3 +1,4 @@
+import { addCodeArtsReplayEvidence } from './team-codearts-replay.js';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 
@@ -39,7 +40,7 @@ import { normalizeStatus } from './helpers.js';
 // ══════════════════════════════════════════════════════════════════════════
 
 /** team parser 版本。解析语义变更必须 bump（design D12 parser-version invalidation）。 */
-export const TEAM_PARSER_VERSION = 'team-v1';
+export const TEAM_PARSER_VERSION = 'team-v2-replay';
 
 /** EvidenceRef.sourceKind 的冻结取值集合（contracts/data-model.md §12.2）。 */
 export const TEAM_SOURCE_KIND_CODEARTS = 'agent-team-directory';
@@ -101,6 +102,11 @@ export interface NormalizedTeamEvidence {
   artifacts: TeamArtifact[];
   evidence: EvidenceRef[];
   completeness: TeamCompleteness;
+  /** Internal ingestion tier; never part of a snapshot/list DTO. */
+  activityBodies?: Array<{
+    activity_id: string; input_body: string | null; output_body: string | null;
+    message_body: string | null; result_body: string | null; raw_body: string | null;
+  }>;
 }
 
 /**
@@ -555,15 +561,6 @@ function codeArtsCost(cost: unknown): number | null {
   return cost;
 }
 
-/** 从 parts 的 message_id 反查 message time_created（ms）。 */
-function findMessageTime(raw: CodeArtsTeamRaw, messageId: string | undefined): number | null {
-  if (messageId === undefined || messageId === '') {
-    return null;
-  }
-  const message = (raw.messages ?? []).find((m) => m.id === messageId);
-  return message?.time_created ?? null;
-}
-
 /** 从 parts 收集 get-my-task 认领的 task id（输出里的 `id` 字段）。 */
 function collectClaimedTaskIds(raw: CodeArtsTeamRaw): ReadonlySet<number> {
   const claimed = new Set<number>();
@@ -576,13 +573,20 @@ function collectClaimedTaskIds(raw: CodeArtsTeamRaw): ReadonlySet<number> {
     if (typeof output !== 'string') {
       continue;
     }
-    // get-my-task 输出形如 `[... {"id": 1, ...}]`；只提取 id 数字，绝不当作正文外发。
-    for (const m of output.matchAll(/"id"\s*:\s*(\d+)/g)) {
-      const id = Number(m[1]);
-      if (Number.isInteger(id)) {
-        claimed.add(id);
+    const start = output.indexOf('[');
+    if (start < 0) continue;
+    try {
+      const tasks: unknown = JSON.parse(output.slice(start));
+      if (!Array.isArray(tasks)) continue;
+      for (const task of tasks) {
+        if (typeof task !== 'object' || task === null) continue;
+        const item = task as Record<string, unknown>;
+        if (Number.isInteger(item.id) && item.owner === part.session_id && item.status === 'claimed') {
+          claimed.add(item.id as number);
+        }
       }
-    }
+    } catch { continue; /* Unrecognized output is unavailable, never matched by a broad ID regex. */ }
+
   }
   return claimed;
 }
@@ -601,7 +605,10 @@ function collectClaimedTaskIds(raw: CodeArtsTeamRaw): ReadonlySet<number> {
  * - 通信 dimension 恒 unavailable（无 sender/recipient，G12.2）
  * - cost = step-finish.cost USD（native）；tokens = step-finish.tokens（native）
  */
-export function parseCodeArtsTeam(raw: CodeArtsTeamRaw): NormalizedTeamEvidence {
+export function parseCodeArtsTeam(raw: CodeArtsTeamRaw, links?: {
+  sessionKeyOf: (nativeSessionId: string) => string | null;
+  eventIdOf: (part: CodeArtsPartRow) => string | null;
+}): NormalizedTeamEvidence {
   const provider: ProviderKey = 'codearts';
   const evidence: EvidenceRef[] = [];
   const sourceLocator = raw.sourceLocator;
@@ -615,6 +622,14 @@ export function parseCodeArtsTeam(raw: CodeArtsTeamRaw): NormalizedTeamEvidence 
   if (nativeRunId === null) {
     throw new Error('CodeArts team run 无稳定 run 身份（contact 无 team-leader 且 sessions 无根）');
   }
+  // A database contains many unrelated runs. Membership is explicit, never temporal.
+  const allowedSessions = new Set(Object.values(raw.contact).map(member => member.sessionID));
+  allowedSessions.add(nativeRunId);
+  raw = { ...raw,
+    parts: (raw.parts ?? []).filter(part => allowedSessions.has(part.session_id)),
+    messages: (raw.messages ?? []).filter(message => allowedSessions.has(message.session_id)),
+  };
+  const messageTimes = new Map(raw.messages?.map(message => [message.id, message.time_created]));
   const runId = canonicalRunId(provider, nativeRunId);
   const occurrence = makeOccurrenceCounter();
 
@@ -660,7 +675,7 @@ export function parseCodeArtsTeam(raw: CodeArtsTeamRaw): NormalizedTeamEvidence 
       state: normalizeTeamAgentState(member.status),
       createdAt: normalizeIso(member.startedAt),
       endedAt: null,
-      sessionKeys: [],
+      sessionKeys: links?.sessionKeyOf(sessionId) ? [links.sessionKeyOf(sessionId)!] : [],
       evidenceIds: [evId],
     });
     agentByNative.set(sessionId, agentId);
@@ -806,12 +821,12 @@ export function parseCodeArtsTeam(raw: CodeArtsTeamRaw): NormalizedTeamEvidence 
         roundId: null,
         kind: 'tool_call',
         status: normalizeActivityStatus(state.status),
-        startedAt: normalizeMs(findMessageTime(raw, part.message_id)),
+        startedAt: normalizeMs(messageTimes.get(part.message_id)),
         endedAt: null,
         nativeSequence: activityIndex,
-        sessionKey: null,
-        eventId: part.id ?? null,
-        turnKey: null,
+        sessionKey: links?.sessionKeyOf(part.session_id) ?? null,
+        eventId: links?.eventIdOf(part) ?? null,
+        turnKey: part.message_id || null,
         messageId: null,
         artifactId: null,
         tokenUsage: null,
@@ -836,12 +851,12 @@ export function parseCodeArtsTeam(raw: CodeArtsTeamRaw): NormalizedTeamEvidence 
         roundId: null,
         kind: 'round',
         status: 'success',
-        startedAt: normalizeMs(findMessageTime(raw, part.message_id)),
+        startedAt: normalizeMs(messageTimes.get(part.message_id)),
         endedAt: null,
         nativeSequence: activityIndex,
-        sessionKey: null,
-        eventId: part.id ?? null,
-        turnKey: null,
+        sessionKey: links?.sessionKeyOf(part.session_id) ?? null,
+        eventId: links?.eventIdOf(part) ?? null,
+        turnKey: part.message_id || null,
         messageId: null,
         artifactId: null,
         tokenUsage,
@@ -857,6 +872,10 @@ export function parseCodeArtsTeam(raw: CodeArtsTeamRaw): NormalizedTeamEvidence 
     }
     activityIndex += 1;
   }
+
+  // Preserve task control events and lazy evidence without assigning ordinary work by time.
+  const activityBodies = addCodeArtsReplayEvidence({ raw, activities, tasks, assignments,
+    agentByNative, taskByNative, runId, nativeRunId, ref, links });
 
   // ── communications：unavailable（§4.6 / G12.2，无 sender/recipient 不构造） ──
   const communications: TeamCommunication[] = [];
@@ -905,6 +924,7 @@ export function parseCodeArtsTeam(raw: CodeArtsTeamRaw): NormalizedTeamEvidence 
     assignments,
     communications,
     activities,
+    activityBodies,
     rounds: [],
     artifacts: [],
     evidence,

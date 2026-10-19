@@ -606,4 +606,44 @@ describe('AgentCollabReplay §7.1', () => {
     const detailsAfter = container.querySelector('.collab-activity-group') as HTMLDetailsElement;
     expect(detailsAfter.open).toBe(false);
   });
+
+  it('links the new workbench selection to the original graph and task replay without additional reads', async () => {
+    mockGetTeamRunBySessionKey.mockResolvedValue({ runIds: ['r1'] });
+    mockRunSnapshot.mockResolvedValue({ snapshot: makeSnapshot(), stamp: 's1', cached: false });
+    mockListActivities.mockResolvedValue({ items: [makeActivity('one', { taskId: 't1' }), makeActivity('two', { taskId: 't2' })], hasMore: false, nextCursor: null, total: 2 });
+    const container = render(<AgentCollabReplay sessionKey="readable-team" locale="zh" />);
+    await flush();
+    expect((container.querySelector('.collab-secondary') as HTMLDetailsElement).open).toBe(false);
+    act(() => (container.querySelector('.tw-member') as HTMLButtonElement).click());
+    expect(container.querySelector('.collab-node-selected')).not.toBeNull();
+    expect(container.querySelector('.tw-detail')!.textContent).toContain('Agent a1');
+    act(() => (container.querySelectorAll('.tw-task')[1] as HTMLButtonElement).click());
+    expect(container.querySelector('.collab-replay-progress')!.textContent).toContain('2/2');
+    expect(mockRunSnapshot).toHaveBeenCalledTimes(1);
+    expect(mockListActivities).toHaveBeenCalledTimes(1);
+  });
+
+  it('discloses truncated activity pages instead of presenting them as a complete run', async () => {
+    mockGetTeamRunBySessionKey.mockResolvedValue({ runIds: ['r1'] });
+    mockRunSnapshot.mockResolvedValue({ snapshot: makeSnapshot(), stamp: 's1', cached: false });
+    mockListActivities.mockResolvedValue({ items: [makeActivity('retained')], hasMore: true, nextCursor: null, total: 100 });
+    const container = render(<AgentCollabReplay sessionKey="partial-team" locale="zh" />);
+    await flush();
+    act(() => (container.querySelector('.tw-member') as HTMLButtonElement).click());
+    expect(container.querySelector('.tw-detail')!.textContent).toContain('活动分页尚未完整加载');
+    expect(mockListActivities).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed snapshot through the real session-to-run lookup rather than remaining stuck', async () => {
+    mockGetTeamRunBySessionKey.mockResolvedValue({ runIds: ['r1'] });
+    mockRunSnapshot.mockRejectedValueOnce(new Error('snapshot unavailable')).mockResolvedValue({ snapshot: makeSnapshot(), stamp: 's1', cached: false });
+    mockListActivities.mockResolvedValue({ items: [], hasMore: false, nextCursor: null, total: 0 });
+    const container = render(<AgentCollabReplay sessionKey="retry-team" locale="zh" />);
+    await flush();
+    act(() => (container.querySelector('.error-state button, .ui-error button, button') as HTMLButtonElement).click());
+    await flush();
+    expect(container.querySelector('.team-workbench')).not.toBeNull();
+    expect(mockGetTeamRunBySessionKey).toHaveBeenCalledTimes(2);
+    expect(mockRunSnapshot).toHaveBeenCalledTimes(2);
+  });
 });

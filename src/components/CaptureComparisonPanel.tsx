@@ -194,8 +194,8 @@ function ComparisonMetrics({ data, locale }: { data: CaptureComparisonResponse; 
     <tbody>{rows.map(row => <tr key={row.id} data-comparison-metric={row.id}><th scope="row">{labels[row.id] ?? row.id}</th><td>{value(row.base, row.unit)}</td><td>{value(row.target, row.unit)}</td><td>{value(row.delta, row.unit, true)}</td>
       <td style={{ overflowWrap: 'anywhere' }}>{!row.comparable && <p>{copy.notComparable}: {row.reasons.map(reason => REASONS[locale][reason]).join(' · ')}</p>}<details><summary>{copy.basis}</summary><code>{row.baseSource}</code><br /><code>{row.targetSource}</code></details></td></tr>)}</tbody>
   </table></div></section>;
-  return <>{table(copy.timing, view.timings)}{table(copy.usage, view.usage)}<p>{copy.cost}</p>
-    <h4>{copy.warnings}</h4><ul>{view.warnings.map((warning, index) => <li key={`${warning.code}:${index}`}>{WARNINGS[locale][warning.code]}
+  return <>{table(copy.timing, view.timings)}{table(copy.usage, view.usage)}
+    <h4>{copy.warnings}</h4><ul>{view.warnings.filter(warning=>warning.code!=='cost_unknown').map((warning, index) => <li key={`${warning.code}:${index}`}>{WARNINGS[locale][warning.code]}
       {warning.sides.length > 0 && <> · {warning.sides.map(side => side === 'base' ? copy.base : copy.target).join(' / ')}</>}
       {warning.details.length > 0 && <span className="mono" style={{ overflowWrap: 'anywhere' }}> · {warning.details.join(' · ')}</span>}</li>)}</ul>
   </>;

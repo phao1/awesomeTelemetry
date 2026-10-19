@@ -18,6 +18,9 @@
  * **i18n**：新键在组件内局部双语映射（见 TopologyView 同样原因）。
  */
 
+import '../../styles/components/team.css';
+import '../../styles/components/team-views.css';
+
 import { useCallback, useMemo } from 'react';
 
 import type { Locale } from '../../i18n.js';

@@ -1,5 +1,5 @@
 import { ta } from '../../i18n.js';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
 
 import { IconClose } from '../icons/index.js';
 import { useFocusTrap } from './focus-trap.js';
@@ -11,6 +11,8 @@ export interface ModalProps {
   children: ReactNode;
   size?: 'sm' | 'md' | 'lg';
   footer?: ReactNode;
+  /** Search/entry dialogs may request a specific control; confirmations keep the safe default. */
+  initialFocusRef?: RefObject<HTMLElement | null>;
 }
 
 /** REQ-005：Modal。焦点陷阱 + Esc 关闭 + role="dialog" aria-modal（REQ-009）。 */
@@ -20,9 +22,10 @@ export function Modal({
   children,
   size = 'md',
   footer,
+  initialFocusRef,
 }: ModalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(containerRef, true, onClose);
+  useFocusTrap(containerRef, true, onClose, undefined, initialFocusRef);
   useEffect(() => pushOverlay(onClose), [onClose]);
 
   return (
@@ -73,10 +76,12 @@ export interface DrawerProps {
   open: boolean;
   footer?: ReactNode;
   className?: string;
+  /** Optional controlled width; the viewport clamp is always retained. */
+  width?: number;
 }
 
 /** REQ-005：Drawer。右侧滑入（transform 过渡，reduced-motion 归零）。 */
-export function Drawer({ title, onClose, children, open, footer, className }: DrawerProps): React.JSX.Element {
+export function Drawer({ title, onClose, children, open, footer, className, width }: DrawerProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(containerRef, open, onClose);
   useEffect(() => (open ? pushOverlay(onClose) : undefined), [open, onClose]);
@@ -90,6 +95,7 @@ export function Drawer({ title, onClose, children, open, footer, className }: Dr
       <div
         ref={containerRef}
         className={`ui-drawer ui-drawer-open ${className ?? ''}`}
+        style={width === undefined ? undefined : { width: `min(${width}px, 96vw)` }}
         role="dialog"
         aria-modal="true"
         aria-label={title}

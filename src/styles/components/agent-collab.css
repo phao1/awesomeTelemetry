@@ -1,0 +1,381 @@
+/* ===== §8 UI 优化：Agent 协作回放章节 =====
+ * spec §8.3（章节滚动 + sticky summary）+ §8.4（样式一致性，复用 session-visuals-panel token）
+ * design §3.3 + §3.4。仅使用 design tokens，无字面量颜色 / 字面量 px（T2/T3 强制）。
+ */
+
+/* --- §8.4 章节外框：与 .session-visuals-panel 逐行对齐（session.css:567-589） --- */
+
+.session-collab-replay-panel {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-subtle);
+}
+
+.session-collab-replay-panel > summary {
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--fg-default);
+  user-select: none;
+}
+
+.session-collab-replay-panel > summary:hover {
+  color: var(--accent-fg);
+}
+
+.session-collab-replay-panel[open] > summary {
+  border-bottom: 1px solid var(--border-default);
+}
+
+/* --- §8.3 章节滚动 + sticky summary --- */
+
+/* summary 在内容区滚动时保持可见可点击折叠（spec §8.3.1 规则 4） */
+.session-collab-replay-panel > summary {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--canvas-subtle);
+}
+
+/* 内容区垂直滚动：max-height 70vh 保证不超出视口（spec §8.3.1 规则 1-2）。
+   降级（spec §8.3.3 异常 1）：父容器 flex 拉伸导致 max-height 不生效时，
+   内容仍可整页滚动，不丢失内容。 */
+.session-collab-replay-panel[open] .collab-replay-body {
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3);
+}
+
+/* 拓扑区域水平滚动：节点宽度按文本扩展不压缩（spec §8.3.1 规则 3） */
+.collab-topology-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* --- §8.4 控件 token 复用（design §3.4.3 表格） --- */
+
+/* 主容器 */
+.agent-collab-replay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* 拓扑图 SVG */
+.collab-topology-graph {
+  display: block;
+  max-width: none;
+}
+
+.collab-topology-graph .collab-edge {
+  fill: none;
+  stroke: var(--border-default);
+  stroke-width: 1;
+}
+
+.collab-topology-graph .collab-edge-supervises {
+  stroke: var(--accent-fg);
+}
+
+.collab-topology-graph .collab-edge-created {
+  stroke: var(--success-fg);
+}
+
+.collab-topology-graph .collab-edge-selected {
+  stroke-width: 2;
+  stroke: var(--accent-emphasis);
+}
+
+.collab-topology-graph .collab-edge-dimmed {
+  opacity: 0.4;
+}
+
+.collab-topology-graph .collab-edge-degraded {
+  stroke-dasharray: 4 2;
+  stroke: var(--danger-fg);
+}
+
+.collab-topology-graph .collab-edge-count {
+  font-size: var(--text-xs);
+  fill: var(--fg-muted);
+  font-family: var(--font-mono);
+}
+
+.collab-topology-graph .collab-node {
+  cursor: pointer;
+}
+
+.collab-topology-graph .collab-node-name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.collab-topology-graph .collab-node-role {
+  font-size: var(--text-xs);
+}
+
+.collab-topology-graph .collab-node-selected .collab-node-card {
+  stroke-width: 2;
+}
+
+.collab-topology-graph .collab-legend-label {
+  font-size: var(--text-xs);
+}
+
+/* 回放控制条 */
+.collab-replay-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+}
+
+.collab-replay-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.collab-replay-nav {
+  justify-content: flex-start;
+}
+
+.collab-replay-info {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  flex-wrap: wrap;
+}
+
+.collab-replay-prev,
+.collab-replay-next,
+.collab-replay-skip-empty {
+  height: var(--control-height-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.collab-replay-prev:hover:not(:disabled),
+.collab-replay-next:hover:not(:disabled),
+.collab-replay-skip-empty:hover:not(:disabled) {
+  background: var(--canvas-raised);
+}
+
+.collab-replay-prev:disabled,
+.collab-replay-next:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.collab-replay-skip-empty {
+  border-color: var(--attention-fg);
+  color: var(--attention-fg);
+}
+
+.collab-replay-progress {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.collab-replay-task-title {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  font-weight: var(--weight-medium);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collab-replay-sep {
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.collab-replay-task-status {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  flex: 0 0 auto;
+}
+
+.collab-task-status-completed {
+  color: var(--success-fg);
+}
+
+.collab-task-status-running,
+.collab-task-status-ready,
+.collab-task-status-claimed {
+  color: var(--attention-fg);
+}
+
+.collab-task-status-failed,
+.collab-task-status-blocked {
+  color: var(--danger-fg);
+}
+
+.collab-task-status-pending,
+.collab-task-status-cancelled,
+.collab-task-status-unknown {
+  color: var(--neutral-fg);
+}
+
+.collab-replay-activity-count {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+/* 分段进度条（spec §8.2.1 规则 4-6，design §3.2.3） */
+.collab-replay-segments {
+  display: flex;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.collab-replay-seg {
+  height: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--border-default);
+  cursor: pointer;
+}
+
+/* 已完成：accent-emphasis */
+.collab-replay-seg-completed {
+  background: var(--accent-emphasis);
+}
+
+/* 当前：accent-emphasis + 加粗（outline 模拟 2px）+ 高度 +2px */
+.collab-replay-seg-current {
+  background: var(--accent-emphasis);
+  height: calc(var(--space-2) + var(--space-1) / 2);
+  outline: 1px solid var(--accent-emphasis);
+}
+
+/* 未开始：border-default（默认） */
+.collab-replay-seg-pending {
+  background: var(--border-default);
+}
+
+/* 无活动：border-muted + 高度 -2px */
+.collab-replay-seg-empty {
+  background: var(--border-muted);
+  height: calc(var(--space-2) - var(--space-1) / 2);
+}
+
+.collab-replay-seg:hover {
+  opacity: 0.8;
+}
+
+/* 活动面板聚合展示（spec §8.5，design §3.5） */
+.collab-activity-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.collab-activity-group {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+}
+
+.collab-activity-group > summary {
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.collab-activity-group > summary:hover {
+  background: var(--canvas-raised);
+}
+
+/* 无活动 agent：不可展开（无 summary 点击效果） */
+.collab-activity-group-empty > summary {
+  cursor: default;
+  color: var(--fg-muted);
+}
+
+.collab-activity-group-empty > summary:hover {
+  background: transparent;
+}
+
+.collab-activity-group-name {
+  font-weight: var(--weight-medium);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.collab-activity-group-count {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.collab-activity-group-summary {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.collab-activity-ambiguous-mark {
+  color: var(--attention-fg);
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+/* 展开明细 */
+.collab-activity-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-top: 1px solid var(--border-muted);
+}
+
+.collab-activity-detail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+}
+
+.collab-activity-detail-time {
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.collab-activity-detail-kind {
+  flex: 0 0 auto;
+}
+
+.collab-activity-detail-status {
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}

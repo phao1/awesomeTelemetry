@@ -75,6 +75,23 @@ function baseProps(over: Partial<TopologyGraphProps> = {}): TopologyGraphProps {
 // ── 8 个测试场景 ─────────────────────────────────────────────
 
 describe('TopologyGraph §7.2 / §8.1', () => {
+  it('keeps a 30-agent intrinsic canvas and a named keyboard-focusable scroll region', () => {
+    const agents = Array.from({ length: 30 }, (_, index) => makeAgent(`a${index}`));
+    const edges = agents.slice(1).map((agent, index) => makeEdge(`e${index}`, agents[0]!.id, agent.id));
+    const container = render(<TopologyGraph {...baseProps({ agents, edges })}/>);
+    const region = container.querySelector('.collab-topology-wrap')!;
+    expect(region.getAttribute('role')).toBe('region');
+    expect(region.getAttribute('tabindex')).toBe('0');
+    expect(region.getAttribute('aria-label')).toContain('横向滚动');
+    const svg = region.querySelector('svg')!;
+    const [, , width, height] = svg.getAttribute('viewBox')!.split(' ').map(Number);
+    expect(width).toBeGreaterThan(1280);
+    expect(svg.getAttribute('width')).toBe(String(width));
+    expect(svg.getAttribute('height')).toBe(String(height));
+    expect(container.querySelectorAll('.collab-node')).toHaveLength(30);
+    act(() => (region as HTMLElement).focus());
+    expect(document.activeElement).toBe(region);
+  });
   it('1. 渲染 SVG + title + desc，role="img"，aria-label 正确', () => {
     const container = render(<TopologyGraph {...baseProps()} />);
     const svg = container.querySelector('svg');

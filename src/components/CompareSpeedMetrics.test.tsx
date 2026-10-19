@@ -63,6 +63,13 @@ const FULL_SPEED: SpeedMetrics = {
 };
 
 describe('CompareSpeedMetrics（建议 2）', () => {
+  it('WB-003: timing differences describe recorded values, not a winning Agent or lower-is-better grade',()=>{
+    const view=mount(<CompareSpeedMetrics speed={{left:FULL_SPEED,right:{...FULL_SPEED,e2eMs:6000}}} locale="en"
+      sessions={{left:makeSession('l',{durationSource:'measured'}),right:makeSession('r',{durationSource:'measured'})}}/>);
+    expect(document.querySelector('.compare-speed-card-l,.compare-speed-card-r')).toBeNull();
+    expect(view.html()).not.toContain('L ✓');expect(view.html()).not.toContain('Lower is better');
+    expect(document.querySelector('.compare-speed-card')?.textContent).toContain('R − L: +3.0s');view.unmount();
+  });
   it('unknown declarations retain side values without claiming equality or winners', () => {
     const { html, unmount } = mount(<CompareSpeedMetrics speed={{ left: FULL_SPEED, right: FULL_SPEED }} locale="en"
       sessions={{ left: makeSession('l'), right: makeSession('r') }} />);
@@ -81,13 +88,15 @@ describe('CompareSpeedMetrics（建议 2）', () => {
     const { unmount } = mount(<CompareSpeedMetrics speed={{ left: FULL_SPEED, right: { ...FULL_SPEED, e2eMs: 6000, ttftMs: 240 } }}
       sides={{ left, right }} locale="en" />);
     const cards = document.querySelectorAll('.compare-speed-card');
-    expect(cards[0]?.className).toContain('compare-speed-card-l');
+    expect(cards[0]?.textContent).toContain('R − L: +3.0s');
+    expect(cards[0]?.className).not.toContain('compare-speed-card-l');
     expect(cards[1]?.textContent).toContain('Incomplete or pending event evidence');
     expect(cards[1]?.className).not.toContain('compare-speed-card-l');
     unmount();
     const complete = mount(<CompareSpeedMetrics speed={{ left: FULL_SPEED, right: { ...FULL_SPEED, ttftMs: 240 } }}
       sides={{ left: { ...left, hasMore: false }, right }} locale="en" />);
-    expect(document.querySelectorAll('.compare-speed-card')[1]?.className).toContain('compare-speed-card-l');
+    expect(document.querySelectorAll('.compare-speed-card')[1]?.textContent).toContain('R − L: +0.1s');
+    expect(document.querySelectorAll('.compare-speed-card')[1]?.className).not.toContain('compare-speed-card-l');
     complete.unmount();
   });
 
@@ -131,7 +140,8 @@ describe('CompareSpeedMetrics（建议 2）', () => {
   it('only complete known equal event measurements may display equality', () => {
     const sessions = { left: makeSession('l', { durationSource: 'derived' }), right: makeSession('r', { durationSource: 'derived' }) };
     const { unmount } = mount(<CompareSpeedMetrics speed={{ left: FULL_SPEED, right: FULL_SPEED }} sessions={sessions} locale="en" />);
-    expect(document.querySelectorAll('.compare-speed-card')[1]?.textContent).toContain('Both sessions are on par');
+    expect(document.querySelectorAll('.compare-speed-card')[1]?.textContent).toContain('R − L: 0s');
+    expect(document.querySelectorAll('.compare-speed-card')[1]?.textContent).not.toContain('on par');
     expect(document.querySelectorAll('.compare-speed-card')[1]?.textContent).not.toContain('Not comparable');
     unmount();
   });
@@ -292,7 +302,7 @@ describe('CompareSpeedMetrics（建议 2）', () => {
         locale="zh"
       />,
     );
-    expect(html()).toContain('启动开销：6.2s');
+    expect(html()).toContain('记录 TTFT 超过 5 秒：6.2s；尚未确认等待原因');
     expect(html()).toContain('compare-speed-warn');
     unmount();
   });

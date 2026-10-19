@@ -4,9 +4,10 @@ import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { SpeedMetrics, TraceEventSlim, TraceSession } from '../core/trace-types.js';
 import { scanTimingReason, scanTimingValue, type ScanTimingMetric, type ScanTimingSide } from '../core/scan-timing.js';
-import { diffPct, fmtMs } from './compare-stats.js';
+import { fmtMs } from './compare-stats.js';
 import { TokenTextModal, type TokenClass } from './TokenTextModal.js';
 import { IconWarning } from './icons/index.js';
+import { CompareTokenUsage } from './CompareTokenUsage.js';
 
 interface SpeedMetricDef {
   key: string;
@@ -85,53 +86,6 @@ export function CompareSpeedMetrics({
     ];
   }, [events, speed, locale]);
 
-  const tokenValues = (side: 'left' | 'right'): Record<TokenClass, number> => {
-    const session = sessions?.[side];
-    return {
-      system: speed[side].systemPromptTokensEstimate ?? 0,
-      input: session?.tokenUsage.input ?? 0,
-      reasoning: session?.tokenUsage.reasoning ?? 0,
-      output: session?.tokenUsage.output ?? 0,
-    };
-  };
-
-  const stack = (side: 'left' | 'right'): React.JSX.Element => {
-    const values = tokenValues(side);
-    const total = Object.values(values).reduce((a, b) => a + b, 0) || 1;
-    const session = sessions?.[side];
-    return (
-      <div className="token-stack" role="group" aria-label={t('compare.charts.tokenDonut', locale)}>
-        {session !== undefined && (
-          <span className="compare-side-mark" style={{ color: side === 'left' ? 'var(--accent-fg)' : 'var(--attention-fg)' }}>
-            {side === 'left' ? 'L' : 'R'}
-          </span>
-        )}
-        <div className="token-stack-bar">
-          {(['system', 'input', 'reasoning', 'output'] as const).map((cls) => {
-            const value = values[cls];
-            if (value <= 0) {
-              return null;
-            }
-            return (
-              <button
-                key={cls}
-                type="button"
-                className={`token-stack-seg token-stack-${cls}`}
-                style={{ width: `${(value / total) * 100}%` }}
-                title={`${t(`compare.charts.tokenClass.${cls}`, locale)} · ${value.toLocaleString()}`}
-                aria-label={`${side === 'left' ? 'L' : 'R'} ${cls}`}
-                onClick={() => setOpenToken({ side, tokenClass: cls })}
-              >
-                <span className="token-stack-seg-label">{t(`compare.charts.tokenClass.${cls}`, locale)}</span>
-                <span className="mono token-stack-seg-count">{value.toLocaleString()}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
   const openSession = openToken === null || sessions === undefined ? null : sessions[openToken.side];
 
   return (
@@ -142,12 +96,8 @@ export function CompareSpeedMetrics({
           const lv = scanTimingValue(speed.left[def.field]);
           const rv = scanTimingValue(speed.right[def.field]);
           const reason = scanTimingReason(leftSide, rightSide, def.metric, speed.left[def.field], speed.right[def.field]);
-          const leftBetter =
-            reason !== null || lv === null || rv === null || lv === rv
-              ? null
-              : def.lowerBetter
-                ? lv < rv
-                : lv > rv;
+          const delta=reason!==null||lv===null||rv===null?null:rv-lv;
+          const observed=delta===null||!Number.isFinite(delta)?null:`R − L: ${delta>0?'+':delta<0?'−':''}${def.fmt(Math.abs(delta))}`;
           const warns: Array<{ side: 'L' | 'R'; ms: number }> = [];
           if (def.key === 'ttft') {
             if (lv !== null && lv > 5000) {
@@ -160,13 +110,10 @@ export function CompareSpeedMetrics({
           return (
             <div
               key={def.key}
-              className={`compare-speed-card ${leftBetter === null ? '' : leftBetter ? 'compare-speed-card-l' : 'compare-speed-card-r'}`}
+              className="compare-speed-card"
             >
               <div className="compare-speed-card-head">
                 <span className="compare-speed-card-label">{def.label}</span>
-                <span className="compare-speed-card-dir">
-                  {def.lowerBetter ? t('compare.lowerBetter', locale) : t('compare.higherBetter', locale)}
-                </span>
               </div>
               <div className="compare-speed-values">
                 <span className="mono compare-speed-value">
@@ -178,12 +125,8 @@ export function CompareSpeedMetrics({
                   {def.fmt(rv)}
                 </span>
               </div>
-              <div className="compare-speed-winner">
-                {reason !== null ? `${t('scan.timing.notComparable', locale)} · ${t(`scan.timing.reason.${reason}`, locale)}` : leftBetter === null
-                  ? t('compare.parity', locale)
-                  : leftBetter
-                    ? 'L ✓'
-                    : 'R ✓'}
+              <div className="compare-speed-observation">
+                {reason !== null ? `${t('scan.timing.notComparable', locale)} · ${t(`scan.timing.reason.${reason}`, locale)}` : observed??t('compare.activity.unavailable',locale)}
               </div>
               {warns.map((warn) => (
                 <div key={warn.side} className="compare-speed-warn" role="status">
@@ -199,13 +142,8 @@ export function CompareSpeedMetrics({
       <div className="compare-speed-aux">
         {auxRows.map((row) => {
           const reason = scanTimingReason(leftSide, rightSide, 'eventDuration', row.lnum, row.rnum);
-          const leftBetter =
-            reason !== null || row.lnum === null || row.rnum === null || row.lnum === row.rnum
-              ? null
-              : row.lowerBetter
-                ? row.lnum < row.rnum
-                : row.lnum > row.rnum;
-          const diff = reason !== null || row.lnum === null || row.rnum === null ? null : diffPct(row.lnum, row.rnum);
+          const diff = reason !== null || row.lnum === null || row.rnum === null ? null : row.rnum-row.lnum;
+          const delta=diff===null||!Number.isFinite(diff)?null:`R − L: ${diff>0?'+':diff<0?'−':''}${row.key==='llmCalls'?Math.abs(diff).toLocaleString(locale):row.key==='cacheHitRate'?`${(Math.abs(diff)*100).toFixed(1)} ${t('compare.activity.percentagePoints',locale)}`:fmtMs(Math.abs(diff))}`;
           return (
             <div key={row.key} className="compare-speed-aux-card">
               <span className="compare-speed-aux-label">{row.label}</span>
@@ -217,9 +155,9 @@ export function CompareSpeedMetrics({
                 <span className="compare-side-mark" style={{ color: 'var(--attention-fg)' }}>R</span>
                 {row.rv}
               </span>
-              <span className={`compare-delta ${leftBetter === null ? '' : leftBetter ? 'compare-delta-win' : 'compare-delta-lose'}`}>
+              <span className="compare-delta">
                 {reason !== null ? `${t('scan.timing.notComparable', locale)} · ${t(`scan.timing.reason.${reason}`, locale)}`
-                  : leftBetter === null ? '=' : `${diff?.toFixed(0)}% ${leftBetter ? '← L' : '→ R'}`}
+                  : delta??t('compare.activity.unavailable',locale)}
               </span>
             </div>
           );
@@ -228,8 +166,9 @@ export function CompareSpeedMetrics({
       {sessions !== undefined && (
         <div className="compare-token-stacks">
           <h4 className="compare-token-stacks-title">{t('compare.charts.tokenDonut', locale)}</h4>
-          {stack('left')}
-          {stack('right')}
+          <CompareTokenUsage visual="bars" locale={locale} usage={{left:sessions.left.tokenUsage,right:sessions.right.tokenUsage}}
+            estimates={{left:speed.left.systemPromptTokensEstimate,right:speed.right.systemPromptTokensEstimate}}
+            pending={{left:leftSide?.pending,right:rightSide?.pending}} onInspectText={(side,tokenClass)=>setOpenToken({side,tokenClass})}/>
         </div>
       )}
       {openToken !== null && openSession !== null && (
@@ -238,7 +177,7 @@ export function CompareSpeedMetrics({
           provider={openSession.provider}
           agentName={openSession.sourceAgent}
           tokenClass={openToken.tokenClass}
-          tokenCount={tokenValues(openToken.side)[openToken.tokenClass]}
+          tokenCount={openToken.tokenClass==='system'?speed[openToken.side].systemPromptTokensEstimate??0:openSession.tokenUsage[openToken.tokenClass]}
           locale={locale}
           onClose={() => setOpenToken(null)}
         />

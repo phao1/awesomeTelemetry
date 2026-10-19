@@ -282,7 +282,7 @@ describe('§4.3–§4.7 parseCodeArtsTeam', () => {
     expect(tool.orderConfidence).toBe('native');
   });
 
-  it('get-my-task → assignmentKind=claimed（不读正文）', () => {
+  it('get-my-task 的显式 claimed 状态及 owner 才建立 claimed 快照', () => {
     const r = parseCodeArtsTeam(
       raw({
         parts: [
@@ -293,7 +293,7 @@ describe('§4.3–§4.7 parseCodeArtsTeam', () => {
             data: {
               type: 'tool',
               tool: 'get-my-task',
-              state: { output: 'You have 1 tasks.\n[ { "id": 1, "content": "x", "owner": "ses_mate_0001" } ]' },
+              state: { output: 'You have 1 tasks.\n[ { "id": 1, "content": "x", "owner": "ses_mate_0001", "status": "claimed" } ]' },
             },
           },
         ],
@@ -486,4 +486,54 @@ describe('§4.13 负向断言：不伪造事实', () => {
     expect('outputSummary' in tool).toBe(false);
     expect('raw' in tool).toBe(false);
   });
+});
+
+
+describe('retained real control shapes: run isolation and honest replay', () => {
+  const part = (id: string, tool: string, session: string, args: unknown, output: string) => ({ id, session_id: session, message_id: 'message-'+id,
+    data: { type: 'tool', tool, callID: 'call-'+id, state: { status: 'completed', input: args, output } } });
+  it('same whole-db input cannot contaminate two runs, including token/cost and claim evidence', () => {
+    const parts = [part('a','finish-task',MATE,{id:1},'You have finished task(id=1, content=A). Contact has been automatically updated and task publisher has been noticed'),
+      part('b','get-my-task','other-mate',{},'[ {"id":1,"owner":"other-mate","status":"claimed"} ]'),
+      {id:'other-cost',session_id:'other-mate',message_id:'other-msg',data:{type:'step-finish',tokens:{input:999},cost:99}}];
+    const first = parseCodeArtsTeam(raw({parts}));
+    const second = parseCodeArtsTeam(raw({contact:{leader:{sessionID:'other-root',agent_type:'team-leader'},mate:{sessionID:'other-mate',parentSessionID:'other-root'}},parts}));
+    expect(first.activities.every(event => event.agentId !== null)).toBe(true);
+    expect(first.run.tokenAvailable).toBe(false);
+    expect(first.run.costAvailable).toBe(false);
+    expect(first.assignments[0]!.assignmentKind).toBe('assigned');
+    const firstEvidence=new Set(first.activities.flatMap(event=>event.evidenceIds).map(id=>first.evidence.find(ref=>ref.id===id)!.nativeId));
+    const secondEvidence=second.activities.flatMap(event=>event.evidenceIds).map(id=>second.evidence.find(ref=>ref.id===id)!.nativeId);
+    expect(secondEvidence.some(id=>firstEvidence.has(id))).toBe(false);
+    expect(first.activities.find(event=>event.kind==='task_status')!.taskId).toBe(first.tasks[0]!.id);
+  });
+  it('retains task references, finish report and undefined-target send attempts without inventing delivery or results', () => {
+    const parts=[part('assign','background-task',LEADER,{assign_task_id:[1,2]},'Background task launched.'),
+      part('finish','finish-task',MATE,{id:1},'You have finished task(id=1, content=A). Contact has been automatically updated and task publisher has been noticed'),
+      part('message','send-message',MATE,{message:'review done'},'message has been sent to {undefined session id}, session ID: undefined'),
+      part('read','read',MATE,{filePath:'x'},'ok'),
+      part('claim','claim-task',MATE,{id:1},'The task has already been assigned to you. You can start working on it.')];
+    const result=parseCodeArtsTeam(raw({parts}));
+    expect(result.activities.filter(event=>event.kind==='task_assignment')).toHaveLength(2);
+    expect(result.activities.filter(event=>event.kind==='tool_call').every(event=>event.taskId===null)).toBe(true);
+    expect(result.activities.find(event=>event.id.includes('claim:control'))!.kind).toBe('tool_result');
+    expect(result.activities.find(event=>event.kind==='unknown')!.messageId).toBeNull();
+    expect(result.communications).toEqual([]);
+    expect(result.tasks[0]!.resultAvailable).toBe(false);
+    expect(result.tasks[0]!.completedAt).toBeNull();
+    expect(result.activities.every(event=>event.eventId===null)).toBe(true);
+    expect(result.activityBodies!.some(body=>body.result_body?.includes('completed_reported'))).toBe(true);
+    expect(result.activityBodies!.some(body=>body.result_body?.includes('unconfirmed'))).toBe(true);
+    expect(JSON.stringify(result.activities)).not.toContain('review done');
+  });
+  it('reading get-my-task is not a claim and arbitrary nested IDs are ignored',()=>{
+    const result=parseCodeArtsTeam(raw({parts:[part('readtasks','get-my-task',MATE,{},'[{"id":1,"owner":"ses_mate_0001","metadata":{"id":2}}]')]}));
+    expect(result.assignments[0]!.assignmentKind).toBe('assigned');
+  });
+  it('republishing a known task is not a second creation event',()=>{
+    const result=parseCodeArtsTeam(raw({parts:[part('publish1','publish-task',LEADER,{todos:[{id:1}]},'ok'),part('publish2','publish-task',LEADER,{todos:[{id:1}]},'ok')]}));
+    expect(result.activities.filter(event=>event.kind==='task_created')).toHaveLength(1);
+    expect(result.activities.filter(event=>event.kind==='tool_result')).toHaveLength(1);
+  });
+
 });

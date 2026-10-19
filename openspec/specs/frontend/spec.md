@@ -28,6 +28,34 @@ force and analysis stays lazy until explicitly selected.
 
 Monitor lifecycle diagnostics distinguish waiting_for_traffic from capturing and stopping from idle. Show per-run observed/active/pending/persisted/interrupted counters independently of the historical total; activity SSE patches them without status polling or list reload. A failed stop with cleanupPending blocks start and permits retry stop. A stopped-state response is authoritative, never set optimistically before cleanup succeeds. Legacy status payloads remain readable but do not certify Agent readiness.
 
+Capture workbench status and metadata-page reads SHALL independently own5s
+deadlines, explicit retry/cancel and late-result suppression. Unknown runtime is
+not stopped; controls require a confirmed state. Shared-listener start/stop is
+single-flight with12s local wait, valid optional decimal1..65535port and safe-focus
+Stop confirmation. Cancellation/timeout is an uncertain backend outcome, not
+rollback; recover through explicit status or later runtime evidence, never polling
+or automatic mutation retry. Later observed SSE metadata survives older snapshots.
+
+Saved requests SHALL use explicit50-row cursor pagination, append previous pages
+and window-render28px native keyboard-activatable rows. Method, HTTP-status and
+hostname/URL/model/ID filters apply only to loaded metadata, with unknown status
+distinct; never read row bodies for filtering/size or imply a network/WS connection
+interval is model inference. Selected detail owns5s read/retry/cancel, an accessible
+viewport-clamped resizable Drawer, and inert byte-bounded64KiB initial body text
+with explicit retained-field expansion and local8..28px font controls. Original
+byte download/completeness and deletion availability remain separate and binding.
+Secondary maintenance is grouped, but collapsing it does not defer the required
+availability check. Capture and active-stream inventory load only at their own
+explicit entries; shared shell SSE and selected live subscription ownership stay
+unchanged. User-approved “Clear current list” is browser-local: hide already-loaded
+rows in this mounted view without IO, count reset, original deletion or listener
+changes. Place it beside list refresh with bilingual scope and restoration
+feedback; no destructive confirmation is needed. Revoke owned pending snapshots
+and suppress old SSE IDs, while allowing new IDs. Only successful explicit
+replacement refresh releases hiding; failed/cancelled refresh retains it. Reopen
+also restores saved rows; cursor paging and lazy bodies stay intact. No bulk
+DELETE endpoint is added; per-request original deletion retains its confirmation.
+
 > React 19 SPA. Source files: `src/`
 >
 > Visuals and atomic components: `specs/design-system/spec.md`; numeric
@@ -50,6 +78,16 @@ information-dense, keyboard-reachable, semantically restrained.
 ---
 
 ## Requirements
+
+User-directed presentation amendment (2026-10-18, supersedes legacy cost/currency
+columns in REQ-017/018/019/027): omit all monetary summaries, currency badges,
+price coverage, money trends/rankings, monetary deltas and generated HTML-report
+amounts. Show Token/cache/call evidence instead; do not equate lower token usage
+with quality or a monetary saving. Hide the monetary-only Mission costEfficiency
+widget and money parts of mixed model/Team views. Team token rows remain readable
+without totalCostUsd/costGini or money-derived verdicts. Backend schemas, API
+payloads, raw evidence and explicit original downloads remain unchanged and
+faithful; this is presentation removal, not deletion/redaction of captured data.
 
 ### REQ-034: WebSocket connection transcript inspection
 Selected WS capture SHALL label connection scope, observed message counts,
@@ -267,6 +305,8 @@ SHALL use a fixed three-column + top/bottom chrome skeleton:
   2px `--accent-emphasis` bottom bar.
 - Left/right rails collapsible (`[` / `]`); collapse state and widths persist
   (REQ-026).
+- A collapsed session rail retains a labelled, keyboard-accessible reopen control.
+  The Tasks exploration header exposes existing Team runs without adding a global tab.
 - Only the session view is three-column; agent / compare / proxy / frida are
   single-column main areas (proxy detail goes in a `Drawer`).
 
@@ -356,6 +396,22 @@ Four segments top to bottom:
   `null` values display `—` with a tooltip explaining why; MUST NOT show `0`
   as a stand-in.
 
+The active compact toolbar SHALL label verification activity and step-error
+ratios explicitly, not measured answer accuracy or a stability score. Follow
+metrics-analysis REQ-004's existing verify-phase/step and error-step/step
+denominators. Show loaded scope and accessible formulas, including unknown
+step-status coverage. With incomplete detail pages or no execution steps, do
+not present a whole-session ratio; a complete observed zero remains distinct.
+Use detail eventTotal/hasMore when available, not an older session index count.
+No additional body/aggregation request or persisted metric-algorithm change.
+
+The optional session radar SHALL be labelled as a fixed-reference log profile,
+not an Agent capability/quality score. Its original values and actual reference
+scales SHALL be inspectable without IO; cumulative session tokens MUST NOT be
+called context length. Incomplete pages omit event-derived ratio axes, and
+unknown statuses omit the no-error axis. Missing axes remain explicitly
+unavailable, never zero-filled. Do not infer Agent superiority from plot area.
+
 **② PhaseRibbon** (product signature)
 A horizontal color band spanning the full width on the time axis; each
 segment's width = that phase's time share, color = `--phase-*`. Hover shows
@@ -410,6 +466,17 @@ fold  seq  phase icon  time bar       title (tree indent)  duration  status
 **① Top KPI row**: 4 `MetricCard`s aggregating all providers (Speed /
 Accuracy / Stability / Cost).
 
+Workbench clarification (WB-003): use additive stored session/event/token counts
+and provider+sourceAgent group count, not an unweighted average of group means,
+invented tool/s, correctness/inverse-error scores or fastest/stablest winner.
+The source is all-history scan aggregation, independent of the filtered/paged
+task index. Explain per-session means and missing eligible sample/status coverage
+without adding API fields or treating null as0. Recorded tool/phase intervals
+are not measured model execution; phase sums may overlap. Keep raw per-group
+non-monetary metrics and accessible definitions in both table/card views.
+Each5s read owns cancellation, timeout and late-result suppression; retry is
+explicit, never driven by locale, rendering, sort, view mode or expansion.
+
 **② Provider compare table**: sortable, density `compact`, sticky header.
 
 | Column | Render |
@@ -434,6 +501,15 @@ Accuracy / Stability / Cost).
 Still constrained by REQ-003: the whole view is **1 request**. Expanded rows
 reuse the existing session store; MUST NOT fetch per session (G11.9).
 
+Both view modes expose at most10 matching loaded scan sessions, using provider
+AND sourceAgent, not provider alone. Disclose the filtered/paged index boundary;
+do not claim these are globally latest. Tiny event charts bucket only this subset
+by recorded UTC dates, not a complete activity trend. Source browsing is explicit
+navigation; group comparison passes both source identities and leaves unmatched
+sides blank instead of retaining a prior pair or substituting another group.
+Missing numeric values sort last in both directions; provider strings sort as
+strings. The freshness stamp is MAX source updatedAt, not a generation timestamp.
+
 ---
 
 ### REQ-019: Compare view
@@ -448,9 +524,77 @@ carries no meaning).
 2.3× faster but uses 41% more tokens". This is what developers want to see
 first.
 
+Workbench amendment (WB-003 / REQ-031 takes precedence over the legacy example):
+show a descriptive observation summary, not an overall wins/losses score or
+measured correctness verdict. Verify-phase/step ratios and observed repair
+patterns are not proof of passing tests or code quality. Null/partial ratios
+remain unavailable. Raw total tokens are not a currency saving; do not call an
+absolute min-based difference percentage a percentage saved.
+
+Each selected L/R pair owns one read,5s deadline, cancellation and explicit retry.
+Changing the pair or unmounting aborts old ownership; late results cannot restore
+old conclusions. Failure/cancel/timeout never auto-retries, nor does a locale or
+parent rerender. Reload hides the prior result while reading. Selecting the same
+run twice is actionable guidance, not a request. The frozen compare API stays slim.
+
+Selection names and source/coverage stay readable even when a selected ID is not
+in the currently filtered shared index. Picker opening focuses search; no-match
+and empty scope differ, and clearing/closing preserves focus. Reuse only loaded
+metadata for bounded error/longest-interval locators, explicitly naming partial
+coverage and unproven task/tool/config/quality equivalence. Selected locators open
+the original run and event; an event beyond a cached2000-page may trigger one
+selected slim read at the existing5000cap, never per-row/unrelated body reads or
+injection of an old comparison snapshot into the live run cache. Network call
+comparison retains its separate explicit Proxy workflow and measurement domain.
+
 **③ Four-dimension compare**: 4 pairs of `BarMeter` double bars (one per L/R),
 deltas labeled `+41%` / `−2.3×`, colored by "who is better" rather than fixed
 left/right colors.
+
+Workbench amendment: descriptive observed magnitudes take precedence over the
+legacy winner-color rule. Six primary KPI summaries precede a labelled, initially
+collapsed additional-activity disclosure; all existing metrics remain reachable.
+Show exact signed R-minus-L values with units, not minimum-based "percent saved"
+or winner arrows. Loaded counts carry their scope; incomplete whole-run ratios,
+no-step denominators and unknown error-step statuses remain unavailable. Verify
+activity uses verify-phase events / execution steps, not total event count.
+KPI error/top-token lists expose bounded keyboard-accessible exact original-run
+and event locators, never a per-row body read on render or expansion.
+
+The comparison radar is a recorded-magnitude profile, not a quality score.
+Normalize available raw values by the larger side value without a lower-better
+inversion, disclose raw side values and scales, omit partial/missing axes rather
+than zero-filling, and use the raw-value disclosure without a plot when fewer
+than three comparable axes remain. Do not infer test success or model latency
+from title patterns, record intervals or plot area. Existing pricing/currency
+contract-gap resolution and remaining detailed comparison audit stay separate.
+
+Token rings and speed-panel stacks SHALL share one presentation of the five
+recorded components (input/output/reasoning/cacheRead/cacheWrite) and native
+total. System-prompt estimates remain separately labelled and nullable, never
+added into that total. If nonnegative finite components do not reconcile exactly
+with a positive native total, or metadata is pending, retain raw numbers and
+explain why no share chart is drawn; do not guess missing reasoning semantics.
+Each ring uses its actual radius and its own total as100%. Cache slices have
+no fabricated text drill-down. Actual text classes retain explicit inspection;
+rendering the chart performs no body IO. Invalid and empty observations are not
+converted to favorable zero shares or billed-consumption claims.
+
+Speed/detail displays SHALL show readable bilingual labels and signed observed
+differences, not overall parity, favorable borders, lower-better grades or Agent
+winner badges. Keep native/network/partial clock guards and raw side values.
+Detail activity ratios use complete step evidence; unknown error status remains
+unavailable, and cache-write records remain inspectable. A retained TTFT above
+the visible5s threshold is an observation, not a diagnosed startup cause.
+
+Agent overview MAY lazy-load its view code behind labelled loading/error
+boundaries; this MUST preserve navigation, existing properties and the single
+aggregation-read/no per-session fan-out contract. Lazy code is not proof that
+the overview's remaining metric/coverage presentation has been corrected.
+The task-scoped Team view MAY likewise defer its code until explicit navigation,
+with labelled loading/error states. Preserve its existing hash restoration,
+single initial run-list read, selection caches and SSE invalidation; no eager
+Team API read is introduced by the ordinary Tasks screen.
 
 **④ PhaseRibbon comparison**: two ribbons stacked, sharing one time scale, to
 see phase-distribution differences at a glance.
@@ -497,6 +641,28 @@ status; do not wire global Clear to this per-request operation.
 
 A lazy Agent connection drawer SHALL fetch one bounded profile list only on opening. Users explicitly save/select a CLI/project recipe, inspect pinned-revision POSIX/PowerShell commands and start its proxy listener through the shared API. No browser action launches a shell/Agent. Show existing-process, shared-listener, NO_PROXY, runtime-trust and unverified-transport boundaries. Dirty/changed profiles cannot generate a stale launch command; conflicted/corrupt configuration exposes reload/review actions without overwriting files. New text is bilingual and rendered inertly. Windows remains platform-unverified until tested.
 
+Connection profile/plan/diagnostic/status/copy operations SHALL own5s waits,
+save/delete10s and start/self-test12s, releasing local waiting even when a loader
+ignores abort. Prevent overlapping submission and reject late/unmounted results.
+Preserve draft fields and the originally reviewed revision through profile reload;
+a newer/missing saved version requires explicit review/reselection, never silent
+adoption for a compare-and-swap write. A failed refresh is not recovery after an
+uncertain write. Unknown profile outcomes require explicit successful list refresh;
+listener uncertainty requires fresh runtime evidence, not a profile reload.
+Propagate uncertain setup start to shared parent controls. No automatic mutation
+retry, status polling, shell/Agent launch or trust/proxy configuration changes.
+
+Switching a dirty recipe or closing dirty/pending setup SHALL have a safe-focus
+confirmation. Cancellation/closing cannot promise rollback or suppress the warning
+that a synthetic capture may still finish saving. Separate essential fields from
+collapsed executable/bypass options and recipe maintenance; identify the three
+terminal recipes separately from desktop/IDE/nine-scanner acceptance. Commands
+retain both shell encodings, reviewed revision and manual execution/copy feedback.
+Selected diagnostics/self-test results must match profile ID AND revision; a
+contradictory passed self-test or unconfirmed listener readiness is not success.
+Recipe deletion names its exact identity and affects neither Agent configuration
+nor retained captures. All controls remain labelled and contain wide paths/text.
+
 The explicit connection check SHALL render the shared backend diagnostic snapshot: expected/actual port, public CA availability/digest/expiry, unverified selected-runtime trust and unchecked OS trust, current shared-listener traffic and actionable findings. Activity/status SSE invalidates a previous snapshot locally without polling. Display checkedAt and a stale warning rather than upgrading unknown Agent identity/trust to success. Abort after5s with retry guidance, clear previous evidence before refresh, reject stale recipe revisions and abort owned requests on unmount. Dirty/changed recipes cannot check old settings; never fetch diagnostics for every list item.
 
 Original-capture amendment: request/response details SHALL fetch ProxyCaptureBodies on demand, display actual retained byte count and completeness status, mark bounded previews, and provide direct original download links. Response headers (including multiple values) SHALL be inspectable. Opening the list MUST NOT fetch any full body file.
@@ -529,7 +695,9 @@ protocol terminal marker. Legacy missing transport remains absent/unknown.
 - Primary buttons: start / stop (stop is destructive, needs confirmation)
 - Port input (editable while stopped)
 - "Download CA cert" button + one-line install guide link
-- Request count + clear button (destructive, confirmation)
+- Historical request count (unchanged by local hiding). “Clear current list”
+  lives beside list refresh, is reversible/local-only, and does not delete data
+  or require a destructive confirmation (user amendment 2026-10-18).
 
 Backend endpoints `POST /api/proxy/start`, `POST /api/proxy/stop`
 are implemented shared controls (defined in `contracts/api.md` §4); stop waits
@@ -558,7 +726,9 @@ completeness labels and original download; monitoring does not redact fields.
 **① Control strip**: status (`stopped` / `running pid=xxxx`) · start/stop
 buttons · target process picker (auto-discover when omitted). Backend
 `POST /api/frida/start`, `POST /api/frida/stop` (defined in
-`contracts/api.md` §5, **currently not implemented**).
+`contracts/api.md` §5) are wired. This is an experimental target-specific entry,
+not generic Codex/CodeArts integration or platform acceptance. Status is a
+snapshot, not installation/readiness detection or proof of successful capture.
 
 **② Capture list**: dense table, columns: type badge · model · time · size;
 click opens a detail drawer.
@@ -566,6 +736,20 @@ click opens a detail drawer.
 **③ Prerequisites not met**: Frida not installed / no target process →
 `EmptyState` explaining exactly what's missing and how to install; MUST NOT
 just show `stopped`.
+
+Workbench clarification: the current status contract cannot detect installation,
+platform support or permissions. Empty history MUST NOT assert a missing install
+or target. Show known runtime/starting/unknown states, manual prerequisites,
+experimental/incomplete-persistence limits and deliberate acknowledgement instead.
+PID is optional and, when entered, must be an exactly representable positive
+integer. Separate status/history reads have5s owned deadlines, cancellation and
+explicit per-region retry, no polling or locale-driven refetch.10s command waits
+are single-flight; Stop requires confirmation. Failure/timeout/cancelled waiting
+never becomes optimistic stopped/capture success or automatic command retry.
+Read status explicitly to recover an uncertain outcome. Cancelling local waiting
+does not undo backend work. Current source lacks the contractual single-record
+detail route and full persistence; the detail drawer remains undelivered, not
+replaced with fabricated content/bytes or a blanket disabled entry.
 
 ---
 
@@ -583,6 +767,16 @@ and `catch` blocks MUST NOT be empty:
 | `CompareBoard` | has error but no empty guidance | complete |
 | `ProxyView` / `FridaView` | empty list and failure indistinguishable | complete |
 | `SettingsModal` | `catch` → `setConfig(null)` stuck at "loading" forever | failure shows error + retry |
+
+Settings uses the shared focus-trapped Modal and one5s owned configuration read.
+Provider enabled/path edits preserve all other LocalSessionConfig fields and
+require an explicit, single-flight10s Save. Parent/locale rerenders do not reload
+or discard a draft. Dirty close/reload requires deliberate discard; closing a
+pending save only stops waiting, never rolls back. Show error codes, retained
+drafts, saved snapshots and uncertain write outcomes without automatic retries.
+Rereading the current service config is not proof of disk-final state or scanner
+hot reload. Immediate browser-only display preferences are separately labelled;
+they never rewrite captured originals or wait for the provider Save action.
 
 #### Scenario: backend unreachable
 - **GIVEN** the backend process is killed

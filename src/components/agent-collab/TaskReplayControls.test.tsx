@@ -98,7 +98,7 @@ describe('TaskReplayControls §7.3 / §8.2', () => {
     const info = container.querySelector('.collab-replay-info');
     expect(info).not.toBeNull();
     expect(info?.querySelector('.collab-replay-task-title')?.textContent).toBe('Task t1');
-    expect(info?.querySelector('.collab-replay-task-status')?.textContent).toBe('completed');
+    expect(info?.querySelector('.collab-replay-task-status')?.textContent).toBe('已完成');
     expect(info?.querySelector('.collab-replay-activity-count')?.textContent).toContain('5');
     // 第 3 行：分段进度条
     const segments = container.querySelector('.collab-replay-segments');

@@ -41,6 +41,13 @@ function makeRecord(eventCount: number): TraceRecord {
 }
 
 describe('REQ-008 报告 HTML', () => {
+  it('has no monetary summary while explicit embedded/exported evidence remains unchanged',()=>{
+    for(const count of [1,3000]){
+      const record=makeRecord(count);record.session.costUsd=456789.1234;const result=buildTraceReportHtml(record);
+      const visible=result.html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,'');expect(visible).not.toContain('456789.1234');expect(visible).not.toMatch(/[$¥￥€£]\s*\d/);expect(visible).toContain('<dt>tokens</dt>');
+      expect(result.externalDataJs??result.html).toContain('"costUsd":456789.1234');expect(record.session.costUsd).toBe(456789.1234);
+    }
+  });
   it('includes the same legacy scan criteria in small and external-data reports', () => {
     for (const count of [1, 3000]) {
       const record = makeRecord(count); record.session.durationSource = 'derived';

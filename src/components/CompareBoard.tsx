@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
@@ -8,7 +8,7 @@ import type {
   TracePhase,
 } from '../core/trace-types.js';
 import { TRACE_PHASES } from '../core/trace-types.js';
-import { api } from '../api/client.js';
+import { api, ApiError } from '../api/client.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 import { Popover } from './ui/Overlay.js';
 import { SearchInput } from './ui/Input.js';
@@ -19,7 +19,7 @@ import type { ScanTimingMetric } from '../core/scan-timing.js';
 import { ScanTimingCriteria } from './ScanTimingCriteria.js';
 import { ContextBar } from './ContextBar.js';
 import { groupEvents } from '../core/event-groups.js';
-import { diffPct, fmtMs, SIGNIFICANT_DIFF, TEST_CMD } from './compare-stats.js';
+import { compareActivity, diffPct, fmtMs, SIGNIFICANT_DIFF, TEST_CMD } from './compare-stats.js';
 import type { CompareResult } from './compare-types.js';
 import { CompareVerdict } from './CompareVerdict.js';
 import { CompareHeroHeader } from './CompareHeroHeader.js';
@@ -29,6 +29,7 @@ import { CompareDimensions } from './CompareDimensions.js';
 import { CompareToolAnalysis } from './CompareToolAnalysis.js';
 import { CompareCharts } from './CompareCharts.js';
 import { CompareTimeline } from './CompareTimeline.js';
+import { CompareRunEvidence } from './CompareRunEvidence.js';
 import { IconChevronDown, IconChevronRight } from './icons/index.js';
 import { ErrorBoundary } from './ui/ErrorBoundary.js';
 
@@ -52,14 +53,18 @@ function SessionPicker({
   onOpenChange: (next: boolean) => void;
 }): React.JSX.Element {
   const [search, setSearch] = useState('');
+  const inputRef=useRef<HTMLInputElement>(null);
+  const deferredSearch=useDeferredValue(search);
+  useEffect(()=>{if(open)inputRef.current?.focus();else setSearch('');},[open]);
   const selected = sessions.find((s) => s.id === value);
+  const selectedName=selected?.title||value||t(`compare.${side === 'L' ? 'left' : 'right'}`,locale);
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     return sessions.filter(
       (s) =>
-        q === '' || s.title.toLowerCase().includes(q) || s.id.toLowerCase().includes(q),
+        q === '' || `${s.title} ${s.id} ${s.provider} ${s.sourceAgent}`.toLowerCase().includes(q),
     );
-  }, [sessions, search]);
+  }, [sessions, deferredSearch]);
   const sideColor = side === 'L' ? 'accent' : 'attention';
   return (
     <Popover
@@ -71,7 +76,7 @@ function SessionPicker({
         }
       }}
       trigger={(props) => (
-        <button type="button" className="btn compare-picker" {...props}>
+        <button type="button" className="btn compare-picker" aria-label={`${side} · ${selectedName}`} title={`${selectedName}${selected?' · '+selected.provider+' / '+selected.sourceAgent:''}`} {...props}>
           <span
             className="compare-side-mark"
             style={{
@@ -81,28 +86,31 @@ function SessionPicker({
           >
             {side}
           </span>
-          <span style={{ maxWidth: 'var(--space-10)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {selected !== undefined ? selected.title || selected.id : t(`compare.${side === 'L' ? 'left' : 'right'}`, locale)}
+          <span className="compare-picker-selected">
+            {selectedName}
           </span>
         </button>
       )}
       style={{ maxHeight: '60vh', overflowY: 'auto', width: 'var(--rail-width)' }}
     >
       <div style={{ padding: 'var(--space-2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-        <SearchInput placeholder={t('session.search', locale)} value={search} onChange={(e) => setSearch(e.target.value)} />
+        <SearchInput inputRef={inputRef} aria-label={`${side} ${t('compare.pickerSearch',locale)}`} placeholder={t('compare.pickerSearch', locale)} value={search} onChange={(e) => setSearch(e.target.value)} />
         <div className="compare-picker-list">
+          {filtered.length===0&&<p className="hint" role="status">{t(sessions.length===0?'compare.pickerEmpty':'compare.pickerNoMatch',locale)}</p>}
           {filtered.slice(0, PICKER_LIMIT).map((session) => (
             <button
               key={session.id}
               type="button"
               className={`compare-picker-item ${session.id === value ? 'compare-picker-item-on' : ''}`}
+              aria-pressed={session.id===value}
+              title={`${session.provider} / ${session.sourceAgent} · ${session.id}`}
               onClick={() => {
                 onSelect(session.id);
                 onOpenChange(false);
               }}
             >
               <span className="compare-picker-title">{session.title || session.id}</span>
-              <span className="mono">{session.eventCount} ev</span>
+              <span className="mono">{session.provider} · {session.eventCount} ev</span>
             </button>
           ))}
           {filtered.length > PICKER_LIMIT && (
@@ -131,6 +139,7 @@ export interface CompareSelectorBarProps {
   rightOpen: boolean;
   onLeftOpenChange: (next: boolean) => void;
   onRightOpenChange: (next: boolean) => void;
+  loading?: boolean;
 }
 
 export function CompareSelectorBar({
@@ -145,6 +154,7 @@ export function CompareSelectorBar({
   rightOpen,
   onLeftOpenChange,
   onRightOpenChange,
+  loading = false,
 }: CompareSelectorBarProps): React.JSX.Element {
   return (
     <div className="compare-bar">
@@ -169,7 +179,7 @@ export function CompareSelectorBar({
       <button
         type="button"
         className="btn"
-        disabled={leftKey === '' || rightKey === ''}
+        disabled={loading || leftKey === '' || rightKey === '' || leftKey === rightKey}
         onClick={() => onCompare(leftKey, rightKey)}
       >
         {t('compare.load', locale)}
@@ -258,6 +268,8 @@ function DetailMetricsTable({ result, locale }: { result: CompareResult; locale:
   const leftEvents = result.left.events as TraceEventSlim[];
   const rightEvents = result.right.events as TraceEventSlim[];
   const speed = result.speed;
+  const la=compareActivity(result.left);
+  const ra=compareActivity(result.right);
   const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
   const fmtYesNo = (v: number): string => (v === 1 ? t('compare.yes', locale) : t('compare.no', locale));
   const [showAll, setShowAll] = useState(false);
@@ -277,26 +289,39 @@ function DetailMetricsTable({ result, locale }: { result: CompareResult; locale:
     { label: 'token.output', lv: left.tokenUsage.output, rv: right.tokenUsage.output, lowerBetter: true, fmt: (v) => v.toLocaleString() },
     { label: 'token.reasoning', lv: left.tokenUsage.reasoning, rv: right.tokenUsage.reasoning, lowerBetter: true, fmt: (v) => v.toLocaleString() },
     { label: 'token.cacheRead', lv: left.tokenUsage.cacheRead, rv: right.tokenUsage.cacheRead, lowerBetter: true, fmt: (v) => v.toLocaleString() },
+    { label: 'token.cacheWrite', lv: left.tokenUsage.cacheWrite, rv: right.tokenUsage.cacheWrite, lowerBetter: true, fmt: (v) => v.toLocaleString() },
     { label: 'token.netInput', lv: left.tokenUsage.netInput, rv: right.tokenUsage.netInput, lowerBetter: true, fmt: (v) => v.toLocaleString() },
     { label: 'token.total', lv: left.tokenUsage.total, rv: right.tokenUsage.total, lowerBetter: true, fmt: (v) => v.toLocaleString() },
-    { label: 'cost', lv: left.costUsd, rv: right.costUsd, lowerBetter: true, fmt: (v) => `$${v.toFixed(4)}` },
     { label: 'messages', lv: left.messageCount, rv: right.messageCount, lowerBetter: false, fmt: (v) => String(v) },
-    { label: 'events', lv: left.eventCount, rv: right.eventCount, lowerBetter: false, fmt: (v) => String(v) },
+    { label: 'events', lv: result.left.eventTotal, rv: result.right.eventTotal, lowerBetter: false, fmt: (v) => String(v) },
     { label: 'tool calls', lv: leftEvents.filter((e) => e.tool !== null).length, rv: rightEvents.filter((e) => e.tool !== null).length, lowerBetter: true, fmt: (v) => String(v) },
     { label: 'llm calls', lv: leftEvents.filter((e) => e.kind === 'llm').length, rv: rightEvents.filter((e) => e.kind === 'llm').length, lowerBetter: false, fmt: (v) => String(v) },
     { label: 'total tool duration', lv: scanTimingValue(leftEvents.filter((e) => e.tool !== null).reduce((s, e) => s + e.durationMs, 0)), rv: scanTimingValue(rightEvents.filter((e) => e.tool !== null).reduce((s, e) => s + e.durationMs, 0)), timing: 'eventDuration', lowerBetter: true, fmt: fmtMs },
     { label: 'file writes', lv: leftEvents.filter((e) => e.kind === 'file_write').length, rv: rightEvents.filter((e) => e.kind === 'file_write').length, lowerBetter: false, fmt: (v) => String(v) },
     { label: 'user rounds', lv: leftEvents.filter((e) => e.kind === 'user_prompt').length, rv: rightEvents.filter((e) => e.kind === 'user_prompt').length, lowerBetter: false, fmt: (v) => String(v) },
     { label: 'fix loops', lv: leftLoops, rv: rightLoops, lowerBetter: true, fmt: (v) => String(v) },
-    { label: 'unit tests', lv: lUnitTests, rv: rUnitTests, lowerBetter: false, fmt: fmtYesNo },
+    { label: 'unit tests', lv: la.complete?lUnitTests:null, rv: ra.complete?rUnitTests:null, lowerBetter: false, fmt: fmtYesNo },
     { label: 'error events', lv: leftEvents.filter((e) => e.status === 'error').length, rv: rightEvents.filter((e) => e.status === 'error').length, lowerBetter: true, fmt: (v) => String(v) },
     { label: 'verify events', lv: leftEvents.filter((e) => e.phase === 'verify').length, rv: rightEvents.filter((e) => e.phase === 'verify').length, lowerBetter: false, fmt: (v) => String(v) },
-    { label: 'error rate', lv: leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.status === 'error').length / leftEvents.length, rv: rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.status === 'error').length / rightEvents.length, lowerBetter: true, fmt: pct },
-    { label: 'verify coverage', lv: leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.phase === 'verify').length / leftEvents.length, rv: rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.phase === 'verify').length / rightEvents.length, lowerBetter: false, fmt: pct },
+    { label: 'error rate', lv: la.errorRate, rv: ra.errorRate, lowerBetter: true, fmt: pct },
+    { label: 'verify coverage', lv: la.verification, rv: ra.verification, lowerBetter: false, fmt: pct },
   ];
-
-  const interpreted = rows.map(row => ({ ...row, reason: row.timing === undefined ? null : scanTimingReason(result.left, result.right, row.timing, row.lv, row.rv)
-    ?? (row.lv !== null && row.rv !== null && !Number.isFinite(diffPct(row.lv, row.rv)) ? 'invalid_value' as const : null) }));
+  const activityKeys=new Set(['tool calls','llm calls','total tool duration','file writes','user rounds','fix loops','unit tests','error events','verify events','error rate','verify coverage']);
+  const labels:Record<string,string>={
+    e2e:t('compare.profile.wallClock',locale),turnGap:t('compare.metric.turnGap',locale),pureInference:t('compare.metric.pureInference',locale),
+    'token.input':`${t('session.tokens',locale)} · input`,'token.output':`${t('session.tokens',locale)} · output`,
+    'token.reasoning':`${t('session.tokens',locale)} · reasoning`,'token.cacheRead':t('compare.charts.tokenClass.cacheRead',locale),
+    'token.cacheWrite':t('compare.charts.tokenClass.cacheWrite',locale),'token.netInput':t('compare.kpi.netInput',locale),'token.total':t('compare.token.total',locale),
+    messages:t('compare.activity.messages',locale),events:t('compare.kpi.events',locale),
+    'tool calls':t('compare.activity.tools',locale),'llm calls':t('compare.kpi.llmCalls',locale),'total tool duration':t('compare.kpi.totalToolDuration',locale),
+    'file writes':t('compare.kpi.fileWrites',locale),'user rounds':t('compare.kpi.userRounds',locale),'fix loops':t('compare.kpi.fixLoops',locale),
+    'unit tests':t('compare.activity.testCommand',locale),'error events':t('compare.kpi.failures',locale),'verify events':t('compare.kpi.verifyEvents',locale),
+    'error rate':t('compare.activity.errorSteps',locale),'verify coverage':t('compare.activity.verification',locale),
+  };
+  const interpreted = rows.map(row => ({ ...row, reason:
+    activityKeys.has(row.label)&&(!la.complete||!ra.complete)?'partial_evidence' as const:
+    row.timing===undefined?(row.lv===null||row.rv===null?'missing_value' as const:null):scanTimingReason(result.left,result.right,row.timing,row.lv,row.rv)
+    ??(row.lv!==null&&row.rv!==null&&!Number.isFinite(row.rv-row.lv)?'invalid_value' as const:null) }));
   const difference = (row: typeof interpreted[number]): number => row.reason !== null || row.lv === null || row.rv === null ? 0 : diffPct(row.lv, row.rv);
   const ranked = [...interpreted].sort((a, b) => difference(b) - difference(a));
   // Unknown measurements remain visible but cannot rank as significant advantages.
@@ -305,31 +330,28 @@ function DetailMetricsTable({ result, locale }: { result: CompareResult; locale:
 
   return (
     <div className="compare-table-wrap">
+      <p className="hint">{t('compare.activity.scope',locale)} · L {leftEvents.length} / {result.left.eventTotal} · R {rightEvents.length} / {result.right.eventTotal}</p>
       <table className="ui-table ui-table-compact compare-table cmp-detail-table">
         <thead>
           <tr>
             <th>{t('compare.diffSort', locale)}</th>
             <th style={{ textAlign: 'right' }}>L</th>
             <th style={{ textAlign: 'right' }}>R</th>
-            <th style={{ textAlign: 'right' }}>Δ</th>
+            <th style={{ textAlign: 'right' }}>R − L</th>
           </tr>
         </thead>
         <tbody>
           {shown.map((row) => {
-            const leftBetter = row.reason !== null || row.lv === null || row.rv === null || row.lv === row.rv ? null : row.lowerBetter ? row.lv < row.rv : row.lv > row.rv;
-            const diff = difference(row);
+            const diff=row.reason!==null||row.lv===null||row.rv===null||row.label==='unit tests'?null:row.rv-row.lv;
+            const ratio=row.label==='error rate'||row.label==='verify coverage';
+            const delta=diff===null||!Number.isFinite(diff)?null:`${diff>0?'+':diff<0?'−':''}${ratio?`${(Math.abs(diff)*100).toFixed(1)} ${t('compare.activity.percentagePoints',locale)}`:row.fmt(Math.abs(diff))}`;
             return (
-              <tr key={row.label}>
-                <td className="mono">{row.label}</td>
+              <tr key={row.label} data-compare-metric={row.label}>
+                <td>{labels[row.label]??row.label}</td>
                 <td className="mono" style={{ textAlign: 'right' }}>{row.lv === null ? '—' : row.fmt(row.lv)}</td>
                 <td className="mono" style={{ textAlign: 'right' }}>{row.rv === null ? '—' : row.fmt(row.rv)}</td>
                 <td className="mono" style={{ textAlign: 'right' }} data-scan-timing-reason={row.reason ?? undefined}>
-                  {row.reason !== null ? `${t('scan.timing.notComparable', locale)}: ${t(`scan.timing.reason.${row.reason}`, locale)}` : leftBetter === null ? '=' : `${diff.toFixed(0)}%`}
-                  {leftBetter !== null && (
-                    <span className={`compare-delta-badge ${leftBetter ? 'compare-delta-win' : 'compare-delta-lose'}`}>
-                      {leftBetter ? 'L' : 'R'}
-                    </span>
-                  )}
+                  {row.reason !== null ? `${t('scan.timing.notComparable', locale)}: ${t(`scan.timing.reason.${row.reason}`, locale)}` : delta??'—'}
                 </td>
               </tr>
             );
@@ -387,7 +409,10 @@ export interface CompareBoardProps {
   rightKey: string;
   onLeftChange: (key: string) => void;
   onRightChange: (key: string) => void;
-  loadCompare?: (left: string, right: string) => Promise<CompareResult>;
+  loadCompare?: (left: string, right: string, signal?: AbortSignal) => Promise<CompareResult>;
+  onOpenRun?: (key:string,eventId?:string)=>void;
+  onOpenCalls?:()=>void;
+  onBrowseRuns?:()=>void;
 }
 
 /** REQ-019 + UI-TASKS 2：对比视图 —— 外壳组合各子组件（v2 拆分）。 */
@@ -400,10 +425,31 @@ export function CompareBoard({
   onLeftChange,
   onRightChange,
   loadCompare,
+  onOpenRun,
+  onOpenCalls,
+  onBrowseRuns,
 }: CompareBoardProps): React.JSX.Element {
-  const [result, setResult] = useState<CompareResult | null>(null);
+  const [snapshot, setResult] = useState<CompareResult | null>(null);
+  const pair = JSON.stringify([leftKey,rightKey]);
+  const validPair = leftKey !== '' && rightKey !== '' && leftKey !== rightKey;
+  const [resultPair,setResultPair] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode,setErrorCode] = useState('COMPARE_FAILED');
+  const loaderRef = useRef(loadCompare ?? api.compare);
+  useEffect(()=>{loaderRef.current=loadCompare ?? api.compare;},[loadCompare]);
+  const requestRef = useRef<{key:string;controller:AbortController;timer:ReturnType<typeof setTimeout>|null}|null>(null);
+  const cancelPending = useCallback(()=>{
+    const request=requestRef.current;
+    if(request===null)return;
+    requestRef.current=null;
+    if(request.timer!==null)clearTimeout(request.timer);
+    request.controller.abort();
+  },[]);
+  // Ownership is the requested pair, not callback identity or a guessed native ID.
+  const currentLoading = validPair && (loading || resultPair !== pair);
+  const currentError = resultPair === pair ? error : null;
+  const result = resultPair === pair && !currentLoading && currentError === null ? snapshot : null;
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -427,31 +473,42 @@ export function CompareBoard({
     [result],
   );
 
-  const onCompare = (left: string, right: string): void => {
-    const loader = loadCompare ?? ((l: string, r: string) => api.compare(l, r));
-    setLoading(true);
-    setError(null);
-    void loader(left, right)
-      .then(setResult)
-      .catch((err: unknown) => {
-        console.error('[compare] 对比失败:', err);
-        setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => setLoading(false));
-  };
+  const onCompare = useCallback((left:string,right:string):void=>{
+    if(left==='' || right==='' || left===right)return;
+    const key=JSON.stringify([left,right]);
+    if(requestRef.current?.key===key)return;
+    cancelPending();
+    const request={key,controller:new AbortController(),timer:null as ReturnType<typeof setTimeout>|null};
+    requestRef.current=request;
+    setResultPair(key);setResult(null);setError(null);setErrorCode('COMPARE_FAILED');setLoading(true);
+    const fail=(err:unknown):void=>{
+      if(requestRef.current!==request)return;
+      console.error('[compare] 对比失败:',err);
+      setErrorCode(err instanceof ApiError?err.code:'COMPARE_FAILED');
+      setError(err instanceof Error?err.message:String(err));
+    };
+    request.timer=setTimeout(()=>{
+      if(requestRef.current!==request)return;
+      cancelPending();setErrorCode('COMPARE_TIMEOUT');setError('COMPARE_TIMEOUT');setLoading(false);
+    },5000);
+    try {
+      void loaderRef.current(left,right,request.controller.signal).then(value=>{
+        if(requestRef.current===request)setResult(value);
+      }).catch(fail).finally(()=>{
+        if(requestRef.current!==request)return;
+        if(request.timer!==null)clearTimeout(request.timer);
+        requestRef.current=null;setLoading(false);
+      });
+    } catch(err) {
+      fail(err);cancelPending();setLoading(false);
+    }
+  },[cancelPending]);
 
   // 首帧 hash / 快捷对比：选中两个会话后自动加载，无需再点「加载对比」。
   useEffect(() => {
-    if (
-      leftKey === '' ||
-      rightKey === '' ||
-      loading ||
-      (result !== null && result.left.session.id === leftKey && result.right.session.id === rightKey)
-    ) {
-      return;
-    }
-    onCompare(leftKey, rightKey);
-  }, [leftKey, rightKey, loading, result]);
+    if(validPair)onCompare(leftKey,rightKey);
+    return cancelPending;
+  }, [leftKey, rightKey, validPair, onCompare, cancelPending]);
 
   const toggleSection = (id: string): void => {
     setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -531,11 +588,16 @@ export function CompareBoard({
         rightOpen={rightOpen}
         onLeftOpenChange={setLeftOpen}
         onRightOpenChange={setRightOpen}
+        loading={currentLoading}
       />
-      {error !== null && (
+      <div className="cmp-selector-scope"><span>{t('compare.pickerScope',locale).replace('{n}',String(sessions.length))}</span>
+        {onBrowseRuns&&<button type="button" className="btn ui-btn-sm" onClick={onBrowseRuns}>{t('compare.browseRuns',locale)}</button>}</div>
+      {currentLoading && <p role="status" className="hint compare-read-status">{t('compare.read.loading',locale)}{' '}
+        <button type="button" className="btn ui-btn-sm" onClick={()=>{cancelPending();setLoading(false);setErrorCode('COMPARE_CANCELLED');setError('COMPARE_CANCELLED');}}>{t('compare.read.cancel',locale)}</button></p>}
+      {currentError !== null && (
         <ErrorState
-          code="COMPARE_FAILED"
-          message={error}
+          code={errorCode}
+          message={errorCode==='COMPARE_TIMEOUT'?t('compare.read.timeout',locale):errorCode==='COMPARE_CANCELLED'?t('compare.read.cancelled',locale):currentError}
           onRetry={() => {
             if (leftKey !== '' && rightKey !== '') {
               onCompare(leftKey, rightKey);
@@ -545,15 +607,15 @@ export function CompareBoard({
           }}
         />
       )}
-      {(loading || sessionsLoading) && result === null && error === null && (
+      {(currentLoading || sessionsLoading) && result === null && currentError === null && (
         <div style={{ padding: 'var(--space-3)' }}>
           <Skeleton variant="row" count={5} />
         </div>
       )}
-      {!loading && !sessionsLoading && error === null && result === null && (
+      {!currentLoading && !sessionsLoading && currentError === null && result === null && (
         <EmptyState
           icon={<span aria-hidden="true" />}
-          title={t('state.selectTwo', locale)}
+          title={t(leftKey!=='' && leftKey===rightKey?'compare.read.distinct':'state.selectTwo', locale)}
           description={hasSelection ? t('compare.selectHint', locale) : t('state.empty', locale)}
           /* 行动按钮跟随选择进度推进：此前选好左侧之后它仍然写着「选择左侧会话」，
              点下去只会把已经选好的那一侧再打开一次。 */
@@ -573,8 +635,9 @@ export function CompareBoard({
       {result !== null && (
         <>
           <ErrorBoundary label={t('compare.hero.title', locale)}>
+            <CompareRunEvidence result={result} locale={locale} onOpenRun={onOpenRun} onOpenCalls={onOpenCalls}/>
             <ScanTimingCriteria left={result.left.session} right={result.right.session}
-              partial={result.left.pending || result.right.pending || result.left.hasMore || result.right.hasMore || result.left.eventOffset !== 0 || result.right.eventOffset !== 0} locale={locale} />
+              partial={result.left.pending || result.right.pending || result.left.hasMore || result.right.hasMore || result.left.eventOffset !== 0 || result.right.eventOffset !== 0} locale={locale} compact />
             <CompareHeroHeader result={result} locale={locale} />
           </ErrorBoundary>
           <ContextBar
@@ -590,7 +653,7 @@ export function CompareBoard({
               <CompareVerdict result={result} locale={locale} />
             </ErrorBoundary>
             <ErrorBoundary label={t('compare.kpiGrid', locale)}>
-              <CompareKPI result={result} locale={locale} sessions={sessions} />
+              <CompareKPI result={result} locale={locale} sessions={sessions} onOpenRun={onOpenRun}/>
             </ErrorBoundary>
           </div>
           <CollapsibleSection

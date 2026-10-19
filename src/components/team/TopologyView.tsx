@@ -21,6 +21,9 @@
  * 已有 team.* 键仍通过 `t()` 复用。
  */
 
+import '../../styles/components/team.css';
+import '../../styles/components/team-views.css';
+
 import { useCallback, useMemo, useRef } from 'react';
 
 import type { Locale } from '../../i18n.js';

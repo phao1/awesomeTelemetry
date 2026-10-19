@@ -1,3 +1,4 @@
+import { parseCodeArtsTeam } from '../../src/adapters/team-codearts.js';
 import { describe, expect, it } from 'vitest';
 
 import Database from 'better-sqlite3';
@@ -31,6 +32,7 @@ import {
 import { initSchema } from './schema.js';
 import {
   deleteTeamRun,
+  evidenceToIngest,
   getTeamActivityDetail,
   getTeamCompareInputs,
   getTeamPatch,
@@ -1449,6 +1451,36 @@ describe('team-storage §3.16 write-counter', () => {
     expect(result.deleted_message_ids).toEqual([]);
     expect(result.deleted_agent_ids).toEqual([]);
     expect(countRows(db, 'team_messages')).toBe(2);
+    db.close();
+  });
+});
+
+
+describe('replay pagination retains undated source evidence',()=>{
+  it('pages across dated/null clocks and null/native sequences without skipping or duplicating rows',()=>{
+    const db=newDb();
+    const entries=[['dated', '2026-08-17T00:00:00Z',1],['null-z',null,9],['null-a',null,8],['null-last',null,null]] as const;
+    upsertTeamRun(db,makeIngest({run:makeRunRow('replay-null'),activities:entries.map(([id,time,seq])=>makeActivityRow('replay-null',id,{started_at:time,native_sequence:seq})),complete:true}));
+    const ids:string[]=[];let cursor:string|undefined;
+    for(let i=0;i<5;i++) { const page=listTeamActivities(db,'replay-null',{limit:1,cursor});ids.push(...page.items.map(item=>item.id));if(!page.hasMore)break;cursor=page.nextCursor!; }
+    expect(ids).toEqual(['dated','null-z','null-a','null-last']);db.close();
+  });
+});
+
+
+describe('replay source bodies stay lazy and redacted',()=>{
+  it('stores redacted control excerpts separately while snapshot/list and default detail remain slim',()=>{
+    const parsed=parseCodeArtsTeam({sourceLocator:'fixture-retained-event',contact:{root:{sessionID:'leader',agent_type:'team-leader'}},teamTask:[{id:1,content:'Review',status:'completed'}],parts:[{id:'finish',message_id:'m',session_id:'leader',data:{type:'tool',tool:'finish-task',state:{status:'completed',input:{id:1,token:'sk-abcdefghijklmnopqrstuv123456'},output:'You have finished task(id=1, content=Review)'}}}]});
+    const db=newDb();upsertTeamRun(db,evidenceToIngest(parsed));
+    const activity=parsed.activities.find(item=>item.kind==='task_status')!;
+    const slim=listTeamActivities(db,parsed.run.runId,{});
+    expect(JSON.stringify(slim)).not.toContain('abcdefghijklmnopqrstuv123456');
+    expect(getTeamActivityDetail(db,parsed.run.runId,activity.id)!.body).toBeNull();
+    const body=getTeamActivityDetail(db,parsed.run.runId,activity.id,'body')!.body!;
+    expect(body.input).toContain('sk-***');expect(body.input).not.toContain('abcdefghijklmnopqrstuv123456');
+    expect(body.result).toContain('completed_reported');
+    expect(getTeamActivityDetail(db,parsed.run.runId,activity.id,'raw')!.raw).toBeNull();
+    expect(getTeamRunSnapshot(db,parsed.run.runId)!.tasks[0]!.resultAvailable).toBe(false);
     db.close();
   });
 });

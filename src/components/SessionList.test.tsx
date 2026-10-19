@@ -8,7 +8,9 @@ import type {
   SessionRange,
   TraceStatus,
 } from '../core/trace-types.js';
-import { SessionList } from './SessionList.js';
+import { SessionList, type SessionListProps } from './SessionList.js';
+
+const rendered: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 
 function entry(id: string, title: string): SessionIndexEntry {
   return {
@@ -36,8 +38,10 @@ function entry(id: string, title: string): SessionIndexEntry {
 function render(node: React.JSX.Element): HTMLDivElement {
   const container = document.createElement('div');
   document.body.appendChild(container);
+  const root = createRoot(container);
+  rendered.push({ root, container });
   act(() => {
-    createRoot(container).render(node);
+    root.render(node);
   });
   return container;
 }
@@ -57,7 +61,71 @@ const baseProps = {
 };
 
 afterEach(() => {
+  act(() => { for (const { root, container } of rendered.splice(0)) { root.unmount(); container.remove(); } });
   vi.unstubAllGlobals();
+});
+
+function discovery(overrides: Partial<SessionListProps> = {}): HTMLDivElement {
+  return render(<SessionList {...baseProps} items={[]} selectedId={null} onSelect={() => undefined}
+    locale="zh" hasMore={false} loading={false} onLoadMore={() => undefined} onRetry={() => undefined}
+    offlineSamples={false} width={300} collapsed={false} onResize={() => undefined}
+    onToggleCollapse={() => undefined} {...overrides} />);
+}
+
+describe('WB-002 session discovery', () => {
+  it('explains empty filtered results and resets all server-side filters in one action', () => {
+    const q = vi.fn(); const range = vi.fn(); const provider = vi.fn(); const status = vi.fn(); const retry = vi.fn();
+    const container = discovery({ q: 'missing', providerFilter: ['codex'], statusFilter: ['error'],
+      onQChange: q, onRangeChange: range, onProviderFilterChange: provider, onStatusFilterChange: status, onRetry: retry });
+    expect(container.querySelector('.ui-empty-title')?.textContent).toBe('没有匹配的会话');
+    const reset = container.querySelector('.ui-empty button') as HTMLButtonElement;
+    expect(reset.textContent).toBe('清除筛选');
+    act(() => reset.click());
+    expect(q).toHaveBeenCalledExactlyOnceWith(''); expect(range).toHaveBeenCalledExactlyOnceWith('all');
+    expect(provider).toHaveBeenCalledExactlyOnceWith([]); expect(status).toHaveBeenCalledExactlyOnceWith([]);
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it('shows an actionable source hint when no records exist without filters', () => {
+    const retry = vi.fn(); const container = discovery({ range: 'all', onRetry: retry });
+    expect(container.querySelector('.ui-empty-description')?.textContent).toContain('本地记录');
+    act(() => (container.querySelector('.ui-empty button') as HTMLButtonElement).click());
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim empty success when the list request failed', () => {
+    const container = discovery({ error: 'API disconnected' });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('API disconnected');
+    expect(container.querySelector('.ui-empty')).toBeNull();
+  });
+
+  it('preserves rows with a busy indication while a new server filter is loading', () => {
+    const container = discovery({ items: [entry('s1', 'Previous result')], loading: true });
+    expect(container.querySelector('[role="listbox"]')?.getAttribute('aria-busy')).toBe('true');
+    expect(container.querySelector('.session-list-updating')?.textContent).toBe('正在更新筛选结果…');
+    expect(container.querySelectorAll('.session-row')).toHaveLength(1);
+    expect(container.querySelector('.ui-empty')).toBeNull();
+  });
+
+  it('offers a localized pointer/keyboard reopen control when collapsed', () => {
+    const toggle = vi.fn(); const container = discovery({ collapsed: true, onToggleCollapse: toggle });
+    const reopen = container.querySelector('[aria-label="展开会话列表"]') as HTMLButtonElement;
+    expect(reopen).not.toBeNull(); expect(reopen.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('input')).toBeNull();
+    act(() => reopen.click()); expect(toggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows Enter/Space row selection, announces status, and exposes existing Team runs', () => {
+    const select = vi.fn(); const teams = vi.fn();
+    const container = discovery({ items: [entry('s1', 'Keyboard run')], onSelect: select, onOpenTeams: teams });
+    const row = container.querySelector('.session-row') as HTMLElement;
+    expect(row.tabIndex).toBe(0);
+    expect(row.querySelector('[aria-label="成功"]')).not.toBeNull();
+    for (const key of ['Enter', ' ']) act(() => row.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })));
+    expect(select.mock.calls).toEqual([['s1'], ['s1']]);
+    const team = container.querySelector('[aria-label="查看 Agent Team 运行"]') as HTMLButtonElement;
+    expect(team).not.toBeNull(); act(() => team.click()); expect(teams).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('REQ-016 会话列表', () => {

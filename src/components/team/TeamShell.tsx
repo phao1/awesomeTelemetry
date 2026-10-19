@@ -38,6 +38,9 @@ import { LruCache } from '../../cache/lru.js';
 import { EmptyState, ErrorState, Skeleton } from '../ui/States.js';
 import { Tabs } from '../ui/Tabs.js';
 import { TeamRunList } from './TeamRunList.js';
+import { StageReplay } from '../agent-collab/StageReplay.js';
+import { TeamWorkbench } from './TeamWorkbench.js';
+import { tokenOnlyTeamComparison } from './token-only-comparison.js';
 import {
   TEAM_PANELS,
   type TeamActivityDetailResponse,
@@ -87,7 +90,7 @@ function TeamSummaryHeader({
   locale: Locale;
 }): React.JSX.Element {
   const s = snapshot.summary;
-  const dims = Object.keys(snapshot.completeness) as Array<keyof typeof snapshot.completeness>;
+  const dims = (Object.keys(snapshot.completeness) as Array<keyof typeof snapshot.completeness>).filter(dim=>dim!=='cost');
   return (
     <header className="team-summary-header">
       <div className="team-summary-title-row">
@@ -100,21 +103,18 @@ function TeamSummaryHeader({
         </span>
       </div>
       <div className="team-summary-meta">
-        <span className="mono">{s.nativeRunId}</span>
         <span>{s.counts.agents} {t('team.agents', locale)}</span>
         <span>{s.counts.tasks} {t('team.tasks', locale)}</span>
-        <span>{s.counts.communications} {t('team.communications', locale)}</span>
+        <span>{t('team.communications', locale)}: {snapshot.completeness.communication === 'unavailable' ? t('team.completeness.unavailable', locale) : s.counts.communications}</span>
         <span>{s.counts.activities} {t('team.activities', locale)}</span>
         <span>{s.counts.rounds} {t('team.rounds', locale)}</span>
         <span>{s.counts.artifacts} {t('team.artifacts', locale)}</span>
       </div>
+      <details><summary>{t('team.completenessLabel', locale)}</summary>
       <div className="team-summary-provenance">
+        <span className="mono">{s.nativeRunId}</span>
         <span>
           {t('team.tokenAvailable', locale)}: {s.tokenAvailable ? t('common.yes', locale) : t('common.no', locale)}
-        </span>
-        <span>
-          {t('team.costAvailable', locale)}:{' '}
-          {s.costAvailable ? (s.costCurrency ?? 'USD') : t('team.costUnavailable', locale)}
         </span>
         <span>
           {t('team.runIdentity', locale)}: {s.runIdentityConfidence}
@@ -130,6 +130,7 @@ function TeamSummaryHeader({
           </span>
         ))}
       </div>
+      </details>
       {snapshot.anomalies.length > 0 && (
         <div className="team-summary-anomalies" role="alert">
           {snapshot.anomalies.map((anomaly, idx) => (
@@ -314,63 +315,6 @@ function TasksPanel({
                 ))}
               </span>
             )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function TimelinePanel({
-  snapshot,
-  selection,
-  onSelect,
-  locale,
-}: {
-  snapshot: TeamRunSnapshot;
-  selection: TeamSelection | null;
-  onSelect: (sel: TeamSelection | null) => void;
-  locale: Locale;
-}): React.JSX.Element {
-  // timeline 需要 activities，但 snapshot 不含 activities（§7.2）。
-  // activities 由 TeamShell 在 ledger/timeline 视图时单独拉取（§7.3）。
-  // 此处用 agents 的 createdAt/endedAt 渲染 swimlane 骨架，activities 由
-  // 上层传入的 activities prop 叠加。
-  if (snapshot.agents.length === 0) {
-    return (
-      <PanelStateWrapper
-        state="empty"
-        error={null}
-        locale={locale}
-        onRetry={() => {}}
-        emptyTitle={t('team.timelineEmpty', locale)}
-        emptyHint={t('team.timelineEmptyHint', locale)}
-        unavailableHint=""
-      >
-        {null}
-      </PanelStateWrapper>
-    );
-  }
-  return (
-    <div className="team-timeline-panel" aria-label={t('team.timelineLabel', locale)}>
-      {snapshot.agents.map((agent) => {
-        const selected = isSelected(selection, 'agent', agent.id);
-        return (
-          <div key={agent.id} className="team-timeline-lane">
-            <button
-              type="button"
-              className={`team-timeline-lane-label ${selected ? 'team-timeline-lane-on' : ''}`}
-              aria-pressed={selected}
-              onClick={() => onSelect(selected ? null : { kind: 'agent', id: agent.id })}
-            >
-              {agent.displayName}
-            </button>
-            <div className="team-timeline-lane-track">
-              <span
-                className="team-timeline-lane-bar"
-                title={`${agent.createdAt ?? '—'} → ${agent.endedAt ?? '…'}`}
-              />
-            </div>
           </div>
         );
       })}
@@ -616,7 +560,7 @@ function ComparePanel({
   compareLeft,
   compareRight,
   compareManualBasis,
-  comparison,
+  comparison: sourceComparison,
   compareState,
   compareError,
   locale,
@@ -637,6 +581,10 @@ function ComparePanel({
   onToggleManualBasis: () => void;
   onRunCompare: () => void;
 }): React.JSX.Element {
+  const comparison = useMemo(
+    () => sourceComparison === null ? null : tokenOnlyTeamComparison(sourceComparison),
+    [sourceComparison],
+  );
   return (
     <div className="team-compare-panel" aria-label={t('team.compareLabel', locale)}>
       <div className="team-compare-selectors">
@@ -784,6 +732,7 @@ export function TeamShell({
   invalidateKey,
 }: TeamShellProps): React.JSX.Element {
   // §7.4 App-owned run list（TeamShell 是 team 视图的 stateful owner）
+  const [mobileRunsOpen, setMobileRunsOpen] = useState(false);
   const [runs, setRuns] = useState<TeamRunSummary[]>([]);
   const [runsHasMore, setRunsHasMore] = useState(false);
   const [runsLoading, setRunsLoading] = useState(false);
@@ -1104,6 +1053,7 @@ export function TeamShell({
 
   const handleSelectRun = useCallback(
     (id: string) => {
+      setMobileRunsOpen(false);
       onTeamHashChange({ ...teamHash, runId: id, selection: null, invalidRunId: null });
     },
     [teamHash, onTeamHashChange],
@@ -1169,7 +1119,8 @@ export function TeamShell({
   // ── 渲染 ──────────────────────────────────────────────────
 
   return (
-    <div className="team-shell">
+    <div className={`team-shell${mobileRunsOpen ? ' team-mobile-runs-open' : ''}`}>
+      <button type="button" className="team-mobile-runs-toggle" aria-expanded={mobileRunsOpen} onClick={() => setMobileRunsOpen(value => !value)}>{mobileRunsOpen ? (locale === 'zh' ? '返回当前团队' : 'Back to current team') : (locale === 'zh' ? '切换团队运行' : 'Choose team run')}</button>
       <TeamRunList
         items={runs}
         selectedId={runId}
@@ -1224,7 +1175,7 @@ export function TeamShell({
                     <Tabs
                       items={TEAM_PANELS.map((p) => ({
                         id: p,
-                        label: t(`team.panel.${p}` as I18nKey, locale),
+                        label: p === 'topology' ? (locale === 'zh' ? '团队概览' : 'Team overview') : t(`team.panel.${p}` as I18nKey, locale),
                       }))}
                       activeId={panel}
                       onChange={handlePanelChange}
@@ -1232,12 +1183,17 @@ export function TeamShell({
                   </div>
                   <div className="team-panel-content">
                     {panel === 'topology' && (
+                      <>
+                      <TeamWorkbench snapshot={snapshot} selection={selection} onSelect={handleSelect} locale={locale} />
+                      <details className="collab-secondary"><summary>{locale === 'zh' ? '原有结构列表' : 'Original structure list'}</summary>
                       <TopologyPanel
                         snapshot={snapshot}
                         selection={selection}
                         onSelect={handleSelect}
                         locale={locale}
                       />
+                      </details>
+                      </>
                     )}
                     {panel === 'tasks' && (
                       <TasksPanel
@@ -1248,12 +1204,11 @@ export function TeamShell({
                       />
                     )}
                     {panel === 'timeline' && (
-                      <TimelinePanel
-                        snapshot={snapshot}
-                        selection={selection}
-                        onSelect={handleSelect}
-                        locale={locale}
-                      />
+                      <>
+                        {activitiesError && <ErrorState code="TEAM_ACTIVITY_FAILED" message={activitiesError} onRetry={() => { void loadActivities('first'); }} />}
+                        <StageReplay snapshot={snapshot} activities={activities} coverage={activitiesLoading ? 'unavailable' : activitiesHasMore ? 'partial' : activitiesError ? 'unavailable' : 'complete'} onSelect={handleSelect} locale={locale} />
+                        {activitiesHasMore && <button type="button" disabled={activitiesLoading} onClick={() => { void loadActivities('next'); }}>{locale === 'zh' ? '加载更早活动' : 'Load earlier activities'}</button>}
+                      </>
                     )}
                     {panel === 'communication' && (
                       <CommunicationPanel

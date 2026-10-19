@@ -22,5 +22,15 @@ system/messages/tools/output/raw and original download. No polling/list bodies/
 per-row fetch. Owned cancellation/stale suppression, explicit refresh after
 uncertain outcomes, bilingual inert text, readable keyboard-accessible controls.
 
+Workbench clarification: the existing lazy right drawer groups optional upload,
+bounded20-row session discovery and selected Turn evidence with accurate page
+ranges. Each read has independent5s ownership/retry; changing identity hides old
+content immediately. List refresh, locale, field or font changes MUST NOT refetch
+unrelated Turn bodies. A cancelled/timed-out120s upload releases local waiting
+even if transport ignores abort; late success is suppressed and another upload
+stays blocked until explicit list refresh succeeds. Cancellation is not rollback.
+Preview is at most64KiB UTF-8 bytes without splitting surrogate pairs; full field
+expansion remains explicit. Original downloads and reported values stay intact.
+
 ## Gotchas
 G7.1/G7.2/G7.4; G8.1/G8.3; G11.1/G11.2/G11.4/G11.9.

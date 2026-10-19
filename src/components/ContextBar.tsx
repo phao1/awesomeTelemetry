@@ -40,7 +40,10 @@ export function ContextBar({
             key={anchor.id}
             type="button"
             className={`contextbar-anchor ${anchor.id === activeId ? 'contextbar-anchor-on' : ''}`}
-            onClick={() => document.getElementById(anchor.id)?.scrollIntoView({ behavior: 'smooth' })}
+            onClick={() => document.getElementById(anchor.id)?.scrollIntoView({
+              behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+              block: 'start',
+            })}
           >
             {anchor.label}
           </button>

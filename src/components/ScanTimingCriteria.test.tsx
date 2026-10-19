@@ -6,6 +6,17 @@ import { ScanTimingCriteria } from './ScanTimingCriteria.js';
 import { makeSession } from './compare-test-fixtures.js';
 
 describe('ScanTimingCriteria', () => {
+  it('keeps timing scope and partial warnings visible while folding the full explanation', () => {
+    const host = document.createElement('div'); const root = createRoot(host);
+    try {
+      act(() => root.render(<ScanTimingCriteria left={makeSession('s',{durationSource:'derived'})} partial locale="zh" compact />));
+      const summary=host.querySelector('.scan-timing-summary')!;
+      expect(summary.textContent).toContain('derived'); expect(summary.textContent).toContain('非网络/模型实测延迟');
+      const details=host.querySelector('.scan-timing-compact > details') as HTMLDetailsElement;
+      expect(details.open).toBe(false); expect(details.textContent).toContain('pureInferenceMs');
+      expect(host.querySelector('.scan-timing-compact > [role="status"]')).not.toBeNull();
+    } finally {act(()=>root.unmount());}
+  });
   it.each(['zh', 'en'] as const)('shows declarations and legacy formulas without IO (%s)', (locale) => {
     const fetcher = vi.spyOn(globalThis, 'fetch');
     const div = document.createElement('div');

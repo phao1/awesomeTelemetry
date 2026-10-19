@@ -511,7 +511,7 @@ describe('deriveTurns — D8 badges', () => {
     expect(running.turns[0]!.badges).toEqual(['tools', 'running']);
   });
 
-  it('subagent marks a turn containing agent or subagent_prompt events', () => {
+  it('subagent marks a turn containing explicit subagent_prompt events', () => {
     const model = derive([
       makeEvent(1, { kind: 'llm', turnKey: 'k1' }),
       makeEvent(2, { kind: 'tool', turnKey: 'k1' }),
@@ -545,6 +545,22 @@ describe('deriveTurns — D8 badges', () => {
 });
 
 describe('deriveTurns — D4 message mapping', () => {
+  it('WB-005: generic agent bookkeeping is a neutral record, not delegation evidence', () => {
+    const generic = makeEvent(2, { kind: 'agent', turnKey: 'k1', actor: 'subagent', title: 'agent step: success', tokens: usage({ input: 90, output: 10, total: 100 }) });
+    const before = structuredClone(generic);
+    const model = derive([makeEvent(1, { kind: 'llm', turnKey: 'k1' }), generic]);
+    expect(model.turns[0]!.badges).not.toContain('subagent');
+    expect(model.turns[0]!.messages[1]).toMatchObject({role: 'system', kind: 'agent', eventId: generic.id, tokens: generic.tokens, hasRaw: true});
+    expect(generic).toEqual(before);
+    // A title or a legacy actor value must not manufacture a relationship.
+    const named = derive([makeEvent(1, { kind: 'agent', title: 'spawn subagent', actor: 'subagent' })]);
+    expect(named.turns[0]!.messages[0]!.role).toBe('system');
+    expect(named.turns[0]!.badges).not.toContain('subagent');
+    const explicit = derive([makeEvent(1, { kind: 'subagent_prompt' })]);
+    expect(explicit.turns[0]!.messages[0]!.role).toBe('subagent');
+    expect(explicit.turns[0]!.badges).toContain('subagent');
+  });
+
   it('maps every kind to its role, including the tool-family set', () => {
     const model = derive([
       makeEvent(1, { kind: 'llm', turnKey: 'k1' }),
@@ -568,7 +584,7 @@ describe('deriveTurns — D4 message mapping', () => {
       'tool',
       'tool',
       'compact',
-      'subagent',
+      'system', // Generic agent record; no delegation evidence.
       'subagent',
       'assistant',
     ]);

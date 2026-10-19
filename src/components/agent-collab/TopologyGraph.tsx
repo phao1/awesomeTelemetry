@@ -14,7 +14,7 @@
  * 无新 runtime dependency：纯 React + SVG。不引入第三方图形库。
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useId, useMemo } from 'react';
 
 
 import type { Locale } from '../../i18n.js';
@@ -120,6 +120,7 @@ export function TopologyGraph({
   edgeMessageCounts,
   locale,
 }: TopologyGraphProps): React.JSX.Element {
+  const scrollHintId = useId();
   const layout = useMemo(
     () => computeLayout(agents, edges),
     [agents, edges],
@@ -170,7 +171,10 @@ export function TopologyGraph({
   const legendSwatchSize = 10;
 
   return (
-    <div className="collab-topology-wrap">
+    <>
+    <p id={scrollHintId} className="hint">{t('session.teamReplay.topologyScrollHint', locale)}</p>
+    <div className="collab-topology-wrap" role="region" tabIndex={0}
+      aria-label={t('session.teamReplay.topologyScrollLabel', locale)} aria-describedby={scrollHintId}>
       <svg
         className="collab-topology-graph"
         viewBox={`0 0 ${layout.width} ${layout.height}`}
@@ -376,5 +380,6 @@ export function TopologyGraph({
         </g>
       </svg>
     </div>
+    </>
   );
 }

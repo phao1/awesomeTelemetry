@@ -42,6 +42,9 @@ import type {
 } from '../../core/trace-types.js';
 import { EmptyState, ErrorState, Skeleton } from '../ui/States.js';
 
+import { tokenOnlyTeamComparison } from './token-only-comparison.js';
+import '../../styles/components/team-compare.css';
+
 // ── 局部双语文字映射（不修改 i18n.ts，见文件头注释） ─────────
 
 const CT = {
@@ -619,7 +622,7 @@ export function TeamCompareView({
   leftRunId,
   rightRunId,
   manualBasis,
-  comparison,
+  comparison: sourceComparison,
   state,
   error,
   onLeftRunIdChange,
@@ -627,6 +630,10 @@ export function TeamCompareView({
   onManualBasisToggle,
   onRunCompare,
 }: TeamCompareViewProps): React.JSX.Element {
+  const comparison = useMemo(
+    () => sourceComparison === null ? null : tokenOnlyTeamComparison(sourceComparison),
+    [sourceComparison],
+  );
   // §9.1 同 id 禁用比较
   const sameId = leftRunId !== null && rightRunId !== null && leftRunId === rightRunId;
   const canCompare = leftRunId !== null && rightRunId !== null && leftRunId !== '' && rightRunId !== '' && !sameId;

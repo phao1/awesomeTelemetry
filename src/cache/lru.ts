@@ -2,6 +2,7 @@
 export class LruCache<V> {
   private readonly entries = new Map<string, V>();
   private readonly maxEntries: number;
+  private epoch = 0;
 
   constructor(maxEntries: number) {
     this.maxEntries = maxEntries;
@@ -10,6 +11,9 @@ export class LruCache<V> {
   get size(): number {
     return this.entries.size;
   }
+
+  /** In-flight consumers must not repopulate an explicitly invalidated cache. */
+  get generation(): number { return this.epoch; }
 
   get(key: string): V | undefined {
     const value = this.entries.get(key);
@@ -34,10 +38,12 @@ export class LruCache<V> {
   }
 
   delete(key: string): void {
+    this.epoch += 1;
     this.entries.delete(key);
   }
 
   clear(): void {
+    this.epoch += 1;
     this.entries.clear();
   }
 }

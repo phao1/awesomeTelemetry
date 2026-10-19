@@ -79,7 +79,9 @@ const KIND_TO_ROLE: Readonly<Record<TraceKind, MessageRole>> = {
   file_write: 'tool',
   bash: 'tool',
   test: 'tool',
-  agent: 'subagent',
+  // Generic agent events include usage/control bookkeeping. Their kind (and
+  // legacy actor) cannot establish delegation; retain them in the neutral role.
+  agent: 'system',
   system: 'system',
   message: 'assistant',
   user_prompt: 'user',
@@ -143,7 +145,7 @@ function computeBadges(options: {
   }
   if (
     options.members.some(
-      (member) => member.kind === 'agent' || member.kind === 'subagent_prompt',
+      (member) => member.kind === 'subagent_prompt',
     )
   ) {
     badges.push('subagent');

@@ -121,7 +121,7 @@ export function SessionHeaderCard({
           icon={<IconCost size={16} />}
           label={t('metric.cost', locale)}
           value={`${session.tokenUsage.total.toLocaleString()}`}
-          unit={`tok · $${session.costUsd.toFixed(4)}`}
+          unit="tok"
           trend={`${metrics.tokensPerStep.toFixed(0)} tok/step`}
         />
       </div>

@@ -35,6 +35,73 @@ afterEach(() => {
 
 const prompt = 'You are a helpful coding assistant. '.repeat(300); // ~8700 chars
 
+describe('SessionToolbar evidence metrics (WB-003)', () => {
+  it.each(['zh', 'en'] as const)('uses verify/steps and error-steps/steps, not correctness or all-event errors (%s)', locale => {
+    const events = [
+      makeEvent({id:'user',kind:'user_prompt',phase:'understand',status:'error'}),
+      makeEvent({id:'llm',kind:'llm',phase:'plan'}),
+      makeEvent({id:'check',kind:'bash',tool:'bash',phase:'verify',status:'error'}),
+      makeEvent({id:'read',kind:'tool',tool:'read',phase:'understand'}),
+      makeEvent({id:'meta',kind:'system',phase:'plan',status:'error'}),
+    ];
+    const fetcher = vi.spyOn(globalThis,'fetch');
+    const {unmount}=mount(<SessionToolbar session={makeSession('s',{eventCount:events.length,costSource:'unknown',costUsd:0})} events={events} locale={locale}/>);
+    try {
+      const cells=document.querySelectorAll('.session-toolbar-metric');
+      expect(cells[1]?.textContent).toContain(locale==='zh'?'验证活动比':'Verification activity');
+      expect(cells[1]?.textContent).toContain('33%');
+      expect(cells[2]?.textContent).toContain(locale==='zh'?'步骤错误比':'Step errors');
+      expect(cells[2]?.textContent).toContain('33%');
+      expect(cells[3]?.textContent).not.toContain('$0.000');
+      const criteria=document.querySelector('.session-metric-criteria');
+      expect(criteria?.textContent).toContain('1 / 3');
+      expect(criteria?.textContent).toContain(locale==='zh'?'不等于正确率':'not answer accuracy');
+      expect(criteria?.querySelector('details')?.open).toBe(false);
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally {unmount();fetcher.mockRestore();}
+  });
+
+  it.each(['empty','nonstep','partial'] as const)('does not display whole-run zero ratios with %s evidence', scenario => {
+    const events=scenario==='empty'?[]:scenario==='nonstep'?[makeEvent({kind:'user_prompt'}),makeEvent({kind:'system'})]:[makeEvent({id:'check',kind:'test',phase:'verify'}),makeEvent({id:'llm'})];
+    const eventCount=scenario==='partial'?5:events.length;
+    const {unmount}=mount(<SessionToolbar session={makeSession('s',{eventCount})} events={events} locale="en"/>);
+    try {
+      const cells=document.querySelectorAll('.session-toolbar-metric');
+      expect(cells[1]?.querySelector('.mono')?.textContent).toBe('—');
+      expect(cells[2]?.querySelector('.mono')?.textContent).toBe('—');
+      expect(document.querySelector('.session-metric-criteria')?.textContent).toContain(`${events.length} / ${eventCount}`);
+      expect(document.querySelector('.session-metric-criteria')?.textContent).toContain(scenario==='partial'?'Incomplete':'No execution steps');
+    } finally {unmount();}
+  });
+
+  it('keeps an observed zero distinguishable from unavailable and discloses unknown statuses', () => {
+    const {unmount}=mount(<SessionToolbar session={makeSession('s',{eventCount:1})} events={[makeEvent({status:'unknown'})]} locale="en"/>);
+    try {
+      const cells=document.querySelectorAll('.session-toolbar-metric');
+      expect(cells[1]?.querySelector('.mono')?.textContent).toBe('0%');
+      expect(cells[2]?.querySelector('.mono')?.textContent).toBe('0%');
+      expect(document.querySelector('.session-metric-criteria')?.textContent).toContain('Unknown step statuses: 1');
+    } finally {unmount();}
+  });
+
+  it('honors authoritative detail pagination even when the older session eventCount looks complete', () => {
+    const {unmount}=mount(<SessionToolbar session={makeSession('s',{eventCount:1})} events={[makeEvent({kind:'test',phase:'verify'})]}
+      eventTotal={7} hasMore locale="en"/>);
+    try {
+      expect(document.querySelectorAll('.session-toolbar-metric')[1]?.querySelector('.mono')?.textContent).toBe('—');
+      expect(document.querySelector('.session-metric-criteria')?.textContent).toContain('Loaded 1 / 7');
+      expect(document.querySelector('.session-metric-criteria [role="status"]')?.textContent).toContain('Incomplete');
+    } finally {unmount();}
+  });
+
+  it('does not round a nonzero observed error ratio down to an apparently exact zero', () => {
+    const events=Array.from({length:501},(_,index)=>makeEvent({id:`s-${index}`,status:index===0?'error':'success'}));
+    const {unmount}=mount(<SessionToolbar session={makeSession('s',{eventCount:events.length})} events={events} locale="en"/>);
+    try {expect(document.querySelectorAll('.session-toolbar-metric')[2]?.querySelector('.mono')?.textContent).toBe('<1%');}
+    finally {unmount();}
+  });
+});
+
 describe('SystemPromptSection（REQ-103）', () => {
   it.each(['zh', 'en'] as const)('active toolbar keeps legacy TTFT value and exposes timing basis without IO (%s)', (locale) => {
     const fetcher = vi.spyOn(globalThis, 'fetch');

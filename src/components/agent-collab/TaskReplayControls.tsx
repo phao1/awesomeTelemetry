@@ -18,7 +18,7 @@
 import { useCallback, type KeyboardEvent } from 'react';
 
 import type { Locale } from '../../i18n.js';
-import { t } from '../../i18n.js';
+import { t, type I18nKey } from '../../i18n.js';
 import type { TeamTask } from '../../core/trace-types.js';
 import { EmptyState } from '../ui/States.js';
 
@@ -164,7 +164,7 @@ export function TaskReplayControls({
         <span className="collab-replay-task-title">{taskTitle}</span>
         <span className="collab-replay-sep" aria-hidden="true">·</span>
         <span className={`collab-replay-task-status collab-task-status-${taskStatus}`}>
-          {taskStatus}
+          {t(`team.taskStatus.${taskStatus}` as I18nKey, locale)}
         </span>
         <span className="collab-replay-sep" aria-hidden="true">·</span>
         <span className="collab-replay-activity-count">{activityCountText}</span>

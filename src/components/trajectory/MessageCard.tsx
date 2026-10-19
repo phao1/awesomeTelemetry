@@ -10,6 +10,7 @@ import type {
 } from '../../core/trace-types.js';
 import { api } from '../../api/client.js';
 import { eventDetailCache } from '../../cache/caches.js';
+import { loadEventDetailCached } from '../../cache/event-detail-loader.js';
 import { extractSubagentType } from '../../core/subagent-type.js';
 import { ErrorState, Skeleton } from '../ui/States.js';
 import { resolveToolRenderer } from './renderers/index.js';
@@ -83,6 +84,11 @@ export interface MessageCardProps {
   /** D7：时长口径行 —— durationSource !== 'native' 时渲染推导行。 */
   durationSource?: DurationSource;
   initialView?: 'rendered' | 'input' | 'output';
+  /** Explicit selected-record inspection; ordinary inline cards remain collapsed. */
+  initialExpanded?: boolean;
+  onInspect?: (eventId: string) => void;
+  /** The record inspector already provides the selected event's header. */
+  showHeader?: boolean;
   loadDetail?: (key: string, eventId: string) => Promise<TraceEvent>;
   loadRaw?: (key: string, eventId: string) => Promise<TraceEventRaw>;
 }
@@ -100,6 +106,9 @@ export function MessageCard({
   message,
   assistant,
   initialView = 'rendered',
+  initialExpanded = false,
+  onInspect,
+  showHeader = true,
   durationSource,
   loadDetail = defaultLoadDetail,
   loadRaw = defaultLoadRaw,
@@ -112,7 +121,7 @@ export function MessageCard({
     return [message.eventId];
   }, [assistant, message.eventId]);
 
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded);
   const [view, setView] = useState<CardView>(initialView);
   const [details, setDetails] = useState<Map<string, TraceEvent>>(new Map());
   const [raws, setRaws] = useState<Map<string, string>>(new Map());
@@ -125,8 +134,9 @@ export function MessageCard({
   const detailsRef = useRef<Map<string, TraceEvent>>(new Map());
   const rawsRef = useRef<Map<string, string>>(new Map());
 
-  // compact 卡是单行，永不展开（D4 rule 4）。
-  const isCompact = message.role === 'compact';
+  // Inline compact cards stay single-line (D4 rule4); explicit record inspection
+  // may open their retained Raw without expanding unrelated inline messages.
+  const isCompact = message.role === 'compact' && !initialExpanded;
   const readableMembers = assistant ? [...assistant.members, ...assistant.toolCalls] : [message];
   const hasInput = readableMembers.some((m) => m.hasInput);
   const hasOutput = readableMembers.some((m) => m.hasOutput);
@@ -153,9 +163,8 @@ export function MessageCard({
           setDetails(new Map(detailsRef.current));
           return Promise.resolve();
         }
-        return loadDetail(sessionKey, id)
+        return loadEventDetailCached(`${sessionKey}:${id}`, () => loadDetail(sessionKey, id))
           .then((loaded) => {
-            eventDetailCache.set(`${sessionKey}:${id}`, loaded);
             if (!cancelled) {
               detailsRef.current.set(id, loaded);
               setDetails(new Map(detailsRef.current));
@@ -196,9 +205,8 @@ export function MessageCard({
           setRaws(new Map(rawsRef.current));
           return Promise.resolve();
         }
-        return loadRaw(sessionKey, id)
+        return loadEventDetailCached(`${sessionKey}:${id}:raw`, () => loadRaw(sessionKey, id))
           .then((loaded) => {
-            eventDetailCache.set(`${sessionKey}:${id}:raw`, loaded);
             if (!cancelled) {
               rawsRef.current.set(id, loaded.raw ?? '');
               setRaws(new Map(rawsRef.current));
@@ -418,7 +426,7 @@ export function MessageCard({
 
   return (
     <article className={`message-card message-card-role-${role} ${message.status === 'error' ? 'message-card-failed' : ''} ${metadataOnly ? 'message-card-metadata' : ''}`}>
-      <header className="message-card-header">
+      {showHeader && <header className="message-card-header">
         <button
           type="button"
           className="message-card-toggle"
@@ -433,7 +441,7 @@ export function MessageCard({
           {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
         <span className="message-card-role-marker">
           <RoleIcon size={12} />
-          {t(ROLE_NAME_KEY[role], locale)}
+          {t(message.kind === 'agent' ? 'trajectory.role.agentRecord' : ROLE_NAME_KEY[role], locale)}
         </span>
         <span className="gantt-title" title={message.title}>
           {message.title || t(role === 'assistant' || role === 'reasoning' ? 'trajectory.reasoning.unavailable' : 'trajectory.metadata.event', locale)}
@@ -448,14 +456,17 @@ export function MessageCard({
 
 
         </button>
+        {onInspect && <button type="button" className="btn ui-btn-sm message-card-inspect"
+          onClick={() => onInspect(message.eventId)}>{t('investigation.inspect', locale)}</button>}
         {(['input', 'output'] as const).filter((target) => target === 'input' ? hasInput : hasOutput).map((target) => (
           <button key={target} type="button" className="btn ui-btn-sm"
             onClick={() => { setView(target); setExpanded(true); }}>
             {t(VIEW_KEYS[target], locale)}
           </button>
         ))}
-      </header>
+      </header>}
       {message.error && <p className="message-error-summary" role="status">{message.error}</p>}
+      {expanded && message.kind === 'agent' && <p className="hint">{t('trajectory.agentRecord.scope', locale)}</p>}
       {expanded && (
         <div className="message-card-view-control" role="group" aria-label={t('trajectory.view.label', locale)}>
           {(['rendered', 'input', 'output', 'source', 'raw'] as const).filter((key) => key === 'raw' ? message.hasRaw : metadataOnly ? key === 'rendered' : key === 'input' ? hasInput : key === 'output' ? hasOutput : true).map((key) => (

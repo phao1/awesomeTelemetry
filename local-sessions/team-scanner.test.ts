@@ -314,3 +314,40 @@ describe('§4.15 scanner 集成', () => {
     db.close();
   });
 });
+
+
+describe('real-shape multi-run source regression', () => {
+  it('scopes whole-db parts to each run and resolves call identities only inside the exact session and scope', async()=>{
+    const dir=tempDir();const root=join(dir,'agent-team');
+    writeCodeArtsSession(root,'ses_lead_0001','ses_mate_0001');
+    writeCodeArtsSession(root,'ses_lead_0002','ses_mate_0002');
+    const path=createCodeArtsDb(dir);const source=new Database(path);
+    source.prepare('INSERT INTO message(id,session_id,time_created,data) VALUES(?,?,?,?)').run('m2','ses_mate_0002',1786980712000,'{}');
+    source.prepare('INSERT INTO part(id,message_id,session_id,data) VALUES(?,?,?,?)').run('p2','m2','ses_mate_0002',JSON.stringify({type:'tool',tool:'finish-task',callID:'same-call',state:{status:'completed',input:{id:1},output:'You have finished task(id=1, content=A)'}}));
+    source.prepare('INSERT INTO part(id,message_id,session_id,data) VALUES(?,?,?,?)').run('p1-control','m1','ses_mate_0001',JSON.stringify({type:'tool',tool:'finish-task',callID:'same-call',state:{status:'completed',input:{id:1},output:'You have finished task(id=1, content=A)'}}));
+    source.close();
+    const db=newDb();
+    // Exact explicit native identities from the existing session scanner; IDs are not derived from part indexes.
+    const {deriveSessionKey}=await import('./session-key.js');
+    const addSession=db.prepare('INSERT INTO sessions(id,provider,source_agent,data_source,source_path,started_at,updated_at) VALUES(?,?,?,?,?,?,?)');
+    const addEvent=db.prepare('INSERT INTO events(session_id,id,sequence,kind,phase,started_at) VALUES(?,?,?,?,?,?)');
+    const addIdentitySource=db.prepare('INSERT INTO trace_identity_sources(id,session_key,parser_version,complete,omitted_count,reasons_json,content_sha256,updated_at) VALUES(?,?,3,1,0,?, ?,?)');
+    const addIdentity=db.prepare('INSERT INTO trace_identities(id,source_id,namespace,kind,value,scope,event_id,source_path) VALUES(?,?,?,?,?,?,?,?)');
+    for (const [index,native] of ['ses_mate_0001','ses_mate_0002'].entries()) {
+      const key=deriveSessionKey('codearts',path,native);addSession.run(key,'codearts','CodeArts','scan',path,'2026-08-17T00:00:00Z','2026-08-17T00:00:00Z');
+      addEvent.run(key,'normalized-'+index,0,'tool','execute','2026-08-17T00:00:00Z');
+      addIdentitySource.run('source-'+index,key,'[]','hash','2026-08-17T00:00:00Z');
+      addIdentity.run('identity-'+index,'source-'+index,'agent:codearts','tool_call','same-call',native,'normalized-'+index,'part.callID');
+    }
+    const {sink,ingested}=recordingSink();
+    await scanTeamSources([{provider:'codearts',root,auxiliary:[path]}],{db,sink});
+    expect(ingested).toHaveLength(2);
+    const [a,b]=ingested;
+    expect(a!.activities.filter(event=>event.kind==='task_status').map(event=>event.eventId)).toEqual(['normalized-0']);
+    expect(b!.activities.filter(event=>event.kind==='task_status').map(event=>event.eventId)).toEqual(['normalized-1']);
+    const ids=new Set(a!.evidence.map(ref=>ref.nativeId).filter(id=>id?.startsWith('p')));
+    expect(b!.evidence.filter(ref=>ref.nativeId?.startsWith('p')).some(ref=>ids.has(ref.nativeId))).toBe(false);
+    expect(b!.activities.every(event=>event.agentId!==null)).toBe(true);
+    db.close();
+  });
+});

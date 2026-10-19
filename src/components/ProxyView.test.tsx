@@ -30,6 +30,9 @@ it('opens TraceLog imports lazily from Proxy without loading source bodies or st
     await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Import TraceLog')!.click(); });
     await vi.waitFor(() => expect(container.textContent).toContain('No imported logs'));
     expect(fetcher.mock.calls.filter(([url]) => url.includes('/trace-imports'))).toHaveLength(1);
+    expect(container.querySelector('[role="dialog"]')?.classList.contains('trace-import-drawer')).toBe(true);
+    expect(container.querySelector('.trace-import-layout')).not.toBeNull();
+    expect(container.querySelector('.trace-import-upload')?.hasAttribute('open')).toBe(false);
     expect(container.querySelector('input[type="file"]')).not.toBeNull();
     expect(fetcher.mock.calls.some(([url]) => /\/(source|start)$/.test(url))).toBe(false);
   } finally { act(() => root.unmount()); container.remove(); }
@@ -756,22 +759,23 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
   it('does not resurrect cleared rows from the bounded parent live buffer', async () => {
     const oldItem = { ...fullRequest(1), hostname: 'cleared-row.test' } as unknown as ProxyRequestListItem;
     const newItem = { ...fullRequest(2), hostname: 'new-live-row.test' } as unknown as ProxyRequestListItem;
-    vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
-      if (init?.method === 'DELETE') return jsonResponse({ ok: true });
+    const fetcher = vi.fn(async (input: string, _init?: RequestInit) => {
       return String(input).includes('/proxy/requests') ? jsonResponse({ items: [oldItem], hasMore: false, nextCursor: null })
         : jsonResponse({ running: true, starting: false, port: 7779, requestCount: 1, startedAt: null });
-    }));
+    });vi.stubGlobal('fetch', fetcher);
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);
     const oldUpdate = { id: 1, hostname: oldItem.hostname, item: oldItem, requestCount: 1 };
     await act(async () => { root.render(<ProxyView locale="zh" liveUpdates={[oldUpdate]} />); });
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-    await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === '清空')!.click(); });
-    await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === '确认')!.click(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    const calls = fetcher.mock.calls.length;
+    await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === '清空当前列表')!.click(); });
+    expect(fetcher).toHaveBeenCalledTimes(calls);expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.textContent).not.toContain('cleared-row.test');
     await act(async () => { root.render(<ProxyView locale="zh" liveUpdates={[oldUpdate, { id: 2, hostname: newItem.hostname, item: newItem, requestCount: 1 }]} />); });
     expect(container.textContent).not.toContain('cleared-row.test');
     expect(container.textContent).toContain('new-live-row.test');
+    expect(fetcher.mock.calls.every(([, init]) => init?.method === undefined)).toBe(true);
     await act(async () => { root.unmount(); });
   });
   it('loads protocol analysis only on activation, escapes evidence and paginates without more requests', async () => {
@@ -805,14 +809,17 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     });
     expect(container.textContent).toContain('openai_subsets');
     expect(container.textContent).toContain('response:interrupted');
-    expect(container.querySelectorAll('summary').length).toBe(52);
+    // Keep the52 protocol disclosures bounded. Workbench maintenance/tools
+    // disclosures are separate and cannot satisfy the protocol assertion.
+    expect(container.querySelector('.capture-protocol-analysis')!.querySelectorAll('summary').length).toBe(52);
+    expect(container.querySelectorAll('.capture-tools, .capture-maintenance')).toHaveLength(2);
     expect(container.querySelector('img')).toBeNull();
     expect(container.textContent).not.toContain('shell-54');
     await act(async () => {
       [...container.querySelectorAll('button')].find(button => button.textContent === '下一页')!.click();
     });
     expect(container.textContent).toContain('shell-54');
-    expect(container.querySelectorAll('summary').length).toBe(7);
+    expect(container.querySelector('.capture-protocol-analysis')!.querySelectorAll('summary').length).toBe(7);
     expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/analysis'))).toHaveLength(1);
   });
   it.each(['ok', 'decode_error', 'resource_limit'] as const)('shows %s decoded-view provenance separately from unchanged original downloads', async status => {
@@ -923,7 +930,7 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     expect(container.textContent).toContain('下载 CA 证书');
   });
 
-  it('Frida 前置条件空态说明缺什么', async () => {
+  it('Frida 空历史不推断缺安装或平台就绪，保留明确实验性限制', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
@@ -940,8 +947,12 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(container.textContent).toContain('Frida 未安装或未找到 Trae 目标进程');
-    expect(container.textContent).toContain('macOS 暂不支持');
+    expect(container.textContent).toContain('当前返回的历史记录为空');
+    expect(container.textContent).toContain('此页不会检查安装、平台适配或注入权限');
+    expect(container.textContent).toContain('采集持久化尚未闭环');
+    expect(container.textContent).not.toContain('Frida 未安装或未找到 Trae 目标进程');
+    expect(container.querySelector<HTMLInputElement>('[data-frida-ack]')?.checked).toBe(false);
+    expect([...container.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='启动 Frida')?.disabled).toBe(true);
   });
 
   it('§7.2 懒加载：打开抽屉在 Request tab 时零 diff 请求；首次激活 Context Diff 只发一次；离开再回不重发', async () => {

@@ -41,11 +41,11 @@ export function CompareHeroHeader({
   const frugalDim = verdict.dims.find((d) => d.key === 'frugal');
   if (frugalDim !== undefined && frugalDim.winner !== 'tie') {
     summaryParts.push(
-      t('compare.hero.summary.frugal', locale).replace('{pct}', verdict.summary.tokenDiffPct.toFixed(0)),
+      t('compare.hero.summary.tokenValues', locale).replace('{left}',left.tokenUsage.total.toLocaleString()).replace('{right}',right.tokenUsage.total.toLocaleString()),
     );
   }
   const qualityDim = verdict.dims.find((d) => d.key === 'quality');
-  if (qualityDim !== undefined && qualityDim.winner !== 'tie') {
+  if (qualityDim !== undefined && verdict.summary.leftCoveragePct !== null && verdict.summary.rightCoveragePct !== null && verdict.summary.leftCoveragePct!==verdict.summary.rightCoveragePct) {
     summaryParts.push(
       t('compare.hero.summary.quality', locale)
         .replace('{left}', `${verdict.summary.leftCoveragePct.toFixed(0)}%`)
@@ -53,7 +53,7 @@ export function CompareHeroHeader({
     );
   }
   if (summaryParts.length === 0) {
-    summaryParts.push(t('compare.tie', locale));
+    summaryParts.push(t('compare.observed.noWinner', locale));
   }
 
   const side = (
