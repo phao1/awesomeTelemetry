@@ -1423,3 +1423,45 @@ acceptance. Runtime and UI source changes are recorded in separate commits.
 - All emitted CSS, including lazy chunks: 24380 bytes gzip (>16384 by7996).
   The CSS budget remains unmet; it was not waived or redefined for this save.
 - Real event logs, local runtime files and private acceptance records are excluded.
+
+
+## 2026-10-19 — M12 npm / Web CLI feature-branch verification
+
+- Reused the completed Mac package validation: 276 files, 3306 tests passed,
+  0 failed, 1 existing skip; typecheck, lint and client/server build passed.
+- Before commit: typecheck/lint and 40 focused CLI/package/recovery tests passed.
+  Corrected three diagnostic setup paths to copy/fingerprint the complete built
+  worker/chunk closure. This changes diagnostic setup, not forwarding logic or
+  assertions. Full perf:check then passed its existing hard gates.
+- The first pre-commit perf attempt stopped before A/B measurement because the
+  old setup required server-dist/assets. The corrected run below is retained;
+  no favorable performance rerun or threshold change was used.
+- Clean external-consumer tarball installation exercised HTTP resources/APIs,
+  all three workers, occupied port, SSH/no-open and graceful exit. Default Mac
+  browser opening was separately observed in Chrome, not mocked. Windows native
+  verification remains pending; no real model traffic was generated.
+
+Prior A/B sample: capture-ab-2026-10-19T01-40-41.022Z-12693.json.
+Current A/B sample: capture-ab-2026-10-19T05-10-18.039Z-18002.json.
+Each profile: 100 warm paired samples at concurrency4, 104 captures and 208
+verified originals; all profiles qualified and passed existing hard budgets.
+
+| Extra latency metric | Prior ms | Current ms | Relative | Hard budget, unchanged |
+| --- | ---: | ---: | ---: | --- |
+| http firstByte | 2.149166 | 2.244000 | +4.4% | <=20ms |
+| http e2e | 5.735750 | 5.273125 | -8.1% | <=20ms |
+| http loopP99 | 2.119679 | 2.113535 | -0.3% | <50ms |
+| https-connect firstByte | 6.830000 | 8.350250 | +22.3% | <=20ms |
+| https-connect e2e | 7.830458 | 10.120042 | +29.2% | <=20ms |
+| https-connect loopP99 | 1.986559 | 2.094079 | +5.4% | <50ms |
+| http-near-2mib firstByte | 2.012833 | 1.948832 | -3.2% | <=20ms |
+| http-near-2mib e2e | 6.214792 | 4.857542 | -21.8% | <=20ms |
+| http-near-2mib loopP99 | 2.160639 | 2.207743 | +2.2% | <50ms |
+
+HTTPS first-byte +22.3% and E2E +29.2% cross the20% relative alert. Trade-off:
+preserve the user-requested npm/Web CLI feature branch for review while keeping
+these unresolved measurements visible. This is not main/release acceptance,
+performance equivalence, an explained regression or a budget waiver. NFR §6.2
+and the commit message record the same observations. No thresholds were relaxed.
+The existing all-CSS gzip24380B exceeds16384B by7996B and remains unresolved.
+Private local histories, runtime/config files and test reports are not published.

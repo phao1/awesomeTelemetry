@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { runtimeResourcePath } from '../runtime-paths.js';
 
 import type { Database } from 'better-sqlite3';
 
@@ -310,7 +310,7 @@ export class FridaRuntime {
     this.starting = true;
     this.pid = target;
     this.emit({ running: false, pid: target });
-    const scriptPath = join(process.cwd(), 'scripts', 'frida-chat-monitor-v2.js');
+    const scriptPath = runtimeResourcePath('scripts/frida-chat-monitor-v2.js');
     try {
       const { child } = runFridaMonitor(target, scriptPath, (_capture: FridaCaptureData) => {
         // 捕获持久化由后续 proxy-writer 接线（P-3 裁剪）；此处保持状态活跃

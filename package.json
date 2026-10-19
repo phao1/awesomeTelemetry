@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19.0"
   },
   "bin": {
     "awesome-telemetry": "./bin/agent-observe.js",
@@ -20,7 +20,9 @@
     "start": "node bin/agent-observe.js",
     "perf:check": "node perf-diag/run-all.mjs",
     "pack:binary": "node scripts/pack-binary.mjs",
-    "gen:samples": "node scripts/generate-local-samples.mjs"
+    "gen:samples": "node scripts/generate-local-samples.mjs",
+    "prepack": "node scripts/verify-package.mjs",
+    "pack:smoke": "node scripts/smoke-packed-install.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
@@ -46,5 +48,20 @@
     "typescript-eslint": "^8.65.0",
     "vite": "^8.2.0",
     "vitest": "^4.1.10"
+  },
+  "description": "Local Web UI for AI coding-agent telemetry",
+  "license": "Apache-2.0",
+  "files": [
+    "bin/agent-observe.js",
+    "server-dist/**/*.js",
+    "dist/**",
+    "!dist/**/*.map",
+    "scripts/trae-extract-key.py",
+    "scripts/frida-chat-monitor-v2.js",
+    "scripts/frida-check-module.js",
+    "README.zh-CN.md"
+  ],
+  "exports": {
+    "./package.json": "./package.json"
   }
 }

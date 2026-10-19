@@ -16,12 +16,12 @@ await access(join(root, 'server-dist', 'capture-worker.js')).catch(() => { throw
 const directory = await mkdtemp(join(tmpdir(), 'capture-ab-build-'));
 try {
   await build({ configFile: false, root, logLevel: 'error', build: { ssr: join(root, 'server/proxy/capture-ab.ts'), outDir: directory, emptyOutDir: false, target: 'node20', rollupOptions: { external: ['better-sqlite3', 'chokidar', 'http-mitm-proxy', 'node-forge'], output: { entryFileNames: 'capture-ab.mjs' } } } });
-  await cp(join(root, 'server-dist', 'capture-worker.js'), join(directory, 'capture-worker.js'));
-  await cp(join(root, 'server-dist', 'assets'), join(directory, 'assets'), { recursive: true });
+  // Preserve every worker dependency regardless of the configured chunk layout.
+  await cp(join(root, 'server-dist'), directory, { recursive: true });
   await writeFile(join(directory, 'package.json'), '{"type":"module"}\n');
   await symlink(join(root, 'node_modules'), join(directory, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   const { runCaptureAb } = await import(pathToFileURL(join(directory, 'capture-ab.mjs')).href);
-  const fingerprintPaths = ['capture-ab.mjs', 'capture-worker.js', ...(await readdir(join(directory, 'assets'))).filter(name => name.endsWith('.js')).sort().map(name => 'assets/' + name)];
+  const fingerprintPaths = ['capture-ab.mjs', ...(await readdir(join(root, 'server-dist'), { recursive: true })).filter(name => name.endsWith('.js')).sort()];
   const artifacts = {};
   for (const path of fingerprintPaths) artifacts[path] = createHash('sha256').update(await readFile(join(directory, path))).digest('hex');
   const { stdout: head } = await promisify(execFile)('git', ['rev-parse', 'HEAD'], { cwd: root });

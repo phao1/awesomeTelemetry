@@ -46,7 +46,7 @@ SIGINT/SIGTERM SHALL asynchronously close the shared HTTP server (including its 
 `--enable-proxy` SHALL actually invoke the shared proxy start control after HTTP startup, using --proxy-port and the configured original body store. A starting-state acceptance is not reported as fully connected Agent traffic.
 `bin/agent-observe.js` (`#!/usr/bin/env node`) → imports `runCli` from
 `server-dist/cli.js` → `createAgentObservabilityServer()` → listen →
-optionally open the browser (open / `cmd /c start` / xdg-open).
+optionally open the browser (open / rundll32 / xdg-open; no shell).
 
 #### Scenario: listen is not blocked by prewarm
 - **GIVEN** `--prewarm-recent 50`
@@ -88,8 +88,9 @@ not reinserted then bulk-deleted on an HTTP path (storage REQ-017/019).
 1. **typecheck** `tsc -b` (tsconfig references both app and node sub-configs)
 2. **frontend SPA** `vite build` → `dist/`
 3. **server entries** `vite build --config vite.cli.config.ts` →
-   `server-dist/cli.js`, `capture-worker.js` and required shared `assets/`
-   chunks, built for Node20. Both entries/chunks must ship together; workers
+   `server-dist/cli.js`, `capture-worker.js`, `trace-import-worker.js`,
+   `codex-worker.js` and required shared chunks, built for Node20. All
+   entries/chunks must ship together; workers
    never depend on source TS execution. The normal CLI entry/path is unchanged.
 
 External deps are not bundled: `better-sqlite3`, `chokidar`, `http-mitm-proxy`,
@@ -139,3 +140,23 @@ historical baseline table in `PERF-DIAGNOSIS.md`.
 - `src/generated/` must not be hand-edited
 - G11.17 (new): `--prewarm-recent` defaults to 0, not some "reasonable"
   value. Any non-zero default reproduces v4's 200-1240x degradation
+
+
+### REQ-011: npm Web distribution
+`awesome-telemetry web [options]` SHALL reuse the legacy CLI. Bare options and
+`agent-observe` remain compatible. Use existing build outputs only; missing
+artifacts fail with build/reinstall guidance. Print the bound address and a
+usable host-local URL using the actual listener port (including port 0 and IPv6).
+Default bind remains 127.0.0.1. Open locally only after listen; inherited
+SSH_CONNECTION/SSH_TTY or --no-open suppress opening. Never infer SSH forwarding.
+Browser launching SHALL pass argument arrays without a shell and failure SHALL
+leave the server running. Existing API/security/static constraints remain.
+
+The npm files allowlist SHALL include built frontend/server/workers/shared chunks
+and optional runtime helper scripts with package-relative paths, excluding local
+data, credentials, node_modules and source maps. Pack SHALL validate artifacts
+without building. Keep private=true until registry ownership and publication are
+separately confirmed; pack/install tests do not publish. Validate the tarball in
+a fresh consumer directory without NODE_PATH/NODE_OPTIONS/repository dependencies,
+including actual HTTP resources/API, workers, occupied port and graceful exit.
+Platform-branch unit tests do not count as actual Windows validation.

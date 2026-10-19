@@ -1,10 +1,10 @@
-import { exec } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { runtimeResourcePath } from './runtime-paths.js';
+import { handoffBrowser, launchedThroughSsh, validateBindHost, webUrl } from './web-launch.js';
 
 import { createAgentObservabilityServer } from './server.js';
 import { runMonitoredLaunch, runMonitorDiagnostics } from './proxy/monitored-launch.js';
@@ -82,6 +82,7 @@ export function prewarmWarning(prewarmRecent: number): string | null {
 }
 
 export function parseCliArgs(argv: readonly string[]): CliOptions {
+  if (argv[0] === 'web') argv = argv.slice(1);
   let host = DEFAULT_HOST;
   let port = DEFAULT_PORT;
   let open = true;
@@ -102,7 +103,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
       return { value: argv[index]!.slice(flag.length + 1), next: index };
     }
     const value = argv[index + 1];
-    if (value === undefined) {
+    if (value === undefined || value === '' || value.startsWith('--')) {
       throw new Error(`${flag} requires a value`);
     }
     return { value, next: index + 1 };
@@ -111,6 +112,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     const flag = arg.split('=')[0] ?? arg;
+    if (['--no-open', '--enable-proxy', '--no-gzip'].includes(flag) && arg !== flag) throw new Error(`${flag} does not take a value`);
     if (flag === '--host') {
       ({ value: host, next: i } = takeValue('--host', i));
     } else if (flag === '--port') {
@@ -156,6 +158,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     }
   }
 
+  validateBindHost(host);
   return {
     host,
     port,
@@ -175,7 +178,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
 
 function parsePort(raw: string): number {
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 0 || value > 65535) {
+  if (!/^\d+$/.test(raw) || !Number.isInteger(value) || value < 0 || value > 65535) {
     throw new Error(`Invalid port: ${raw}`);
   }
   return value;
@@ -190,7 +193,7 @@ function parseNonNegativeInt(raw: string, flag: string): number {
 }
 
 function printHelp(): void {
-  console.log(`agent-observe [options]
+  console.log(`awesome-telemetry web [options] (legacy: agent-observe [options])
 
   launch --server <loopback-url> --profile <uuid> --revision <n> -- [Agent arguments]
   diagnose --server <loopback-url> --profile <uuid> --revision <n> [--json]
@@ -198,9 +201,9 @@ function printHelp(): void {
 
   --host <host>                bind address (default 127.0.0.1)
   --port <port>                HTTP port (default 4173)
-  --no-open                    do not auto-open the browser
+  --no-open                    do not auto-open the browser (SSH also disables opening)
   --config-root <path>         config directory (default process.cwd())
-  --db-path <path>             SQLite path (default <config-root>/agent-observe-data/observe.sqlite)
+  --db-path <path>             SQLite path (default <config-root>/awesome-telemetry-data/observe.sqlite)
   --proxy-port <port>          MITM port (default 7779)
   --enable-proxy               start MITM proxy on launch
   --prewarm-recent <n>         prewarm the most recent N sessions (default 0 = fully on demand)
@@ -255,7 +258,7 @@ export function runStartupSelfCheck(
   console.log(
     `Startup self-check passed: schemaVersion=${SCHEMA_VERSION} sessions=${sessionCount} ` +
       `db=${(dbSizeBytes / 1024 / 1024).toFixed(2)}MB wal=${(walSizeBytes / 1024 / 1024).toFixed(2)}MB ` +
-      `http://${options.host}:${options.port}/`,
+      `bind=${options.host}:${options.port}`,
   );
   return { sessionCount, dbSizeBytes, walSizeBytes };
 }
@@ -283,6 +286,8 @@ export async function runCli(argv: readonly string[]): Promise<void> {
     return;
   }
   const options = parseCliArgs(argv);
+  if (!existsSync(runtimeResourcePath('dist/index.html'))) throw new Error('Built Web UI is missing. In a source checkout run npm install then npm run build; for an installed package, reinstall a complete package.');
+  await probePort(options.port, options.host);
   const db = openWritable(options.dbPath);
   const config = loadLocalSessionConfig(configLoadOptions(options.configRoot));
   // G2.3：定价覆盖层（config/model-pricing.json + 用户级）在扫描前生效，
@@ -353,6 +358,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   const server: Server = createAgentObservabilityServer({
     db,
     config: enriched,
+    distDir: runtimeResourcePath('dist'),
     dbPath: options.dbPath,
     userConfigPath: configLoadOptions(options.configRoot).userConfigPath,
     captureDirectory: options.captureDirectory,
@@ -366,7 +372,6 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   // §7.1（calibrate-tokens-and-compare-report）：友好报错优先；
   // TOCTOU 窗口由 listen 自身的 error 处理兜底。
   try {
-    await probePort(options.port, options.host);
     await listen(server, options.port, options.host);
   } catch (error) {
     await new Promise<void>((resolve, reject) => server.close(closeError => closeError === undefined ? resolve() : reject(closeError)));
@@ -377,8 +382,12 @@ export async function runCli(argv: readonly string[]): Promise<void> {
     throw error;
   }
 
-  const url = `http://${options.host}:${options.port}/`;
-  console.log(`AwesomeTelemetry is running at ${url}`);
+  const boundAddress = server.address();
+  if (boundAddress === null || typeof boundAddress === 'string') throw new Error('HTTP listener has no TCP address');
+  const url = webUrl(options.host, boundAddress.port);
+  console.log(`AwesomeTelemetry is running at ${url} (bind ${options.host}:${boundAddress.port})`);
+  const ssh = launchedThroughSsh();
+  if (ssh) console.log('SSH session: browser opening disabled. This URL is on the server; use your own local forwarded address/port.');
   if (options.enableProxy) {
     const address = server.address();
     const controlPort = address !== null && typeof address !== 'string' ? address.port : options.port;
@@ -391,9 +400,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
     console.log(`MITM startup requested on 127.0.0.1:${options.proxyPort}; connection status is available in the Web monitor`);
   }
 
-  if (options.open) {
-    await openBrowser(url);
-  }
+  await handoffBrowser(url, options.open);
 }
 
 /** CLI owns SQLite; only the server's successful ownership-release callback
@@ -465,28 +472,4 @@ export function probePort(port: number, host: string): Promise<void> {
       });
     });
   });
-}
-
-const execAsync = promisify(exec);
-
-async function openBrowser(url: string): Promise<void> {
-  const command = openCommand(url);
-  try {
-    await execAsync(command);
-  } catch (err) {
-    console.warn(
-      `Failed to open browser: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-}
-
-function openCommand(url: string): string {
-  switch (process.platform) {
-    case 'darwin':
-      return `open ${url}`;
-    case 'win32':
-      return `cmd /c start "" ${url}`;
-    default:
-      return `xdg-open ${url}`;
-  }
 }

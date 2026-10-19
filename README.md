@@ -1,5 +1,61 @@
 # AwesomeTelemetry
 
+## npm / npx local Web UI (package preparation — unpublished)
+
+The intended public package name is `awesome-telemetry`; registry ownership has
+not been confirmed and this version has **not been published**. `private: true`
+remains a publication guard. Do not assume `npx awesome-telemetry web` currently
+resolves to this project. After a separately approved publication, that will be
+the entry command; `agent-observe` remains a compatibility alias.
+
+From source (Node >=20.19, npm):
+
+```bash
+npm install
+npm run build
+npm start -- web
+npm start -- web --no-open
+```
+
+Startup uses existing `dist/` and `server-dist/`; it never runs a build. Missing
+artifacts give build/reinstall guidance. The server defaults to
+`http://127.0.0.1:4173/`, opens the default browser after listening, and keeps
+serving if opening fails. `--no-open` disables opening. An inherited
+`SSH_CONNECTION` or `SSH_TTY` also disables opening and prints the server URL;
+use your SSH client's actual forwarded URL/port. No forwarded port is guessed.
+`--port 0` selects a free port and prints the actual port. `--host` controls the
+bind address; wildcard binds display a loopback browser URL on that host.
+Existing local API Host/Origin restrictions still apply. Config/data remain in
+the chosen `--config-root` (default current directory), outside installed code.
+
+To verify an unpublished tarball:
+
+```bash
+npm run build
+npm pack --pack-destination /tmp
+npm run pack:smoke -- /tmp/awesome-telemetry-0.1.0.tgz --open-browser
+# Or from a separate directory:
+npm install /tmp/awesome-telemetry-0.1.0.tgz
+npx --offline awesome-telemetry web --no-open
+```
+
+`npm pack` verifies existing artifacts without rebuilding. The tarball contains
+built Web/server/worker JavaScript, required helper scripts, README and license;
+it excludes node_modules, source maps, source/tests, local databases, captures,
+certificates and development notes. Native `better-sqlite3` is installed for the
+consumer's OS/architecture/Node ABI. A missing prebuilt binary requires a native
+build toolchain (Windows: MSVC plus Python/node-gyp requirements; macOS: Xcode
+Command Line Tools plus Python). Optional Trae SQLCipher/Frida integrations still
+require their separately installed Python/tools. Copying macOS node_modules is
+not Windows compatibility testing. Windows browser-command branches are tested
+in simulation; actual platform validation must be reported separately.
+
+This independently implemented flow was informed by the
+[dsh Web runtime](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/bundle/web-app/src/index.ts)
+and [clean packed-install verification](https://github.com/deepseek-ai/deepseek-harness/blob/master/scripts/release/verify-packed-install.ts).
+No dsh source code or package namespace is included.
+
+
 **English** | [简体中文](README.zh-CN.md)
 
 Local web UI that reads and analyzes session traces from 9 AI coding assistants

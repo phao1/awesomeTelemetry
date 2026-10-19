@@ -1,7 +1,16 @@
 #!/usr/bin/env node
-import { runCli } from '../server-dist/cli.js';
+import { existsSync } from 'node:fs';
 
-runCli(process.argv.slice(2)).catch((err) => {
-  console.error(err instanceof Error ? err.message : String(err));
-  process.exit(1);
-});
+const entry = new URL('../server-dist/cli.js', import.meta.url);
+if (!existsSync(entry)) {
+  console.error('AwesomeTelemetry build is missing. Source checkout: npm install && npm run build, then npm start -- web. Installed package: reinstall a complete package. No build is run automatically.');
+  process.exitCode = 1;
+} else {
+  try {
+    const { runCli } = await import(entry.href);
+    await runCli(process.argv.slice(2));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}

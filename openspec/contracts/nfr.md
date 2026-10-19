@@ -721,6 +721,38 @@ long-soak acceptance, §7 work and the remaining41 tasks are still incomplete;
 the user's separate deferral of database splitting/new storage-boundary tests
 stands. No automatic promotion to main or release is authorized.
 
+
+### 6.2 npm / Web CLI feature-branch measurements — 2026-10-19
+
+The M12 npm/Web CLI branch uses the existing forwarding core. Its diagnostic
+setup now copies/fingerprints the complete built worker/chunk closure so flat
+server-dist output can be checked. The first pre-commit attempt failed during
+old directory setup, before any A/B sample. The corrected run is retained below.
+No hard threshold, performance assertion or prior measurement was changed.
+
+Prior: capture-ab-2026-10-19T01-40-41.022Z-12693.json; current: capture-ab-2026-10-19T05-10-18.039Z-18002.json.
+Each profile has100 warm paired samples/concurrency4 and104captures/208verified
+originals. Existing hard gates pass; actual loop p99 samples are nonzero.
+
+| Extra latency metric | Prior ms | Current ms | Relative | Hard budget, unchanged |
+| --- | ---: | ---: | ---: | --- |
+| http firstByte | 2.149166 | 2.244000 | +4.4% | <=20ms |
+| http e2e | 5.735750 | 5.273125 | -8.1% | <=20ms |
+| http loopP99 | 2.119679 | 2.113535 | -0.3% | <50ms |
+| https-connect firstByte | 6.830000 | 8.350250 | +22.3% | <=20ms |
+| https-connect e2e | 7.830458 | 10.120042 | +29.2% | <=20ms |
+| https-connect loopP99 | 1.986559 | 2.094079 | +5.4% | <50ms |
+| http-near-2mib firstByte | 2.012833 | 1.948832 | -3.2% | <=20ms |
+| http-near-2mib e2e | 6.214792 | 4.857542 | -21.8% | <=20ms |
+| http-near-2mib loopP99 | 2.160639 | 2.207743 | +2.2% | <50ms |
+
+HTTPS first-byte +22.3% and E2E +29.2% remain unresolved relative alerts. The
+recorded trade-off for this user-requested feature-branch save is to preserve
+the Mac-verified npm/Web workflow for review while retaining those alerts and
+the existing CSS gzip24380B versus16384B gap. This is not a main-branch merge,
+release acceptance, a claim of performance equivalence or causal attribution.
+The commit message and PERF-BASELINE.md preserve this scope; no budget is waived.
+
 ---
 
 ## 7. Escalation signals

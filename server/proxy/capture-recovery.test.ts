@@ -17,8 +17,8 @@ beforeAll(async () => {
   buildDirectory = await mkdtemp(join(tmpdir(), 'capture-recovery-build-'));
   await build({ configFile: false, logLevel: 'error', build: { ssr: join(process.cwd(), 'server/proxy/capture-recovery.fixture.mjs'), target: 'node20', outDir: buildDirectory, emptyOutDir: false,
     rollupOptions: { external: ['better-sqlite3', 'chokidar', 'http-mitm-proxy', 'node-forge'], output: { entryFileNames: 'fixture.mjs' } } } });
-  await cp(join(process.cwd(), 'server-dist/capture-worker.js'), join(buildDirectory, 'capture-worker.js'));
-  await cp(join(process.cwd(), 'server-dist/assets'), join(buildDirectory, 'assets'), { recursive: true });
+  // Copy the complete worker/chunk closure regardless of build chunk layout.
+  await cp(join(process.cwd(), 'server-dist'), buildDirectory, { recursive: true });
   await writeFile(join(buildDirectory, 'package.json'), '{"type":"module"}');
   await symlink(join(process.cwd(), 'node_modules'), join(buildDirectory, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
 }, 15_000);

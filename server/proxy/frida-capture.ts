@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { runtimeResourcePath } from '../runtime-paths.js';
 
 // P-3：Frida 需要 Windows + Trae 进程，macOS 无法端到端验证。spawn 异步，不用 spawnSync（REQ-013/G11.6）。
 
@@ -53,7 +53,7 @@ export async function discoverFridaTarget(): Promise<number> {
   if (process.platform !== 'win32') {
     throw new Error('FRIDA_TARGET_NOT_FOUND: Frida 捕获仅支持 Windows');
   }
-  const script = join(process.cwd(), 'scripts', 'frida-check-module.js');
+  const script = runtimeResourcePath('scripts/frida-check-module.js');
   if (!existsSync(script)) {
     throw new Error('FRIDA_TARGET_NOT_FOUND: 探测脚本缺失');
   }

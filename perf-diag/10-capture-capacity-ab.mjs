@@ -29,10 +29,10 @@ try {
     } }];
     await build({ configFile: false, root, plugins, logLevel: 'error', build: { ssr: join(root, 'server/proxy/capture-ab.ts'), outDir, emptyOutDir: false, target: 'node20', rollupOptions: { external: ['better-sqlite3', 'chokidar', 'http-mitm-proxy', 'node-forge'], output: { entryFileNames: 'capture-ab.mjs' } } } });
     assert.equal(changed, variant === 'production' ? 0 : 2);
-    await cp(join(root, 'server-dist/capture-worker.js'), join(outDir, 'capture-worker.js'));
-    await cp(join(root, 'server-dist/assets'), join(outDir, 'assets'), { recursive: true });
+    // Preserve every worker dependency regardless of the configured chunk layout.
+    await cp(join(root, 'server-dist'), outDir, { recursive: true });
     await symlink(join(root, 'node_modules'), join(outDir, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
-    const files = ['capture-ab.mjs', 'capture-worker.js', ...(await readdir(join(outDir, 'assets'))).filter(name => name.endsWith('.js')).sort().map(name => 'assets/' + name)];
+    const files = ['capture-ab.mjs', ...(await readdir(join(root, 'server-dist'), { recursive: true })).filter(name => name.endsWith('.js')).sort()];
     const artifacts = {};
     for (const file of files) artifacts[file] = digest(await readFile(join(outDir, file)));
     variants.set(variant, { run: (await import(pathToFileURL(join(outDir, 'capture-ab.mjs')).href)).runCaptureAb, artifacts, changed });

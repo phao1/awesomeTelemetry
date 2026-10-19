@@ -11,7 +11,11 @@ export default defineConfig({
     rollupOptions: {
       input: { cli: 'server/cli.ts', 'capture-worker': 'server/proxy/capture-worker.ts', 'trace-import-worker': 'server/trace-import/worker.ts', 'codex-worker': 'server/codex/worker.ts' },
       external: ['better-sqlite3', 'chokidar', 'http-mitm-proxy', 'node-forge'],
-      output: { entryFileNames: '[name].js', format: 'es' },
+      output: {
+        entryFileNames: '[name].js',
+        chunkFileNames: '[name]-[hash].js',
+        format: 'es',
+      },
     },
   },
 });
