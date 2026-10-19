@@ -4,11 +4,57 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { gzipSync, brotliCompressSync, deflateSync } from 'node:zlib';
 import { CaptureProcessor, CaptureProcessingError, type CaptureJob } from './capture-processor.js';
 import { CaptureResources } from './capture-resources.js';
+import type { CaptureNetworkTiming } from '../../src/core/trace-types.js';
+import { WS_ARCHIVE_MAGIC, wsRecordHeader } from './websocket-archive.js';
 
 const job = (): CaptureJob => ({ hostname: 'synthetic.invalid', url: '/v1/messages', requestBody: '{"model":"synthetic","system":"你好","messages":[],"metadata":{"agent_provider":"claude","session_id":"native-one"}}', responseBody: 'event: message_start\r\ndata: {"message":{"id":"msg_1","usage":{"input_tokens":12}}}\r\n\r\nevent: message_delta\r\ndata: {"usage":{"output_tokens":5}}\r\n\r\n', requestHeaders: {}, responseHeaders: {}, isStreaming: true, previewTruncated: false });
 const faultWorker = join(process.cwd(), 'server/proxy/capture-worker.fixture.mjs');
 
 describe('bounded real worker capture processor', () => {
+  it('retains exact Codex WS session membership without turning a connection into a model call', async () => {
+    const processor = new CaptureProcessor();
+    const body = Buffer.from(JSON.stringify({ type: 'response.create', client_metadata: { session_id: 'codex-native',
+      'x-codex-turn-metadata': JSON.stringify({ session_id: 'codex-native', thread_id: 'codex-native' }) }, model: 'synthetic', input: [] }));
+    const requestBytes = Buffer.concat([WS_ARCHIVE_MAGIC, wsRecordHeader('message', false, 1, 0, body.length), body]);
+    try {
+      const result = await processor.submit({ ...job(), evidenceFormat: 'websocket_archive_v1', requestHeaders: {}, requestBytes, responseBytes: WS_ARCHIVE_MAGIC });
+      expect(result.parsed).toMatchObject({ model: null, inputTokens: null, outputTokens: null, parserRoute: 'websocket_connection' });
+      expect(result.identities.completeness.complete).toBe(true);
+      expect(result.identities.items).toEqual([expect.objectContaining({ namespace: 'agent:codex', kind: 'session', value: 'codex-native', scope: null, sourcePath: 'awsp1.request[1].client_metadata.session_id' })]);
+      const partial = await processor.submit({ ...job(), evidenceFormat: 'websocket_archive_v1', requestHeaders: {}, requestBytes, responseBytes: WS_ARCHIVE_MAGIC, requestTruncated: true });
+      expect(partial.identities.completeness.complete).toBe(false); expect(partial.identities.completeness.reasons).toContain('source_preview_truncated');
+    } finally { await processor.close(); }
+  });
+  it('classifies recorded arrivals in the actual worker without replacing them with worker time or detaching caller arrays', async () => {
+    const processor = new CaptureProcessor();
+    const parts = [': ping\n\n', 'data: {"choices":[{"delta":{"content":"中文🙂"}}]}\n\n', 'data: [DONE]\n\n'];
+    const responseBytes = Buffer.from(parts.join(''));
+    let offset = 0;
+    const offsets = Uint32Array.from(parts.map(part => offset += Buffer.byteLength(part)));
+    const elapsedMs = Float64Array.of(150, 800, 1900);
+    const timing: CaptureNetworkTiming = { version: 1, clock: 'proxy_monotonic', responseHeadersMs: 100, firstBodyByteMs: 150,
+      firstContentMs: null, firstContentKind: null, firstContentBasis: null, completedMs: 2000,
+      contentTimingStatus: 'not_collected', serverTiming: 'native;dur=700', serverTimingTruncated: false };
+    const source = { ...job(), url: '/v1/chat/completions', requestBody: '{"model":"synthetic","messages":[]}', responseBody: null,
+      responseBytes, timing, responseTimeline: { offsets, elapsedMs, count: 3, limited: false }, responseTruncated: false };
+    const snapshot = JSON.stringify(source);
+    try {
+      const result = await processor.submit(source);
+      expect(result.workerThreadId).toBeGreaterThan(0);
+      expect(result.timing).toEqual({ ...timing, firstContentMs: 800, firstContentKind: 'text', firstContentBasis: 'sse_event_dispatch', contentTimingStatus: 'observed' });
+      expect(JSON.stringify(source)).toBe(snapshot); expect(offsets.byteLength).toBe(12); expect(elapsedMs.byteLength).toBe(24);
+      expect(processor.status().bytes).toBe(0);
+    } finally { await processor.close(); }
+  });
+  it('charges arrival arrays against processor admission before cloning or worker transfer', async () => {
+    const processor = new CaptureProcessor({ maxBytes: 49152 });
+    const responseTimeline = { offsets: new Uint32Array(4096), elapsedMs: new Float64Array(4096), count: 0, limited: true };
+    try {
+      await expect(processor.submit({ ...job(), responseTimeline })).rejects.toMatchObject({ status: 'queue_full' });
+      expect(responseTimeline.offsets.byteLength + responseTimeline.elapsedMs.byteLength).toBe(49152);
+      expect(processor.status().bytes).toBe(0);
+    } finally { await processor.close(); }
+  });
   it('enforces job admission across processors and releases global reservations after real termination', async () => {
     const resources = new CaptureResources({ jobs: 1, workers: 1 });
     const first = new CaptureProcessor({ resources, workerPath: faultWorker, timeoutMs: 1000 });

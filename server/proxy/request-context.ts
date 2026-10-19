@@ -1,5 +1,7 @@
 import { StringDecoder } from 'node:string_decoder';
 import type { CaptureResources } from './capture-resources.js';
+import type { CaptureNetworkTiming } from '../../src/core/trace-types.js';
+import { ARRIVAL_BYTES, ARRIVAL_POINT_LIMIT, type ResponseArrivalTimeline } from './network-timing.js';
 
 /** Fixed-size blocks prevent one retained object per tiny network chunk. */
 class BytePreview {
@@ -82,10 +84,23 @@ export class RequestContext {
   private responseDisplayTruncated = false;
   requestPreviewTruncated = false;
   responsePreviewTruncated = false;
-  private readonly startedMonotonic = performance.now();
+  private readonly startedMonotonic: number;
+  private readonly monotonic: () => number;
+  private headersMs: number | null = null;
+  private bodyByteMs: number | null = null;
+  private completedMs: number | null = null;
+  private serverTiming: string | null = null;
+  private serverTimingTruncated = false;
+  private arrivalOffsets: Uint32Array | null = null;
+  private arrivalElapsed: Float64Array | null = null;
+  private arrivalCount = 0;
+  private arrivalCharge = 0;
+  private arrivalLimited = false;
+  private arrivalTaken = false;
   private transportEnd: { completedAt: string; durationMs: number } | null = null;
 
-  constructor(init: RequestContextInit, counter = 0, resources?: CaptureResources) {
+  constructor(init: RequestContextInit, counter = 0, resources?: CaptureResources, monotonic: () => number = () => performance.now()) {
+    this.monotonic = monotonic; this.startedMonotonic = monotonic();
     this.resources = resources;
     this.requestBytes = new BytePreview(resources); this.responseBytes = new BytePreview(resources);
     if (resources !== undefined) {
@@ -125,18 +140,23 @@ export class RequestContext {
     if (!this.requestDisplayTruncated) this.body += this.requestDecoder.end();
   }
 
-  appendResponseBytes(chunk: Buffer): void {
+  appendResponseBytes(chunk: Buffer): string {
+    const elapsed = this.elapsed();
+    if (chunk.length > 0) this.bodyByteMs ??= elapsed;
     this.responseObserved += chunk.length;
-    if (this.previewResourceLimited) return;
+    if (this.previewResourceLimited) { this.arrivalLimited ||= chunk.length > 0; return ''; }
     const accepted = this.responseBytes.append(chunk); this.responseAccepted += accepted;
     this.responsePreviewTruncated ||= accepted < chunk.length;
-    if (this.responseBytes.budgetLimited) { this.limitResources(); return; }
+    if (this.responseBytes.budgetLimited) { this.limitResources(); return ''; }
+    if (accepted > 0) this.recordArrival(this.responseAccepted, elapsed);
+    this.arrivalLimited ||= accepted < chunk.length;
     const remaining = Math.max(0, 64 * 1024 - this.responsePreviewBytes);
     const part = chunk.subarray(0, remaining);
     this.responseDisplayTruncated ||= part.length < chunk.length;
     this.responsePreviewBytes += part.length;
     const text = this.responseDecoder.write(part);
     if (text !== '') this.appendChunk(text);
+    return text;
   }
 
   finishResponseBody(): void {
@@ -154,10 +174,54 @@ export class RequestContext {
     return { requestBytes: this.requestBytes.take(), responseBytes: this.responseBytes.take() };
   }
 
+  markResponseHeaders(headers: Record<string, string | string[]>): void {
+    if (this.headersMs !== null) return;
+    this.headersMs = this.elapsed();
+    const value = Object.entries(headers).find(([key]) => key.toLowerCase() === 'server-timing')?.[1];
+    const raw = Array.isArray(value) ? value.join(',') : value;
+    this.serverTiming = raw === undefined ? null : raw.slice(0, 512);
+    this.serverTimingTruncated = raw !== undefined && raw.length > 512;
+  }
+
+  networkTiming(): CaptureNetworkTiming {
+    const ms = (value: number | null): number | null => value === null ? null : Math.round(value);
+    return { version: 1, clock: 'proxy_monotonic', responseHeadersMs: ms(this.headersMs), firstBodyByteMs: ms(this.bodyByteMs),
+      firstContentMs: null, firstContentKind: null, firstContentBasis: null, completedMs: ms(this.completedMs),
+      contentTimingStatus: this.arrivalLimited ? 'preview_limit' : 'not_collected', serverTiming: this.serverTiming, serverTimingTruncated: this.serverTimingTruncated };
+  }
+
+  /** Transfer ownership logically; the processor clones before worker transfer. */
+  takeResponseTimeline(): ResponseArrivalTimeline | undefined {
+    if (this.arrivalTaken || this.arrivalOffsets === null && !this.arrivalLimited) return undefined;
+    this.arrivalTaken = true;
+    const result = { offsets: this.arrivalOffsets ?? new Uint32Array(0), elapsedMs: this.arrivalElapsed ?? new Float64Array(0),
+      count: this.arrivalCount, limited: this.arrivalLimited };
+    this.arrivalOffsets = null; this.arrivalElapsed = null;
+    return result;
+  }
+
+  private elapsed(): number { return Math.max(0, this.monotonic() - this.startedMonotonic); }
+
+  private recordArrival(offset: number, elapsed: number): void {
+    if (this.arrivalLimited || this.arrivalTaken) return;
+    if (this.arrivalCount >= ARRIVAL_POINT_LIMIT) { this.arrivalLimited = true; return; }
+    if (this.arrivalOffsets === null) {
+      if (this.resources !== undefined && !this.resources.reservePreview(ARRIVAL_BYTES)) { this.arrivalLimited = true; return; }
+      this.arrivalCharge = this.resources === undefined ? 0 : ARRIVAL_BYTES;
+      this.arrivalOffsets = new Uint32Array(ARRIVAL_POINT_LIMIT); this.arrivalElapsed = new Float64Array(ARRIVAL_POINT_LIMIT);
+    }
+    this.arrivalOffsets[this.arrivalCount] = offset; this.arrivalElapsed![this.arrivalCount] = elapsed;
+    this.arrivalCount += 1;
+  }
+
   get previewDroppedBytes(): { request: number; response: number } {
     return { request: this.requestObserved - this.requestAccepted, response: this.responseObserved - this.responseAccepted };
   }
-  releaseRawPreviews(): void { this.requestBytes.clear(); this.responseBytes.clear(); }
+  releaseRawPreviews(): void {
+    this.requestBytes.clear(); this.responseBytes.clear();
+    this.arrivalOffsets = null; this.arrivalElapsed = null;
+    this.resources?.releasePreview(this.arrivalCharge); this.arrivalCharge = 0;
+  }
   releasePreviews(): void {
     this.releaseRawPreviews(); this.body = ''; this.chunks.length = 0;
     this.collectorRelease?.(); this.collectorRelease = null;
@@ -165,6 +229,7 @@ export class RequestContext {
   private limitResources(): void {
     if (this.previewResourceLimited) return;
     this.previewResourceLimited = true; this.resources?.notePreviewLimit();
+    this.arrivalLimited = true;
     this.requestAccepted = 0; this.responseAccepted = 0;
     this.requestPreviewTruncated = true; this.responsePreviewTruncated = true;
     this.requestDisplayTruncated = true; this.responseDisplayTruncated = true;
@@ -177,7 +242,10 @@ export class RequestContext {
 
   /** Capture once at transport end, before worker queue/flush/SQLite latency. */
   markTransportEnd(): { completedAt: string; durationMs: number } {
-    this.transportEnd ??= { completedAt: new Date().toISOString(), durationMs: Math.max(0, Math.round(performance.now() - this.startedMonotonic)) };
+    if (this.transportEnd === null) {
+      this.completedMs = this.elapsed();
+      this.transportEnd = { completedAt: new Date().toISOString(), durationMs: Math.round(this.completedMs) };
+    }
     return { ...this.transportEnd };
   }
 

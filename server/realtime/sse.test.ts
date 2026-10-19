@@ -42,9 +42,20 @@ function fakeRes(): ServerResponse {
 }
 
 describe('REQ-005/006 SSE 广播器', () => {
+  it('sends source hints only to the matching selected feed, without replay or unrelated IDs', () => {
+    const selected = new FakeRes(), other = new FakeRes(), metadata = new FakeRes();
+    addSseClient(selected as unknown as ServerResponse, { requestId: 'ws-selected' });
+    addSseClient(other as unknown as ServerResponse, { requestId: 'ws-other' });
+    addSseClient(metadata as unknown as ServerResponse);
+    eventBus.emit('proxy_sources_changed', { requestIds: ['ws-selected', 'ws-private-other'] });
+    expect(selected.chunks.join('')).toContain('event: proxy_sources_changed\ndata: {"requestIds":["ws-selected"]}');
+    expect(selected.chunks.join('')).not.toContain('ws-private-other');
+    expect(other.chunks.join('')).not.toContain('proxy_sources_changed');
+    expect(metadata.chunks.join('')).not.toContain('proxy_sources_changed');
+  });
   it('bounds a real HTTP writable backlog while a healthy HTTP subscriber continues receiving', async () => {
     const baseline = sseResourceStatus().slowSseDisconnects;
-    const server = createServer((req, res) => { if (req.url === '/blocked') res.cork(); addSseClient(res); });
+    const server = createServer((req, res) => { if (req.url === '/blocked') res.cork(); addSseClient(res, { requestId: 'synthetic' }); });
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     const port = (server.address() as AddressInfo).port;
     let healthyFrames = 0;
@@ -105,7 +116,7 @@ describe('REQ-005/006 SSE 广播器', () => {
     eventBus.emit('scan_completed', { provider: 'all', count: 9 });
     expect(slow.destroyed).toBe(true); expect(fast.destroyed).toBe(false);
     expect(fast.chunks.join('')).toContain('"count":9');
-    eventBus.emit('proxy_stream_chunk', { requestId: 'synthetic', chunk: 'x'.repeat(256 * 1024) });
+    eventBus.emit('sessions_changed', { keys: ['x'.repeat(256 * 1024)], count: 1 });
     expect(fast.destroyed).toBe(true); expect(eventBus.totalListenerCount()).toBe(0);
   });
   it('rejects excess subscriptions before 200/registration, using the unified 503 envelope', () => {
@@ -128,6 +139,47 @@ describe('REQ-005/006 SSE 广播器', () => {
     expect(fake.chunks.join('')).toContain('event: connected');
     // 跟随 SCHEMA_VERSION 常量，避免每次 schema 升版都要改断言字面量
     expect(fake.chunks.join('')).toContain(`"schemaVersion":${SCHEMA_VERSION}`);
+  });
+
+  it('replays metadata emitted without clients, never body fragments, with ordered event ids', () => {
+    const first = new FakeRes(); const stop = addSseClient(first as unknown as ServerResponse);
+    const cursor = /id: ([^\n]+)/.exec(first.chunks.join(''))![1]!;
+    stop();
+    eventBus.emit('proxy_request', { id: 42, hostname: 'loopback' });
+    eventBus.emit('proxy_stream_chunk', { requestId: 'req-sensitive', chunk: 'sensitive original fragment' });
+    const second = new FakeRes(); addSseClient(second as unknown as ServerResponse, { lastEventId: cursor });
+    const text = second.chunks.join('');
+    expect(text).toContain('"resume":"replayed"');
+    expect(text).toContain('"id":42');
+    expect(text.match(/event: proxy_request/g)).toHaveLength(1);
+    expect(text).not.toContain('sensitive original fragment');
+    expect(text.lastIndexOf('id: ')).toBeGreaterThan(text.indexOf('event: proxy_request'));
+  });
+
+  it('only an explicitly selected client receives its live chunks and end, without metadata replay', () => {
+    const global = new FakeRes(), selected = new FakeRes();
+    addSseClient(global as unknown as ServerResponse);
+    addSseClient(selected as unknown as ServerResponse, { requestId: 'selected' });
+    eventBus.emit('proxy_stream_chunk', { requestId: 'other', chunk: 'other body' });
+    eventBus.emit('proxy_stream_chunk', { requestId: 'selected', chunk: 'selected body' });
+    eventBus.emit('proxy_stream_ended', { requestId: 'selected' });
+    eventBus.emit('scan_completed', { provider: 'all', count: 777 });
+    expect(global.chunks.join('')).not.toContain('selected body');
+    expect(global.chunks.join('')).toContain('"count":777');
+    expect(selected.chunks.join('')).toContain('selected body');
+    expect(selected.chunks.join('')).toContain('event: proxy_stream_ended');
+    expect(selected.chunks.join('')).not.toContain('other body');
+    expect(selected.chunks.join('')).not.toContain('"count":777');
+    expect(selected.chunks.join('')).not.toContain('id: ');
+  });
+
+  it('advertises reset after process epoch changes rather than silently replaying a partial tail', () => {
+    const first = new FakeRes(); addSseClient(first as unknown as ServerResponse);
+    const cursor = /id: ([^\n]+)/.exec(first.chunks.join(''))![1]!;
+    closeSseBroadcaster();
+    const second = new FakeRes(); addSseClient(second as unknown as ServerResponse, { lastEventId: cursor });
+    expect(second.chunks.join('')).toContain('"resume":"reset"');
+    expect(second.chunks.join('')).not.toContain('event: proxy_request');
   });
 
   it('forwards one bounded relation-only invalidation after the real coalescing window', async () => {

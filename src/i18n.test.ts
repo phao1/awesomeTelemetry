@@ -27,4 +27,16 @@ describe('REQ-010 i18n', () => {
     expect(errorMessage('SESSION_NOT_FOUND', 'en')).toBe('Session not found');
     expect(errorMessage('UNKNOWN_CODE', 'zh')).toBe('UNKNOWN_CODE');
   });
+
+  it('keeps scan timing caveats and unavailable reasons bilingual', () => {
+    for (const locale of ['zh', 'en'] as const) {
+      expect(t('scan.timing.formulaText', locale)).toContain('pureInferenceMs');
+      expect(t('scan.timing.scope', locale)).toContain('TTFT/TPS');
+      expect(t('scan.timing.wallClockRatio', locale)).toContain('{ratio}');
+      expect(t('scan.timing.notComparable', locale)).not.toBe('');
+      for (const code of ['missing_value', 'invalid_value', 'source_mismatch', 'duration_basis_mismatch', 'duration_basis_unknown', 'partial_evidence'] as const) {
+        expect(t(`scan.timing.reason.${code}`, locale)).not.toBe('');
+      }
+    }
+  });
 });

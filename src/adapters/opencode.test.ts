@@ -29,6 +29,13 @@ function msg(over: Partial<OpenCodeMessage> & { id: string; role: 'user' | 'assi
 }
 
 describe('OpenCode adapter（REQ-005）', () => {
+  it('binds native message and call ids to exact part events without promoting generated ids to native identity', () => {
+    const result = normalizeOpenCode(sample([msg({ id: 'native-message', role: 'assistant', content: [{ type: 'text', text: 'thinking' }, { type: 'tool', callID: 'native-call', tool: 'Read', state: { status: 'completed', input: {}, output: 'ok' } }] })]), SRC);
+    expect(result.nativeIdentities?.items.find(item => item.kind === 'tool_call')).toMatchObject({ value: 'native-call', eventId: 'native-message-1' });
+    expect(result.nativeIdentities?.items.filter(item => item.kind === 'message').map(item => item.eventId)).toEqual(['native-message-0', 'native-message-1']);
+    expect(result.nativeIdentities?.items.some(item => item.value === 'native-message-1')).toBe(false);
+    expect(result.events.every(event => Object.getOwnPropertySymbols(event).length === 0)).toBe(true);
+  });
   it('fixture 完整 TraceRecord 快照', () => {
     const r = normalizeOpenCode(sample(opencodeFixture.events), SRC);
     expect(r.session.provider).toBe('opencode');

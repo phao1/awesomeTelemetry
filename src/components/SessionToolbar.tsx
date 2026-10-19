@@ -5,6 +5,8 @@ import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { TraceEvent, TraceEventSlim, TraceSession } from '../core/trace-types.js';
 import { computeSpeedMetrics } from '../core/speed-metrics.js';
+import { scanTimingValue } from '../core/scan-timing.js';
+import { ScanTimingCriteria } from './ScanTimingCriteria.js';
 import { DropdownMenu } from './ui/Overlay.js';
 import { ProviderBadge, StatusBadge } from './ui/Badge.js';
 import { IconAccuracy, IconChevronDown, IconChevronRight, IconCost, IconKebab, IconSpeed, IconStability, IconSuccess } from './icons/index.js';
@@ -23,7 +25,8 @@ export interface SessionToolbarProps {
 }
 
 function fmtMs(ms: number | null): string {
-  return ms === null ? '—' : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms.toFixed(0)}ms`;
+  const value = scanTimingValue(ms);
+  return value === null ? '—' : value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${value.toFixed(0)}ms`;
 }
 
 /** REQ-103 / G-UI-5：系统 Prompt 展开区持久化 key（新前缀，禁止老前缀）。 */
@@ -223,9 +226,9 @@ export function SessionToolbar({
           </button>
         </div>
         <div className="session-toolbar-metrics">
-          <div className="session-toolbar-metric" title={metrics.hasData ? t('metric.speed', locale) : t('session.insufficientData', locale)}>
+          <div className="session-toolbar-metric" title={`${t('scan.timing.scope', locale)} ${metrics.hasData ? '' : t('session.insufficientData', locale)}`}>
             <span className="session-toolbar-metric-label">
-              <IconSpeed size={12} /> {t('metric.speed', locale)}
+              <IconSpeed size={12} /> {t('metric.speed', locale)} · TTFT
             </span>
             <span className="mono">{fmtMs(metrics.speed.ttftMs)}</span>
           </div>
@@ -269,6 +272,7 @@ export function SessionToolbar({
           ]}
         />
       </header>
+      <ScanTimingCriteria left={session} partial={events.length < session.eventCount} locale={locale} />
       <SystemPromptSection session={session} locale={locale} />
     </>
   );

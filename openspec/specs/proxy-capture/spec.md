@@ -11,6 +11,58 @@ data scan cannot reach.
 
 ## Requirements
 
+### REQ-022: Native WebSocket connection evidence
+Capture WS/WSS application messages using actual engine hooks without changing
+forwarded payloads/binary flags. Preserve bidirectional AWSP1 archives and
+bounded worker/live transcripts per authoritative contracts. One connection
+is not one call; unknown usage/association/timing is not inferred. Observe
+upstream101, both close events and interrupted prefixes; Stop owns both socket
+legs and accepted IO. No protocol downgrade or new runtime dependency.
+
+### REQ-021: Explicit local capture pipeline self-test
+An explicit saved-recipe action SHALL send one fixed synthetic loopback HTTP SSE
+request through the matching running owned listener and verify forwarding,
+committed metadata, both original-file bytes/digests and worker parsing. No
+external destinations, Agent/tool/model execution, automatic listener start/stop,
+CA trust mutation or native association. Mark synthetic traffic and retain its
+capture for inspection. Report independent checks and unverified TLS/Agent scope;
+listener/run races, cancellation, deadlines and close retain owned cleanup.
+
+### REQ-020: Explicit offline reparse action
+Reparse SHALL reuse actual retained originals with SHA/length/encoding validation
+and the current protocol parser; require complete valid refs and never send an
+upstream request/execute tools. Status reads are metadata-only; only explicit
+action computes/persists the versioned usage/status manifest. Unknown/partial/
+failed protocol remains evidence,not false infrastructure or Agent success.
+Preserve original transport/processing/identity; same-id repeat stays one call.
+Fresh identity/ref/deletion guards,one active per DB and shutdown ownership use
+the frozen API/NFR contracts; full original archive import is a separate scope.
+
+### REQ-019: Implementation capability manifest
+Expose bounded implementation/controlled-test evidence separately from installed
+versions and actual Agent certification, without executable/config/body probes.
+Distinguish nine scanners from three process recipes, shared-listener scope,
+identity live previews from compressed offline semantics, controlled WS connection capture,
+unverified transports, dev-only CDP and experimental Windows Frida. Selecting
+a recipe opens a new blank form only; no implicit configuration or launch.
+
+### REQ-018: Selected capture comparison
+An explicit pair comparison SHALL expose bounded protocol usage/error summary
+and independent timing/transport/processing/original/deletion evidence without
+loading bodies from lists or executing upstream. Recheck both deletion intents
+after analysis; metadata mode skips source reads. Different measurement and
+accounting bases remain explicit; no inferred speedup, retry or charge merge.
+
+### REQ-017: Monotonic capture timing evidence
+Proxy header/first-byte/end offsets SHALL be observed before IO/worker latency.
+The bounded worker SHALL classify first meaningful SSE text/public reasoning/
+tool-argument dispatch using recorded arrival offsets, not its execution clock.
+Heartbeat/empty/usage/finish-only frames are not content. JSON timing SHALL be
+labelled document completion, not token TTFT. Missing/encoded/limited/invalid
+evidence remains explicitly unknown; raw vendor Server-Timing is a separate
+bounded projection with original headers retained. Detailed types/bounds follow
+the authoritative data-model/database/API/NFR contracts; no new DB table.
+
 ### MITM proxy
 
 ### REQ-001: HTTPS CONNECT interception
@@ -76,6 +128,31 @@ Explicit connection diagnostics SHALL read the same saved recipe/current runtime
 Parsers SHALL extract model and system/developer context from Chat messages, Responses instructions, and Messages string/array system. Usage may be top-level, message_start.message.usage or response.completed.response.usage. Partial snapshots merge fields and never sum repeated snapshots. Missing/invalid counters remain null, genuine zero stays zero. Malformed-JSON fallback stays best-effort and never replaces original evidence.
 
 An on-demand ProxyProtocolAnalysis SHALL separate observed request history, tool declarations, response text/public reasoning, proposed tool calls and observed tool results. Chat parallel tool fragments are keyed by choice+tool index; Responses items by output index/native item ID; Messages blocks by index. Final snapshots replace their accumulated projection rather than duplicate output. Preserve incomplete argument strings and stop/error evidence. Unknown events remain in originals and increment unknownEvents, rather than dropping the entire call. This projection does not claim tool execution or expose hidden reasoning.
+
+Qoder gateway SSE supports exactly one observed envelope: an object with object
+`headers`, string `statusCode` and string `body`, where `statusCode="OK"` and
+the JSON-decoded `body` is `object="chat.completion.chunk"` with a `choices`
+array. Only streaming response frames are unwrapped, once, under the existing
+2MiB source/projection limits; no recursive, base64 or arbitrary `body` search.
+Keep original outer frames unchanged and use `events[n].body` source locators.
+Successful inner chunks use Chat response/usage semantics, including subset
+cache/reasoning accounting and choice/tool-index reconstruction, without
+rewriting `requestFormat` or inventing readable request context. Encoded or
+unknown requests stay unknown. A hostname alone does not establish protocol.
+Explicit Messages/Responses requests conflicting with this Chat envelope
+remain unparsed with a visible `qoder_protocol_conflict` reason. Standard Chat
+and wrapped frames may interleave when the request already declares Chat;
+ordinary unknown/nonstreaming payloads are not upgraded by this support.
+Malformed/oversized/unsupported inner bodies retain a locator and explicit
+incompleteness reason; later finish/DONE markers cannot hide that missing
+evidence. A non-OK wrapper status is a failed protocol outcome and cannot be
+overwritten by later success. Clean EOF alone never completes a nested call.
+Parser version is 3. Messages request tool_result blocks preserve native boolean
+is_error independently from their content as toolResultIsError (other/missing/
+invalid fields are null). A true flag is a reported tool-result failure, not a
+network/protocol failure or measured execution; source is block.is_error.
+This documents synthetic protocol verification, not
+actual Qoder version/transport acceptance or native session association.
 
 ### REQ-010: SSE accumulator
 `sse-accumulator.ts` SHALL provide `parseSseChunk(chunk)` returning SseEvent[]
@@ -193,3 +270,13 @@ one-shot scan script. Rust heap fragmentation makes one-shot scans incomplete.
 - G10.2: CDP routes are dev-only
 - G11.12 (new): `proxy_requests` is the fastest-growing table; long-term
   capture must use the retention policy or it becomes the next 320MB
+## Codex per-call inspection amendment
+
+CODEX-001: stream-verify AWSP1 sources and bind Responses creates/events using
+explicit response IDs/FIFO lanes, preserving unknown/ambiguous/truncated cases.
+CODEX-002: selected call input/system/tools/output/public reasoning, subset usage
+and monotonic timings; warmups and lineage distinct from calls/retries/execution.
+CODEX-003: live written-prefix inspection and unique explicit Codex native
+session/scoped event links, no original mutation or cross-source billing.
+CODEX-004: bounded4096-call/4MiB index with worker-side20-row pagination and
+selected-only detail; preserve original integrity verification and explicit limits.

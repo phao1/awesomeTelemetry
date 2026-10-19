@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MonitorAgent, MonitorConnectionDiagnostics, MonitorConnectionPlan, MonitorConnectionProfile, MonitorConnectionSettings, ProxyRuntimeStatus } from '../core/trace-types.js';
+import type { MonitorAgent, MonitorCaptureSelfTest, MonitorConnectionDiagnostics, MonitorConnectionPlan, MonitorConnectionProfile, MonitorConnectionSettings, ProxyRuntimeStatus } from '../core/trace-types.js';
 import { api, ApiError } from '../api/client.js';
 import { t, type Locale } from '../i18n.js';
 
-interface Props { locale: Locale; onStatus?: (status: ProxyRuntimeStatus) => void; runtimeStatus?: ProxyRuntimeStatus | null }
-const initial = (): MonitorConnectionSettings => ({ label: '', agent: 'claude', projectDirectory: '', executable: null, proxyPort: 7779, noProxy: null });
+interface Props { locale: Locale; onStatus?: (status: ProxyRuntimeStatus) => void; runtimeStatus?: ProxyRuntimeStatus | null; initialAgent?: MonitorAgent; onOpenCapture?: (id: number) => void }
+const initial = (agent: MonitorAgent = 'claude'): MonitorConnectionSettings => ({ label: '', agent, projectDirectory: '', executable: null, proxyPort: 7779, noProxy: agent === 'opencode' ? 'localhost,127.0.0.1,::1' : null });
 const agents: MonitorAgent[] = ['claude', 'codex', 'opencode'];
 
 function runtimeKey(status: ProxyRuntimeStatus): string {
@@ -19,12 +19,16 @@ function runtimeKey(status: ProxyRuntimeStatus): string {
 }
 
 /** Recipe editor only; no browser/API action starts an external Agent process. */
-export function MonitorSetupPanel({ locale, onStatus, runtimeStatus }: Props) {
+export function MonitorSetupPanel({ locale, onStatus, runtimeStatus, initialAgent, onOpenCapture }: Props) {
   const [profiles, setProfiles] = useState<MonitorConnectionProfile[] | null>(null);
   const [selectedId, setSelectedId] = useState('');
-  const [settings, setSettings] = useState(initial);
+  const [settings, setSettings] = useState(() => initial(initialAgent));
   const [plan, setPlan] = useState<MonitorConnectionPlan | null>(null);
   const [diagnostics, setDiagnostics] = useState<MonitorConnectionDiagnostics | null>(null);
+  const [selfTest, setSelfTest] = useState<MonitorCaptureSelfTest | null>(null);
+  const selfTestAbort = useRef<AbortController | null>(null);
+  const selfTestGeneration = useRef(0);
+  const clearSelfTest = (): void => { selfTestGeneration.current += 1; selfTestAbort.current?.abort(); setSelfTest(null); };
   const [pending, setPending] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
@@ -40,15 +44,16 @@ export function MonitorSetupPanel({ locale, onStatus, runtimeStatus }: Props) {
     alive.current = true;
     const generation = ++loadGeneration.current;
     void api.monitorProfiles().then(response => { if (alive.current && generation === loadGeneration.current) setProfiles(response.items); }).catch(error => { if (alive.current && generation === loadGeneration.current) fail(error); });
-    return () => { alive.current = false; loadGeneration.current += 1; diagnosticAbort.current?.abort(); };
+    return () => { alive.current = false; loadGeneration.current += 1; diagnosticAbort.current?.abort(); selfTestGeneration.current += 1; selfTestAbort.current?.abort(); };
   }, []);
 
   const choose = (id: string): void => {
+    clearSelfTest();
     const profile = profiles?.find(item => item.id === id);
     setSelectedId(id); setPlan(null); setDiagnostics(null); setCopied(false); setConfirmDelete(false); setError(null);
-    setSettings(profile === undefined ? initial() : { label: profile.label, agent: profile.agent, projectDirectory: profile.projectDirectory, executable: profile.executable, proxyPort: profile.proxyPort, noProxy: profile.noProxy });
+    setSettings(profile === undefined ? initial(initialAgent) : { label: profile.label, agent: profile.agent, projectDirectory: profile.projectDirectory, executable: profile.executable, proxyPort: profile.proxyPort, noProxy: profile.noProxy });
   };
-  const change = (patch: Partial<MonitorConnectionSettings>): void => { setSettings(previous => ({ ...previous, ...patch })); setPlan(null); setDiagnostics(null); setCopied(false); };
+  const change = (patch: Partial<MonitorConnectionSettings>): void => { clearSelfTest(); setSettings(previous => ({ ...previous, ...patch })); setPlan(null); setDiagnostics(null); setCopied(false); };
   const action = async (work: () => Promise<void>): Promise<void> => {
     if (pendingRef.current) return;
     pendingRef.current = true;
@@ -58,12 +63,14 @@ export function MonitorSetupPanel({ locale, onStatus, runtimeStatus }: Props) {
     finally { pendingRef.current = false; if (alive.current) setPending(false); }
   };
   const save = (): Promise<void> => action(async () => {
+    clearSelfTest();
     const profile = selected === undefined ? await api.monitorCreateProfile(settings) : await api.monitorUpdateProfile(selected.id, settings, selected.revision);
     if (!alive.current) return;
     setProfiles(previous => [...(previous ?? []).filter(item => item.id !== profile.id), profile]);
     setSelectedId(profile.id); setPlan(null); setDiagnostics(null);
   });
   const getPlan = (start: boolean): Promise<void> => action(async () => {
+    clearSelfTest();
     if (selected === undefined) return;
     setPlan(null); setDiagnostics(null);
     const next = start ? await api.monitorStartProfile(selected.id, selected.revision) : await api.monitorConnectionPlan(selected.id);
@@ -87,17 +94,34 @@ export function MonitorSetupPanel({ locale, onStatus, runtimeStatus }: Props) {
       throw error;
     } finally { clearTimeout(timer); if (diagnosticAbort.current === controller) diagnosticAbort.current = null; }
   });
+  const testCapture = (): Promise<void> => action(async () => {
+    if (selected === undefined) return;
+    clearSelfTest(); const generation = selfTestGeneration.current;
+    const controller = new AbortController(); selfTestAbort.current = controller;
+    const timer = setTimeout(() => controller.abort(), 12_000);
+    try {
+      const report = await api.monitorCaptureSelfTest(selected.id, selected.revision, controller.signal);
+      if (!alive.current || generation !== selfTestGeneration.current) return;
+      if (report.profileId !== selected.id || report.profileRevision !== selected.revision) throw new ApiError('MONITOR_PROFILE_CONFLICT', 'Saved recipe changed; reload before testing');
+      setSelfTest(report);
+    } catch (error) {
+      if (generation !== selfTestGeneration.current || !alive.current) return;
+      if (controller.signal.aborted) throw new ApiError('MONITOR_SELF_TEST_FAILED', 'Self-test timed out. A synthetic capture may still be saved; inspect the capture list before retrying.');
+      throw error;
+    } finally { clearTimeout(timer); if (selfTestAbort.current === controller) selfTestAbort.current = null; }
+  });
   const remove = (): Promise<void> => action(async () => {
+    clearSelfTest();
     if (selected === undefined) return;
     await api.monitorDeleteProfile(selected.id, selected.revision);
     if (!alive.current) return;
     setProfiles(previous => previous?.filter(item => item.id !== selected.id) ?? []);
-    setSelectedId(''); setSettings(initial()); setPlan(null); setDiagnostics(null); setConfirmDelete(false);
+    setSelectedId(''); setSettings(initial(initialAgent)); setPlan(null); setDiagnostics(null); setConfirmDelete(false);
   });
   const dirty = selected !== undefined && (Object.keys(initial()) as Array<keyof MonitorConnectionSettings>).some(key => settings[key] !== selected[key]);
   const disabled = pending || profiles === null;
   const stale = diagnostics !== null && runtimeStatus != null && runtimeKey(diagnostics.status) !== runtimeKey(runtimeStatus);
-  const errorKeys = { MONITOR_PROFILE_CONFLICT: 'monitor.error.conflict', MONITOR_PROFILE_BUSY: 'monitor.error.busy', MONITOR_PROFILE_INVALID: 'monitor.error.invalid', MONITOR_PROFILE_NOT_FOUND: 'monitor.error.missing', MONITOR_NOT_READY: 'monitor.error.notReady', PROXY_ALREADY_RUNNING: 'monitor.error.proxyOwned', MONITOR_DIAGNOSTICS_TIMEOUT: 'monitor.error.diagTimeout' } as const;
+  const errorKeys = { MONITOR_SELF_TEST_NOT_READY: 'monitor.selfTest.notReady', MONITOR_SELF_TEST_BUSY: 'monitor.selfTest.busy', MONITOR_SELF_TEST_FAILED: 'monitor.selfTest.error', MONITOR_PROFILE_CONFLICT: 'monitor.error.conflict', MONITOR_PROFILE_BUSY: 'monitor.error.busy', MONITOR_PROFILE_INVALID: 'monitor.error.invalid', MONITOR_PROFILE_NOT_FOUND: 'monitor.error.missing', MONITOR_NOT_READY: 'monitor.error.notReady', PROXY_ALREADY_RUNNING: 'monitor.error.proxyOwned', MONITOR_DIAGNOSTICS_TIMEOUT: 'monitor.error.diagTimeout' } as const;
   return (
     <section className="monitor-setup" aria-label={t('monitor.title', locale)} style={{ display: 'grid', gap: 'var(--space-3)' }}>
       <p className="hint">{t('monitor.scope', locale)}</p><p className="hint">{t('monitor.stopWarning', locale)}</p>
@@ -105,8 +129,9 @@ export function MonitorSetupPanel({ locale, onStatus, runtimeStatus }: Props) {
       {error !== null && <div role="alert"><strong>{error.code}</strong> — {t(errorKeys[error.code as keyof typeof errorKeys] ?? 'monitor.error.generic', locale)}<p>{error.message}</p></div>}
       {profiles === null && error === null && <p role="status">{t('common.loading', locale)}</p>}
       <button type="button" className="btn" disabled={pending} onClick={() => void action(async () => {
+        clearSelfTest();
         const response = await api.monitorProfiles();
-        if (alive.current) { setProfiles(response.items); setSelectedId(''); setSettings(initial()); setPlan(null); setDiagnostics(null); }
+        if (alive.current) { setProfiles(response.items); setSelectedId(''); setSettings(initial(initialAgent)); setPlan(null); setDiagnostics(null); }
       })}>{t('monitor.reload', locale)}</button>
       <label>{t('monitor.savedProfiles', locale)}<select className="ui-select" value={selectedId} disabled={disabled} onChange={event => choose(event.target.value)}><option value="">{t('monitor.newProfile', locale)}</option>{profiles?.map(profile => <option key={profile.id} value={profile.id}>{profile.label} · {profile.agent}</option>)}</select></label>
       <form onSubmit={event => { event.preventDefault(); void save(); }} style={{ display: 'grid', gap: 'var(--space-2)' }}>
@@ -127,11 +152,22 @@ export function MonitorSetupPanel({ locale, onStatus, runtimeStatus }: Props) {
         <button type="button" className="btn" disabled={disabled || dirty} onClick={() => void getPlan(false)}>{t('monitor.command', locale)}</button>
         <button type="button" className="btn" disabled={disabled || dirty} onClick={() => void getPlan(true)}>{t('monitor.startListener', locale)}</button>
         <button type="button" className="btn" disabled={disabled || dirty} onClick={() => void diagnose()}>{t('monitor.diagnose', locale)}</button>
+        <button type="button" className="btn" disabled={disabled || dirty} onClick={() => void testCapture()}>{t('monitor.selfTest', locale)}</button>
         <button type="button" className="btn" disabled={disabled} onClick={() => setConfirmDelete(true)}>{t('monitor.delete', locale)}</button>
         {dirty && <span className="hint">{t('monitor.saveFirst', locale)}</span>}
       </div>}
       {confirmDelete && <div role="alert"><p>{t('monitor.confirmDelete', locale)}</p><button type="button" className="btn" disabled={pending} onClick={() => void remove()}>{t('common.confirm', locale)}</button><button type="button" className="btn" disabled={pending} onClick={() => setConfirmDelete(false)}>{t('common.cancel', locale)}</button></div>}
       {pending && <p role="status">{t('monitor.working', locale)}</p>}
+      {selected !== undefined && <p className="hint">{t('monitor.selfTestScope', locale)}</p>}
+      {selfTest !== null && <section aria-label={t('monitor.selfTestTitle', locale)}>
+        <h3>{t('monitor.selfTestTitle', locale)}</h3>
+        <p role="status">{t(selfTest.passed ? 'monitor.selfTestPassed' : 'monitor.selfTestFailed', locale)}</p>
+        <p className="hint"><time dateTime={selfTest.checkedAt}>{selfTest.checkedAt}</time> · {t('monitor.selfTestScope', locale)}</p>
+        {runtimeStatus != null && (!runtimeStatus.running || runtimeStatus.port !== selected?.proxyPort || runtimeStatus.diagnostics?.runId !== selfTest.runId) && <p role="status">{t('monitor.snapshotStale', locale)}</p>}
+        <ul>{(['forwarding', 'persistence', 'originals', 'parsing'] as const).map(check => <li key={check}>{t(`monitor.selfTest.${check}`, locale)}: {t(selfTest.checks[check] ? 'monitor.selfTest.ok' : 'monitor.selfTest.notOk', locale)}</li>)}</ul>
+        <p>{t('monitor.selfTestUnverified', locale)}</p>
+        {onOpenCapture !== undefined && <button type="button" className="btn" onClick={() => onOpenCapture(selfTest.proxyId)}>{t('monitor.selfTestOpen', locale)} #{selfTest.proxyId}</button>}
+      </section>}
       {diagnostics !== null && <section aria-label={t('monitor.diagnosticTitle', locale)}>
         <h3>{t('monitor.diagnosticTitle', locale)}</h3>
         <p className="hint">{t('monitor.snapshot', locale)} <time dateTime={diagnostics.checkedAt}>{diagnostics.checkedAt}</time></p>

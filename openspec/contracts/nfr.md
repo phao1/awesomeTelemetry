@@ -1,5 +1,165 @@
 # Contract: Non-functional requirements (performance budget)
 
+## Codex selected call inspection
+
+Selected jobs may keep at most2MiB total previous request text (FIFO eviction)
+for one explicit-lineage payload diff, not full inherited context reconstruction.
+
+One active inspection per service/DB, no waiting queue; process-shared capture
+job/worker leases (16MiB reservation,64MiB old/16MiB young worker heap),30s
+deadline and request/close cancellation. Stream <=100MiB/direction in64KiB
+chunks; <=2MiB/frame,65536frames,4096calls,64tool IDs/call. Retained call-index
+serialized metadata<=4MiB, incrementally charged as records change. Worker
+returns only the requested20-row page (no items in detail mode), never all calls.
+Validate complete
+source digest even when projection bounds are reached. No whole-file JSON.parse,
+sync source IO, per-message SQL or parsing inside forwarding callbacks.
+Worker result and final detail including native links<=1MiB; metadata page<=64KiB; detail request preview<=64KiB and
+existing analysis projection bounds apply. Native resolution<=3 cached batch
+queries/detail,<=2048 identities; no raw/body/native event N+1.
+Active writer snapshot is an O(1) hash.copy of written bytes only, private
+registered same-DB sources; no duplicate original or unbounded in-memory stream.
+UI lazy,20rows/page; opened selected live sources may update on coalesced
+metadata hints at most once/5s, serial page then changed selected detail only.
+Before auto cycles, count selected page/detail UTF-8 result bytes over30s.
+At>=512KiB delay to debt expiry, reserving64KiB+1MiB for the next serial cycle;
+auto reads stay below2MB/30s. Explicit manual actions remain available.
+Pause/hidden/unmount suspends automatic reads, no hint means no polling.
+No automatic retry after a read error except one explicit CODEX_SOURCE_CHANGED
+live-to-saved convergence attempt, owned by the same5s/byte budget (manual
+refresh resets that one allowance). Preserve completed selection/content.
+Abort/unmount/deletion/
+relation invalidation suppress stale results. All existing budgets unchanged.
+
+## TraceLog bounded import
+Existing budgets unchanged. Upload async spool128MiB max and120s total deadline;
+one worker/DB,64MiB old/16MiB young heap. Streaming JSON framing retains at most
+one2MiB turn/64KiB session;512MiB expanded gzip tar,200MiB selected JSON total,
+100MiB/JSON,16files,2000 turns/job,50000tarentries,64KiB extended header. No
+HTTP-thread whole-file JSON.parse, sync IO or new runtime dependency. Source
+copies throttle existing body-store queue; capture quota/capacity apply. Temp
+paths are private generated owned files, cleaned after failure/cancel/close.
+Metadata pages<=20 rows; turn detail <=2MiB+64KiB source data before JSON escaping;
+download streams. UI preview64KiB, explicit expand/font controls. Unsafe/malformed
+or over-budget input fails visibly without deleting user data or weakening tests.
+
+## Native/scan timing interpretation bounds
+
+Functional handoff evidence:227files2879passed/1existing skipped;initial HTML+
+preloadedJS standard gzip184270B. Existing05-36-53.997Z-59066 perf all3hard
+profiles pass,actual loop p99HTTP2.234367/HTTPS2.062335/near2MiB2.125823ms.
+HTTP E2E+23.2% relative to05-15 row crosses20% alert;retain/no waiver or automatic
+commit. User paused further work for manual use; no full product/Agent/soak
+acceptance or changed storage boundary. Existing §6 commit gate unchanged.
+
+Scan comparison policy is pure, using existing session/pagination/value fields
+only, no IO/normalization loops over unrelated sessions/new metric DTO or cost
+dedup. Keep numeric scan algorithms; metric epoch6 marks interpretation, capture
+parser3/metric1 unchanged. Linked execution merges scalar session-duration and
+event count in scan-owner lookup, and adds one cached bulk transport read,
+at most8 SELECTs per metadata page regardless of attempt count,
+transport<=4096B/attempt,<=50attempts and existing whole1MiB bound unchanged.
+No raw/headers/source/body reads, new table/index, N+1 or clock subtraction.
+Native/network panel remains lazy; no new eager dependency/runtime package or
+polling. Existing JS gzip<=200000B/rendering/loop/forwarding budgets remain.
+
+## Explicit offline reparse bounds
+
+One active reparse per Database,no waiting queue;<=2MiB encoded/decoded per
+original,existing parser1024record/262144content/1MiB projection limits. Persist
+only<=8192B numeric/status manifest per capture,GETstatus<=16KiB,POST<=1MiB.
+Reuse existing capacity-admitted finite commit retry; no hidden source/body copy,
+startup reparse,per-row fetch,metric recompute on version check or new capture
+event. Existing forwarding/loop/DB/WAL budgets unchanged; no DB split. Status
+and action read only on explicit user interaction,client10s owned deadline,
+cancel/unmount/invalidation suppress late callbacks; cancellation isn't rollback.
+
+Current functional evidence:223files2797passed/1existing skipped,initial/preloaded
+JS gzip198587B. Existing perf05-15-18.499Z-51247 all3hard profiles pass,actual
+loop p99HTTP2.068479/HTTPS2.002943/near2MiB2.019327ms. Adjacent04-53row
+HTTP/HTTPS first-byte+21.2%/+21.8% and near2MiB E2E+24.5% cross20% alert;
+all history retained in PERF-BASELINE.md. No waiver/automatic commit/push or
+whole-product/real-Agent/soak acceptance;the existing §6 commit gate remains.
+
+## Functional capability setup and selected diagnostics
+
+Capabilities are fixed9 agent rows/9 transport rows,<=64KiB, no IO/probes/DB/
+network effects. One explicit Web read per opening/refresh, owned5s cancellation
+and no polling. Pure pair diagnostics reuse an already fetched comparison,
+at most5 findings/ten evidence refs, no full-body strings/normalizer/HTTP calls.
+UI threshold changes perform no IO. All existing budgets remain unchanged.
+
+Current functional gate (33/71,not release):218files2666passed/1existing skipped,
+initial/preloaded JS gzip198243B. Existing perf:check04-53-19.778Z-46153 passes
+all3hard profiles; actual loop p99HTTP2.150399/HTTPS2.103295/near2MiB2.134015ms.
+Near2MiB extra first-byte p951.775959vs previous04-23row1.313458ms(+35.2%)
+crosses the20% relative alert. Preserve all rows/alerts in PERF-BASELINE.md;
+no waiver or rerun-until-favorable,no automatic commit/push. Existing §6 commit
+gate/full-product acceptance remains; no new disk-boundary/soak/DB-split work.
+
+## Functional selected comparison and native parent increment
+
+One selected pair GET, at most2 existing bounded analysis reads and a fresh
+synchronous metadata/deletion snapshot; response<=1MiB, error codes<=32/side,
+no raw/header/content payload. No analysis/HTTP/SQL fan-out from request lists,
+no charge aggregate or upstream execution.10s owned client deadline, context
+diff lazy explicit and separate. Existing source2MiB/projection1MiB limits and
+all forwarding/loop/initial-JS budgets stay unchanged.
+
+Native parent references<=50/page,20 candidate owners/reference,<=512KiB total.
+Cached fixed-count indexed SQL using source and session/scope-NULL native match
+indexes; target<100ms at reference scale, no global parent scan/new index/table.
+No original IO or recursive traversal. Client5s deadline, lazy metadata only,
+no auto-refetch on SSE, candidate owner rows bounded/virtual where needed.
+
+## Functional timing/execution/export increment
+
+Timing owns at most4096 arrival offset/elapsed points: Uint32+Float64 arrays,
+49152 bytes/collector, explicitly charged to shared preview admission and worker
+job bytes, including owned handoff copies. Bounds stop timing collection with
+preview_limit, not forwarding/original retention. No forwarding-path JSON parse
+or decompression. Content classification runs in the bounded capture worker;
+recorded arrival offsets, not worker execution time, determine latency. Optional
+transport timing increases its serialized cap to4096B; non-timing outcome<=512B
+and error code<=128chars remain. Server-Timing projection<=512 UTF16 units with
+truncation disclosed; originals unchanged. Existing loop/forwarding budgets stand.
+
+Execution projection: events<=200/attempts<=50 per metadata page, identities and
+matches<=1000 each and whole response<=1MiB UTF8; byte pressure removes excess
+identity/match entries with explicit incomplete reasons, never metadata body
+columns or false exact links. Use fixed-count cached queries/source indexes,
+no N+1 or global identity scan; target<100ms at existing tier-B fixture scale.
+No server TraceTurn derivation; UI virtualizes events and makes one page request.
+
+Capture export:4MiB serialized UTF8 JSON, analysis retains existing2MiB per
+source/1MiB projected bounds. First100 identity/link metadata rows only, no
+recursive fetching or original bodies in JSON. Original downloads stay separate
+and unbounded by semantic limits. Explicit Web action timeout10s, no polling or
+automatic upstream replay. Exceeding the export cap is a static503 error, never
+silent header redaction/truncation. No extra runtime dependency or DB table.
+
+## Functional live preview and bounded reconnect (B9)
+
+Metadata journal: max512 frames/512KiB total and5minutes, one process epoch;
+individual frames retain the existing256KiB limit. Record once per emitted bus
+metadata event, even with no clients; no original body/chunk is journalled.
+Overflow/expiry advances the replay floor; gaps force explicit reset rather than
+silently skipping changes. No timers/DB writes/body reads for this ring.
+Replay stays within the existing1MiB/client writable budget. Existing64-client,
+5s drain timeout and slow-disconnect policy applies to both subscription modes.
+
+Live preview: at most64 request windows,32768 UTF16 code units/window and the
+existing64KiB display prefix per request;100ms merge or one terminal flush.
+Exhaustion stops that request's live preview explicitly, not forwarding/original
+capture. No full JSON/regex parse in callbacks or extra decompression there.
+Frontend retains at most50 recent stream metadata entries and64KiB selected
+preview text; one selected EventSource, no polling or body/list N+1. The selected
+connection may drain its tail for at most5s after a separate metadata end hint;
+its own ordered end clears that timer, timeout explicitly marks a gap. Metadata
+reset uses bounded snapshot refresh only. This is not durable history, arbitrary
+transport support or long-soak reliability certification. All old hard budgets
+and pre-commit gates remain unchanged.
+
 ## Durable capture journal (B6 task7.2)
 
 Capture pressure admission: one shared per-DB lane/max64 active+queued actions,
@@ -182,6 +342,16 @@ admission follows the process-wide bounds above. Full failure/overhead/load
 and reconnect acceptance remains5.4–5.5/B9/B10.
 
 Live capture metadata processing: one owned lazy worker per MITM listener;
+WS uses that same collector/file/worker budgets, not an unbounded parallel
+pipeline. Forward hooks append constant-size archive headers and bounded
+payload copies, no full-payload JSON/base64 or semantic parsing. Live preview
+<=64KiB total per connection, each inspected payload prefix<=4096B, text
+conversion only within that budget. Worker archive traversal<=8192 records
+per direction and2MiB source, readable output<=64KiB/direction; limits are
+explicit, original capture/download independent. Close/error/Stop settle once;
+Stop marks interruption before terminating both owned WS legs, awaits original
+IO/worker/commits before DB release. No default lifetime timer or HTTP fallback.
+Transport metadata <=4096B includes WS <=512B, no timing for connection rows.
 max64 outstanding jobs and32MiB UTF-8 source bytes, including the active job.
 Each body preview<=2MiB and metadata<=64KiB; worker result<=4MiB serialized.
 Worker heap limit64MiB old/16MiB young; total admission-to-result timeout5s.
@@ -228,6 +398,19 @@ Quota includes completed files, crash remnants and in-flight reserved bytes. Res
 > files) — it describes what the project would grow into **without these
 > constraints**, not where this project starts. This project is written to the
 > budget columns from the first line of code.
+
+## Explicit local capture self-test
+
+One active job/server, no queue or polling;10s total owned deadline including
+origin/network/event wait/original checks,12s Web deadline. Fixed loopback origin
+only; fixture/request/response/read buffers<=4096 bytes each, report<=4096 bytes.
+Two original reads maximum via existing size/SHA validation, indexed single-row
+metadata reads only; event-driven committed capture wait, no DB scans. No new
+worker/parser on HTTP handling path: use the actual existing capture worker.
+Client disconnect/shutdown abort owned sockets, timers and event subscription;
+shutdown waits job cleanup before releasing DB. Existing forwarding/loop/JS
+budgets are unchanged. Shared listener and saved synthetic evidence survive a
+test; only the owned temporary origin/client are closed.
 
 ## 1. Scale assumptions
 

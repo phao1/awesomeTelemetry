@@ -1,9 +1,10 @@
 import type { ServerResponse } from 'node:http';
 
-import type { BusEvents } from '../../src/core/trace-types.js';
+import type { BusEvents, SseConnected } from '../../src/core/trace-types.js';
+import { metadataReplayLog } from './replay-log.js';
 import { SCHEMA_VERSION } from '../storage/schema.js';
 import { eventBus, type BusEventName } from './event-bus.js';
-import { clearPendingSessionChanges, clearPendingTeamChanges, clearPendingTraceLinkChanges } from './coalescer.js';
+import { clearPendingSessionChanges, clearPendingTeamChanges, clearPendingTraceLinkChanges, clearPendingProxySourceChanges } from './coalescer.js';
 import { sendApiError } from '../http/error-envelope.js';
 
 const HEARTBEAT_MS = 30_000;
@@ -14,8 +15,11 @@ const EVENT_NAMES = [
   'scan_started',
   'scan_completed',
   'proxy_request',
+  'proxy_stream_started',
+  'proxy_stream_ended',
   'trace_links_changed',
   'proxy_stream_chunk',
+  'proxy_sources_changed',
   'proxy_status',
   'frida_capture',
   'frida_status',
@@ -30,7 +34,7 @@ export function sseResourceStatus(): { sseClients: number; slowSseDisconnects: n
  * REQ-005/006：SSE 广播器。订阅 BusEvents 全部事件并转发；
  * 返回 cleanup，客户端断开时解除全部订阅。
  */
-export function addSseClient(res: ServerResponse): () => void {
+export function addSseClient(res: ServerResponse, options: { lastEventId?: string; requestId?: string } = {}): () => void {
   if (cleanups.size >= 64) { sendApiError(res, 503, 'SSE_LIMIT_REACHED', 'Live subscriber capacity reached; retry later'); return () => {}; }
   const unsubscribes: Array<() => void> = [];
   let closed = false;
@@ -66,17 +70,35 @@ export function addSseClient(res: ServerResponse): () => void {
     'cache-control': 'no-cache',
     connection: 'keep-alive',
   });
-  const connected: { serverTime: string; schemaVersion: number } = {
+  const replay = metadataReplayLog.resume(options.requestId === undefined ? options.lastEventId : undefined);
+  const connected: SseConnected = {
     serverTime: new Date().toISOString(),
     schemaVersion: SCHEMA_VERSION,
+    cursor: replay.cursor,
+    resume: replay.resume,
   };
   write(`event: connected\ndata: ${JSON.stringify(connected)}\n\n`);
+  if (options.requestId === undefined) {
+    for (const frame of replay.frames) write(frame);
+    // A reconnect interrupted mid-replay must retain the last delivered id.
+    write(`id: ${replay.cursor}\n\n`);
+  }
 
   if (closed) return cleanup;
   for (const name of EVENT_NAMES) {
     unsubscribes.push(
-      eventBus.on(name, (payload: BusEvents[typeof name]) => {
-        write(`event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`);
+      eventBus.on(name, (payload: BusEvents[typeof name], cursor) => {
+        if (name === 'proxy_sources_changed') {
+          if (options.requestId !== undefined && 'requestIds' in payload && payload.requestIds.includes(options.requestId)) {
+            write(`event: proxy_sources_changed\ndata: ${JSON.stringify({ requestIds: [options.requestId] })}\n\n`);
+          }
+          return;
+        }
+        if (options.requestId !== undefined) {
+          if ((name !== 'proxy_stream_chunk' && name !== 'proxy_stream_ended') || !('requestId' in payload) || payload.requestId !== options.requestId) return;
+        } else if (name === 'proxy_stream_chunk') return;
+        const id = options.requestId === undefined && cursor !== undefined ? `id: ${cursor}\n` : '';
+        write(`${id}event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`);
       }),
     );
   }
@@ -97,4 +119,6 @@ export function closeSseBroadcaster(): void {
   clearPendingSessionChanges();
   clearPendingTeamChanges();
   clearPendingTraceLinkChanges();
+  clearPendingProxySourceChanges();
+  metadataReplayLog.clear();
 }

@@ -4,6 +4,25 @@ const SESSION_WINDOW_MS = 200;
 const CHUNK_WINDOW_MS = 100;
 const TEAM_WINDOW_MS = 200;
 
+const pendingProxySources = new Set<string>();
+let proxySourceTimer: NodeJS.Timeout | null = null;
+export function clearPendingProxySourceChanges(): void {
+  if (proxySourceTimer !== null) clearTimeout(proxySourceTimer);
+  proxySourceTimer = null; pendingProxySources.clear();
+}
+/** Dirty hint only: no payload parsing, DB write or completion assertion. */
+export function queueProxySourceChange(requestId: string): void {
+  if (pendingProxySources.size < 64) pendingProxySources.add(requestId);
+  if (proxySourceTimer === null) {
+    proxySourceTimer = setTimeout(() => {
+      const requestIds = [...pendingProxySources].sort();
+      clearPendingProxySourceChanges();
+      eventBus.emit('proxy_sources_changed', { requestIds });
+    }, 1000);
+    proxySourceTimer.unref();
+  }
+}
+
 /** contracts/data-model.md §10 / design D14：每个 id 列表的上限。 */
 export const TEAM_CHANGE_CAP = 200;
 
@@ -36,7 +55,10 @@ export function queueTraceLinkChange(sessionKey: string, proxyId?: number): void
   }
 }
 
-const chunkBuffers = new Map<string, string[]>();
+const STREAM_WINDOW_CAP = 64;
+// JSON escaping costs at most six bytes per code unit; leave frame headroom.
+const STREAM_WINDOW_CHARS = 32768;
+const chunkBuffers = new Map<string, string>();
 const chunkTimers = new Map<string, NodeJS.Timeout>();
 
 // team_runs_changed 合并状态（§6.11 / design D14）
@@ -70,23 +92,29 @@ export function queueSessionChange(key: string): void {
   }
 }
 
-/** REQ-004：同一 requestId 的 chunk 按 100ms 窗口拼接后发一条 proxy_stream_chunk。 */
-export function queueProxyStreamChunk(requestId: string, chunk: string): void {
-  const buffer = chunkBuffers.get(requestId) ?? [];
-  buffer.push(chunk);
-  chunkBuffers.set(requestId, buffer);
+/** REQ-004: false is explicit live-preview pressure, not original-file loss. */
+export function queueProxyStreamChunk(requestId: string, chunk: string): boolean {
+  if (chunk === '') return true;
+  const buffer = chunkBuffers.get(requestId) ?? '';
+  if ((!chunkBuffers.has(requestId) && chunkBuffers.size >= STREAM_WINDOW_CAP) ||
+    buffer.length + chunk.length > STREAM_WINDOW_CHARS) return false;
+  chunkBuffers.set(requestId, buffer + chunk);
   if (!chunkTimers.has(requestId)) {
-    const timer = setTimeout(() => {
-      chunkTimers.delete(requestId);
-      const parts = chunkBuffers.get(requestId);
-      chunkBuffers.delete(requestId);
-      if (parts !== undefined && parts.length > 0) {
-        eventBus.emit('proxy_stream_chunk', { requestId, chunk: parts.join('') });
-      }
-    }, CHUNK_WINDOW_MS);
+    const timer = setTimeout(() => flushProxyStreamChunk(requestId), CHUNK_WINDOW_MS);
     timer.unref();
     chunkTimers.set(requestId, timer);
   }
+  return true;
+}
+
+/** Terminal-only flush preserves accepted text before proxy_stream_ended. */
+export function flushProxyStreamChunk(requestId: string): void {
+  const timer = chunkTimers.get(requestId);
+  if (timer !== undefined) clearTimeout(timer);
+  chunkTimers.delete(requestId);
+  const chunk = chunkBuffers.get(requestId);
+  chunkBuffers.delete(requestId);
+  if (chunk !== undefined && chunk !== '') eventBus.emit('proxy_stream_chunk', { requestId, chunk });
 }
 
 function flushTeamChanges(): void {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TraceEvent, TraceRecord } from './trace-types.js';
-import { cleanPromptText, computeMetrics, isGenuineUserPrompt } from './metrics.js';
+import { cleanPromptText, computeMetrics, isGenuineUserPrompt, METRICS_CALC_VERSION } from './metrics.js';
 
 function makeRecord(
   id: string,
@@ -64,6 +64,15 @@ function makeRecord(
 }
 
 describe('REQ-004 computeMetrics', () => {
+  it('publishes scan interpretation epoch6 without changing legacy numeric metrics', () => {
+    expect(METRICS_CALC_VERSION).toBe(6);
+    const record = makeRecord('epoch');
+    const result = computeMetrics(record);
+    expect(result.calcVersion).toBe(6);
+    expect(result.totalToolDurationMs).toBe(100);
+    expect(result.e2eMs).toBe(10_000);
+    expect(result.ttftMs).toBeNull();
+  });
   it('计算四维指标与基础指标', () => {
     const record = makeRecord('s1', {
       phases: ['implement', 'implement', 'verify'],
@@ -85,7 +94,7 @@ describe('REQ-004 computeMetrics', () => {
     expect(m.avgToolDurationMs).toBeCloseTo(350 / 3);
     expect(m.tokensPerStep).toBeCloseTo(16);
     expect(m.costUsd).toBe(0.5);
-    expect(m.calcVersion).toBe(5); // v5（2026-08-11 校准审计）：用户轮次过滤系统注入 + phase 修复
+    expect(m.calcVersion).toBe(6); // Fusion interpretation epoch; numeric metrics unchanged.
     expect(m.e2eMs).toBe(10_000);
   });
 

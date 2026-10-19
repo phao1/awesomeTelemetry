@@ -1,5 +1,233 @@
 # Contract: Data Model
 
+## Codex WebSocket per-call inspection (no schema change)
+
+```ts
+export interface CodexCallSummary {
+  sequence: number;
+  streamId: string | null;
+  responseId: string | null;
+  previousResponseId: string | null;
+  predecessorSequence: number | null;
+  model: string | null;
+  warmup: boolean;
+  nativeSessionId: string | null;
+  nativeTurnId: string | null;
+  startedAt: string;
+  startedMs: number;
+  firstContentMs: number | null;
+  durationMs: number | null;
+  state: 'completed' | 'incomplete' | 'failed' | 'pending';
+  usage: Omit<ProxyNativeUsage, 'snapshots'>;
+  proposedToolIds: string[];
+  returnedToolIds: string[];
+  reasons: string[];
+}
+export interface CodexCallPage {
+  requestId: string;
+  active: boolean;
+  fingerprint: string;
+  items: CodexCallSummary[];
+  offset: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  complete: boolean;
+  reasons: string[];
+  unassignedEvents: number;
+}
+export interface CodexNativeLink {
+  state: 'linked' | 'missing' | 'ambiguous' | 'incomplete' | 'blocked';
+  sessionKey: string | null;
+  matches: Array<{ eventId: string; kind: 'response' | 'tool_call' | 'turn'; value: string; sourcePath: string }>;
+}
+export interface CodexCallDetail {
+  contextDiff: CodexContextDiff | null;
+  contextDiffUnavailableReason: 'no_predecessor' | 'base_outside_projection' | 'normalization_failed' | null;
+  requestId: string;
+  active: boolean;
+  fingerprint: string;
+  call: CodexCallSummary;
+  analysis: ProxyProtocolAnalysis;
+  native: CodexNativeLink;
+  toolReferences: Array<{ callId: string; proposalSequence: number | null }>;
+  requestPreview: string;
+  requestPreviewTruncated: boolean;
+}
+export interface CodexContextDiff {
+  baseSequence: number;
+  categories: ContextCategoryDiff[];
+  growth: ContextGrowth;
+  indicators: ContextIndicator[];
+  completeness: ContextCompleteness;
+  noChange: boolean;
+}
+
+```
+
+Sequence is zero-based observed response.create order inside ONE connection,
+not a native turn/call/billing ID. Named stream_id lanes are FIFO; response IDs
+and lane evidence bind events. Missing/contradictory IDs never use timestamps to
+guess. Warmup is exactly generate=false, not a zero-token heuristic. Previous
+response is observed lineage, not retry/execution proof; predecessorSequence
+only when exactly one earlier response matches. Unknown full inherited context
+is never reconstructed from an incremental input. Reused response IDs mark all
+affected calls ambiguous; ambiguous calls have unknown usage.
+
+startedAt is ISO UTC from observed connection epoch + monotonic create offset.
+startedMs is connection-relative; firstContentMs/durationMs are CALL-relative
+nonnegative integer proxy observations, not provider inference/tool execution.
+Missing stays null. Terminal completed/failed/incomplete is protocol-only, not
+Agent success; a later connection interruption cannot undo an observed call
+terminal. Usage snapshots replace counters; cache/reasoning are OpenAI subsets.
+No cross-source token sum or price inferred here.
+
+Each list is metadata-only, <=20 calls/page. Detail alone includes bounded
+request preview and existing analysis limits; exact original containers remain
+separate. Tool references mean an observed later input mentions the same call_id,
+not proof the tool ran/succeeded. Native session/turn comes from explicit Codex
+client_metadata or x-codex-turn-metadata; conflicting session/thread/header
+declarations become unknown. Never inherit the handshake turn for every call.
+Unique complete native owner may expose exact scoped response/tool/turn bindings;
+missing/ambiguous/incomplete manifests never generate a native event match.
+Retained rejected/revoked membership decisions return blocked, not a revived
+automatic session link; selected native metadata stays independently retained.
+
+The existing WS capture worker may retain agent:codex session declarations from
+complete bounded request-archive messages/upgrade headers. Locators reference the
+actual client_metadata session_id/thread_id or embedded x-codex-turn-metadata
+field. Request preview truncation/conflict invalidates manifest completeness.
+This supplies existing session membership suggestions, not a connection-level
+model call, native tool execution or additional charged usage.
+
+Codex's per-call semantic adapter maps custom_tool_call.input to the existing
+tool_call content, custom_tool_call_output to tool_result and
+response.custom_tool_call_input delta/done to argument-content assembly. It
+never rewrites original frames; indices/container source locators are unchanged.
+This is a Codex WS projection, not a changed HTTP capture parser epoch.
+
+Context diff reuses the existing bounded normalizer/diff engine against ONE
+explicit previous-response call, only if its request fits the2MiB previous-input
+cache. Null reason is success; absent/outside/normalization failure is explicit.
+Only compares observed transmitted payloads; never interprets incremental input
+shrink as compaction/context loss. Suppress inferred shrink/loss indicators when
+previous_response_id is present; measured usage delta remains source-reported.
+
+## TraceLog imports (schema19)
+
+Independent offline evidence, never native sessions/proxy requests or billing.
+`id` is SHA256 of exact inner JSON. Strings are source reported; absent/invalid
+numbers and timestamps are null. Project timestamps require explicit timezone,
+converted to ISO UTC milliseconds; original precision/shape remains in source.
+Metadata strings <=512 UTF-16 units (title clipped with ellipsis; identifiers
+over limit rejected). Each projected turn <=2048 UTF-8 bytes. Raw session/turn
+objects preserve unknown fields; no automatic decoding changes stored originals.
+
+```ts
+export interface TraceLogSession {
+  id: string;
+  fileName: string;
+  sourceMember: string | null;
+  importedAt: string;
+  source: CaptureBodyRef;
+  nativeSessionId: string | null;
+  ideType: string | null;
+  model: string | null;
+  title: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  turnCount: number;
+}
+export interface TraceLogTurn {
+  sequence: number; // zero-based file order, not inferred native turn_number
+  turnId: string | null;
+  turnNumber: number | null;
+  model: string | null;
+  requestTime: string | null;
+  responseTime: string | null;
+  isError: boolean | null;
+  reported: Record<string, number | null>; // only allowlist below
+  hasOutput: boolean;
+}
+export interface TraceLogPage<T> { items: T[]; offset: number; limit: number; hasMore: boolean }
+export interface TraceLogImportResult {
+  items: { state: 'imported' | 'duplicate'; session: TraceLogSession }[];
+  ignoredEntries: number;
+}
+export interface TraceLogTurnDetail {
+  sessionId: string;
+  sequence: number;
+  session: Record<string, unknown>;
+  raw: Record<string, unknown>;
+}
+```
+
+`reported` keys verbatim: input_tokens,output_tokens,cache_creation_tokens,
+cache_read_tokens,thoughts_token_count,total_tokens,ttft_ms,tpot_ms,tps,
+e2e_latency_ms,model_inference_ms,tool_time_ms,tool_call_count. Source-reported
+nonnegative finite numbers only, otherwise null. Never reinterpret totals/cache
+inclusion or tool_time_ms as measured execution; no cross-source aggregation.
+Internal indexed turn adds byte_offset,byte_length,body_sha256; internal session
+object offset/length/session_sha256 is kept in manifest, not duplicated raw
+content in SQLite. Selected detail verifies both bounded object digests.
+
+## Explicit offline capture reparse (schema18)
+
+```ts
+export interface CaptureReparseSnapshot {
+  parserVersion: number;
+  metricVersion: number;
+  sourceFingerprint: string;
+  parsedAt: string;
+  requestFormat: RequestContextFormat;
+  state: ProxyProtocolAnalysis['state'];
+  usage: Omit<ProxyNativeUsage, 'snapshots'>;
+  completeness: ProxyProtocolAnalysis['completeness'];
+}
+export interface CaptureReparseStatus {
+  proxyId: number;
+  requestId: string;
+  currentParserVersion: number;
+  currentMetricVersion: number;
+  state: 'not_parsed' | 'current' | 'stale' | 'unavailable';
+  unavailableReason: 'originals_deleted' | 'originals_missing' | 'originals_incomplete' | 'originals_invalid' | null;
+  snapshot: CaptureReparseSnapshot | null;
+}
+export interface CaptureReparseResponse {
+  status: CaptureReparseStatus;
+  analysis: ProxyProtocolAnalysis;
+}
+```
+
+Versions are positive safe integers; current parser=3,capture-metric=1,independent
+of scan METRICS_CALC_VERSION. parsedAt is ISO8601 UTC. Snapshot<=8192UTF8 bytes,
+completeness reasons<=32 strings each<=128characters,nonnegative safe omittedCount;
+usage has only nullable safe nonnegative counts and frozen accounting enum.
+No native snapshots/content/system/tools/error messages/headers/file paths in
+persisted summary. Full analysis is returned once,not stored as another body.
+
+Fingerprint is lowercase SHA256 of UTF8 JSON.stringify of this ordered array:
+`[1,requestId,requestFormat,hostname,url,ttnetEncrypted,isStreaming,
+[requestRef.id,requestRef.bytes,requestRef.sha256,requestRef.status],
+[responseRef.id,responseRef.bytes,responseRef.sha256,responseRef.status],
+requestEncoding,responseEncoding,
+transport ? [transport.version,transport.state,transport.error,
+transport.requestEnded,transport.responseEnded,transport.statusCode] : null]`.
+Encoding is exact observed content-encoding string,array joined by comma,or null
+when absent,using case-insensitive header lookup without rewriting headers.
+Fingerprint binds parser inputs,not unused timing/other headers; not a call ID.
+
+Two valid complete UUID/SHA/byte refs are required. GETstatus is metadata-only;
+deleted/missing/incomplete/invalid refs mean unavailable with null snapshot.
+Otherwise no snapshot=not_parsed,versions/ref mismatch=stale,else=current.
+Current means versions/reference metadata match the last successful reparse,
+not fresh file verification or Agent/protocol success. POST verifies actual
+original bytes/digest/decode with no legacy fallback. Body-valid unknown/failed/
+incomplete protocol remains a legitimate result. Same proxy_id update,no new
+call/charge or original/native/scan metric mutation. Fresh identity/ref/deletion
+checks prevent stale commits. Confirmed body deletion clears summary atomically
+with intent. Reparse is not detached archive import or external execution replay.
+
 > Capture amendment (2026-10-15, user approved): monitoring preserves original request/response headers, URLs, bodies, prompts and tool data without redaction. This supersedes earlier monitoring redaction/raw-opt-in wording. Existing redaction utilities remain optional and are bypassed by monitoring. CA private keys are not capture payload.
 
 ## Original body storage types (fuse-agent-monitoring)
@@ -92,10 +320,20 @@ export interface ProxyProtocolItem {
   index: number | null;
   choiceIndex: number | null;
   content: string;
+  toolResultIsError: boolean | null;
   complete: boolean;
   sourcePath: string;
 }
 
+// toolResultIsError preserves a native boolean only on Messages request
+// tool_result blocks; absent/invalid/other shapes are null. False is not proof
+// of tool success. True reports a failure at sourcePath + '.is_error', without
+// changing the independent network/protocol state or observed content.
+// Framework-generated item source locators (fixed grammar + bounded indices,
+// never user content) remain exact independently of the 262144 display-content
+// character pool. Record and serialized-response bounds still apply; exhausting
+// displayed content must not turn a retained flag into a false '.is_error' path.
+// The on-demand analysis parser version is 3 after this projection change.
 export interface ProxyToolDeclaration {
   name: string | null;
   type: string;
@@ -253,6 +491,35 @@ export interface CaptureTransportResult {
   responseEnded: boolean;
   /** Actual upstream status; null before any upstream headers, never a synthetic local status. */
   statusCode: number | null;
+  /** Optional for legacy captures; a missing timing is unknown. */
+  timing?: CaptureNetworkTiming;
+  /** Connection observation, NOT one model call or wire-frame archive. */
+  websocket?: CaptureWebSocketConnection;
+}
+
+export interface CaptureWebSocketConnection {
+  version: 1;
+  scope: 'connection';
+  archive: 'awsp1';
+  requestMessages: number;
+  responseMessages: number;
+  /** Observed socket close codes; null when not observed before settlement. */
+  clientCloseCode: number | null;
+  upstreamCloseCode: number | null;
+}
+
+export interface CaptureNetworkTiming {
+  version: 1;
+  clock: 'proxy_monotonic';
+  responseHeadersMs: number | null;
+  firstBodyByteMs: number | null;
+  firstContentMs: number | null;
+  firstContentKind: 'text' | 'reasoning' | 'tool_arguments' | null;
+  firstContentBasis: 'sse_event_dispatch' | 'json_document_complete' | null;
+  completedMs: number | null;
+  contentTimingStatus: 'observed' | 'no_content' | 'not_collected' | 'unsupported_encoding' | 'preview_limit' | 'decode_error';
+  serverTiming: string | null;
+  serverTimingTruncated: boolean;
 }
 
 /** Internal durable journal only. Never returned on list/SSE/API or exported as a body. */
@@ -279,6 +546,7 @@ export interface CaptureJournalEntry {
   requestRef: CaptureBodyRef | null;
   responseRef: CaptureBodyRef | null;
 }
+```
 
 The journal owns request/file identity before original file creation. Initial
 metadata is durable before queued original bytes are written, without waiting
@@ -328,6 +596,160 @@ No default request/stream timeout is imposed by monitoring. Already-started
 responses are aborted on upstream failure, never appended with synthetic
 error text; a local pre-header error response is not upstream original data.
 
+Timing offsets are nonnegative safe integer milliseconds from the same observed
+proxy request start, rounded from a monotonic clock, not UTC differences or
+worker/SQLite completion time. SSE first content is the arrival that completed
+dispatch of the first nonempty text/public reasoning/tool-argument frame;
+comments, role/empty deltas, usage and terminal markers are not content. JSON
+first content means first complete document, not token/stream TTFT. Preserve
+the first observed category, including real zero latency; otherwise null, never
+E2E/headers substituted. Compression, missing stamps, limits and decode failure
+are explicit statuses. Already observed content is not erased by later truncation.
+serverTiming retains at most512 UTF16 code units from the observed Server-Timing
+header with an explicit truncation flag; complete original headers remain in
+capture metadata. Vendor units/clock/meaning are not guessed or mixed with
+local timings. No TPS is inferred from network chunk count or these offsets.
+
+### Linked execution metadata projection
+
+```ts
+export interface LinkedExecutionIdentityMatch {
+  eventId: string;
+  scanIdentityId: string;
+  proxyIdentityId: string;
+  namespace: string;
+  kind: NativeIdentityKind;
+  value: string;
+  scope: string;
+}
+export interface LinkedExecutionPage {
+  sessionKey: string;
+  /** Retained session declaration only; NOT measured provenance per event. */
+  sessionDurationSource: DurationSource;
+  events: TraceEventSlim[];
+  eventOffset: number;
+  eventLimit: number;
+  eventTotal: number;
+  eventsHasMore: boolean;
+  attempts: Array<{
+    association: TraceAssociation;
+    request: ProxyRequestListItem;
+    /** Existing bounded network metadata, null for legacy missing evidence. */
+    transport: CaptureTransportResult | null;
+    matches: LinkedExecutionIdentityMatch[];
+  }>;
+  nextCaptureCursor: number | null;
+  capturesHasMore: boolean;
+  identities: TraceSourceIdentity[];
+  identityCompleteness: IdentityCompleteness;
+}
+```
+
+events are native metadata in sequence order; no server-derived TraceTurn or
+new execution/call IDs. Attempts are accepted direct/confirmed memberships,
+not proof of one native model event or a retry. A match means same exact
+namespace/kind/value/nonempty native scope, with a real retained scan eventId
+and complete source manifests. Session/parent-session/trace membership alone
+never binds a call; request/response/tool_call/message/span may provide shared
+identity evidence, not causal or billing identity. Ambiguous bindings must not
+be guessed, including collisions outside the current event page. Incomplete/
+unbound manifests stay visible with reasons and no fabricated event link.
+Native IDs keep the source value; eventId is bound during source conversion,
+not used to invent that value. Existing source originals/decisions are untouched.
+
+sessionDurationSource is normalized from sessions.duration_source (unknown when
+absent/invalid), not inferred from provider or positive duration. Existing
+adapters can mix measured/derived/zero-duration events under one declaration;
+therefore every native event keeps per-event measurement provenance unknown.
+Display its retained duration as normalized log duration/interval, never as
+measured tool time. Attempts include retained transport metadata in one batched
+read, independently of native timing/matches. No cross-clock subtraction,
+same-call/billing deduction or derived timing write.
+
+### Selected capture comparison and native parent references
+
+```ts
+export interface CaptureComparisonAnalysis extends Pick<ProxyProtocolAnalysis,
+  'parserVersion' | 'requestFormat' | 'model' | 'state' | 'stopReason' | 'usage' | 'completeness'> {
+  errorCount: number;
+  errorCodes: Array<string | null>;
+  errorCodesTruncated: boolean;
+}
+export interface CaptureComparisonSide {
+  request: ProxyRequestListItem;
+  evidence: Omit<ProxyCaptureBodies, 'responseHeaders'>;
+  originalDeletion: OriginalDeletionJob | null;
+  analysis: CaptureComparisonAnalysis | null;
+  analysisUnavailableReason: 'original_deleted' | 'analysis_unavailable' | 'metadata_only' | null;
+}
+export interface CaptureComparisonResponse {
+  base: CaptureComparisonSide;
+  target: CaptureComparisonSide;
+  generatedAt: string;
+}
+export interface NativeSessionParentPage {
+  sessionKey: string;
+  items: Array<{
+    identity: TraceSourceIdentity;
+    state: 'resolved' | 'unresolved' | 'ambiguous' | 'incomplete';
+    matches: Array<Pick<SessionIndexEntry, 'id' | 'provider' | 'sourceAgent' | 'title' | 'startedAt'>>;
+    matchesTruncated: boolean;
+  }>;
+  nextCursor: string | null;
+  hasMore: boolean;
+  completeness: IdentityCompleteness;
+}
+```
+
+Comparison includes only the first32 native error codes (null is a real missing
+code), full observed projected errorCount and explicit truncation, not error
+payloads/prompts/tool schema or raw bodies. Side metadata is a fresh point-in-
+time snapshot. Any deletion intent strips that side's analysis; metadata-only
+strips both. First-content differences require same nonnull basis and kind,
+observed status and valid same-domain clocks; all other metrics keep explicit
+basis. Unknown never becomes0, native usage subsets are not added twice. No
+cross-source billing identity, aggregate charge/cost or causal speedup asserted.
+Tool/parameter/task/quality equivalence is unproven until separately checked.
+
+Parent page uses retained source values/locators, not title/filename/time guesses.
+A unique same-namespace native session owner may resolve a declared parent/fork
+reference, not prove a runtime spawn. Source and matched-owner manifests must
+be complete; owner native session scope must be explicit/unambiguous, self
+reference cannot resolve. Multiple matching owners are ambiguous; no matches
+is unresolved unless evidence is incomplete. Each reference keeps at most20
+matched metadata owners and a truncation flag, with paged source identities.
+No recursive ancestry, inferred child/communication edge or new causal IDs.
+
+### Versioned local capture evidence export
+
+```ts
+export interface CaptureEvidenceExport {
+  format: 'awesome-telemetry.capture-evidence';
+  formatVersion: 1;
+  exportedAt: string;
+  schemaVersion: number;
+  request: Omit<ProxyRequest, 'requestBody' | 'responseBody' | 'rawRequestBody' | 'rawResponseBody' | 'systemPrompt'>;
+  capture: ProxyCaptureBodies;
+  originalDeletion: OriginalDeletionJob | null;
+  analysis: ProxyProtocolAnalysis | null;
+  analysisUnavailableReason: 'original_deleted' | 'analysis_unavailable' | 'metadata_only' | null;
+  identities: TraceIdentityPage;
+  traceLinks: ProxyTraceLinkPage;
+  limitations: string[];
+}
+```
+
+This is a bounded JSON snapshot, not a full original-file archive, future access
+guarantee, full execution trace or supported offline import format. It preserves
+observed header values without redaction; original body refs/digests/status
+identify separately downloadable encoded originals. Analysis carries its parser
+version and bounded evidence. Identity/link pages expose their own cursors and
+missing manifests. No body/prompt preview fields in request, no paths/journal/
+private CA. Any originalDeletion intent forces analysis=null and reason
+original_deleted, even after async analysis; never substitute cached previews.
+Export is local download only, not external API/tool replay or cloud upload.
+
+```ts
 export interface CaptureProcessingResult {
   version: 1;
   status: 'ok' | 'preview_truncated' | 'queue_full' | 'worker_error' | 'timeout' | 'closed' | 'result_limit' | 'decode_error' | 'resource_limit';
@@ -339,6 +761,36 @@ export interface CaptureProcessingResult {
 }
 
 export type CaptureContentEncoding = 'identity' | 'gzip' | 'br' | 'deflate' | 'unsupported';
+```
+
+Native WS capture uses method `WS`, requestFormat `unknown`, parserRoute
+`websocket_connection`, no inferred session or connection-level token counts.
+CaptureTransportResult.websocket identifies a connection; timing is absent.
+Duration is connection lifetime, NOT model E2E/TTFT. statusCode is101 only after
+observing upstream upgrade, otherwise null. Message counters count observed
+application messages, not tokens, close/control events or model calls; integers
+are nonnegative safe integers. Close codes are null or integers1000..4999.
+Processing runs the existing bounded worker. It produces <=64KiB text per
+direction with global sequence/elapsed offset/kind/binary labels and binary
+payload as base64; preview truncation is explicit. No JSON semantic inference
+or text decoding of binary containers on forwarding callbacks. Worker framing
+errors use WS_ARCHIVE_INVALID; finite preview/record limits use
+SOURCE_PREVIEW_TRUNCATED. Identity manifest explicitly omits
+websocket_connection_not_model_call. Existing HTTP analysis returns unknown,
+incomplete with this same reason, not parsed container bytes or a complete
+model call. HTTP reparse is unavailable (`originals_invalid`) for WS archives.
+
+AWSP1 original-file format: request file=client→upstream, response
+file=upstream→client. Each starts ASCII `AWSP1\n`. Records have18-byte header:
+kind u8 (1 message,2 ping,3 pong,4 observed close), binary u8 (0/1), global
+sequence u32BE (starts1), elapsed monotonic milliseconds f64BE, payload length
+u32BE, then exact payload bytes. Close observation payload is u16BE code plus
+observed reason bytes;1005/1006 are event observations, not fabricated wire
+frames. The shared sequence preserves cross-direction observation order.
+Message reassembly/decompression belongs to the existing engine; TCP frames,
+masks, fragmentation and compressed wire bytes are not retained. Header/body
+bytes count toward existing quotas, hashes and byte refs. Interrupted files
+may end within a record and are never described as complete transcripts.
 
 Capture processing status describes execution of a bounded live metadata job,
 not protocol completion, Agent success, runtime trust or original retention.
@@ -366,6 +818,7 @@ a replacement character for a split trailing code point. EOF is not a final
 SSE delimiter or protocol completion: discard a pending incomplete event,
 report SSE_INCOMPLETE_FRAME, and do not accept its usage/completion markers.
 
+```ts
 export interface ProxyCaptureActivity {
   listening: boolean;
   observedRequests: number;
@@ -402,6 +855,7 @@ export interface CaptureResourceStatus {
   sseClients: number;
   slowSseDisconnects: number;
 }
+```
 
 resource_limit means process-wide preview admission failed. Discard semantic
 buffers, retain unknown parsed fields and an incomplete identity manifest;
@@ -411,6 +865,7 @@ from semantic previews (including evicted prefixes), not lost original data.
 Resource snapshots are process-wide gauges/lifetime counters, not per-run
 counts or whole-process RSS. Absence on old records means unknown, not zero.
 
+```ts
 export interface ProxyRuntimeStatus {
   running: boolean;
   starting: boolean;
@@ -422,6 +877,67 @@ export interface ProxyRuntimeStatus {
 
 export type MonitorAgent = 'claude' | 'codex' | 'opencode';
 
+export type MonitorTransportCapability = 'http1_json_sse' | 'https_connect' | 'compressed_semantics' | 'live_identity_sse'
+  | 'agent_websocket' | 'http2_grpc' | 'mtls_pinning' | 'electron_cdp' | 'trae_cn_frida';
+export interface MonitorCapabilityReport {
+  manifestVersion: 1;
+  generatedAt: string;
+  platform: string;
+  scope: 'terminal_child_and_descendants';
+  listener: 'shared_not_process_filtered';
+  agents: Array<{
+    provider: ProviderKey;
+    processRecipe: MonitorAgent | null;
+    nativeScanner: 'implemented';
+    installedVersion: null;
+    runtimeVerification: 'unverified';
+  }>;
+  transports: Array<{
+    id: MonitorTransportCapability;
+    level: 'controlled_test' | 'unsupported' | 'unverified' | 'dev_only' | 'experimental';
+    testedPlatforms: string[];
+  }>;
+}
+```
+
+The capabilities document is bounded implementation evidence, not an installed
+inventory or exact Agent version/OS/transport certification. Null installedVersion
+is unknown, never an absent installation. Controlled tests list only actually
+tested host platforms, never upgrade Agent runtimeVerification. Nine scanner
+implementations do not certify nine network integrations. processRecipe only
+selects a blank CLI form; it must not save/start/overwrite an existing profile.
+Only the already implemented terminal child+descendant environment scope exists,
+with a shared listener, not a process/project traffic filter or global proxy.
+
+Local-only diagnostic view model (not a new HTTP/storage projection):
+
+```ts
+export interface CaptureDiagnosticFinding {
+  code: 'slow_network' | 'slow_first_content' | 'repeated_encoded_request';
+  classification: 'derived';
+  evidence: Array<{ side: 'base' | 'target'; requestId: number; path: string; value: string | number }>;
+}
+export interface CaptureDiagnosticsViewModel {
+  thresholdMs: number;
+  repeat: 'same_encoded_request' | 'different_encoded_request' | 'unavailable';
+  findings: CaptureDiagnosticFinding[];
+}
+```
+
+deriveCaptureDiagnostics uses CaptureComparisonResponse only. Threshold must be a
+positive safe integer<=3600000, default10000ms; invalid input falls back to that
+documented default. A slow finding requires valid network offset evidence through
+the same timing validation as selected comparison, applied independently per side;
+normal HTTP error completion is a valid network observation, not Agent success.
+Threshold equality qualifies. First-content also needs observed known basis/kind;
+not cross-domain timing or pure model latency. Repetition requires distinct safe
+positive capture IDs and retained complete request refs, valid64lowerhex digest,
+positive safe integer bytes, no deletion intent, same known method/hostname/URL
+and supported requestFormat. Equal bytes+digest is a recorded encoded-body match,
+not equality of headers/credentials, decoded meaning, request execution, retries,
+billing or quality. No file validation/IO, analysis/identity mutation or sums.
+
+```ts
 export interface MonitorConnectionSettings {
   label: string;
   agent: MonitorAgent;
@@ -467,7 +983,29 @@ export interface MonitorConnectionDiagnostics {
   status: ProxyRuntimeStatus;
   issues: Array<{ code: MonitorDiagnosticCode; severity: 'info' | 'warning' | 'error'; message: string; nextStep: string }>;
 }
+
+export interface MonitorCaptureSelfTest {
+  profileId: string;
+  profileRevision: number;
+  checkedAt: string;
+  runId: string;
+  proxyId: number;
+  scope: 'local_http_sse';
+  synthetic: true;
+  checks: { forwarding: boolean; persistence: boolean; originals: boolean; parsing: boolean };
+  passed: boolean;
+  agentVerified: false;
+  tlsVerified: false;
+}
 ```
+
+MonitorCaptureSelfTest is an explicit synthetic loopback HTTP/SSE pipeline
+snapshot. Passed requires every check plus unchanged current run/port. Original
+checks read both retained files with size/SHA256 validation and compare exact
+fixture bytes; parsing checks the actual capture-worker metadata. No new table,
+native identity or charge is created; the existing capture row and original files
+remain, marked by model agent-observe-self-test and unique URL query marker.
+Shared listener counters include this traffic and do not certify an Agent.
 
 Connection diagnostics are timestamped read-only snapshots of one saved recipe and the shared listener. They do not start a listener, initialize a missing CA, inspect Agent/native configs, execute a process, send an upstream request or open original capture files. Public CA metadata is read asynchronously, max64KiB from the canonical certs/ca.pem, rejecting symlink/non-regular/invalid/non-CA/out-of-validity public evidence. A public certificate being available is not runtime trust or proof that a signing key still matches it. Missing/unreadable/invalid evidence is explicit; never expose private key material. Report messages/nextStep are bounded static English troubleshooting copy, not captured payload.
 
@@ -1316,7 +1854,7 @@ export interface TraceDimensionMetrics {
 
 export interface TraceMetrics extends TraceMetricsBase, TraceDimensionMetrics {
   /** 持久化的速度指标（add-mission-control §4 B6，G11.11）：不持久化 →
-   * 跨会话聚合触发 N+1（G11.9）。改算法必须 bump METRICS_CALC_VERSION（当前 3）。 */
+   * 跨会话聚合触发 N+1（G11.9）。改算法必须 bump METRICS_CALC_VERSION（当前 6）。 */
   ttftMs?: number | null;
   e2eMs?: number;
   /** 修复循环命中（W-F-W-F-W ≥2 轮，与 session-findings repairLoop 同口径）。
@@ -1346,17 +1884,18 @@ export interface TraceMetrics extends TraceMetricsBase, TraceDimensionMetrics {
 
 /** Speed metrics, computed at runtime, not persisted. */
 export interface SpeedMetrics {
-  /** Time to first token (ms). */
+  /** Legacy scan: first user_prompt to first LLM log startedAt, not wire TTFT. */
   ttftMs: number | null;
-  /** Tokens per second. */
+  /** Legacy scan: arithmetic mean of valid per-event output/duration rates. */
   tps: number | null;
-  /** Time per output token (ms). */
+  /** Legacy scan: sum valid LLM durations / sum their output, not streaming TPOT. */
   tpotMs: number | null;
   /** End-to-end wall-clock (ms). */
   e2eMs: number;
   /** Median gap between adjacent turns (ms). */
   turnGapMedianMs: number | null;
   /**
+   * Legacy scan sum of normalized LLM durations; not guaranteed measured time.
    * ⚠️ Pure LLM inference time must come from InferHub.inference_duration.
    * Kernel-Inference duration includes tool execution time (G4.1).
    */
@@ -1696,6 +2235,12 @@ export interface LocalSessionConfig {
 
 ```ts
 export interface BusEvents {
+  /** Ephemeral live-preview lifecycle; not persistence or Agent success. */
+  proxy_stream_started: { requestId: string; hostname: string; startedAt: string };
+  proxy_stream_ended: { requestId: string };
+  /** Ephemeral opaque WS dirty hints; 1s/max64 IDs, selected feed only,
+   * no body, replay, completion or durable-written-prefix guarantee. */
+  proxy_sources_changed: { requestIds: string[] };
   /** Single session created. Low frequency, not coalesced. */
   session_created: { key: string; provider: ProviderKey };
   /**
@@ -1734,6 +2279,28 @@ export interface BusEvents {
   };
 }
 ```
+
+Live stream lifecycle describes identity-encoded SSE responses only. startedAt
+is the observed UTC request start; ended means the network preview ended, not
+that a complete original/parsed record was persisted. Normal chunk windows are
+100ms; terminal flush may emit an accepted partial window before ended. No raw
+chunk is sent on the default metadata subscription. Selected subscription uses
+the requestId exactly as observed; missing/earlier chunks are not recovered.
+
+SSE's non-bus connected control additionally supports the following shape:
+
+```ts
+export interface SseConnected {
+  serverTime: string;
+  schemaVersion: number;
+  cursor: string;
+  resume: 'fresh' | 'replayed' | 'reset';
+}
+```
+
+The cursor identifies an in-memory metadata position, not a database revision.
+Reset means a restart, expired/overflowed window or unusable cursor; no assertion
+of durable event history or recovered live body fragments is made.
 
 ---
 

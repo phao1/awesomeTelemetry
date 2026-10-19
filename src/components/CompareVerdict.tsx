@@ -4,6 +4,8 @@ import type { I18nKey, Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { TraceEventSlim } from '../core/trace-types.js';
 import { groupEvents } from '../core/event-groups.js';
+import { scanTimingRatio, scanTimingReason, scanTimingValue } from '../core/scan-timing.js';
+import type { ScanTimingReason } from '../core/scan-timing.js';
 import { fmtMs } from './compare-stats.js';
 import type { CompareResult } from './compare-types.js';
 import {
@@ -15,8 +17,9 @@ import {
 
 interface VerdictDim {
   key: 'fast' | 'frugal' | 'quality';
-  winner: 'L' | 'R' | 'tie';
+  winner: 'L' | 'R' | 'tie' | 'unavailable';
   detail: string;
+  reason?: ScanTimingReason;
 }
 
 /** §6.3 裁决（calibrate-tokens-and-compare-report）：快/省/质 三维裁决。 */
@@ -30,7 +33,7 @@ export function computeVerdict(
   winner: 'L' | 'R' | 'tie';
   /** REQ-104：Hero 摘要用到的比率（与裁决同一数据源，避免口径漂移）。 */
   summary: {
-    fastRatio: number;
+    fastRatio: number | null;
     tokenDiffPct: number;
     leftCoveragePct: number;
     rightCoveragePct: number;
@@ -54,18 +57,18 @@ export function computeVerdict(
     dims.push({ key, winner, detail });
   };
 
-  const lE2e = result.speed.left.e2eMs ?? 0;
-  const rE2e = result.speed.right.e2eMs ?? 0;
-  const fastRatio = Math.max(lE2e, rE2e) / Math.max(1, Math.min(lE2e, rE2e));
-  add(
+  const lE2e = scanTimingValue(result.speed.left.e2eMs);
+  const rE2e = scanTimingValue(result.speed.right.e2eMs);
+  const fastReason = scanTimingReason(result.left, result.right, 'e2e', result.speed.left.e2eMs, result.speed.right.e2eMs);
+  const fastRatio = scanTimingRatio(result.left, result.right, 'e2e', result.speed.left.e2eMs, result.speed.right.e2eMs);
+  if (fastReason !== null) dims.push({ key: 'fast', winner: 'unavailable', reason: fastReason,
+    detail: `${fmtMs(lE2e)} vs ${fmtMs(rE2e)} · ${t('scan.timing.notComparable', locale)}: ${t(`scan.timing.reason.${fastReason}`, locale)}` });
+  else add(
     'fast',
-    lE2e,
-    rE2e,
+    lE2e!,
+    rE2e!,
     true,
-    t('compare.fastDetail', locale)
-      .replace('{left}', fmtMs(lE2e))
-      .replace('{right}', fmtMs(rE2e))
-      .replace('{ratio}', fastRatio.toFixed(1)),
+    `${fmtMs(lE2e)} vs ${fmtMs(rE2e)} · ${fastRatio === null ? t('scan.timing.wallClock', locale) : t('scan.timing.wallClockRatio', locale).replace('{ratio}', fastRatio.toFixed(1))}`,
   );
 
   const lTok = left.tokenUsage.total;
@@ -229,7 +232,7 @@ export function CompareVerdict({
               <Icon size={16} />
               <span className="compare-verdict-dim-label">{t(DIM_LABEL_KEY[dim.key], locale)}</span>
               <span className="compare-verdict-dim-winner" style={{ color: tone }}>
-                {dim.winner === 'tie' ? t('compare.parity', locale) : t('compare.leads', locale).replace('{name}', dim.winner === 'L' ? leftName : rightName)}
+                {dim.winner === 'unavailable' ? t('scan.timing.notComparable', locale) : dim.winner === 'tie' ? t('compare.parity', locale) : t('compare.leads', locale).replace('{name}', dim.winner === 'L' ? leftName : rightName)}
               </span>
               <span className="compare-verdict-dim-detail">{dim.detail}</span>
             </button>

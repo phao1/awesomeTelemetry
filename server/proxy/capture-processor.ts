@@ -1,11 +1,13 @@
 import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import type { CaptureProcessingResult, NativeIdentitySet } from '../../src/core/trace-types.js';
+import type { CaptureNetworkTiming, CaptureProcessingResult, NativeIdentitySet } from '../../src/core/trace-types.js';
 import type { ParsedRequest } from './parser-router.js';
 import { captureResources, type CaptureResources } from './capture-resources.js';
+import { ARRIVAL_BYTES, ARRIVAL_POINT_LIMIT, type ResponseArrivalTimeline } from './network-timing.js';
 
 export interface CaptureJob {
+  evidenceFormat?: 'websocket_archive_v1';
   hostname: string;
   url: string;
   requestBody: string;
@@ -18,6 +20,8 @@ export interface CaptureJob {
   responseBytes?: Uint8Array;
   requestTruncated?: boolean;
   responseTruncated?: boolean;
+  timing?: CaptureNetworkTiming;
+  responseTimeline?: ResponseArrivalTimeline;
 }
 export interface CaptureProjection {
   parsed: ParsedRequest;
@@ -25,6 +29,7 @@ export interface CaptureProjection {
   processing: CaptureProcessingResult;
   workerThreadId: number;
   previews: { request: string | null; response: string | null; requestTruncated: boolean; responseTruncated: boolean };
+  timing?: CaptureNetworkTiming;
 }
 export class CaptureProcessingError extends Error {
   readonly status: Exclude<CaptureProcessingResult['status'], 'ok' | 'preview_truncated'>;
@@ -71,15 +76,22 @@ export class CaptureProcessor {
   submit(input: CaptureJob): Promise<CaptureProjection> {
     if (this.closed) return Promise.reject(new CaptureProcessingError('closed'));
     const requestBytes = Buffer.byteLength(input.requestBody) + (input.requestBytes?.byteLength ?? 0), responseBytes = Buffer.byteLength(input.responseBody ?? '') + (input.responseBytes?.byteLength ?? 0);
-    const metadata = Buffer.byteLength(JSON.stringify([input.hostname, input.url, input.requestHeaders, input.responseHeaders]));
-    const bytes = requestBytes + responseBytes + metadata;
-    if (requestBytes > 2 * 1024 * 1024 || responseBytes > 2 * 1024 * 1024 || metadata > 64 * 1024 || this.jobs.size >= this.maxJobs || this.bytes + bytes > this.maxBytes) {
+    const metadata = Buffer.byteLength(JSON.stringify([input.hostname, input.url, input.requestHeaders, input.responseHeaders, input.timing]));
+    const arrivals = input.responseTimeline;
+    const arrivalBytes = arrivals === undefined ? 0 : arrivals.offsets.byteLength + arrivals.elapsedMs.byteLength;
+    const bytes = requestBytes + responseBytes + metadata + arrivalBytes;
+    if (requestBytes > 2 * 1024 * 1024 || responseBytes > 2 * 1024 * 1024 || metadata > 64 * 1024 ||
+      arrivalBytes > ARRIVAL_BYTES || arrivals !== undefined && (!Number.isSafeInteger(arrivals.count) || arrivals.count < 0 || arrivals.count > ARRIVAL_POINT_LIMIT || arrivals.count > arrivals.offsets.length || arrivals.count > arrivals.elapsedMs.length) ||
+      this.jobs.size >= this.maxJobs || this.bytes + bytes > this.maxBytes) {
       this.resources.noteProcessingRejection(); return Promise.reject(new CaptureProcessingError('queue_full'));
     }
     const release = this.resources.acquireJob(bytes);
     if (release === null) { this.resources.noteProcessingRejection(); return Promise.reject(new CaptureProcessingError('queue_full')); }
     let owned: CaptureJob;
-    try { owned = { ...input, requestBytes: input.requestBytes === undefined ? undefined : Uint8Array.from(input.requestBytes), responseBytes: input.responseBytes === undefined ? undefined : Uint8Array.from(input.responseBytes), requestHeaders: structuredClone(input.requestHeaders), responseHeaders: structuredClone(input.responseHeaders) }; }
+    try { owned = { ...input, requestBytes: input.requestBytes === undefined ? undefined : Uint8Array.from(input.requestBytes), responseBytes: input.responseBytes === undefined ? undefined : Uint8Array.from(input.responseBytes), requestHeaders: structuredClone(input.requestHeaders), responseHeaders: structuredClone(input.responseHeaders),
+      timing: input.timing === undefined ? undefined : structuredClone(input.timing), responseTimeline: arrivals === undefined ? undefined : {
+        offsets: Uint32Array.from(arrivals.offsets), elapsedMs: Float64Array.from(arrivals.elapsedMs), count: arrivals.count, limited: arrivals.limited,
+      } }; }
     catch { release(); this.resources.noteProcessingRejection(); return Promise.reject(new CaptureProcessingError('worker_error')); }
     return new Promise((resolve, reject) => {
       const id = ++this.next;
@@ -117,6 +129,7 @@ export class CaptureProcessor {
       const transfers: ArrayBuffer[] = [];
       if (job.input.requestBytes !== undefined) transfers.push(job.input.requestBytes.buffer as ArrayBuffer);
       if (job.input.responseBytes !== undefined) transfers.push(job.input.responseBytes.buffer as ArrayBuffer);
+      if (job.input.responseTimeline !== undefined) transfers.push(job.input.responseTimeline.offsets.buffer as ArrayBuffer, job.input.responseTimeline.elapsedMs.buffer as ArrayBuffer);
       this.worker.postMessage({ id: job.id, input: job.input }, transfers);
     }
     catch { this.failAll('worker_error'); }

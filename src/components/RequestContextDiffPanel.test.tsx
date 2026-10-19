@@ -195,6 +195,22 @@ describe('RequestContextDiffPanel §7', () => {
     vi.stubGlobal('fetch', vi.fn());
   });
 
+  it('uses an explicit initial base without automatic previous pairing and does not refetch on locale changes', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(jsonOk(diffResponse({ pairing: { confidence: 'manual', reason: 'explicit same pair', warnings: [] } })));
+    const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
+    const props = { targetId: 2, initialBaseId: 1, targetFormat: 'anthropic_messages' as const, loadedItems: [listItem(1)], onOpenRequest: () => undefined };
+    try {
+      await act(async () => root.render(<RequestContextDiffPanel {...props} locale="en" />));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/proxy/requests/2/context-diff?base=1');
+      expect(container.textContent).toContain('explicit same pair');
+      await act(async () => root.render(<RequestContextDiffPanel {...props} locale="zh" />));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(container.textContent).toContain('explicit same pair');
+    } finally { act(() => root.unmount()); }
+  });
+
   it.each([false, true])('marks changed association evidence stale without reparsing; ignores old in-flight results=%s', async pending => {
     let resolveOld!: (value: Response) => void;
     const delayed = new Promise<Response>(resolve => { resolveOld = resolve; });

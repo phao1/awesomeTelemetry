@@ -2,17 +2,17 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MonitorSetupPanel } from './MonitorSetupPanel.js';
-import type { MonitorConnectionDiagnostics, MonitorConnectionPlan, MonitorConnectionProfile } from '../core/trace-types.js';
+import type { MonitorAgent, MonitorConnectionDiagnostics, MonitorConnectionPlan, MonitorConnectionProfile } from '../core/trace-types.js';
 
 const profile: MonitorConnectionProfile = { id: '00000000-0000-4000-8000-000000000001', label: 'Synthetic project', agent: 'claude', projectDirectory: '/synthetic/project', executable: null, proxyPort: 7779, noProxy: null, revision: 1, createdAt: '2026-10-16T00:00:00.000Z', updatedAt: '2026-10-16T00:00:00.000Z' };
 const plan: MonitorConnectionPlan = { profile, controlUrl: 'http://127.0.0.1:4173', proxyUrl: 'http://127.0.0.1:7779', caCertUrl: 'http://127.0.0.1:4173/api/ca-cert', caSha256: 'a'.repeat(64), commands: { posix: "'node' '/app/bin/agent-observe.js' 'launch' '--profile' 'synthetic' '--'", powershell: "& 'node' '/app/bin/agent-observe.js' 'launch'" }, warnings: ['process_and_descendants', 'transport_unverified'], status: { running: true, starting: false, port: 7779, requestCount: 0, startedAt: null } };
 const mounted: Root[] = [];
 const diagnostic: MonitorConnectionDiagnostics = { profileId: profile.id, profileRevision: 1, checkedAt: '2026-10-16T00:00:00.000Z', expectedPort: 7779, listener: 'listening', ca: { state: 'available', sha256: 'a'.repeat(64), validUntil: '2030-01-01T00:00:00.000Z' }, trust: { scope: 'selected_child_runtime', variable: 'NODE_EXTRA_CA_CERTS', runtimeVerified: false, osTrust: 'not_checked' }, traffic: { state: 'waiting', scope: 'shared_listener' }, status: { ...plan.status, diagnostics: { phase: 'waiting_for_traffic', runId: 'synthetic', cleanupPending: false, listening: true, observedRequests: 0, activeRequests: 0, pendingWrites: 0, persistedRequests: 0, interruptedRequests: 0, captureErrors: 0, lastError: null, lastRequestAt: null } }, issues: [{ code: 'traffic_waiting', severity: 'warning', message: 'No traffic', nextStep: 'Inspect terminal' }, { code: 'trust_unverified', severity: 'warning', message: 'Unknown trust', nextStep: 'Verify runtime' }] };
 function response(data: unknown, status = 200): Response { return { ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(data) } as Response; }
-async function render(onStatus = vi.fn()) {
+async function render(onStatus = vi.fn(), initialAgent?: MonitorAgent) {
   const container = document.createElement('div'); document.body.append(container);
   const root = createRoot(container); mounted.push(root);
-  await act(async () => { root.render(<MonitorSetupPanel locale="zh" onStatus={onStatus} />); });
+  await act(async () => { root.render(<MonitorSetupPanel locale="zh" onStatus={onStatus} initialAgent={initialAgent} />); });
   return container;
 }
 function button(container: HTMLElement, text: string): HTMLButtonElement { return [...container.querySelectorAll('button')].find(item => item.textContent === text)!; }
@@ -22,6 +22,60 @@ async function selectProfile(container: HTMLElement) {
 afterEach(async () => { for (const root of mounted.splice(0)) await act(async () => root.unmount()); document.body.replaceChildren(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('explicit process-scoped connection setup', () => {
+  it('runs self-test only on explicit saved action, renders independent evidence and opens the synthetic capture', async () => {
+    const report = { profileId: profile.id, profileRevision: 1, checkedAt: profile.createdAt, runId: 'synthetic', proxyId: 42,
+      scope: 'local_http_sse', synthetic: true, checks: { forwarding: true, persistence: true, originals: true, parsing: true }, passed: true, agentVerified: false, tlsVerified: false };
+    const fetcher = vi.fn(async (url: string, _init?: RequestInit) => response(String(url).endsWith('/profiles') ? { items: [profile] } : report));
+    vi.stubGlobal('fetch', fetcher); const open = vi.fn(); const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push(root); await act(async () => root.render(<MonitorSetupPanel locale="zh" onOpenCapture={open} />));
+    await selectProfile(container); expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('保留抓包记录');
+    await act(async () => button(container, '本地抓包链路自检').click());
+    expect(fetcher).toHaveBeenCalledTimes(2); expect(fetcher.mock.calls[1]![0]).toBe(`/api/proxy/profiles/${profile.id}/self-test`);
+    expect(JSON.parse(String(fetcher.mock.calls[1]![1]?.body))).toEqual({ expectedRevision: 1 });
+    expect(container.textContent).toContain('本地 HTTP 抓包链路通过'); expect(container.textContent).toContain('真实 Agent 接入、工具及子 Agent 覆盖仍未验证');
+    await act(async () => [...container.querySelectorAll('button')].find(item => item.textContent?.includes('查看自检抓包'))!.click()); expect(open).toHaveBeenCalledWith(42);
+    await act(async () => { const input = container.querySelector('input')!; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Edited'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+    expect(container.textContent).not.toContain('本地 HTTP 抓包链路通过'); expect(button(container, '本地抓包链路自检').disabled).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows actionable idle-listener self-test errors without implicit start or retry', async () => {
+    const fetcher = vi.fn(async (url: string) => String(url).endsWith('/profiles') ? response({ items: [profile] })
+      : response({ error: { code: 'MONITOR_SELF_TEST_NOT_READY', message: 'MONITOR_SELF_TEST_NOT_READY' } }, 409)); vi.stubGlobal('fetch', fetcher);
+    const container = await render(); await selectProfile(container); await act(async () => button(container, '本地抓包链路自检').click());
+    expect(container.textContent).toContain('请先开启此配置的代理监听'); expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(container.textContent).not.toContain('本地 HTTP 抓包链路通过');
+  });
+
+  it('aborts an owned self-test on unmount and never accepts a late result', async () => {
+    let signal: AbortSignal | null = null;
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => String(url).endsWith('/profiles') ? Promise.resolve(response({ items: [profile] }))
+      : new Promise((_resolve, reject) => { signal = init!.signal!; signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))); })));
+    const container = await render(); await selectProfile(container); await act(async () => button(container, '本地抓包链路自检').click());
+    const root = mounted.pop()!; await act(async () => root.unmount()); expect((signal as AbortSignal | null)?.aborted).toBe(true);
+  });
+
+  it.each(['codex', 'opencode'] as const)('preselects a new blank %s form without saving, starting or changing an existing profile', async agent => {
+    const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => response({ items: [profile] })); vi.stubGlobal('fetch', fetcher);
+    const container = await render(vi.fn(), agent);
+    expect(container.querySelectorAll('select')[0]!.value).toBe('');
+    expect(container.querySelectorAll('select')[1]!.value).toBe(agent);
+    expect(container.querySelector<HTMLInputElement>('input')!.value).toBe('');
+    expect(container.querySelector<HTMLInputElement>('[placeholder="/absolute/project/path"]')!.value).toBe('');
+    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(agent !== 'opencode');
+    if (agent === 'opencode') expect([...container.querySelectorAll('input')].some(input => input.value === 'localhost,127.0.0.1,::1')).toBe(true);
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual(['/api/proxy/profiles']);
+    expect(container.querySelector('textarea')).toBeNull();
+    await selectProfile(container);
+    expect(container.querySelectorAll('select')[1]!.value).toBe('claude');
+    await act(async () => { const input = container.querySelector('input')!; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Unsent user draft'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+    await act(async () => mounted.at(-1)!.render(<MonitorSetupPanel locale="zh" initialAgent={agent === 'codex' ? 'opencode' : 'codex'} />));
+    expect(container.querySelector('input')!.value).toBe('Unsent user draft');
+    expect(container.querySelectorAll('select')[0]!.value).toBe(profile.id);
+    expect(container.querySelectorAll('select')[1]!.value).toBe('claude');
+    expect(fetcher).toHaveBeenCalledTimes(1); expect(button(container, '生成启动命令').disabled).toBe(true);
+  });
   it('checks only on demand, keeps trust unknown and invalidates snapshots locally without polling on SSE status changes', async () => {
     const fetchMock = vi.fn(async (url: string) => response(String(url).endsWith('/profiles') ? { items: [profile] } : diagnostic));
     vi.stubGlobal('fetch', fetchMock);

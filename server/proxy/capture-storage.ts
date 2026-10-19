@@ -2,6 +2,7 @@ import type { Database } from 'better-sqlite3';
 import type { CaptureBodyRef, CaptureProcessingResult, CaptureTransportResult, ProxyCaptureBodies } from '../../src/core/trace-types.js';
 import { PROXY_CAPTURE_BODY_COLS, PROXY_CAPTURE_PROCESSING_COLS, PROXY_CAPTURE_TRANSPORT_COLS } from '../storage/columns.js';
 import { cachedStmt } from '../storage/stmt-cache.js';
+import { validNetworkTiming } from './network-timing.js';
 
 const WRITE = `INSERT INTO proxy_capture_bodies (${PROXY_CAPTURE_BODY_COLS}) VALUES (?, ?, ?, ?, ?, ?)
   ON CONFLICT(proxy_id) DO UPDATE SET request_ref=excluded.request_ref, response_ref=excluded.response_ref,
@@ -14,8 +15,15 @@ const READ_TRANSPORT = `SELECT ${PROXY_CAPTURE_TRANSPORT_COLS} FROM proxy_captur
 const WRITE_TRANSPORT = `INSERT INTO proxy_capture_transport (${PROXY_CAPTURE_TRANSPORT_COLS}) VALUES (?, ?) ON CONFLICT(proxy_id) DO UPDATE SET result_json=excluded.result_json`;
 
 export function writeCaptureTransport(db: Database, id: number, value: CaptureTransportResult): void {
+  const { timing, websocket, ...outcome } = value;
+  if (!(value.error === null || typeof value.error === 'string' && value.error.length <= 128) ||
+    Buffer.byteLength(JSON.stringify(outcome)) > 512 || timing !== undefined && !validNetworkTiming(timing) ||
+    websocket !== undefined && (timing !== undefined || websocket.version !== 1 || websocket.scope !== 'connection' || websocket.archive !== 'awsp1' ||
+      [websocket.requestMessages, websocket.responseMessages].some(v => !Number.isSafeInteger(v) || v < 0) ||
+      [websocket.clientCloseCode, websocket.upstreamCloseCode].some(v => v !== null && (!Number.isInteger(v) || v < 1000 || v > 4999)) ||
+      Buffer.byteLength(JSON.stringify(websocket)) > 512)) throw new RangeError('Invalid capture transport metadata');
   const encoded = JSON.stringify(value);
-  if (Buffer.byteLength(encoded) > 512) throw new RangeError('Capture transport outcome exceeds its metadata bound');
+  if (Buffer.byteLength(encoded) > 4096) throw new RangeError('Capture transport outcome exceeds its metadata bound');
   cachedStmt(db, WRITE_TRANSPORT).run(id, encoded);
 }
 

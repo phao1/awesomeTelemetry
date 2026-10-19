@@ -36,6 +36,21 @@ afterEach(() => {
 const prompt = 'You are a helpful coding assistant. '.repeat(300); // ~8700 chars
 
 describe('SystemPromptSection（REQ-103）', () => {
+  it.each(['zh', 'en'] as const)('active toolbar keeps legacy TTFT value and exposes timing basis without IO (%s)', (locale) => {
+    const fetcher = vi.spyOn(globalThis, 'fetch');
+    const { html, unmount } = mount(<SessionToolbar session={makeSession('s', { durationSource: 'measured', eventCount: 3 })}
+      events={[makeEvent({ kind: 'user_prompt', actor: 'user' }), makeEvent({ id: 'llm', startedAt: '2026-08-01T00:00:00.120Z' })]}
+      locale={locale} />);
+    try {
+      expect(document.querySelector('.session-toolbar-metric')?.textContent).toContain('TTFT');
+      expect(document.querySelector('.session-toolbar-metric')?.textContent).toContain('120ms');
+      expect(html()).toContain('durationSource');
+      expect(html()).toContain('pureInferenceMs');
+      expect(document.querySelector('.scan-timing-criteria [role="status"]')).not.toBeNull();
+      expect(html()).toContain(locale === 'zh' ? '不证明逐事件实测' : 'not per-event measurement proof');
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally { unmount(); fetcher.mockRestore(); }
+  });
   it('systemPrompt === null 时整个区域不渲染', () => {
     const { html, unmount } = mount(
       <SystemPromptSection session={makeSession('s1', { systemPrompt: null })} locale="zh" />,

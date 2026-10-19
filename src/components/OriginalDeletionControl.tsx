@@ -9,7 +9,7 @@ interface Props {
   locale: Locale;
   monitorStopped: boolean;
   supported: boolean;
-  onAvailability: (value: 'loading' | 'available' | 'blocked') => void;
+  onAvailability: (value: 'loading' | 'available' | 'blocked' | 'unknown') => void;
 }
 
 /** Metadata-only selected-request control; never auto-polls or deletes on mount. */
@@ -36,7 +36,10 @@ export function OriginalDeletionControl({ id, requestId, locale, monitorStopped,
     if (!blocked.current) onAvailability('loading');
     const timeout = setTimeout(() => operation.abort(), 5000);
     try { const value = await api.originalDeletion(id, operation.signal); if (operation.signal.aborted) throw new ApiError('STATUS_TIMEOUT', 'Deletion status timed out'); if (token === generation.current) check(value); }
-    catch (cause) { if (token === generation.current) setError(cause instanceof ApiError ? cause.code : 'STATUS_UNAVAILABLE'); }
+    catch (cause) { if (token === generation.current) {
+      setError(cause instanceof ApiError ? cause.code : 'STATUS_UNAVAILABLE');
+      onAvailability(blocked.current ? 'blocked' : 'unknown');
+    } }
     finally { clearTimeout(timeout); if (token === generation.current) setLoading(false); }
   }, [id, onAvailability, check]);
   useEffect(() => { void load(); return () => { generation.current += 1; controller.current?.abort(); }; }, [load]);

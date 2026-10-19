@@ -9,8 +9,16 @@ import { captureWasDeleted } from '../storage/retention.js';
 import { CaptureBodyStore } from './body-store.js';
 import { readCaptureBodies, writeCaptureBodies } from './capture-storage.js';
 import { OriginalDeletionQueue, PENDING_ORIGINAL_DELETION_SQL, SHARED_ORIGINAL_SQL } from './original-deletions.js';
-import { initSchema } from '../storage/schema.js';
+import { SCHEMA_VERSION, initSchema } from '../storage/schema.js';
 import { CaptureJournal } from './capture-journal.js';
+import type { CaptureReparseSnapshot } from '../../src/core/trace-types.js';
+import { readCaptureAnalysis, writeCaptureAnalysis } from '../storage/capture-analysis.js';
+
+function analysisSnapshot(): CaptureReparseSnapshot {
+  return { parserVersion: 3, metricVersion: 1, sourceFingerprint: 'a'.repeat(64), parsedAt: '2026-10-16T00:00:00.000Z', requestFormat: 'unknown', state: 'unknown',
+    usage: { inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, reasoningTokens: null, nativeTotalTokens: null, totalTokens: null, accounting: 'unknown' },
+    completeness: { complete: false, omittedCount: 1, reasons: ['protocol_unknown'] } };
+}
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'original-deletions-')), path = join(directory, 'state.sqlite');
@@ -34,7 +42,7 @@ describe('durable explicitly authorized original-file deletion queue core', () =
       f.db.prepare('INSERT INTO proxy_capture_bodies(proxy_id,request_ref) VALUES(?,?)').run(legacy, 'malformed');
       initSchema(f.db); initSchema(f.db);
       expect(readCaptureBodies(f.db, f.id)).toEqual(before);
-      expect(f.db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '17' });
+      expect(f.db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: String(SCHEMA_VERSION) });
       expect(f.db.prepare('SELECT request_ref FROM proxy_capture_bodies WHERE proxy_id=?').get(legacy)).toEqual({ request_ref: 'malformed' });
       const shared = JSON.stringify(f.db.prepare('EXPLAIN QUERY PLAN ' + SHARED_ORIGINAL_SQL).all({ proxyId: f.id, a: f.request.id, b: f.response.id }));
       expect(shared).toContain('idx_capture_request_original'); expect(shared).toContain('idx_capture_response_original'); expect(shared).not.toContain('SCAN proxy_capture_bodies');
@@ -56,6 +64,34 @@ describe('durable explicitly authorized original-file deletion queue core', () =
       expect(await readdir(f.store.directory)).toEqual([]); expect(f.store.status().usedBytes).toBe(0);
       expect(f.db.prepare('SELECT request_id FROM proxy_requests').all()).toEqual([{ request_id: f.requestId }]);
       expect(readCaptureBodies(f.db, f.id).request).toEqual(f.request);
+    } finally { await f.close(); }
+  });
+  it('clears the bounded reparse summary in the confirmed-intent transaction without creating captures or deleting originals early', async () => {
+    const f = await fixture();
+    try {
+      writeCaptureAnalysis(f.db, f.id, analysisSnapshot());
+      const before = f.store.status().usedBytes, job = await f.queue.request(f.id, f.requestId);
+      expect(readCaptureAnalysis(f.db, f.id)).toBeNull(); expect(job.state).toBe('pending');
+      expect(captureWasDeleted(f.db, f.requestId, f.request.id, f.response.id)).toBe(true);
+      expect(f.store.status().usedBytes).toBe(before); expect(await readFile(join(f.store.directory, f.request.id + '.body'))).toEqual(Buffer.from('request原文'));
+      expect(f.db.prepare('SELECT id,request_id FROM proxy_requests').all()).toEqual([{ id: f.id, request_id: f.requestId }]);
+      // Defensive pre-existing-intent path also clears any externally reintroduced summary.
+      writeCaptureAnalysis(f.db, f.id, analysisSnapshot()); await f.queue.request(f.id, f.requestId); expect(readCaptureAnalysis(f.db, f.id)).toBeNull();
+      writeCaptureAnalysis(f.db, f.id, analysisSnapshot()); await f.queue.run(job.id); expect(readCaptureAnalysis(f.db, f.id)).toBeNull();
+    } finally { await f.close(); }
+  });
+  it('rolls back intent, tombstone, body clearing and summary deletion together when the summary clear fails', async () => {
+    const f = await fixture();
+    try {
+      writeCaptureAnalysis(f.db, f.id, analysisSnapshot());
+      f.db.prepare('UPDATE proxy_requests SET request_body=?,response_body=?,system_prompt=?,system_prompt_len=? WHERE id=?').run('kept-request', 'kept-response', 'kept-system', 11, f.id);
+      f.db.exec("CREATE TRIGGER reject_analysis_clear BEFORE DELETE ON proxy_capture_analysis BEGIN SELECT RAISE(ABORT,'synthetic-summary-clear-failure'); END");
+      await expect(f.queue.request(f.id, f.requestId)).rejects.toThrow('synthetic-summary-clear-failure');
+      expect(readCaptureAnalysis(f.db, f.id)).toEqual(analysisSnapshot());
+      expect(f.db.prepare('SELECT request_body,response_body,system_prompt,system_prompt_len FROM proxy_requests WHERE id=?').get(f.id)).toEqual({ request_body: 'kept-request', response_body: 'kept-response', system_prompt: 'kept-system', system_prompt_len: 11 });
+      expect(f.db.prepare('SELECT COUNT(*) AS n FROM proxy_original_deletions').get()).toEqual({ n: 0 });
+      expect(captureWasDeleted(f.db, f.requestId, f.request.id, f.response.id)).toBe(false);
+      f.db.exec('DROP TRIGGER reject_analysis_clear'); await f.queue.request(f.id, f.requestId); expect(readCaptureAnalysis(f.db, f.id)).toBeNull();
     } finally { await f.close(); }
   });
   it('rolls back job and tombstone together on actual SQLite marker failure', async () => {

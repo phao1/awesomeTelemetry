@@ -1,5 +1,20 @@
 # Spec: Frontend
 
+The linked execution entry SHALL load only on explicit expansion, with paged
+virtualized native-event metadata and accepted capture memberships. Exact shared
+identity references, unbound/candidate and incomplete evidence are distinct;
+opening one native event/capture loads only its own detail. Relation invalidation
+marks the page stale until explicit refresh; old asynchronous results cannot
+restore a revoked conclusion. No new router/shell or per-row fetch.
+
+Selected capture Timing SHALL separately label headers/first byte/first content/
+network end, explicit SSE/JSON basis, unavailable status and raw vendor timing.
+No network-chunk TPS, hidden reasoning or cross-domain speed ratio is invented.
+An explicit versioned JSON evidence export uses one bounded local download,
+with loading/error/retry/cancel ownership,10s deadline and bilingual limitations.
+Deleted bodies may export retained metadata only; a pending/unknown deletion
+transition must not allow a late browser download to restore stale analysis.
+
 Monitoring detail includes a lazy protocol-analysis tab: model/protocol terminal state, native usage and accounting basis, declarations, public reasoning/text, proposed tool calls and observed request tool-result history. Analysis is not fetched from lists or until that tab is opened. Display incomplete/legacy/over-limit reasons, unknown counters as unavailable, and observed history/proposals as such (not invented executions). Render observed strings as React text, never HTML.
 
 Capture-metadata and lazy analysis reads SHALL have independent loading/error
@@ -35,6 +50,75 @@ information-dense, keyboard-reachable, semantically restrained.
 ---
 
 ## Requirements
+
+### REQ-034: WebSocket connection transcript inspection
+Selected WS capture SHALL label connection scope, observed message counts,
+close codes, AWSP1 download provenance and bounded readable transcripts.
+Never label connection lifetime as model inference or count usage across its
+possibly multiple turns. HTTP-only reparse/context/protocol controls are hidden
+for WS, with bilingual explanation; retained headers/deletion/download remain.
+Selected live preview includes WS message prefixes under existing gap/bounds.
+
+### REQ-033: Explicit local capture self-test
+Saved connection setup SHALL offer a separate explicit local HTTP/SSE self-test,
+warn that it creates one retained synthetic capture, display each verified stage
+and a capture-detail action. No automatic execution/polling/retry. Missing listener
+and failures have start/check/retry guidance; editing/selection/unmount invalidates
+old results. Show actual Agent and HTTPS trust as unverified even when passed.
+
+### REQ-031: Distinct native, scan and network timing
+Legacy scan timings SHALL expose formulas, retained session duration declaration
+and partial-event evidence without refetching data. Unknown/mixed/native versus
+network domains never produce speedup/equality/winner/radar advantages. Preserve
+raw side values and existing scan field labels. E2E differences describe session
+wall-clock, not model inference or a causal optimization. Apply consistently in
+Hero/verdict/KPI/speed/details/dimensions/charts/header and exported reports.
+Linked execution SHALL separately display selected normalized native log
+duration (per-event measurement unknown) and existing accepted capture network
+timing with shared-ID locator limitations, no additional body/metadata reads.
+Derived declarations explicitly include scheduling gaps; zero-duration logs
+must not imply measured instantaneous tool execution. All copy bilingual and
+rendered as text; source invalidation hides stale evidence without polling.
+
+### REQ-030: Explicit versioned offline reparse control
+Selected detail SHALL offer expandable bilingual metadata status/current/old
+parser+capture-metric versions,parsedAt and explicit refresh/reparse. No reads
+before expansion or from list rows,no polling/locale/invalidation refetch. Only
+explicit POST revalidates originals; current status alone does not certify file
+integrity. Clear old analysis/diff/comparison conclusions at action start; accept
+returned analysis only for the same still-available request. Delete/unmount/
+invalidation cancels owned requests and hides stale callbacks.10s timeout/cancel
+shows uncertain local outcome,not rollback; refresh status explicitly. No new
+model/tool request,automatic optimization,charge or extra analysis GET on success.
+
+### REQ-029: Actionable capability setup and selected evidence diagnosis
+The explicit lazy capability matrix SHALL distinguish implementation scope and
+controlled transport tests from actual Agent/platform verification; unknown
+installation is not absent. Only existing process recipes can enter a new blank
+form, never modify saved/dirty profiles or act as a process traffic filter.
+Reuse real setup/start/stop/diagnostic paths,5s owned metadata loading/explicit
+refresh, no polling or locale/per-row fan-out. All copy and errors bilingual.
+
+Selected-pair diagnosis SHALL reuse the current response with editable visible
+slow threshold (default10000ms), independent validated per-side clock evidence
+and original capture jumps. Repeated encoded request candidates need complete
+nonempty matching SHA/byte refs and endpoint/protocol; missing/deleted/incomplete
+stays unavailable. Headers/semantics/retry/charge/quality equivalence is not
+proven. Existing Context Diff growth, cache and tool-error source navigation
+remain distinct and usable. No extra source/API fetch, request replay, cost sum,
+automatic causal conclusion or hidden threshold; invalidation hides old findings.
+
+### REQ-028: Explicit call comparison and native parent references
+Selected capture comparison SHALL require an explicit pair action, show usage,
+separate clock-basis timings, network/protocol/error/completeness differences
+and unproven task/tool/config/quality equivalence. Reuse Context Diff explicitly
+for that same pair, not a new normalizer. No automatic source fetch from lists,
+causal speedup verdict, missing-as-zero or charge aggregation. Mode/pair/source
+invalidation hides old derived content; owned10s cancellation/retry, bilingual
+keyboard-accessible states. Parent-reference exploration is lazy metadata with
+5s owned deadline, paging/refresh and distinct resolved/ambiguous/incomplete/
+unresolved states. Only resolved retained parent/fork references navigate to one
+original native session; not proof of runtime spawn, communication or billing.
 
 ### REQ-001: Six-view shell
 `App.tsx` SHALL provide 6 views: session / agent / compare / proxy / frida /
@@ -647,3 +731,20 @@ area (NOT three columns) with A/B/C section chip navigation:
   Treat empty catches as compile errors in review.
 - **G7.8 (new)**: `mode=full` is only for explicit raw/transcript needs, and
   must paginate. One full fetch for a 648-event session is tens of MB.
+## Codex call inspection amendment
+
+UI-CODEX-001: lazy metadata pages and selected details for retained and active
+WS sources, explicit refresh, prior-response navigation, exact native session
+entry and tool input-reference evidence. Show partial/unknown/error and source
+bounds, do not promise full inherited context, execution timing or Agent success.
+Invalidate/abort detail on source change, confirmed deletion, unmount and
+relation changes. No HTML execution from captured content or automatic replay.
+UI-CODEX-002: selected live inspectors default to metadata-hint-driven updates,
+at most one page plus changed selected detail per5s, serial not concurrent.
+Preserve current selection/expanded completed detail, expose pause/manual
+refresh, suspend while hidden/unmounted and stop automatic retry on error.
+One explicit CODEX_SOURCE_CHANGED live-to-saved convergence reread is allowed
+under the same limits; a second failure is visible until explicit manual retry.
+Large selected details SHALL delay auto cycles under the30s byte budget,
+display that delay, and retain the manual action; no hidden large-body polling.
+No hints means no polling; reconnect/end requests a final bounded snapshot.

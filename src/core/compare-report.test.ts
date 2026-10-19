@@ -29,6 +29,34 @@ function record(id: string): TraceRecord {
 }
 
 describe('REQ-009 对比报告', () => {
+  it('labels legacy scan formulas and derived session declaration without claiming measured tools', () => {
+    const left = record('derived'); left.session.durationSource = 'derived';
+    const html = buildCompareReportHtml(left, record('unknown'), 'en');
+    expect(html).toContain('Legacy scan timing');
+    expect(html).toContain('TTFT: first user_prompt to first LLM log start');
+    expect(html).toContain('TPS: arithmetic mean of valid per-LLM output/duration');
+    expect(html).toContain('TPOT: sum valid LLM durations / sum output');
+    expect(html).toContain('includes scheduling gaps');
+    expect(html).toContain('Session duration declaration: unknown');
+    expect(html).toContain('not per-event measurement proof');
+    expect(html).toContain('not a causal performance improvement');
+  });
+
+  it('renders Chinese criteria and untrusted session declarations inertly', () => {
+    const left = record('measured'); left.session.durationSource = 'measured';
+    const html = buildCompareReportHtml(left, record('unknown'));
+    expect(html).toContain('旧扫描指标口径');
+    expect(html).toContain('不是网络首 token');
+    expect(html).toContain('会话时长来源声明：measured');
+    expect(html).toContain('逐事件实测依据仍未知');
+  });
+
+  it('does not export an invalid E2E measurement as a real time', () => {
+    const left = record('invalid'); left.session.totalDurationMs = NaN;
+    const html = buildCompareReportHtml(left, record('right'), 'en');
+    expect(html).not.toContain('NaN');
+    expect(html).toContain('e2e: n/a');
+  });
   it('#18 包含左右两列、速度指标、token 分解与阶段时长分布', () => {
     const html = buildCompareReportHtml(record('left'), record('right'));
     expect(html).toContain('对比报告');

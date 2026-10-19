@@ -27,6 +27,7 @@ import { CaptureBodyStore } from './body-store.js';
 import { readCaptureBodies } from './capture-storage.js';
 import { CaptureProcessor } from './capture-processor.js';
 import { CaptureResources } from './capture-resources.js';
+import { eventBus } from '../realtime/event-bus.js';
 
 const ANTHROPIC_MODEL = 'claude-3-5-sonnet-20241022';
 const CAPTURE_TEST_COLS = `${PROXY_LIST_COLS}, request_body, response_body, system_prompt, raw_request_body, raw_response_body`;
@@ -176,6 +177,193 @@ function setupProxy(opts: { keepRawBodies?: boolean; captureGroupId?: string } =
 }
 
 describe('createMitmProxy 真实网络级捕获（D-002）', () => {
+  it.each([
+    ['/v1/chat/completions', { model: 'synthetic', messages: [] }, { choices: [{ delta: { reasoning_content: '公开推理' } }] }, 'reasoning'],
+    ['/v1/responses', { model: 'synthetic', input: 'hello' }, { type: 'response.function_call_arguments.delta', delta: '{"path":' }, 'tool_arguments'],
+    ['/v1/messages', { model: 'synthetic', messages: [], max_tokens: 8 }, { type: 'content_block_delta', delta: { type: 'text_delta', text: '中文🙂' } }, 'text'],
+    ['/opaque-gateway', { body: 'opaque-request' }, { headers: {}, statusCode: 'OK', body: JSON.stringify({ object: 'chat.completion.chunk', choices: [{ delta: { content: 'wrapped response' } }] }) }, null],
+  ] as const)('persists monotonic headers/heartbeat/content/end timing through the real %s proxy/worker path', async (path, requestBody, value, kind) => {
+    const directory = await mkdtemp(join(tmpdir(), 'capture-network-timing-'));
+    const db = new Database(':memory:'); initSchema(db);
+    const store = await CaptureBodyStore.create(join(directory, 'bodies'));
+    const content = 'data: ' + JSON.stringify(value) + '\n\n';
+    const body = ': ping\n\n' + content + 'data: [DONE]\n\n';
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    const origin = await startOrigin((req, res) => { req.resume(); req.once('end', () => {
+      void (async () => {
+        await delay(20); res.writeHead(200, { 'content-type': 'text/event-stream', 'server-timing': 'inference;dur=700' }); res.flushHeaders();
+        await delay(25); res.write(': ping\n\n');
+        await delay(40); res.write(content);
+        await delay(30); res.end('data: [DONE]\n\n');
+      })();
+    }); });
+    const port = await freePort(), ids: number[] = [];
+    const proxy = await createMitmProxy({ db, bodyStore: store, port, caDirectory: join(directory, 'ca'), notify: id => ids.push(id) });
+    try {
+      expect((await requestViaProxy(port, origin.port, { path, body: JSON.stringify(requestBody) })).body).toBe(body);
+      await waitFor(() => ids.length === 1);
+      const capture = readCaptureBodies(db, ids[0]!);
+      const timing = capture.transport!.timing!;
+      expect(timing).toMatchObject({ version: 1, clock: 'proxy_monotonic', firstContentKind: kind, firstContentBasis: kind === null ? null : 'sse_event_dispatch', contentTimingStatus: kind === null ? 'not_collected' : 'observed', serverTiming: 'inference;dur=700', serverTimingTruncated: false });
+      expect(timing.responseHeadersMs).toBeGreaterThanOrEqual(15);
+      expect(timing.firstBodyByteMs! - timing.responseHeadersMs!).toBeGreaterThanOrEqual(15);
+      if (kind === null) expect(timing.firstContentMs).toBeNull();
+      else {
+        expect(timing.firstContentMs! - timing.firstBodyByteMs!).toBeGreaterThanOrEqual(25);
+        expect(timing.completedMs! - timing.firstContentMs!).toBeGreaterThanOrEqual(20);
+      }
+      const saved: Buffer[] = [];
+      for await (const chunk of store.openRead(capture.response!.id)) saved.push(Buffer.from(chunk));
+      expect(Buffer.concat(saved)).toEqual(Buffer.from(body)); expect(capture.response?.status).toBe('complete');
+    } finally {
+      await proxy.shutdown({ graceMs: 0 }); await origin.close(); db.close(); await rm(directory, { recursive: true, force: true });
+    }
+  });
+  it('publishes bounded live SSE before origin EOF and flushes text before one terminal signal', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'capture-live-stream-'));
+    const db = new Database(':memory:'); initSchema(db);
+    const store = await CaptureBodyStore.create(join(directory, 'bodies'));
+    const first = Buffer.from('data: {"choices":[{"delta":{"content":"中文🙂"}}]}\n\n');
+    const last = Buffer.from('data: [DONE]\n\n');
+    let held: ServerResponse | undefined;
+    const origin = await startOrigin((req, res) => {
+      req.resume(); req.once('end', () => {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        held = res;
+        void (async () => { for (const byte of first) { res.write(Buffer.from([byte])); await yieldImmediate(); } })();
+      });
+    });
+    const seen: Array<{ kind: string; requestId: string; chunk?: string }> = [];
+    const unsubscribers = [
+      eventBus.on('proxy_stream_started', e => seen.push({ kind: 'started', ...e })),
+      eventBus.on('proxy_stream_chunk', e => seen.push({ kind: 'chunk', ...e })),
+      eventBus.on('proxy_stream_ended', e => seen.push({ kind: 'ended', ...e })),
+    ];
+    const port = await freePort(), ids: number[] = [];
+    const proxy = await createMitmProxy({ db, bodyStore: store, port, caDirectory: join(directory, 'ca'), notify: id => ids.push(id) });
+    const reply = requestViaProxy(port, origin.port, { path: '/v1/chat/completions', body: '{"model":"synthetic","messages":[]}' });
+    try {
+      await waitFor(() => seen.some(e => e.kind === 'chunk'));
+      expect(held?.writableEnded).toBe(false);
+      expect(ids).toEqual([]);
+      expect(seen[0]).toMatchObject({ kind: 'started', requestId: expect.stringMatching(/^req-\d+-\d+$/), hostname: '127.0.0.1', startedAt: expect.any(String) });
+      expect(seen.some(e => e.kind === 'ended')).toBe(false);
+      expect(seen.filter(e => e.kind === 'chunk').map(e => e.chunk).join('')).toBe(first.toString('utf8'));
+      held!.end(last);
+      expect((await reply).bytes).toEqual(Buffer.concat([first, last]));
+      await waitFor(() => ids.length === 1);
+      expect(seen.filter(e => e.kind === 'started')).toHaveLength(1);
+      expect(seen.filter(e => e.kind === 'ended')).toHaveLength(1);
+      expect(seen.at(-1)?.kind).toBe('ended');
+      expect(new Set(seen.map(e => e.requestId)).size).toBe(1);
+      expect(seen.filter(e => e.kind === 'chunk').map(e => e.chunk).join('')).toBe(Buffer.concat([first, last]).toString('utf8'));
+      const capture = readCaptureBodies(db, ids[0]!);
+      const saved: Buffer[] = [];
+      for await (const chunk of store.openRead(capture.response!.id)) saved.push(Buffer.from(chunk));
+      expect(Buffer.concat(saved)).toEqual(Buffer.concat([first, last]));
+      expect(capture.response?.status).toBe('complete');
+      expect(proxy.captureActivity().captureErrors).toBe(0);
+    } finally {
+      held?.end(); await reply.catch(() => {});
+      await proxy.shutdown({ graceMs: 0 }); await origin.close();
+      for (const unsubscribe of unsubscribers) unsubscribe();
+      db.close(); await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps compressed SSE out of the identity-only live preview while retaining exact originals', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'capture-live-compressed-'));
+    const db = new Database(':memory:'); initSchema(db);
+    const store = await CaptureBodyStore.create(join(directory, 'bodies'));
+    const encoded = gzipSync(Buffer.from('data: {"choices":[{"delta":{"content":"中文"}}]}\n\ndata: [DONE]\n\n'));
+    const origin = await startOrigin((req, res) => { req.resume(); req.once('end', () => {
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'content-encoding': 'gzip' }); res.end(encoded);
+    }); });
+    const seen: unknown[] = [];
+    const unsubscribers = [eventBus.on('proxy_stream_started', e => seen.push(e)), eventBus.on('proxy_stream_chunk', e => seen.push(e)), eventBus.on('proxy_stream_ended', e => seen.push(e))];
+    const port = await freePort(), ids: number[] = [];
+    const proxy = await createMitmProxy({ db, bodyStore: store, port, caDirectory: join(directory, 'ca'), notify: id => ids.push(id) });
+    try {
+      expect((await requestViaProxy(port, origin.port, { path: '/v1/chat/completions', body: '{"model":"synthetic","messages":[]}' })).bytes).toEqual(encoded);
+      await waitFor(() => ids.length === 1);
+      expect(seen).toEqual([]);
+      const capture = readCaptureBodies(db, ids[0]!);
+      expect(capture.processing?.status).toBe('ok');
+      expect(capture.transport?.timing).toMatchObject({ firstContentMs: null, firstContentKind: null, firstContentBasis: null, contentTimingStatus: 'unsupported_encoding' });
+      const saved: Buffer[] = [];
+      for await (const chunk of store.openRead(capture.response!.id)) saved.push(Buffer.from(chunk));
+      expect(Buffer.concat(saved)).toEqual(encoded);
+      expect(capture.response?.status).toBe('complete');
+    } finally {
+      await proxy.shutdown({ graceMs: 0 }); await origin.close();
+      for (const unsubscribe of unsubscribers) unsubscribe();
+      db.close(); await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('reports live preview overflow without changing forwarding or original completeness', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'capture-live-limit-'));
+    const db = new Database(':memory:'); initSchema(db);
+    const store = await CaptureBodyStore.create(join(directory, 'bodies'));
+    const response = Buffer.from(`data: {"choices":[{"delta":{"content":"${'x'.repeat(40000)}"}}]}\n\ndata: [DONE]\n\n`);
+    const origin = await startOrigin((req, res) => { req.resume(); req.once('end', () => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(response);
+    }); });
+    const chunks: string[] = [];
+    const unsubscribe = eventBus.on('proxy_stream_chunk', e => chunks.push(e.chunk));
+    const port = await freePort(), ids: number[] = [];
+    const proxy = await createMitmProxy({ db, bodyStore: store, port, caDirectory: join(directory, 'ca'), notify: id => ids.push(id) });
+    try {
+      expect((await requestViaProxy(port, origin.port, { path: '/v1/chat/completions', body: '{"model":"synthetic","messages":[]}' })).bytes).toEqual(response);
+      await waitFor(() => ids.length === 1);
+      expect(proxy.captureActivity()).toMatchObject({ captureErrors: 1, lastError: 'CAPTURE_LIVE_PREVIEW_LIMIT', persistedRequests: 1 });
+      expect(chunks.every(chunk => chunk.length <= 32768)).toBe(true);
+      const capture = readCaptureBodies(db, ids[0]!);
+      expect(capture.processing?.status).toBe('ok');
+      const saved: Buffer[] = [];
+      for await (const chunk of store.openRead(capture.response!.id)) saved.push(Buffer.from(chunk));
+      expect(Buffer.concat(saved)).toEqual(response);
+      expect(capture.response?.status).toBe('complete');
+    } finally {
+      await proxy.shutdown({ graceMs: 0 }); await origin.close(); unsubscribe();
+      db.close(); await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('ends a cancelled live stream exactly once without waiting for metadata processing', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'capture-live-cancel-'));
+    const db = new Database(':memory:'); initSchema(db);
+    let held: ServerResponse | undefined;
+    const prefix = 'data: {"choices":[{"delta":{"content":"prefix"}}]}\n\n';
+    const origin = await startOrigin((req, res) => { req.resume(); req.once('end', () => {
+      held = res; res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(prefix);
+    }); });
+    const seen: Array<{ kind: string; requestId: string; chunk?: string }> = [];
+    const unsubscribers = [eventBus.on('proxy_stream_started', e => seen.push({ kind: 'started', ...e })),
+      eventBus.on('proxy_stream_chunk', e => seen.push({ kind: 'chunk', ...e })),
+      eventBus.on('proxy_stream_ended', e => seen.push({ kind: 'ended', ...e }))];
+    const port = await freePort(), ids: number[] = [];
+    const proxy = await createMitmProxy({ db, port, caDirectory: join(directory, 'ca'), notify: id => ids.push(id) });
+    const client = httpRequest({ host: '127.0.0.1', port, method: 'POST', path: `http://127.0.0.1:${origin.port}/v1/chat/completions`, headers: { host: '127.0.0.1', 'content-type': 'application/json' } }, res => { res.on('error', () => {}); res.resume(); });
+    client.on('error', () => {}); client.end('{"model":"synthetic","messages":[]}');
+    try {
+      await waitFor(() => seen.some(e => e.kind === 'chunk'));
+      client.destroy();
+      await waitFor(() => seen.some(e => e.kind === 'ended'));
+      expect(held?.writableEnded).toBe(false);
+      await waitFor(() => ids.length === 1);
+      await proxy.shutdown({ graceMs: 0 });
+      expect(seen.filter(e => e.kind === 'ended')).toHaveLength(1);
+      expect(seen.at(-1)?.kind).toBe('ended');
+      expect(seen.filter(e => e.kind === 'chunk').map(e => e.chunk).join('')).toBe(prefix);
+      expect(readCaptureBodies(db, ids[0]!).transport?.state).toBe('cancelled');
+    } finally {
+      client.destroy(); held?.destroy(); await proxy.shutdown({ graceMs: 0 }); await origin.close();
+      for (const unsubscribe of unsubscribers) unsubscribe();
+      db.close(); await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('shares preview admission across real listeners while overloaded captures retain originals and forwarding', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'capture-global-preview-'));
     const db = new Database(':memory:'); initSchema(db);

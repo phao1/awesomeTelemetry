@@ -43,6 +43,21 @@ const baseProps = {
 };
 
 describe('CompareBoard 壳（REQ-019 / 可用性）', () => {
+  it('keeps missing and unknown-basis detail timings visible without zero, ranked advantages or equality', async () => {
+    const result = makeResult(); result.speed.left.ttftMs = null; result.speed.left.tps = NaN; result.speed.left.tpotMs = -1;
+    const { html, unmount } = mount(<CompareBoard sessions={[]} locale="en" leftKey="left" rightKey="right"
+      onLeftChange={() => undefined} onRightChange={() => undefined} loadCompare={async () => result} />);
+    await act(async () => { for (let i = 0; i < 20 && document.querySelector('#compare-metrics button') === null; i += 1) await new Promise(resolve => setTimeout(resolve, 10)); });
+    act(() => (document.querySelector('#compare-metrics button') as HTMLButtonElement).click());
+    const rows = [...document.querySelectorAll('.cmp-detail-table tbody tr')];
+    for (const label of ['TTFT', 'TPS', 'TPOT']) {
+      const row = rows.find(row => row.querySelector('td')?.textContent === label)!;
+      expect(row).toBeDefined(); expect(row.querySelectorAll('td')[1]!.textContent).toBe('—');
+      expect(row.querySelector('[data-scan-timing-reason]')!.textContent).toContain('Not comparable');
+      expect(row.querySelector('.compare-delta-badge')).toBeNull();
+    }
+    expect(html()).not.toContain('NaN'); unmount();
+  });
   it('会话列表加载中显示骨架，不误显示「暂无数据」', () => {
     const { html, unmount } = mount(
       <CompareBoard {...baseProps} sessionsLoading={true} />,
@@ -118,7 +133,8 @@ describe('CompareBoard 壳（REQ-019 / 可用性）', () => {
     const out = html();
     expect(out).toContain('compare-hero');
     expect(out).toContain('linear-gradient(135deg, var(--provider-codex-subtle) 0%, var(--provider-codex-subtle) 100%)');
-    expect(out).toContain('快 1.7×');
+    expect(out).toContain('会话墙钟观测比 1.7×');
+    expect(out).not.toContain('快 1.7×');
     unmount();
   });
 

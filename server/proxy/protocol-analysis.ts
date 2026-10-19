@@ -3,8 +3,11 @@ import { setImmediate as yieldTurn } from 'node:timers/promises';
 import type { CaptureTransportResult, ProxyProtocolAnalysis, ProxyProtocolItem, RequestContextFormat } from '../../src/core/trace-types.js';
 import { normalizeRequestContext } from './context-normalizer.js';
 import { SseDecoder } from './sse-accumulator.js';
+import { unwrapQoderSseFrame } from './nested-sse.js';
 
 type RecordValue = Record<string, unknown>;
+export const CAPTURE_PARSER_VERSION = 3;
+export const CAPTURE_METRIC_VERSION = 1;
 function record(value: unknown): RecordValue | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : null;
 }
@@ -30,7 +33,7 @@ export interface ProtocolAnalysisInput {
 /** Offline projection only: never forwards traffic, runs tools or invents execution. */
 export async function analyzeProtocol(input: ProtocolAnalysisInput): Promise<ProxyProtocolAnalysis> {
   const result: ProxyProtocolAnalysis = {
-    parserVersion: 1, requestFormat: input.format, model: null, responseId: null,
+    parserVersion: CAPTURE_PARSER_VERSION, requestFormat: input.format, model: null, responseId: null,
     state: input.streaming ? 'incomplete' : 'unknown', stopReason: null, system: null,
     declarations: [], items: [], errors: [], unknownEvents: 0,
     usage: { inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null,
@@ -39,8 +42,15 @@ export async function analyzeProtocol(input: ProtocolAnalysisInput): Promise<Pro
           : input.format === 'unknown' ? 'unknown' : 'openai_subsets', snapshots: [] },
     completeness: { complete: true, omittedCount: 0, reasons: [] },
   };
+  if (input.transport?.websocket !== undefined) {
+    result.requestFormat = 'unknown'; result.state = 'unknown'; result.usage.accounting = 'unknown';
+    result.completeness = { complete: false, omittedCount: 1, reasons: ['websocket_connection_not_model_call'] };
+    return result;
+  }
   const items = new Map<string, ProxyProtocolItem>();
   const choiceFinished = new Map<number, boolean>();
+  let observedNestedChat = false;
+  let incompleteNestedEvidence = false;
   let remainingChars = 262_144;
   let records = 0;
   const omitted = (reason: string): void => {
@@ -69,8 +79,11 @@ export async function analyzeProtocol(input: ProtocolAnalysisInput): Promise<Pro
     const existing = items.get(key);
     if (existing !== undefined) return existing;
     if (!reserveRecord()) return null;
+    // Fixed grammar + bounded numeric indices, never user text. Structural
+    // locators stay exact when the separate display-content budget is spent;
+    // record and serialized-response caps still account for this metadata.
     const value: ProxyProtocolItem = { phase, kind, id: null, callId: null, name: null,
-      index: itemIndex, choiceIndex, content: '', complete: false, sourcePath: clip(path) };
+      index: itemIndex, choiceIndex, content: '', toolResultIsError: null, complete: false, sourcePath: path };
     items.set(key, value);
     return value;
   };
@@ -183,6 +196,9 @@ export async function analyzeProtocol(input: ProtocolAnalysisInput): Promise<Pro
         const target = item('request-block-' + i + '-' + j, block.type === 'tool_use' ? 'tool_call' : 'tool_result', path + '.content[' + j + ']', 'request', j);
         if (target !== null) {
           setField(target, 'id', string(block.id)); setField(target, 'callId', string(block.tool_use_id) ?? string(block.id)); setField(target, 'name', string(block.name));
+          // This flag belongs to the Messages request block, not its content,
+          // protocol completion or independently observed network outcome.
+          target.toolResultIsError = input.format === 'anthropic_messages' && block.type === 'tool_result' && typeof block.is_error === 'boolean' ? block.is_error : null;
           target.complete = true; setContent(target, block.type === 'tool_use' ? json(block.input) : text(block.content) || json(block.content), true);
         }
       });
@@ -341,17 +357,37 @@ export async function analyzeProtocol(input: ProtocolAnalysisInput): Promise<Pro
   else if (input.responseBody !== null) {
     const consumeFrame = (data: string | undefined, eventIndex: number | null): void => {
       if (data === '[DONE]') {
-        if (input.format === 'openai_chat' && result.state !== 'failed') result.state = 'completed';
+        if ((input.format === 'openai_chat' || observedNestedChat) && result.state !== 'failed') result.state = 'completed';
         return;
       }
-      const frame = data === undefined ? null : record(parse(data));
+      let frame = data === undefined ? null : record(parse(data));
       if (frame === null) { result.unknownEvents += 1; return; }
+      let path = eventIndex === null ? 'response' : 'events[' + eventIndex + ']';
+      let responseFormat = input.format;
+      const nested = input.streaming ? unwrapQoderSseFrame(frame) : null;
+      if (nested !== null) {
+        path += nested.sourcePathSuffix;
+        if (nested.kind === 'invalid' || (input.format !== 'unknown' && input.format !== 'openai_chat')) {
+          const reason = nested.kind === 'invalid' ? nested.reason : 'qoder_protocol_conflict';
+          const message = nested.kind === 'invalid' && nested.reason === 'qoder_status'
+            ? 'Qoder gateway status: ' + nested.statusCode : 'Unparsed Qoder SSE evidence: ' + reason;
+          omitted(reason);
+          result.unknownEvents += 1;
+          incompleteNestedEvidence = true;
+          if (reason === 'qoder_status') error({ code: reason, message }, path);
+          else if (reserveRecord()) result.errors.push({ code: reason, message: clip(message), sourcePath: clip(path) });
+          return;
+        }
+        frame = nested.frame;
+        responseFormat = 'openai_chat';
+        observedNestedChat = true;
+        result.usage.accounting = 'openai_subsets';
+      }
       usage(frame, eventIndex);
-      const path = eventIndex === null ? 'response' : 'events[' + eventIndex + ']';
       metadata(frame, path);
-      const handled = input.format === 'openai_chat' ? chat(frame, path)
-        : input.format === 'openai_responses' ? responses(frame, path)
-          : input.format === 'anthropic_messages' ? anthropic(frame, path) : false;
+      const handled = responseFormat === 'openai_chat' ? chat(frame, path)
+        : responseFormat === 'openai_responses' ? responses(frame, path)
+          : responseFormat === 'anthropic_messages' ? anthropic(frame, path) : false;
       if (!handled) result.unknownEvents += 1;
     };
     if (input.streaming) {
@@ -365,10 +401,13 @@ export async function analyzeProtocol(input: ProtocolAnalysisInput): Promise<Pro
       for (const event of decoder.finish()) consumeFrame(event.data, eventIndex++);
       if (decoder.droppedEvents > 0) omitted('sse_event_limit');
       if (decoder.incompleteEvents > 0) omitted('sse_incomplete_frame');
+      if (observedNestedChat && (decoder.droppedEvents > 0 || decoder.incompleteEvents > 0)) incompleteNestedEvidence = true;
     } else {
       consumeFrame(input.responseBody, null);
     }
   } else omitted('response_missing');
+
+  if (incompleteNestedEvidence && result.state === 'completed') result.state = 'incomplete';
 
   if (input.transport !== undefined && input.transport.state !== 'completed') {
     const outcome = input.transport;
@@ -378,6 +417,7 @@ export async function analyzeProtocol(input: ProtocolAnalysisInput): Promise<Pro
   }
   for (const target of items.values()) {
     if (target.phase === 'response' && result.state === 'completed') target.complete = true;
+    if (target.phase === 'response' && incompleteNestedEvidence) target.complete = false;
     if (target.kind === 'tool_call' && target.complete && parse(target.content) === null) {
       target.complete = false;
       omitted('invalid_tool_arguments');

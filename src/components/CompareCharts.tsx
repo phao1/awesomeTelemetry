@@ -14,6 +14,8 @@ import type { CompareResult } from './compare-types.js';
 import { TokenTextModal, type TokenClass } from './TokenTextModal.js';
 import { RadarChart as RadarChartBase } from './charts/RadarChart.js';
 import { DonutRing } from './charts/DonutChart.js';
+import { scanTimingReason } from '../core/scan-timing.js';
+import type { ScanTimingMetric } from '../core/scan-timing.js';
 import type { ChartSlice, ChartTone } from './charts/types.js';
 
 /** 建议 1-① + REQ-119：8 轴综合能力雷达图（速度/省Token/工具/LLM/写入/读取/稳定性/验证）。
@@ -34,38 +36,41 @@ export function RadarChart({
   const rErr = rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.status === 'error').length / rightEvents.length;
   const lVerify = leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.phase === 'verify').length / leftEvents.length;
   const rVerify = rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.phase === 'verify').length / rightEvents.length;
-  const avgTool = (events: TraceEventSlim[]): number => {
+  const avgTool = (events: TraceEventSlim[]): number | null => {
     const tools = events.filter((e) => e.tool !== null);
-    return tools.length === 0 ? 0 : tools.reduce((sum, e) => sum + e.durationMs, 0) / tools.length;
+    return tools.length === 0 ? null : tools.reduce((sum, e) => sum + e.durationMs, 0) / tools.length;
   };
 
   const axes = useMemo(() => {
-    const defs: Array<{ label: string; lv: number; rv: number; lowerBetter: boolean }> = [
-      { label: t('metric.speed', locale), lv: speed.left.e2eMs ?? 0, rv: speed.right.e2eMs ?? 0, lowerBetter: true },
+    const defs: Array<{ label: string; lv: number | null; rv: number | null; lowerBetter: boolean; timing?: ScanTimingMetric }> = [
+      { label: t('metric.speed', locale), lv: speed.left.e2eMs, rv: speed.right.e2eMs, timing: 'e2e', lowerBetter: true },
       { label: t('session.tokens', locale), lv: result.left.session.tokenUsage.total, rv: result.right.session.tokenUsage.total, lowerBetter: true },
-      { label: t('compare.radar.tool', locale), lv: avgTool(leftEvents), rv: avgTool(rightEvents), lowerBetter: true },
-      { label: t('compare.radar.llm', locale), lv: speed.left.tps ?? 0, rv: speed.right.tps ?? 0, lowerBetter: false },
+      { label: t('compare.radar.tool', locale), lv: avgTool(leftEvents), rv: avgTool(rightEvents), timing: 'eventDuration', lowerBetter: true },
+      { label: t('compare.radar.llm', locale), lv: speed.left.tps, rv: speed.right.tps, timing: 'tps', lowerBetter: false },
       { label: t('compare.radar.write', locale), lv: ls.fileWrites, rv: rs.fileWrites, lowerBetter: false },
       { label: t('compare.radar.read', locale), lv: ls.fileReads, rv: rs.fileReads, lowerBetter: false },
       { label: t('compare.radar.stability', locale), lv: 1 - lErr, rv: 1 - rErr, lowerBetter: false },
       { label: t('compare.radar.verify', locale), lv: lVerify, rv: rVerify, lowerBetter: false },
     ];
-    return defs.map((d) => {
+    return defs.map(d => ({ ...d, reason: d.timing === undefined ? null : scanTimingReason(result.left, result.right, d.timing, d.lv, d.rv) })).map((d) => {
+      if (d.reason !== null || d.lv === null || d.rv === null) return { ...d, l: 0, r: 0 };
       const max = Math.max(d.lv, d.rv, 0.001);
       const norm = (v: number): number => (d.lowerBetter ? (max - v) / max : v / max);
       return { ...d, l: norm(d.lv), r: norm(d.rv) };
     });
   }, [result, speed, ls, rs, lErr, rErr, lVerify, rVerify, locale]);
 
-  return (
+  const omitted = axes.filter(axis => axis.reason !== null);
+  return (<>
+    {omitted.length > 0 && <p role="status">{t('scan.timing.notComparable', locale)}: {omitted.map(axis => `${axis.label} (${t(`scan.timing.reason.${axis.reason!}`, locale)})`).join('; ')}</p>}
     <RadarChartBase
-      data={axes.map((axis) => ({ axis: axis.label, values: [axis.l, axis.r] }))}
+      data={axes.filter(axis => axis.reason === null).map((axis) => ({ axis: axis.label, values: [axis.l, axis.r] }))}
       colors={['var(--accent-fg)', 'var(--attention-fg)']}
       fills={['var(--accent-subtle)', 'var(--attention-subtle)']}
       size={220}
       ariaLabel={t('compare.radar', locale)}
     />
-  );
+  </>);
 }
 
 const TOKEN_CLASSES = ['system', 'input', 'reasoning', 'output'] as const;

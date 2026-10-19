@@ -42,6 +42,8 @@ export interface RequestContextDiffPanelProps {
   onOpenRequest: (id: number) => void;
   /** Metadata-only association change; mark stale without re-reading originals. */
   invalidateKey?: number;
+  /** Explicit comparison caller's selected base; absent keeps the existing previous mode. */
+  initialBaseId?: number;
 }
 
 const COMPATIBLE_TONE: Record<ContextDiffCategory, 'accent' | 'success' | 'attention' | 'neutral'> = {
@@ -76,6 +78,7 @@ export function RequestContextDiffPanel({
   loadedItems,
   onOpenRequest,
   invalidateKey = 0,
+  initialBaseId,
 }: RequestContextDiffPanelProps): React.JSX.Element {
   const cacheRef = useRef<Map<string, RequestContextDiffResponse>>(new Map());
   const generation = useRef(0);
@@ -85,7 +88,7 @@ export function RequestContextDiffPanel({
   const [data, setData] = useState<RequestContextDiffResponse | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [baseRef, setBaseRef] = useState<{ mode: 'previous' } | { mode: 'id'; id: number }>({ mode: 'previous' });
+  const [baseRef, setBaseRef] = useState<{ mode: 'previous' } | { mode: 'id'; id: number }>(initialBaseId === undefined ? { mode: 'previous' } : { mode: 'id', id: initialBaseId });
   const [activeCategory, setActiveCategory] = useState<ContextDiffCategory>('system');
   const [fontPx, setFontPx] = useState(BASE_FONT_PX);
 
@@ -148,11 +151,11 @@ export function RequestContextDiffPanel({
     [targetId],
   );
 
-  // 面板仅在 tab 激活时才挂载 → 首次激活即发起一次自动（previous）请求。
+  // Explicit callers may pin the selected pair; existing tab mounts keep previous mode.
   useEffect(() => {
-    void load({ mode: 'previous' });
+    void load(initialBaseId === undefined ? { mode: 'previous' } : { mode: 'id', id: initialBaseId });
     return () => { generation.current += 1; };
-  }, [load]);
+  }, [load, initialBaseId]);
 
   useEffect(() => {
     if (evidenceVersion.current === invalidateKey) return;

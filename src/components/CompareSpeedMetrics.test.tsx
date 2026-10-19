@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { SpeedMetrics } from '../core/trace-types.js';
 import { CompareSpeedMetrics } from './CompareSpeedMetrics.js';
-import { makeEvent } from './compare-test-fixtures.js';
+import { makeEvent, makeSession } from './compare-test-fixtures.js';
 
 const containers: HTMLDivElement[] = [];
 
@@ -63,6 +63,78 @@ const FULL_SPEED: SpeedMetrics = {
 };
 
 describe('CompareSpeedMetrics（建议 2）', () => {
+  it('unknown declarations retain side values without claiming equality or winners', () => {
+    const { html, unmount } = mount(<CompareSpeedMetrics speed={{ left: FULL_SPEED, right: FULL_SPEED }} locale="en"
+      sessions={{ left: makeSession('l'), right: makeSession('r') }} />);
+    const cards = document.querySelectorAll('.compare-speed-card');
+    expect(cards[1]?.textContent).toContain('0.1s');
+    expect(cards[1]?.textContent).toContain('Unknown duration declaration');
+    expect(cards[1]?.className).not.toContain('compare-speed-card-l');
+    expect(cards[1]?.textContent).not.toContain('≈');
+    expect(html()).toContain('not network');
+    unmount();
+  });
+
+  it('complete matching declarations allow comparisons but paginated evidence blocks event metrics only', () => {
+    const left = { session: makeSession('l', { durationSource: 'measured' }), hasMore: true };
+    const right = { session: makeSession('r', { durationSource: 'measured' }) };
+    const { unmount } = mount(<CompareSpeedMetrics speed={{ left: FULL_SPEED, right: { ...FULL_SPEED, e2eMs: 6000, ttftMs: 240 } }}
+      sides={{ left, right }} locale="en" />);
+    const cards = document.querySelectorAll('.compare-speed-card');
+    expect(cards[0]?.className).toContain('compare-speed-card-l');
+    expect(cards[1]?.textContent).toContain('Incomplete or pending event evidence');
+    expect(cards[1]?.className).not.toContain('compare-speed-card-l');
+    unmount();
+    const complete = mount(<CompareSpeedMetrics speed={{ left: FULL_SPEED, right: { ...FULL_SPEED, ttftMs: 240 } }}
+      sides={{ left: { ...left, hasMore: false }, right }} locale="en" />);
+    expect(document.querySelectorAll('.compare-speed-card')[1]?.className).toContain('compare-speed-card-l');
+    complete.unmount();
+  });
+
+  it('invalid timing values are unknown, not NaN or negative winners; zero remains visible', () => {
+    const { html, unmount } = mount(<CompareSpeedMetrics speed={{ left: { ...FULL_SPEED, ttftMs: NaN, tpotMs: -1, tps: 0 }, right: FULL_SPEED }} locale="en" />);
+    expect(html()).not.toContain('NaN');
+    expect(html()).not.toContain('-1.0ms');
+    expect(document.querySelectorAll('.compare-speed-card')[2]?.textContent).toContain('0.0');
+    expect(document.querySelectorAll('.compare-speed-card')[1]?.textContent).toContain('Invalid value');
+    unmount();
+  });
+
+  it('timing auxiliaries retain values without differences when event basis is mixed', () => {
+    const { unmount } = mount(<CompareSpeedMetrics speed={{ left: FULL_SPEED, right: { ...FULL_SPEED, avgLlmDurationMs: 1800 } }} locale="en"
+      sessions={{ left: makeSession('l', { durationSource: 'derived' }), right: makeSession('r', { durationSource: 'measured' }) }}
+      events={{ left: [makeEvent({ tool: 'Bash', durationMs: 100 })], right: [makeEvent({ tool: 'Bash', durationMs: 300 })] }} />);
+    const cards = document.querySelectorAll('.compare-speed-aux-card');
+    for (const index of [1, 2]) {
+      expect(cards[index]?.textContent).toContain('Different duration declarations');
+      expect(cards[index]?.querySelector('.compare-delta-win,.compare-delta-lose')).toBeNull();
+    }
+    unmount();
+  });
+
+  it.each(['pending', 'eventOffset', 'provider', 'dataSource'] as const)('blocks unsupported timing conclusions for %s', (kind) => {
+    const left = { session: makeSession('l', { durationSource: 'measured' }), pending: false, eventOffset: 0 };
+    const right = { session: makeSession('r', { durationSource: 'measured' }), pending: kind === 'pending', eventOffset: kind === 'eventOffset' ? 1 : 0 };
+    if (kind === 'provider') right.session = makeSession('r', { durationSource: 'measured', provider: 'claude' });
+    if (kind === 'dataSource') right.session = makeSession('r', { durationSource: 'measured', dataSource: 'proxy' });
+    const { unmount } = mount(<CompareSpeedMetrics speed={{ left: FULL_SPEED, right: { ...FULL_SPEED, ttftMs: 240 } }}
+      sides={{ left, right }} locale="zh" />);
+    const ttft = document.querySelectorAll('.compare-speed-card')[1];
+    expect(ttft?.textContent).toContain('不可比较');
+    expect(ttft?.textContent).toContain('0.1s');
+    expect(ttft?.textContent).toContain('0.2s');
+    expect(ttft?.className).not.toMatch(/compare-speed-card-[lr]/);
+    expect(ttft?.textContent).not.toContain('✓');
+    unmount();
+  });
+
+  it('only complete known equal event measurements may display equality', () => {
+    const sessions = { left: makeSession('l', { durationSource: 'derived' }), right: makeSession('r', { durationSource: 'derived' }) };
+    const { unmount } = mount(<CompareSpeedMetrics speed={{ left: FULL_SPEED, right: FULL_SPEED }} sessions={sessions} locale="en" />);
+    expect(document.querySelectorAll('.compare-speed-card')[1]?.textContent).toContain('Both sessions are on par');
+    expect(document.querySelectorAll('.compare-speed-card')[1]?.textContent).not.toContain('Not comparable');
+    unmount();
+  });
   it('六指标全部渲染，字段名映射正确（tpotMs/turnGapMedianMs/pureInferenceMs）', () => {
     const { html, unmount } = mount(
       <CompareSpeedMetrics

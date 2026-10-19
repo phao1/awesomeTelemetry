@@ -1,7 +1,7 @@
 # Spec: Storage
 
 > SQLite storage layer: schema, writers, queries. Current schema version is
-> defined in contracts/database.md (v17 narrows the native lookup index).
+> defined in contracts/database.md (v18 adds a bounded reparse summary).
 > Fresh product build; no historical user-dataset migration is in scope.
 > **The authoritative source for DDL / indexes / PRAGMAs is
 > `contracts/database.md`; this file only defines behavior requirements.**
@@ -13,6 +13,43 @@ Persist scan sessions, proxy requests, Frida captures, and metrics. WAL mode,
 single-process writes.
 
 ## Requirements
+
+### REQ-023: Same-capture versioned offline reparse summary
+Explicit reparse SHALL update one bounded metadata-only summary per existing
+capture with parser/usage-metric versions and source fingerprint. Current/stale/
+unavailable are metadata states,not fresh original-file checks. Repeated actions
+MUST NOT insert a new capture/charge or overwrite original/native/scan data.
+Confirmed body deletion clears the summary in its intent transaction; no legacy
+body fallback or startup reparse. Types/DDL/bounds follow contracts schema18.
+
+### REQ-022: Native parent-reference projection
+Read retained parent_session references and exact same-namespace native session
+owners through existing source/session indexes, without source IO, global parent
+scan, schema mutation or inferred topology. Complete unique non-self evidence
+may resolve a declared parent/fork reference only; missing/ambiguous/incomplete
+and truncated matches remain distinct. Paged bounded shape follows contracts.
+
+### REQ-020: Linked execution metadata read model
+Return the retained session duration declaration (unknown fallback) and one
+batched projection of existing transport metadata, null for legacy absence.
+This does not prove any native event's measured duration; do not load event raw
+or source files just to populate the list. Preserve bounded pages and no N+1.
+
+An explicit execution page SHALL combine fixed-size native slim event pages and
+accepted direct/confirmed capture memberships, preserving both original sources.
+Exact scoped native identities may link a retained event only when all relevant
+source manifests are complete and unambiguous, including off-page collisions.
+Session-only/absent evidence SHALL remain unbound. No generated causal/retry/
+billing IDs or server TraceTurn derivation; no raw/summary/body columns, N+1,
+source-file IO or automatic association writes. Bounds/shapes follow contracts.
+
+### REQ-021: Local capture evidence snapshot export
+An explicit capture export SHALL include bounded versioned analysis plus
+metadata/headers/body references and paged identity/link evidence without
+redaction or upstream execution. Full original files remain separately
+downloadable; missing/truncated/deleted evidence is explicit. Recheck fresh
+deletion intent after async analysis and never export cached body projections
+after intent. No filesystem paths/journal/private CA data in the package.
 
 ### REQ-018: Evidence-backed capture association
 Persist identity sources/entries, session-proxy associations and append-only user decisions per contracts. Differential/idempotent ingest MUST NOT rewrite original scan/proxy rows, charge a new call, or overwrite a confirmed/rejected/revoked user decision. Late conflicting session identities MUST downgrade previous automatic direct links to candidates. List APIs SHALL use indexed metadata pages and bulk evidence reads, with no raw/body/summary columns and no per-row query.

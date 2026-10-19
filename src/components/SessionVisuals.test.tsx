@@ -35,13 +35,31 @@ function detailWith(events: TraceEventSlim[], totalDurationMs = 5000): SessionDe
 }
 
 describe('REQ-121 SessionVisuals（Heatmap + Radar）', () => {
+  it('omits unknown timing axes instead of plotting fabricated zero scores', () => {
+    const { unmount } = mount(<SessionVisuals detail={detailWith([makeEvent({ id: 'unknown', tokens: null })])} locale="en" />);
+    const radar = document.querySelector('.session-radar')!;
+    expect(radar.querySelectorAll('line')).toHaveLength(6);
+    expect(radar.querySelectorAll('text')).toHaveLength(6);
+    expect(radar.querySelector('[role="status"]')).not.toBeNull();
+    unmount();
+  });
+
+  it('omits partial-event timing scores even with a known session declaration', () => {
+    const detail = detailWith([makeEvent({ id: 'a', tokens: makeSession('s').tokenUsage })]);
+    detail.session.durationSource = 'measured'; detail.hasMore = true;
+    const { unmount } = mount(<SessionVisuals detail={detail} locale="zh" />);
+    expect(document.querySelector('.session-radar')!.querySelectorAll('line')).toHaveLength(6);
+    unmount();
+  });
+
   it('渲染热力图与 8 轴雷达图两个区块', () => {
     const events = [
-      makeEvent({ id: 'a', startedAt: '2026-08-01T00:00:00.000Z' }),
-      makeEvent({ id: 'b', startedAt: '2026-08-01T00:01:00.000Z' }),
+      makeEvent({ id: 'a', kind: 'user_prompt', startedAt: '2026-08-01T00:00:00.000Z' }),
+      makeEvent({ id: 'b', tokens: makeSession('s').tokenUsage, startedAt: '2026-08-01T00:01:00.000Z' }),
       makeEvent({ id: 'c', startedAt: '2026-08-01T00:02:00.000Z' }),
     ];
-    const { unmount } = mount(<SessionVisuals detail={detailWith(events)} locale="zh" />);
+    const detail = detailWith(events); detail.session.durationSource = 'measured'; detail.session.eventCount = events.length;
+    const { unmount } = mount(<SessionVisuals detail={detail} locale="zh" />);
     const heatmap = document.querySelector('.session-heatmap');
     const radar = document.querySelector('.session-radar');
     expect(heatmap).not.toBeNull();

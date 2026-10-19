@@ -1,4 +1,4 @@
-import type { Server } from 'node:http';
+import type { IncomingMessage, Server } from 'node:http';
 import type { Socket } from 'node:net';
 import type { Proxy } from 'http-mitm-proxy';
 
@@ -10,6 +10,7 @@ export class TransportLifecycle {
   private readonly servers = new Set<Server>();
   private readonly sockets = new Set<Socket>();
   private readonly websockets = new Set<NonNullable<Proxy['wsServer']>>();
+  private readonly upgrades = new WeakMap<object, IncomingMessage>();
   private readonly closures = new Map<Server, Promise<void>>();
   private pendingTls = 0;
   stopping = false;
@@ -60,11 +61,16 @@ export class TransportLifecycle {
       });
       if (this.stopping) this.closeServer(server);
     }
-    if (ws !== undefined) {
+    if (ws !== undefined && !this.websockets.has(ws)) {
       this.websockets.add(ws);
+      // v1.1.0 does not expose upgradeReq on IWebSocketContext. Observe the
+      // actual server event before its engine listener constructs that context.
+      ws.prependListener('connection', (socket: object, request: IncomingMessage) => this.upgrades.set(socket, request));
       if (this.stopping) this.closeWebsocket(ws);
     }
   }
+
+  webSocketRequest(socket: object): IncomingMessage | undefined { return this.upgrades.get(socket); }
 
   beginStop(): void {
     this.stopping = true;

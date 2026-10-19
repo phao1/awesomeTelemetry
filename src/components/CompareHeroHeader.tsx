@@ -32,9 +32,10 @@ export function CompareHeroHeader({
 
   const summaryParts: string[] = [];
   const fastDim = verdict.dims.find((d) => d.key === 'fast');
-  if (fastDim !== undefined && fastDim.winner !== 'tie') {
+  if (fastDim?.winner === 'unavailable') summaryParts.push(t('scan.timing.notComparable', locale));
+  else if (fastDim !== undefined && fastDim.winner !== 'tie' && verdict.summary.fastRatio !== null) {
     summaryParts.push(
-      t('compare.hero.summary.fast', locale).replace('{ratio}', verdict.summary.fastRatio.toFixed(1)),
+      t('scan.timing.wallClockRatio', locale).replace('{ratio}', verdict.summary.fastRatio.toFixed(1)),
     );
   }
   const frugalDim = verdict.dims.find((d) => d.key === 'frugal');
@@ -82,6 +83,7 @@ export function CompareHeroHeader({
       {side(left.provider, left.sourceAgent, left.title || left.id, 'left')}
       <div className="compare-hero-summary" aria-label={t('compare.hero.summary', locale)}>
         {summaryParts.join(' · ')}
+        <p className="hint">{t('scan.timing.nonCausal', locale)}</p>
       </div>
       {side(right.provider, right.sourceAgent, right.title || right.id, 'right')}
     </section>

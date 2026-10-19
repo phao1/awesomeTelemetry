@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { NativeIdentitySet } from '../../src/core/trace-types.js';
-import { initSchema } from './schema.js';
+import { initSchema, SCHEMA_VERSION } from './schema.js';
 import { decideTraceAssociation, findLinkedCapturePredecessor, listProxyTraceLinks, listSessionCaptureLinks, listTraceDecisions, listTraceIdentities, LINKED_PREDECESSOR_TIME_SQL, LINKED_PREDECESSOR_ID_SQL, SESSION_IDENTITY_SQL, writeNativeIdentities } from './trace-links.js';
 import { cachedStmt } from './stmt-cache.js';
 
@@ -110,7 +110,7 @@ describe('native identity and association storage', () => {
     db.exec('DROP TABLE trace_association_decisions; DROP TABLE trace_association_evidence; DROP TABLE trace_associations; DROP TABLE trace_identities; DROP TABLE trace_identity_sources;');
     db.prepare("UPDATE _meta SET value='11' WHERE key='schema_version'").run();
     initSchema(db); initSchema(db);
-    expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '17' });
+    expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: String(SCHEMA_VERSION) });
     expect(db.prepare('SELECT id FROM sessions').all()).toEqual([{ id: 's1' }]);
     expect(db.prepare('SELECT id FROM proxy_requests').all()).toEqual([{ id: 1 }]);
   });

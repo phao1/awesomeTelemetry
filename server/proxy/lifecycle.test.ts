@@ -11,6 +11,28 @@ import { initSchema } from '../storage/schema.js';
 import { CaptureBodyStore } from './body-store.js';
 import { readCaptureBodies } from './capture-storage.js';
 import { createMitmProxy } from './mitm-proxy.js';
+import type { CaptureNetworkTiming } from '../../src/core/trace-types.js';
+
+/** These fixtures forward non-JSON SSE data; byte timing is observed, content timing is not. */
+function assertMalformedStreamTiming(timing: CaptureNetworkTiming | undefined): void {
+  expect(timing).toBeDefined();
+  expect(Object.keys(timing!).sort()).toEqual([
+    'version', 'clock', 'responseHeadersMs', 'firstBodyByteMs', 'firstContentMs', 'firstContentKind',
+    'firstContentBasis', 'completedMs', 'contentTimingStatus', 'serverTiming', 'serverTimingTruncated',
+  ].sort());
+  expect(timing).toEqual({
+    version: 1, clock: 'proxy_monotonic', responseHeadersMs: timing!.responseHeadersMs,
+    firstBodyByteMs: timing!.firstBodyByteMs, firstContentMs: null, firstContentKind: null, firstContentBasis: null,
+    completedMs: timing!.completedMs, contentTimingStatus: 'decode_error', serverTiming: null, serverTimingTruncated: false,
+  });
+  for (const key of ['responseHeadersMs', 'firstBodyByteMs', 'completedMs'] as const) {
+    expect(timing![key]).not.toBeNull();
+    expect(Number.isSafeInteger(timing![key])).toBe(true);
+    expect(timing![key]!).toBeGreaterThanOrEqual(0);
+  }
+  expect(timing!.firstBodyByteMs!).toBeGreaterThanOrEqual(timing!.responseHeadersMs!);
+  expect(timing!.completedMs!).toBeGreaterThanOrEqual(timing!.firstBodyByteMs!);
+}
 
 async function waitFor(predicate: () => boolean): Promise<void> {
   const end = Date.now() + 3000;
@@ -111,7 +133,9 @@ describe('real proxy shutdown and original persistence', () => {
       const bodies = readCaptureBodies(f.db, row.id);
       expect(bodies.request?.status).toBe('complete');
       expect(bodies.response?.status).toBe('complete');
-      expect(bodies.transport).toEqual({ version: 1, state: 'completed', error: null, requestEnded: true, responseEnded: true, statusCode: 200 });
+      const { timing, ...outcome } = bodies.transport!;
+      expect(outcome).toEqual({ version: 1, state: 'completed', error: null, requestEnded: true, responseEnded: true, statusCode: 200 });
+      assertMalformedStreamTiming(timing);
       expect(await readFile(join(f.directory, 'bodies', `${bodies.response!.id}.body`), 'utf8')).toBe('data: first\n\ndata: done\n\n');
       expect(f.body()).toBe('data: first\n\ndata: done\n\n');
       expect(f.store.status()).toMatchObject({ activeBodies: 0, pendingBytes: 0 });
@@ -135,7 +159,9 @@ describe('real proxy shutdown and original persistence', () => {
       const bodies = readCaptureBodies(f.db, rows[0]!.id);
       expect(bodies.request).toMatchObject({ status: 'complete', error: null });
       expect(bodies.response).toMatchObject({ status: 'interrupted', error: 'PROXY_STOPPED' });
-      expect(bodies.transport).toEqual({ version: 1, state: 'interrupted', error: 'PROXY_STOPPED', requestEnded: true, responseEnded: false, statusCode: 200 });
+      const { timing, ...outcome } = bodies.transport!;
+      expect(outcome).toEqual({ version: 1, state: 'interrupted', error: 'PROXY_STOPPED', requestEnded: true, responseEnded: false, statusCode: 200 });
+      assertMalformedStreamTiming(timing);
       expect(await readFile(join(f.directory, 'bodies', `${bodies.response!.id}.body`), 'utf8')).toBe('data: first\n\n');
       expect(f.proxy.captureActivity()).toMatchObject({ activeRequests: 0, pendingWrites: 0, persistedRequests: 1, interruptedRequests: 1 });
       await f.proxy.shutdown({ graceMs: 0 });

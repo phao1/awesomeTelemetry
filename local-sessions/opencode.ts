@@ -27,6 +27,7 @@ interface OpenCodeDbPartRow {
   text: string | null;
   tool: string | null;
   state: string | Record<string, unknown> | null;
+  callID?: string | null;
 }
 
 /** 真实 OpenCode DB（v2+）与 fixture 旧 schema 的差异点。 */
@@ -35,6 +36,8 @@ interface OpenCodeDbDialect {
   sessionTime: 'epoch' | 'legacy';
   /** message/part 是否只有 JSON data 列（真实 schema）。 */
   dataCols: boolean;
+  sessionParentColumn: 'parent_id' | 'parentID' | null;
+  partCallColumn: 'callID' | null;
 }
 
 function detectOpenCodeDialect(db: Database): OpenCodeDbDialect {
@@ -46,6 +49,8 @@ function detectOpenCodeDialect(db: Database): OpenCodeDbDialect {
   return {
     sessionTime: has(sessionCols, 'time_created') ? 'epoch' : 'legacy',
     dataCols: has(messageCols, 'data') && has(partCols, 'data'),
+    sessionParentColumn: has(sessionCols, 'parent_id') ? 'parent_id' : has(sessionCols, 'parentID') ? 'parentID' : null,
+    partCallColumn: has(partCols, 'callID') ? 'callID' : null,
   };
 }
 
@@ -64,7 +69,7 @@ function parseJson<T>(value: string | T | null | undefined): T | null {
 }
 
 export interface OpenCodeSessionSample {
-  session: { id?: string; title?: string; directory?: string; time?: { created?: number; updated?: number } };
+  session: { id?: string; parentID?: string; title?: string; directory?: string; time?: { created?: number; updated?: number } };
   messages: Array<{
     id: string;
     role: 'user' | 'assistant';
@@ -85,12 +90,15 @@ export function readOpenCodeDb(dbPath: string): OpenCodeSessionSample[] {
   const db = openReadonly(dbPath);
   try {
     const dialect = detectOpenCodeDialect(db);
+    // The optional source columns are selected only after schema inspection;
+    // older databases remain readable and no source database is modified.
+    const parentColumn = dialect.sessionParentColumn ?? 'NULL';
     const sessionRows = (
       dialect.sessionTime === 'epoch'
         ? db.prepare(
-            'SELECT id, title, version, directory, time_created, time_updated FROM session ORDER BY rowid',
+            `SELECT id, title, version, directory, time_created, time_updated, ${parentColumn} AS native_parent_id FROM session ORDER BY rowid`,
           )
-        : db.prepare('SELECT id, title, version, time, directory FROM session ORDER BY rowid')
+        : db.prepare(`SELECT id, title, version, time, directory, ${parentColumn} AS native_parent_id FROM session ORDER BY rowid`)
     ).all() as Array<Record<string, unknown>>;
     const rawMessages = (
       dialect.dataCols
@@ -102,7 +110,7 @@ export function readOpenCodeDb(dbPath: string): OpenCodeSessionSample[] {
     const rawParts = (
       dialect.dataCols
         ? db.prepare('SELECT message_id, data FROM part ORDER BY rowid')
-        : db.prepare('SELECT messageID, type, text, tool, state FROM part ORDER BY rowid')
+        : db.prepare(`SELECT messageID, type, text, tool, state, ${dialect.partCallColumn ?? 'NULL'} AS callID FROM part ORDER BY rowid`)
     ).all() as Array<Record<string, unknown>>;
 
     const partsByMessage = new Map<string, OpenCodePart[]>();
@@ -115,6 +123,7 @@ export function readOpenCodeDb(dbPath: string): OpenCodeSessionSample[] {
           type: typeof data.type === 'string' ? data.type : 'text',
           text: typeof data.text === 'string' ? data.text : undefined,
           tool: typeof data.tool === 'string' ? data.tool : undefined,
+          callID: typeof data.callID === 'string' ? data.callID : undefined,
           state: data.state as OpenCodePart['state'] | undefined,
           tokens:
             typeof data.tokens === 'object' && data.tokens !== null
@@ -127,6 +136,7 @@ export function readOpenCodeDb(dbPath: string): OpenCodeSessionSample[] {
           type: typed.type,
           text: typed.text ?? undefined,
           tool: typed.tool ?? undefined,
+          callID: typed.callID ?? undefined,
           state: parseJson<OpenCodePart['state']>(typed.state) ?? undefined,
         });
       }
@@ -213,6 +223,7 @@ export function readOpenCodeDb(dbPath: string): OpenCodeSessionSample[] {
       samples.push({
         session: {
           id: typeof session.id === 'string' ? session.id : undefined,
+          parentID: typeof session.native_parent_id === 'string' ? session.native_parent_id : undefined,
           title: typeof session.title === 'string' ? session.title : undefined,
           directory: typeof session.directory === 'string' ? session.directory : undefined,
           time: sessionTime,

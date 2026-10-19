@@ -45,6 +45,31 @@ function clickByLabel(html: () => string, label: string): void {
 }
 
 describe('CompareKPI（建议 7 drill-down）', () => {
+  it('does not print an infinite percentage for individually finite wall-clock values', () => {
+    const result = makeResult(); result.speed.left.e2eMs = Number.MAX_VALUE; result.speed.right.e2eMs = 1;
+    const { html, unmount } = mount(<CompareKPI result={result} locale="en" />);
+    expect(html()).not.toContain('Infinity%'); unmount();
+  });
+  it('keeps event-duration values but gives no winner or equality when the declaration is unknown or mixed', () => {
+    const result = makeResult(); result.speed.left.avgLlmDurationMs = null;
+    const { html, unmount } = mount(<CompareKPI result={result} locale="en" />);
+    const cell = [...document.querySelectorAll('[data-scan-timing-reason]')];
+    expect(cell.length).toBeGreaterThanOrEqual(2);
+    expect(cell.every(node => !node.textContent!.includes('% ←') && !node.textContent!.includes('% →'))).toBe(true);
+    expect(html()).toContain('Not comparable'); expect(html()).toContain('—'); unmount();
+  });
+  it('retains finite declared event durations and descriptive wall-clock comparisons but hides invalid drill-down rates', () => {
+    const result = makeResult(); result.left.session.durationSource = 'measured'; result.right.session.durationSource = 'measured';
+    result.speed.left.avgLlmDurationMs = 100; result.speed.right.avgLlmDurationMs = 200;
+    result.speed.left.tps = NaN; result.speed.left.tpotMs = -1;
+    const { html, unmount } = mount(<CompareKPI result={result} locale="en" />);
+    expect(document.querySelectorAll('[data-scan-timing-reason]')).toHaveLength(0);
+    const delta = [...document.querySelectorAll('.compare-kpi-cell')].find(node => node.querySelector('.compare-kpi-label')?.textContent?.includes('Avg LLM'))!;
+    expect(delta.querySelector('.compare-delta')?.textContent).toBe('100% ← L');
+    const actualE2e = [...document.querySelectorAll<HTMLButtonElement>('.compare-kpi-cell button')].find(button => button.getAttribute('aria-label')?.startsWith('Speed '))!;
+    expect(actualE2e).toBeDefined();
+    act(() => actualE2e.click()); expect(html()).not.toContain('NaN'); expect(html()).not.toContain('-1.0ms'); unmount();
+  });
   it('e2e 卡片点击展开速度构成明细', () => {
     const { html, unmount } = mount(<CompareKPI result={makeResult()} locale="zh" />);
     clickByLabel(html, '快 点击展开构成明细');

@@ -1,4 +1,7 @@
 import type {
+  CodexCallPage,
+  CodexCallDetail,
+  TraceLogImportResult, TraceLogPage, TraceLogSession, TraceLogTurn, TraceLogTurnDetail,
   AgentOverviewRow,
   MissionResponse,
   ProxyRequest,
@@ -7,9 +10,16 @@ import type {
   MonitorConnectionSettings,
   MonitorConnectionPlan,
   MonitorConnectionDiagnostics,
+  MonitorCaptureSelfTest,
+  MonitorCapabilityReport,
   ProxyRequestListItem,
   ProxyCaptureBodies,
   ProxyProtocolAnalysis,
+  CaptureReparseStatus,
+  CaptureReparseResponse,
+  LinkedExecutionPage,
+  CaptureComparisonResponse,
+  NativeSessionParentPage,
   ProxyTraceLinkPage,
   SessionCaptureLinkPage,
   TraceAssociation,
@@ -35,11 +45,13 @@ const BASE = '/api';
 export class ApiError extends Error {
   readonly code: string;
   readonly status?: number;
+  readonly details?: Record<string, unknown>;
 
-  constructor(code: string, message: string, status?: number) {
+  constructor(code: string, message: string, status?: number, details?: Record<string, unknown>) {
     super(message);
     this.code = code;
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -65,11 +77,13 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
     }
   }
   if (!res.ok) {
-    const envelope = body as { error?: { code?: string; message?: string } } | null;
+    const envelope = body as { error?: { code?: string; message?: string; details?: unknown } } | null;
+    const details = envelope?.error?.details;
     throw new ApiError(
       envelope?.error?.code ?? 'INTERNAL_ERROR',
       envelope?.error?.message ?? `HTTP ${res.status}`,
       res.status,
+      details !== null && typeof details === 'object' && !Array.isArray(details) ? details as Record<string, unknown> : undefined,
     );
   }
   return body as T;
@@ -115,6 +129,18 @@ export interface SessionListResponse {
 }
 
 export const api = {
+  importTraceLog(file: File, signal?: AbortSignal): Promise<TraceLogImportResult> {
+    return fetchJson('/trace-imports', { method: 'POST', headers: { 'content-type': 'application/octet-stream', 'x-trace-filename': encodeURIComponent(file.name) }, body: file, signal, cache: 'no-store' });
+  },
+  traceLogImports(offset = 0, signal?: AbortSignal): Promise<TraceLogPage<TraceLogSession>> {
+    return fetchJson(`/trace-imports?offset=${offset}&limit=20`, { signal, cache: 'no-store' });
+  },
+  traceLogTurns(id: string, offset = 0, signal?: AbortSignal): Promise<TraceLogPage<TraceLogTurn>> {
+    return fetchJson(`/trace-imports/${encodeURIComponent(id)}/turns?offset=${offset}&limit=20`, { signal, cache: 'no-store' });
+  },
+  traceLogTurn(id: string, sequence: number, signal?: AbortSignal): Promise<TraceLogTurnDetail> {
+    return fetchJson(`/trace-imports/${encodeURIComponent(id)}/turns/${sequence}`, { signal, cache: 'no-store' });
+  },
   listSessions(params: {
     dataSource?: 'scan' | 'proxy';
     provider?: string[];
@@ -159,9 +185,10 @@ export const api = {
       `/sessions/${encodeURIComponent(key)}/prompt-context`,
     );
   },
-  eventDetail(key: string, eventId: string, includeRaw = false): Promise<TraceEvent | TraceEventRaw> {
+  eventDetail(key: string, eventId: string, includeRaw = false, signal?: AbortSignal): Promise<TraceEvent | TraceEventRaw> {
     return fetchJson<TraceEvent | TraceEventRaw>(
       `/sessions/${encodeURIComponent(key)}/events/${encodeURIComponent(eventId)}${qs({ include: includeRaw ? 'raw' : undefined })}`,
+      { signal },
     );
   },
   agentOverview(dataSource: 'scan' | 'proxy' = 'scan'): Promise<AgentOverviewResponse> {
@@ -191,6 +218,9 @@ export const api = {
   proxyStatus(): Promise<ProxyRuntimeStatus> {
     return fetchJson('/proxy/status');
   },
+  monitorCapabilities(signal?: AbortSignal): Promise<MonitorCapabilityReport> {
+    return fetchJson('/proxy/capabilities', { signal, cache: 'no-store' });
+  },
   monitorProfiles(): Promise<{ items: MonitorConnectionProfile[] }> {
     return fetchJson('/proxy/profiles');
   },
@@ -208,6 +238,9 @@ export const api = {
   },
   monitorConnectionDiagnostics(id: string, signal?: AbortSignal): Promise<MonitorConnectionDiagnostics> {
     return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/diagnostics`, { signal });
+  },
+  monitorCaptureSelfTest(id: string, expectedRevision: number, signal?: AbortSignal): Promise<MonitorCaptureSelfTest> {
+    return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/self-test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision }), signal, cache: 'no-store' });
   },
   monitorStartProfile(id: string, expectedRevision: number): Promise<MonitorConnectionPlan> {
     return fetchJson(`/proxy/profiles/${encodeURIComponent(id)}/start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision }) });
@@ -231,6 +264,26 @@ export const api = {
   proxyAnalysis(id: number, signal?: AbortSignal): Promise<ProxyProtocolAnalysis> {
     return fetchJson(`/proxy/requests/${id}/analysis`, { signal });
   },
+  codexCalls(source: { id: number } | { requestId: string }, offset = 0, signal?: AbortSignal): Promise<CodexCallPage> {
+    const path = 'id' in source ? `/proxy/requests/${source.id}` : `/proxy/live/${encodeURIComponent(source.requestId)}`;
+    return fetchJson(`${path}/codex-calls?offset=${offset}&limit=20`, { signal, cache: 'no-store' });
+  },
+  codexLiveSources(signal?: AbortSignal): Promise<{ items: Array<{ requestId: string; hostname: string; startedAt: string; ended: false }> }> {
+    return fetchJson('/proxy/live', { signal, cache: 'no-store' });
+  },
+  codexCall(source: { id: number } | { requestId: string }, sequence: number, signal?: AbortSignal): Promise<CodexCallDetail> {
+    const path = 'id' in source ? `/proxy/requests/${source.id}` : `/proxy/live/${encodeURIComponent(source.requestId)}`;
+    return fetchJson(`${path}/codex-calls/${sequence}`, { signal, cache: 'no-store' });
+  },
+  captureReparseStatus(id: number, signal?: AbortSignal): Promise<CaptureReparseStatus> {
+    return fetchJson(`/proxy/requests/${encodeURIComponent(String(id))}/reparse`, { signal, cache: 'no-store' });
+  },
+  reparseCapture(id: number, expectedRequestId: string, signal?: AbortSignal): Promise<CaptureReparseResponse> {
+    return fetchJson(`/proxy/requests/${encodeURIComponent(String(id))}/reparse`, {
+      method: 'POST', signal, cache: 'no-store', headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ expectedRequestId }),
+    });
+  },
   proxyIdentities(id: number, cursor?: string): Promise<TraceIdentityPage> {
     return fetchJson(`/proxy/requests/${id}/identities${qs({ cursor })}`);
   },
@@ -239,6 +292,15 @@ export const api = {
   },
   sessionCaptureLinks(key: string, cursor?: number): Promise<SessionCaptureLinkPage> {
     return fetchJson(`/sessions/${encodeURIComponent(key)}/capture-links${qs({ cursor })}`);
+  },
+  linkedExecution(key: string, params: { eventOffset?: number; eventLimit?: number; captureCursor?: number; captureLimit?: number } = {}, signal?: AbortSignal): Promise<LinkedExecutionPage> {
+    return fetchJson(`/sessions/${encodeURIComponent(key)}/execution${qs(params)}`, { signal });
+  },
+  nativeSessionParents(key: string, params: { limit?: number; cursor?: string } = {}, signal?: AbortSignal): Promise<NativeSessionParentPage> {
+    return fetchJson(`/sessions/${encodeURIComponent(key)}/parents${qs(params)}`, { signal });
+  },
+  captureComparison(targetId: number, baseId: number, metadataOnly = false, signal?: AbortSignal): Promise<CaptureComparisonResponse> {
+    return fetchJson(`/proxy/requests/${targetId}/comparison${qs({ base: baseId, mode: metadataOnly ? 'metadata' : undefined })}`, { signal, cache: 'no-store' });
   },
   proxyTraceLinks(id: number, cursor?: string): Promise<ProxyTraceLinkPage> {
     return fetchJson(`/proxy/requests/${id}/trace-links${qs({ cursor })}`);

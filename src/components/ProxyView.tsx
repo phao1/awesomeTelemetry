@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
-import type { BusEvents, CaptureBodyStatus, ProxyCaptureBodies, ProxyProtocolAnalysis, ProxyRequest, ProxyRequestListItem, ProxyRuntimeStatus, SessionIndexEntry } from '../core/trace-types.js';
+import type { BusEvents, CaptureBodyStatus, MonitorAgent, ProxyCaptureBodies, ProxyProtocolAnalysis, ProxyRequest, ProxyRequestListItem, ProxyRuntimeStatus, SessionIndexEntry } from '../core/trace-types.js';
 import { api } from '../api/client.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 import { Drawer } from './ui/Modal.js';
@@ -11,8 +11,16 @@ import { Badge } from './ui/Badge.js';
 import { RequestContextDiffPanel } from './RequestContextDiffPanel.js';
 import { ProxyTraceLinksPanel } from './TraceLinksPanel.js';
 import { OriginalDeletionControl } from './OriginalDeletionControl.js';
+const ProxyInsights = lazy(() => import('./ProxyInsights.js').then(module => ({ default: module.ProxyInsights })));
+const CodexCallsPanel = lazy(() => import('./CodexCallsPanel.js').then(module => ({ default: module.CodexCallsPanel })));
+const TraceLogImportPanel = lazy(() => import('./TraceLogImportPanel.js').then(module => ({ default: module.TraceLogImportPanel })));
 const MonitorSetupPanel = lazy(() => import('./MonitorSetupPanel.js').then(module => ({ default: module.MonitorSetupPanel })));
+const MonitorCapabilitiesPanel = lazy(() => import('./MonitorCapabilitiesPanel.js').then(module => ({ default: module.MonitorCapabilitiesPanel })));
 const CaptureCapacityPanel = lazy(() => import('./CaptureCapacityPanel.js').then(module => ({ default: module.CaptureCapacityPanel })));
+const CaptureTimingPanel = lazy(() => import('./CaptureTimingPanel.js').then(module => ({ default: module.CaptureTimingPanel })));
+const CaptureExportControl = lazy(() => import('./CaptureExportControl.js').then(module => ({ default: module.CaptureExportControl })));
+const CaptureReparseControl = lazy(() => import('./CaptureReparseControl.js').then(module => ({ default: module.CaptureReparseControl })));
+const CaptureComparisonPanel = lazy(() => import('./CaptureComparisonPanel.js').then(module => ({ default: module.CaptureComparisonPanel })));
 
 const DETAIL_READ_TIMEOUT = 'PROXY_DETAIL_READ_TIMEOUT';
 /** Own only this local read; abort/unmount/timeout never retries an Agent call. */
@@ -107,7 +115,10 @@ export function ProxyView({ locale, liveStatus, liveUpdates, sessions = [], focu
   const [error, setError] = useState<string | null>(null);
   const [port, setPort] = useState('');
   const [setupOpen, setSetupOpen] = useState(false);
+  const [setupAgent, setSetupAgent] = useState<MonitorAgent | undefined>();
+  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   const [capacityOpen, setCapacityOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const closeCapacity = useCallback(() => setCapacityOpen(false), []);
   const [confirming, setConfirming] = useState<'stop' | 'clear' | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -231,6 +242,7 @@ export function ProxyView({ locale, liveStatus, liveUpdates, sessions = [], focu
   }, []);
 
   const openDetail = useCallback(async (id: number) => {
+    setImportOpen(false);
     setCapacityOpen(false);
     const token = ++detailGeneration.current;
     setSelected(id);
@@ -300,8 +312,9 @@ export function ProxyView({ locale, liveStatus, liveUpdates, sessions = [], focu
         <button type="button" className="btn" onClick={() => void downloadCa()}>
           {t('proxy.downloadCa', locale)}
         </button>
-        <button type="button" className="btn" onClick={() => { setSelected(null); setCapacityOpen(false); setSetupOpen(true); }}>{t('monitor.title', locale)}</button>
-        <button type="button" className="btn" onClick={() => { detailGeneration.current += 1; setSelected(null); setSetupOpen(false); setCapacityOpen(true); }}>{t('proxy.capacity.title', locale)}</button>
+        <button type="button" className="btn" onClick={() => { setImportOpen(false); detailGeneration.current += 1; setSelected(null); setCapacityOpen(false); setCapabilitiesOpen(false); setSetupAgent(undefined); setSetupOpen(true); }}>{t('monitor.title', locale)}</button>
+        <button type="button" className="btn" onClick={() => { setImportOpen(false); detailGeneration.current += 1; setSelected(null); setSetupOpen(false); setCapacityOpen(false); setCapabilitiesOpen(true); }}>{t('monitor.capabilities.title', locale)}</button>
+        <button type="button" className="btn" onClick={() => { setImportOpen(false); detailGeneration.current += 1; setSelected(null); setSetupOpen(false); setCapabilitiesOpen(false); setCapacityOpen(true); }}>{t('proxy.capacity.title', locale)}</button>
         {/* CA 说明只在运行时留在工具栏；未运行时它与下方空状态的引导逐字重复。 */}
         {running && (
           <span className="hint" style={{ margin: 0 }}>
@@ -309,6 +322,7 @@ export function ProxyView({ locale, liveStatus, liveUpdates, sessions = [], focu
           </span>
         )}
         <span className="spacer" />
+        <button type="button" className="btn" onClick={() => { detailGeneration.current += 1; setSelected(null); setSetupOpen(false); setCapabilitiesOpen(false); setCapacityOpen(false); setImportOpen(true); }}>{t('traceImport.title', locale)}</button>
         <span className="mono">{status?.requestCount ?? 0} req</span>
         <button type="button" className="btn" onClick={() => setConfirming('clear')} disabled={items.length === 0}>
           {t('proxy.clear', locale)}
@@ -318,7 +332,15 @@ export function ProxyView({ locale, liveStatus, liveUpdates, sessions = [], focu
         </button>
       </div>
       {setupOpen && <Drawer open title={t('monitor.title', locale)} onClose={() => setSetupOpen(false)}>
-        <Suspense fallback={<p>{t('common.loading', locale)}</p>}><MonitorSetupPanel locale={locale} runtimeStatus={status} onStatus={next => { setStatus(next); setError(null); }} /></Suspense>
+        <Suspense fallback={<p>{t('common.loading', locale)}</p>}><MonitorSetupPanel locale={locale} initialAgent={setupAgent} runtimeStatus={status} onOpenCapture={id => { setSetupOpen(false); void openDetail(id); }} onStatus={next => { setStatus(next); setError(null); }} /></Suspense>
+      </Drawer>}
+      {importOpen && <Drawer open title={t('traceImport.title', locale)} onClose={() => setImportOpen(false)}>
+        <Suspense fallback={<p>{t('common.loading', locale)}</p>}><TraceLogImportPanel locale={locale} stopped={status !== null && !ownsResources && !stopping} /></Suspense>
+      </Drawer>}
+      {capabilitiesOpen && <Drawer open title={t('monitor.capabilities.title', locale)} onClose={() => setCapabilitiesOpen(false)}>
+        <Suspense fallback={<p>{t('common.loading', locale)}</p>}><MonitorCapabilitiesPanel locale={locale} onConfigure={agent => {
+          setCapabilitiesOpen(false); setSetupAgent(agent); setSetupOpen(true);
+        }} /></Suspense>
       </Drawer>}
       {capacityOpen && <Drawer open title={t('proxy.capacity.title', locale)} onClose={closeCapacity}>
         <Suspense fallback={<p>{t('common.loading', locale)}</p>}><CaptureCapacityPanel locale={locale} runtimeStatus={status} /></Suspense>
@@ -465,7 +487,7 @@ function ProxyDetailDrawer({
   bodyBlocked: boolean;
   onBlockBodies: (id: number) => void;
 }): React.JSX.Element {
-  const [tab, setTab] = useState<'request' | 'response' | 'headers' | 'timing' | 'contextDiff' | 'analysis' | 'traceLinks'>('request');
+  const [tab, setTab] = useState<'request' | 'response' | 'headers' | 'timing' | 'contextDiff' | 'analysis' | 'traceLinks' | 'comparison' | 'codex'>('request');
   // 首次激活 Context Diff 后保持挂载，切走/回来时复用本地缓存而不重发（design D14）。
   const [contextDiffActivated, setContextDiffActivated] = useState(false);
   const [capture, setCapture] = useState<ProxyCaptureBodies | null>(null);
@@ -478,24 +500,57 @@ function ProxyDetailDrawer({
   const [analysisPending, setAnalysisPending] = useState(false);
   const [analysisAttempt, setAnalysisAttempt] = useState(0);
   const [analysisPage, setAnalysisPage] = useState(0);
-  const [availability, setAvailability] = useState<'loading' | 'available' | 'blocked'>('loading');
+  const analysisRoot = useRef<HTMLDivElement>(null);
+  const [analysisEvidence, setAnalysisEvidence] = useState<{ key: string } | null>(null);
+  const [availability, setAvailability] = useState<'loading' | 'available' | 'blocked' | 'unknown'>('loading');
   const bodyEpoch = useRef(0);
+  const analysisReadCleanup = useRef<(() => void) | null>(null);
+  const analysisFromReparse = useRef(false);
+  const reparseBodyEpoch = useRef<number | null>(null);
+  const availabilityNow = useRef(availability);
+  const previousTraceInvalidation = useRef(traceInvalidateKey);
   const bodyHidden = bodyBlocked || availability !== 'available';
-  const onAvailability = useCallback((value: 'loading' | 'available' | 'blocked') => {
+  const isWebSocket = request.method === 'WS' || capture?.transport?.websocket !== undefined;
+  const inspectAnalysisEvidence = (key: string): void => {
+    if (key.startsWith('item-')) setAnalysisPage(Math.floor(Number(key.slice(5)) / 50));
+    setAnalysisEvidence({ key });
+  };
+  useEffect(() => {
+    if (analysisEvidence === null || bodyHidden) return;
+    const element = analysisRoot.current?.querySelector<HTMLElement>('[data-analysis-evidence="' + analysisEvidence.key + '"]');
+    if (element instanceof HTMLDetailsElement) element.open = true;
+    const group = element?.closest('details');
+    if (group) group.open = true;
+    element?.focus();
+    element?.scrollIntoView?.({ block: 'nearest' });
+  }, [analysisEvidence, bodyHidden]);
+  const onAvailability = useCallback((value: 'loading' | 'available' | 'blocked' | 'unknown') => {
+    availabilityNow.current = value;
     setAvailability(value);
     if (value === 'blocked') {
       bodyEpoch.current += 1; setAnalysis(null); setAnalysisError(null); setAnalysisPage(0);
+      analysisFromReparse.current = false; reparseBodyEpoch.current = null;
       setAnalysisActivated(false); setContextDiffActivated(false); onBlockBodies(request.id);
     }
   }, [onBlockBodies, request.id]);
   useEffect(() => {
-    if (!analysisActivated || bodyHidden) return;
+    if (!analysisActivated || bodyHidden || analysisFromReparse.current) return;
     const epoch = bodyEpoch.current;
     setAnalysis(null); setAnalysisPage(0);
-    return beginDetailRead(signal => api.proxyAnalysis(request.id, signal), value => {
+    const cleanup = beginDetailRead(signal => api.proxyAnalysis(request.id, signal), value => {
       if (epoch === bodyEpoch.current) setAnalysis(value);
     }, setAnalysisError, setAnalysisPending);
+    analysisReadCleanup.current = cleanup;
+    return () => { cleanup(); if (analysisReadCleanup.current === cleanup) analysisReadCleanup.current = null; };
   }, [analysisActivated, request.id, bodyHidden, analysisAttempt]);
+  useEffect(() => {
+    if (previousTraceInvalidation.current === traceInvalidateKey) return;
+    previousTraceInvalidation.current = traceInvalidateKey;
+    if (!analysisFromReparse.current && reparseBodyEpoch.current === null) return;
+    bodyEpoch.current += 1; reparseBodyEpoch.current = null; analysisFromReparse.current = false;
+    analysisReadCleanup.current?.(); setAnalysis(null); setAnalysisError(null); setAnalysisPending(false);
+    setAnalysisPage(0); setAnalysisEvidence(null); setAnalysisActivated(false); setContextDiffActivated(false);
+  }, [traceInvalidateKey]);
   useEffect(() => {
     return beginDetailRead(signal => api.proxyCapture(request.id, signal), setCapture, setCaptureError, setCapturePending);
   }, [request.id, captureAttempt]);
@@ -514,7 +569,7 @@ function ProxyDetailDrawer({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', alignItems: 'center' }}>
         <Badge tone={ref.status === 'complete' ? 'success' : 'attention'}>{t(statusKey[ref.status], locale)}</Badge>
         <span className="mono" title={ref.sha256}>{ref.bytes.toLocaleString()} B</span>
-        <a className="btn" href={`/api/proxy/requests/${request.id}/body/${direction}`} download>{t('proxy.capture.download', locale)}</a>
+        <a className="btn" href={`/api/proxy/requests/${request.id}/body/${direction}`} download>{t(isWebSocket ? 'proxy.websocket.download' : 'proxy.capture.download', locale)}</a>
         {truncated && <span className="hint">{t('proxy.capture.preview', locale)}</span>}
       </div>
     );
@@ -526,9 +581,32 @@ function ProxyDetailDrawer({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
       <OriginalDeletionControl id={request.id} requestId={request.requestId} locale={locale} monitorStopped={monitorStopped}
         supported={capture?.request != null && capture?.response != null} onAvailability={onAvailability} />
+      <Suspense fallback={<Skeleton count={1} />}>
+        <CaptureExportControl id={request.id} locale={locale} blocked={availability === 'loading'} metadataOnly={bodyHidden} />
+        {!isWebSocket && <CaptureReparseControl id={request.id} requestId={request.requestId} locale={locale} blocked={bodyHidden} invalidateKey={traceInvalidateKey}
+          onBegin={() => {
+            bodyEpoch.current += 1; reparseBodyEpoch.current = bodyEpoch.current; analysisFromReparse.current = false;
+            analysisReadCleanup.current?.(); setAnalysis(null); setAnalysisError(null); setAnalysisPending(false);
+            setAnalysisPage(0); setAnalysisEvidence(null); setAnalysisActivated(false); setContextDiffActivated(false); setTab('request');
+          }}
+          onParsed={result => {
+            if (availabilityNow.current !== 'available' || bodyHidden || reparseBodyEpoch.current !== bodyEpoch.current ||
+              result.status.proxyId !== request.id || result.status.requestId !== request.requestId) return;
+            // The user may have opened ordinary analysis while POST was still
+            // pending. Cancel that newer read too, not just the one at begin.
+            analysisReadCleanup.current?.(); bodyEpoch.current += 1;
+            reparseBodyEpoch.current = null; analysisFromReparse.current = true;
+            setAnalysis(result.analysis); setAnalysisError(null); setAnalysisPending(false); setAnalysisPage(0);
+            setAnalysisActivated(true); setTab('analysis');
+          }} />}
+      </Suspense>
       {bodyHidden && <p className="hint" role="status">{t(availability === 'loading' && !bodyBlocked ? 'proxy.deletion.checkingBody' : 'proxy.deletion.hidden', locale)}</p>}
       {capturePending && <Skeleton count={1} />}
       {captureError !== null && <DetailReadError code="CAPTURE_METADATA_FAILED" message={captureError} locale={locale} onRetry={() => setCaptureAttempt(attempt => attempt + 1)} />}
+      {isWebSocket && <section aria-label={t('proxy.websocket.scope', locale)}>
+        <h3>{t('proxy.websocket.scope', locale)}</h3><p className="hint">{t('proxy.websocket.notice', locale)}</p>
+        {capture?.transport?.websocket !== undefined && <p className="mono">{t('proxy.websocket.counts', locale)}: {capture.transport.websocket.requestMessages} / {capture.transport.websocket.responseMessages}; {capture.transport.websocket.clientCloseCode ?? '—'} / {capture.transport.websocket.upstreamCloseCode ?? '—'}</p>}
+      </section>}
       {capture?.transport !== undefined && <div role="status" className="hint">
         {t('proxy.transport.title', locale)}: {t(`proxy.transport.${capture.transport.state}`, locale)}
         {capture.transport.error !== null && <span> — <code>{capture.transport.error}</code></span>}
@@ -558,11 +636,15 @@ function ProxyDetailDrawer({
           { id: 'response', label: t('proxy.response', locale) },
           { id: 'headers', label: t('proxy.headers', locale) },
           { id: 'timing', label: t('proxy.timing', locale) },
-          { id: 'analysis', label: t('proxy.analysis.title', locale) },
+          ...(!isWebSocket ? [{ id: 'analysis', label: t('proxy.analysis.title', locale) }] : []),
+          ...(isWebSocket ? [{ id: 'codex', label: locale === 'zh' ? 'Codex 调用链路' : 'Codex call chain' }] : []),
           { id: 'traceLinks', label: t('trace.links.title', locale) },
-          { id: 'contextDiff', label: t('proxy.contextDiff.title', locale) },
+          ...(!isWebSocket ? [{ id: 'contextDiff', label: t('proxy.contextDiff.title', locale) }, { id: 'comparison', label: t('proxy.comparison.title', locale) }] : []),
         ]}
       />
+      {tab === 'codex' && isWebSocket && !bodyHidden && <Suspense fallback={<Skeleton count={2} />}>
+        <CodexCallsPanel key={request.id + ':' + traceInvalidateKey} source={{ id: request.id }} locale={locale} onOpenSession={onOpenSession} invalidateKey={traceInvalidateKey} />
+      </Suspense>}
       {tab === 'request' && !bodyHidden && (
         <div>
           {originalInfo('request')}
@@ -600,7 +682,7 @@ function ProxyDetailDrawer({
         </table>
       )}
       {tab === 'timing' && (
-        <dl className="meta" style={{ flexDirection: 'column' }}>
+        <div><dl className="meta" style={{ flexDirection: 'column' }}>
           <dt>{t('proxy.time', locale)}</dt>
           <dd className="mono">{new Date(request.startedAt).toLocaleString()}</dd>
           <dt>{t('proxy.duration', locale)}</dt>
@@ -608,14 +690,19 @@ function ProxyDetailDrawer({
           <dt>capture</dt>
           <dd className="mono">{request.captureMethod}</dd>
         </dl>
+        {!isWebSocket && !capturePending && captureError === null && <Suspense fallback={<Skeleton count={1} />}>
+          <CaptureTimingPanel timing={capture?.transport?.timing} locale={locale} />
+        </Suspense>}
+        </div>
       )}
       {tab === 'analysis' && !bodyHidden && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-          {analysisError !== null && <DetailReadError code="PROTOCOL_ANALYSIS_FAILED" message={analysisError} locale={locale} onRetry={() => setAnalysisAttempt(attempt => attempt + 1)} />}
+        <div ref={analysisRoot} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          {analysisError !== null && <DetailReadError code="PROTOCOL_ANALYSIS_FAILED" message={analysisError} locale={locale} onRetry={() => { analysisFromReparse.current = false; setAnalysisAttempt(attempt => attempt + 1); }} />}
           {analysisPending && <Skeleton count={3} />}
           {analysis !== null && (
             <>
               <p className="hint">{t('proxy.analysis.evidenceOnly', locale)}</p>
+              <Suspense fallback={<Skeleton count={1} />}><ProxyInsights analysis={analysis} locale={locale} onInspect={inspectAnalysisEvidence} /></Suspense>
               <div className="meta"><span>{analysis.requestFormat}</span><span>{analysis.model ?? '—'}</span><Badge tone={analysis.state === 'completed' ? 'success' : 'attention'}>{analysis.state}</Badge><span>{analysis.stopReason ?? '—'}</span></div>
               {!analysis.completeness.complete && <p role="status">{t('proxy.analysis.partial', locale)}: {analysis.completeness.reasons.join(', ')}</p>}
               <dl className="meta">
@@ -624,14 +711,15 @@ function ProxyDetailDrawer({
                 ))}
               </dl>
               <p className="hint">{t('proxy.analysis.accounting', locale)}: {analysis.usage.accounting} · unknown events: {analysis.unknownEvents}</p>
-              {analysis.system !== null && <details><summary>System</summary><pre style={{ whiteSpace: 'pre-wrap' }}>{analysis.system}</pre></details>}
-              <details><summary>{t('proxy.analysis.declarations', locale)} ({analysis.declarations.length})</summary>{analysis.declarations.map((tool, index) => <pre key={index} style={{ whiteSpace: 'pre-wrap' }}>{tool.definition}</pre>)}</details>
-              <details><summary>{t('proxy.analysis.nativeUsage', locale)}</summary><pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(analysis.usage.snapshots, null, 2)}</pre></details>
-              {analysis.errors.map((error, index) => <ErrorState key={index} code={error.code ?? 'PROTOCOL_ERROR'} message={error.message} />)}
+              {analysis.system !== null && <details data-analysis-evidence="system" tabIndex={-1}><summary>System</summary><pre style={{ whiteSpace: 'pre-wrap' }}>{analysis.system}</pre></details>}
+              <details><summary>{t('proxy.analysis.declarations', locale)} ({analysis.declarations.length})</summary>{analysis.declarations.map((tool, index) => <pre key={index} data-analysis-evidence={'declaration-' + index} tabIndex={-1} style={{ whiteSpace: 'pre-wrap' }}>{tool.definition}</pre>)}</details>
+              <details data-analysis-evidence="usage" tabIndex={-1}><summary>{t('proxy.analysis.nativeUsage', locale)}</summary><pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(analysis.usage.snapshots, null, 2)}</pre></details>
+              {analysis.errors.map((error, index) => <div key={index} data-analysis-evidence={'error-' + index} tabIndex={-1}><ErrorState code={error.code ?? 'PROTOCOL_ERROR'} message={error.message} /></div>)}
               {analysis.items.slice(analysisPage * 50, (analysisPage + 1) * 50).map((item, index) => (
-                <details key={analysisPage * 50 + index}>
+                <details key={analysisPage * 50 + index} data-analysis-evidence={'item-' + (analysisPage * 50 + index)} tabIndex={-1}>
                   <summary>{item.phase === 'request' ? t('proxy.analysis.history', locale) : t('proxy.analysis.response', locale)} · {item.kind} · {item.name ?? item.callId ?? item.id ?? '—'} {!item.complete && '…'}</summary>
                   <p className="hint mono">{item.sourcePath}{item.callId !== null ? ' · callId=' + item.callId : ''}</p>
+                  {typeof item.toolResultIsError === 'boolean' && <p className="hint mono">{item.sourcePath}.is_error = {String(item.toolResultIsError)} · {t('proxy.analysis.toolResultFlag', locale)}</p>}
                   <pre className="mono" style={{ whiteSpace: 'pre-wrap' }}>{item.content}</pre>
                 </details>
               ))}
@@ -647,6 +735,9 @@ function ProxyDetailDrawer({
         </div>
       )}
       {tab === 'traceLinks' && <ProxyTraceLinksPanel proxyId={request.id} sessions={sessions} locale={locale} onOpenSession={onOpenSession} invalidateKey={traceInvalidateKey} />}
+      {tab === 'comparison' && availability !== 'loading' && <Suspense fallback={<Skeleton count={1} />}>
+        <CaptureComparisonPanel targetId={request.id} locale={locale} loadedItems={loadedItems} onOpenRequest={onOpenRequest} invalidateKey={traceInvalidateKey} metadataOnly={bodyHidden} />
+      </Suspense>}
       {showContextDiff && !bodyHidden && (
         <div hidden={tab !== 'contextDiff'}>
           <RequestContextDiffPanel

@@ -1,4 +1,6 @@
 // contracts/database.md §5.2 列常量，逐字采用。禁止 SELECT *。
+export const TRACE_LOG_IMPORT_COLS = 'id, imported_at, metadata_json, session_offset, session_length, session_sha256';
+export const TRACE_LOG_TURN_COLS = 'import_id, sequence, metadata_json, byte_offset, byte_length, body_sha256';
 
 export const SESSION_LIST_COLS = [
   'id', 'provider', 'source_agent', 'title', 'started_at', 'updated_at',
@@ -38,6 +40,7 @@ export const PROXY_LIST_COLS = [
 export const PROXY_CAPTURE_BODY_COLS = 'proxy_id, request_ref, response_ref, request_preview_truncated, response_preview_truncated, response_headers';
 export const PROXY_CAPTURE_PROCESSING_COLS = 'proxy_id, result_json';
 export const PROXY_CAPTURE_TRANSPORT_COLS = 'proxy_id, result_json';
+export const PROXY_CAPTURE_ANALYSIS_COLS = 'proxy_id, parser_version, metric_version, source_fingerprint, parsed_at, request_format, state, usage_json, completeness_json';
 export const PROXY_CAPTURE_TOMBSTONE_COLS = 'request_id, request_body_id, response_body_id, deleted_at';
 
 /** session_annotations 读取列（contracts/database.md §3.10）。显式列，禁止 SELECT *。 */

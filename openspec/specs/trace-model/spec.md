@@ -14,7 +14,17 @@ sources normalize into one shape.
 ## Requirements
 
 ### REQ-009: Native identity provenance
+Linked execution's sessionDurationSource SHALL remain a session declaration,
+not per-event measurement proof. Existing normalized event duration and each
+capture's network transport timing remain separate clocks/interpretations.
+
 TraceRecord MAY carry nativeIdentities only when explicit source fields were observed. Preserve namespace/kind/value/scope/sourcePath; do not promote filenames, generated IDs or inferred turnKey to native IDs. Repeated native fields may share one evidence entry with the first source locator. Multiple conflicting session IDs remain visible and ambiguous. Response/message/tool identities alone cannot automatically merge sessions. Identity extraction completeness is independent of token/duration completeness.
+
+When a native field and normalized event are created from the same source row
+or part, the adapter MAY retain that exact eventId binding. Internal provenance
+tags MUST NOT leak into public events or mutate the source object; ordering and
+duplicate-ID normalization must preserve the correct mapping. An unbound field
+stays eventId=null, never matched back by timing/text or by parsing generated IDs.
 
 ### REQ-001: Single source of type definitions
 All types MUST adopt `contracts/data-model.md` verbatim. No module MUST define

@@ -3,6 +3,7 @@ import type { Database } from 'better-sqlite3';
 import type { CaptureBodyRef, OriginalDeletionJob } from '../../src/core/trace-types.js';
 import { PROXY_CAPTURE_TOMBSTONE_COLS, PROXY_ORIGINAL_DELETION_COLS, PROXY_ORIGINAL_REF_COLS, ORIGINAL_DELETION_STATUS_COLS } from '../storage/columns.js';
 import { cachedStmt } from '../storage/stmt-cache.js';
+import { clearCaptureAnalysis } from '../storage/capture-analysis.js';
 import type { CaptureBodyStore } from './body-store.js';
 import { retryCaptureCommit } from './capture-journal.js';
 
@@ -77,6 +78,7 @@ export class OriginalDeletionQueue {
     cachedStmt(this.db, `UPDATE proxy_requests SET request_body=NULL,response_body=NULL,
       raw_request_body=NULL,raw_response_body=NULL,system_prompt=NULL,system_prompt_len=0
       WHERE id=? AND request_id=?`).run(proxyId, requestId);
+    clearCaptureAnalysis(this.db, proxyId);
   }
 
   /** Persists intent+exact tombstone atomically; performs NO original-file IO. */

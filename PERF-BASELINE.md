@@ -1407,3 +1407,19 @@ full-app/real-Agent/Windows/30-minute equivalence. NFR§6.1 records the same
 history and unchanged budget. No new functionality, database split or new
 storage-boundary test.30/71 remains partial; only source/tests/specs/scripts
 are intended for Git, all raw diagnostic reports remain locally available.
+
+
+## 2026-10-19 — UI branch preservation checks
+
+The combined runtime prerequisites and UI candidate were checked before saving
+this branch. This is an in-progress workbench snapshot, not whole-product release
+acceptance. Runtime and UI source changes are recorded in separate commits.
+
+- Current typecheck, lint and client/server build: passed.
+- Full single-worker regression: 274 files, 3290 passed, 0 failed, 1 existing skip.
+- Synthetic perf:check: passed; HTTP, HTTPS CONNECT and near-2MiB forwarding
+  profiles all qualified and met their existing budgets. No external model calls.
+- Initial HTML plus all preloaded JavaScript: 195617 bytes gzip (<200000).
+- All emitted CSS, including lazy chunks: 24380 bytes gzip (>16384 by7996).
+  The CSS budget remains unmet; it was not waived or redefined for this save.
+- Real event logs, local runtime files and private acceptance records are excluded.

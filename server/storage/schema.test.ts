@@ -27,6 +27,7 @@ const EXPECTED_TABLES = [
   'proxy_requests',
   'proxy_capture_processing',
   'proxy_capture_transport',
+  'proxy_capture_analysis',
   'proxy_capture_tombstones',
   'proxy_original_deletions',
   'frida_captures',
@@ -177,7 +178,7 @@ describe('REQ-003 v17 bounded native lookup index', () => {
       const before = listTraceIdentities(db, { source: 'scan', key: 'kept-scan' });
       const source = db.prepare('SELECT parser_version,complete,omitted_count,reasons_json,content_sha256,updated_at FROM trace_identity_sources').all();
       initSchema(db);
-      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '17' });
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: String(SCHEMA_VERSION) });
       expect(listTraceIdentities(db, { source: 'scan', key: 'kept-scan' })).toEqual(before);
       expect(db.prepare('SELECT parser_version,complete,omitted_count,reasons_json,content_sha256,updated_at FROM trace_identity_sources').all()).toEqual(source);
       expect(db.prepare('SELECT id,source_path FROM sessions').all()).toEqual([{ id: 'kept-scan', source_path: 'synthetic:kept-scan' }]);
@@ -200,7 +201,7 @@ describe('REQ-003 v17 bounded native lookup index', () => {
       expect(db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get()).toEqual(old);
       expect(listTraceIdentities(db, { source: 'scan', key: 'kept-scan' })).toEqual(before);
       db.exec('DROP TRIGGER reject_v17'); initSchema(db);
-      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '17' });
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: String(SCHEMA_VERSION) });
     } finally { db.close(); }
   });
   it('uses the partial index for exact session matching but retains all kinds through source pagination', () => {
@@ -210,6 +211,45 @@ describe('REQ-003 v17 bounded native lookup index', () => {
       const plan = JSON.stringify(db.prepare('EXPLAIN QUERY PLAN ' + SESSION_IDENTITY_SQL).all(JSON.stringify([['agent:codex', 'native-session']])));
       expect(plan).toContain('idx_trace_identities_native'); expect(plan).not.toContain('SCAN i');
       const page = listTraceIdentities(db, { source: 'scan', key: 'kept-scan' }); expect(page.items).toHaveLength(2); expect(page.items.some(item => item.kind === 'tool_call' && item.value.length === 1024 && item.scope?.length === 1024)).toBe(true);
+    } finally { db.close(); }
+  });
+});
+
+describe('REQ-023 additive schema18 analysis summary', () => {
+  function fixture(): Db {
+    const db = new Database(':memory:'); db.pragma('foreign_keys=ON'); initSchema(db);
+    db.exec("DROP TABLE IF EXISTS proxy_capture_analysis; UPDATE _meta SET value='17' WHERE key='schema_version'");
+    db.prepare('INSERT INTO proxy_requests(id,request_id,method,url,hostname,started_at,request_body,response_body) VALUES(?,?,?,?,?,?,?,?)')
+      .run(1, 'kept-capture', 'POST', '/synthetic', 'synthetic', '2026-10-16T00:00:00Z', 'kept-request', 'kept-response');
+    return db;
+  }
+  it('adds only the summary table to v17 and preserves original rows and the current partial index through repeated init', () => {
+    const db = fixture();
+    try {
+      const index = db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get();
+      const capture = db.prepare('SELECT id,request_id,request_body,response_body FROM proxy_requests').all();
+      initSchema(db);
+      expect(SCHEMA_VERSION).toBe(19);
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '19' });
+      expect((db.prepare('PRAGMA table_info(proxy_capture_analysis)').all() as Array<{ name: string }>).map(row => row.name)).toEqual(['proxy_id', 'parser_version', 'metric_version', 'source_fingerprint', 'parsed_at', 'request_format', 'state', 'usage_json', 'completeness_json']);
+      expect(db.prepare('SELECT COUNT(*) AS n FROM proxy_capture_analysis').get()).toEqual({ n: 0 });
+      initSchema(db); initSchema(db);
+      expect(db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get()).toEqual(index);
+      expect(db.prepare('SELECT id,request_id,request_body,response_body FROM proxy_requests').all()).toEqual(capture);
+    } finally { db.close(); }
+  });
+  it('preserves v17 version/index/sources when the v18 state write fails and safely retries the additive table', () => {
+    const db = fixture();
+    try {
+      const index = db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get();
+      db.exec("CREATE TRIGGER reject_v18 BEFORE UPDATE ON _meta WHEN NEW.key='schema_version' AND NEW.value='18' BEGIN SELECT RAISE(ABORT,'synthetic-v18-failure'); END");
+      expect(() => initSchema(db)).toThrow('synthetic-v18-failure');
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '17' });
+      expect(db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get()).toEqual(index);
+      expect(db.prepare('SELECT request_body,response_body FROM proxy_requests WHERE id=1').get()).toEqual({ request_body: 'kept-request', response_body: 'kept-response' });
+      db.exec('DROP TRIGGER reject_v18'); initSchema(db);
+      expect(db.prepare('SELECT COUNT(*) AS n FROM proxy_capture_analysis').get()).toEqual({ n: 0 });
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '19' });
     } finally { db.close(); }
   });
 });

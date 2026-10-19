@@ -32,6 +32,46 @@ function button(container: Element, text: string): HTMLButtonElement {
 }
 
 describe('linked trace metadata UI', () => {
+  it('opens native parents lazily, navigates only a resolved owner and hides invalidated conclusions without reads', async () => {
+    const open = vi.fn();
+    const fetchMock = vi.fn(async (url: string) => response(url.endsWith('/parents') ? {
+      sessionKey: 'native-session', items: [{ identity: { ...identityPage().items[0], source: 'scan', sourceKey: 'native-session', kind: 'parent_session', value: 'parent-native', scope: 'child-native', sourcePath: 'session_meta.payload.parent_thread_id' },
+        state: 'resolved', matches: [{ id: 'parent-key', provider: 'codex', sourceAgent: 'Codex', title: 'Synthetic parent', startedAt: '2026-10-16T00:00:00.000Z' }], matchesTruncated: false }],
+      nextCursor: null, hasMore: false, completeness: { complete: true, omittedCount: 0, reasons: [] },
+    } : { sessionKey: 'native-session', items: [], confirmedCount: 0, candidateCount: 0, nextCursor: null, hasMore: false }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { root, container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} onOpenSession={open} />);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await act(async () => { const details = container.querySelector('details')!; details.open = true; details.dispatchEvent(new Event('toggle', { bubbles: true })); }); await flush();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/native-session/capture-links']);
+    await act(async () => { button(container, '原生父会话引用').click(); await import('./NativeSessionParentsPanel.js'); }); await flush();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/native-session/capture-links', '/api/sessions/native-session/parents']);
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-native-parent-reference]')!.click(); });
+    expect(container.textContent).toContain('Synthetic parent');
+    await act(async () => { button(container, '打开已解析父级会话').click(); });
+    expect(open).toHaveBeenCalledExactlyOnceWith('parent-key');
+    await act(async () => { root.render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} onOpenSession={open} invalidateKey={1} />); });
+    expect(container.textContent).toContain('父级依据已变化');
+    expect(container.textContent).not.toContain('Synthetic parent');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it('loads execution metadata only after its explicit action inside the expanded session entry', async () => {
+    const fetchMock = vi.fn(async (url: string) => response(url.endsWith('/execution') ? {
+      sessionKey: 'native-session', sessionDurationSource: 'unknown', events: [], eventOffset: 0, eventLimit: 100, eventTotal: 0, eventsHasMore: false,
+      attempts: [], nextCaptureCursor: null, capturesHasMore: false, identities: [], identityCompleteness: { complete: true, omittedCount: 0, reasons: [] },
+    } : { sessionKey: 'native-session', items: [], confirmedCount: 0, candidateCount: 0, nextCursor: null, hasMore: false }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} />);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await act(async () => { const details = container.querySelector('details')!; details.open = true; details.dispatchEvent(new Event('toggle', { bubbles: true })); }); await flush();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/native-session/capture-links']);
+    await act(async () => { button(container, '关联执行证据').click(); });
+    await vi.waitFor(async () => {
+      await flush();
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/native-session/capture-links', '/api/sessions/native-session/execution']);
+    });
+    expect(container.textContent).toContain('此页没有原生事件');
+  });
   it.each(['identities', 'decisions'])('does not attach a late %s drill-down to a newly selected proxy', async endpoint => {
     let resolveOld!: (value: Response) => void;
     const delayed = new Promise<Response>(resolve => { resolveOld = resolve; });

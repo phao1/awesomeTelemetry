@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   startTransition,
   useCallback,
   useEffect,
@@ -15,6 +17,7 @@ import type {
   TraceEventSlim,
   TraceStatus,
   BusEvents,
+  SseConnected,
 } from './core/trace-types.js';
 import {
   errorMessage,
@@ -25,7 +28,7 @@ import {
   type Locale,
 } from './i18n.js';
 import { api, ApiError } from './api/client.js';
-import { invalidateSessionDetail, recordCache } from './cache/caches.js';
+import { eventDetailCache, invalidateSessionDetail, recordCache } from './cache/caches.js';
 import { mergeSessionsPatch } from './core/list-utils.js';
 import { localSamples } from './generated/local-samples.js';
 import { LanguageToggle } from './components/LanguageToggle.js';
@@ -37,8 +40,10 @@ import { SessionVisuals } from './components/SessionVisuals.js';
 import { TrajectoryPane } from './components/trajectory/TrajectoryPane.js';
 import { AgentCollabReplay } from './components/AgentCollabReplay.js';
 import { AgentOverview } from './components/AgentOverview.js';
-import { CompareBoard } from './components/CompareBoard.js';
+const CompareBoard = lazy(() => import('./components/CompareBoard.js').then(module => ({ default: module.CompareBoard })));
 import { ProxyView } from './components/ProxyView.js';
+import type { LiveStreamEntry } from './components/ProxyLivePanel.js';
+const ProxyLivePanel = lazy(() => import('./components/ProxyLivePanel.js').then(module => ({ default: module.ProxyLivePanel })));
 import { SessionCaptureLinksPanel } from './components/TraceLinksPanel.js';
 import { FridaView } from './components/FridaView.js';
 import { MissionControl, type MissionRange } from './components/MissionControl.js';
@@ -181,11 +186,14 @@ export default function App() {
   const [missionInvalidateKey, setMissionInvalidateKey] = useState(0);
   const [proxyLiveStatus, setProxyLiveStatus] = useState<BusEvents['proxy_status'] | null>(null);
   const [proxyLiveUpdates, setProxyLiveUpdates] = useState<BusEvents['proxy_request'][]>([]);
+  const [proxyStreams, setProxyStreams] = useState<LiveStreamEntry[]>([]);
+  const [liveReset, setLiveReset] = useState(0);
   const [proxyFocusedId, setProxyFocusedId] = useState<number | null>(null);
   const [traceLinksVersion, setTraceLinksVersion] = useState(0);
   const clearProxyFocus = useCallback(() => setProxyFocusedId(null), []);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectedKeyRef = useRef<string | null>(null);
+  const metadataEpochRef = useRef(0);
 
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next);
@@ -232,6 +240,7 @@ export default function App() {
   // REQ-015（G7.6）：会话索引由 App 单一持有，SessionList/CompareBoard 全部读这一份
   const loadSessions = useCallback(
     async (mode: 'first' | 'next') => {
+      const epoch = metadataEpochRef.current;
       const filters = sessionFiltersRef.current;
       setSessionsLoading(true);
       try {
@@ -244,6 +253,7 @@ export default function App() {
           q: filters.q.trim() !== '' ? filters.q.trim() : undefined,
           range: filters.range,
         });
+        if (metadataEpochRef.current !== epoch) return;
         startTransition(() => {
           setSessions((prev) => (mode === 'first' ? result.items : mergeSessionsPatch(prev, result.items)));
         });
@@ -253,6 +263,7 @@ export default function App() {
         setSessionsError(null);
         setOfflineSamples(false);
       } catch (err) {
+        if (metadataEpochRef.current !== epoch) return;
         console.error('[sessions] 列表加载失败:', err);
         setSessionsError(formatError(err, localeRef.current));
         // REQ-014：API 不可用时用本地样本兜底，状态栏显示「离线样本」
@@ -261,7 +272,7 @@ export default function App() {
         });
         setOfflineSamples(true);
       } finally {
-        setSessionsLoading(false);
+        if (metadataEpochRef.current === epoch) setSessionsLoading(false);
       }
     },
     [],
@@ -295,27 +306,66 @@ export default function App() {
   // REQ-004：SSE 局部 patch——失效缓存 + 一次 keys 批量补丁，不重拉全量
   useEffect(() => {
     const es = new EventSource('/api/events');
+    const seen = new Set<string>();
+    const listen = (name: string, callback: (event: MessageEvent) => void): void => {
+      es.addEventListener(name, event => {
+        const message = event as MessageEvent;
+        // connected has no wire id and inherits the previous event's id on a
+        // native EventSource reconnect. It must never be deduplicated away.
+        if (name !== 'connected' && message.lastEventId) {
+          if (seen.has(message.lastEventId)) return;
+          seen.add(message.lastEventId);
+          if (seen.size > 512) seen.delete(seen.values().next().value!);
+        }
+        callback(message);
+      });
+    };
     es.onopen = () => setLive(true);
     es.onerror = () => setLive(false);
-    es.addEventListener('scan_started', () => {
+    listen('connected', (event) => {
+      const state = JSON.parse((event as MessageEvent).data) as SseConnected;
+      if (state.resume !== 'reset') return;
+      metadataEpochRef.current += 1;
+      // Only a bounded metadata snapshot is needed when the ephemeral journal
+      // cannot cover a gap. Never restore missed original/body fragments.
+      recordCache.clear(); eventDetailCache.clear();
+      setProxyLiveUpdates([]); setProxyStreams([]); setProxyLiveStatus(null);
+      setProxyFocusedId(null); setLiveReset(value => value + 1);
+      setTraceLinksVersion(value => value + 1);
+      setMissionInvalidateKey(value => value + 1); setTeamInvalidateKey(value => value + 1);
+      selectedKeyRef.current = null; setSelectedKey(null); setDetail(null); setSelectedTurn(null); setPending(false);
+      setPromptContextKey(null); eventPageRequest.current = null; setLoadingMoreEvents(false); setMoreEventsError(null); setDetailError(null);
+      void loadSessions('first');
+    });
+    listen('proxy_stream_started', (event) => {
+      const stream = JSON.parse((event as MessageEvent).data) as BusEvents['proxy_stream_started'];
+      setProxyStreams(previous => previous.some(item => item.requestId === stream.requestId)
+        ? previous : [...previous.slice(-49), { ...stream, ended: false }]);
+    });
+    listen('proxy_stream_ended', (event) => {
+      const { requestId } = JSON.parse((event as MessageEvent).data) as BusEvents['proxy_stream_ended'];
+      setProxyStreams(previous => previous.map(item => item.requestId === requestId ? { ...item, ended: true } : item));
+    });
+    listen('scan_started', () => {
       setScanning(true);
     });
-    es.addEventListener('scan_completed', () => {
+    listen('scan_completed', () => {
       setScanning(false);
       setLastScanAt(new Date().toISOString());
     });
-    es.addEventListener('proxy_status', (event) => {
+    listen('proxy_status', (event) => {
       setProxyLiveStatus(JSON.parse((event as MessageEvent).data) as BusEvents['proxy_status']);
     });
-    es.addEventListener('proxy_request', (event) => {
+    listen('proxy_request', (event) => {
       const update = JSON.parse((event as MessageEvent).data) as BusEvents['proxy_request'];
       if (update.item !== undefined) startTransition(() => setProxyLiveUpdates(previous => [...previous.slice(-49), update]));
     });
-    es.addEventListener('trace_links_changed', () => {
+    listen('trace_links_changed', () => {
       // Relation-only invalidation: no source-detail/body refetch and no polling.
       setTraceLinksVersion(version => version + 1);
     });
-    es.addEventListener('sessions_changed', (event) => {
+    listen('sessions_changed', (event) => {
+      const epoch = metadataEpochRef.current;
       const data = JSON.parse((event as MessageEvent).data) as { keys: string[] };
       setMissionInvalidateKey((k) => k + 1);
       for (const key of data.keys) {
@@ -324,9 +374,13 @@ export default function App() {
       if (data.keys.length === 0) {
         return;
       }
+      // A changed native owner may invalidate a different open session's
+      // parent-reference uniqueness. Mark metadata evidence stale, no IO here.
+      setTraceLinksVersion(version => version + 1);
       void api
-        .listSessions({ keys: data.keys })
+        .listSessions({ keys: data.keys, limit: Math.min(500, data.keys.length) })
         .then((result) => {
+          if (metadataEpochRef.current !== epoch) return;
           startTransition(() => {
             setSessions((prev) => mergeSessionsPatch(prev, result.items));
           });
@@ -338,7 +392,7 @@ export default function App() {
             void api
               .sessionDetail(key, 'slim')
               .then((result) => {
-                if (selectedKeyRef.current !== key) return;
+                if (metadataEpochRef.current !== epoch || selectedKeyRef.current !== key) return;
                 if (result.pending) {
                   setPending(true);
                   setDetail({ ...result, events: [], eventTotal: 0, hasMore: false });
@@ -348,6 +402,7 @@ export default function App() {
                 setDetail(result);
               })
               .catch((err: unknown) => {
+                if (metadataEpochRef.current !== epoch) return;
                 console.error('[sse] 当前会话详情刷新失败:', err);
                 if (selectedKeyRef.current === key) {
                   setDetailError(formatError(err, localeRef.current));
@@ -356,19 +411,21 @@ export default function App() {
           }
         })
         .catch((err) => {
+          if (metadataEpochRef.current !== epoch) return;
           // 失败时保留现有列表，但必须记录错误（禁止空 catch）
           console.error('[sse] sessions_changed patch 失败:', err);
         });
     });
     // §7.8 team_runs_changed → 本地 patch/reconnect（TeamShell 内部处理增量）
-    es.addEventListener('team_runs_changed', () => {
+    listen('team_runs_changed', () => {
       setTeamInvalidateKey((k) => k + 1);
     });
     return () => es.close();
-  }, []);
+  }, [loadSessions]);
 
   const selectSession = useCallback(
     (key: string) => {
+      const epoch = metadataEpochRef.current;
       selectedKeyRef.current = key;
       eventPageRequest.current = null;
       setLoadingMoreEvents(false);
@@ -387,6 +444,7 @@ export default function App() {
       void api
         .sessionDetail(key, 'slim')
         .then((result) => {
+          if (metadataEpochRef.current !== epoch || selectedKeyRef.current !== key) return;
           if (result.pending) {
             setPending(true); // REQ-009：解密中占位，等待 SSE 通知
             setDetail({ ...result, events: [], eventTotal: 0, hasMore: false });
@@ -397,6 +455,7 @@ export default function App() {
           setDetailError(null);
         })
         .catch((err: unknown) => {
+          if (metadataEpochRef.current !== epoch || selectedKeyRef.current !== key) return;
           // REQ-022：失败必须可见 —— 错误码 + 重试（禁止空 catch）
           console.error('[detail] 会话详情加载失败:', err);
           setDetailError(formatError(err, localeRef.current));
@@ -657,6 +716,7 @@ export default function App() {
         <LiveIndicator connected={live} locale={locale} />
       </AppHeader>
       <ViewTabs active={view === 'team' ? 'session' : view} onChange={switchView} locale={locale} />
+      {liveReset > 0 && <p role="status">{locale === 'zh' ? '实时恢复窗口已重置，已刷新有界元数据；更早的流片段不可恢复，请查看已保存原文。' : 'Live recovery window reset. Bounded metadata refreshed; earlier stream fragments are unavailable. Inspect retained originals.'}</p>}
       {/* §7.3 team 视图入口已移除（团队运行统一在任务列表中展示）。
           team 视图保留用于团队任务详情：点击团队任务 → switchView('team')。
           D15：Sessions(任务) | Agents | ...，AppShell 不含 team */}
@@ -805,6 +865,7 @@ export default function App() {
                 <div className="session-scroll">
                 <div className="session-canvas">
                   <SessionCaptureLinksPanel key={selectedKey ?? ''} sessionKey={selectedKey ?? ''} locale={locale} invalidateKey={traceLinksVersion}
+                    onOpenSession={key => selectSession(key)}
                     onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} />
                   {findingsResult !== null && (
                     <details className="session-findings-panel">
@@ -878,6 +939,7 @@ export default function App() {
       {view === 'compare' && (
         <div className="view-body">
           <main className="main">
+            <Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}>
             <CompareBoard
               sessions={sessions}
               sessionsLoading={sessionsLoading}
@@ -887,13 +949,18 @@ export default function App() {
               onLeftChange={setCompareLeft}
               onRightChange={setCompareRight}
             />
+            </Suspense>
           </main>
         </div>
       )}
       {view === 'proxy' && (
         <div className="view-body">
           <main className="main">
-            <ProxyView locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates}
+            <Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}>
+              <ProxyLivePanel streams={proxyStreams} locale={locale} invalidateKey={traceLinksVersion}
+                onOpenSession={key => { switchView('session'); selectSession(key); }} />
+            </Suspense>
+            <ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates}
               sessions={sessions} focusedRequestId={proxyFocusedId} onFocusedRequestHandled={clearProxyFocus} traceInvalidateKey={traceLinksVersion}
               onOpenSession={key => { switchView('session'); selectSession(key); }} />
           </main>

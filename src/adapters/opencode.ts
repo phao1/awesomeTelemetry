@@ -22,7 +22,7 @@ import {
 } from './helpers.js';
 import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
-import { collectOpencodeIdentities } from './native-identities.js';
+import { collectNativeEventBindings, collectOpencodeIdentities, trackNativeEvent } from './native-identities.js';
 
 /** G9.1：CodeArts / CodeAgent2 复用 opencode，用 dialect 区分。 */
 export interface OpenCodeDialect {
@@ -78,6 +78,7 @@ export interface OpenCodeOtelSpan {
 export interface OpenCodeRawSample {
   session: {
     id?: string;
+    parentID?: string;
     title?: string;
     directory?: string;
     time?: { created?: number; updated?: number };
@@ -396,7 +397,7 @@ export function createOpencodeAdapter(
             partTokens ?? messageTokens,
           );
           if (event !== null) {
-            events.push(event);
+            events.push(trackNativeEvent(event, message, part));
           }
         }
       }
@@ -455,7 +456,7 @@ export function createOpencodeAdapter(
       return {
         session,
         events: classified,
-        nativeIdentities: collectOpencodeIdentities(raw, messages, dialect.provider),
+        nativeIdentities: collectOpencodeIdentities(raw, messages, dialect.provider, collectNativeEventBindings(classified)),
         tokenSemantics: semantics,
         // fix-adapter-turn-semantics A5：opencode/codearts/codeagent2 均按源消息 id
         // 分组（A4 表），OTel span 无 id 时退化为 null —— provenance 仍如实声明为

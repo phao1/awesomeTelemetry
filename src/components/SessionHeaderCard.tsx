@@ -4,6 +4,8 @@ import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { TraceEvent, TraceEventSlim, TraceSession } from '../core/trace-types.js';
 import { computeSpeedMetrics } from '../core/speed-metrics.js';
+import { scanTimingValue } from '../core/scan-timing.js';
+import { ScanTimingCriteria } from './ScanTimingCriteria.js';
 import { DropdownMenu } from './ui/Overlay.js';
 import { MetricCard } from './ui/Misc.js';
 import { StatusBadge } from './ui/Badge.js';
@@ -20,7 +22,8 @@ export interface SessionHeaderCardProps {
 }
 
 function fmtMs(ms: number | null): string {
-  return ms === null ? '—' : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms.toFixed(0)}ms`;
+  const value = scanTimingValue(ms);
+  return value === null ? '—' : value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${value.toFixed(0)}ms`;
 }
 
 /** REQ-017 ①：会话头 + 四维指标条（null 显示 — 加 tooltip，不得用 0 冒充）。 */
@@ -97,7 +100,7 @@ export function SessionHeaderCard({
           icon={<IconSpeed size={16} />}
           label={t('metric.speed', locale)}
           value={fmtMs(metrics.speed.ttftMs)}
-          unit={`ttft · tps ${metrics.speed.tps === null ? '—' : metrics.speed.tps.toFixed(1)}`}
+          unit={`ttft · tps ${scanTimingValue(metrics.speed.tps)?.toFixed(1) ?? '—'}`}
           trend={`e2e ${fmtMs(metrics.speed.e2eMs)}${na}`}
         />
         <MetricCard
@@ -122,6 +125,7 @@ export function SessionHeaderCard({
           trend={`${metrics.tokensPerStep.toFixed(0)} tok/step`}
         />
       </div>
+      <ScanTimingCriteria left={session} partial={events.length < session.eventCount} locale={locale} />
     </div>
   );
 }

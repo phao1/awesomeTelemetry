@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { CompareVerdict } from './CompareVerdict.js';
+import { CompareVerdict, computeVerdict } from './CompareVerdict.js';
 import {
   makeEvent,
   makeResult,
@@ -38,6 +38,27 @@ afterEach(() => {
 });
 
 describe('CompareVerdict（建议 9）', () => {
+  it('retains valid positive wall-clock observations when their descriptive ratio overflows', () => {
+    const result = makeResult(); result.speed.left.e2eMs = Number.MIN_VALUE; result.speed.right.e2eMs = 1;
+    expect(() => computeVerdict(result, 'en')).not.toThrow();
+    expect(computeVerdict(result, 'en').summary.fastRatio).toBeNull();
+    const { html, unmount } = mount(<CompareVerdict result={result} locale="en" />); expect(html()).not.toContain('Infinity'); unmount();
+  });
+  it('does not award a speed winner or ratio to zero/invalid/non-scan/pending wall-clock evidence', () => {
+    for (const cause of ['zero', 'negative', 'nan', 'source', 'pending']) {
+      const result = makeResult();
+      if (cause === 'zero') result.speed.left.e2eMs = 0;
+      if (cause === 'negative') result.speed.left.e2eMs = -1;
+      if (cause === 'nan') result.speed.left.e2eMs = NaN;
+      if (cause === 'source') result.left.session.dataSource = 'proxy';
+      if (cause === 'pending') result.left.pending = true;
+      const verdict = computeVerdict(result, 'en');
+      expect(verdict.summary.fastRatio).toBeNull();
+      expect(verdict.dims.find(dim => dim.key === 'fast')!.winner).toBe('unavailable');
+      const { html, unmount } = mount(<CompareVerdict result={result} locale="en" />);
+      expect(html()).not.toContain('× faster'); expect(html()).toContain('Not comparable'); unmount();
+    }
+  });
   it('渲染胜负评分条，宽度 = wins:losses', () => {
     // left 更快更省，质量持平 → 2:0
     const verify = makeEvent({ id: 'v', phase: 'verify' });

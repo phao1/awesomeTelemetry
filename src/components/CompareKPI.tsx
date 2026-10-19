@@ -1,4 +1,6 @@
 import { formatCost } from '../core/pricing.js';
+import { scanTimingReason, scanTimingValue } from '../core/scan-timing.js';
+import type { ScanTimingMetric } from '../core/scan-timing.js';
 import { useMemo, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -25,8 +27,9 @@ interface KpiItem {
   label: string;
   lv: string;
   rv: string;
-  lnum: number;
-  rnum: number;
+  lnum: number | null;
+  rnum: number | null;
+  timing?: ScanTimingMetric;
   lowerBetter: boolean;
   /** 有 drill-down 明细的 key 才可展开。 */
   drill?: boolean;
@@ -258,13 +261,16 @@ function KpiDrilldown({
     );
   }
   if (item.key === 'e2e') {
+    const numeric = (value: unknown): string => scanTimingValue(value)?.toFixed(1) ?? '—';
+    const milliseconds = (value: unknown): string => fmtMs(scanTimingValue(value));
+    const perToken = (value: unknown): string => scanTimingValue(value) === null ? '—' : `${scanTimingValue(value)!.toFixed(1)}ms`;
     rows.push(
-      { label: 'TTFT', lv: fmtMs(speed.left.ttftMs), rv: fmtMs(speed.right.ttftMs) },
-      { label: 'TPS', lv: speed.left.tps?.toFixed(1) ?? '—', rv: speed.right.tps?.toFixed(1) ?? '—' },
-      { label: 'TPOT', lv: speed.left.tpotMs === null ? '—' : `${speed.left.tpotMs.toFixed(1)}ms`, rv: speed.right.tpotMs === null ? '—' : `${speed.right.tpotMs.toFixed(1)}ms` },
-      { label: t('compare.metric.turnGap', locale), lv: fmtMs(speed.left.turnGapMedianMs), rv: fmtMs(speed.right.turnGapMedianMs) },
-      { label: t('compare.metric.pureInference', locale), lv: fmtMs(speed.left.pureInferenceMs), rv: fmtMs(speed.right.pureInferenceMs) },
-      { label: t('compare.kpi.avgLlmDuration', locale), lv: fmtMs(speed.left.avgLlmDurationMs), rv: fmtMs(speed.right.avgLlmDurationMs) },
+      { label: 'TTFT', lv: milliseconds(speed.left.ttftMs), rv: milliseconds(speed.right.ttftMs) },
+      { label: 'TPS', lv: numeric(speed.left.tps), rv: numeric(speed.right.tps) },
+      { label: 'TPOT', lv: perToken(speed.left.tpotMs), rv: perToken(speed.right.tpotMs) },
+      { label: t('compare.metric.turnGap', locale), lv: milliseconds(speed.left.turnGapMedianMs), rv: milliseconds(speed.right.turnGapMedianMs) },
+      { label: t('compare.metric.pureInference', locale), lv: milliseconds(speed.left.pureInferenceMs), rv: milliseconds(speed.right.pureInferenceMs) },
+      { label: t('compare.kpi.avgLlmDuration', locale), lv: milliseconds(speed.left.avgLlmDurationMs), rv: milliseconds(speed.right.avgLlmDurationMs) },
     );
   } else if (item.key === 'cost') {
     rows.push(
@@ -420,10 +426,10 @@ export function CompareKPI({
       lowerBetter: false,
       drill: true,
     },
-    { key: 'e2e', label: t('metric.speed', locale), lv: fmtMs(result.speed.left.e2eMs ?? null), rv: fmtMs(result.speed.right.e2eMs ?? null), lnum: result.speed.left.e2eMs ?? 0, rnum: result.speed.right.e2eMs ?? 0, lowerBetter: true, drill: true },
+    { key: 'e2e', label: t('metric.speed', locale), lv: fmtMs(scanTimingValue(result.speed.left.e2eMs)), rv: fmtMs(scanTimingValue(result.speed.right.e2eMs)), lnum: scanTimingValue(result.speed.left.e2eMs), rnum: scanTimingValue(result.speed.right.e2eMs), timing: 'e2e', lowerBetter: true, drill: true },
     { key: 'cost', label: t('session.cost', locale), lv: formatCost(left.costUsd, left.costSource, left.costCurrency), rv: formatCost(right.costUsd, right.costSource, right.costCurrency), lnum: left.costUsd, rnum: right.costUsd, lowerBetter: true, drill: true },
-    { key: 'avgLlmDuration', label: t('compare.kpi.avgLlmDuration', locale), lv: fmtMs(ls.avgLlmDuration), rv: fmtMs(rs.avgLlmDuration), lnum: ls.avgLlmDuration ?? 0, rnum: rs.avgLlmDuration ?? 0, lowerBetter: true },
-    { key: 'totalToolDuration', label: t('compare.kpi.totalToolDuration', locale), lv: fmtMs(ls.totalToolDuration), rv: fmtMs(rs.totalToolDuration), lnum: ls.totalToolDuration, rnum: rs.totalToolDuration, lowerBetter: true },
+    { key: 'avgLlmDuration', label: t('compare.kpi.avgLlmDuration', locale), lv: fmtMs(scanTimingValue(ls.avgLlmDuration)), rv: fmtMs(scanTimingValue(rs.avgLlmDuration)), lnum: scanTimingValue(ls.avgLlmDuration), rnum: scanTimingValue(rs.avgLlmDuration), timing: 'eventDuration', lowerBetter: true },
+    { key: 'totalToolDuration', label: t('compare.kpi.totalToolDuration', locale), lv: fmtMs(scanTimingValue(ls.totalToolDuration)), rv: fmtMs(scanTimingValue(rs.totalToolDuration)), lnum: scanTimingValue(ls.totalToolDuration), rnum: scanTimingValue(rs.totalToolDuration), timing: 'eventDuration', lowerBetter: true },
     { key: 'cacheHitRate', label: t('compare.kpi.cacheHitRate', locale), lv: fmtPct(ls.cacheHitRate), rv: fmtPct(rs.cacheHitRate), lnum: ls.cacheHitRate ?? 0, rnum: rs.cacheHitRate ?? 0, lowerBetter: false },
     { key: 'cacheRead', label: t('compare.kpi.cacheRead', locale), lv: fmtNum(ls.cacheRead), rv: fmtNum(rs.cacheRead), lnum: ls.cacheRead, rnum: rs.cacheRead, lowerBetter: true },
     { key: 'netInput', label: t('compare.kpi.netInput', locale), lv: fmtNum(ls.netInput), rv: fmtNum(rs.netInput), lnum: ls.netInput, rnum: rs.netInput, lowerBetter: true },
@@ -499,8 +505,11 @@ export function CompareKPI({
   return (
     <section className="compare-kpis" id="compare-kpi">
       {items.map((item) => {
-        const leftBetter = item.lnum === item.rnum ? null : item.lowerBetter ? item.lnum < item.rnum : item.lnum > item.rnum;
-        const diff = diffPct(item.lnum, item.rnum);
+        const rawDiff = item.lnum === null || item.rnum === null ? null : diffPct(item.lnum, item.rnum);
+        const reason = item.timing === undefined ? null : scanTimingReason(result.left, result.right, item.timing, item.lnum, item.rnum)
+          ?? (rawDiff !== null && !Number.isFinite(rawDiff) ? 'invalid_value' : null);
+        const leftBetter = reason !== null || item.lnum === null || item.rnum === null || item.lnum === item.rnum ? null : item.lowerBetter ? item.lnum < item.rnum : item.lnum > item.rnum;
+        const diff = rawDiff !== null && Number.isFinite(rawDiff) ? rawDiff : null;
         const isExpanded = expanded === item.key;
         const trend = trendFor(item.key);
         const content = (
@@ -526,8 +535,9 @@ export function CompareKPI({
             </div>
             <span
               className={`compare-delta ${leftBetter === null ? '' : leftBetter ? 'compare-delta-win' : 'compare-delta-lose'}`}
+              data-scan-timing-reason={reason ?? undefined}
             >
-              {leftBetter === null ? '=' : `${diff.toFixed(0)}% ${leftBetter ? '← L' : '→ R'}`}
+              {reason !== null ? `${t('scan.timing.notComparable', locale)}: ${t(`scan.timing.reason.${reason}`, locale)}` : leftBetter === null ? '=' : `${diff!.toFixed(0)}% ${leftBetter ? '← L' : '→ R'}`}
             </span>
           </>
         );

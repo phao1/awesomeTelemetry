@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { TraceEventSlim } from '../core/trace-types.js';
+import { scanTimingReason, scanTimingValue, type ScanTimingMetric, type ScanTimingReason } from '../core/scan-timing.js';
 import {
   compareSideStats,
   diffPct,
@@ -20,6 +21,7 @@ interface DimRow {
   rv: number | null;
   lowerBetter: boolean;
   fmt: (value: number | null) => string;
+  reason?: ScanTimingReason | null;
 }
 
 function DimensionCard({
@@ -35,14 +37,14 @@ function DimensionCard({
   const ranked = useMemo(
     () =>
       [...rows].sort((a, b) => {
-        const da = a.lv === null || a.rv === null ? 0 : diffPct(a.lv, a.rv);
-        const db = b.lv === null || b.rv === null ? 0 : diffPct(b.lv, b.rv);
+        const da = a.reason != null || a.lv === null || a.rv === null ? 0 : diffPct(a.lv, a.rv);
+        const db = b.reason != null || b.lv === null || b.rv === null ? 0 : diffPct(b.lv, b.rv);
         return db - da;
       }),
     [rows],
   );
   const significant = ranked.filter(
-    (row) => row.lv !== null && row.rv !== null && diffPct(row.lv, row.rv) >= SIGNIFICANT_DIFF,
+    (row) => row.reason != null || row.lv !== null && row.rv !== null && diffPct(row.lv, row.rv) >= SIGNIFICANT_DIFF,
   );
   const insignificantCount = ranked.length - significant.length;
   const shown = showAll ? ranked : significant;
@@ -60,14 +62,14 @@ function DimensionCard({
         <ul className="compare-dim-rows">
           {shown.map((row) => {
             const leftBetter =
-              row.lv === null || row.rv === null
+              row.reason != null || row.lv === null || row.rv === null
                 ? null
                 : row.lv === row.rv
                   ? null
                   : row.lowerBetter
                     ? row.lv < row.rv
                     : row.lv > row.rv;
-            const diff = row.lv === null || row.rv === null ? 0 : diffPct(row.lv, row.rv);
+            const diff = row.reason != null || row.lv === null || row.rv === null ? 0 : diffPct(row.lv, row.rv);
             const barWidth = Math.min(diff, 100) / 2;
             return (
               <li key={row.label} className="compare-dim-row">
@@ -91,6 +93,7 @@ function DimensionCard({
                   )}
                 </span>
                 <span className="mono compare-dim-row-value">{row.fmt(row.rv)}</span>
+                {row.reason != null && <small className="hint">{t('scan.timing.notComparable', locale)} · {t(`scan.timing.reason.${row.reason}`, locale)}</small>}
               </li>
             );
           })}
@@ -125,13 +128,17 @@ export function CompareDimensions({
   const fmtConcise = (v: number | null): string => (v === null ? '—' : v.toFixed(2));
   const fmtYesNo = (v: number | null): string => (v === 1 ? t('compare.yes', locale) : t('compare.no', locale));
 
+  const timingRow = (label: string, metric: ScanTimingMetric, lv: number | null, rv: number | null, lowerBetter: boolean, fmt: DimRow['fmt']): DimRow => ({
+    label, lv: scanTimingValue(lv), rv: scanTimingValue(rv), lowerBetter, fmt,
+    reason: scanTimingReason(result.left, result.right, metric, lv, rv),
+  });
   const speedRows: DimRow[] = [
-    { label: t('compare.speed', locale), lv: speed.left.e2eMs ?? 0, rv: speed.right.e2eMs ?? 0, lowerBetter: true, fmt: fmtMs },
-    { label: 'TTFT', lv: speed.left.ttftMs ?? 0, rv: speed.right.ttftMs ?? 0, lowerBetter: true, fmt: fmtMs },
-    { label: 'TPS', lv: speed.left.tps ?? 0, rv: speed.right.tps ?? 0, lowerBetter: false, fmt: (v) => v?.toFixed(1) ?? '—' },
-    { label: 'TPOT', lv: speed.left.tpotMs ?? 0, rv: speed.right.tpotMs ?? 0, lowerBetter: true, fmt: (v) => (v === null ? '—' : `${v.toFixed(1)}ms`) },
-    { label: t('compare.kpi.llmCalls', locale), lv: ls.llmCalls, rv: rs.llmCalls, lowerBetter: false, fmt: (v) => String(v ?? '—') },
-    { label: t('compare.kpi.totalToolDuration', locale), lv: ls.totalToolDuration, rv: rs.totalToolDuration, lowerBetter: true, fmt: fmtMs },
+    timingRow(t('compare.speed', locale), 'e2e', speed.left.e2eMs, speed.right.e2eMs, true, fmtMs),
+    timingRow('TTFT', 'ttft', speed.left.ttftMs, speed.right.ttftMs, true, fmtMs),
+    timingRow('TPS', 'tps', speed.left.tps, speed.right.tps, false, (v) => v?.toFixed(1) ?? '—'),
+    timingRow('TPOT', 'tpot', speed.left.tpotMs, speed.right.tpotMs, true, (v) => v === null ? '—' : `${v.toFixed(1)}ms`),
+    timingRow(t('compare.kpi.llmCalls', locale), 'eventDuration', ls.llmCalls, rs.llmCalls, false, (v) => String(v ?? '—')),
+    timingRow(t('compare.kpi.totalToolDuration', locale), 'eventDuration', ls.totalToolDuration, rs.totalToolDuration, true, fmtMs),
   ];
   const costRows: DimRow[] = [
     { label: t('session.tokens', locale), lv: left.tokenUsage.total, rv: right.tokenUsage.total, lowerBetter: true, fmt: (v) => (v === null ? '—' : v.toLocaleString()) },

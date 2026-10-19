@@ -14,6 +14,9 @@ import { Popover } from './ui/Overlay.js';
 import { SearchInput } from './ui/Input.js';
 import { TimeCompositionBar } from './TimeCompositionBar.js';
 import { computeTimeComposition } from '../core/time-composition.js';
+import { scanTimingReason, scanTimingValue } from '../core/scan-timing.js';
+import type { ScanTimingMetric } from '../core/scan-timing.js';
+import { ScanTimingCriteria } from './ScanTimingCriteria.js';
 import { ContextBar } from './ContextBar.js';
 import { groupEvents } from '../core/event-groups.js';
 import { diffPct, fmtMs, SIGNIFICANT_DIFF, TEST_CMD } from './compare-stats.js';
@@ -263,13 +266,13 @@ function DetailMetricsTable({ result, locale }: { result: CompareResult; locale:
   const lUnitTests = leftEvents.some((e) => e.phase === 'verify' && TEST_CMD.test(e.title)) ? 1 : 0;
   const rUnitTests = rightEvents.some((e) => e.phase === 'verify' && TEST_CMD.test(e.title)) ? 1 : 0;
 
-  const rows: Array<{ label: string; lv: number; rv: number; lowerBetter: boolean; fmt: (v: number) => string }> = [
-    { label: 'e2e', lv: speed.left.e2eMs ?? 0, rv: speed.right.e2eMs ?? 0, lowerBetter: true, fmt: fmtMs },
-    { label: 'TTFT', lv: speed.left.ttftMs ?? 0, rv: speed.right.ttftMs ?? 0, lowerBetter: true, fmt: fmtMs },
-    { label: 'TPS', lv: speed.left.tps ?? 0, rv: speed.right.tps ?? 0, lowerBetter: false, fmt: (v) => v.toFixed(1) },
-    { label: 'TPOT', lv: speed.left.tpotMs ?? 0, rv: speed.right.tpotMs ?? 0, lowerBetter: true, fmt: (v) => `${v.toFixed(1)}ms` },
-    { label: 'turnGap', lv: speed.left.turnGapMedianMs ?? 0, rv: speed.right.turnGapMedianMs ?? 0, lowerBetter: true, fmt: fmtMs },
-    { label: 'pureInference', lv: speed.left.pureInferenceMs ?? 0, rv: speed.right.pureInferenceMs ?? 0, lowerBetter: true, fmt: fmtMs },
+  const rows: Array<{ label: string; lv: number | null; rv: number | null; timing?: ScanTimingMetric; lowerBetter: boolean; fmt: (v: number) => string }> = [
+    { label: 'e2e', lv: scanTimingValue(speed.left.e2eMs), rv: scanTimingValue(speed.right.e2eMs), timing: 'e2e', lowerBetter: true, fmt: fmtMs },
+    { label: 'TTFT', lv: scanTimingValue(speed.left.ttftMs), rv: scanTimingValue(speed.right.ttftMs), timing: 'ttft', lowerBetter: true, fmt: fmtMs },
+    { label: 'TPS', lv: scanTimingValue(speed.left.tps), rv: scanTimingValue(speed.right.tps), timing: 'tps', lowerBetter: false, fmt: (v) => v.toFixed(1) },
+    { label: 'TPOT', lv: scanTimingValue(speed.left.tpotMs), rv: scanTimingValue(speed.right.tpotMs), timing: 'tpot', lowerBetter: true, fmt: (v) => `${v.toFixed(1)}ms` },
+    { label: 'turnGap', lv: scanTimingValue(speed.left.turnGapMedianMs), rv: scanTimingValue(speed.right.turnGapMedianMs), timing: 'turnGap', lowerBetter: true, fmt: fmtMs },
+    { label: 'pureInference', lv: scanTimingValue(speed.left.pureInferenceMs), rv: scanTimingValue(speed.right.pureInferenceMs), timing: 'eventDuration', lowerBetter: true, fmt: fmtMs },
     { label: 'token.input', lv: left.tokenUsage.input, rv: right.tokenUsage.input, lowerBetter: true, fmt: (v) => v.toLocaleString() },
     { label: 'token.output', lv: left.tokenUsage.output, rv: right.tokenUsage.output, lowerBetter: true, fmt: (v) => v.toLocaleString() },
     { label: 'token.reasoning', lv: left.tokenUsage.reasoning, rv: right.tokenUsage.reasoning, lowerBetter: true, fmt: (v) => v.toLocaleString() },
@@ -281,7 +284,7 @@ function DetailMetricsTable({ result, locale }: { result: CompareResult; locale:
     { label: 'events', lv: left.eventCount, rv: right.eventCount, lowerBetter: false, fmt: (v) => String(v) },
     { label: 'tool calls', lv: leftEvents.filter((e) => e.tool !== null).length, rv: rightEvents.filter((e) => e.tool !== null).length, lowerBetter: true, fmt: (v) => String(v) },
     { label: 'llm calls', lv: leftEvents.filter((e) => e.kind === 'llm').length, rv: rightEvents.filter((e) => e.kind === 'llm').length, lowerBetter: false, fmt: (v) => String(v) },
-    { label: 'total tool duration', lv: leftEvents.filter((e) => e.tool !== null).reduce((s, e) => s + e.durationMs, 0), rv: rightEvents.filter((e) => e.tool !== null).reduce((s, e) => s + e.durationMs, 0), lowerBetter: true, fmt: fmtMs },
+    { label: 'total tool duration', lv: scanTimingValue(leftEvents.filter((e) => e.tool !== null).reduce((s, e) => s + e.durationMs, 0)), rv: scanTimingValue(rightEvents.filter((e) => e.tool !== null).reduce((s, e) => s + e.durationMs, 0)), timing: 'eventDuration', lowerBetter: true, fmt: fmtMs },
     { label: 'file writes', lv: leftEvents.filter((e) => e.kind === 'file_write').length, rv: rightEvents.filter((e) => e.kind === 'file_write').length, lowerBetter: false, fmt: (v) => String(v) },
     { label: 'user rounds', lv: leftEvents.filter((e) => e.kind === 'user_prompt').length, rv: rightEvents.filter((e) => e.kind === 'user_prompt').length, lowerBetter: false, fmt: (v) => String(v) },
     { label: 'fix loops', lv: leftLoops, rv: rightLoops, lowerBetter: true, fmt: (v) => String(v) },
@@ -292,11 +295,12 @@ function DetailMetricsTable({ result, locale }: { result: CompareResult; locale:
     { label: 'verify coverage', lv: leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.phase === 'verify').length / leftEvents.length, rv: rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.phase === 'verify').length / rightEvents.length, lowerBetter: false, fmt: pct },
   ];
 
-  const ranked = useMemo(
-    () => [...rows].sort((a, b) => diffPct(b.lv, b.rv) - diffPct(a.lv, a.rv)),
-    [rows],
-  );
-  const significant = ranked.filter((row) => diffPct(row.lv, row.rv) >= SIGNIFICANT_DIFF);
+  const interpreted = rows.map(row => ({ ...row, reason: row.timing === undefined ? null : scanTimingReason(result.left, result.right, row.timing, row.lv, row.rv)
+    ?? (row.lv !== null && row.rv !== null && !Number.isFinite(diffPct(row.lv, row.rv)) ? 'invalid_value' as const : null) }));
+  const difference = (row: typeof interpreted[number]): number => row.reason !== null || row.lv === null || row.rv === null ? 0 : diffPct(row.lv, row.rv);
+  const ranked = [...interpreted].sort((a, b) => difference(b) - difference(a));
+  // Unknown measurements remain visible but cannot rank as significant advantages.
+  const significant = ranked.filter(row => row.reason !== null || difference(row) >= SIGNIFICANT_DIFF);
   const shown = showAll ? ranked : significant;
 
   return (
@@ -312,15 +316,15 @@ function DetailMetricsTable({ result, locale }: { result: CompareResult; locale:
         </thead>
         <tbody>
           {shown.map((row) => {
-            const leftBetter = row.lv === row.rv ? null : row.lowerBetter ? row.lv < row.rv : row.lv > row.rv;
-            const diff = diffPct(row.lv, row.rv);
+            const leftBetter = row.reason !== null || row.lv === null || row.rv === null || row.lv === row.rv ? null : row.lowerBetter ? row.lv < row.rv : row.lv > row.rv;
+            const diff = difference(row);
             return (
               <tr key={row.label}>
                 <td className="mono">{row.label}</td>
-                <td className="mono" style={{ textAlign: 'right' }}>{row.fmt(row.lv)}</td>
-                <td className="mono" style={{ textAlign: 'right' }}>{row.fmt(row.rv)}</td>
-                <td className="mono" style={{ textAlign: 'right' }}>
-                  {leftBetter === null ? '=' : `${diff.toFixed(0)}%`}
+                <td className="mono" style={{ textAlign: 'right' }}>{row.lv === null ? '—' : row.fmt(row.lv)}</td>
+                <td className="mono" style={{ textAlign: 'right' }}>{row.rv === null ? '—' : row.fmt(row.rv)}</td>
+                <td className="mono" style={{ textAlign: 'right' }} data-scan-timing-reason={row.reason ?? undefined}>
+                  {row.reason !== null ? `${t('scan.timing.notComparable', locale)}: ${t(`scan.timing.reason.${row.reason}`, locale)}` : leftBetter === null ? '=' : `${diff.toFixed(0)}%`}
                   {leftBetter !== null && (
                     <span className={`compare-delta-badge ${leftBetter ? 'compare-delta-win' : 'compare-delta-lose'}`}>
                       {leftBetter ? 'L' : 'R'}
@@ -569,6 +573,8 @@ export function CompareBoard({
       {result !== null && (
         <>
           <ErrorBoundary label={t('compare.hero.title', locale)}>
+            <ScanTimingCriteria left={result.left.session} right={result.right.session}
+              partial={result.left.pending || result.right.pending || result.left.hasMore || result.right.hasMore || result.left.eventOffset !== 0 || result.right.eventOffset !== 0} locale={locale} />
             <CompareHeroHeader result={result} locale={locale} />
           </ErrorBoundary>
           <ContextBar
@@ -599,6 +605,7 @@ export function CompareBoard({
                 speed={result.speed}
                 locale={locale}
                 sessions={{ left: result.left.session, right: result.right.session }}
+                sides={{ left: result.left, right: result.right }}
                 events={{ left: result.left.events as TraceEventSlim[], right: result.right.events as TraceEventSlim[] }}
               />
             </ErrorBoundary>

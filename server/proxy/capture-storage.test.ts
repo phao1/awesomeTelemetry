@@ -1,10 +1,40 @@
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { initSchema } from '../storage/schema.js';
+import { initSchema, SCHEMA_VERSION } from '../storage/schema.js';
 import { readCaptureBodies, writeCaptureBodies, writeCaptureTransport } from './capture-storage.js';
-import type { ProxyCaptureBodies } from '../../src/core/trace-types.js';
+import type { CaptureNetworkTiming, ProxyCaptureBodies } from '../../src/core/trace-types.js';
 
 describe('capture body reference index', () => {
+  it('round-trips connection metadata independently and rejects invalid WS counters/codes or model-call timing', () => {
+    const db = new Database(':memory:'); initSchema(db);
+    db.exec("INSERT INTO proxy_requests(request_id,method,url,hostname,started_at) VALUES('ws','WS','/','h','2026-10-16T00:00:00.000Z')");
+    const websocket = { version: 1 as const, scope: 'connection' as const, archive: 'awsp1' as const, requestMessages: 2, responseMessages: 10, clientCloseCode: 1000, upstreamCloseCode: 1000 };
+    const transport = { version: 1 as const, state: 'completed' as const, error: null, requestEnded: true, responseEnded: true, statusCode: 101, websocket };
+    try {
+      writeCaptureTransport(db, 1, transport); expect(readCaptureBodies(db, 1).transport).toEqual(transport);
+      expect(() => writeCaptureTransport(db, 1, { ...transport, websocket: { ...websocket, requestMessages: -1 } })).toThrow(RangeError);
+      expect(() => writeCaptureTransport(db, 1, { ...transport, websocket: { ...websocket, upstreamCloseCode: 999 } })).toThrow(RangeError);
+      expect(readCaptureBodies(db, 1).transport).toEqual(transport);
+    } finally { db.close(); }
+  });
+  it('round-trips bounded timing without relaxing legacy outcome or error limits', () => {
+    const db = new Database(':memory:'); initSchema(db);
+    db.exec("INSERT INTO proxy_requests(request_id,method,url,hostname,started_at) VALUES('timing','POST','/','h','2026-10-16T00:00:00.000Z')");
+    const timing: CaptureNetworkTiming = { version: 1, clock: 'proxy_monotonic', responseHeadersMs: 100, firstBodyByteMs: 150,
+      firstContentMs: 800, firstContentKind: 'reasoning', firstContentBasis: 'sse_event_dispatch', completedMs: 2000,
+      contentTimingStatus: 'observed', serverTiming: '\u0000'.repeat(512), serverTimingTruncated: true };
+    const transport = { version: 1 as const, state: 'completed' as const, error: null, requestEnded: true, responseEnded: true, statusCode: 200, timing };
+    try {
+      writeCaptureTransport(db, 1, transport);
+      expect(readCaptureBodies(db, 1).transport).toEqual(transport);
+      expect(() => writeCaptureTransport(db, 1, { ...transport, error: 'x'.repeat(129) })).toThrow(RangeError);
+      expect(() => writeCaptureTransport(db, 1, { ...transport, timing: { ...timing, serverTiming: 'x'.repeat(513) } })).toThrow(RangeError);
+      expect(() => writeCaptureTransport(db, 1, { ...transport, timing: { ...timing, firstContentMs: NaN } })).toThrow(RangeError);
+      expect(() => writeCaptureTransport(db, 1, { ...transport, timing: { ...timing, firstContentMs: 800.5 } })).toThrow(RangeError);
+      expect(() => writeCaptureTransport(db, 1, { ...transport, timing: { ...timing, firstContentMs: null } })).toThrow(RangeError);
+      expect(readCaptureBodies(db, 1).transport).toEqual(transport);
+    } finally { db.close(); }
+  });
   it('adds v15 deletion identity without rewriting v14 evidence, preserves tombstones after deletion and uses indexed lookups', () => {
     const db = new Database(':memory:'); initSchema(db);
     try {
@@ -15,7 +45,7 @@ describe('capture body reference index', () => {
       initSchema(db); initSchema(db);
       expect(readCaptureBodies(db, 1)).toEqual(original);
       expect(db.prepare('SELECT request_id FROM proxy_requests').all()).toEqual([{ request_id: 'preserved' }]);
-      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '17' });
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: String(SCHEMA_VERSION) });
       db.prepare('INSERT INTO proxy_capture_tombstones(request_id,request_body_id,response_body_id,deleted_at) VALUES(?,?,?,?)').run('preserved', 'request-original', 'response-original', '2026-10-16T00:00:00.000Z');
       db.exec('DELETE FROM proxy_requests'); initSchema(db);
       expect(db.prepare('SELECT request_id,request_body_id,response_body_id,deleted_at FROM proxy_capture_tombstones').all()).toEqual([{ request_id: 'preserved', request_body_id: 'request-original', response_body_id: 'response-original', deleted_at: '2026-10-16T00:00:00.000Z' }]);
@@ -46,7 +76,7 @@ describe('capture body reference index', () => {
     db.exec("INSERT INTO proxy_requests(request_id,method,url,hostname,started_at) VALUES('r','POST','/','h','2026-10-15T00:00:00.000Z')");
     db.exec("DROP TABLE proxy_capture_bodies; UPDATE _meta SET value='10' WHERE key='schema_version'");
     initSchema(db); initSchema(db);
-    expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '17' });
+    expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: String(SCHEMA_VERSION) });
     expect(db.prepare('SELECT request_id FROM proxy_requests').all()).toEqual([{ request_id: 'r' }]);
     expect(db.prepare('SELECT COUNT(*) AS n FROM proxy_capture_bodies').get()).toEqual({ n: 0 });
     db.close();
@@ -60,7 +90,7 @@ describe('capture body reference index', () => {
     db.exec("DROP TABLE proxy_capture_processing; UPDATE _meta SET value='12' WHERE key='schema_version'");
     initSchema(db); initSchema(db);
     expect(readCaptureBodies(db, 1)).toEqual(value);
-    expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '17' });
+    expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: String(SCHEMA_VERSION) });
     writeCaptureBodies(db, 1, { ...value, processing: { version: 1, status: 'queue_full', error: 'CAPTURE_PROCESSING_QUEUE_FULL' } });
     expect(readCaptureBodies(db, 1)).toEqual({ ...value, processing: { version: 1, status: 'queue_full', error: 'CAPTURE_PROCESSING_QUEUE_FULL' } });
     db.exec('DELETE FROM proxy_requests WHERE id=1');
@@ -75,7 +105,7 @@ describe('capture body reference index', () => {
     db.exec("DROP TABLE proxy_capture_transport; UPDATE _meta SET value='13' WHERE key='schema_version'");
     initSchema(db); initSchema(db);
     expect(readCaptureBodies(db, 1)).toEqual(value);
-    expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '17' });
+    expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: String(SCHEMA_VERSION) });
     const transport = { version: 1 as const, state: 'http_error' as const, error: 'HTTP_ERROR', requestEnded: true, responseEnded: true, statusCode: 429 };
     writeCaptureTransport(db, 1, transport);
     expect(readCaptureBodies(db, 1)).toEqual({ ...value, transport });

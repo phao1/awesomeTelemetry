@@ -7,7 +7,25 @@ import {
   queueSessionChange,
   queueTraceLinkChange,
   clearPendingTraceLinkChanges,
+  flushProxyStreamChunk,
+  queueProxySourceChange,
+  clearPendingProxySourceChanges,
 } from './coalescer.js';
+
+describe('LIVE-CODEX-001 opaque source hints', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => { clearPendingProxySourceChanges(); vi.useRealTimers(); });
+  it('coalesces repeated IDs independently of preview text and caps the window at64', async () => {
+    const received = vi.fn(), unsubscribe = eventBus.on('proxy_sources_changed', received);
+    for (let i = 0; i < 1000; i += 1) queueProxySourceChange('ws-' + (i % 80));
+    await vi.advanceTimersByTimeAsync(999); expect(received).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1); expect(received).toHaveBeenCalledTimes(1);
+    expect(received.mock.calls[0]?.[0]).toEqual({ requestIds: Array.from({ length: 64 }, (_, i) => 'ws-' + i).sort() });
+    queueProxySourceChange('ws-later'); clearPendingProxySourceChanges();
+    await vi.advanceTimersByTimeAsync(1000); expect(received).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0); unsubscribe();
+  });
+});
 
 describe('REQ-009 relation invalidation', () => {
   beforeEach(() => { vi.useFakeTimers(); });
@@ -122,5 +140,48 @@ describe('REQ-004 流式 chunk 服务端节流', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(chunks.map((c) => c.chunk)).toEqual(['a', 'b']);
     unsub();
+  });
+
+  it('bounds pending request windows and releases admission after the window', async () => {
+    const chunks: Array<{ requestId: string; chunk: string }> = [];
+    const unsub = eventBus.on('proxy_stream_chunk', p => chunks.push(p));
+    try {
+      for (let i = 0; i < 64; i += 1) expect(queueProxyStreamChunk(`r${i}`, 'x')).toBe(true);
+      expect(queueProxyStreamChunk('overflow', 'not retained')).toBe(false);
+      expect(queueProxyStreamChunk('r0', 'y')).toBe(true);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(chunks).toHaveLength(64);
+      expect(chunks[0]).toEqual({ requestId: 'r0', chunk: 'xy' });
+      expect(queueProxyStreamChunk('overflow', 'now admitted')).toBe(true);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(chunks.at(-1)).toEqual({ requestId: 'overflow', chunk: 'now admitted' });
+    } finally { unsub(); }
+  });
+
+  it('rejects oversized windows without losing accepted text or exceeding the frame budget', async () => {
+    const chunks: Array<{ requestId: string; chunk: string }> = [];
+    const unsub = eventBus.on('proxy_stream_chunk', p => chunks.push(p));
+    try {
+      expect(queueProxyStreamChunk('r1', '\u0000'.repeat(32768))).toBe(true);
+      expect(queueProxyStreamChunk('r1', 'extra')).toBe(false);
+      expect(queueProxyStreamChunk('r2', 'x'.repeat(32769))).toBe(false);
+      expect(queueProxyStreamChunk('r3', '')).toBe(true);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]?.chunk).toBe('\u0000'.repeat(32768));
+      expect(Buffer.byteLength(JSON.stringify(chunks[0]))).toBeLessThan(256 * 1024);
+    } finally { unsub(); }
+  });
+
+  it('terminal flush emits accepted text once and cancels its pending window', async () => {
+    const received = vi.fn();
+    const unsub = eventBus.on('proxy_stream_chunk', payload => received(payload));
+    try {
+      queueProxyStreamChunk('r1', 'final fragment');
+      flushProxyStreamChunk('r1'); flushProxyStreamChunk('r1');
+      expect(received).toHaveBeenCalledExactlyOnceWith({ requestId: 'r1', chunk: 'final fragment' });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(received).toHaveBeenCalledTimes(1);
+    } finally { unsub(); }
   });
 });

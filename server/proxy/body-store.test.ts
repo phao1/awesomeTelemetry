@@ -25,6 +25,16 @@ afterEach(async () => {
 });
 
 describe('original capture body store', () => {
+  it('snapshots only written prefix bytes without consuming the digest or finishing the writer', async () => {
+    const store = await CaptureBodyStore.create(await directory()), writer = store.begin();
+    writer.append(Buffer.from('first')); expect(writer.snapshot().bytes).toBe(0);
+    while (store.status().pendingBytes !== 0) await new Promise(resolve => setTimeout(resolve, 1));
+    const prefix = writer.snapshot(); expect(prefix).toMatchObject({ bytes: 5, sha256: createHash('sha256').update('first').digest('hex'), status: 'interrupted', error: 'LIVE_PREFIX' });
+    writer.append(Buffer.from('-second'));
+    const final = await writer.finish();
+    expect(prefix.bytes).toBe(5); expect(final).toMatchObject({ bytes: 12, sha256: createHash('sha256').update('first-second').digest('hex'), status: 'complete' });
+    expect(writer.snapshot()).toEqual(final); expect(await writer.finish()).toEqual(final); expect(await contents(store, final.id)).toEqual(Buffer.from('first-second'));
+  });
   it('explicitly removes only selected originals and reconciles quota across restart/idempotent retries', async () => {
     const root = await directory(), crashId = randomUUID();
     await writeFile(join(root, crashId + '.part'), 'prefix');

@@ -23,8 +23,10 @@ import { commandTextOf, promptTextOf } from './phase-classifier.js';
  * #B hasUnitTests 的 TEST_CMD 补 JVM/.NET 跑测命令并读真实命令文本；
  * #C phase 分类修好后 verify/debug 首次产出非零值，依赖 phase 的
  * verificationPresent / verificationCoverage / enteredDebug 全部要重算。
+ * v6 (fusion): publish explicit legacy scan interpretation/comparison policy.
+ * Numeric scan algorithms remain unchanged; capture parser/usage versions are separate.
  */
-export const METRICS_CALC_VERSION = 5;
+export const METRICS_CALC_VERSION = 6;
 
 /** repair_loop 判定：连续 W F W F W（write, fail, write, fail, write），≥2 轮。
  * 与 event-groups detectRepairLoop 的 isWriteEventLike + (bash|test)+error 同口径。 */

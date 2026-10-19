@@ -582,7 +582,7 @@ export interface TraceMetrics extends TraceMetricsBase, TraceDimensionMetrics {
   /**
    * 持久化的速度指标（add-mission-control §4 B6，G11.11）：
    * 不持久化 → 跨会话聚合触发 N+1（G11.9）。改算法必须 bump
-   * METRICS_CALC_VERSION（当前 3）。
+   * METRICS_CALC_VERSION（当前 6）。
    */
   ttftMs?: number | null;
   e2eMs?: number;
@@ -610,17 +610,18 @@ export interface TraceMetrics extends TraceMetricsBase, TraceDimensionMetrics {
 
 /** 速度指标，运行时计算，不持久化。 */
 export interface SpeedMetrics {
-  /** 首 token 时延 (ms)。 */
+  /** Legacy scan: first user_prompt to first LLM log startedAt, not wire TTFT. */
   ttftMs: number | null;
-  /** 每秒 token 数。 */
+  /** Legacy scan: arithmetic mean of valid per-event output/duration rates. */
   tps: number | null;
-  /** 每输出 token 时延 (ms)。 */
+  /** Legacy scan: sum valid LLM durations / sum their output, not streaming TPOT. */
   tpotMs: number | null;
   /** 端到端 wall-clock (ms)。 */
   e2eMs: number;
   /** 相邻 turn 间隔中位数 (ms)。 */
   turnGapMedianMs: number | null;
   /**
+   * Legacy scan sum of normalized LLM durations; not guaranteed measured time.
    * ⚠️ 纯 LLM 推理时长必须取自 InferHub.inference_duration。
    * Kernel-Inference 的 duration 包含 Tool 执行时间（G4.1）。
    */
@@ -920,6 +921,11 @@ export interface LocalSessionConfig {
 // ── §10 事件总线 ───────────────────────────────────────────
 
 export interface BusEvents {
+  proxy_stream_started: { requestId: string; hostname: string; startedAt: string };
+  proxy_stream_ended: { requestId: string };
+  /** Ephemeral opaque WS dirty hints; 1s/max64 IDs, selected feed only,
+   * no body, replay, completion or durable-written-prefix guarantee. */
+  proxy_sources_changed: { requestIds: string[] };
   /** 单条会话新建。低频，不合并。 */
   session_created: { key: string; provider: ProviderKey };
   /**
@@ -953,6 +959,13 @@ export interface BusEvents {
     truncated: boolean;
     stamp: string;
   };
+}
+
+export interface SseConnected {
+  serverTime: string;
+  schemaVersion: number;
+  cursor: string;
+  resume: 'fresh' | 'replayed' | 'reset';
 }
 
 // ── §11 Mission Control（add-mission-control） ─────────────
@@ -1731,6 +1744,7 @@ export interface ProxyProtocolItem {
   index: number | null;
   choiceIndex: number | null;
   content: string;
+  toolResultIsError: boolean | null;
   complete: boolean;
   sourcePath: string;
 }
@@ -1752,6 +1766,30 @@ export interface ProxyNativeUsage {
   totalTokens: number | null;
   accounting: 'openai_subsets' | 'anthropic_additive_input' | 'unknown';
   snapshots: Array<{ eventIndex: number | null; value: string }>;
+}
+
+export interface CaptureReparseSnapshot {
+  parserVersion: number;
+  metricVersion: number;
+  sourceFingerprint: string;
+  parsedAt: string;
+  requestFormat: RequestContextFormat;
+  state: ProxyProtocolAnalysis['state'];
+  usage: Omit<ProxyNativeUsage, 'snapshots'>;
+  completeness: ProxyProtocolAnalysis['completeness'];
+}
+export interface CaptureReparseStatus {
+  proxyId: number;
+  requestId: string;
+  currentParserVersion: number;
+  currentMetricVersion: number;
+  state: 'not_parsed' | 'current' | 'stale' | 'unavailable';
+  unavailableReason: 'originals_deleted' | 'originals_missing' | 'originals_incomplete' | 'originals_invalid' | null;
+  snapshot: CaptureReparseSnapshot | null;
+}
+export interface CaptureReparseResponse {
+  status: CaptureReparseStatus;
+  analysis: ProxyProtocolAnalysis;
 }
 
 export interface ProxyProtocolAnalysis {
@@ -1846,6 +1884,28 @@ export interface ProxyRuntimeStatus {
 
 export type MonitorAgent = 'claude' | 'codex' | 'opencode';
 
+export type MonitorTransportCapability = 'http1_json_sse' | 'https_connect' | 'compressed_semantics' | 'live_identity_sse'
+  | 'agent_websocket' | 'http2_grpc' | 'mtls_pinning' | 'electron_cdp' | 'trae_cn_frida';
+export interface MonitorCapabilityReport {
+  manifestVersion: 1;
+  generatedAt: string;
+  platform: string;
+  scope: 'terminal_child_and_descendants';
+  listener: 'shared_not_process_filtered';
+  agents: Array<{
+    provider: ProviderKey;
+    processRecipe: MonitorAgent | null;
+    nativeScanner: 'implemented';
+    installedVersion: null;
+    runtimeVerification: 'unverified';
+  }>;
+  transports: Array<{
+    id: MonitorTransportCapability;
+    level: 'controlled_test' | 'unsupported' | 'unverified' | 'dev_only' | 'experimental';
+    testedPlatforms: string[];
+  }>;
+}
+
 export interface MonitorConnectionSettings {
   label: string;
   agent: MonitorAgent;
@@ -1890,6 +1950,20 @@ export interface MonitorConnectionDiagnostics {
   traffic: { scope: 'shared_listener'; state: 'unavailable' | 'waiting' | 'observed' };
   status: ProxyRuntimeStatus;
   issues: Array<{ code: MonitorDiagnosticCode; severity: 'info' | 'warning' | 'error'; message: string; nextStep: string }>;
+}
+
+export interface MonitorCaptureSelfTest {
+  profileId: string;
+  profileRevision: number;
+  checkedAt: string;
+  runId: string;
+  proxyId: number;
+  scope: 'local_http_sse';
+  synthetic: true;
+  checks: { forwarding: boolean; persistence: boolean; originals: boolean; parsing: boolean };
+  passed: boolean;
+  agentVerified: false;
+  tlsVerified: false;
 }
 
 export interface CaptureStorageConfig {
@@ -1937,6 +2011,111 @@ export interface CaptureTransportResult {
   responseEnded: boolean;
   /** Actual upstream status; null before any upstream headers, never a synthetic local status. */
   statusCode: number | null;
+  timing?: CaptureNetworkTiming;
+  /** Connection observation, NOT one model call or wire-frame archive. */
+  websocket?: CaptureWebSocketConnection;
+}
+
+export interface CaptureWebSocketConnection {
+  version: 1;
+  scope: 'connection';
+  archive: 'awsp1';
+  requestMessages: number;
+  responseMessages: number;
+  /** Observed socket close codes; null when not observed before settlement. */
+  clientCloseCode: number | null;
+  upstreamCloseCode: number | null;
+}
+
+export interface CaptureNetworkTiming {
+  version: 1;
+  clock: 'proxy_monotonic';
+  responseHeadersMs: number | null;
+  firstBodyByteMs: number | null;
+  firstContentMs: number | null;
+  firstContentKind: 'text' | 'reasoning' | 'tool_arguments' | null;
+  firstContentBasis: 'sse_event_dispatch' | 'json_document_complete' | null;
+  completedMs: number | null;
+  contentTimingStatus: 'observed' | 'no_content' | 'not_collected' | 'unsupported_encoding' | 'preview_limit' | 'decode_error';
+  serverTiming: string | null;
+  serverTimingTruncated: boolean;
+}
+
+export interface LinkedExecutionIdentityMatch {
+  eventId: string;
+  scanIdentityId: string;
+  proxyIdentityId: string;
+  namespace: string;
+  kind: NativeIdentityKind;
+  value: string;
+  scope: string;
+}
+export interface LinkedExecutionPage {
+  sessionKey: string;
+  /** Retained session declaration only; NOT measured provenance per event. */
+  sessionDurationSource: DurationSource;
+  events: TraceEventSlim[];
+  eventOffset: number;
+  eventLimit: number;
+  eventTotal: number;
+  eventsHasMore: boolean;
+  attempts: Array<{
+    association: TraceAssociation;
+    request: ProxyRequestListItem;
+    /** Existing bounded network metadata, null for legacy missing evidence. */
+    transport: CaptureTransportResult | null;
+    matches: LinkedExecutionIdentityMatch[];
+  }>;
+  nextCaptureCursor: number | null;
+  capturesHasMore: boolean;
+  identities: TraceSourceIdentity[];
+  identityCompleteness: IdentityCompleteness;
+}
+
+export interface CaptureComparisonAnalysis extends Pick<ProxyProtocolAnalysis,
+  'parserVersion' | 'requestFormat' | 'model' | 'state' | 'stopReason' | 'usage' | 'completeness'> {
+  errorCount: number;
+  errorCodes: Array<string | null>;
+  errorCodesTruncated: boolean;
+}
+export interface CaptureComparisonSide {
+  request: ProxyRequestListItem;
+  evidence: Omit<ProxyCaptureBodies, 'responseHeaders'>;
+  originalDeletion: OriginalDeletionJob | null;
+  analysis: CaptureComparisonAnalysis | null;
+  analysisUnavailableReason: 'original_deleted' | 'analysis_unavailable' | 'metadata_only' | null;
+}
+export interface CaptureComparisonResponse {
+  base: CaptureComparisonSide;
+  target: CaptureComparisonSide;
+  generatedAt: string;
+}
+export interface NativeSessionParentPage {
+  sessionKey: string;
+  items: Array<{
+    identity: TraceSourceIdentity;
+    state: 'resolved' | 'unresolved' | 'ambiguous' | 'incomplete';
+    matches: Array<Pick<SessionIndexEntry, 'id' | 'provider' | 'sourceAgent' | 'title' | 'startedAt'>>;
+    matchesTruncated: boolean;
+  }>;
+  nextCursor: string | null;
+  hasMore: boolean;
+  completeness: IdentityCompleteness;
+}
+
+export interface CaptureEvidenceExport {
+  format: 'awesome-telemetry.capture-evidence';
+  formatVersion: 1;
+  exportedAt: string;
+  schemaVersion: number;
+  request: Omit<ProxyRequest, 'requestBody' | 'responseBody' | 'rawRequestBody' | 'rawResponseBody' | 'systemPrompt'>;
+  capture: ProxyCaptureBodies;
+  originalDeletion: OriginalDeletionJob | null;
+  analysis: ProxyProtocolAnalysis | null;
+  analysisUnavailableReason: 'original_deleted' | 'analysis_unavailable' | 'metadata_only' | null;
+  identities: TraceIdentityPage;
+  traceLinks: ProxyTraceLinkPage;
+  limitations: string[];
 }
 
 /** Internal durable journal only. Never returned on list/SSE/API or exported as a body. */
@@ -1975,3 +2154,99 @@ export interface CaptureProcessingResult {
 }
 
 export type CaptureContentEncoding = 'identity' | 'gzip' | 'br' | 'deflate' | 'unsupported';
+// contracts/data-model.md — independent offline TraceLog evidence (schema19).
+export interface TraceLogSession {
+  id: string;
+  fileName: string;
+  sourceMember: string | null;
+  importedAt: string;
+  source: CaptureBodyRef;
+  nativeSessionId: string | null;
+  ideType: string | null;
+  model: string | null;
+  title: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  turnCount: number;
+}
+export interface TraceLogTurn {
+  sequence: number;
+  turnId: string | null;
+  turnNumber: number | null;
+  model: string | null;
+  requestTime: string | null;
+  responseTime: string | null;
+  isError: boolean | null;
+  reported: Record<string, number | null>;
+  hasOutput: boolean;
+}
+export interface TraceLogPage<T> { items: T[]; offset: number; limit: number; hasMore: boolean }
+export interface TraceLogImportResult {
+  items: { state: 'imported' | 'duplicate'; session: TraceLogSession }[];
+  ignoredEntries: number;
+}
+export interface TraceLogTurnDetail {
+  sessionId: string;
+  sequence: number;
+  session: Record<string, unknown>;
+  raw: Record<string, unknown>;
+}
+export interface CodexCallSummary {
+  sequence: number;
+  streamId: string | null;
+  responseId: string | null;
+  previousResponseId: string | null;
+  predecessorSequence: number | null;
+  model: string | null;
+  warmup: boolean;
+  nativeSessionId: string | null;
+  nativeTurnId: string | null;
+  startedAt: string;
+  startedMs: number;
+  firstContentMs: number | null;
+  durationMs: number | null;
+  state: 'completed' | 'incomplete' | 'failed' | 'pending';
+  usage: Omit<ProxyNativeUsage, 'snapshots'>;
+  proposedToolIds: string[];
+  returnedToolIds: string[];
+  reasons: string[];
+}
+export interface CodexCallPage {
+  requestId: string;
+  active: boolean;
+  fingerprint: string;
+  items: CodexCallSummary[];
+  offset: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  complete: boolean;
+  reasons: string[];
+  unassignedEvents: number;
+}
+export interface CodexNativeLink {
+  state: 'linked' | 'missing' | 'ambiguous' | 'incomplete' | 'blocked';
+  sessionKey: string | null;
+  matches: Array<{ eventId: string; kind: 'response' | 'tool_call' | 'turn'; value: string; sourcePath: string }>;
+}
+export interface CodexCallDetail {
+  contextDiff: CodexContextDiff | null;
+  contextDiffUnavailableReason: 'no_predecessor' | 'base_outside_projection' | 'normalization_failed' | null;
+  requestId: string;
+  active: boolean;
+  fingerprint: string;
+  call: CodexCallSummary;
+  analysis: ProxyProtocolAnalysis;
+  native: CodexNativeLink;
+  toolReferences: Array<{ callId: string; proposalSequence: number | null }>;
+  requestPreview: string;
+  requestPreviewTruncated: boolean;
+}
+export interface CodexContextDiff {
+  baseSequence: number;
+  categories: ContextCategoryDiff[];
+  growth: ContextGrowth;
+  indicators: ContextIndicator[];
+  completeness: ContextCompleteness;
+  noChange: boolean;
+}

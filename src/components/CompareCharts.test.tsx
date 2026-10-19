@@ -39,8 +39,23 @@ afterEach(() => {
 });
 
 describe('CompareCharts（建议 1）', () => {
+  it('does not award full tool-speed credit for absent samples, while preserving a real measured zero', () => {
+    const result = makeResult(); result.left.session.durationSource = 'measured'; result.right.session.durationSource = 'measured';
+    result.left.events = []; const first = mount(<RadarChart result={result} locale="en" />);
+    expect(document.querySelectorAll('svg line')).toHaveLength(7); expect(first.html()).toContain('Tools'); first.unmount();
+    result.left.events = [makeEvent({ tool: 'Bash', durationMs: 0 })]; const second = mount(<RadarChart result={result} locale="en" />);
+    expect(document.querySelectorAll('svg line')).toHaveLength(8); second.unmount();
+  });
+  it('omits inadmissible timing axes instead of giving unknown or mixed-basis measurements a zero advantage', () => {
+    const result = makeResult(); result.speed.left.tps = null;
+    const { html, unmount } = mount(<RadarChart result={result} locale="en" />);
+    expect(document.querySelectorAll('svg line')).toHaveLength(6);
+    expect(html()).toContain('Not comparable'); unmount();
+  });
   it('雷达图渲染 8 轴并带 L/R 多边形', () => {
-    const { html, unmount } = mount(<RadarChart result={makeResult()} locale="zh" />);
+    // Eight axes require actual matching declarations; the default historical fixture remains unknown.
+    const result = makeResult(); result.left.session.durationSource = 'measured'; result.right.session.durationSource = 'measured';
+    const { html, unmount } = mount(<RadarChart result={result} locale="zh" />);
     const lines = html().match(/<line /g) ?? [];
     expect(lines.length).toBe(8);
     expect(html()).toContain('fill="var(--accent-subtle)"');
@@ -49,7 +64,8 @@ describe('CompareCharts（建议 1）', () => {
   });
 
   it('REQ-119/120：重构后仍逐像素一致（雷达几何 + 双环 dasharray 基准）', () => {
-    const radar = mount(<RadarChart result={makeResult()} locale="zh" />);
+    const result = makeResult(); result.left.session.durationSource = 'measured'; result.right.session.durationSource = 'measured';
+    const radar = mount(<RadarChart result={result} locale="zh" />);
     const svg = document.querySelector('svg')!;
     expect(svg.getAttribute('viewBox')).toBe('0 0 200 200');
     expect(svg.getAttribute('height')).toBe('220');
@@ -68,6 +84,15 @@ describe('CompareCharts（建议 1）', () => {
       expect(len! + rest!).toBeCloseTo(circ, 6);
     }
     donut.unmount();
+  });
+
+  it('omits mixed and partial event bases but retains independently comparable wall-clock', () => {
+    for (const cause of ['mixed', 'partial']) {
+      const result = makeResult(); result.left.session.durationSource = 'measured'; result.right.session.durationSource = cause === 'mixed' ? 'derived' : 'measured';
+      if (cause === 'partial') result.left.hasMore = true;
+      const { html, unmount } = mount(<RadarChart result={result} locale="en" />);
+      expect(document.querySelectorAll('svg line')).toHaveLength(6); expect(html()).toContain('Not comparable'); unmount();
+    }
   });
 
   it('双环 Token 环形图渲染 8 个圆环分段 + 图例', () => {

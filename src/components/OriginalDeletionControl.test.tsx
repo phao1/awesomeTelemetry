@@ -18,6 +18,16 @@ function mount(overrides: Partial<React.ComponentProps<typeof OriginalDeletionCo
 afterEach(() => { act(() => { for (const root of roots.splice(0)) root.unmount(); }); vi.useRealTimers(); vi.unstubAllGlobals(); document.body.innerHTML = ''; });
 
 describe('explicit original body deletion control', () => {
+  it('reports failed availability as unknown, not loading/deleted, and recovers only after an explicit successful refresh', async () => {
+    const fetcher = vi.fn().mockRejectedValueOnce(new Error('temporary status failure')).mockResolvedValue(response(null));
+    vi.stubGlobal('fetch', fetcher); const { container, onAvailability } = mount(); await flush();
+    expect(onAvailability).toHaveBeenLastCalledWith('unknown'); expect(onAvailability).not.toHaveBeenCalledWith('blocked');
+    expect(button(container, 'Delete this request’s bodies').disabled).toBe(true);
+    expect(container.textContent).toContain('STATUS_UNAVAILABLE');
+    await act(async () => button(container, 'Refresh deletion status').click()); await flush();
+    expect(onAvailability).toHaveBeenLastCalledWith('available'); expect(button(container, 'Delete this request’s bodies').disabled).toBe(false);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it('requires a separate acknowledgement, posts exact identity once and does not claim completion while pending', async () => {
     let finish!: (value: Response) => void;
     const fetcher = vi.fn(async (_url: string, init?: RequestInit) => init?.method === 'POST' ? new Promise<Response>(resolve => { finish = resolve; }) : response(null)); vi.stubGlobal('fetch', fetcher);

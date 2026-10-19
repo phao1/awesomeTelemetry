@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { once } from 'node:events';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +7,13 @@ import { createHash } from 'node:crypto';
 import { access } from 'node:fs/promises';
 import { CaptureCapacityError, readCaptureCapacity } from './proxy/capture-capacity.js';
 import { parseBodyByteRange } from './proxy/body-range.js';
+import { CaptureReparser, CaptureReparseError } from './proxy/capture-reparse.js';
+import { CodexInspector, CodexSourceAccessError, codexInteger, type CodexSelector } from './codex/service.js';
+import { CodexInspectionError } from './codex/archive.js';
+import { liveCodexInventory } from './codex/source.js';
+import { TraceImportError } from './trace-import/format.js';
+import { TraceLogImporter, importId, importSequence, importPaging, requireImport } from './trace-import/service.js';
+import { listImports, listImportTurns } from './storage/trace-import.js';
 
 import type { Database } from 'better-sqlite3';
 
@@ -20,6 +27,10 @@ import type {
   TraceRecord,
   CaptureStorageConfig,
   MonitorConnectionProfile,
+  ProxyProtocolAnalysis,
+  CaptureEvidenceExport,
+  CaptureComparisonResponse,
+  CaptureComparisonSide,
 } from '../src/core/trace-types.js';
 import {
   PROVIDER_KEYS,
@@ -32,7 +43,7 @@ import {
   mergeLocalSessionConfig,
   saveUserConfig,
 } from '../local-sessions/config.js';
-import { getProxyRequestById } from './storage/query-engine.js';
+import { getProxyRequestById, getProxyRequestListItemById } from './storage/query-engine.js';
 import { buildTraceReportHtml } from '../src/core/report-html.js';
 import { buildCompareReportHtml } from '../src/core/compare-report.js';
 import { DetailCache } from './storage/detail-cache.js';
@@ -75,7 +86,7 @@ import { markForegroundRequest } from './realtime/frontline.js';
 import { scanAndStoreDetail, scanLocalSessions, SessionParseError } from './watch/scan-scheduler.js';
 import { startFileWatcher } from './watch/file-watcher.js';
 import { Router } from './http/router.js';
-import { sendJson } from './http/send-json.js';
+import { sendJson, sendCompressedOrPlain } from './http/send-json.js';
 import { sendApiError, type ErrorCode } from './http/error-envelope.js';
 import { serveStatic } from './http/static.js';
 import { resolveRules } from './desensitization/rules.js';
@@ -91,9 +102,14 @@ import { CaptureBodyStore } from './proxy/body-store.js';
 import { CaptureJournal } from './proxy/capture-journal.js';
 import { buildConnectionPlan, ConnectionProfileError, ConnectionProfileStore, validateExpectedRevision } from './proxy/connection-profiles.js';
 import { inspectConnection } from './proxy/connection-diagnostics.js';
+import { CaptureSelfTester, CaptureSelfTestError } from './proxy/capture-self-test.js';
 import { readCaptureBodies } from './proxy/capture-storage.js';
 import { readAnalysisBody } from './proxy/analysis-source.js';
 import { analyzeProtocol } from './proxy/protocol-analysis.js';
+import { assembleCaptureEvidenceExport, stringifyCaptureEvidenceExport, CaptureExportLimitError } from './proxy/capture-export.js';
+import { getLinkedExecution, LinkedExecutionLimitError } from './storage/linked-execution.js';
+import { getNativeSessionParents } from './storage/native-session-parents.js';
+import { getMonitorCapabilities } from './proxy/monitor-capabilities.js';
 import { parseProxyRequest } from './proxy/parser-router.js';
 import { decideTraceAssociation, listProxyTraceLinks, listSessionCaptureLinks, listTraceDecisions, listTraceIdentities, TraceLinkError } from './storage/trace-links.js';
 import { ensureInterceptCa } from './proxy/ca-manager.js';
@@ -271,6 +287,9 @@ export function createAgentObservabilityServer(
     }).catch((error: unknown) => { fileStorePromise = null; throw error; });
     return fileStorePromise;
   };
+  const captureReparser = new CaptureReparser(db, getFileStore);
+  const codexInspector = new CodexInspector(db, getFileStore);
+  const traceImporter = new TraceLogImporter(db, getFileStore);
   const getBodyStore = (): Promise<CaptureBodyStore> => {
     if (bodyStorePromise === null) {
       bodyStorePromise = getFileStore().then(async store => {
@@ -405,6 +424,7 @@ export function createAgentObservabilityServer(
   const fridaRuntime = new FridaRuntime((payload) => {
     eventBus.emit('frida_status', payload);
   });
+  const captureSelfTester = new CaptureSelfTester(db, proxyRuntime, getFileStore);
 
   /** REQ-015：惰性详情加载（compare/report 与 GET 详情同口径）。 */
   const ensureDetail = async (
@@ -450,6 +470,43 @@ export function createAgentObservabilityServer(
   };
 
   const router = new Router();
+
+  router.register('POST', '/api/trace-imports', async (req, res) => {
+    const controller = new AbortController(), cancel = (): void => controller.abort();
+    res.once('close', cancel);
+    try {
+      if (req.headers['content-type'] !== 'application/octet-stream') throw new TraceImportError('TRACE_IMPORT_INVALID');
+      if (Number(req.headers['content-length'] ?? 0) > 128 * 1024 * 1024) throw new TraceImportError('TRACE_IMPORT_LIMIT');
+      let filename: string;
+      try { if (typeof req.headers['x-trace-filename'] !== 'string') throw new Error(); filename = decodeURIComponent(req.headers['x-trace-filename']); }
+      catch { throw new TraceImportError('TRACE_IMPORT_INVALID'); }
+      const result = await proxyRuntime.withStoppedMonitor(() => traceImporter.import(req, filename, controller.signal));
+      sendJson(res, 200, result, req);
+    } finally { res.removeListener('close', cancel); if (!req.complete && !req.destroyed) req.resume(); }
+  });
+  router.register('GET', '/api/trace-imports', (req, res) => {
+    const page = importPaging(new URL(req.url ?? '/', 'http://127.0.0.1'), 1024);
+    sendJson(res, 200, listImports(db, page.offset, page.limit), req);
+  });
+  router.register('GET', '/api/trace-imports/:id/turns', (req, res, params) => {
+    const id = importId(params.id); requireImport(db, id);
+    const page = importPaging(new URL(req.url ?? '/', 'http://127.0.0.1'), 2000);
+    sendJson(res, 200, listImportTurns(db, id, page.offset, page.limit), req);
+  });
+  router.register('GET', '/api/trace-imports/:id/turns/:sequence', async (req, res, params) => {
+    const controller = new AbortController(), cancel = (): void => controller.abort(); res.once('close', cancel);
+    try { sendJson(res, 200, await traceImporter.detail(importId(params.id), importSequence(params.sequence), controller.signal), req); }
+    finally { res.removeListener('close', cancel); }
+  });
+  router.register('GET', '/api/trace-imports/:id/source', async (_req, res, params) => {
+    const id = importId(params.id), ref = requireImport(db, id).session.source;
+    const stream = (await getFileStore()).openRead(ref.id);
+    try { await once(stream, 'open'); } catch { stream.destroy(); throw new TraceImportError('TRACE_IMPORT_FAILED'); }
+    stream.on('error', () => res.destroy()); res.once('close', () => stream.destroy());
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'content-disposition': `attachment; filename="tracelog-${id.slice(0, 12)}.json"`,
+      'content-length': ref.bytes, etag: '"' + ref.sha256 + '"', 'x-trace-sha256': ref.sha256, 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' });
+    stream.pipe(res);
+  });
 
   router.register('GET', '/api/health', (_req, res) => {
     const dbSizeBytes = dbPath !== '' && existsSync(dbPath) ? statSync(dbPath).size : 0;
@@ -971,6 +1028,34 @@ export function createAgentObservabilityServer(
     sendJson(res, 200, readCaptureBodies(db, captureRequestId(params.id)), req);
   });
 
+  const codexRead = async (req: IncomingMessage, res: ServerResponse, selector: CodexSelector, sequence?: string): Promise<void> => {
+    const controller = new AbortController();
+    const abort = (): void => { if (!res.writableEnded) controller.abort(); };
+    res.once('close', abort);
+    try {
+      const query = parseQuery(req);
+      const result = await codexInspector.read(selector, sequence === undefined
+        ? { offset: codexInteger(query.get('offset'), 0, 4096), limit: codexInteger(query.get('limit'), 20, 20) }
+        : { selected: codexInteger(sequence, 0, 4095) }, controller.signal);
+      // An await must not resurrect a body whose durable deletion intent exists.
+      const row = cachedStmt(db, 'SELECT id FROM proxy_requests WHERE request_id=?').get(result.requestId) as { id: number } | undefined;
+      if (row !== undefined && getOriginalDeletionForProxy(db, row.id) !== null) throw new CodexSourceAccessError('CAPTURE_ORIGINALS_DELETED');
+      if (!controller.signal.aborted) {
+        if (Buffer.byteLength(JSON.stringify(result)) > 1024 * 1024) throw new CodexInspectionError('CODEX_INSPECTION_LIMIT');
+        res.setHeader('cache-control', 'no-store'); sendJson(res, 200, result, req);
+      }
+    } catch (error) {
+      if (error instanceof CodexSourceAccessError) throw new HttpError(error.code === 'BAD_REQUEST' ? 400 : error.code === 'CAPTURE_ORIGINALS_DELETED' ? 409 : 404, error.code, error.code);
+      if (error instanceof CodexInspectionError) throw new HttpError(error.code === 'CODEX_SOURCE_CHANGED' ? 409 : error.code === 'CODEX_SOURCE_UNAVAILABLE' ? 422 : 503, error.code, error.code);
+      throw error;
+    } finally { res.removeListener('close', abort); }
+  };
+  router.register('GET', '/api/proxy/live', (req, res) => { res.setHeader('cache-control', 'no-store'); sendJson(res, 200, liveCodexInventory(db), req); });
+  router.register('GET', '/api/proxy/requests/:id/codex-calls', (req, res, params) => codexRead(req, res, { id: captureRequestId(params.id) }));
+  router.register('GET', '/api/proxy/requests/:id/codex-calls/:sequence', (req, res, params) => codexRead(req, res, { id: captureRequestId(params.id) }, params.sequence));
+  router.register('GET', '/api/proxy/live/:requestId/codex-calls', (req, res, params) => codexRead(req, res, { requestId: params.requestId ?? '' }));
+  router.register('GET', '/api/proxy/live/:requestId/codex-calls/:sequence', (req, res, params) => codexRead(req, res, { requestId: params.requestId ?? '' }, params.sequence));
+
   router.register('GET', '/api/proxy/requests/:id/original-deletion', (req, res, params) => {
     sendJson(res, 200, getOriginalDeletionForProxy(db, captureRequestId(params.id)), req);
   });
@@ -996,11 +1081,15 @@ export function createAgentObservabilityServer(
     sendJson(res, 200, result, req);
   });
 
-  router.register('GET', '/api/proxy/requests/:id/analysis', async (req, res, params) => {
-    const id = captureRequestId(params.id);
+  const readCaptureAnalysis = async (id: number): Promise<ProxyProtocolAnalysis> => {
     if (getOriginalDeletionForProxy(db, id) !== null) throw new HttpError(409, 'CAPTURE_ORIGINALS_DELETED', 'Original bodies were explicitly deleted; retained metadata is not body evidence');
     const request = getProxyRequestById(db, id)!;
     const capture = readCaptureBodies(db, id);
+    if (request.method === 'WS' || capture.transport?.websocket !== undefined) {
+      const analysis = await analyzeProtocol({ format: 'unknown', requestBody: '', responseBody: null, streaming: false, transport: capture.transport });
+      analysis.state = 'unknown'; analysis.completeness = { complete: false, omittedCount: 1, reasons: ['websocket_connection_not_model_call'] };
+      return analysis;
+    }
     const reasons: string[] = [];
     const readDirection = async (direction: 'request' | 'response'): Promise<string | null> => {
       const ref = capture[direction];
@@ -1030,7 +1119,177 @@ export function createAgentObservabilityServer(
         analysis.state = 'incomplete';
       }
     }
-    sendJson(res, 200, analysis, req);
+    return analysis;
+  };
+
+  router.register('GET', '/api/proxy/requests/:id/analysis', async (req, res, params) => {
+    sendJson(res, 200, await readCaptureAnalysis(captureRequestId(params.id)), req);
+  });
+
+  const validateReparseRequest = (req: IncomingMessage, value: string | undefined): number => {
+    if (parseQuery(req).size !== 0 || typeof value !== 'string' || !/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Reparse requires one positive capture ID and no query parameters');
+    }
+    return captureRequestId(value);
+  };
+  const reparseError = (error: unknown): never => {
+    if (error instanceof HttpError) throw error;
+    if (error instanceof CaptureReparseError) {
+      const errors = {
+        BAD_REQUEST: 400, PROXY_REQUEST_NOT_FOUND: 404, CAPTURE_ORIGINALS_DELETED: 409,
+        CAPTURE_REPARSE_CONFLICT: 409, CAPTURE_REPARSE_UNSUPPORTED: 422,
+        CAPTURE_REPARSE_BUSY: 503, CAPTURE_REPARSE_FAILED: 503, CAPTURE_REPARSE_LIMIT: 503,
+      } as const;
+      const code = error.code as keyof typeof errors;
+      if (Object.hasOwn(errors, code)) throw new HttpError(errors[code], code, 'Local capture reparse is unavailable; inspect its status before retrying', error.reason === null ? undefined : { reason: error.reason });
+    }
+    throw new HttpError(503, 'CAPTURE_REPARSE_FAILED', 'Local capture reparse failed; no upstream request was replayed');
+  };
+  const sendReparse = (req: IncomingMessage, res: ServerResponse, value: unknown, maxBytes: number): void => {
+    const bytes = Buffer.from(JSON.stringify(value));
+    if (bytes.byteLength > maxBytes) throw new HttpError(503, 'CAPTURE_REPARSE_LIMIT', 'Capture reparse response exceeds its bounded projection');
+    sendCompressedOrPlain(res, 200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, bytes, req);
+  };
+  router.register('GET', '/api/proxy/requests/:id/reparse', (req, res, params) => {
+    const id = validateReparseRequest(req, params.id);
+    try { sendReparse(req, res, captureReparser.status(id), 16 * 1024); }
+    catch (error) { reparseError(error); }
+  });
+  router.register('POST', '/api/proxy/requests/:id/reparse', async (req, res, params) => {
+    const id = validateReparseRequest(req, params.id), body = await readJsonBody(req, 8 * 1024);
+    if (Object.keys(body).some(key => key !== 'expectedRequestId') || typeof body.expectedRequestId !== 'string' || body.expectedRequestId.length === 0 || body.expectedRequestId.length > 1024) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Exact expectedRequestId is required for local reparse');
+    }
+    try {
+      const result = await captureReparser.reparse(id, body.expectedRequestId);
+      // The service result crossed one last await boundary. No await after
+      // this metadata guard: a confirmed intent cannot leak old body analysis.
+      const current = (() => {
+        try { return captureReparser.status(id); }
+        catch (error) {
+          if (error instanceof CaptureReparseError && error.code === 'PROXY_REQUEST_NOT_FOUND') throw new HttpError(409, 'CAPTURE_REPARSE_CONFLICT', 'Capture source disappeared before the reparse response');
+          throw error;
+        }
+      })();
+      if (current.unavailableReason === 'originals_deleted') throw new HttpError(409, 'CAPTURE_ORIGINALS_DELETED', 'Original bodies were explicitly deleted during reparse');
+      if (current.state !== 'current' || current.requestId !== body.expectedRequestId || current.snapshot?.sourceFingerprint !== result.status.snapshot?.sourceFingerprint) {
+        throw new HttpError(409, 'CAPTURE_REPARSE_CONFLICT', 'Capture source changed before the reparse response');
+      }
+      sendReparse(req, res, result, 1024 * 1024);
+    }
+    catch (error) { reparseError(error); }
+  });
+
+  router.register('GET', '/api/proxy/requests/:id/comparison', async (req, res, params) => {
+    const query = parseQuery(req);
+    const validId = (value: string | null | undefined): value is string => typeof value === 'string' && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value));
+    const base = query.get('base');
+    if (!validId(params.id) || !validId(base) || query.getAll('base').length !== 1 || query.getAll('mode').length > 1 ||
+      [...query.keys()].some(key => key !== 'base' && key !== 'mode') || (query.has('mode') && query.get('mode') !== 'metadata') || Number(base) === Number(params.id)) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Comparison requires two distinct positive capture IDs and a valid mode');
+    }
+    const targetId = captureRequestId(params.id); const baseId = captureRequestId(base);
+    const metadataOnly = query.get('mode') === 'metadata';
+    const optionalAnalysis = async (id: number): Promise<ProxyProtocolAnalysis | null> => {
+      if (metadataOnly) return null;
+      try { return await readCaptureAnalysis(id); }
+      catch { return null; } // Report unavailable below; never expose internal source errors.
+    };
+    const [baseAnalysis, targetAnalysis] = await Promise.all([optionalAnalysis(baseId), optionalAnalysis(targetId)]);
+    // No await after both fresh deletion checks: body-derived summaries cannot
+    // return from an older asynchronous original read after confirmed intent.
+    const snapshot = db.transaction((): CaptureComparisonResponse => {
+      const side = (id: number, parsed: ProxyProtocolAnalysis | null): CaptureComparisonSide => {
+        const request = getProxyRequestListItemById(db, id);
+        if (request === null) throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', 'Proxy request not found');
+        const originalDeletion = getOriginalDeletionForProxy(db, id);
+        const capture = readCaptureBodies(db, id);
+        const { responseHeaders: _headers, ...evidence } = capture; void _headers;
+        const analysis = originalDeletion !== null || metadataOnly || parsed === null ? null : {
+          parserVersion: parsed.parserVersion, requestFormat: parsed.requestFormat, model: parsed.model, state: parsed.state,
+          stopReason: parsed.stopReason, usage: structuredClone(parsed.usage), completeness: structuredClone(parsed.completeness),
+          errorCount: parsed.errors.length, errorCodes: parsed.errors.slice(0, 32).map(error => error.code), errorCodesTruncated: parsed.errors.length > 32,
+        };
+        return { request, evidence, originalDeletion, analysis, analysisUnavailableReason: originalDeletion !== null ? 'original_deleted' :
+          metadataOnly ? 'metadata_only' : analysis === null ? 'analysis_unavailable' : null };
+      };
+      return { base: side(baseId, baseAnalysis), target: side(targetId, targetAnalysis), generatedAt: new Date().toISOString() };
+    })();
+    const bytes = Buffer.from(JSON.stringify(snapshot));
+    if (bytes.length > 1024 * 1024) throw new HttpError(503, 'CAPTURE_COMPARISON_LIMIT', 'Capture comparison exceeds its bounded projection');
+    sendCompressedOrPlain(res, 200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, bytes, req);
+  });
+
+  router.register('GET', '/api/sessions/:key/parents', (req, res, params) => {
+    const query = parseQuery(req);
+    if ([...query.keys()].some(key => key !== 'limit' && key !== 'cursor') || query.getAll('limit').length > 1 || query.getAll('cursor').length > 1 ||
+      (query.has('limit') && !/^[1-9]\d*$/.test(query.get('limit')!)) || (query.has('cursor') && !/^[a-f0-9]{64}$/.test(query.get('cursor')!))) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Invalid native parent reference page');
+    }
+    try {
+      sendJson(res, 200, getNativeSessionParents(db, params.key ?? '', { limit: Number(query.get('limit') ?? 20), cursor: query.get('cursor') ?? undefined }), req);
+    } catch (error) {
+      if (error instanceof LinkedExecutionLimitError) throw new HttpError(503, 'EXECUTION_METADATA_LIMIT', 'Native parent metadata cannot fit its bounded page');
+      throw error;
+    }
+  });
+
+  router.register('GET', '/api/proxy/requests/:id/export', async (req, res, params) => {
+    const id = captureRequestId(params.id);
+    const query = parseQuery(req);
+    if ([...query.keys()].some(key => key !== 'mode') || query.getAll('mode').length > 1 || (query.has('mode') && query.get('mode') !== 'metadata')) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Invalid capture export mode');
+    }
+    const metadataOnly = query.get('mode') === 'metadata';
+    let analysis: ProxyProtocolAnalysis | null = null;
+    let reason: CaptureEvidenceExport['analysisUnavailableReason'] = metadataOnly ? 'metadata_only' : null;
+    try { if (!metadataOnly) analysis = await readCaptureAnalysis(id); }
+    catch { reason = 'analysis_unavailable'; }
+    // From this fresh snapshot through serialization/send there is no await:
+    // an async analysis must not revive evidence removed by confirmed intent.
+    const snapshot = db.transaction(() => {
+      const item = getProxyRequestListItemById(db, id);
+      if (item === null) throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', 'Proxy request not found');
+      const { hasSystemPrompt: _hasSystemPrompt, ...requestMetadata } = item;
+      void _hasSystemPrompt;
+      const headers = cachedStmt(db, 'SELECT request_headers FROM proxy_requests WHERE id=?').get(id) as { request_headers: string };
+      const request = { ...requestMetadata, requestHeaders: JSON.parse(headers.request_headers) as CaptureEvidenceExport['request']['requestHeaders'] };
+      return assembleCaptureEvidenceExport({ request, capture: readCaptureBodies(db, id),
+        originalDeletion: getOriginalDeletionForProxy(db, id), analysis, analysisUnavailableReason: reason,
+        identities: listTraceIdentities(db, { source: 'proxy', key: String(id) }, { limit: 100 }),
+        traceLinks: listProxyTraceLinks(db, id, { limit: 100 }), schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString() });
+    })();
+    let encoded: string;
+    try { encoded = stringifyCaptureEvidenceExport(snapshot); }
+    catch (error) {
+      if (error instanceof CaptureExportLimitError) throw new HttpError(503, 'CAPTURE_EXPORT_LIMIT', 'Capture evidence export exceeds its bounded package size');
+      throw error;
+    }
+    sendCompressedOrPlain(res, 200, { 'content-type': 'application/json; charset=utf-8',
+      'content-disposition': `attachment; filename="capture-${id}.json"`, 'cache-control': 'no-store' }, Buffer.from(encoded), req);
+  });
+
+  router.register('GET', '/api/sessions/:key/execution', (req, res, params) => {
+    const query = parseQuery(req);
+    const defaults = { eventOffset: 0, eventLimit: 100, captureLimit: 20 };
+    const allowed = new Set(['eventOffset', 'eventLimit', 'captureCursor', 'captureLimit']);
+    for (const key of query.keys()) {
+      const value = query.get(key)!;
+      if (!allowed.has(key) || query.getAll(key).length !== 1 || !/^(0|[1-9]\d*)$/.test(value) || !Number.isSafeInteger(Number(value))) {
+        throw new HttpError(400, 'BAD_REQUEST', 'Invalid execution page query');
+      }
+    }
+    let page;
+    try { page = getLinkedExecution(db, params.key ?? '', {
+      eventOffset: Number(query.get('eventOffset') ?? defaults.eventOffset),
+      eventLimit: Number(query.get('eventLimit') ?? defaults.eventLimit),
+      captureCursor: query.has('captureCursor') ? Number(query.get('captureCursor')) : undefined,
+      captureLimit: Number(query.get('captureLimit') ?? defaults.captureLimit),
+    }); } catch (error) {
+      if (error instanceof LinkedExecutionLimitError) throw new HttpError(503, 'EXECUTION_METADATA_LIMIT', 'Execution metadata cannot fit its bounded page');
+      throw error;
+    }
+    sendJson(res, 200, page, req);
   });
 
   router.register('GET', '/api/proxy/requests/:id/body/:direction', async (req, res, params) => {
@@ -1112,6 +1371,20 @@ export function createAgentObservabilityServer(
     const profile = await connectionProfiles.get(params.id ?? '');
     sendJson(res, 200, await inspectConnection(profile, caDirectory, () => proxyRuntime.status()), req);
   });
+  router.register('POST', '/api/proxy/profiles/:id/self-test', async (req, res, params) => {
+    const body = await readJsonBody(req, 32 * 1024);
+    if (parseQuery(req).size !== 0 || Object.keys(body).length !== 1 || !Number.isSafeInteger(body.expectedRevision) || Number(body.expectedRevision) < 1) throw new HttpError(400, 'BAD_REQUEST', 'Only a positive integer expectedRevision is accepted; no destination or process parameters');
+    const profile = await connectionProfiles.get(params.id ?? '');
+    if (validateExpectedRevision(body.expectedRevision) !== profile.revision) throw new ConnectionProfileError('MONITOR_PROFILE_CONFLICT', 'Connection profile changed; reload before testing', 409);
+    if (closing) throw new HttpError(503, 'SERVER_SHUTTING_DOWN', 'Server is draining');
+    const controller = new AbortController();
+    const abort = () => { if (!res.writableEnded) controller.abort(); };
+    res.once('close', abort);
+    try {
+      const report = await captureSelfTester.run(profile, controller.signal);
+      res.setHeader('cache-control', 'no-store'); sendJson(res, 200, report, req);
+    } finally { res.removeListener('close', abort); }
+  });
   router.register('POST', '/api/proxy/profiles/:id/start', async (req, res, params) => {
     const body = await readJsonBody(req, 32 * 1024);
     const profile = await connectionProfiles.get(params.id ?? '');
@@ -1121,6 +1394,12 @@ export function createAgentObservabilityServer(
     if (!current.running && !current.starting) proxyRuntime.start({ port: profile.proxyPort });
     await proxyRuntime.waitUntilReady();
     sendJson(res, 200, await connectionPlan(req, profile), req);
+  });
+
+  router.register('GET', '/api/proxy/capabilities', (req, res) => {
+    if (parseQuery(req).size !== 0) throw new HttpError(400, 'BAD_REQUEST', 'Capability manifest does not accept query parameters');
+    const bytes = Buffer.from(JSON.stringify(getMonitorCapabilities()));
+    sendCompressedOrPlain(res, 200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, bytes, req);
   });
 
   router.register('GET', '/api/proxy/status', (_req, res) => {
@@ -1686,8 +1965,17 @@ export function createAgentObservabilityServer(
   });
 
   router.register('GET', '/api/events', (req, res) => {
+    const query = parseQuery(req);
+    const requestId = query.get('requestId') ?? undefined;
+    const lastEventId = req.headers['last-event-id'];
+    const hasControl = (value: string): boolean => [...value].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+    if ([...query.keys()].some(key => key !== 'requestId') || query.getAll('requestId').length > 1 ||
+      (requestId !== undefined && (requestId.length === 0 || requestId.length > 1024 || hasControl(requestId))) ||
+      (lastEventId !== undefined && (typeof lastEventId !== 'string' || lastEventId.length > 128 || hasControl(lastEventId)))) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Invalid live subscription or resume cursor');
+    }
     // 头信息由 addSseClient 统一写入（REQ-005）
-    const cleanup = addSseClient(res);
+    const cleanup = addSseClient(res, { requestId, lastEventId });
     ownSseClients.add(cleanup);
     req.on('close', () => { cleanup(); ownSseClients.delete(cleanup); });
   });
@@ -1729,7 +2017,8 @@ export function createAgentObservabilityServer(
     }
     const handler = (async () => {
       try {
-        if (pathname.startsWith('/api/proxy/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links)$/.test(pathname)) {
+        if (pathname === '/api/events' || pathname.startsWith('/api/proxy/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents)$/.test(pathname)) {
+          if (pathname.startsWith('/api/trace-imports')) res.setHeader('cache-control', 'no-store');
           const localHost = (host: string): boolean => host === 'localhost' || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host);
           const remote = req.socket.remoteAddress ?? '';
           if (!(remote === '::1' || remote.startsWith('127.') || remote.startsWith('::ffff:127.'))) {
@@ -1753,6 +2042,14 @@ export function createAgentObservabilityServer(
         }
         await match.handler(req, res, match.params);
       } catch (err) {
+        if (err instanceof TraceImportError) {
+          const status = err.code === 'TRACE_IMPORT_INVALID' ? 400 : err.code === 'TRACE_IMPORT_LIMIT' ? 413 : err.code === 'TRACE_IMPORT_BUSY' ? 409 : err.code === 'TRACE_IMPORT_NOT_FOUND' ? 404 : 503;
+          sendApiError(res, status, err.code, err.code, undefined, req); return;
+        }
+        if (err instanceof CaptureSelfTestError) {
+          sendApiError(res, err.code === 'MONITOR_SELF_TEST_BUSY' || err.code === 'MONITOR_SELF_TEST_NOT_READY' ? 409 : 503, err.code, err.message, undefined, req);
+          return;
+        }
         if (err instanceof ConnectionProfileError) {
           sendApiError(res, err.status, err.code, err.message, undefined, req);
           return;
@@ -1824,6 +2121,10 @@ export function createAgentObservabilityServer(
         void httpClosed.catch(() => {});
       }
       shutdown = (async () => {
+        await captureSelfTester.close();
+        await captureReparser.close();
+        await codexInspector.close();
+        await traceImporter.close();
         const proxy = proxyRuntime.status();
         const proxyStopped = proxy.running || proxy.starting || proxy.diagnostics?.cleanupPending ? proxyRuntime.stop() : Promise.resolve();
         fridaRuntime.stop();

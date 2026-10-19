@@ -155,6 +155,7 @@ export class CaptureBodyStore {
     let closed = false;
     let writeFailed = false;
     let result: Promise<CaptureBodyRef> | null = null;
+    let finalRef: CaptureBodyRef | null = null;
     this.activeBodies += 1;
 
     const fail = (cause: unknown): void => {
@@ -238,16 +239,19 @@ export class CaptureBodyStore {
         // Failed/unwritten reservations are released; successfully written bytes stay.
         this.usedBytes -= accepted - written;
         this.activeBodies -= 1;
-        return { id, bytes: written, sha256: hash.digest('hex'), status, error };
+        finalRef = { id, bytes: written, sha256: hash.digest('hex'), status, error };
+        return finalRef;
       })();
       return result;
     };
-    return { id, append, finish };
+    return { id, append, finish, snapshot: () => finalRef ?? { id, bytes: written, sha256: hash.copy().digest('hex'), status: status === 'complete' ? 'interrupted' : status, error: error ?? 'LIVE_PREFIX' } };
   }
 }
 
 export interface CaptureBodyWriter {
   readonly id: string;
+  /** Private written-prefix observation; never promises queued/future bytes. */
+  snapshot(): CaptureBodyRef;
   /** False means collection stopped; forwarding must continue unchanged. */
   append(chunk: Uint8Array): boolean;
   /** Resolves after accepted writes flush. Repeated calls return the same result. */

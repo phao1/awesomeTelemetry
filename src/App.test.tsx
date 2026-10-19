@@ -3,8 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionIndexEntry } from './core/trace-types.js';
-import type { SessionDetailResponse, TraceEventSlim, TraceSession } from './core/trace-types.js';
+import type { SessionDetailResponse, TraceEvent, TraceEventSlim, TraceSession } from './core/trace-types.js';
 import App from './App.js';
+import { recordCache, eventDetailCache } from './cache/caches.js';
 
 function session(id: string, provider: 'codex' | 'claude', title: string): SessionIndexEntry {
   return {
@@ -40,7 +41,7 @@ class EventSourceStub {
   static readonly instances: EventSourceStub[] = [];
   readonly onopen: (() => void) | null = null;
   readonly onerror: (() => void) | null = null;
-  readonly listeners = new Map<string, Array<(event: { data: string }) => void>>();
+  readonly listeners = new Map<string, Array<(event: { data: string; lastEventId?: string }) => void>>();
 
   constructor(_url: string) {
     EventSourceStub.instances.push(this);
@@ -54,9 +55,9 @@ class EventSourceStub {
     // noop
   }
 
-  emit(type: string, data: unknown): void {
+  emit(type: string, data: unknown, lastEventId?: string): void {
     for (const listener of this.listeners.get(type) ?? []) {
-      listener({ data: JSON.stringify(data) });
+      listener({ data: JSON.stringify(data), lastEventId });
     }
   }
 }
@@ -97,6 +98,73 @@ afterEach(() => {
 });
 
 describe('REQ-015 共享会话 store（G7.6）', () => {
+  it('metadata reset invalidates caches and refreshes one bounded page, never original bodies', async () => {
+    const { container, unmount } = renderAppWithUnmount();
+    try {
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+      const before = vi.mocked(fetch).mock.calls.length;
+      recordCache.set('stale:slim', {} as SessionDetailResponse);
+      eventDetailCache.set('stale:event', {} as TraceEvent);
+      // Native EventSource's id-less connected control inherits the last id.
+      await act(async () => {
+        EventSourceStub.instances[0]!.emit('scan_completed', { provider: 'all', count: 1 }, 'old-epoch:6');
+        EventSourceStub.instances[0]!.emit('connected', { resume: 'reset', cursor: 'epoch:7' }, 'old-epoch:6');
+      });
+      expect(recordCache.size).toBe(0); expect(eventDetailCache.size).toBe(0);
+      const paths = vi.mocked(fetch).mock.calls.slice(before).map(call => String(call[0]));
+      expect(paths).toHaveLength(1);
+      expect(paths[0]).toContain('/api/sessions?');
+      expect(paths[0]).toContain('limit=50');
+      expect(paths[0]).not.toContain('/events/');
+      expect(container.textContent).toContain('实时恢复窗口已重置');
+    } finally { unmount(); }
+  });
+
+  it('repeated replay cursors trigger one key patch, not duplicate requests', async () => {
+    const { unmount } = renderAppWithUnmount();
+    try {
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+      const before = vi.mocked(fetch).mock.calls.length;
+      await act(async () => {
+        EventSourceStub.instances[0]!.emit('sessions_changed', { keys: ['s-1'], count: 1 }, 'epoch:1');
+        EventSourceStub.instances[0]!.emit('sessions_changed', { keys: ['s-1'], count: 1 }, 'epoch:1');
+      });
+      const paths = vi.mocked(fetch).mock.calls.slice(before).map(call => String(call[0]));
+      expect(paths).toHaveLength(1);
+      expect(paths[0]).toContain('keys=s-1');
+      expect(paths[0]).not.toContain('limit=50');
+    } finally { unmount(); }
+  });
+
+  it('late pre-reset detail and key patches cannot restore old caches or overwrite the new metadata snapshot', async () => {
+    const response = (value: unknown) => ({ ok: true, text: async () => JSON.stringify(value) });
+    type Result = ReturnType<typeof response>;
+    let finishPatch: ((result: Result) => void) | undefined;
+    let finishDetail: ((result: Result) => void) | undefined;
+    recordCache.clear();
+    vi.stubGlobal('fetch', vi.fn((input: unknown) => {
+      const path = String(input);
+      if (path.includes('keys=')) return new Promise<Result>(resolve => { finishPatch = resolve; });
+      if (path.includes('/api/sessions/s-1?')) return new Promise<Result>(resolve => { finishDetail = resolve; });
+      if (path.includes('/api/sessions?')) return Promise.resolve(response({ items: THREE_SESSIONS, total: 3, hasMore: false, nextCursor: null }));
+      return Promise.resolve(response({}));
+    }));
+    const { container, unmount } = renderAppWithUnmount();
+    try {
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+      act(() => (container.querySelector('.session-row') as HTMLElement).click());
+      act(() => EventSourceStub.instances[0]!.emit('sessions_changed', { keys: ['s-1'], count: 1 }, 'old:1'));
+      expect(finishPatch).toBeDefined(); expect(finishDetail).toBeDefined();
+      await act(async () => EventSourceStub.instances[0]!.emit('connected', { resume: 'reset' }, 'old:1'));
+      await act(async () => {
+        finishPatch!(response({ items: [{ ...THREE_SESSIONS[0], title: 'STALE EPOCH TITLE' }], hasMore: false, nextCursor: null }));
+        finishDetail!(response({ session: { id: 's-1' }, events: [], hasMore: false }));
+      });
+      expect(container.textContent).not.toContain('STALE EPOCH TITLE');
+      expect(recordCache.get('s-1:slim')).toBeUndefined();
+      expect(container.querySelector('.session-toolbar')).toBeNull();
+    } finally { unmount(); }
+  });
   it('1.1 启动后直接切 compare：两个选择器各含全部 3 个会话', async () => {
     const container = renderApp();
     await act(async () => {
@@ -108,7 +176,10 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       b.textContent?.includes('对比'),
     );
     expect(compareTab).toBeDefined();
-    act(() => compareTab!.click());
+    await act(async () => {
+      compareTab!.click();
+      await import('./components/CompareBoard.js');
+    });
 
     // REQ-019：MUST NOT 用原生 select（7.1）——选择器是 Popover 搜索按钮
     expect(container.querySelectorAll('select')).toHaveLength(0);
@@ -202,6 +273,14 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
         if (url.includes('/api/sessions/s-1/team-run')) {
           return okJson({ runIds: [] });
         }
+        if (url.includes('/api/sessions/s-1/capture-links')) {
+          return okJson({ sessionKey: 's-1', items: [], confirmedCount: 0, candidateCount: 0, nextCursor: null, hasMore: false });
+        }
+        if (url.includes('/api/sessions/s-1/parents')) {
+          return okJson({ sessionKey: 's-1', items: [{ identity: { id: 'a'.repeat(64), source: 'scan', sourceKey: 's-1', namespace: 'agent:codex', kind: 'parent_session', value: 'parent-native', scope: 'child-native', eventId: null, sourcePath: 'session_meta.payload.parent_thread_id' },
+            state: 'resolved', matches: [{ id: 's-2', provider: 'claude', sourceAgent: 'Claude', title: 'Synthetic resolved owner', startedAt: '2026-08-02T00:00:00.000Z' }], matchesTruncated: false }],
+            nextCursor: null, hasMore: false, completeness: { complete: true, omittedCount: 0, reasons: [] } });
+        }
         if (url.includes('/api/sessions/s-1')) {
           return okJson(sessionDetail);
         }
@@ -265,6 +344,26 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     });
     expect(fetchMock.mock.calls).toHaveLength(callsBeforeLinks);
     expect(container.querySelectorAll('.turn-row')).toHaveLength(2);
+
+    // Another native owner can make the open child's exact parent ambiguous.
+    // Invalidate locally before the batched index read; never re-read parents.
+    await act(async () => {
+      const details = [...container.querySelectorAll('details')].find(node => node.querySelector('summary')?.textContent === '关联 Trace')!;
+      details.open = true; details.dispatchEvent(new Event('toggle', { bubbles: true }));
+    });
+    await act(async () => { [...container.querySelectorAll('button')].find(node => node.textContent === '原生父会话引用')!.click(); await import('./components/NativeSessionParentsPanel.js'); });
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-native-parent-reference]')!.click(); });
+    expect(container.textContent).toContain('Synthetic resolved owner');
+    const parentReads = fetchMock.mock.calls.filter(([input]) => String(input).includes('/parents')).length;
+    expect(parentReads).toBe(1);
+    await act(async () => {
+      EventSourceStub.instances.at(-1)!.emit('sessions_changed', { keys: ['s-2'], count: 1 });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(container.textContent).toContain('父级依据已变化');
+    expect(container.textContent).not.toContain('Synthetic resolved owner');
+    expect([...container.querySelectorAll('button')].some(node => node.textContent === '打开已解析父级会话')).toBe(false);
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/parents'))).toHaveLength(1);
 
     sessionDetail.events.push({
       id: 'e3', sessionId: 's-1', sequence: 3, turnKey: null, kind: 'llm', phase: 'implement',
@@ -376,7 +475,10 @@ describe('Compare 端到端（UI-TASKS 2 回归）', () => {
       b.textContent?.includes('对比'),
     );
     expect(compareTab).toBeDefined();
-    act(() => compareTab!.click());
+    await act(async () => {
+      compareTab!.click();
+      await import('./components/CompareBoard.js');
+    });
 
     act(() => {
       (container.querySelectorAll('.compare-picker')[0] as HTMLButtonElement).click();

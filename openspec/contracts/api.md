@@ -1,6 +1,192 @@
 # Contract: HTTP API
 
+## Codex per-call local inspection
+
+GET /api/proxy/live returns {items:Array<{requestId:string,hostname:string,
+startedAt:string,ended:false}>} for at most64 currently registered WS sources;
+metadata only,<=64KiB,no-store and same local Host/Origin guard. Used once on
+Proxy mount/explicit refresh to rediscover still-active connections after reload,
+not polling or a replay of missing body fragments.
+
+GET /api/proxy/requests/:id/codex-calls?offset=0&limit=20 returns CodexCallPage.
+GET /api/proxy/requests/:id/codex-calls/:sequence returns CodexCallDetail.
+GET /api/proxy/live/:requestId/codex-calls uses the same page query/response;
+GET /api/proxy/live/:requestId/codex-calls/:sequence uses the same detail.
+Live lookup falls back to the exact persisted request_id after settlement.
+No arbitrary file paths, uploads, upstream requests or state mutations.
+All routes retain local-origin/Host protection and Cache-Control:no-store.
+Unsigned decimal safe integers only; offset<=4096,limit1..20,sequence0..4095.
+Unknown source/call 404 PROXY_REQUEST_NOT_FOUND; invalid input400 BAD_REQUEST;
+non-WS/missing/invalid originals422 CODEX_SOURCE_UNAVAILABLE; busy503
+CODEX_INSPECTION_BUSY; bound/deadline503 CODEX_INSPECTION_LIMIT;
+read/integrity/worker failure503 CODEX_INSPECTION_FAILED. All use ApiError.
+Confirmed original-deletion intent409 CAPTURE_ORIGINALS_DELETED, checked
+before/after every async boundary and immediately before serialization.
+
+An active source snapshot binds only successfully written prefix bytes+digest,
+not queued bytes or future messages. Partial trailing records are explicit.
+Final/source replacement while inspecting yields409 CODEX_SOURCE_CHANGED;
+caller refreshes explicitly or on a selected source dirty hint. No implicit polling/per-frame requests or persisted
+per-message DB rows. Detail re-verifies original bytes and resolves native
+metadata in bounded batch queries, never raw event bodies.
+
+## TraceLog import (schema19)
+
+All `/api/trace-imports` routes require existing local connection/Host/Origin
+guard. No filesystem paths in responses; untrusted source content is inert.
+- POST `/api/trace-imports`: raw application/octet-stream upload; required
+  `x-trace-filename` URI-encoded basename ending .json/.gz/.tgz/.tar.gz,<=512
+  chars. No multipart.120s total deadline,128MiB max incl. chunked uploads.
+  Requires stopped monitor and one job/DB. Returns200 TraceLogImportResult only
+  after complete copies+atomic metadata commit. No model/tool/network replay.
+- GET `/api/trace-imports?offset=0&limit=20`: TraceLogPage<TraceLogSession>;
+  offset0..1024,limit1..20; imported_at DESC,id, no source/body file reads.
+- GET `/api/trace-imports/:id/turns?offset=0&limit=20`:
+  TraceLogPage<TraceLogTurn>,offset0..2000,limit1..20; sequence ASC. No raw data.
+- GET `/api/trace-imports/:id/turns/:sequence`: TraceLogTurnDetail, one <=2MiB
+  original turn + <=64KiB session object, range reads. No auto links or metrics.
+- GET `/api/trace-imports/:id/source`: streamed exact JSON download, fixed safe
+  generated filename, SHA256 ETag/X-Trace-Sha256 and content-length; not archive.
+
+id=64 lowercase hex; sequence=0..1999. Non-2xx ApiError §0.3 always. §0.4 adds
+TRACE_IMPORT_INVALID(400),TRACE_IMPORT_LIMIT(413),TRACE_IMPORT_BUSY(409),
+TRACE_IMPORT_NOT_FOUND(404),TRACE_IMPORT_FAILED(503). PROXY_MAINTENANCE(409)
+also rejects live-monitor import. All error messages static, never input snippets
+or local paths. Cancel/disconnect/deadline stops owned work before commit where
+possible; after commit cancellation is uncertain, refresh list. No auto resubmit.
+Full source download may end incomplete on later disk failure; do not fabricate
+an HTTP success JSON body or silently retry. No SSE additions or polling.
+
+## Explicit same-capture offline reparse (schema18)
+
+GET `/api/proxy/requests/:id/reparse` returns CaptureReparseStatus with no
+original IO,automatic reparse,version rewrite or upstream request. No query
+parameters. POST same path accepts only `{expectedRequestId:string}` (1–1024
+chars,body<=8KiB),returns CaptureReparseResponse. Both no-store,existing loopback
+Host/Origin guard and unified ApiError apply. GET<=16KiB,POST<=1MiB UTF8.
+
+POST reads/validates both complete original files (<=2MiB encoded/decoded each)
+using existing reader/parser,never substitutes legacy previews; updates one
+versioned numeric/status summary,not original capture/transport/processing/
+identity/association/scan metrics. No new saved-capture event or charge. Fresh
+identity/ref/deletion rechecks follow all async IO and precede the synchronous
+capacity-admitted transaction/send. Same id repeated stays one row. Unknown/
+failed/incomplete protocol is not infrastructure failure. Current status only
+compares metadata/version,last parsedAt; it is not a fresh file integrity check.
+
+One active operation per DB,no queue; server shutdown owns accepted work. Web
+10s cancellation stops waiting,not guaranteed rollback; explicitly refresh
+status after uncertain result. No poll/automatic restart/reparse on stale version.
+
+Errors:400BAD_REQUEST invalid id/query/body,404PROXY_REQUEST_NOT_FOUND;
+409CAPTURE_ORIGINALS_DELETED for confirmed intent;
+409CAPTURE_REPARSE_CONFLICT for changed request identity/fingerprint;
+422CAPTURE_REPARSE_UNSUPPORTED with static details.reason for missing/incomplete/
+invalid refs or existing AnalysisSourceReason source/decode/integrity/size failure;
+503CAPTURE_REPARSE_BUSY for overlapping/closing operation;
+503CAPTURE_REPARSE_FAILED for other read/parse/commit failure;503CAPTURE_REPARSE_LIMIT
+for invalid/oversized metadata/response. No filesystem/vendor/body error text.
+
 ## Original capture access (fuse-agent-monitoring)
+
+GET `/api/proxy/capabilities` returns MonitorCapabilityReport, no-store, max64KiB,
+no query parameters (any query400 BAD_REQUEST), same local Host/Origin guard.
+No process/version/config/CA/body probe, file/DB read or write, upstream request,
+listener start or recovery. Static implementation levels have explicit tested
+platforms; generatedAt is current ISO UTC, installed versions remain unknown.
+The Web matrix loads once only after explicit expansion,5s owned timeout and
+manual retry/refresh, no polling/per-row reads/locale refetch. Its configure
+action selects a new blank process-recipe form only, without creating a profile
+or modifying saved/dirty profiles, starting a listener or launching an Agent.
+Existing start/stop/diagnostics remain the actual control path.
+
+### Functional linked execution and local export
+
+GET `/api/proxy/requests/:id/comparison?base=<id>` compares two explicit distinct
+positive safe integer capture IDs, no automatic pairing. Exactly one base and
+optional one `mode=metadata`; unknown/duplicate/malformed params or same IDs400
+BAD_REQUEST; absent capture404 PROXY_REQUEST_NOT_FOUND. Returns
+CaptureComparisonResponse, no-store, local Host/Origin guard. Full mode reads
+bounded analysis once per side; analysis failure leaves explicit unavailable
+summary and usable metadata. Metadata mode reads no body/analysis. After awaits,
+fresh synchronous snapshot of both original-deletion intents strips affected
+analysis, then serialization/send with no await. First32 error codes only,
+explicit projected count/truncation. No headers/raw/prompt/tool schema/large
+analysis content. Whole UTF8 response<=1MiB, excess503 CAPTURE_COMPARISON_LIMIT
+static unified envelope. No DB mutation/replay/new association or billing sum.
+Client loads only on explicit compare, one pair GET/10s abort, no polling/cache
+or per-row reads; changing pair/mode/invalidation aborts and hides prior result.
+Context Diff for that pair is a separate explicit existing local read, not an
+automatically duplicated normalizer or an experiment.
+
+GET `/api/sessions/:key/parents` returns NativeSessionParentPage for an existing
+scan session (unknown404 SESSION_NOT_FOUND), metadata only with no source IO.
+Query limit default20/max50, positive safe integer; cursor absent or lower-case
+64hex retained identity ID, exclusive ascending. Unknown/duplicate/malformed
+params400 BAD_REQUEST. Local Host/Origin guard applies. Scope/namespace/value
+and complete unique owner evidence determine resolved references; truncated,
+self, incomplete or multiowner claims never invent topology. At most20 matched
+owners/reference; whole JSON<=512KiB. Byte pressure shrinks source-reference
+page and advances by actual returned last identity, without altering fields or
+skipping refs; unprojectable single record503 EXECUTION_METADATA_LIMIT. No new
+table/index, recursive/global parent lookup, source reparse or relation mutation.
+Web entry only after explicit expansion,5s abort, explicit paging/refresh,
+invalidation hides stale conclusions rather than auto-refetching or N+1.
+
+GET `/api/sessions/:key/execution` returns LinkedExecutionPage for an existing
+scan session; unknown404 SESSION_NOT_FOUND. Queries: eventOffset default0,
+eventLimit default100/max200; captureCursor absent or positive numeric proxy ID,
+captureLimit default20/max50. All integers are safe/nonnegative (limits positive),
+malformed/duplicate/unknown params return400 BAD_REQUEST. Native events use slim
+columns only, ordered sequence; attempts use accepted direct/confirmed links,
+proxy id descending. Identities/matches are bounded to1000 retained entries
+and byte budgets from nfr.md; truncation sets identityCompleteness=false with
+reasons and cannot authorize an ambiguous match. No body/source-file IO, scan,
+new association mutation or billing aggregation. Local Host/Origin guard applies.
+Byte-budget reduced pages advance by the actual returned event count/last proxy
+cursor, not the requested limit; no skipped records. A single unprojectable
+metadata record returns503 EXECUTION_METADATA_LIMIT rather than an endless empty
+page or silently modified URL/title/identity.
+The frontend pages this metadata only, virtualizes events, and explicitly opens
+one native event or proxy on demand. Missing/candidate identities are not facts.
+The execution snapshot also returns sessionDurationSource, the retained session
+declaration only (unknown fallback, not per-event measured provenance), and each
+attempt's existing transport metadata or null. One cached bulk transport query;
+the scalar declaration and event count share the scan-owner query (at most8
+SELECTs/page), no body/header/raw query, source IO or per-attempt read.
+Network/native clocks are never subtracted
+or promoted to a same-call/speedup/billing conclusion. Whole1MiB limit unchanged.
+
+GET `/api/proxy/requests/:id/export` returns CaptureEvidenceExport as
+application/json, attachment `capture-<numeric-id>.json`, Cache-Control:no-store.
+Explicit local download; same Host/Origin checks,400 BAD_REQUEST for invalid id,
+404 PROXY_REQUEST_NOT_FOUND for absent capture. Only this action performs bounded
+original-backed analysis, no model/tool/network replay. First100 identities and
+first100 trace links are included with their paging metadata; no per-row fetch.
+After async analysis, acquire fresh synchronous request/capture/deletion/
+identity/link metadata and serialize/send without another await; confirmed
+deletion always removes analysis regardless of cleanup outcome. Retained headers
+and metadata may still export after deletion. A failed analysis yields metadata
+with analysisUnavailableReason=analysis_unavailable, not success. Maximum JSON
+UTF8 size4MiB; excess503 CAPTURE_EXPORT_LIMIT, static ApiError without silently
+clipping headers. No raw body/prompt previews, server paths, journal or CA keys.
+Optional query `mode=metadata` skips all analysis/body reads and returns
+analysis=null/reason=metadata_only (original_deleted still takes precedence).
+Unknown/duplicate params or mode values return400 BAD_REQUEST. The UI uses this
+mode whenever body availability is blocked/unknown and invalidates an older
+full-export operation immediately on that transition, preventing pre-intent
+submission races from downloading prior body projections. Metadata-only packages
+must not be accepted if a response unexpectedly contains nonnull analysis.
+The Web action sends one explicit request, aborts after10s, rejects late/deleted/
+unmounted results and does not automatically retry or upload anything. An older
+download cannot be retroactively erased by deleting current evidence.
+
+Capture transport detail optionally includes CaptureNetworkTiming. It is not
+part of metadata lists/SSE. Header/first-byte/first-content/end offsets use one
+monotonic request clock; missing legacy timing remains unknown. SSE content is
+dispatch arrival, JSON content is document completion (explicit basis), encoded
+streams currently expose unsupported_encoding rather than guessed first-content.
+Observed raw Server-Timing is shown separately without unit/model-time claims.
 
 ### Capture metadata capacity diagnostic
 
@@ -210,6 +396,14 @@ Example:
 | `CAPTURE_DELETE_CONFLICT` | 409 | exact identity/ref/directory/shared-owner conflict; static reason only |
 | `CAPTURE_DELETE_LIMIT` | 503 | retained deletion-job capacity reached, no new intent |
 | `CAPTURE_DELETE_FAILED` | 503 | deletion/DB state could not finish; inspect typed job before retry |
+| `CAPTURE_EXPORT_LIMIT` | 503 | local JSON evidence package exceeds its explicit size bound |
+| `CAPTURE_COMPARISON_LIMIT` | 503 | selected capture comparison exceeds its bounded projection |
+| `CAPTURE_REPARSE_CONFLICT` | 409 | exact capture identity or source fingerprint changed |
+| `CAPTURE_REPARSE_UNSUPPORTED` | 422 | retained originals cannot be reparsed; static source reason only |
+| `CAPTURE_REPARSE_BUSY` | 503 | one same-DB reparse or shutdown owns the operation |
+| `CAPTURE_REPARSE_FAILED` | 503 | local reparse/read/commit failed; no upstream replay |
+| `CAPTURE_REPARSE_LIMIT` | 503 | invalid or oversized bounded reparse projection |
+| `EXECUTION_METADATA_LIMIT` | 503 | one execution metadata record cannot fit the bounded page |
 | `SERVER_SHUTTING_DOWN` | 503 | server is draining; new work rejected |
 | `SSE_LIMIT_REACHED` | 503 | process-wide live subscriber limit reached; retry later |
 | `MONITOR_PROFILE_NOT_FOUND` | 404 | connection profile missing |
@@ -217,6 +411,9 @@ Example:
 | `MONITOR_PROFILE_BUSY` | 409 | profile writer lock is owned; retry, never delete another writer's lock |
 | `MONITOR_PROFILE_INVALID` | 400/500 | invalid request settings / unreadable or corrupt stored profile document |
 | `MONITOR_NOT_READY` | 503 | listener/CA not ready; no Agent was started |
+| `MONITOR_SELF_TEST_NOT_READY` | 409 | matching owned listener/run is not ready; no implicit start/switch |
+| `MONITOR_SELF_TEST_BUSY` | 409 | one explicit local self-test is already active; no queue |
+| `MONITOR_SELF_TEST_FAILED` | 503 | local self-test network/persistence/deadline failed; retained synthetic evidence is not rolled back |
 | `CONTEXT_DIFF_UNAVAILABLE` | 409 | target is valid but no trustworthy automatic predecessor exists |
 | `CONTEXT_DIFF_UNSUPPORTED` | 422 | target/base source cannot be normalized safely within phase-1 rules |
 | `FRIDA_TARGET_NOT_FOUND` | 409 | no Trae process or ai_agent.dll not loaded |
@@ -543,6 +740,42 @@ Mission 指挥中心聚合：**一次请求返回全部 A/B/C 三区 widget**（
 
 ### 3.1 `GET /api/events` (SSE)
 
+Metadata events carry `id: <opaque epoch:sequence>` and the connected control
+uses SseConnected. A reconnect's Last-Event-ID replays retained metadata in order
+after connected(resume=replayed). The connected frame advertises the final
+current cursor but sends its id only AFTER replay completes via an id-only
+frame, so interrupted replay cannot acknowledge undelivered events. Initial
+connections are fresh; unknown epoch/future/expired/overflow cursor yields
+resume=reset with the current cursor. No persisted rows or model calls are
+replayed. Default /api/events contains metadata only, never proxy_stream_chunk.
+
+Optional query `requestId` (1..1024 non-control characters) explicitly selects
+one ephemeral live preview: that connection receives only connected and matching
+proxy_stream_chunk/proxy_stream_ended and proxy_sources_changed filtered to
+that requestId. Source hints contain only requestIds, coalesce for1s (max64),
+are not written-prefix/completion guarantees, and are excluded from replay and
+the default metadata feed. Selection/reconnect/end recovers via one bounded
+source inspection, not body history. It has no replay and does not change the
+global metadata cursor. The browser closes it on deselection/unmount/its own
+ordered end. An end hint on the separate metadata connection allows up to5s
+for selected-connection tail frames, then closes with a gap warning; it must
+not discard already-in-flight final chunks merely because metadata arrived
+first. Late
+subscription/reconnect may miss earlier text, which MUST be disclosed. Only
+identity-encoded SSE is previewed; encoded streams remain inspectable through
+retained originals and final analysis. Selected streaming receives the same
+loopback Host/Origin guard as capture bodies. Reject malformed/multiple query
+parameters or invalid/over128-character Last-Event-ID with400 BAD_REQUEST.
+
+The id-less connected control inherits a browser's previous lastEventId; it
+MUST bypass metadata event-id deduplication. On metadata reset, invalidate detail
+caches, drop stale proxy live patches and
+refresh only a bounded first metadata page/current visible metadata, never
+fetch every session body. Pre-reset asynchronous index/patch/detail completions
+cannot restore old state or caches. Show a reset notice. Normal replayed notifications use
+the existing key-patch path; duplicate proxy IDs replace rather than append.
+Unrecoverable live fragments are not represented as durable history.
+
 `text/event-stream`. Sends a `connected` event immediately on connection.
 
 Event types and payloads map exactly to `BusEvents` in
@@ -607,6 +840,18 @@ as degraded capture activity, and never substitute partial parsed usage as
 complete. This outcome is not included in metadata lists or chunk SSE.
 
 ProxyCaptureBodies may separately include transport: CaptureTransportResult.
+Its optional websocket identifies an AWSP1 connection capture (method WS).
+Existing request/response body downloads return the exact binary container;
+SHA/bytes describe that container. Existing selected detail text contains
+bounded worker-rendered message transcripts. A connection may contain multiple
+Responses turns: counters are messages, duration is connection lifetime, usage
+and model-call timings remain unknown. No new endpoint or body-bearing list.
+Open connections announce selected live preview; final persistence occurs on
+close/Stop. Live text has direction/sequence labels,100ms coalescing and the
+existing display bounds; pre-selection/reconnect gaps are not replayed.
+HTTP-only analysis returns unknown/incomplete websocket_connection_not_model_call
+without reading archive files; HTTP reparse reports originals_invalid. Retained
+metadata export remains valid with this limitation and separate original files.
 Its normally ended HTTP4xx/5xx, network error, observed timeout, client cancel
 and explicit interruption remain distinct from processing and file outcomes.
 statusCode is upstream-only; missing legacy transport is unknown. Client UI
@@ -639,6 +884,17 @@ All routes below use the existing local-only proxy Host/Origin guard and unified
 | `/api/proxy/profiles/:id/plan` | GET | MonitorConnectionPlan; no proxy/Agent start; public CA may be initialized using the existing CA path |
 | `/api/proxy/profiles/:id/diagnostics` | GET | MonitorConnectionDiagnostics read-only timestamped snapshot, no CA generation/listener/Agent start or upstream test request; same local-only guard. CA faults are200 diagnostic findings, not a falsely successful connection. Missing/corrupt profiles still use404/500 ApiError. |
 | `/api/proxy/profiles/:id/start` | POST | `{ expectedRevision: number }` →200 MonitorConnectionPlan after actual listener readiness; no Agent start. Existing same-port running proxy can be reused, other-port/closing proxy returns409 PROXY_ALREADY_RUNNING. |
+| `/api/proxy/profiles/:id/self-test` | POST | Exactly `{ expectedRevision: number }`, no query parameters →200 MonitorCaptureSelfTest, no-store. Explicitly creates one retained synthetic capture through the matching already-running owned proxy and a temporary fixed loopback origin. Does not start/stop the proxy, call models/tools or test Agent/TLS trust. |
+
+Self-test admits one active job/server, no queue. Invalid body/query400
+BAD_REQUEST; revision404/409 uses existing profile errors; wrong/stopped/run-changed
+listener409 MONITOR_SELF_TEST_NOT_READY; overlap409 MONITOR_SELF_TEST_BUSY;
+network/persistence deadline or infrastructure fault503 MONITOR_SELF_TEST_FAILED;
+shutdown503 SERVER_SHUTTING_DOWN. All use ApiError. Bounded completed evidence
+checks can return200 with passed=false and per-stage booleans, never false green.
+Abort/disconnect is not rollback: a synthetic capture may still finish saving.
+No external URL/headers/credentials/process parameters are accepted. The result
+is not included in read-only diagnostics and does not prove actual Agent traffic.
 
 Plan command is shell-quoted for POSIX and PowerShell and calls `agent-observe launch --server <loopback-control-url> --profile <uuid> --revision <n> -- <user-args>`. Copied commands pin the reviewed revision; later edits require regeneration, never silently launch a changed executable/project. The CLI obtains/starts the same listener through these APIs, checks CA digest, uses process-local environment/trust and inherits terminal stdio. It does not automatically stop a shared listener when its child exits. Proxy stop can disrupt still-connected Agents and must say so. Returned profile is the revision explicitly selected for launch; no implicit native session or verified Agent identity is created. A readiness wait is bounded at10s and never claims success solely from starting-state acceptance.
 

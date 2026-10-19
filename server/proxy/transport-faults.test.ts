@@ -13,8 +13,32 @@ import { CaptureResources } from './capture-resources.js';
 import { readCaptureBodies } from './capture-storage.js';
 import { createMitmProxy } from './mitm-proxy.js';
 import { analyzeProtocol } from './protocol-analysis.js';
+import type { CaptureNetworkTiming, ProxyCaptureBodies } from '../../src/core/trace-types.js';
 
 const body = '{"model":"synthetic","system":"原文🙂","messages":[]}';
+function assertTiming(capture: ProxyCaptureBodies, contentTimingStatus: CaptureNetworkTiming['contentTimingStatus'], headersObserved: boolean, bodyObserved: boolean): void {
+  const timing = capture.transport?.timing;
+  expect(timing).toBeDefined();
+  expect(Object.keys(timing!).sort()).toEqual(['version', 'clock', 'responseHeadersMs', 'firstBodyByteMs', 'firstContentMs', 'firstContentKind', 'firstContentBasis', 'completedMs', 'contentTimingStatus', 'serverTiming', 'serverTimingTruncated'].sort());
+  expect(timing).toEqual({ version: 1, clock: 'proxy_monotonic', responseHeadersMs: headersObserved ? timing!.responseHeadersMs : null,
+    firstBodyByteMs: bodyObserved ? timing!.firstBodyByteMs : null, firstContentMs: null, firstContentKind: null, firstContentBasis: null,
+    completedMs: timing!.completedMs, contentTimingStatus, serverTiming: null, serverTimingTruncated: false });
+  for (const key of ['responseHeadersMs', 'firstBodyByteMs', 'completedMs'] as const) {
+    const value = timing![key];
+    if (key === 'completedMs' || key === 'responseHeadersMs' && headersObserved || key === 'firstBodyByteMs' && bodyObserved) {
+      expect(value).not.toBeNull(); expect(Number.isSafeInteger(value)).toBe(true); expect(value!).toBeGreaterThanOrEqual(0);
+    }
+  }
+  if (headersObserved) expect(timing!.responseHeadersMs!).toBeLessThanOrEqual(timing!.completedMs!);
+  if (bodyObserved) {
+    expect(timing!.firstBodyByteMs!).toBeGreaterThanOrEqual(timing!.responseHeadersMs!);
+    expect(timing!.firstBodyByteMs!).toBeLessThanOrEqual(timing!.completedMs!);
+  }
+}
+function outcome(capture: ProxyCaptureBodies) {
+  const { timing: _timing, ...network } = capture.transport!;
+  return network;
+}
 async function waitFor(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 3000;
   while (!predicate()) { if (Date.now() > deadline) throw new Error('Transport fixture condition timed out'); await yieldImmediate(); }
@@ -72,7 +96,8 @@ describe('real transport terminal fidelity and single-record finalization', () =
     try {
       const reply = await send(f).reply; expect(reply).toEqual({ status, bytes: Buffer.from(errorBody), aborted: false });
       const capture = await f.one();
-      expect(capture.transport).toEqual({ version: 1, state: 'http_error', error: 'HTTP_ERROR', requestEnded: true, responseEnded: true, statusCode: status });
+      expect(outcome(capture)).toEqual({ version: 1, state: 'http_error', error: 'HTTP_ERROR', requestEnded: true, responseEnded: true, statusCode: status });
+      assertTiming(capture, 'no_content', true, true);
       expect(capture.processing?.status).toBe('ok'); expect(capture.response?.status).toBe('complete');
       expect(capture.responseHeaders['set-cookie']).toEqual(['one=original', 'two=original']);
       expect(await f.original('request')).toEqual(Buffer.from(body)); expect(await f.original('response')).toEqual(Buffer.from(errorBody));
@@ -87,6 +112,7 @@ describe('real transport terminal fidelity and single-record finalization', () =
       const reply = await send(f).reply; expect(reply.status).toBe(504);
       const capture = await f.one();
       expect(capture.transport).toMatchObject({ state: 'network_error', error: 'ECONNREFUSED', responseEnded: false, statusCode: null });
+      assertTiming(capture, 'not_collected', false, false);
       expect(capture.response).toMatchObject({ bytes: 0, status: 'interrupted', error: 'UPSTREAM_ERROR' });
       expect(await f.original('response')).toEqual(Buffer.alloc(0)); expect(f.calls()).toBe(0);
     } finally { await f.dispose(); }
@@ -98,7 +124,8 @@ describe('real transport terminal fidelity and single-record finalization', () =
       const flight = send(f, () => upstream!.destroy()); const reply = await flight.reply;
       expect(reply.bytes).toEqual(Buffer.from(prefix)); expect(reply.aborted).toBe(true);
       const capture = await f.one();
-      expect(capture.transport).toEqual({ version: 1, state: 'network_error', error: 'UPSTREAM_ABORTED', requestEnded: true, responseEnded: false, statusCode: 200 });
+      expect(outcome(capture)).toEqual({ version: 1, state: 'network_error', error: 'UPSTREAM_ABORTED', requestEnded: true, responseEnded: false, statusCode: 200 });
+      assertTiming(capture, 'not_collected', true, true);
       expect(capture.response).toMatchObject({ status: 'interrupted', error: 'UPSTREAM_ERROR' });
       expect(await f.original('response')).toEqual(Buffer.from(prefix));
       const analysis = await analyzeProtocol({ format: 'anthropic_messages', requestBody: body, responseBody: prefix, streaming: true, transport: capture.transport });
@@ -125,6 +152,7 @@ describe('real transport terminal fidelity and single-record finalization', () =
       else expect(reply.status).toBe(504);
       const capture = await f.one();
       expect(capture.transport).toMatchObject({ state: 'timeout', error: 'ETIMEDOUT', requestEnded: true, responseEnded: false, statusCode: afterHeaders ? 200 : null });
+      assertTiming(capture, 'not_collected', afterHeaders, afterHeaders);
       expect(await f.original('response')).toEqual(Buffer.from(afterHeaders ? prefix : '')); expect(f.calls()).toBe(1);
     } finally { await f.dispose(); }
   });
@@ -135,6 +163,7 @@ describe('real transport terminal fidelity and single-record finalization', () =
       const flight = send(f, () => flight.client.destroy());
       await flight.reply; const capture = await f.one();
       expect(capture.transport).toMatchObject({ state: 'cancelled', error: 'CLIENT_DISCONNECTED', requestEnded: true, responseEnded: false, statusCode: 200 });
+      assertTiming(capture, 'not_collected', true, true);
       expect(capture.response?.status).toBe('interrupted'); expect(await f.original('response')).toEqual(Buffer.from(prefix));
       await f.proxy.shutdown(); expect(readCaptureBodies(f.db, f.ids[0]!).transport).toEqual(capture.transport);
     } finally { await f.dispose(); }
@@ -148,6 +177,7 @@ describe('real transport terminal fidelity and single-record finalization', () =
       await waitFor(() => received.length === 10); client.destroy();
       const capture = await f.one();
       expect(capture.transport).toMatchObject({ state: 'cancelled', error: 'CLIENT_DISCONNECTED', requestEnded: false, responseEnded: false, statusCode: null });
+      assertTiming(capture, 'not_collected', false, false);
       expect(capture.request).toMatchObject({ bytes: 10, status: 'interrupted', error: 'CLIENT_DISCONNECTED' });
       expect(await f.original('request')).toEqual(Buffer.from(body.slice(0, 10))); expect(await f.original('response')).toEqual(Buffer.alloc(0));
     } finally { client.destroy(); await f.dispose(); }
@@ -158,6 +188,7 @@ describe('real transport terminal fidelity and single-record finalization', () =
     try {
       expect((await send(f).reply).aborted).toBe(false);
       const capture = await f.one(); expect(capture.transport?.state).toBe('completed'); expect(capture.response?.status).toBe('complete');
+      assertTiming(capture, 'no_content', true, true);
       const analysis = await analyzeProtocol({ format: 'anthropic_messages', requestBody: body, responseBody: response, streaming: true, transport: capture.transport });
       expect(analysis.state).toBe('incomplete'); expect(analysis.usage.inputTokens).toBe(3); expect(analysis.usage.outputTokens).toBeNull();
     } finally { await f.dispose(); }
@@ -176,7 +207,8 @@ describe('real transport terminal fidelity and single-record finalization', () =
       expect(f.ids).toHaveLength(0); expect(f.resources.snapshot().previewCollectors).toBe(1);
       client.end(body.slice(10));
       const capture = await f.one();
-      expect(capture.transport).toEqual({ version: 1, state: 'completed', error: null, requestEnded: true, responseEnded: true, statusCode: 200 });
+      expect(outcome(capture)).toEqual({ version: 1, state: 'completed', error: null, requestEnded: true, responseEnded: true, statusCode: 200 });
+      assertTiming(capture, 'no_content', true, true);
       expect(await f.original('request')).toEqual(Buffer.from(body)); expect(await f.original('response')).toEqual(Buffer.from(response));
     } finally { client.destroy(); await f.dispose(); }
   });

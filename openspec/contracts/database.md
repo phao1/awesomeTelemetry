@@ -1,8 +1,85 @@
 # Contract: Database
 
+## v19 TraceLog metadata only
+
+Current SCHEMA_VERSION=19; additive tables/index below, no native/proxy changes,
+reparse/backfill/source IO on startup. Preserve historical v18 version-write gate
+for failed migration retries. JSON originals/unknown fields are body files only.
+Manifest <=4096 bytes; turn metadata <=2048 bytes; one job <=2000 turns/16files.
+Use cached statements, one transaction for all new manifests/turns after file
+copy; duplicate SHA is read, never delete/reinsert or overwritten. Existing
+capture DB/WAL admission applies; max1024 imported sessions, explicit refusal.
+Internal session_offset/session_length locate <=64KiB original session object.
+
+```sql
+CREATE TABLE IF NOT EXISTS trace_log_imports (
+  id TEXT PRIMARY KEY,
+  imported_at TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  session_offset INTEGER NOT NULL,
+  session_length INTEGER NOT NULL,
+  session_sha256 TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS trace_log_turns (
+  import_id TEXT NOT NULL REFERENCES trace_log_imports(id) ON DELETE CASCADE,
+  sequence INTEGER NOT NULL,
+  metadata_json TEXT NOT NULL,
+  byte_offset INTEGER NOT NULL,
+  byte_length INTEGER NOT NULL,
+  body_sha256 TEXT NOT NULL,
+  PRIMARY KEY(import_id,sequence)
+);
+CREATE INDEX IF NOT EXISTS idx_trace_log_imported ON trace_log_imports(imported_at DESC,id);
+```
+
+§5.2 additional column constants:
+`TRACE_LOG_IMPORT_COLS='id, imported_at, metadata_json, session_offset, session_length, session_sha256'`;
+`TRACE_LOG_TURN_COLS='import_id, sequence, metadata_json, byte_offset, byte_length, body_sha256'`.
+Lists explicitly select metadata_json only, no body-file IO and no per-row SQL.
+Turn detail reads indexed ranges and verifies raw session and turn SHA; unavailable/corrupt
+originals fail explicitly, not fallback to another import/native observation.
+
+## v18 explicit capture reparse summary
+
+Historical v18 increment (current version19 above). Additive v17→v18,one bounded metadata row per existing
+capture; no backfill/reparse,source cleanup,scan reset,original mutation or index
+rebuild. Fresh creation/idempotent current init uses the same table; a compatible
+empty new table may remain on a failed version write,retry must preserve sources.
+The historical v17 atomic index cutover below remains required for older DBs.
+
+```sql
+CREATE TABLE IF NOT EXISTS proxy_capture_analysis (
+  proxy_id INTEGER PRIMARY KEY REFERENCES proxy_requests(id) ON DELETE CASCADE,
+  parser_version INTEGER NOT NULL CHECK (parser_version > 0),
+  metric_version INTEGER NOT NULL CHECK (metric_version > 0),
+  source_fingerprint TEXT NOT NULL CHECK (length(source_fingerprint)=64 AND source_fingerprint NOT GLOB '*[^0-9a-f]*'),
+  parsed_at TEXT NOT NULL,
+  request_format TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('completed','incomplete','failed','unknown')),
+  usage_json TEXT NOT NULL CHECK (json_valid(usage_json)),
+  completeness_json TEXT NOT NULL CHECK (json_valid(completeness_json))
+);
+```
+
+Column constant `PROXY_CAPTURE_ANALYSIS_COLS = 'proxy_id, parser_version, metric_version, source_fingerprint, parsed_at, request_format, state, usage_json, completeness_json'`.
+usage_json/completeness_json adopt only the metadata shapes/limits in data-model;
+never persist analysis text/snapshots/headers or unknown extra fields. Cached
+explicit-column SELECT by primary key,INSERT ON CONFLICT(proxy_id) DO UPDATE,
+bounded summary<=8192B. Caller owns synchronous transaction with fresh identity/
+fingerprint/deletion checks and existing capacity-admitted finite commit retry.
+No new queue/capture/billing row. Confirmed body deletion's existing intent/body
+clear transaction DELETEs this one summary too; metadata expiry FK-cascades only
+summary,never source files. No startup reparse or body file read from status.
+
+Functional selected capture comparison/native parent-reference projections use
+the existing capture/body/processing/transport/deletion and identity/source/
+session tables only. No schema version, table or index changes. Parent refs
+are source-indexed; matching owner sessions use exact native session/scope NULL
+index keys. No global parent_session index scan, source reparse or mutation.
+
 ## v17 session-only native lookup index
 
-Current SCHEMA_VERSION=17. The v16→v17 cutover atomically replaces only
+Historical v17. The v16→v17 cutover atomically replaces only
 idx_trace_identities_native with the definition below and writes schema_version.
 Rollback retains the previous index/version on failure. Keep every identity row,
 value/scope/locator, source manifest, association/decision, scan state, capture
@@ -50,7 +127,7 @@ SELECT total_changes(), PRAGMA schema_version and PRAGMA data_version around eac
 including the post-checkpoint read. The former detects writes on this connection
 (rollback is conservatively dirty); schema_version also detects same-connection
 DDL/index creation that does not increment total_changes. This PRAGMA is SQLite's
-schema cookie, NOT the application's _meta.schema_version (currently17).
+schema cookie, NOT the application's _meta.schema_version (currently19).
 data_version detects observed commits on
 other connections. Stamp reads temporarily use busy_timeout=0 and restore the
 exact prior value before invoking user code; failures use the static unavailable
@@ -201,7 +278,19 @@ CREATE TABLE IF NOT EXISTS proxy_capture_transport (
 ```
 
 Column constant: `PROXY_CAPTURE_TRANSPORT_COLS = 'proxy_id, result_json'`.
-result_json encodes CaptureTransportResult, max512 bytes, static/native error
+result_json encodes CaptureTransportResult, max4096 bytes including optional
+CaptureNetworkTiming or CaptureWebSocketConnection (<=512B, independently
+validated). No new table,
+schema bump or backfill. WS original refs refer to AWSP1 application-message
+containers, not HTTP bodies or compressed wire bytes. WS previews remain
+bounded existing body columns; metadata lists/SSE never contain them. Optional
+Error alone remains a static/native code of at most128
+characters. No new DDL/schema bump/backfill or rewrite is needed. Timing is
+detail-only and current captures write it atomically with existing outcomes.
+Legacy missing timing stays unknown. Original headers remain independently
+retained without truncation; the timing header projection is bounded as in
+data-model.md. The pre-timing outcome alone retains its existing512B envelope.
+Use static/native error
 codes only. Missing legacy outcome is absent, not completed. Current MITM
 writes it atomically with metadata/processing/body index even without a body
 store. Detail reads are fixed-count; no transport-body join on lists/SSE.
@@ -318,7 +407,7 @@ Column constant: `PROXY_CAPTURE_BODY_COLS = 'proxy_id, request_ref, response_ref
 
 
 > **Authoritative source.** This is a fresh build; the schema starts at **v1**
-> and is currently at **v17** (fusion amendments at the top of this contract).
+> and is currently at **v18** (fusion amendments at the top of this contract).
 > Historical **v10** (add-agent-team-observability) added the additive
 > team table family — `team_runs`, `team_agents`, `team_agent_edges`,
 > `team_tasks`, `team_task_dependencies`, `team_assignments`, `team_messages`,
@@ -639,6 +728,10 @@ CREATE TABLE IF NOT EXISTS metrics (
 >   可信度（design.md §1 P0-C）。
 > - `sessions.duration_source` ∈ `measured | derived | unknown` — 逐事件
 >   durationMs 的来源（design.md §1 P0-A）。
+>   This is a session-level adapter declaration, not retained per-event proof:
+>   mixed events can include missing/derived values. Linked execution selects
+>   this single scalar and batch-reads existing proxy_capture_transport explicit
+>   columns via json_each(id page); no schema/index/body duplication is needed.
 > - `metrics.ttft_ms` / `metrics.e2e_ms` — 持久化的速度指标，避免跨会话聚合
 >   触发 N+1（design.md §4 B6；G11.11：改算法必须 bump
 >   `METRICS_CALC_VERSION`）。

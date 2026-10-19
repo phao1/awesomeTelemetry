@@ -20,7 +20,7 @@ import {
 } from './helpers.js';
 import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
-import { collectClaudeIdentities } from './native-identities.js';
+import { collectClaudeIdentities, collectNativeEventBindings, trackNativeEvent } from './native-identities.js';
 
 export interface ClaudeContentPart {
   type: string;
@@ -122,6 +122,8 @@ export function normalizeClaudeSample(
 ): TraceRecord {
   const rows = sample.events;
   const events: EventWithRaw[] = [];
+  let sourceRow: ClaudeRawRow | null = null;
+  const pushEvent = (event: EventWithRaw): void => { events.push(sourceRow === null ? event : trackNativeEvent(event, sourceRow)); };
   let messageCount = 0;
   const sessionId =
     rows.find((r) => r.sessionId !== undefined && r.sessionId !== '')?.sessionId ??
@@ -151,6 +153,7 @@ export function normalizeClaudeSample(
 
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex]!;
+    sourceRow = row;
     const timestamp = row.timestamp ?? '1970-01-01T00:00:00.000Z';
     const message = row.message;
     const parts = partsOf(message ?? {});
@@ -169,10 +172,11 @@ export function normalizeClaudeSample(
             // tool_result 经 toolu_… id 解析后继承 assistant 消息的 message.id）。
             target.outputSummary = text.length > 0 ? text : null;
             target.hasOutput = true;
+            trackNativeEvent(target, row, block);
           } else {
             // 无匹配 tool_use → 只带结果侧的 tool 事件，status 反映 is_error。
             // 绝不丢弃，也绝不转回 user message。
-            events.push({
+            pushEvent(trackNativeEvent({
               id: block.tool_use_id ?? `tool-result-${events.length}`,
               sessionId,
               sequence: 0,
@@ -193,7 +197,7 @@ export function normalizeClaudeSample(
               inputSummary: null,
               outputSummary: text.length > 0 ? text : null,
               raw: JSON.stringify(block),
-            } as EventWithRaw);
+            } as EventWithRaw, block));
           }
         }
         continue;
@@ -201,7 +205,7 @@ export function normalizeClaudeSample(
 
       messageCount += 1;
       const text = parts.map((p) => p.text ?? '').join('\n');
-      events.push({
+      pushEvent({
         id: message?.id ?? `user-${events.length}`,
         sessionId,
         sequence: 0,
@@ -260,13 +264,13 @@ export function normalizeClaudeSample(
             outputSummary: null,
             raw: JSON.stringify(part),
           } as EventWithRaw;
-          events.push(event);
+          pushEvent(trackNativeEvent(event, part));
           if (part.id !== undefined) {
             toolEventsById.set(part.id, event);
           }
           continue;
         }
-        events.push({
+        pushEvent({
           id: `${message?.id ?? 'assistant'}-${partIndex}`,
           sessionId,
           sequence: 0,
@@ -297,7 +301,7 @@ export function normalizeClaudeSample(
     // system 行
     if (row.type === 'system' && row.isMeta !== true) {
       const text = parts.map((p) => p.text ?? '').join('\n');
-      events.push({
+      pushEvent({
         id: message?.id ?? `system-${events.length}`,
         sessionId,
         sequence: 0,
@@ -360,7 +364,7 @@ export function normalizeClaudeSample(
   return {
     session,
     events: classified,
-    nativeIdentities: collectClaudeIdentities(rows),
+    nativeIdentities: collectClaudeIdentities(rows, 'claude', collectNativeEventBindings(classified)),
     tokenSemantics: semantics,
     // A5：按源自身的消息标识（assistant message.id）分组 → message_identity。
     turnKeySource: 'message_identity',

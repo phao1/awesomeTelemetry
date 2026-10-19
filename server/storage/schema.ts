@@ -42,7 +42,7 @@ import { cachedStmt } from './stmt-cache.js';
  * team 表族内部 FK 级联；session 删除只清 junction 链接不清 team，team 删除只删
  * team-owned 行绝不删 session。
  */
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 19;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -182,9 +182,39 @@ CREATE TABLE IF NOT EXISTS proxy_capture_processing (
   result_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS trace_log_imports (
+  id TEXT PRIMARY KEY,
+  imported_at TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  session_offset INTEGER NOT NULL,
+  session_length INTEGER NOT NULL,
+  session_sha256 TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS trace_log_turns (
+  import_id TEXT NOT NULL REFERENCES trace_log_imports(id) ON DELETE CASCADE,
+  sequence INTEGER NOT NULL,
+  metadata_json TEXT NOT NULL,
+  byte_offset INTEGER NOT NULL,
+  byte_length INTEGER NOT NULL,
+  body_sha256 TEXT NOT NULL,
+  PRIMARY KEY(import_id,sequence)
+);
+
 CREATE TABLE IF NOT EXISTS proxy_capture_transport (
   proxy_id INTEGER PRIMARY KEY REFERENCES proxy_requests(id) ON DELETE CASCADE,
   result_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS proxy_capture_analysis (
+  proxy_id INTEGER PRIMARY KEY REFERENCES proxy_requests(id) ON DELETE CASCADE,
+  parser_version INTEGER NOT NULL CHECK (parser_version > 0),
+  metric_version INTEGER NOT NULL CHECK (metric_version > 0),
+  source_fingerprint TEXT NOT NULL CHECK (length(source_fingerprint)=64 AND source_fingerprint NOT GLOB '*[^0-9a-f]*'),
+  parsed_at TEXT NOT NULL,
+  request_format TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('completed','incomplete','failed','unknown')),
+  usage_json TEXT NOT NULL CHECK (json_valid(usage_json)),
+  completeness_json TEXT NOT NULL CHECK (json_valid(completeness_json))
 );
 
 CREATE TABLE IF NOT EXISTS proxy_capture_tombstones (
@@ -531,6 +561,7 @@ CREATE TABLE IF NOT EXISTS team_run_sessions (
 // contracts/database.md §4 索引（全集），逐字采用。
 // 注意：不建单列 idx_events_session_id / idx_sessions_data_source，复合索引已覆盖。
 export const INDEX_SQL = `
+CREATE INDEX IF NOT EXISTS idx_trace_log_imported ON trace_log_imports(imported_at DESC,id);
 CREATE INDEX IF NOT EXISTS idx_events_session_seq    ON events(session_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_events_session_phase  ON events(session_id, phase);
 CREATE INDEX IF NOT EXISTS idx_events_kind           ON events(kind);
@@ -1117,9 +1148,13 @@ export function migrateSchema(db: Database, fromVersion: number): void {
     db.transaction(() => {
       db.exec('DROP INDEX IF EXISTS idx_trace_identities_native');
       db.exec("CREATE INDEX idx_trace_identities_native ON trace_identities(namespace, kind, value, scope, source_id) WHERE kind='session' AND scope IS NULL");
-      cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
+      // Preserve the historical v17 index+version transaction and its rollback
+      // gate before applying later additive schema versions.
+      cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('17');
     })();
-  } else cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
+  }
+  if (fromVersion < 18) cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('18');
+  cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
 }
 
 export function initSchema(db: Database): void {

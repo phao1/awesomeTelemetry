@@ -1,7 +1,8 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { CaptureReparseSnapshot, CaptureReparseStatus, CaptureReparseResponse, ProxyNativeUsage } from './trace-types';
 
 import { EMPTY_TOKEN_USAGE, PROVIDER_KEYS, TEAM_TOPOLOGY_KINDS, TRACE_KINDS, TRACE_PHASES } from './trace-types';
-import type { CaptureMetadataCapacity, MonitorConnectionDiagnostics, MonitorDiagnosticCode, OriginalDeletionJob } from './trace-types';
+import type { MonitorCapabilityReport, MonitorAgent, MonitorTransportCapability, CaptureComparisonAnalysis, CaptureComparisonResponse, CaptureComparisonSide, NativeSessionParentPage, ProxyCaptureBodies, ProxyProtocolAnalysis, TraceSourceIdentity, CaptureEvidenceExport, CaptureNetworkTiming, CaptureTransportResult, LinkedExecutionIdentityMatch, LinkedExecutionPage, CaptureMetadataCapacity, MonitorConnectionDiagnostics, MonitorDiagnosticCode, OriginalDeletionJob } from './trace-types';
 import type {
   ComparisonMatch,
   CompletenessLevel,
@@ -14,6 +15,7 @@ import type {
   ContextIndicator,
   ContextPairingConfidence,
   ContextRequestRef,
+  DurationSource,
   EvidenceConfidence,
   EvidenceDimension,
   MessageRole,
@@ -63,6 +65,68 @@ it('keeps original deletion file-job states explicit and projections metadata-on
   expectTypeOf<OriginalDeletionJob['state']>().toEqualTypeOf<'pending' | 'failed' | 'complete'>();
   expectTypeOf<OriginalDeletionJob['completedAt']>().toEqualTypeOf<string | null>();
   expectTypeOf<keyof OriginalDeletionJob>().toEqualTypeOf<'id' | 'proxyId' | 'requestId' | 'state' | 'error' | 'createdAt' | 'updatedAt' | 'completedAt'>();
+});
+
+it('separates implementation capabilities from installed versions, process filtering and Agent certification', () => {
+  expectTypeOf<keyof MonitorCapabilityReport>().toEqualTypeOf<'manifestVersion' | 'generatedAt' | 'platform' | 'scope' | 'listener' | 'agents' | 'transports'>();
+  expectTypeOf<MonitorCapabilityReport['manifestVersion']>().toEqualTypeOf<1>();
+  expectTypeOf<MonitorCapabilityReport['agents'][number]['installedVersion']>().toEqualTypeOf<null>();
+  expectTypeOf<MonitorCapabilityReport['agents'][number]['runtimeVerification']>().toEqualTypeOf<'unverified'>();
+  expectTypeOf<MonitorCapabilityReport['agents'][number]['processRecipe']>().toEqualTypeOf<MonitorAgent | null>();
+  expectTypeOf<MonitorCapabilityReport['listener']>().toEqualTypeOf<'shared_not_process_filtered'>();
+  expectTypeOf<MonitorCapabilityReport['transports'][number]['id']>().toEqualTypeOf<MonitorTransportCapability>();
+  expectTypeOf<MonitorCapabilityReport['transports'][number]['level']>().toEqualTypeOf<'controlled_test' | 'unsupported' | 'unverified' | 'dev_only' | 'experimental'>();
+});
+
+it('retains a nullable native tool-result error flag separately from content and protocol state', () => {
+  expectTypeOf<ProxyProtocolAnalysis['items'][number]['toolResultIsError']>().toEqualTypeOf<boolean | null>();
+});
+
+it('separates capture reparse versions and metadata from body-bearing analysis', () => {
+  expectTypeOf<keyof CaptureReparseSnapshot>().toEqualTypeOf<'parserVersion' | 'metricVersion' | 'sourceFingerprint' | 'parsedAt' | 'requestFormat' | 'state' | 'usage' | 'completeness'>();
+  expectTypeOf<CaptureReparseSnapshot['usage']>().toEqualTypeOf<Omit<ProxyNativeUsage, 'snapshots'>>();
+  expectTypeOf<CaptureReparseStatus['state']>().toEqualTypeOf<'not_parsed' | 'current' | 'stale' | 'unavailable'>();
+  expectTypeOf<keyof CaptureReparseResponse>().toEqualTypeOf<'status' | 'analysis'>();
+});
+
+describe('functional capture timing, execution and export contract shapes', () => {
+  it('keeps selected comparison summaries bounded and excludes inline body/header fields', () => {
+    expectTypeOf<keyof CaptureComparisonResponse>().toEqualTypeOf<'base' | 'target' | 'generatedAt'>();
+    expectTypeOf<CaptureComparisonSide['request']>().toEqualTypeOf<ProxyRequestListItem>();
+    expectTypeOf<CaptureComparisonSide['evidence']>().toEqualTypeOf<Omit<ProxyCaptureBodies, 'responseHeaders'>>();
+    expectTypeOf<CaptureComparisonSide['analysisUnavailableReason']>().toEqualTypeOf<'original_deleted' | 'analysis_unavailable' | 'metadata_only' | null>();
+    expectTypeOf<keyof CaptureComparisonAnalysis>().toEqualTypeOf<'parserVersion' | 'requestFormat' | 'model' | 'state' | 'stopReason' | 'usage' | 'completeness' | 'errorCount' | 'errorCodes' | 'errorCodesTruncated'>();
+    expectTypeOf<CaptureComparisonAnalysis['usage']>().toEqualTypeOf<ProxyProtocolAnalysis['usage']>();
+    expectTypeOf<CaptureComparisonAnalysis['errorCodes']>().toEqualTypeOf<Array<string | null>>();
+  });
+  it('keeps parent references and uncertainty distinct from inferred execution topology', () => {
+    expectTypeOf<NativeSessionParentPage['items'][number]['identity']>().toEqualTypeOf<TraceSourceIdentity>();
+    expectTypeOf<NativeSessionParentPage['items'][number]['state']>().toEqualTypeOf<'resolved' | 'unresolved' | 'ambiguous' | 'incomplete'>();
+    expectTypeOf<NativeSessionParentPage['items'][number]['matches']>().toEqualTypeOf<Array<Pick<SessionIndexEntry, 'id' | 'provider' | 'sourceAgent' | 'title' | 'startedAt'>>>();
+    expectTypeOf<keyof NativeSessionParentPage['items'][number]>().toEqualTypeOf<'identity' | 'state' | 'matches' | 'matchesTruncated'>();
+    expectTypeOf<NativeSessionParentPage['nextCursor']>().toEqualTypeOf<string | null>();
+  });
+  it('keeps capture timing optional for legacy outcomes and in one explicit clock domain', () => {
+    expectTypeOf<CaptureTransportResult['timing']>().toEqualTypeOf<CaptureNetworkTiming | undefined>();
+    expectTypeOf<CaptureNetworkTiming['clock']>().toEqualTypeOf<'proxy_monotonic'>();
+    expectTypeOf<CaptureNetworkTiming['firstContentMs']>().toEqualTypeOf<number | null>();
+    expectTypeOf<CaptureNetworkTiming['firstContentBasis']>().toEqualTypeOf<'sse_event_dispatch' | 'json_document_complete' | null>();
+  });
+  it('keeps linked execution pages metadata-only without manufactured execution identities', () => {
+    expectTypeOf<LinkedExecutionPage['sessionDurationSource']>().toEqualTypeOf<DurationSource>();
+    expectTypeOf<LinkedExecutionPage['events']>().toEqualTypeOf<TraceEventSlim[]>();
+    expectTypeOf<LinkedExecutionPage['attempts'][number]['request']>().toEqualTypeOf<ProxyRequestListItem>();
+    expectTypeOf<LinkedExecutionPage['attempts'][number]['transport']>().toEqualTypeOf<CaptureTransportResult | null>();
+    expectTypeOf<LinkedExecutionPage['attempts'][number]['matches']>().toEqualTypeOf<LinkedExecutionIdentityMatch[]>();
+    expectTypeOf<LinkedExecutionPage>().not.toHaveProperty('turns');
+    expectTypeOf<keyof LinkedExecutionIdentityMatch>().toEqualTypeOf<'eventId' | 'scanIdentityId' | 'proxyIdentityId' | 'namespace' | 'kind' | 'value' | 'scope'>();
+  });
+  it('versions evidence exports and excludes all inline body/prompt preview fields', () => {
+    expectTypeOf<CaptureEvidenceExport['format']>().toEqualTypeOf<'awesome-telemetry.capture-evidence'>();
+    expectTypeOf<CaptureEvidenceExport['formatVersion']>().toEqualTypeOf<1>();
+    expectTypeOf<CaptureEvidenceExport['request']>().toEqualTypeOf<Omit<ProxyRequest, 'requestBody' | 'responseBody' | 'rawRequestBody' | 'rawResponseBody' | 'systemPrompt'>>();
+    expectTypeOf<CaptureEvidenceExport['analysisUnavailableReason']>().toEqualTypeOf<'original_deleted' | 'analysis_unavailable' | 'metadata_only' | null>();
+  });
 });
 
 it('keeps metadata pressure unknown distinct from measured zero and hides filesystem paths', () => {

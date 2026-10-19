@@ -39,6 +39,31 @@ describe('explicit native identities', () => {
   it('does not manufacture an identity when native fields are absent', () => {
     expect(collectCodexIdentities([{ type: 'response_item', payload: { role: 'assistant', content: 'hello' } }])).toMatchObject({ items: [], completeness: { complete: false, reasons: ['no_native_identifiers'] } });
   });
+  it('retains Codex event-side tool ids verbatim and scopes them to their own explicit session', () => {
+    const result = collectCodexIdentities([
+      { type: 'session_meta', payload: { id: 's-a' } },
+      { type: 'event_msg', payload: { type: 'mcp_tool_call_end', session_id: 's-a', turn_id: 't-a', call_id: 'call:7' } },
+      { type: 'event_msg', payload: { type: 'web_search_end', session_id: 's-b', turn_id: 't-b', call_id: 'call:7' } },
+    ]);
+    expect(result.items.filter(item => item.kind === 'tool_call')).toEqual([
+      { namespace: 'protocol:openai', kind: 'tool_call', value: 'call:7', scope: 's-a', eventId: null, sourcePath: 'events[1].payload.call_id' },
+      { namespace: 'protocol:openai', kind: 'tool_call', value: 'call:7', scope: 's-b', eventId: null, sourcePath: 'events[2].payload.call_id' },
+    ]);
+    expect(result.items.filter(item => item.kind === 'turn').map(item => item.scope)).toEqual(['s-a', 's-b']);
+  });
+  it('does not borrow a Codex scope when explicit metadata contains different native session ids', () => {
+    const result = collectCodexIdentities([
+      { type: 'session_meta', payload: { id: 'child', session_id: 'parent', parent_thread_id: 'parent' } },
+      { type: 'response_item', payload: { type: 'function_call', call_id: 'unscoped' } },
+    ]);
+    expect(result.items.find(item => item.kind === 'tool_call')?.scope).toBeNull();
+    expect(result.items.find(item => item.kind === 'parent_session')).toMatchObject({ value: 'parent', scope: 'child' });
+  });
+  it('scopes OpenCode parent-session evidence to the child without reinterpreting parent-message IDs', () => {
+    const result = collectOpencodeIdentities({ id: 'child', parentID: 'parent' }, [{ id: 'reply', sessionID: 'child', parentID: 'user-message', content: [] }], 'opencode');
+    expect(result.items.find(item => item.kind === 'parent_session')).toMatchObject({ value: 'parent', scope: 'child', sourcePath: 'session.parentID' });
+    expect(result.items.some(item => item.value === 'user-message')).toBe(false);
+  });
   it('bounds count and oversized identifiers without truncating matching keys', () => {
     const collector = createIdentityCollector(1);
     collector.add('agent:claude', 'session', 'x'.repeat(1025), 'sessionId');

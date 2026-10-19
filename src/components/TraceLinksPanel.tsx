@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import type { ProxyTraceLinkPage, SessionCaptureLinkPage, SessionIndexEntry, TraceAssociationDecision, TraceAssociationState, TraceIdentityPage } from '../core/trace-types.js';
 import { t, type Locale } from '../i18n.js';
 import { Badge } from './ui/Badge.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
 import { IconSearch } from './icons/index.js';
+
+const LinkedExecutionPanel = lazy(() => import('./LinkedExecutionPanel.js').then(module => ({ default: module.LinkedExecutionPanel })));
+const NativeSessionParentsPanel = lazy(() => import('./NativeSessionParentsPanel.js').then(module => ({ default: module.NativeSessionParentsPanel })));
 
 const stateKeys = {
   direct: 'trace.links.direct', candidate: 'trace.links.candidate', confirmed: 'trace.links.confirmed',
@@ -133,10 +136,12 @@ export function ProxyTraceLinksPanel({ proxyId, sessions, locale, invalidateKey 
 }
 
 /** Separate, lazy exploration: scan sources are not rewritten as proxy sessions. */
-export function SessionCaptureLinksPanel({ sessionKey, locale, onOpenRequest, invalidateKey = 0 }: {
-  sessionKey: string; locale: Locale; onOpenRequest: (id: number) => void; invalidateKey?: number;
+export function SessionCaptureLinksPanel({ sessionKey, locale, onOpenRequest, onOpenSession, invalidateKey = 0 }: {
+  sessionKey: string; locale: Locale; onOpenRequest: (id: number) => void; onOpenSession?: (key: string) => void; invalidateKey?: number;
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
+  const [executionOpen, setExecutionOpen] = useState(false);
+  const [parentsOpen, setParentsOpen] = useState(false);
   const [page, setPage] = useState<SessionCaptureLinkPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadedVersion, setLoadedVersion] = useState(-1);
@@ -159,6 +164,10 @@ export function SessionCaptureLinksPanel({ sessionKey, locale, onOpenRequest, in
     {expanded && <div>
       <p className="hint">{t('trace.links.hint', locale)}</p>
       <p className="hint">{t('trace.links.promptHint', locale)}</p>
+      <button className="btn" type="button" aria-expanded={executionOpen} onClick={() => setExecutionOpen(value => !value)}>{t('trace.execution.title', locale)}</button>
+      {executionOpen && <Suspense fallback={<Skeleton count={1} />}><LinkedExecutionPanel sessionKey={sessionKey} locale={locale} onOpenRequest={onOpenRequest} invalidateKey={invalidateKey} /></Suspense>}
+      <button className="btn" type="button" aria-expanded={parentsOpen} onClick={() => setParentsOpen(value => !value)}>{t('trace.parents.title', locale)}</button>
+      {parentsOpen && <Suspense fallback={<Skeleton count={1} />}><NativeSessionParentsPanel sessionKey={sessionKey} locale={locale} onOpenSession={onOpenSession} invalidateKey={invalidateKey} /></Suspense>}
       {loadedVersion >= 0 && loadedVersion !== invalidateKey && <p role="status">{t('trace.links.stale', locale)}</p>}
       <button className="btn" type="button" disabled={busy} onClick={() => void load()}>{t('trace.links.refresh', locale)}</button>
       {busy && <Skeleton count={2} />}

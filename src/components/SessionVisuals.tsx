@@ -8,6 +8,7 @@ import type {
   TraceRecord,
 } from '../core/trace-types.js';
 import { computeSpeedMetrics } from '../core/speed-metrics.js';
+import { scanTimingReason, scanTimingValue, type ScanTimingMetric } from '../core/scan-timing.js';
 import { buildEventDensity, computeSessionRadar } from '../core/session-visuals.js';
 import { fmtDur } from '../core/session-findings.js';
 import { HeatmapChart } from './charts/HeatmapChart.js';
@@ -28,7 +29,15 @@ export function SessionVisuals({ detail, locale }: SessionVisualsProps): React.J
   const density = useMemo(() => buildEventDensity(events), [events]);
   const radar = useMemo(() => {
     const speed = computeSpeedMetrics(detail as unknown as TraceRecord);
-    return computeSessionRadar(detail.session, events, speed);
+    const all = computeSessionRadar(detail.session, events, speed);
+    const timingAxes: Partial<Record<(typeof all)[number]['axis'], ScanTimingMetric>> = { speed: 'e2e', ttft: 'ttft', tps: 'tps' };
+    const side = { ...detail, hasMore: detail.hasMore || events.length < detail.session.eventCount };
+    const points = all.filter(point => {
+      if (scanTimingValue(point.raw) === null) return false;
+      const metric = timingAxes[point.axis];
+      return metric === undefined || scanTimingReason(side, side, metric, point.raw, point.raw) === null;
+    });
+    return { points, omitted: all.filter(point => !points.includes(point)).map(point => point.axis) };
   }, [detail, events]);
 
   if (events.length === 0) {
@@ -65,7 +74,7 @@ export function SessionVisuals({ detail, locale }: SessionVisualsProps): React.J
       <section className="session-radar">
         <h4 className="session-visuals-title">{t('session.radar.title', locale)}</h4>
         <RadarChart
-          data={radar.map((point) => ({
+          data={radar.points.map((point) => ({
             axis: t(`session.radar.axis.${point.axis}`, locale),
             values: [point.value],
           }))}
@@ -75,6 +84,9 @@ export function SessionVisuals({ detail, locale }: SessionVisualsProps): React.J
           ariaLabel={t('session.radar.title', locale)}
         />
         <p className="hint session-visuals-hint">{t('session.radar.criteria', locale)}</p>
+        {radar.omitted.length > 0 && <p className="hint" role="status">
+          {t('scan.timing.notComparable', locale)} · {radar.omitted.map(axis => t(`session.radar.axis.${axis}`, locale)).join(', ')}
+        </p>}
       </section>
     </div>
   );
