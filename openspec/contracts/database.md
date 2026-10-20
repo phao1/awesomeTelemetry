@@ -1,5 +1,51 @@
 # Contract: Database
 
+## v21 local Claude hook observations
+
+Current SCHEMA_VERSION=21; supersedes older labels. Add only this table/indexes;
+no native/capture rewrite, rescan, association or accounting mutation.
+
+```sql
+CREATE TABLE IF NOT EXISTS claude_hook_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  received_at TEXT NOT NULL,
+  event_name TEXT NOT NULL CHECK(event_name IN ('SessionStart','SessionEnd','PreToolUse','PostToolUse','PostToolUseFailure','SubagentStart','SubagentStop','Stop')),
+  native_session_id TEXT NOT NULL CHECK(length(native_session_id) BETWEEN 1 AND 512),
+  agent_id TEXT CHECK(agent_id IS NULL OR length(agent_id) BETWEEN 1 AND 512),
+  agent_type TEXT CHECK(agent_type IS NULL OR length(agent_type)<=512),
+  tool_use_id TEXT CHECK(tool_use_id IS NULL OR length(tool_use_id) BETWEEN 1 AND 512),
+  tool_name TEXT CHECK(tool_name IS NULL OR length(tool_name) BETWEEN 1 AND 128),
+  native_duration_ms REAL CHECK(native_duration_ms IS NULL OR native_duration_ms>=0),
+  payload_bytes INTEGER NOT NULL CHECK(payload_bytes BETWEEN 0 AND 262144),
+  payload_ref TEXT NOT NULL CHECK(json_valid(payload_ref) AND length(payload_ref)<=1536)
+);
+CREATE INDEX IF NOT EXISTS idx_claude_hooks_session ON claude_hook_events(native_session_id,id DESC);
+CREATE INDEX IF NOT EXISTS idx_claude_hooks_tool ON claude_hook_events(native_session_id,tool_use_id,agent_id,id DESC);
+```
+
+§5.2 adds verbatim constants:
+`CLAUDE_HOOK_LIST_COLS = 'id, received_at, event_name, native_session_id, agent_id, agent_type, tool_use_id, tool_name, native_duration_ms, payload_bytes'`;
+`CLAUDE_HOOK_DETAIL_COLS = CLAUDE_HOOK_LIST_COLS + ', payload_ref'`.
+Lists exclude payload_ref and never load raw originals. Details read one ref.
+Hard10000-row admission uses cached count plus existing withCaptureCapacity and
+an atomic recheck/insert; no dedupe, automatic expiration or source cascade.
+CH-001..006 in claude-hooks.md owns semantics and boundaries.
+
+## v20 reverse native parent lookup
+
+Current SCHEMA_VERSION=20; supersedes historical version labels below. Add only
+this metadata index, no source rewrite/backfill/table/column/accounting changes.
+Existing v19 index+version upgrade is atomic; repeated init preserves the index.
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_trace_identities_parent
+  ON trace_identities(namespace, value, source_id, id)
+  WHERE kind='parent_session';
+```
+
+Use exact indexed native keys for family children. Existing source/session
+indexes stay unchanged; page bounds never determine native owner uniqueness.
+
 ## v19 TraceLog metadata only
 
 Current SCHEMA_VERSION=19; additive tables/index below, no native/proxy changes,
@@ -1259,6 +1305,19 @@ CREATE INDEX IF NOT EXISTS idx_team_run_sessions_session
    equals time order)
 
 ### 5.2 Column constants
+
+Frida's additive bounded reader follows the existing §3.8 fields, with no DDL
+change. Constants owned by server/storage/frida-captures.ts:
+
+~~~ts
+export const FRIDA_METADATA_COLS = 'id, pid, captured_at, capture_type, model, session_id, capture_session_id, message_count';
+export const FRIDA_DETAIL_COLS = `${FRIDA_METADATA_COLS}, json_data, tokens_json`;
+~~~
+
+List projection selects substr(json_data,1,500), never a full json_data value,
+and NULL tokens_json; selected detail enforces frida-capture-flow.md byte bounds
+before fetching full retained fields. Prepared statements remain cached and
+preview/read failure never mutates retained captures.
 
 ```ts
 export const SESSION_LIST_COLS = [

@@ -22,6 +22,7 @@ const EVENT_NAMES = [
   'proxy_sources_changed',
   'proxy_status',
   'frida_capture',
+  'hook_events_changed',
   'frida_status',
   'team_runs_changed',
 ] as const satisfies readonly BusEventName[];

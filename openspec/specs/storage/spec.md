@@ -281,3 +281,45 @@ awaits it. No body deletion or scan reset; journal scratch cleanup is distinct.
 - G11.4 (new): v4's four queries all produced `USE TEMP B-TREE` because the
   indexes were single-column instead of composite. Confirm with
   `EXPLAIN QUERY PLAN` before adding indexes
+
+### REQ-024: Indexed session family projection
+Return one selected native session, its retained parents and paged reverse-parent declarations via the frozen family contract. Full source/scope/owner validation separates resolved, ambiguous, incomplete and unresolved. Fixed-count batched metadata reads, no source/body IO, inferred retry/spawn/communication, accounting change or source mutation.
+
+### REQ-025: Cross-page native tool-reference observations
+Read selected-session exact scoped tool_call references across slim event pages per the frozen native-tool-observations contract. Validate full-source/off-page conflicts and native owner scope; preserve incomplete/ambiguous/unresolved states. Never infer execution lifecycle, retry, success or measured latency; no source/body IO, N+1 or writes.
+### REQ-026: Local scan metadata trace export
+Serve frozen TX-003 metadata page with three cached SELECTs and no source/body
+IO, native mutation or synthetic causal edges. ISO normalized timestamps remain
+unchanged; isolated OTLP wire conversion follows the additive export contract.
+
+### REQ-027: Independent manual experiment registry
+Manual experiment records follow EXP-001..004 in an asynchronous app-owned JSON
+registry independent of SQLite/native records. New run references use one batched
+scan lookup; unavailable existing refs remain retained. No source/Agent writes.
+
+### REQ-028: Bounded Frida saved-capture reads
+Reuse the existing table and DTO under FC-001..004. Persist complete validated
+frames before saved notifications; list projections cap JSON in SQL and detail
+checks byte limits before full acquisition. No partial frame or silent write
+success. Real target hook compatibility remains a separate acceptance.
+
+### REQ-029: Linked-source metadata trace export
+LTX-001..005 reuses the native export and accepted linked-execution readers in
+one read snapshot with <=11 cached metadata SELECTs. Native and network spans
+keep independent identities, clocks, coverage and unknown states. No body IO,
+source mutation, reparse, causal inference or accounting merge.
+
+### REQ-030: Original capture bundle export
+CB-001..005 SHALL combine the selected retained evidence metadata with exact
+encoded original prefixes in a streamed local tar, with expected SHA/length
+manifest and a verified-transfer receipt emitted only after matching bytes.
+No source mutation, archive spool, new schema or synchronous large-file read.
+Missing refs/partial source/metadata pagination stay explicit; source change and
+confirmed deletion stop transfer, including after asynchronous file acquisition.
+
+### REQ-031: Official hook observation retention
+CH-001..006 preserves each admitted local delivery separately, raw JSON outside
+SQLite and body-free metadata with indexed exact session/agent/tool filtering.
+Metadata/save notifications follow completed original+commit only. Native scan
+jumps require unique complete exact declared session identity; never mutate
+native sources or infer execution, retries, charges or child sessions.

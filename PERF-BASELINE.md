@@ -1465,3 +1465,127 @@ performance equivalence, an explained regression or a budget waiver. NFR §6.2
 and the commit message record the same observations. No thresholds were relaxed.
 The existing all-CSS gzip24380B exceeds16384B by7996B and remains unresolved.
 Private local histories, runtime/config files and test reports are not published.
+
+## 2026-10-19 — M11 telemetryRef continuation on the verified npm baseline
+
+Local branch `codex/telemetryref-npm-continuation`, based on remote npm commit
+`29e9e20f8a9dc9b18c8a6e17128440451309f912`; no commit/push/release. Fix semantic
+session uniqueness when one source retains multiple native identity locators.
+Preserve original evidence, distinct source owners, manual decisions and actual
+network attempts. No UI/provider/usage/schema/package/dependency changes.
+
+- Nine new SQLite regressions; five failed before the source fix. Targeted
+  storage/execution/extractor:60 passed. Full suite:276 files,3315 passed,
+  1 existing skip,93.51s with maxWorkers2. Typecheck/lint/build/strict OpenSpec,
+  package artifact verifier and diff-check passed. Earlier executor-disconnected
+  test attempt had no result and is not counted as passing. A redundant restricted
+  API runner was stopped by its observed PID after the full suite passed.
+- `npm run perf:check` exited0. Synthetic524 sessions/73588 events/1820 captures,
+  DB29.57MiB; no user config/source scan was loaded. Core query plans retain
+  indexes and no temporary sort trees. List500:0.399ms; slim9590:9.827ms;
+  proxy50:0.856ms; overview cold/cache51.67/0.340ms. Append1 remains1 INSERT/
+  2 statements/0.32ms. Mission cold/cache0.86/0.025ms,worst widget0.213ms,242B
+  representative gzip. The zero-sample loop microbench is not live-load proof.
+- Actual A/B report: `reports/capture-ab-2026-10-19T11-26-16.898Z-25463.json`.
+  Each of3 profiles has100 warm paired samples,104 captures/208 exact originals.
+  All profiles qualified and met unchanged <=20ms added latency/<50ms loop p99
+  hard gates. Synthetic local tests are not real Agent/Windows/soak certification.
+
+| Metric | Previous npm sample ms | This run ms | Relative |
+| --- | ---: | ---: | ---: |
+| HTTP first body byte | 2.244000 | 3.085291 | +37.5% |
+| HTTP E2E | 5.273125 | 7.617958 | +44.5% |
+| HTTP loop p99 | 2.113535 | 2.336767 | +10.6% |
+| HTTPS CONNECT first body byte | 8.350250 | 6.902708 | -17.3% |
+| HTTPS CONNECT E2E | 10.120042 | 8.722376 | -13.8% |
+| HTTPS CONNECT loop p99 | 2.094079 | 1.997823 | -4.6% |
+| Near2MiB HTTP first body byte | 1.948832 | 2.100834 | +7.8% |
+| Near2MiB HTTP E2E | 4.857542 | 5.269750 | +8.5% |
+| Near2MiB HTTP loop p99 | 2.207743 | 2.066431 | -6.4% |
+
+Previous sample is the committed npm record05-10-18.039Z-18002. HTTP first-byte
+and E2E exceed the20% relative alert; cause is unresolved. No favorable rerun,
+threshold change, performance-equivalence claim or release waiver. Earlier
+HTTPS relative alerts and all-CSS gzip24380B vs16384B (over7996B) remain recorded.
+The isolated worktree retains synthetic raw reports; none are uploaded. Original
+npm worktree's25 dirty files were SHA256-checked unchanged.
+
+### Bounded attribution follow-up (same local branch; no source change)
+
+The original05-10 and11-26 reports match Node26.5.1/darwin/arm64/schema19,
+100warm pairs/concurrency4, three workloads, request/response byte counts and
+seven worker/shared JS hashes. The older report's sourceHead is6248748 with
+working-tree changes, not an adjacent frozen version comparison. Historical
+host scheduling/load state was not fully recorded; no causal conclusion follows
+from that single pair of reports.
+
+Preregistered one A/B/B/A sequence: A replaces only trace-links.ts in memory
+with exact29e9e20 source; B uses the current fix. All other sources/workers and
+identical path counters are shared; no disk source swapping. Exactly4 measured
+runs ×3 profiles ×100warm pairs, concurrency4; every raw sample retained.
+One zero-request/zero-sample setup attempt failed a module-path assertion before
+measurement (/tmp vs /private/tmp). A logged pre-sample plan revision corrected
+only the canonical root; no workload/budget change or post-result rerun.
+
+| Extra latency p95 ms | A1 old | B1 new | B2 new | A2 old | New/old mean change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| HTTP firstByte | 3.501416 | 4.306583 | 3.570083 | 3.997250 | +5.0% |
+| HTTP E2E | 5.674709 | 6.493583 | 6.296666 | 7.523083 | -3.1% |
+| HTTPS firstByte | 6.733958 | 9.064458 | 9.600083 | 7.678542 | +29.5% |
+| HTTPS E2E | 12.953542 | 12.285541 | 12.072000 | 10.168167 | +5.3% |
+| Near2MiB HTTP firstByte | 1.477291 | 2.557292 | 1.778333 | 1.653541 | +38.5% |
+| Near2MiB HTTP E2E | 4.449626 | 5.419958 | 5.002042 | 4.661626 | +14.4% |
+
+Means are descriptive averages of two run-level p95s, not pooled p95 or a
+significance/equivalence test. All12 profiles passed unchanged hard gates,
+original fidelity and cleanup; loop p99 range1.926143–2.105343ms. Per profile,
+104reconciliations executed the count query with zero matching session rows,
+zero sourceIds/count rows and zero candidate loop visits. The changed semantic
+uniqueness logic is unexercised; fixed empty-query overhead remains possible.
+
+The original HTTP+37.5%/+44.5% was not reproduced as a consistent new-version
+penalty in this bounded control. Cause remains unresolved; HTTPS/near2MiB
+firstByte relative differences are also retained, not dismissed as noise.
+No speculative source fix or favorable extra run; previous alerts/CSS gap remain.
+All four JSONs/logs, exact source snapshots/hashes, plans, failed setup and
+summary reside in /tmp/awesomeTelemetry-causal-check/. Instrumented diagnostic
+results do not replace the uninstrumented baseline or certify real Agents,
+Windows or long-duration load. This closes only the requested finite inquiry.
+
+## 2026-10-20 — pre-push M11 functional continuation
+
+User requested committing and pushing the retained functional increments to
+`codex/telemetryref-npm-continuation`, then continuing on another computer.
+Functional development remains paused; this run is the mandatory commit gate,
+not resumed reliability/soak work or release acceptance. Source base is
+29e9e20f8a9dc9b18c8a6e17128440451309f912 plus the reviewed working-tree changes.
+
+- Fresh `npm run typecheck && npm run test -- --maxWorkers=2 && npm run lint`
+  passed:307 files,3724 passed/1 existing skip,106.68s. Build, package artifact
+  verifier, strict OpenSpec and diff check passed. No test assertion was relaxed.
+- `npm run perf:check` exited0. Legacy storage diagnostic fixture remains
+  schema7 (perf-diag/lib/schema-sql.mjs),524 sessions/73588 events/1820 captures,
+  29.57MiB; no real provider/config/source scan was loaded. These diagnostics do
+  not prove the current schema21 hook feature's full-load performance.
+- Core plans use indexes and no temporary sort tree. List500:0.428ms;
+  slim9590:9.467ms; proxy50:0.838ms; overview cold/cache50.64/0.351ms.
+  Append1:1 INSERT/2 statements/0.36ms. Mission cold/cache0.68/0.019ms,
+  worst widget0.170ms, representative gzip241B. The loop microbench's0.00ms
+  does not represent a live-load percentile.
+- Actual forwarding/worker/originals/SSE A/B report:
+  `reports/capture-ab-2026-10-20T07-08-04.919Z-95642.json` (retained locally,
+  ignored raw diagnostic output). All3 profiles qualified, each with100 warm
+  paired samples/concurrency4,104 captures and208 independently verified
+  originals. All unchanged <=20ms added-latency/<50ms loop-p99 gates passed.
+
+| Profile | Added first-body-byte p95 ms | Added E2E p95 ms | Loop p99 ms |
+| --- | ---: | ---: | ---: |
+| HTTP | 2.313125 | 5.718208 | 1.944575 |
+| HTTPS CONNECT | 6.122917 | 7.279708 | 1.943551 |
+| Near2MiB HTTP | 2.061584 | 4.873209 | 2.014207 |
+
+This single current-source run is not an adjacent frozen-version comparison.
+No favorable rerun, budget change, previous-relative-alert clearance, CSS-gap
+waiver, real Agent/Windows certification, hook-runtime certification, physical
+fault/soak or complete Web/scanner NFR claim follows. Existing alerts and
+unclosed functional clauses remain documented; this push is a branch snapshot.

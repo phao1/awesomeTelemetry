@@ -10,6 +10,7 @@ import { getProxyRequestListItemById } from '../storage/query-engine.js';
 import {
   discoverFridaTarget,
   runFridaMonitor,
+  validateFridaMonitorScript,
   type FridaCaptureData,
 } from './frida-capture.js';
 import { createMitmProxy, type MitmProxyOptions, type ProxyServerLike } from './mitm-proxy.js';
@@ -17,6 +18,7 @@ import type { CaptureBodyStore } from './body-store.js';
 import { ConnectionProfileError } from './connection-profiles.js';
 import { captureResources } from './capture-resources.js';
 import { sseResourceStatus } from '../realtime/sse.js';
+import { insertFridaCapture } from '../storage/frida-captures.js';
 
 /**
  * T-12（contracts/api.md §4/§5）：Proxy / Frida 控制路由的运行时。
@@ -275,84 +277,115 @@ function emptyActivity(): ProxyCaptureActivity {
   return { listening: false, observedRequests: 0, activeRequests: 0, pendingWrites: 0, persistedRequests: 0, interruptedRequests: 0, captureErrors: 0, lastRequestAt: null, lastError: null };
 }
 
+export interface FridaRuntimeDeps {
+  db?: Database;
+  notify?: (payload: BusEvents['frida_capture']) => void;
+  onError?: (error: Error) => void;
+  discover?: () => Promise<number>;
+  monitor?: typeof runFridaMonitor;
+  validateScript?: (path: string) => Promise<void>;
+  uuid?: () => string;
+  stopTimeoutMs?: number;
+}
+
 export class FridaRuntime {
   private running = false;
   private starting = false;
   private pid: number | null = null;
   private child: ReturnType<typeof runFridaMonitor>['child'] | null = null;
+  private generation = 0;
+  private bootTask: Promise<FridaStatus> | null = null;
+  private stopping = false;
+  private stopTask: Promise<void> | null = null;
+  private closed: Promise<void> = Promise.resolve();
   private readonly emit: (payload: BusEvents['frida_status']) => void;
+  private readonly deps: FridaRuntimeDeps;
 
-  constructor(emit: (payload: BusEvents['frida_status']) => void) {
-    this.emit = emit;
+  constructor(emit: (payload: BusEvents['frida_status']) => void, deps: FridaRuntimeDeps = {}) {
+    this.emit = emit; this.deps = deps;
   }
-
-  status(): FridaStatus {
-    return { running: this.running, starting: this.starting, pid: this.pid };
+  status(): FridaStatus { return { running: this.running, starting: this.starting, pid: this.pid }; }
+  private report(error: unknown): void {
+    const value = error instanceof Error ? error : new Error('FRIDA_CAPTURE_FAILED');
+    if (this.deps.onError) this.deps.onError(value);
+    else console.error('Frida capture failed:', value.message);
   }
-
-  /**
-   * 异步启动：pid 缺省时同步 await 自动发现（失败 409 FRIDA_TARGET_NOT_FOUND，
-   * 契约 §5 要求失败可见）；发现成功后 spawn monitor，就绪由 frida_status 通知。
-   * P-3：macOS 无法端到端验证，仅接线纯逻辑。
-   */
-  async start(opts: { pid?: number }): Promise<FridaStatus> {
-    if (this.running || this.starting) {
-      return this.status();
-    }
-    let target = opts.pid;
-    if (target === undefined) {
-      try {
-        target = await discoverFridaTarget();
-      } catch (err) {
-        throw new FridaTargetError(err instanceof Error ? err.message : String(err));
-      }
-    }
+  start(opts: { pid?: number }): Promise<FridaStatus> {
+    if (this.stopping) return Promise.reject(new FridaTargetError('Frida cleanup pending; retry stop before starting'));
+    if (this.running || this.starting) return Promise.resolve(this.status());
+    const task = this.startOwned(opts);
+    this.bootTask = task;
+    void task.then(() => { if (this.bootTask === task) this.bootTask = null; }, () => { if (this.bootTask === task) this.bootTask = null; });
+    return task;
+  }
+  private async startOwned(opts: { pid?: number }): Promise<FridaStatus> {
+    if (this.stopping) throw new FridaTargetError('Frida cleanup pending; retry stop before starting');
+    if (this.running || this.starting) return this.status();
+    if (!this.deps.db) throw new FridaTargetError('Frida persistence unavailable');
+    if (opts.pid !== undefined && (!Number.isSafeInteger(opts.pid) || opts.pid <= 0)) throw new FridaTargetError('Invalid Frida PID');
+    const generation = ++this.generation;
     this.starting = true;
-    this.pid = target;
-    this.emit({ running: false, pid: target });
-    const scriptPath = runtimeResourcePath('scripts/frida-chat-monitor-v2.js');
     try {
-      const { child } = runFridaMonitor(target, scriptPath, (_capture: FridaCaptureData) => {
-        // 捕获持久化由后续 proxy-writer 接线（P-3 裁剪）；此处保持状态活跃
-        this.emit({ running: true, pid: target });
-      });
-      this.child = child;
-      child.once('spawn', () => {
-        this.starting = false;
-        this.running = true;
-        this.emit({ running: true, pid: target });
-      });
-      const fail = (): void => {
-        this.starting = false;
-        this.running = false;
-        this.pid = null;
-        this.child = null;
-        this.emit({ running: false, pid: undefined });
+      const target = opts.pid ?? await (this.deps.discover ?? discoverFridaTarget)();
+      if (generation !== this.generation) return this.status();
+      const script = runtimeResourcePath('scripts/frida-chat-monitor-v2.js');
+      await (this.deps.validateScript ?? validateFridaMonitorScript)(script);
+      if (generation !== this.generation) return this.status();
+      this.pid = target;
+      const runId = (this.deps.uuid ?? randomUUID)();
+      let failed = false;
+      const fail = (error: Error): void => {
+        if (generation !== this.generation || failed) return;
+        failed = true; this.report(error); this.stopping = true;
+        try { this.child?.kill(); } catch (killError) { this.report(killError); }
       };
+      const { child } = (this.deps.monitor ?? runFridaMonitor)(target, script, (capture: FridaCaptureData) => {
+        if (generation !== this.generation || failed || this.stopping) return;
+        let id: number;
+        try { id = insertFridaCapture(this.deps.db!, capture, runId); }
+        catch (error) { fail(error instanceof Error ? error : new Error('FRIDA_STORAGE_FAILED')); return; }
+        // Notification follows a committed row, never parser receipt or process spawn.
+        try { (this.deps.notify ?? (payload => eventBus.emit('frida_capture', payload)))({ id, ...(capture.model === null ? {} : { model: capture.model }), ...(capture.sessionId === null ? {} : { sessionId: capture.sessionId }) }); }
+        catch (error) { this.report(error); }
+      }, fail);
+      this.child = child;
+      this.closed = new Promise(resolve => {
+        child.once('close', () => {
+          resolve();
+          if (this.child !== child) return;
+          this.child = null; this.running = false; this.starting = false; this.pid = null; if (this.stopTask === null) this.stopping = false;
+          this.generation++; this.emit({ running: false });
+        });
+      });
+      child.once('spawn', () => {
+        if (generation !== this.generation || failed || this.stopping) return;
+        this.starting = false; this.running = true; this.emit({ running: true, pid: target });
+      });
       child.once('error', fail);
-      child.once('exit', fail);
-    } catch (err) {
-      this.starting = false;
-      this.pid = null;
-      throw new FridaTargetError(err instanceof Error ? err.message : String(err));
+      if (failed) child.kill();
+    } catch (error) {
+      if (generation === this.generation) { this.starting = false; this.pid = null; this.emit({ running: false }); }
+      throw new FridaTargetError(error instanceof Error ? error.message : 'Frida startup failed');
     }
     return this.status();
   }
-
-  stop(): FridaStatus {
-    const child = this.child;
-    this.child = null;
-    this.running = false;
-    this.starting = false;
-    this.pid = null;
-    if (child !== null) {
-      try {
-        child.kill();
-      } catch (err) {
-        console.error(`frida stop failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
+  async stop(): Promise<FridaStatus> {
+    if (this.stopTask === null) {
+      this.generation++; this.stopping = true;
+      this.stopTask = (async () => {
+        try { await this.bootTask; } catch { /* start caller receives its explicit error */ }
+        const child = this.child;
+        if (child !== null) { child.kill(); await this.closed; }
+        this.starting = false; this.running = false; this.pid = null; this.stopping = false;
+      })().finally(() => { this.stopTask = null; });
     }
-    this.emit({ running: false, pid: undefined });
-    return this.status();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([this.stopTask, new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new FridaTargetError('Frida cleanup pending; retry stop')), this.deps.stopTimeoutMs ?? 5000);
+        timer.unref();
+      })]);
+      return this.status();
+    } finally { clearTimeout(timer); }
   }
 }

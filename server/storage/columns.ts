@@ -1,4 +1,6 @@
 // contracts/database.md §5.2 列常量，逐字采用。禁止 SELECT *。
+export const CLAUDE_HOOK_LIST_COLS = 'id, received_at, event_name, native_session_id, agent_id, agent_type, tool_use_id, tool_name, native_duration_ms, payload_bytes';
+export const CLAUDE_HOOK_DETAIL_COLS = CLAUDE_HOOK_LIST_COLS + ', payload_ref';
 export const TRACE_LOG_IMPORT_COLS = 'id, imported_at, metadata_json, session_offset, session_length, session_sha256';
 export const TRACE_LOG_TURN_COLS = 'import_id, sequence, metadata_json, byte_offset, byte_length, body_sha256';
 

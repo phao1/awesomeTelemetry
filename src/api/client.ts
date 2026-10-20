@@ -20,6 +20,7 @@ import type {
   LinkedExecutionPage,
   CaptureComparisonResponse,
   NativeSessionParentPage,
+  NativeSessionFamilyPage,
   ProxyTraceLinkPage,
   SessionCaptureLinkPage,
   TraceAssociation,
@@ -296,6 +297,9 @@ export const api = {
   },
   linkedExecution(key: string, params: { eventOffset?: number; eventLimit?: number; captureCursor?: number; captureLimit?: number } = {}, signal?: AbortSignal): Promise<LinkedExecutionPage> {
     return fetchJson(`/sessions/${encodeURIComponent(key)}/execution${qs(params)}`, { signal });
+  },
+  nativeSessionFamily(key: string, params: { limit?: number; cursor?: string } = {}, signal?: AbortSignal): Promise<NativeSessionFamilyPage> {
+    return fetchJson(`/sessions/${encodeURIComponent(key)}/family${qs(params)}`, { signal, cache: 'no-store' });
   },
   nativeSessionParents(key: string, params: { limit?: number; cursor?: string } = {}, signal?: AbortSignal): Promise<NativeSessionParentPage> {
     return fetchJson(`/sessions/${encodeURIComponent(key)}/parents${qs(params)}`, { signal });

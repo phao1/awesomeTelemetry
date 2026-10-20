@@ -46,6 +46,11 @@ identity live previews from compressed offline semantics, controlled WS connecti
 unverified transports, dev-only CDP and experimental Windows Frida. Selecting
 a recipe opens a new blank form only; no implicit configuration or launch.
 
+Official Claude HTTP hooks are a separate explicit authenticated observation
+source per CH-001..006. Receiving their declared IDs is not proof of a genuine
+Claude binary, complete history or process transport certification; no hook
+decision, permission bypass, context injection or output rewrite is returned.
+
 ### REQ-018: Selected capture comparison
 An explicit pair comparison SHALL expose bounded protocol usage/error summary
 and independent timing/transport/processing/original/deletion evidence without
@@ -233,6 +238,13 @@ unknown parser/original completeness. Missing upstream status stays null.
 9222) via WebSocket, enable `Network` and `Page`, call `getResponseBody` on
 `loadingFinished`, and rediscover targets every 10 seconds.
 
+The bounded helper and explicit lifecycle contract is
+[cdp-capture-flow.md](../../contracts/cdp-capture-flow.md). Protocol tests do
+not certify a real Electron target. The Vite-only product entry follows API §8:
+explicit control, owned target snapshots and selected decoded-response memory
+inspection, never automatic startup or fabricated persistent network records.
+TTNet remains unsupported (G6.5).
+
 #### Scenario: dev mode only
 - **GIVEN** production `server.ts`
 - **THEN** CDP routes are not exposed; requests return 404 `ROUTE_NOT_FOUND`
@@ -247,6 +259,12 @@ structured stdout (`[NEW CHAT DATA]` / `[HEX]` / `[END]` markers), store into
 the `frida_captures` table, and emit `frida_capture` and `frida_status`.
 
 MUST use async `spawn`, MUST NOT use `spawnSync`.
+
+Incremental framing, persistence-before-notification, cleanup and selected
+history/detail behavior follow
+[frida-capture-flow.md](../../contracts/frida-capture-flow.md) FC-001..004.
+The packaged hook is a known skeleton and must fail visibly before spawn;
+saved synthetic captures do not establish a working target-specific hook.
 
 ### REQ-014: Auto-discover target
 `discoverFridaTarget()` SHALL find Trae CN.exe PIDs with `tasklist` and probe

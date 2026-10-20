@@ -88,6 +88,13 @@ a claim that reconnect/resume has recovered missed events (B9 remains open).
 The SSE broadcaster SHALL subscribe to all `BusEvents` and forward them to all
 clients. On client disconnect, MUST run cleanup to unsubscribe everything.
 
+The frontend's existing shared subscription retains bounded Frida saved IDs
+and the last process notification as metadata only. Save notices are not body
+fetch triggers; selected detail remains explicit. Reset discards stale notices
+and selected detail ownership before reloading a mounted bounded snapshot.
+An uncertain command requires explicit status recovery; process notices do not
+prove hook readiness or complete traffic recovery.
+
 ### REQ-007: Foreground request marking
 Every `/api/*` request MUST call `markForegroundRequest()` on entry.
 `isForegroundBusy()` returns true when a request was seen within 750ms, so

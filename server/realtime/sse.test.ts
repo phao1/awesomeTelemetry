@@ -42,6 +42,13 @@ function fakeRes(): ServerResponse {
 }
 
 describe('REQ-005/006 SSE 广播器', () => {
+  it('forwards bounded hook hints only through the shared metadata feed', () => {
+    const shared = new FakeRes(), selected = new FakeRes();
+    addSseClient(shared as unknown as ServerResponse); addSseClient(selected as unknown as ServerResponse, { requestId: 'selected' });
+    eventBus.emit('hook_events_changed', { latestId: 17 });
+    expect(shared.chunks.join('')).toContain('event: hook_events_changed\ndata: {"latestId":17}');
+    expect(selected.chunks.join('')).not.toContain('hook_events_changed');
+  });
   it('sends source hints only to the matching selected feed, without replay or unrelated IDs', () => {
     const selected = new FakeRes(), other = new FakeRes(), metadata = new FakeRes();
     addSseClient(selected as unknown as ServerResponse, { requestId: 'ws-selected' });

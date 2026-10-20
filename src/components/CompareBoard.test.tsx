@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,7 +26,7 @@ function mount(node: React.ReactNode): { unmount: () => void; html: () => string
 }
 
 afterEach(() => {
-  vi.restoreAllMocks(); vi.useRealTimers();
+  vi.restoreAllMocks(); vi.useRealTimers(); vi.unstubAllGlobals();
   while (containers.length > 0) {
     const container = containers.pop();
     if (container !== undefined) {
@@ -45,6 +45,25 @@ const baseProps = {
 };
 
 describe('CompareBoard 壳（REQ-019 / 可用性）', () => {
+  it('lazily opens manual records and hands changed and same pairs to exactly one existing comparison read', async () => {
+    const sessions = ['left', 'right'].map(id => ({ id, title: id, provider: 'codex', sourceAgent: 'Codex', startedAt: '2026-10-19T00:00:00Z', updatedAt: '2026-10-19T00:00:00Z', status: 'success', cwd: null, eventCount: 1, messageCount: 0, tokenTotal: 0, costUsd: 0, dataSource: 'scan', sourcePath: 'synthetic', detailLoaded: true, mergeGroupId: null, hasSystemPrompt: false, tags: [] } as SessionIndexEntry));
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ version: 1, revision: 1, records: [{ id: '00000000-0000-4000-8000-000000000001', name: 'Manual trial', task: null, inputVersion: null, modelParameters: null, toolSet: null, mode: 'controlled', runs: [{ sessionKey: 'left', label: 'mixed', note: null }, { sessionKey: 'right', label: 'unrated', note: null }], createdAt: '2026-10-19T00:00:00Z', updatedAt: '2026-10-19T00:00:00Z' }] }) }) as Response);
+    vi.stubGlobal('fetch', fetchMock); const load = vi.fn(async () => makeResult());
+    function Harness() { const [left, setLeft] = useState(''), [right, setRight] = useState(''); return <CompareBoard sessions={sessions} locale="en" leftKey={left} rightKey={right} onLeftChange={setLeft} onRightChange={setRight} loadCompare={load} />; }
+    const view = mount(<Harness />);
+    const click = (text: string, exact = true) => { const button = [...document.querySelectorAll<HTMLButtonElement>('button')].find(item => exact ? item.textContent === text : item.textContent?.includes(text))!; expect(button, text).toBeDefined(); act(() => button.click()); };
+    try {
+      expect(fetchMock).not.toHaveBeenCalled(); expect(load).not.toHaveBeenCalled();
+      for (let round = 0; round < 2; round++) {
+        await act(async () => { click('Manual experiment records'); await import('./ExperimentRecordsPanel.js'); });
+        await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+        expect(fetchMock).toHaveBeenCalledTimes(round + 1); click('Manual trial', false);
+        act(() => { document.querySelector<HTMLInputElement>('[aria-label="Compare selected runs: left"]')!.click(); document.querySelector<HTMLInputElement>('[aria-label="Compare selected runs: right"]')!.click(); });
+        click('Compare selected runs'); await act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });
+        expect(document.querySelector('.experiment-records-panel')).toBeNull(); expect(load).toHaveBeenCalledTimes(round + 1); expect(load.mock.calls.at(-1)?.slice(0, 2)).toEqual(['left', 'right']);
+      }
+    } finally { act(() => view.unmount()); }
+  });
   it('WB-003: detail table uses readable labels, complete step ratios and no winner badges for partial activity',async()=>{
     const left=makeDetail('left',[
       makeEvent({id:'prompt',kind:'user_prompt'}),makeEvent({id:'verify',phase:'verify'}),makeEvent({id:'step',status:'unknown'}),

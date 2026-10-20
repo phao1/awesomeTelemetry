@@ -14,6 +14,8 @@ import { OriginalDeletionControl } from './OriginalDeletionControl.js';
 import { CaptureRequestList } from './CaptureRequestList.js';
 import { CaptureBodyText } from './CaptureBodyText.js';
 const ProxyInsights = lazy(() => import('./ProxyInsights.js').then(module => ({ default: module.ProxyInsights })));
+const CdpPanel = lazy(() => import('./CdpPanel.js').then(module => ({ default: module.CdpPanel })));
+const OfficialHooksPanel = lazy(() => import('./OfficialHooksPanel.js').then(module => ({ default: module.OfficialHooksPanel })));
 const CodexCallsPanel = lazy(() => import('./CodexCallsPanel.js').then(module => ({ default: module.CodexCallsPanel })));
 const TraceLogImportPanel = lazy(() => import('./TraceLogImportPanel.js').then(module => ({ default: module.TraceLogImportPanel })));
 const MonitorSetupPanel = lazy(() => import('./MonitorSetupPanel.js').then(module => ({ default: module.MonitorSetupPanel })));
@@ -21,6 +23,7 @@ const MonitorCapabilitiesPanel = lazy(() => import('./MonitorCapabilitiesPanel.j
 const CaptureCapacityPanel = lazy(() => import('./CaptureCapacityPanel.js').then(module => ({ default: module.CaptureCapacityPanel })));
 const CaptureTimingPanel = lazy(() => import('./CaptureTimingPanel.js').then(module => ({ default: module.CaptureTimingPanel })));
 const CaptureExportControl = lazy(() => import('./CaptureExportControl.js').then(module => ({ default: module.CaptureExportControl })));
+const CaptureBundleControl = lazy(() => import('./CaptureBundleControl.js').then(module => ({ default: module.CaptureBundleControl })));
 const CaptureReparseControl = lazy(() => import('./CaptureReparseControl.js').then(module => ({ default: module.CaptureReparseControl })));
 const CaptureComparisonPanel = lazy(() => import('./CaptureComparisonPanel.js').then(module => ({ default: module.CaptureComparisonPanel })));
 
@@ -52,6 +55,7 @@ function DetailReadError({ code, message, locale, onRetry }: {
 }
 
 export interface ProxyViewProps {
+  latestHookId?: number;
   locale: Locale;
   liveStatus?: BusEvents['proxy_status'] | null;
   liveUpdates?: BusEvents['proxy_request'][];
@@ -88,7 +92,7 @@ function withoutBodies(request: ProxyRequest): ProxyRequest {
 }
 
 /** REQ-020：代理视图。控制条 + 密排请求表 + 详情抽屉（8.4）。 */
-export function ProxyView({ locale, liveStatus, liveUpdates, sessions = [], focusedRequestId = null, onFocusedRequestHandled, onOpenSession, traceInvalidateKey = 0, livePreview }: ProxyViewProps): React.JSX.Element {
+export function ProxyView({ locale, liveStatus, liveUpdates, sessions = [], focusedRequestId = null, onFocusedRequestHandled, onOpenSession, traceInvalidateKey = 0, livePreview, latestHookId = 0 }: ProxyViewProps): React.JSX.Element {
   const [items, setItems] = useState<ProxyRequestListItem[]>([]);
   const [status, setStatus] = useState<ProxyStatus | null>(null);
   const statusNow = useRef<ProxyStatus | null>(null);
@@ -318,6 +322,8 @@ export function ProxyView({ locale, liveStatus, liveUpdates, sessions = [], focu
         <button type="button" className="btn" onClick={() => openPanel('capacity')}>{t('proxy.capacity.title', locale)}</button>
       </div></details>
     </div>
+    <Suspense fallback={<p>{t('common.loading', locale)}</p>}><CdpPanel locale={locale} /></Suspense>
+    <Suspense fallback={<p>{t('common.loading', locale)}</p>}><OfficialHooksPanel locale={locale} latestId={latestHookId} onOpenSession={onOpenSession} /></Suspense>
     {diagnostics !== undefined && <details className="capture-run"><summary>{t('proxy.activity', locale)} · {t('capture.observed', locale)} {diagnostics.observedRequests} · {t('capture.persisted', locale)} {diagnostics.persistedRequests}</summary>
       <p className="hint">{t('capture.runScope', locale)}</p><dl className="capture-run-grid">
         {([['capture.observed', diagnostics.observedRequests], ['capture.active', diagnostics.activeRequests], ['capture.pendingWrites', diagnostics.pendingWrites],
@@ -505,6 +511,7 @@ function ProxyDetailDrawer({
         supported={capture?.request != null && capture?.response != null} onAvailability={onAvailability} />
       <Suspense fallback={<Skeleton count={1} />}>
         <CaptureExportControl id={request.id} locale={locale} blocked={availability === 'loading'} metadataOnly={bodyHidden} />
+        <CaptureBundleControl id={request.id} locale={locale} blocked={availability === 'loading'} metadataOnly={bodyHidden} invalidateKey={traceInvalidateKey} />
         {!isWebSocket && <CaptureReparseControl id={request.id} requestId={request.requestId} locale={locale} blocked={bodyHidden} invalidateKey={traceInvalidateKey}
           onBegin={() => {
             bodyEpoch.current += 1; reparseBodyEpoch.current = bodyEpoch.current; analysisFromReparse.current = false;

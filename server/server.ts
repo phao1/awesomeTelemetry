@@ -14,6 +14,9 @@ import { liveCodexInventory } from './codex/source.js';
 import { TraceImportError } from './trace-import/format.js';
 import { TraceLogImporter, importId, importSequence, importPaging, requireImport } from './trace-import/service.js';
 import { listImports, listImportTurns } from './storage/trace-import.js';
+import { ClaudeHookControl } from './hooks/claude-control.js';
+import { ClaudeHookReceiver } from './hooks/claude-receiver.js';
+import { registerClaudeHookRoutes } from './http/claude-hook-routes.js';
 
 import type { Database } from 'better-sqlite3';
 
@@ -109,6 +112,15 @@ import { analyzeProtocol } from './proxy/protocol-analysis.js';
 import { assembleCaptureEvidenceExport, stringifyCaptureEvidenceExport, CaptureExportLimitError } from './proxy/capture-export.js';
 import { getLinkedExecution, LinkedExecutionLimitError } from './storage/linked-execution.js';
 import { getNativeSessionParents } from './storage/native-session-parents.js';
+import { getNativeSessionFamily } from './storage/session-family.js';
+import { getNativeToolObservations } from './storage/native-tool-observations.js';
+import { handleTraceExport } from './http/trace-export-route.js';
+import { handleLinkedTraceExport } from './http/linked-trace-export-route.js';
+import { ExperimentRegistry } from './experiments/registry.js';
+import { registerExperimentRoutes } from './http/experiment-routes.js';
+import { registerFridaCaptureRoutes } from './http/frida-capture-routes.js';
+import { registerCaptureBundleRoutes } from './http/capture-bundle-routes.js';
+import { CaptureBundleExporter } from './proxy/capture-bundle.js';
 import { getMonitorCapabilities } from './proxy/monitor-capabilities.js';
 import { parseProxyRequest } from './proxy/parser-router.js';
 import { decideTraceAssociation, listProxyTraceLinks, listSessionCaptureLinks, listTraceDecisions, listTraceIdentities, TraceLinkError } from './storage/trace-links.js';
@@ -142,6 +154,8 @@ const DEV_ONLY_ROUTES = [
   '/api/cdp/stop',
   '/api/cdp/status',
   '/api/cdp/targets',
+  '/api/cdp/captures',
+  '/api/cdp/captures/:id',
 ] as const;
 
 export interface AgentObservabilityServerOptions {
@@ -290,6 +304,9 @@ export function createAgentObservabilityServer(
   const captureReparser = new CaptureReparser(db, getFileStore);
   const codexInspector = new CodexInspector(db, getFileStore);
   const traceImporter = new TraceLogImporter(db, getFileStore);
+  const hookReceiver = new ClaudeHookReceiver(db,
+    new ClaudeHookControl(join(dirname(opts.userConfigPath ?? (dbPath || join(process.cwd(), '.agent-observe', 'state.sqlite'))), 'claude-hook-receiver.json')),
+    getFileStore, latestId => eventBus.emit('hook_events_changed', { latestId }));
   const getBodyStore = (): Promise<CaptureBodyStore> => {
     if (bodyStorePromise === null) {
       bodyStorePromise = getFileStore().then(async store => {
@@ -423,7 +440,8 @@ export function createAgentObservabilityServer(
   }, caDirectory, notifySession: queueTraceLinkChange });
   const fridaRuntime = new FridaRuntime((payload) => {
     eventBus.emit('frida_status', payload);
-  });
+  }, { db, notify: payload => eventBus.emit('frida_capture', payload),
+    onError: () => console.error('Frida capture failed; no saved-capture success was reported') });
   const captureSelfTester = new CaptureSelfTester(db, proxyRuntime, getFileStore);
 
   /** REQ-015：惰性详情加载（compare/report 与 GET 详情同口径）。 */
@@ -470,6 +488,14 @@ export function createAgentObservabilityServer(
   };
 
   const router = new Router();
+  registerClaudeHookRoutes(router, hookReceiver);
+  registerFridaCaptureRoutes(router, db);
+  const experimentRegistry = new ExperimentRegistry(dirname(opts.userConfigPath ?? (dbPath || join(process.cwd(), '.agent-observe', 'state.sqlite'))));
+  registerExperimentRoutes(router, experimentRegistry, keys => {
+    const rows = cachedStmt(db, "SELECT id FROM sessions WHERE data_source='scan' AND id IN (SELECT value FROM json_each(?))")
+      .all(JSON.stringify(keys)) as Array<{ id: string }>;
+    return rows.map(row => row.id);
+  });
 
   router.register('POST', '/api/trace-imports', async (req, res) => {
     const controller = new AbortController(), cancel = (): void => controller.abort();
@@ -1220,6 +1246,22 @@ export function createAgentObservabilityServer(
     sendCompressedOrPlain(res, 200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, bytes, req);
   });
 
+  router.register('GET', '/api/sessions/:key/family', (req, res, params) => {
+    const query = parseQuery(req);
+    if ([...query.keys()].some(key => key !== 'limit' && key !== 'cursor') || query.getAll('limit').length > 1 || query.getAll('cursor').length > 1 ||
+      (query.has('limit') && !/^[1-9]\d*$/.test(query.get('limit')!))) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Invalid session family query');
+    }
+    try {
+      const page = getNativeSessionFamily(db, params.key ?? '', { limit: Number(query.get('limit') ?? 20), cursor: query.get('cursor') ?? undefined });
+      res.setHeader('cache-control', 'no-store');
+      sendJson(res, 200, page, req);
+    } catch (error) {
+      if (error instanceof LinkedExecutionLimitError) throw new HttpError(503, 'EXECUTION_METADATA_LIMIT', 'Session family metadata cannot fit its bounded page');
+      throw error;
+    }
+  });
+
   router.register('GET', '/api/sessions/:key/parents', (req, res, params) => {
     const query = parseQuery(req);
     if ([...query.keys()].some(key => key !== 'limit' && key !== 'cursor') || query.getAll('limit').length > 1 || query.getAll('cursor').length > 1 ||
@@ -1234,6 +1276,29 @@ export function createAgentObservabilityServer(
     }
   });
 
+  const captureExportSnapshot = (id: number, exportedAt: string, analysis: ProxyProtocolAnalysis | null = null,
+    reason: CaptureEvidenceExport['analysisUnavailableReason'] = 'metadata_only'): CaptureEvidenceExport | null => db.transaction(() => {
+      const item = getProxyRequestListItemById(db, id);
+      if (item === null) return null;
+      const { hasSystemPrompt: _hasSystemPrompt, ...requestMetadata } = item;
+      void _hasSystemPrompt;
+      const headers = cachedStmt(db, 'SELECT request_headers FROM proxy_requests WHERE id=?').get(id) as { request_headers: string };
+      const request = { ...requestMetadata, requestHeaders: JSON.parse(headers.request_headers) as CaptureEvidenceExport['request']['requestHeaders'] };
+      return assembleCaptureEvidenceExport({ request, capture: readCaptureBodies(db, id),
+        originalDeletion: getOriginalDeletionForProxy(db, id), analysis, analysisUnavailableReason: reason,
+        identities: listTraceIdentities(db, { source: 'proxy', key: String(id) }, { limit: 100 }),
+        traceLinks: listProxyTraceLinks(db, id, { limit: 100 }), schemaVersion: SCHEMA_VERSION, exportedAt });
+    })();
+  const captureBundler = new CaptureBundleExporter({ snapshot: captureExportSnapshot, getStore: getFileStore,
+    current: (id, requestId, refs, originals) => {
+      if (getProxyRequestListItemById(db, id)?.requestId !== requestId) return false;
+      if (!originals) return true;
+      if (getOriginalDeletionForProxy(db, id) !== null) return false;
+      const current = readCaptureBodies(db, id);
+      return JSON.stringify([current.request, current.response]) === JSON.stringify([refs.request, refs.response]);
+    } });
+  registerCaptureBundleRoutes(router, captureBundler);
+
   router.register('GET', '/api/proxy/requests/:id/export', async (req, res, params) => {
     const id = captureRequestId(params.id);
     const query = parseQuery(req);
@@ -1245,20 +1310,9 @@ export function createAgentObservabilityServer(
     let reason: CaptureEvidenceExport['analysisUnavailableReason'] = metadataOnly ? 'metadata_only' : null;
     try { if (!metadataOnly) analysis = await readCaptureAnalysis(id); }
     catch { reason = 'analysis_unavailable'; }
-    // From this fresh snapshot through serialization/send there is no await:
-    // an async analysis must not revive evidence removed by confirmed intent.
-    const snapshot = db.transaction(() => {
-      const item = getProxyRequestListItemById(db, id);
-      if (item === null) throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', 'Proxy request not found');
-      const { hasSystemPrompt: _hasSystemPrompt, ...requestMetadata } = item;
-      void _hasSystemPrompt;
-      const headers = cachedStmt(db, 'SELECT request_headers FROM proxy_requests WHERE id=?').get(id) as { request_headers: string };
-      const request = { ...requestMetadata, requestHeaders: JSON.parse(headers.request_headers) as CaptureEvidenceExport['request']['requestHeaders'] };
-      return assembleCaptureEvidenceExport({ request, capture: readCaptureBodies(db, id),
-        originalDeletion: getOriginalDeletionForProxy(db, id), analysis, analysisUnavailableReason: reason,
-        identities: listTraceIdentities(db, { source: 'proxy', key: String(id) }, { limit: 100 }),
-        traceLinks: listProxyTraceLinks(db, id, { limit: 100 }), schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString() });
-    })();
+    // Fresh synchronous snapshot after async analysis; no deleted projection revival.
+    const snapshot = captureExportSnapshot(id, new Date().toISOString(), analysis, reason);
+    if (snapshot === null) throw new HttpError(404, 'PROXY_REQUEST_NOT_FOUND', 'Proxy request not found');
     let encoded: string;
     try { encoded = stringifyCaptureEvidenceExport(snapshot); }
     catch (error) {
@@ -1267,6 +1321,35 @@ export function createAgentObservabilityServer(
     }
     sendCompressedOrPlain(res, 200, { 'content-type': 'application/json; charset=utf-8',
       'content-disposition': `attachment; filename="capture-${id}.json"`, 'cache-control': 'no-store' }, Buffer.from(encoded), req);
+  });
+
+  router.register('GET', '/api/sessions/:key/trace-export', (req, res, params) => {
+    handleTraceExport(req, res, db, params.key ?? '');
+  });
+
+  router.register('GET', '/api/sessions/:key/linked-trace-export', (req, res, params) => {
+    handleLinkedTraceExport(req, res, db, params.key ?? '');
+  });
+
+  router.register('GET', '/api/sessions/:key/tool-observations', (req, res, params) => {
+    const query = parseQuery(req);
+    const allowed = new Set(['namespace', 'value', 'scope', 'limit', 'cursor']);
+    for (const key of query.keys()) {
+      if (!allowed.has(key) || query.getAll(key).length !== 1) throw new HttpError(400, 'BAD_REQUEST', 'Invalid native tool observation query');
+    }
+    for (const key of ['limit', 'cursor']) if (query.has(key) && (!/^(0|[1-9]\d*)$/.test(query.get(key)!) || !Number.isSafeInteger(Number(query.get(key))))) {
+      throw new HttpError(400, 'BAD_REQUEST', 'Invalid native tool observation pagination');
+    }
+    let page;
+    try { page = getNativeToolObservations(db, params.key ?? '', {
+      namespace: query.get('namespace') ?? '', value: query.get('value') ?? '', scope: query.get('scope') ?? '',
+      limit: query.has('limit') ? Number(query.get('limit')) : undefined,
+      cursor: query.has('cursor') ? Number(query.get('cursor')) : undefined,
+    }); } catch (error) {
+      if (error instanceof LinkedExecutionLimitError) throw new HttpError(503, 'EXECUTION_METADATA_LIMIT', 'Native tool metadata cannot fit its bounded page');
+      throw error;
+    }
+    res.setHeader('cache-control', 'no-store'); sendJson(res, 200, page, req);
   });
 
   router.register('GET', '/api/sessions/:key/execution', (req, res, params) => {
@@ -1433,7 +1516,7 @@ export function createAgentObservabilityServer(
     const rawPid = body.pid;
     let pid: number | undefined;
     if (rawPid !== undefined) {
-      if (typeof rawPid !== 'number' || !Number.isInteger(rawPid) || rawPid <= 0) {
+      if (typeof rawPid !== 'number' || !Number.isSafeInteger(rawPid) || rawPid <= 0) {
         throw new HttpError(400, 'BAD_REQUEST', 'pid must be a positive integer');
       }
       pid = rawPid;
@@ -1441,29 +1524,8 @@ export function createAgentObservabilityServer(
     sendJson(res, 200, await fridaRuntime.start({ pid }), req);
   });
 
-  router.register('POST', '/api/frida/stop', (_req, res) => {
-    sendJson(res, 200, fridaRuntime.stop(), _req);
-  });
-
-  router.register('GET', '/api/frida/captures', (_req, res) => {
-    const rows = cachedStmt(
-      db,
-      `SELECT id, pid, captured_at, capture_type, json_data, model, session_id, capture_session_id, message_count, tokens_json
-       FROM frida_captures ORDER BY captured_at DESC LIMIT 50`,
-    ).all() as Array<Record<string, unknown>>;
-    const items = rows.map((row) => ({
-      id: row.id,
-      pid: row.pid,
-      capturedAt: row.captured_at,
-      captureType: row.capture_type,
-      jsonData: String(row.json_data ?? '').slice(0, 500),
-      model: row.model,
-      sessionId: row.session_id,
-      captureSessionId: row.capture_session_id,
-      messageCount: row.message_count,
-      tokens: row.tokens_json === null ? null : JSON.parse(row.tokens_json as string),
-    }));
-    sendJson(res, 200, { items, nextCursor: null, hasMore: false }, _req);
+  router.register('POST', '/api/frida/stop', async (_req, res) => {
+    sendJson(res, 200, await fridaRuntime.stop(), _req);
   });
 
   router.register('GET', '/api/config/providers', (_req, res) => {
@@ -2017,7 +2079,9 @@ export function createAgentObservabilityServer(
     }
     const handler = (async () => {
       try {
-        if (pathname === '/api/events' || pathname.startsWith('/api/proxy/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents)$/.test(pathname)) {
+        if (pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
+          if (pathname.startsWith('/api/hooks/')) res.setHeader('cache-control', 'no-store');
+          if (pathname.startsWith('/api/frida/')) res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/trace-imports')) res.setHeader('cache-control', 'no-store');
           const localHost = (host: string): boolean => host === 'localhost' || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host);
           const remote = req.socket.remoteAddress ?? '';
@@ -2121,14 +2185,15 @@ export function createAgentObservabilityServer(
         void httpClosed.catch(() => {});
       }
       shutdown = (async () => {
+        await hookReceiver.close();
+        await captureBundler.close();
         await captureSelfTester.close();
         await captureReparser.close();
         await codexInspector.close();
         await traceImporter.close();
         const proxy = proxyRuntime.status();
         const proxyStopped = proxy.running || proxy.starting || proxy.diagnostics?.cleanupPending ? proxyRuntime.stop() : Promise.resolve();
-        fridaRuntime.stop();
-        await Promise.all([proxyStopped, (async () => {
+        await Promise.all([proxyStopped, fridaRuntime.stop(), (async () => {
           await fileWatcher.close();
           // A handler may still be reading its request before starting a scan.
           // Observe all registered scan tasks only after those handlers settle.

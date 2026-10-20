@@ -118,7 +118,9 @@ function reconcile(db: Database, owner: IdentityOwner, keys: Array<[string, stri
   const scanRows = cachedStmt(db, SESSION_IDENTITY_SQL).all(JSON.stringify(nativeKeys(proxyRows))) as Row[];
   const scans = scanRows.filter(row => row.session_key !== null);
   const sourceIds = [...new Set([...proxyRows, ...scans].map(row => row.source_id as string))];
-  const counts = cachedStmt(db, "SELECT source_id, COUNT(*) AS count FROM trace_identities WHERE source_id IN (SELECT value FROM json_each(?)) AND kind='session' AND scope IS NULL AND namespace LIKE 'agent:%' GROUP BY source_id").all(JSON.stringify(sourceIds)) as Array<{ source_id: string; count: number }>;
+  // Multiple native locators are evidence for the same semantic identity,
+  // not additional sessions. Keep their stored rows and bounded evidence IDs.
+  const counts = cachedStmt(db, "SELECT source_id, COUNT(DISTINCT json_array(namespace, value)) AS count FROM trace_identities WHERE source_id IN (SELECT value FROM json_each(?)) AND kind='session' AND scope IS NULL AND namespace LIKE 'agent:%' GROUP BY source_id").all(JSON.stringify(sourceIds)) as Array<{ source_id: string; count: number }>;
   const countBySource = new Map(counts.map(row => [row.source_id, row.count]));
   const byNative = new Map<string, Row[]>();
   for (const row of scans) {
@@ -139,6 +141,7 @@ function reconcile(db: Database, owner: IdentityOwner, keys: Array<[string, stri
   for (const proxy of proxyRows) {
     if (!namespaceKnown(proxy.namespace as string)) continue;
     const candidates = byNative.get(JSON.stringify([proxy.namespace, proxy.value])) ?? [];
+    const candidateOwners = new Set(candidates.map(scan => scan.source_id as string));
     const previousOwners = automaticOwners.get(proxy.proxy_id as number);
     const ordered = [...candidates.filter(scan => previousOwners?.has(scan.session_key as string)), ...candidates.filter(scan => !previousOwners?.has(scan.session_key as string))];
     for (const scan of ordered) {
@@ -149,7 +152,7 @@ function reconcile(db: Database, owner: IdentityOwner, keys: Array<[string, stri
         candidateCounts.set(proxyId, (candidateCounts.get(proxyId) ?? 0) + 1);
       }
       const complete = scan.complete === 1 && proxy.complete === 1;
-      const direct = complete && candidates.length === 1 && countBySource.get(scan.source_id as string) === 1 && countBySource.get(proxy.source_id as string) === 1;
+      const direct = complete && candidateOwners.size === 1 && countBySource.get(scan.source_id as string) === 1 && countBySource.get(proxy.source_id as string) === 1;
       const value = desired.get(id);
       const evidence = [...new Set([...(value?.evidence ?? []), proxy.id as string, scan.id as string])].slice(0, 8);
       desired.set(id, { sessionKey, proxyId, state: direct ? 'direct' : 'candidate',

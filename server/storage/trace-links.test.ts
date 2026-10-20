@@ -35,8 +35,86 @@ function bindScan(db: Db, key: string, value: string, namespace = 'agent:claude'
 function bindProxy(db: Db, id: number, value: string, namespace = 'agent:claude'): string[] {
   return writeNativeIdentities(db, { source: 'proxy', key: String(id) }, identities(value, namespace), time);
 }
+function repeatedIdentities(value: string, namespace = 'agent:claude'): NativeIdentitySet {
+  const bundle = identities(value, namespace);
+  bundle.items.push({ ...bundle.items[0]!, sourcePath: 'metadata.session_id' });
+  return bundle;
+}
 
 describe('native identity and association storage', () => {
+  it.each(['scan', 'proxy', 'both'])('counts repeated %s identity locators as one native session without deleting provenance', repeated => {
+    const db = database(); session(db, 's1'); proxy(db, 1);
+    const scan = repeated === 'proxy' ? identities('a') : repeatedIdentities('a');
+    const network = repeated === 'scan' ? identities('a') : repeatedIdentities('a');
+    writeNativeIdentities(db, { source: 'scan', key: 's1' }, scan, time);
+    writeNativeIdentities(db, { source: 'proxy', key: '1' }, network, time);
+    const link = listProxyTraceLinks(db, 1).items[0]!;
+    expect(link).toMatchObject({ sessionKey: 's1', state: 'direct', reason: 'exact_native_session_id' });
+    const retained = [
+      ...listTraceIdentities(db, { source: 'scan', key: 's1' }).items,
+      ...listTraceIdentities(db, { source: 'proxy', key: '1' }).items,
+    ];
+    expect(retained).toHaveLength(scan.items.length + network.items.length);
+    expect(link.evidenceIds).toHaveLength(retained.length);
+    expect(new Set(link.evidenceIds)).toEqual(new Set(retained.map(item => item.id)));
+    expect(listSessionCaptureLinks(db, 's1')).toMatchObject({ confirmedCount: 1, candidateCount: 0 });
+  });
+
+  it('keeps equal values in different provider namespaces contradictory even with repeated locators', () => {
+    const db = database(); session(db, 'claude'); session(db, 'codex', 'codex'); proxy(db, 1);
+    writeNativeIdentities(db, { source: 'scan', key: 'claude' }, repeatedIdentities('shared'), time);
+    writeNativeIdentities(db, { source: 'scan', key: 'codex' }, repeatedIdentities('shared', 'agent:codex'), time);
+    const bundle = repeatedIdentities('shared'); bundle.items.push(...repeatedIdentities('shared', 'agent:codex').items);
+    writeNativeIdentities(db, { source: 'proxy', key: '1' }, bundle, time);
+    expect(listProxyTraceLinks(db, 1).items.map(item => [item.sessionKey, item.state])).toEqual([
+      ['claude', 'candidate'], ['codex', 'candidate'],
+    ]);
+  });
+
+  it('downgrades distinct owners with repeated evidence and restores uniqueness after late corrected evidence', () => {
+    const db = database(); session(db, 'first'); session(db, 'second'); proxy(db, 1);
+    writeNativeIdentities(db, { source: 'scan', key: 'first' }, repeatedIdentities('a'), time);
+    writeNativeIdentities(db, { source: 'proxy', key: '1' }, repeatedIdentities('a'), time);
+    expect(listProxyTraceLinks(db, 1).items[0]?.state).toBe('direct');
+    writeNativeIdentities(db, { source: 'scan', key: 'second' }, repeatedIdentities('a'), time);
+    expect(listProxyTraceLinks(db, 1).items.map(item => item.state)).toEqual(['candidate', 'candidate']);
+    writeNativeIdentities(db, { source: 'scan', key: 'second' }, repeatedIdentities('b'), time);
+    expect(listProxyTraceLinks(db, 1).items).toMatchObject([{ sessionKey: 'first', state: 'direct' }]);
+    const incomplete = repeatedIdentities('a');
+    incomplete.completeness = { complete: false, omittedCount: 1, reasons: ['partial_source'] };
+    writeNativeIdentities(db, { source: 'proxy', key: '1' }, incomplete, time);
+    expect(listProxyTraceLinks(db, 1).items[0]).toMatchObject({ state: 'candidate', reason: 'identity_collection_incomplete' });
+  });
+
+  it.each(['confirmed', 'rejected', 'revoked'] as const)('preserves the %s user decision when duplicate provenance changes', state => {
+    const db = database(); session(db, 's1'); proxy(db, 1);
+    bindScan(db, 's1', 'a'); bindProxy(db, 1, 'a');
+    decideTraceAssociation(db, 1, 's1', state, 'explicit decision');
+    writeNativeIdentities(db, { source: 'scan', key: 's1' }, repeatedIdentities('a'), time);
+    writeNativeIdentities(db, { source: 'proxy', key: '1' }, repeatedIdentities('a'), time);
+    expect(listProxyTraceLinks(db, 1).items[0]?.state).toBe(state);
+    expect(listTraceDecisions(db, 1, 's1').items).toMatchObject([{ state, note: 'explicit decision' }]);
+  });
+
+  it('retains duplicate provenance across reopen with zero-write reingestion and distinct network attempts', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'trace-links-repeat-')); directories.push(directory);
+    const path = join(directory, 'trace.sqlite'); const first = database(path);
+    session(first, 's1'); proxy(first, 1); proxy(first, 2);
+    writeNativeIdentities(first, { source: 'scan', key: 's1' }, repeatedIdentities('a'), time);
+    for (const key of ['1', '2']) writeNativeIdentities(first, { source: 'proxy', key }, repeatedIdentities('a'), time);
+    first.close();
+    const reopened = database(path);
+    const before = cachedStmt(reopened, 'SELECT total_changes() AS count').get();
+    writeNativeIdentities(reopened, { source: 'scan', key: 's1' }, repeatedIdentities('a'), time);
+    for (const key of ['1', '2']) writeNativeIdentities(reopened, { source: 'proxy', key }, repeatedIdentities('a'), time);
+    expect(cachedStmt(reopened, 'SELECT total_changes() AS count').get()).toEqual(before);
+    const page = listSessionCaptureLinks(reopened, 's1');
+    expect(page).toMatchObject({ confirmedCount: 2, candidateCount: 0 });
+    expect(page.items.map(item => item.request.id)).toEqual([2, 1]);
+    expect(listTraceIdentities(reopened, { source: 'scan', key: 's1' }).items).toHaveLength(2);
+    expect(JSON.stringify(page)).not.toMatch(/PRIVATE_BODY|PRIVATE_OUTPUT|PRIVATE_SYSTEM/);
+  });
+
   it('selects a predecessor at10000 captures with fixed indexed metadata reads and no sorting tree', () => {
     const log: string[] = []; const db = database(':memory:', sql => log.push(sql)); session(db, 'long-session');
     const insertProxy = cachedStmt(db, "INSERT INTO proxy_requests (id, request_id, method, url, hostname, started_at, request_format) VALUES (?, ?, 'POST', '/v1/messages', 'synthetic.test', ?, 'anthropic_messages')");

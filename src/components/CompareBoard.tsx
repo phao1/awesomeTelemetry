@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
+import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
@@ -32,6 +32,8 @@ import { CompareTimeline } from './CompareTimeline.js';
 import { CompareRunEvidence } from './CompareRunEvidence.js';
 import { IconChevronDown, IconChevronRight } from './icons/index.js';
 import { ErrorBoundary } from './ui/ErrorBoundary.js';
+
+const ExperimentRecordsPanel = lazy(() => import('./ExperimentRecordsPanel.js').then(module => ({ default: module.ExperimentRecordsPanel })));
 
 export type { CompareResult } from './compare-types.js';
 
@@ -452,6 +454,7 @@ export function CompareBoard({
   const result = resultPair === pair && !currentLoading && currentError === null ? snapshot : null;
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
+  const [experimentsOpen, setExperimentsOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     'compare-speed': true,
     'compare-dims': true,
@@ -590,6 +593,16 @@ export function CompareBoard({
         onRightOpenChange={setRightOpen}
         loading={currentLoading}
       />
+      <button className="btn" type="button" onClick={() => setExperimentsOpen(true)}>{locale === 'zh' ? '手工实验记录' : 'Manual experiment records'}</button>
+      {experimentsOpen && <ErrorBoundary label={locale === 'zh' ? '手工实验记录' : 'Manual experiment records'} fallback={() => <div role="alert">
+        <p>{locale === 'zh' ? '面板加载失败，请关闭后重试。' : 'Panel loading failed. Close and retry.'}</p>
+        <button className="btn" type="button" onClick={() => setExperimentsOpen(false)}>{locale === 'zh' ? '关闭' : 'Close'}</button>
+      </div>}><Suspense fallback={<p role="status">{locale === 'zh' ? '正在加载手工实验面板…' : 'Loading manual experiment panel…'}</p>}>
+        <ExperimentRecordsPanel sessions={sessions} locale={locale} onClose={() => setExperimentsOpen(false)} onCompare={(left, right) => {
+          if (left === leftKey && right === rightKey) onCompare(left, right);
+          else { onLeftChange(left); onRightChange(right); }
+        }} />
+      </Suspense></ErrorBoundary>}
       <div className="cmp-selector-scope"><span>{t('compare.pickerScope',locale).replace('{n}',String(sessions.length))}</span>
         {onBrowseRuns&&<button type="button" className="btn ui-btn-sm" onClick={onBrowseRuns}>{t('compare.browseRuns',locale)}</button>}</div>
       {currentLoading && <p role="status" className="hint compare-read-status">{t('compare.read.loading',locale)}{' '}

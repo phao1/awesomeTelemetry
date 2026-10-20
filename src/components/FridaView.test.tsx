@@ -89,3 +89,34 @@ describe('Frida experimental workflow',()=>{
     expect(view.host.textContent).toContain('FRIDA_RESPONSE_INVALID');expect(view.host.textContent).toContain(t('frida.status.unknown','en'));expect(view.host.textContent).not.toContain(t('frida.empty','en'));expect(button(view.host,'frida.start').disabled).toBe(true);expect(view.host.querySelector('.ui-skeleton')).toBeNull();
   });
 });
+
+describe('Frida saved capture entry',()=>{
+  it('live notifications remain separate from uncertain control state and locale/freshness changes perform no IO',async()=>{
+    reads();const start=vi.spyOn(api,'fridaStart').mockRejectedValue(new ApiError('SYNTHETIC_START','failure',500));vi.spyOn(console,'error').mockImplementation(()=>undefined);
+    const fetch=vi.spyOn(globalThis,'fetch');const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+    cleanup.push(()=>{act(()=>root.unmount());host.remove();});
+    act(()=>root.render(<FridaView locale="en"/>));await flush();
+    act(()=>host.querySelector<HTMLInputElement>('[data-frida-ack]')!.click());act(()=>button(host,'frida.start').click());await flush();
+    expect(host.textContent).toContain(t('frida.uncertain','en'));
+    act(()=>root.render(<FridaView locale="en" liveStatus={{running:true,pid:456}} savedNotifications={[{id:42}]} connected={false}/>));
+    expect(host.textContent).toContain('PID 456');expect(host.textContent).toContain('notifications may be missing');
+    expect(host.textContent).toContain(t('frida.uncertain','en'));expect(button(host,'frida.start').disabled).toBe(true);
+    act(()=>root.render(<FridaView locale="zh" liveStatus={{running:false}} savedNotifications={[{id:42}]} connected/>));
+    expect(host.textContent).toContain('进程停止');expect(host.textContent).toContain(t('frida.uncertain','zh'));
+    expect(api.fridaStatus).toHaveBeenCalledTimes(1);expect(api.fridaCaptures).toHaveBeenCalledTimes(1);expect(start).toHaveBeenCalledTimes(1);expect(fetch).not.toHaveBeenCalled();
+    expect(host.querySelector('[aria-label="打开新保存捕获 #42"]')).not.toBeNull();
+  });
+  it('opens exactly one full detail only on explicit saved row selection and refresh closes it',async()=>{
+    reads();vi.mocked(api.fridaCaptures).mockResolvedValue({items:[{id:42,capturedAt:'2026-10-20T00:00:00.000Z',captureType:'chat',model:null}],nextCursor:null,hasMore:false});
+    const fetch=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response(JSON.stringify({id:42,pid:12,capturedAt:'2026-10-20T00:00:00.000Z',captureType:'chat',jsonData:'{"saved":true}',model:null,sessionId:null,captureSessionId:null,messageCount:null,tokens:null}),{headers:{'content-type':'application/json'}}));
+    const view=mount();await flush();expect(fetch).not.toHaveBeenCalled();
+    act(()=>view.host.querySelector<HTMLButtonElement>('[aria-label="Open capture #42"]')!.click());await flush();expect(fetch).toHaveBeenCalledTimes(1);expect(view.host.querySelector('pre')?.textContent).toBe('{"saved":true}');
+    act(()=>button(view.host,'frida.refreshHistory').click());await flush();expect(view.host.querySelector('.frida-capture-inspector')).toBeNull();expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('pages explicitly and keeps window-rendered rows bounded without per-row detail IO',async()=>{
+    reads();vi.mocked(api.fridaCaptures).mockResolvedValue({items:Array.from({length:50},(_,i)=>({id:i+1,capturedAt:'2026-10-20T00:00:00.000Z',captureType:'chat',model:null})),nextCursor:'["2026-10-20T00:00:00.000Z",1]',hasMore:true});
+    const fetch=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response(JSON.stringify({items:Array.from({length:50},(_,i)=>({id:i+51,capturedAt:'2026-10-19T00:00:00.000Z',captureType:'chat',model:null})),nextCursor:null,hasMore:false}),{headers:{'content-type':'application/json'}}));
+    const view=mount();await flush();expect(view.host.querySelectorAll('tbody button').length).toBeLessThanOrEqual(40);expect(fetch).not.toHaveBeenCalled();
+    act(()=>[...view.host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='Load next page')!.click());await flush();expect(fetch).toHaveBeenCalledTimes(1);expect(String(fetch.mock.calls[0]?.[0])).toContain('limit=50');expect(view.host.querySelectorAll('tbody button').length).toBeLessThanOrEqual(40);
+  });
+});

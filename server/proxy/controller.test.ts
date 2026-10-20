@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { ChildProcess } from 'node:child_process';
 
 import Database from 'better-sqlite3';
 
@@ -328,5 +329,63 @@ describe('ProxyRuntime captureGroupId 生命周期（design D2 / tasks §3.1-§3
     expect(runtime.status().diagnostics).toMatchObject({ phase: 'idle', cleanupPending: false });
     expect(proxy.shutdown).toHaveBeenCalledOnce();
     db.close();
+  });
+});
+
+// Real Frida parser + in-memory SQLite; only child transport is injected.
+describe('Frida saved capture lifecycle', () => {
+  async function setupFrida() {
+    const { EventEmitter } = await import('node:events');
+    const { PassThrough } = await import('node:stream');
+    const { FridaRuntime } = await import('./controller.js');
+    const { runFridaMonitor } = await import('./frida-capture.js');
+    const db = new Database(':memory:'); initSchema(db);
+    const processes: ChildProcess[] = [];
+    const monitor: typeof runFridaMonitor = (pid, path, data, error) => runFridaMonitor(pid, path, data, error, () => {
+      const child = new EventEmitter() as ChildProcess;
+      child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.kill = vi.fn(() => true); processes.push(child); return child;
+    });
+    const notify = vi.fn(), onError = vi.fn(), emit = vi.fn();
+    const deps = { db, notify, onError, monitor, validateScript: async () => {}, uuid: () => 'synthetic-local-run', stopTimeoutMs: 20 };
+    return { db, processes, notify, onError, emit, deps, runtime: new FridaRuntime(emit, deps), FridaRuntime };
+  }
+  it('notifies only after real commit, stops until close and rejects old-child callbacks/duplicate close', async () => {
+    const { db, runtime, processes, notify, emit } = await setupFrida();
+    try {
+      await runtime.start({ pid: 12 }); const first = processes[0]!; first.emit('spawn');
+      notify.mockImplementation(({ id }: { id: number }) => { expect(db.prepare('SELECT id FROM frida_captures WHERE id=?').get(id)).toBeDefined(); });
+      first.stdout!.emit('data', Buffer.from('[NEW CHAT DATA]{"x":1}[END]')); expect(notify).toHaveBeenCalledExactlyOnceWith({ id: 1 });
+      const stop = runtime.stop(); await Promise.resolve(); expect(runtime.status().running).toBe(true); await expect(runtime.start({ pid: 13 })).rejects.toThrow('cleanup');
+      first.emit('close', 0); await stop; expect(runtime.status().running).toBe(false);
+      await runtime.start({ pid: 13 }); const second = processes[1]!; second.emit('spawn'); const count = emit.mock.calls.length;
+      first.emit('exit', 1); first.emit('close', 0); first.stdout!.emit('data', Buffer.from('[NEW CHAT DATA]{"old":1}[END]'));
+      expect(emit).toHaveBeenCalledTimes(count); expect(runtime.status().pid).toBe(13); expect(notify).toHaveBeenCalledTimes(1);
+      const final = runtime.stop(); await Promise.resolve(); second.emit('close', 0); await final;
+    } finally { db.close(); }
+  });
+  it('write failure kills owned child and never publishes saved success', async () => {
+    const { db, runtime, processes, notify, onError } = await setupFrida();
+    try { await runtime.start({ pid: 12 }); const child = processes[0]!; child.emit('spawn'); db.exec('DROP TABLE frida_captures');
+      child.stdout!.emit('data', Buffer.from('[NEW CHAT DATA]{"x":1}[END]')); expect(notify).not.toHaveBeenCalled(); expect(onError).toHaveBeenCalledTimes(1); expect(child.kill).toHaveBeenCalledTimes(1);
+      child.emit('close', 1); expect(runtime.status().running).toBe(false);
+    } finally { db.close(); }
+  });
+  it('malformed/incomplete data never becomes a saved capture', async () => {
+    const { db, runtime, processes, notify, onError } = await setupFrida();
+    try { await runtime.start({ pid: 12 }); const child = processes[0]!; child.emit('spawn'); child.stdout!.emit('data', Buffer.from('[NEW CHAT DATA]{bad}[END]')); child.emit('error', new Error('synthetic')); child.emit('close', 1);
+      expect(notify).not.toHaveBeenCalled(); expect(onError).toHaveBeenCalledTimes(1); expect(db.prepare('SELECT id FROM frida_captures').all()).toEqual([]);
+    } finally { db.close(); }
+  });
+  it('stop during discovery waits for ownership, rejects late target and does not spawn', async () => {
+    const { db, deps, FridaRuntime, processes } = await setupFrida(); let resolve!: (pid: number) => void;
+    const runtime = new FridaRuntime(vi.fn(), { ...deps, discover: () => new Promise(done => { resolve = done; }) });
+    try { const start = runtime.start({}); const stop = runtime.stop(); await expect(runtime.start({ pid: 13 })).rejects.toThrow('cleanup'); resolve(12); await start; await stop; expect(processes).toHaveLength(0); expect(runtime.status()).toEqual({ running: false, starting: false, pid: null }); }
+    finally { db.close(); }
+  });
+  it('stop timeout retains ownership and permits explicit retry after actual close', async () => {
+    const { db, runtime, processes } = await setupFrida();
+    try { await runtime.start({ pid: 12 }); const child = processes[0]!; child.emit('spawn'); await expect(runtime.stop()).rejects.toThrow('cleanup'); expect(runtime.status().running).toBe(true); await expect(runtime.start({ pid: 13 })).rejects.toThrow('cleanup');
+      const retry = runtime.stop(); await Promise.resolve(); child.emit('close', 0); await retry; expect(runtime.status().pid).toBeNull();
+    } finally { db.close(); }
   });
 });

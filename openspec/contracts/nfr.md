@@ -1,5 +1,16 @@
 # Contract: Non-functional requirements (performance budget)
 
+## Local official hook bounds
+
+CH-001..006 caps raw ingress256KiB/2s,4 accepted writes/1MiB,10000 metadata rows;
+raw originals reuse existing file quota/queue and metadata uses shared capacity
+admission. Control file<=4096B, atomic0600; no secret/hash in status/list/logs.
+List<=50/64KiB, raw selected detail<=1MiB serialized; no source fan-out. One
+latest-ID hint/200ms (unref), shared shell SSE. Selected open metadata can refresh
+only when hinted and at most once/5s; stop auto refresh on error/close. Owned UI
+reads5s, configuration10s. No whole-file native transcript, new runtime dependency,
+schema budget increase or claimed hook crash-journal/real-version certification.
+
 ## Codex selected call inspection
 
 Selected jobs may keep at most2MiB total previous request text (FIFO eviction)
@@ -772,3 +783,57 @@ the next tier — do not wait until everything is over budget:
 | Team activities in one run > 1,000,000 | partitioned activity storage |
 | Team runs > 5,000 | server-side FTS replaces frontend filtering |
 | Team source parsing > 10s | move team derivation into a `worker_threads` pool |
+
+## Functional family exploration bounds
+
+One family read: default20/max50 child sessions, existing20 parent-reference
+page, <=1MiB UTF8 response, <=12 cached metadata SELECT/WITH statements in one
+synchronous snapshot, no source/body IO and no per-child query. Reverse native
+parent index and existing native/source indexes apply. Explicit expansion may
+load one further page; no eager whole-graph/N+1 fetch. Browser5s owned metadata
+wait, independent error/retry/cancel, stale-result suppression; no polling.
+Session/attempt/event detail remains selected/lazy using existing slim API.
+No new performance waiver; this functional batch defers attribution/soak work.
+
+## Selected native tool-reference lookup
+
+[native-tool-observations.md](native-tool-observations.md) uses default20/max100 slim events, <=1000 returned identity locators, <=1MiB UTF8, <=9 cached SELECT/WITH queries in one synchronous read snapshot. Full selected-source identity validation includes off-page collisions; no per-event read, source/body IO, write, eager full-graph or polling. The source/native/event indexes remain in force; no budget waiver or new performance certification.
+# Local export and manual registry bounds
+
+Trace-export metadata reads use exactly three cached SELECTs and at most200
+events/512KiB serialized OTLP JSON, with no source/body/identity/proxy reads.
+Experiment records use asynchronous bounded1MiB app-owned JSON IO, <=100records,
+<=16references/record, a single batch query for newly added scan references and
+<=20KiB HTTP mutation bodies. No implicit execution, polling or body fan-out.
+These functional bounds do not waive the existing performance budgets or certify
+whole-product/long-running/platform acceptance. Full contracts: trace-export.md
+TX-003 and experiment-records.md EXP-001..004.
+
+## Frida history and linked export functional bounds
+
+FC-001..004 limits frames to1MiB wire/256KiB decoded JSON; list defaults50,
+max500, SQL JSON previews500characters. Selected detail checks256KiB JSON and
+4KiB tokens before full acquisition; total reply<=2MiB. Owned browser reads5s,
+commands10s; cancelled waits never establish command success.
+LTX-001..005 shares one snapshot with <=11 cached SELECTs, native max200 and
+capture max50 metadata records, total UTF8<=512KiB. Both pages remain explicit
+and independently navigated. No body/source IO or implicit frontend fan-out.
+CDP acquisition/manager bounds follow cdp-capture-flow.md. The explicit dev
+inspector retains at most64 decoded responses and8MiB decoded UTF8 text total,
+each<=1MiB. Admission rejects additional records and increments rejectedCount;
+never evicts accepted records. Metadata-only list<=64KiB, selected detail<=2MiB
+JSON (escaping included); a detail exceeding that bound is rejected at admission.
+An accepted record lives until dev-server shutdown. No automatic scan/start,
+body polling, backend fan-out or new runtime dependency. Browser reads own5s,
+control waits12s; timeout/cancel is uncertain for mutations. These checks do
+not waive the existing budgets, unresolved baselines or long-running acceptance.
+
+## Capture original bundle bounds
+
+CB-001..005 uses at most2 active transfers/exporter,120s total deadline,
+at most2 original readers and64KiB file chunks with backpressure. Metadata JSON
+retains its4MiB cap; manifest/receipt<=64KiB. No archive spool, full-body buffer,
+new runtime dependency or body-bearing list. Browser preparation is5s owned
+metadata only; actual native download streams outside JS. Original tar entries
+are bounded by ustar's8589934591-byte field, independent of analysis size; larger
+sources fail explicitly and remain available through individual downloads.

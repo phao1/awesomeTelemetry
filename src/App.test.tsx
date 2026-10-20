@@ -141,6 +141,66 @@ describe('WB-007 lazy Agent overview entry',()=>{
       expect(container.querySelector('[data-frida-ack]')).not.toBeNull();expect(container.querySelector('[role="tablist"]')).not.toBeNull();
     } finally {unmount();}
   });
+  it('retains bounded unique Frida save notifications with zero hidden reads and opens only the selected text',async()=>{
+    const previousUrl=window.location.href;history.replaceState(null,'','#/session');
+    const paths:string[]=[];vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{
+      const path=String(input);paths.push(path);
+      const body=path.endsWith('/frida/status')?{running:false,starting:false,pid:null}
+        :path.endsWith('/frida/captures')?{items:[],nextCursor:null,hasMore:false}
+        :path.endsWith('/frida/captures/64')?{id:64,pid:123,capturedAt:'2026-10-20T00:00:00.000Z',captureType:'chat',jsonData:'{"synthetic":true}',model:null,sessionId:null,captureSessionId:null,messageCount:null,tokens:null}
+        :path.includes('/sessions?')?{items:THREE_SESSIONS,nextCursor:null,hasMore:false,total:3}:{};
+      return {ok:true,text:async()=>JSON.stringify(body)};
+    }));const {container,unmount}=renderAppWithUnmount();
+    try {
+      await act(async()=>{await Promise.resolve();});
+      const es=EventSourceStub.instances[0]!;
+      act(()=>{
+        for(let id=1;id<=64;id++)es.emit('frida_capture',{id,model:'MUST_NOT_RETAIN',sessionId:'MUST_NOT_RETAIN'});
+        es.emit('frida_capture',{id:64});es.emit('frida_capture',{id:0});es.emit('frida_capture',{id:'65'});
+        es.emit('frida_capture',{id:Number.MAX_SAFE_INTEGER+1});es.emit('frida_capture',null);
+        es.emit('frida_status',{running:true,pid:123});es.emit('frida_status',{running:'false',pid:0});
+        for(const listener of es.listeners.get('frida_capture')??[])listener({data:'{broken'});
+      });
+      expect(paths.filter(path=>path.includes('/frida/'))).toHaveLength(0);
+      act(()=>[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>button.textContent==='Frida')!.click());
+      await act(async()=>{await import('./components/FridaView.js');for(let i=0;i<30&&!container.querySelector('[aria-label="新保存捕获通知"]');i++)await new Promise(resolve=>setTimeout(resolve,10));});
+      const buttons=container.querySelectorAll<HTMLButtonElement>('[aria-label="新保存捕获通知"] button');
+      expect([...buttons].map(item=>item.textContent)).toEqual(Array.from({length:20},(_,i)=>'#'+(45+i)));
+      expect(container.textContent).not.toContain('MUST_NOT_RETAIN');expect(container.textContent).toContain('PID 123');
+      expect(paths.filter(path=>path.includes('/frida/')).sort()).toEqual(['/api/frida/captures','/api/frida/status']);
+      await act(async()=>{container.querySelector<HTMLButtonElement>('[aria-label="打开新保存捕获 #64"]')!.click();await Promise.resolve();});
+      expect(container.querySelector('pre')?.textContent).toBe('{"synthetic":true}');
+      expect(paths.filter(path=>/\/frida\/captures\/\d+/.test(path))).toEqual(['/api/frida/captures/64']);
+      expect(EventSourceStub.instances).toHaveLength(1);expect(paths.some(path=>/\/frida\/(start|stop)/.test(path))).toBe(false);
+    } finally {unmount();history.replaceState(null,'',previousUrl);}
+  });
+  it('reset clears Frida notices and selected text, reloads only the mounted bounded snapshot and ignores old detail completion',async()=>{
+    const previousUrl=window.location.href;history.replaceState(null,'','#/frida');
+    const paths:string[]=[];let resolveDetail!: (value:{ok:boolean;text:()=>Promise<string>})=>void;let detailSignal:AbortSignal|undefined;
+    vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const path=String(input);paths.push(path);
+      if(path.endsWith('/frida/captures/9')){detailSignal=init?.signal??undefined;return new Promise<{ok:boolean;text:()=>Promise<string>}>(resolve=>{resolveDetail=resolve;});}
+      const body=path.endsWith('/frida/status')?{running:false,starting:false,pid:null}
+        :path.endsWith('/frida/captures')?{items:[],nextCursor:null,hasMore:false}
+        :path.includes('/sessions?')?{items:[],nextCursor:null,hasMore:false,total:0}:{};
+      return {ok:true,text:async()=>JSON.stringify(body)};
+    }));const {container,unmount}=renderAppWithUnmount();
+    try {
+      act(()=>[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>button.textContent==='Frida')!.click());
+      await act(async()=>{await import('./components/FridaView.js');for(let i=0;i<30&&!container.querySelector('[data-frida-ack]');i++)await new Promise(resolve=>setTimeout(resolve,10));});
+      act(()=>{EventSourceStub.instances[0]!.emit('frida_capture',{id:9});EventSourceStub.instances[0]!.emit('frida_status',{running:true,pid:12});});
+      act(()=>container.querySelector<HTMLButtonElement>('[aria-label="打开新保存捕获 #9"]')!.click());
+      expect(detailSignal?.aborted).toBe(false);
+      await act(async()=>{EventSourceStub.instances[0]!.emit('connected',{resume:'reset'});await Promise.resolve();});
+      expect(detailSignal?.aborted).toBe(true);expect(container.querySelector('.frida-capture-inspector')).toBeNull();
+      expect(container.querySelector('[aria-label="新保存捕获通知"]')).toBeNull();expect(container.querySelector('[aria-label="最近 Frida 运行通知"]')).toBeNull();
+      await act(async()=>{resolveDetail({ok:true,text:async()=>JSON.stringify({id:9,pid:12,capturedAt:'2026-10-20T00:00:00.000Z',captureType:'chat',jsonData:'OLD_LATE_BODY'})});await Promise.resolve();});
+      expect(container.textContent).not.toContain('OLD_LATE_BODY');
+      expect(paths.filter(path=>path==='/api/frida/status')).toHaveLength(2);expect(paths.filter(path=>path==='/api/frida/captures')).toHaveLength(2);
+      expect(paths.filter(path=>/\/frida\/captures\/\d+/.test(path))).toEqual(['/api/frida/captures/9']);
+      expect(EventSourceStub.instances).toHaveLength(1);
+    } finally {unmount();history.replaceState(null,'',previousUrl);}
+  });
   it('keeps navigation available and issues one aggregate read, never a detail fan-out',async()=>{
     const paths:string[]=[];
     vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{

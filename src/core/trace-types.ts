@@ -943,6 +943,7 @@ export interface BusEvents {
   /** 服务端已按 100ms 窗口拼接，前端无需再节流。 */
   proxy_stream_chunk: { requestId: string; chunk: string };
   frida_capture: { id: number; model?: string; sessionId?: string };
+  hook_events_changed: { latestId: number };
   frida_status: { running: boolean; pid?: number };
   /**
    * Team run changes (add-agent-team-observability D14). Coalesced in the
@@ -2090,6 +2091,19 @@ export interface CaptureComparisonResponse {
   target: CaptureComparisonSide;
   generatedAt: string;
 }
+export interface NativeSessionFamilyPage {
+  session: NativeSessionParentPage['items'][number]['matches'][number];
+  parents: NativeSessionParentPage;
+  children: Array<{
+    session: NativeSessionParentPage['items'][number]['matches'][number];
+    identity: TraceSourceIdentity;
+    state: NativeSessionParentPage['items'][number]['state'];
+  }>;
+  nextCursor: string | null;
+  hasMore: boolean;
+  completeness: IdentityCompleteness;
+}
+
 export interface NativeSessionParentPage {
   sessionKey: string;
   items: Array<{
@@ -2249,4 +2263,42 @@ export interface CodexContextDiff {
   indicators: ContextIndicator[];
   completeness: ContextCompleteness;
   noChange: boolean;
+}
+
+/** Client-only grouping of retained tool observations on ONE execution page.
+ * key is a UI selection key, never a native execution ID or persisted identity.
+ * No count, order or input/output flag establishes execution/causal success. */
+export interface ToolInspectionGroup {
+  key: string;
+  reason: 'native_id' | 'missing_identity' | 'incomplete' | 'ambiguous_identity';
+  identities: TraceSourceIdentity[];
+  events: TraceEventSlim[];
+}
+
+/** Development CDP acquisition, not original wire evidence or Agent execution. */
+export interface CdpDevStatus {
+  state: 'idle' | 'running' | 'stopping';
+  discovering: boolean;
+  targetCount: number;
+  connectedTargetCount: number;
+}
+export interface CdpDevTarget {
+  id: string;
+  title: string;
+  url: string;
+  webSocketDebuggerUrl: string;
+}
+export interface CdpDevCaptureSummary {
+  id: number;
+  targetId: string;
+  url: string;
+  capturedAt: string;
+  bodyBytes: number;
+}
+export interface CdpDevCaptureDetail extends CdpDevCaptureSummary { body: string }
+export interface CdpDevCapturePage {
+  items: CdpDevCaptureSummary[];
+  totalBytes: number;
+  rejectedCount: number;
+  lastIssue: string | null;
 }

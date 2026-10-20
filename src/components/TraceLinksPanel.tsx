@@ -8,6 +8,10 @@ import { IconSearch } from './icons/index.js';
 
 const LinkedExecutionPanel = lazy(() => import('./LinkedExecutionPanel.js').then(module => ({ default: module.LinkedExecutionPanel })));
 const NativeSessionParentsPanel = lazy(() => import('./NativeSessionParentsPanel.js').then(module => ({ default: module.NativeSessionParentsPanel })));
+const SessionFamilyPanel = lazy(() => import('./SessionFamilyPanel.js').then(module => ({ default: module.SessionFamilyPanel })));
+const ToolExecutionPanel = lazy(() => import('./ToolExecutionPanel.js').then(module => ({ default: module.ToolExecutionPanel })));
+const TraceExportPanel = lazy(() => import('./TraceExportPanel.js').then(module => ({ default: module.TraceExportPanel })));
+const LinkedTraceExportPanel = lazy(() => import('./LinkedTraceExportPanel.js').then(module => ({ default: module.LinkedTraceExportPanel })));
 
 const stateKeys = {
   direct: 'trace.links.direct', candidate: 'trace.links.candidate', confirmed: 'trace.links.confirmed',
@@ -136,10 +140,14 @@ export function ProxyTraceLinksPanel({ proxyId, sessions, locale, invalidateKey 
 }
 
 /** Separate, lazy exploration: scan sources are not rewritten as proxy sessions. */
-export function SessionCaptureLinksPanel({ sessionKey, locale, onOpenRequest, onOpenSession, invalidateKey = 0 }: {
-  sessionKey: string; locale: Locale; onOpenRequest: (id: number) => void; onOpenSession?: (key: string) => void; invalidateKey?: number;
+export function SessionCaptureLinksPanel({ sessionKey, locale, onOpenRequest, onOpenSession, invalidateKey = 0, traceExportEnabled = false }: {
+  sessionKey: string; locale: Locale; onOpenRequest: (id: number) => void; onOpenSession?: (key: string) => void; invalidateKey?: number; traceExportEnabled?: boolean;
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
+  const [familyOpen, setFamilyOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [traceExportOpen, setTraceExportOpen] = useState(false);
+  const [linkedExportOpen, setLinkedExportOpen] = useState(false);
   const [executionOpen, setExecutionOpen] = useState(false);
   const [parentsOpen, setParentsOpen] = useState(false);
   const [page, setPage] = useState<SessionCaptureLinkPage | null>(null);
@@ -159,7 +167,16 @@ export function SessionCaptureLinksPanel({ sessionKey, locale, onOpenRequest, on
     finally { if (token === generation.current) setBusy(false); }
   }, [sessionKey]);
   useEffect(() => { if (expanded) void load(); return () => { generation.current += 1; }; }, [expanded, load]);
-  return <details className="session-findings-panel" onToggle={event => setExpanded(event.currentTarget.open)}>
+  return <><div className="family-entry"><button className="btn" type="button" disabled={sessionKey === ''} onClick={() => setFamilyOpen(true)}>{locale === 'zh' ? 'Agent 家族与尝试' : 'Agent family & attempts'} →</button><span>{locale === 'zh' ? '父子会话 · 独立网络尝试 · 原始 Trace' : 'Parent & child sessions · independent attempts · original traces'}</span></div>
+    <div className="family-entry"><button className="btn" type="button" disabled={sessionKey === ''} onClick={() => setToolsOpen(true)}>{locale === 'zh' ? '工具执行调查台' : 'Tool execution investigation'} →</button><span>{locale === 'zh' ? '原生工具 ID · 输入与输出 · 错误与上下文' : 'Native tool IDs · inputs & outputs · errors & context'}</span></div>
+    {traceExportEnabled && <><div className="family-entry"><button className="btn" type="button" aria-expanded={traceExportOpen} onClick={() => setTraceExportOpen(open => !open)}>{locale === 'zh' ? '标准 Trace 导出' : 'Standard Trace export'}</button></div>
+      {traceExportOpen && <Suspense fallback={<Skeleton count={1} />}><TraceExportPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} /></Suspense>}
+      <div className="family-entry"><button className="btn" type="button" aria-expanded={linkedExportOpen} onClick={() => setLinkedExportOpen(open => !open)}>{locale === 'zh' ? '跨来源 Trace 导出' : 'Cross-source Trace export'}</button></div>
+      {linkedExportOpen && <Suspense fallback={<Skeleton count={1} />}><LinkedTraceExportPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} /></Suspense>}
+    </>}
+    {toolsOpen && <Suspense fallback={<Skeleton count={1} />}><ToolExecutionPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} onClose={() => setToolsOpen(false)} onOpenRequest={onOpenRequest} /></Suspense>}
+    {familyOpen && <Suspense fallback={<Skeleton count={1} />}><SessionFamilyPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} onClose={() => setFamilyOpen(false)} onOpenSession={onOpenSession} onOpenRequest={onOpenRequest} /></Suspense>}
+    <details className="session-findings-panel" onToggle={event => setExpanded(event.currentTarget.open)}>
     <summary>{t('trace.links.title', locale)}</summary>
     {expanded && <div>
       <p className="hint">{t('trace.links.hint', locale)}</p>
@@ -183,5 +200,5 @@ export function SessionCaptureLinksPanel({ sessionKey, locale, onOpenRequest, on
       </tr>)}</tbody></table>}
       {page?.hasMore && <button className="btn" type="button" disabled={busy} onClick={() => void load(page.nextCursor ?? undefined)}>{t('trace.links.next', locale)}</button>}
     </div>}
-  </details>;
+  </details></>;
 }

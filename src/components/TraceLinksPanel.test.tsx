@@ -32,6 +32,55 @@ function button(container: Element, text: string): HTMLButtonElement {
 }
 
 describe('linked trace metadata UI', () => {
+  it('opens cross-source export only for eligible scan sessions, without fetching until explicit download', async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
+    const props = { sessionKey: 'native-session', locale: 'zh' as const, onOpenRequest: vi.fn() };
+    const f = render(<SessionCaptureLinksPanel {...props} />); expect(f.container.textContent).not.toContain('跨来源 Trace 导出');
+    act(() => f.root.render(<SessionCaptureLinksPanel {...props} traceExportEnabled />));
+    await act(async () => { button(f.container, '跨来源 Trace 导出').click(); await import('./LinkedTraceExportPanel.js'); }); await flush();
+    expect(f.container.textContent).toContain('下载关联 OTLP JSON'); expect(fetchMock).not.toHaveBeenCalled();
+    act(() => f.root.render(<SessionCaptureLinksPanel {...props} traceExportEnabled={false} />));
+    expect(f.container.querySelector('.linked-trace-export-panel')).toBeNull(); expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('keeps scan export eligibility explicit and opening the independent export panel performs no fetch', async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
+    const props = { sessionKey: 'native-session', locale: 'zh' as const, onOpenRequest: vi.fn() };
+    const f = render(<SessionCaptureLinksPanel {...props} />); expect(f.container.textContent).not.toContain('标准 Trace 导出');
+    act(() => f.root.render(<SessionCaptureLinksPanel {...props} traceExportEnabled />));
+    await act(async () => { button(f.container, '标准 Trace 导出').click(); await import('./TraceExportPanel.js'); }); await flush();
+    expect(f.container.textContent).toContain('下载 OTLP JSON'); expect(fetchMock).not.toHaveBeenCalled();
+    act(() => f.root.render(<SessionCaptureLinksPanel {...props} traceExportEnabled={false} />)); expect(f.container.querySelector('.trace-export-panel')).toBeNull(); expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('opens the standalone tool investigation with one metadata page and no collapsed association reads', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      expect(url).toBe('/api/sessions/native-session/execution?eventOffset=0&eventLimit=100&captureLimit=20');
+      return response({ sessionKey: 'native-session', sessionDurationSource: 'unknown', events: [], eventOffset: 0, eventLimit: 100, eventTotal: 0, eventsHasMore: false,
+        attempts: [], nextCaptureCursor: null, capturesHasMore: false, identities: [], identityCompleteness: { complete: true, omittedCount: 0, reasons: [] } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} />);
+    expect(fetchMock).not.toHaveBeenCalled(); const entry = button(container, '工具执行调查台 →'); entry.focus();
+    await act(async () => { entry.click(); await import('./ToolExecutionPanel.js'); }); await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1); expect(container.textContent).toContain('没有保留事件');
+    act(() => container.querySelector<HTMLButtonElement>('.ui-drawer-header .ui-icon-btn')!.click());
+    expect(document.activeElement).toBe(entry); expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the standalone family entry without fetching collapsed association lists and returns focus on close', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      expect(url).toBe('/api/sessions/native-session/family');
+      return response({ session: { id: 'native-session', provider: 'codex', sourceAgent: 'Codex', title: 'Synthetic family', startedAt: '2026-10-19T00:00:00.000Z' }, parents: { sessionKey: 'native-session', items: [], nextCursor: null, hasMore: false, completeness: { complete: true, omittedCount: 0, reasons: [] } }, children: [], nextCursor: null, hasMore: false, completeness: { complete: true, omittedCount: 0, reasons: [] } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} />);
+    expect(fetchMock).not.toHaveBeenCalled(); const entry = button(container, 'Agent 家族与尝试 →'); entry.focus();
+    await act(async () => { entry.click(); await import('./SessionFamilyPanel.js'); }); await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1); expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    await act(async () => { container.querySelector<HTMLButtonElement>('.ui-drawer-header .ui-icon-btn')!.click(); });
+    expect(container.querySelector('[role="dialog"]')).toBeNull(); expect(document.activeElement).toBe(entry);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('opens native parents lazily, navigates only a resolved owner and hides invalidated conclusions without reads', async () => {
     const open = vi.fn();
     const fetchMock = vi.fn(async (url: string) => response(url.endsWith('/parents') ? {

@@ -1542,10 +1542,15 @@ describe('API 契约（contracts/api.md §8）', () => {
 
   it('生产实例不暴露 dev-only 路由', async () => {
     const { port } = await boot();
-    const r = await request(port, 'GET', '/api/cdp/status');
-    expect(r.status).toBe(404);
-    const body = JSON.parse(r.text) as { error: { code: string } };
-    expect(body.error.code).toBe('ROUTE_NOT_FOUND');
+    for (const [method, path] of [['GET', '/api/cdp/status'], ['GET', '/api/cdp/targets'], ['GET', '/api/cdp/captures'], ['GET', '/api/cdp/captures/1'], ['POST', '/api/cdp/start'], ['POST', '/api/cdp/stop']]) {
+      const r = await request(port, method!, path!);
+      expect(r.status, path).toBe(404);
+      const body = JSON.parse(r.text) as { error: { code: string } };
+      expect(body.error.code).toBe('ROUTE_NOT_FOUND');
+    }
+    const health = JSON.parse((await request(port, 'GET', '/api/health')).text) as { devOnly: string[] };
+    expect(health.devOnly).toContain('/api/cdp/captures');
+    expect(health.devOnly).toContain('/api/cdp/captures/:id');
   });
 });
 

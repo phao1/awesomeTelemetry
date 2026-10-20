@@ -747,9 +747,21 @@ explicit per-region retry, no polling or locale-driven refetch.10s command waits
 are single-flight; Stop requires confirmation. Failure/timeout/cancelled waiting
 never becomes optimistic stopped/capture success or automatic command retry.
 Read status explicitly to recover an uncertain outcome. Cancelling local waiting
-does not undo backend work. Current source lacks the contractual single-record
-detail route and full persistence; the detail drawer remains undelivered, not
-replaced with fabricated content/bytes or a blanket disabled entry.
+does not undo backend work. Saved-capture history and explicit selected detail
+now follow [frida-capture-flow.md](../../contracts/frida-capture-flow.md)
+FC-001..004: bounded metadata paging, separately owned detail read, inert JSON,
+unknown/error states, retry/cancel and stale-result suppression. The packaged
+monitor remains a known skeleton and is rejected before spawning; fixture
+history/detail acceptance does not certify a real Windows target hook.
+
+The shared App SSE forwards existing `frida_capture`/`frida_status` metadata.
+Keep <=20 unique recent saved IDs, distinct from the paged history snapshot;
+explicit selection alone reads that ID's detail. Runtime notices describe the
+last received process event and never resolve an uncertain control command,
+prove readiness or invent missing metadata. Disconnect discloses unknown
+freshness. Journal reset clears notices and closes/aborts selected detail,
+reloading only the mounted bounded status/history snapshot. No per-notice IO,
+second EventSource, polling or automatic target action.
 
 ---
 
@@ -942,3 +954,69 @@ under the same limits; a second failure is visible until explicit manual retry.
 Large selected details SHALL delay auto cycles under the30s byte budget,
 display that delay, and retain the manual action; no hidden large-body polling.
 No hints means no polling; reconnect/end requests a final bounded snapshot.
+
+### REQ-035: Session family and attempt explorer
+A discoverable explicit family entry opens a focus-trapped drawer with parent/child browsing, explicit branch expansion, selected-session evidence, independent attempts and original Trace/capture navigation. Read family metadata once per explicit selection/expansion and execution/body only on demand. Show unknown retry, absent relations, incomplete/ambiguous evidence, loading/error/retry/stale states bilingually. Abort owned reads on close/selection/invalidation, suppress late results, no polling/N+1. No money summaries or automatic workload execution.
+
+### REQ-036: Native tool execution investigation
+An explicit standalone lazy drawer SHALL show a virtual native event process and
+current-page tool groups per ToolInspectionGroup, with retained scoped identity
+locators, exact event membership, input/output hints, normalized status and error.
+Show source/page coverage and unknown lifecycle/timing; never equate proposals,
+missing outputs, same-name/time events or incomplete identity with tool success.
+Filters use loaded metadata only. Explicit previous/next pages use actual counts,
+not requested limits. Selected event body and raw read independently on demand;
+no eager member body fan-out. Bilingual four-state and stale handling, focus
+return,5s owned waits/abort/late suppression,8..28px text controls, inert output.
+No polling, replay, shell/model invocation, fee summaries or new App shell.
+
+### REQ-037: Explicit cross-page native tool lookup
+Selected exact native tool evidence MAY open an explicit bounded same-ID lookup across native event pages. Preserve scope, completeness, ambiguity and original source locators. Paginate explicitly and select exact members for existing single-event body/raw reads. Own5s cancellation/retry and hide source-invalidated snapshots without polling; no invented execution identity.
+### REQ-038: Explicit local scan trace export
+Eligible non-offline scan sessions offer a lazy explicit OTLP metadata download
+per TX-001..004. Opening/locale/invalidation never reads or downloads; one chosen
+bounded range owns10s wait/cancel and rejects stale results. Display coverage,
+unknown source completeness and generated-ID/observation-point limitations.
+
+### REQ-039: Manual experimental record workflow
+Compare view offers lazy manual record CRUD per EXP-001..004, preserving loaded
+session-store ownership. Explicit confirmed writes, revision review and uncertain
+outcomes remain distinct. Compare only two available selected refs through the
+existing comparison callback; do not duplicate its pair-change read or execute
+experiments. User declarations never become inferred pass/fail/causal quality.
+
+### REQ-040: Explicit linked-source OTLP export
+Eligible native sessions retain the v1 export and offer a separate lazy
+LTX-001..005 entry. Opening and locale changes perform no IO. Explicit bounded
+download owns cancellation, timeout and stale-result suppression. Native and
+capture ranges paginate independently with disclosed coverage; source identity,
+transport state and unknown clocks do not establish causality or billing.
+
+### REQ-041: Development CDP control and response inspection
+Proxy provides a collapsed explicit development CDP entry, with start/stop,
+status/target refresh and metadata-only response refresh. Only explicit actions
+perform IO; no polling or new global shell. Production404 shows dev-only
+guidance. Selected response text reads independently, as inert bounded text
+with8..28px font controls. Display body-acquisition time and decoded byte count,
+unknown network/native/model identity, memory-only lifetime, capacity rejects
+and static issues. A running manager is not proven traffic or Agent success.
+Commands own12s waits; reads5s, cancellation/unmount hides late results, mutation
+timeout/cancel is uncertain and requires explicit status reconciliation. Copy
+is bilingual; locale changes do not fetch, controls remain keyboard reachable.
+
+### REQ-042: Original evidence bundle download
+The selected capture offers lazy bilingual CB-005 preparation and a validated
+native streaming download link. No automatic preparation/body fan-out or JS
+buffer of large original files. Show included files, omitted source history,
+captured-prefix and bounded metadata scope. Deletion/selection/invalidation
+aborts preparation and hides stale links; cancellation, errors and saving-unknown
+states remain distinct. Existing JSON/individual-original downloads remain.
+
+### REQ-043: Official hook setup and observation explorer
+Proxy offers explicit CH-005 receiver configuration and bounded paged observations,
+raw-retention acknowledgement, generated settings fragment and native source
+jumps. Never auto-install hooks or execute an Agent. Distinguish before-tool,
+reported success/failure/native duration, receipt time, agent lifecycle and
+unverified sender/history. Shared SSE hints drive only bounded active metadata;
+detail raw reads are explicit, inert, owned and bounded. Both locales and all
+loading/empty/error/uncertain/stale states are required.

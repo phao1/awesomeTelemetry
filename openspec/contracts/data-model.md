@@ -1,5 +1,31 @@
 # Contract: Data Model
 
+## Native session family exploration (M11 functional increment)
+
+```ts
+export interface NativeSessionFamilyPage {
+  session: NativeSessionParentPage['items'][number]['matches'][number];
+  parents: NativeSessionParentPage;
+  children: Array<{
+    session: NativeSessionParentPage['items'][number]['matches'][number];
+    identity: TraceSourceIdentity;
+    state: NativeSessionParentPage['items'][number]['state'];
+  }>;
+  nextCursor: string | null;
+  hasMore: boolean;
+  completeness: IdentityCompleteness;
+}
+```
+
+One selected scan session, existing parent declarations and one page of sessions
+retaining its exact native identity as parent. Children keep a real parent_session
+identity/locator; duplicate locators do not duplicate the child. Resolution needs
+complete unique native owners and explicit child scope. Ambiguous/incomplete/self
+claims remain non-resolved. No inferred recursion, spawn/communication/retry IDs,
+model/time/hash matching or cost fields. Existing LinkedExecutionPage supplies
+independent attempts and event matches; absent retry declarations mean unknown,
+including failed-then-completed captures. Source originals remain independent.
+
 ## Codex WebSocket per-call inspection (no schema change)
 
 ```ts
@@ -3116,3 +3142,93 @@ expectTypeOf<Pick<TeamRunSummary, 'costCurrency'>>().toEqualTypeOf<{ costCurrenc
 expectTypeOf<Pick<TeamCostMetrics, 'costCurrency'>>().toEqualTypeOf<{ costCurrency: PriceCurrency | null }>();
 expectTypeOf<Pick<TeamMetricValue, 'value'>>().toEqualTypeOf<{ value: number | null }>();
 ```
+
+## Client tool-inspection projection
+
+```ts
+
+/** Client-only grouping of retained tool observations on ONE execution page.
+ * key is a UI selection key, never a native execution ID or persisted identity.
+ * No count, order or input/output flag establishes execution/causal success. */
+export interface ToolInspectionGroup {
+  key: string;
+  reason: 'native_id' | 'missing_identity' | 'incomplete' | 'ambiguous_identity';
+  identities: TraceSourceIdentity[];
+  events: TraceEventSlim[];
+}
+```
+
+Groups are current-page metadata only, using one nonempty scoped tool_call tuple
+per event from this scan session and a complete identity manifest. Duplicate
+locators do not create a new group. Conflicting IDs, unbound locators or repeated
+IDs across known distinct turnKeys prevent grouping. Incomplete/absent identity
+keeps each event independent. Same name, event-id shape, adjacency, wall time or
+protocol proposal never supplies a native tool ID. Input/output are retained
+hasInput/hasOutput hints, not inferred lifecycle roles. Off-page references and
+page coverage stay explicit; there is no whole-session execution count or new
+measured tool timing. No source mutation, billing or tool execution.
+
+## Cross-page native tool observations
+
+The exact NativeToolObservationPage definition in [native-tool-observations.md](native-tool-observations.md) extends this contract. It organizes retained references only, never inventing execution/retry identity.
+# Additive functional contracts (M11 increment)
+
+Official Claude HTTP-hook observation types are defined verbatim in
+[claude-hooks.md](claude-hooks.md) CH-001..006 and src/core/claude-hooks.ts.
+BusEvents additionally includes hook_events_changed:{latestId:number}; only a
+coalesced saved-metadata hint, not a per-session or body event.
+
+The frozen local metadata export types are in [trace-export.md](trace-export.md)
+TX-001..004; generated export IDs are separate from native/propagated identities.
+Manual experiment DTOs are in [experiment-records.md](experiment-records.md)
+EXP-001..004. Their conditions/labels are user declarations and do not change
+TraceRecord, native evidence, SQLite schema or measured quality.
+
+Frida saved-capture flow uses the existing `FridaCapture` definition above,
+with limits, lifecycle and list/detail ownership frozen in
+[frida-capture-flow.md](frida-capture-flow.md) FC-001..004. No new native
+session identity or completed Agent execution is inferred from capture.
+The additive linked-network OTLP document is independently defined in
+[linked-trace-export.md](linked-trace-export.md) LTX-001..005; network and scan
+observations keep separate generated trace IDs and explicit coverage.
+Standard Electron CDP helper types, ownership and the additive development-only
+DTOs below follow [cdp-capture-flow.md](cdp-capture-flow.md).
+
+## Development CDP inspection DTOs
+
+Original capture bundle DTOs and retained-byte semantics are defined verbatim
+in [capture-bundle.md](capture-bundle.md) CB-001..005. They wrap existing evidence
+and original refs without changing native identity or SQLite storage types.
+
+```ts
+export interface CdpDevStatus {
+  state: 'idle' | 'running' | 'stopping';
+  discovering: boolean;
+  targetCount: number;
+  connectedTargetCount: number;
+}
+export interface CdpDevTarget {
+  id: string;
+  title: string;
+  url: string;
+  webSocketDebuggerUrl: string;
+}
+export interface CdpDevCaptureSummary {
+  id: number; // positive safe development-server-local sequence, never a native ID
+  targetId: string;
+  url: string;
+  capturedAt: string; // UTC body-acquisition callback time, not network end
+  bodyBytes: number; // decoded UTF-8 text bytes, not original wire length
+}
+export interface CdpDevCaptureDetail extends CdpDevCaptureSummary { body: string }
+export interface CdpDevCapturePage {
+  items: CdpDevCaptureSummary[];
+  totalBytes: number;
+  rejectedCount: number;
+  lastIssue: string | null; // static CdpIssueCode or capture_limit; max64 characters
+}
+```
+
+These represent decoded response acquisition only. No request, header, HTTP
+status, native identity, execution, archive, token or timing measurement is
+inferred. No source data is inserted as a fabricated MITM or native event.

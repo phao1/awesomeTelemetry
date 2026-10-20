@@ -1,5 +1,24 @@
 # Contract: HTTP API
 
+## Official local Claude hook observations
+
+The explicit `/api/hooks/claude/status`, `/configure`, `/events` and
+`/events/:id` routes follow [claude-hooks.md](claude-hooks.md) CH-001..006.
+All retain local Host/Origin/connection protection and no-store; ingress also
+requires enabled state and the issued Bearer secret. §0.4 adds HOOK_DISABLED(409),
+HOOK_AUTH_REQUIRED(401), HOOK_CONFLICT(409), HOOK_BUSY(409), HOOK_LIMIT(413/503),
+HOOK_UNAVAILABLE(503), HOOK_EVENT_NOT_FOUND(404). Success ingest is empty204,
+never a tool decision or context injection. Native observations stay separate.
+
+## Local capture original bundle
+
+The explicit GET `/api/proxy/requests/:id/bundle/manifest` and
+`/api/proxy/requests/:id/bundle` routes follow
+[capture-bundle.md](capture-bundle.md) CB-001..005 exactly. They retain local
+guards, unified ApiError and no-store. §0.4 adds CAPTURE_BUNDLE_CHANGED(409),
+CAPTURE_BUNDLE_BUSY(503), CAPTURE_BUNDLE_UNAVAILABLE(503); existing
+CAPTURE_ORIGINALS_DELETED/CAPTURE_EXPORT_LIMIT/PROXY_REQUEST_NOT_FOUND apply.
+
 ## Codex per-call local inspection
 
 GET /api/proxy/live returns {items:Array<{requestId:string,hostname:string,
@@ -978,11 +997,20 @@ response < 1 MiB, two-row read (see `contracts/nfr.md` §2).
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/frida/start` | POST | body `{ pid?: number }`, auto-discover when omitted; failure → 409 `FRIDA_TARGET_NOT_FOUND` |
+| `/api/frida/start` | POST | body `{ pid?: number }`, exactly representable positive integer when present; auto-discover when omitted; failure → 409 `FRIDA_TARGET_NOT_FOUND` |
 | `/api/frida/stop` | POST | |
 | `/api/frida/status` | GET | `{ running: boolean, starting: boolean, pid: number \| null }` |
 | `/api/frida/captures` | GET | paginated list; `jsonData` truncated to 500 chars |
 | `/api/frida/captures/:id` | GET | full record |
+
+All Frida methods retain the same local connection/Host/Origin protection as
+monitoring controls. A valid local request alone does not authorize or prove
+target installation, successful capture or platform support.
+
+Saved-capture pagination, selected detail limits and error behavior follow
+[frida-capture-flow.md](frida-capture-flow.md) FC-002. List previews are SQL
+bounded to500characters; full JSON is selected only by an explicit detail
+request and bounded to256KiB before acquisition. All methods use `no-store`.
 
 ---
 
@@ -1198,7 +1226,7 @@ sources are untouched.
 
 ## 8. Dev-only endpoints
 
-The following are wired **only** in `local-sessions/vite-plugin.ts`; production
+The following are reserved for explicit development integration; production
 `server.ts` does not expose them (G10.2). Requests to a production instance
 return 404 `ROUTE_NOT_FOUND`:
 
@@ -1206,6 +1234,37 @@ return 404 `ROUTE_NOT_FOUND`:
 |----------|-------------|
 | `/api/cdp/start` `/api/cdp/stop` `/api/cdp/status` | CDP capture control |
 | `/api/cdp/targets` | list connectable Electron targets |
+
+Development integration (2026-10-20): Vite's localSessionsPlugin owns these
+paths before the existing backend proxy; it never creates a native scanner.
+Production `server.ts` still exposes none of them. All CDP paths require local
+connection/Host/Origin and Cache-Control:no-store, including reads; non-2xx
+uses ApiError. Exact supported routes:
+
+- POST `/api/cdp/start`, JSON object with optional numeric safe integer `port`
+  (1..65535, default9222), returns CdpDevStatus. Empty body means {}. Unknown
+  keys are400 BAD_REQUEST. No auto-start, process launch or port scanning.
+  Repeated same-port start joins current discovery; different-port start while
+  non-idle is409 CDP_BUSY. A running manager does not prove connection/traffic.
+- POST `/api/cdp/stop`, empty body or {}, returns CdpDevStatus after owned
+  cleanup. A stop may interrupt initial discovery. Retained diagnostics survive.
+- GET `/api/cdp/status`, returns CdpDevStatus without target network IO.
+- GET `/api/cdp/targets`, returns `{items:CdpDevTarget[]}`, max16 current
+  owned targets, including connecting targets. No rediscovery on reads.
+- GET `/api/cdp/captures`, returns CdpDevCapturePage, max64 summaries in
+  acquisition order; no body field or per-item IO. This development-server
+  memory is lost on shutdown; it is not an original archive or DB history.
+- GET `/api/cdp/captures/:id`, positive decimal safe ID, returns exactly one
+  CdpDevCaptureDetail. Missing ID404 CDP_CAPTURE_NOT_FOUND. No source request.
+
+Request bodies<=1024 UTF8 bytes with5s total read deadline; invalid/oversize
+body400 BAD_REQUEST. Cross-origin/nonlocal403 BAD_REQUEST; unsupported CDP
+method/path404 ROUTE_NOT_FOUND. Closing development server503
+SERVER_SHUTTING_DOWN. Internal control failure503 CDP_UNAVAILABLE with static
+message, never upstream exception text. §0.4 adds CDP_BUSY(409),
+CDP_UNAVAILABLE(503), CDP_CAPTURE_NOT_FOUND(404). Body/target acquisition
+issues surface as the bounded static lastIssue diagnostic, not false success.
+The plugin owns stop on dev-server close and does not run in build/preview.
 
 > v4 known gap: CDP is dev-only. v5 keeps that but **must expose a
 > `devOnly: string[]` field in the `/api/health` response** listing the
@@ -1362,3 +1421,39 @@ describe('API contract', () => {
   });
 });
 ```
+
+## Functional session family exploration
+
+GET `/api/sessions/:key/family` returns NativeSessionFamilyPage. Query limit
+(default20,max50,positive safe integer) and cursor (exclusive ascending child
+session key,nonempty<=512 chars,no C0 controls) only; duplicate/unknown/invalid
+queries400 BAD_REQUEST,missing scan session404 SESSION_NOT_FOUND,unprojectable
+metadata503 EXECUTION_METADATA_LIMIT, all ApiError. Local Host/Origin guard and
+no-store apply. One-hop indexed reverse-parent page with fixed-count batched
+metadata reads,no body/source IO/reparse/mutation. Duplicate child locators
+retain one actual reference, never multiply children. Full owner/scope checks
+outside the display page determine states. Metadata<=1MiB; byte-reduced pages
+advance from the actual last child, never clip identifiers. Existing /parents
+paging remains available for additional selected-session references. Existing
+/execution supplies independent native events/attempts; no retry identity is
+invented or model/tool request sent. Further generations load only on explicit
+expansion/navigation; no per-row frontend fetches.
+
+## Cross-page native tool observations
+
+GET `/api/sessions/:key/tool-observations` follows [native-tool-observations.md](native-tool-observations.md): strict required namespace/value/scope, sequence keyset pages, existing owner/local guards/error envelope and no-store. No body/source IO or writes.
+# Additive local functional endpoints
+
+GET `/api/sessions/:key/trace-export` follows [trace-export.md](trace-export.md)
+TX-003: bounded local OTLP JSON attachment, no upstream collector send.
+GET/POST `/api/experiment-records` and PUT/DELETE
+`/api/experiment-records/:id` follow [experiment-records.md](experiment-records.md)
+EXP-003: confirmed manual writes, revision CAS, unified ApiError envelopes.
+All methods use the existing local connection/Host/Origin guard and foreground
+tracking; no-store is required. Original/native data remain independent.
+
+GET `/api/sessions/:key/linked-trace-export` follows
+[linked-trace-export.md](linked-trace-export.md) LTX-001..005. It exports two
+separate observation scopes with independent paging and generated trace IDs;
+membership does not establish a causal parent, retry or billing owner. Existing
+local guards, foreground marking and no-store apply. The v1 route is unchanged.

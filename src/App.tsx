@@ -191,6 +191,9 @@ export default function App() {
   /** Mission 视图的 SSE 失效计数：sessions_changed 时 +1（REQ-027，只标失效不轮询）。 */
   const [missionInvalidateKey, setMissionInvalidateKey] = useState(0);
   const [proxyLiveStatus, setProxyLiveStatus] = useState<BusEvents['proxy_status'] | null>(null);
+  const [fridaLiveStatus, setFridaLiveStatus] = useState<BusEvents['frida_status'] | null>(null);
+  const [fridaSaved, setFridaSaved] = useState<BusEvents['frida_capture'][]>([]);
+  const [latestHookId, setLatestHookId] = useState(0);
   const [proxyLiveUpdates, setProxyLiveUpdates] = useState<BusEvents['proxy_request'][]>([]);
   const [proxyStreams, setProxyStreams] = useState<LiveStreamEntry[]>([]);
   const [liveReset, setLiveReset] = useState(0);
@@ -340,6 +343,7 @@ export default function App() {
       // cannot cover a gap. Never restore missed original/body fragments.
       recordCache.clear(); eventDetailCache.clear();
       setProxyLiveUpdates([]); setProxyStreams([]); setProxyLiveStatus(null);
+      setFridaLiveStatus(null); setFridaSaved([]); setLatestHookId(0);
       setProxyFocusedId(null); setLiveReset(value => value + 1);
       setTraceLinksVersion(value => value + 1);
       setMissionInvalidateKey(value => value + 1); setTeamInvalidateKey(value => value + 1);
@@ -366,9 +370,32 @@ export default function App() {
     listen('proxy_status', (event) => {
       setProxyLiveStatus(JSON.parse((event as MessageEvent).data) as BusEvents['proxy_status']);
     });
+    listen('frida_status', event => {
+      let value: unknown;
+      try { value = JSON.parse(event.data); } catch { return; }
+      if (typeof value !== 'object' || value === null) return;
+      const status = value as Record<string, unknown>;
+      if (typeof status.running !== 'boolean' || status.pid !== undefined &&
+        (typeof status.pid !== 'number' || !Number.isSafeInteger(status.pid) || status.pid <= 0)) return;
+      setFridaLiveStatus({ running: status.running, ...(status.pid === undefined ? {} : { pid: status.pid as number }) });
+    });
+    listen('frida_capture', event => {
+      let value: unknown;
+      try { value = JSON.parse(event.data); } catch { return; }
+      if (typeof value !== 'object' || value === null) return;
+      const id = (value as Record<string, unknown>).id;
+      if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) return;
+      setFridaSaved(previous => previous.some(item => item.id === id) ? previous : [...previous.slice(-19), { id }]);
+    });
     listen('proxy_request', (event) => {
       const update = JSON.parse((event as MessageEvent).data) as BusEvents['proxy_request'];
       if (update.item !== undefined) startTransition(() => setProxyLiveUpdates(previous => [...previous.slice(-49), update]));
+    });
+    listen('hook_events_changed', event => {
+      try {
+        const value: unknown = JSON.parse(event.data);
+        if (value && typeof value === 'object' && 'latestId' in value && typeof value.latestId === 'number' && Number.isSafeInteger(value.latestId) && value.latestId > 0) setLatestHookId(value.latestId);
+      } catch { return; /* malformed hints never trigger IO */ }
     });
     listen('trace_links_changed', () => {
       // Relation-only invalidation: no source-detail/body refetch and no polling.
@@ -891,6 +918,7 @@ export default function App() {
                 <div className="session-scroll">
                 <div className="session-canvas">
                   <SessionCaptureLinksPanel key={selectedKey ?? ''} sessionKey={selectedKey ?? ''} locale={locale} invalidateKey={traceLinksVersion}
+                    traceExportEnabled={!offlineSamples && detail.session.dataSource === 'scan'}
                     onOpenSession={key => selectSession(key)}
                     onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} />
                   {findingsResult !== null && (
@@ -999,6 +1027,7 @@ export default function App() {
             <ErrorBoundary label={t('view.proxy',locale)}>
             <Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}>
             <ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates}
+              latestHookId={latestHookId}
               sessions={sessions} focusedRequestId={proxyFocusedId} onFocusedRequestHandled={clearProxyFocus} traceInvalidateKey={traceLinksVersion}
               livePreview={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><ProxyLivePanel streams={proxyStreams} locale={locale} invalidateKey={traceLinksVersion}
                 onOpenSession={key => { switchView('session'); selectSession(key); }} /></Suspense>}
@@ -1013,7 +1042,7 @@ export default function App() {
           <main className="main">
             <ErrorBoundary label={t('view.frida',locale)}>
             <Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}>
-              <FridaView locale={locale} />
+              <FridaView key={liveReset} locale={locale} liveStatus={fridaLiveStatus} savedNotifications={fridaSaved} connected={live} />
             </Suspense>
             </ErrorBoundary>
           </main>

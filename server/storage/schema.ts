@@ -42,7 +42,7 @@ import { cachedStmt } from './stmt-cache.js';
  * team 表族内部 FK 级联；session 删除只清 junction 链接不清 team，team 删除只删
  * team-owned 行绝不删 session。
  */
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 21;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -180,6 +180,20 @@ CREATE TABLE IF NOT EXISTS proxy_requests (
 CREATE TABLE IF NOT EXISTS proxy_capture_processing (
   proxy_id INTEGER PRIMARY KEY REFERENCES proxy_requests(id) ON DELETE CASCADE,
   result_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS claude_hook_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  received_at TEXT NOT NULL,
+  event_name TEXT NOT NULL CHECK(event_name IN ('SessionStart','SessionEnd','PreToolUse','PostToolUse','PostToolUseFailure','SubagentStart','SubagentStop','Stop')),
+  native_session_id TEXT NOT NULL CHECK(length(native_session_id) BETWEEN 1 AND 512),
+  agent_id TEXT CHECK(agent_id IS NULL OR length(agent_id) BETWEEN 1 AND 512),
+  agent_type TEXT CHECK(agent_type IS NULL OR length(agent_type)<=512),
+  tool_use_id TEXT CHECK(tool_use_id IS NULL OR length(tool_use_id) BETWEEN 1 AND 512),
+  tool_name TEXT CHECK(tool_name IS NULL OR length(tool_name) BETWEEN 1 AND 128),
+  native_duration_ms REAL CHECK(native_duration_ms IS NULL OR native_duration_ms>=0),
+  payload_bytes INTEGER NOT NULL CHECK(payload_bytes BETWEEN 0 AND 262144),
+  payload_ref TEXT NOT NULL CHECK(json_valid(payload_ref) AND length(payload_ref)<=1536)
 );
 
 CREATE TABLE IF NOT EXISTS trace_log_imports (
@@ -561,6 +575,9 @@ CREATE TABLE IF NOT EXISTS team_run_sessions (
 // contracts/database.md §4 索引（全集），逐字采用。
 // 注意：不建单列 idx_events_session_id / idx_sessions_data_source，复合索引已覆盖。
 export const INDEX_SQL = `
+CREATE INDEX IF NOT EXISTS idx_claude_hooks_session ON claude_hook_events(native_session_id,id DESC);
+CREATE INDEX IF NOT EXISTS idx_claude_hooks_tool ON claude_hook_events(native_session_id,tool_use_id,agent_id,id DESC);
+CREATE INDEX IF NOT EXISTS idx_trace_identities_parent ON trace_identities(namespace, value, source_id, id) WHERE kind='parent_session';
 CREATE INDEX IF NOT EXISTS idx_trace_log_imported ON trace_log_imports(imported_at DESC,id);
 CREATE INDEX IF NOT EXISTS idx_events_session_seq    ON events(session_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_events_session_phase  ON events(session_id, phase);
@@ -1154,6 +1171,10 @@ export function migrateSchema(db: Database, fromVersion: number): void {
     })();
   }
   if (fromVersion < 18) cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('18');
+  if (fromVersion < 20) db.transaction(() => {
+    db.exec("CREATE INDEX IF NOT EXISTS idx_trace_identities_parent ON trace_identities(namespace, value, source_id, id) WHERE kind='parent_session';");
+    cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('20');
+  })();
   cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
 }
 
