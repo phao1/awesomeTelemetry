@@ -837,3 +837,10 @@ new runtime dependency or body-bearing list. Browser preparation is5s owned
 metadata only; actual native download streams outside JS. Original tar entries
 are bounded by ustar's8589934591-byte field, independent of analysis size; larger
 sources fail explicitly and remain available through individual downloads.
+
+## Task workbench budgets (2026-10-25)
+
+The additive explicit process-metadata and full-scope histogram budgets follow
+[task-process.md](task-process.md) TP-001..005; ordinary slim-read budgets stay in force.
+
+Task list: maximum100 metadata rows, one fixed-count SQL aggregation, no per-task HTTP reads, target <100ms /200KB gzip. Task context: maximum100 members, <100ms /200KB gzip excluding explicit source hydration. Records: maximum200 slim rows, <100ms /200KB gzip after native parsing; source hydration asynchronous and bounded to2 concurrent reads. First render <2s after scope metadata is ready. Native body and Raw read only for the selected record. Steady state <15 API reads in30s; SSE marks only affected scope stale, with no polling. Virtualized lists keep DOM bounded.

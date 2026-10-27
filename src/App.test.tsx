@@ -274,6 +274,7 @@ function renderAppWithUnmount(): { container: HTMLDivElement; unmount: () => voi
 }
 
 beforeEach(() => {
+  history.replaceState(null, '', '#/session');
   EventSourceStub.instances.length = 0;
   vi.stubGlobal('fetch', vi.fn(async () => ({
     ok: true,
@@ -300,6 +301,8 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     const fallback=fetch;
     const fetcher=vi.fn((input:RequestInfo|URL,init?:RequestInit)=>{
       const path=String(input);
+      if(path.startsWith('/api/tasks/collected%3As-1/records?')) return Promise.resolve({ok:true,text:async()=>JSON.stringify({context:{task:{id:'collected:s-1',origin:'collected',provenanceKnown:true,rootSessionKey:'s-1',runId:null,title:'Fix build',provider:'codex',startedAt:'2026-10-17T00:00:00.000Z',updatedAt:'2026-10-17T00:00:00.000Z',recordedStatus:'error',memberCount:1,eventCount:6000,loadedMemberCount:1},members:[{id:'main',name:'Codex',role:'main',sessionKey:'s-1',parentId:null,detailLoaded:true,eventCount:6000}],importSession:null,warnings:[]},items:[{id:'s-1:event:beyond-first-page',memberId:'main',memberName:'Codex',sessionKey:'s-1',event:target,importedTurn:null}],total:6000,offset:2960,limit:200,hasMore:true,hasPrevious:true,window:'fixed-window',warnings:[]})} as Response);
+      if(path==='/api/tasks/collected%3As-1') return Promise.resolve({ok:true,text:async()=>JSON.stringify({task:{id:'collected:s-1',origin:'collected',provenanceKnown:true,rootSessionKey:'s-1',runId:null,title:'Fix build',provider:'codex',startedAt:'2026-10-17T00:00:00.000Z',updatedAt:'2026-10-17T00:00:00.000Z',recordedStatus:'error',memberCount:1,eventCount:6000,loadedMemberCount:1},members:[{id:'main',name:'Codex',role:'main',sessionKey:'s-1',parentId:null,detailLoaded:true,eventCount:6000}],importSession:null,warnings:[]})} as Response);
       if(path==='/api/compare')return Promise.resolve({ok:true,text:async()=>JSON.stringify(pair)}as Response);
       if(path.includes('/api/session-groups'))return Promise.resolve({ok:true,text:async()=>JSON.stringify({groups:[]})}as Response);
       if(path.includes('/api/sessions/s-1?'))return Promise.resolve({ok:true,text:async()=>JSON.stringify(selected)}as Response);
@@ -313,10 +316,11 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       const left=container.querySelector('.cmp-evidence-side')!;
       act(()=>left.querySelector('summary')!.click());
       await act(async()=>{left.querySelector<HTMLButtonElement>('.cmp-evidence-errors button')!.click();for(let i=0;i<10;i++)await Promise.resolve();});
-      expect(fetcher.mock.calls.filter(([path])=>String(path).includes('/api/sessions/s-1?')&&String(path).includes('limit=5000'))).toHaveLength(1);
-      expect(container.querySelector('.session-toolbar-id')?.textContent).toBe('s-1');
-      expect(container.querySelector('.record-inspector')?.textContent).toContain('beyond-first-page');
-      expect(container.querySelector('.record-inspector')?.textContent).toContain('SYNTHETIC_SELECTED_ERROR');
+      expect(fetcher.mock.calls.filter(([path])=>String(path).includes('/api/tasks/collected%3As-1/records?')&&String(path).includes('anchor=s-1%3Aevent%3Abeyond-first-page'))).toHaveLength(1);
+      expect(fetcher.mock.calls.some(([path])=>String(path).includes('limit=5000'))).toBe(false);
+      expect(window.location.hash).toContain('task=collected%3As-1');
+      expect(container.querySelector('.task-evidence')?.textContent).toContain('beyond-first-page');
+      expect(container.querySelector('.task-evidence')?.textContent).toContain('SYNTHETIC_SELECTED_ERROR');
     } finally {unmount();recordCache.clear();eventDetailCache.clear();history.replaceState(null,'',previousUrl);}
   });
   it('WB-002: switching runs clears the previous Turn and event focus, even when event IDs repeat', async () => {
@@ -921,7 +925,7 @@ describe('team 视图入口 + URL restore + SSE（§7.3 / §7.8）', () => {
   });
 
   afterEach(() => {
-    window.location.hash = originalHash;
+    history.replaceState(null, '', originalHash || '#/session');
   });
 
   it('§7.3 team nav 按钮已移除（UI 架构调整：Teams 页签移除，Sessions 改名为任务）', async () => {

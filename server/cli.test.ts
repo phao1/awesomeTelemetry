@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -126,6 +126,7 @@ describe('REQ-001 parseCliArgs', () => {
     expect(opts.captureMaxBodyBytes).toBe(104_857_600);
     expect(opts.proxyPort).toBe(7779);
     expect(opts.enableProxy).toBe(false);
+    expect(opts.enableMonitoring).toBe(false);
     expect(opts.noGzip).toBe(false);
   });
 
@@ -151,6 +152,7 @@ describe('REQ-001 parseCliArgs', () => {
       '--proxy-port',
       '8888',
       '--enable-proxy',
+      '--enable-monitoring',
       '--prewarm-recent=50',
       '--proxy-retention-days',
       '7',
@@ -163,6 +165,7 @@ describe('REQ-001 parseCliArgs', () => {
     expect(opts.dbPath).toBe('/tmp/db.sqlite');
     expect(opts.proxyPort).toBe(8888);
     expect(opts.enableProxy).toBe(true);
+    expect(opts.enableMonitoring).toBe(true);
     expect(opts.prewarmRecent).toBe(50);
     expect(opts.proxyRetentionDays).toBe(7);
     expect(opts.noGzip).toBe(true);
@@ -228,6 +231,7 @@ describe('REQ-004 启动自检', () => {
       dbPath,
       proxyPort: 7779,
       enableProxy: false,
+      enableMonitoring: false,
       prewarmRecent: 0,
       proxyRetentionDays: 30,
       noGzip: false,
@@ -251,6 +255,7 @@ describe('REQ-004 启动自检', () => {
       dbPath,
       proxyPort: 7779,
       enableProxy: false,
+      enableMonitoring: false,
       prewarmRecent: 0,
       proxyRetentionDays: 30,
       noGzip: false,
@@ -262,5 +267,46 @@ describe('REQ-004 启动自检', () => {
     expect(names).toContain('idx_events_session_seq');
     expect(summary.sessionCount).toBe(0);
     db.close();
+  });
+});
+
+
+describe('built Web CLI collection defaults', () => {
+  it('starts with no scans, no automatic watching, and no proxy listener', async () => {
+    const root = tempDir();
+    const sessions = join(root, 'sessions');
+    mkdirSync(sessions);
+    mkdirSync(join(root, 'config'));
+    const source = join(sessions, 'session.jsonl');
+    const row = JSON.stringify({ type: 'response_item', timestamp: '2026-10-25T00:00:00Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'default-off regression' }] } }) + '\n';
+    writeFileSync(source, row);
+    writeFileSync(join(root, 'config', 'local-sessions.local.json'), JSON.stringify({ providers: { codex: { enabled: true, path: sessions, watchStrategy: 'poll', pollIntervalMs: 20 } } }));
+    const child = spawn(process.execPath, ['bin/agent-observe.js', '--port=0', '--no-open', '--config-root', root], {
+      cwd: process.cwd(), env: { ...process.env, XDG_CONFIG_HOME: join(root, 'user-config') }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    const ready = new Promise<string>((resolve, reject) => {
+      child.stdout.on('data', chunk => {
+        output += String(chunk);
+        const match = output.match(/AwesomeTelemetry is running at (http:\/\/127\.0\.0\.1:\d+\/)/);
+        if (match) resolve(match[1]!);
+      });
+      child.stderr.on('data', chunk => { output += String(chunk); });
+      child.once('error', reject);
+      child.once('exit', () => reject(new Error('Web CLI exited before readiness: ' + output)));
+    });
+    const exited = new Promise<number | null>((resolve, reject) => { child.once('close', resolve); child.once('error', reject); });
+    try {
+      const url = await ready;
+      const health = async () => { const response = await fetch(url + 'api/health'); expect(response.status).toBe(200); return response.json(); };
+      expect(await health()).toMatchObject({ monitoringEnabled: false, sessionCount: 0, eventCount: 0 });
+      const proxy = await fetch(url + 'api/proxy/status');
+      expect(await proxy.json()).toMatchObject({ running: false, starting: false });
+      appendFileSync(source, row);
+      await new Promise(resolve => setTimeout(resolve, 700));
+      expect(await health()).toMatchObject({ monitoringEnabled: false, sessionCount: 0, eventCount: 0 });
+      child.kill('SIGTERM');
+      expect(await exited).toBe(0);
+    } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } }
   });
 });

@@ -1457,3 +1457,21 @@ GET `/api/sessions/:key/linked-trace-export` follows
 separate observation scopes with independent paging and generated trace IDs;
 membership does not establish a causal parent, retry or billing owner. Existing
 local guards, foreground marking and no-store apply. The v1 route is unchanged.
+
+### Automatic monitoring status
+`GET /api/health` additionally returns `monitoringEnabled: boolean`, describing automatic file watching/polling for this server instance. Normal Web CLI startup defaults false; `--enable-monitoring` opts in to startup session/team scans and watching. Explicit manual scans and historical reads remain available. The embeddable server factory keeps its prior default watching behavior unless `enableMonitoring: false` is supplied.
+
+## Task workbench read APIs (2026-10-25)
+
+The optional `structure=true`, inclusive UTC `from`/`to`, and fixed-window
+`GET /api/tasks/:id/timeline?member=&window=` follow [task-process.md](task-process.md)
+TP-001..003. Ordinary slim reads remain compatible; no source/body IO in timeline.
+
+- `GET /api/tasks?origin=collected|imported&q=&provider=&range=today|7d|30d|all&offset=0&limit=50` returns TaskPage. Default origin collected, range all; limit 1–100, offset 0–100000. Root tasks are filtered after grouping; child sessions never create duplicate rows.
+- `GET /api/tasks/:id` returns TaskContext, at most 100 members. `:id` is URI encoded. `collected:<childSessionKey>` resolves to the canonical root identity. `run:<runId>` resolves an old team link when its root is unique. Missing task returns SESSION_NOT_FOUND (404); invalid/conflicting scope returns BAD_REQUEST (400). Unresolved native relationships produce warnings and preserve standalone access.
+- `GET /api/tasks/:id/records?member=main|all|<memberId>&q=&status=&offset=&limit=200&window=&anchor=` returns TaskRecordPage including the refreshed metadata-only TaskContext, so first-read hydration updates member coverage without a second request. Native records are metadata only. Import records reuse TraceLogTurn metadata. No offset means the latest page; anchor overrides offset to load at most one page around that exact record. Unknown/nonmember anchors return SESSION_NOT_FOUND, not a nearby event. Page limit 1–200; search matches metadata and is explicitly scoped to this task/member. It does not search unloaded body text.
+- Native record reads lazily parse only the selected native scope, at most 100 members with concurrency 2. They never start a monitor or upstream Agent. Cancellation stops scheduling further parses; already completed local persistence remains. Incomplete/deleted sources are reported as warnings. Imported reads never trigger native scans.
+- The first record read fixes per-session maximum sequences in an opaque, validated window token; later pages exclude appended records. Token task/member/filter mismatch returns BAD_REQUEST. Explicit refresh omits the token and obtains a new window. Both empty and unknown-time windows are supported. Raw/body reads use the existing single-event or single-import-turn APIs.
+- Every task route is no-store and uses the existing unified ApiError envelope. Query sizes and source counts are bounded. Runtime API types are TaskPage, TaskContext and TaskRecordPage in the data-model task section.
+
+`GET /api/monitoring` returns `{ enabled: boolean, state: idle|starting|running|stopping }`; `PUT /api/monitoring` with `{ enabled: boolean }` serializes shared native listener transitions. Stop waits for watcher cleanup and automatic scans; viewing tasks and reading evidence never invokes these mutations. Both routes are loopback-only and no-store. Configuration persistence and current runtime state are separate.

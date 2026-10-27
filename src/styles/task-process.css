@@ -1,0 +1,130 @@
+/* DSH-inspired compact ledger and fixed overview, adapted to task/member scope.
+ * Uses this project's tokens; no DSH runtime or style package is imported. */
+.process-time-navigator{flex:none;border-bottom:1px solid var(--border-default);background:var(--canvas-subtle);padding:var(--space-2) var(--space-4);font-size:var(--text-xs);position:relative}
+.process-time-navigator>header{display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);min-height:1.875rem}
+.process-time-navigator>header>div{display:flex;align-items:center;gap:var(--space-3);min-width:0}
+.process-time-navigator header strong{font-weight:600;color:var(--fg-default);white-space:nowrap}
+.process-time-navigator header span{color:var(--fg-muted);white-space:nowrap}
+.process-time-navigator button,.process-ledger-summary button{font:inherit;border:1px solid transparent;color:var(--fg-muted);background:none;border-radius:var(--radius-sm);padding:var(--space-1) var(--space-2);cursor:pointer;white-space:nowrap}
+.process-time-navigator button:hover,.process-ledger-summary button:hover{background:var(--canvas-raised);color:var(--fg-default)}
+.process-time-navigator button[aria-pressed=true]{background:var(--canvas-default);color:var(--accent-fg);border-color:var(--border-default)}
+.process-time-navigator button:disabled{opacity:.4;cursor:default}
+.process-time-controls{gap:var(--space-1)!important}
+.process-time-overview{display:grid;grid-template-columns:5.5rem minmax(0,1fr);align-items:center;margin:var(--space-1) 0 var(--space-2);gap:var(--space-2);color:var(--fg-muted)}
+.process-time-overview>span{font-size:var(--text-xs);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.process-time-overview svg{width:100%;height:1.125rem;background:var(--canvas-inset);cursor:ew-resize;overflow:hidden}
+.process-density{fill:var(--fg-muted);opacity:.38}
+.process-viewport{fill:var(--accent-subtle);fill-opacity:.3;stroke:var(--accent-fg);stroke-width:1px;vector-effect:non-scaling-stroke}
+.process-global-selection{fill:var(--accent-emphasis);opacity:.3;pointer-events:none}
+.process-time-chart{display:grid;grid-template-columns:5.5rem minmax(0,1fr);gap:var(--space-2)}
+.process-lane-labels{display:flex;flex-direction:column;min-width:0;color:var(--fg-muted)}
+.process-lane-labels>span{height:1.375rem;line-height:1.375rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:var(--space-1)}
+.process-time-track{width:100%;overflow:hidden;touch-action:none;cursor:crosshair;background:var(--canvas-default);border-left:1px solid var(--border-default)}
+.process-time-track:focus-visible,.process-time-overview svg:focus-visible{outline:1px solid var(--accent-fg);outline-offset:1px}
+.process-grid{stroke:var(--border-muted);stroke-width:1px;vector-effect:non-scaling-stroke}
+.process-histogram{opacity:.24;pointer-events:none}
+.process-histogram.input,.process-exact.input{fill:var(--accent-fg)}
+.process-histogram.model,.process-exact.model{fill:var(--success-fg)}
+.process-histogram.tool,.process-exact.tool{fill:var(--attention-fg)}
+.process-histogram.other,.process-exact.other{fill:var(--fg-muted)}
+.process-exact{opacity:.72;cursor:pointer;stroke:var(--canvas-default);stroke-width:1px;vector-effect:non-scaling-stroke}
+.process-exact.is-point{fill-opacity:.5;stroke:var(--fg-muted)}
+.process-exact.has-error{fill:var(--danger-fg);stroke:var(--danger-fg)}
+.process-exact:hover,.process-exact:focus-visible,.process-exact.is-selected{opacity:1;stroke:var(--accent-emphasis);stroke-width:0.125rem;outline:none}
+.process-time-selection{fill:var(--accent-subtle);fill-opacity:.5;stroke:var(--accent-fg);stroke-width:1px;vector-effect:non-scaling-stroke;pointer-events:none}
+.process-hover-line{stroke:var(--accent-fg);stroke-width:1px;vector-effect:non-scaling-stroke;pointer-events:none;opacity:.6}
+.process-time-axis{display:grid;grid-template-columns:5.5rem repeat(5,minmax(0,1fr));gap:var(--space-2);color:var(--fg-muted);padding-top:var(--space-1);font:var(--text-xs)/1.4 var(--font-mono)}
+.process-time-axis time:not(:nth-child(2)):not(:last-child){text-align:center}.process-time-axis time:last-child{text-align:right}
+.process-time-footer{display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);min-height:1.375rem;color:var(--fg-muted);font-size:var(--text-xs)}
+.process-time-footer>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}.process-time-footer>div{display:flex;align-items:center;gap:var(--space-2);flex:none}
+.process-time-range-controls{display:flex;align-items:center;gap:var(--space-2);color:var(--fg-muted);font-size:var(--text-xs);min-height:1.25rem;flex-wrap:wrap}
+.process-time-range-controls:has(>details:not([open])):not(:has(>button)){position:absolute;right:var(--space-4);bottom:var(--space-2);background:var(--canvas-subtle)}
+.process-time-range-controls details{position:relative}.process-time-range-controls summary{cursor:pointer}
+.process-time-range-controls details[open]{display:flex;gap:var(--space-3)}
+.process-time-range-controls details label{display:inline-flex;align-items:center;gap:var(--space-2);margin-right:var(--space-3)}
+.process-time-range-controls input[type=range]{width:8rem;accent-color:var(--accent-fg)}
+.process-time-range-controls>label{display:flex;gap:var(--space-1);align-items:center}
+.process-time-empty,.process-time-loading,.process-time-error{padding:var(--space-1);color:var(--fg-muted);font-size:var(--text-xs)}
+.process-time-error{color:var(--danger-fg);display:flex;justify-content:space-between}
+.process-time-loading{display:block}.process-time-navigator:has(.process-time-chart)>.process-time-loading{position:absolute;top:var(--space-3);right:var(--space-4);background:var(--canvas-subtle);z-index:1;pointer-events:none}
+.process-ledger-summary{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);min-height:1.875rem;padding:var(--space-1) var(--space-3);font-size:var(--text-xs);color:var(--fg-muted);border-bottom:1px solid var(--border-muted);flex:none}
+.process-ledger-summary>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.process-ledger-summary b{font-weight:500;color:var(--fg-default)}
+.process-ledger-summary>div{display:flex;gap:var(--space-2);flex:none}
+.process-ledger{padding:0!important;min-height:5.5rem;scrollbar-gutter:stable}
+.process-row{box-sizing:border-box;display:flex;align-items:center;gap:var(--space-2);border-bottom:1px solid var(--border-muted);padding-right:var(--space-3);font-size:var(--text-xs);min-width:0;background:var(--canvas-default)}
+.process-row button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;min-width:0;padding:0}
+.process-row:hover{background:var(--canvas-raised)}
+.process-group{background:var(--canvas-subtle)}
+.process-round{border-top:1px solid var(--border-default);background:var(--canvas-inset);font-weight:600}
+.process-step{background:var(--canvas-subtle)}
+.process-fold{width:1rem;flex:none;align-self:stretch;display:grid;place-items:center;font-size:var(--text-lg)!important;color:var(--fg-muted)!important}
+.process-group-kind{color:var(--fg-muted);white-space:nowrap;flex:none;font-weight:500;max-width:9rem;overflow:hidden;text-overflow:ellipsis}
+.process-round>.process-group-kind{color:var(--accent-fg)}
+.process-attempt>.process-group-kind,.process-model>.process-group-kind{color:var(--success-fg)}
+.process-tool>.process-group-kind{color:var(--attention-fg)}
+.process-group-title{display:flex;flex:1;flex-direction:column;align-items:flex-start;text-align:left;gap:var(--space-1);overflow:hidden}
+.process-group-title strong{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;line-height:1.35}
+.process-group-title small{font-size:var(--text-xs);line-height:1.2;color:var(--fg-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.process-step .process-group-title small,.process-round .process-group-title small{display:none}
+.process-native{font-size:var(--text-xs);color:var(--fg-muted);border:1px solid var(--border-muted);border-radius:var(--radius-sm);padding:0 var(--space-1);white-space:nowrap}
+.process-partial,.process-count{color:var(--fg-muted);flex:none;font-weight:400}.process-count{font-family:var(--font-mono);min-width:1rem;text-align:right}
+.process-error-count{color:var(--danger-fg);white-space:nowrap;font-weight:500;flex:none}
+.process-observation.is-selected{background:var(--accent-subtle);border-left:0.125rem solid var(--accent-emphasis)}
+.process-kind-icon{width:1rem;flex:none;text-align:center;color:var(--fg-muted)}.process-kind-icon.user_prompt{color:var(--accent-fg)}.process-kind-icon.llm,.process-kind-icon.reasoning{color:var(--success-fg)}.process-kind-icon.tool{color:var(--attention-fg)}
+.process-record-button{display:flex;flex:1;flex-direction:column;align-items:flex-start;text-align:left;overflow:hidden;gap:var(--space-1)}
+.process-record-button>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;font-weight:450;line-height:1.35}
+.process-record-button>small{font-size:var(--text-xs);color:var(--fg-muted);line-height:1.2}
+.process-observation time{color:var(--fg-muted);font-family:var(--font-mono);flex:none}
+.process-original-link{flex:none;color:var(--accent-fg)!important}
+.process-scope-note{margin:0;padding:var(--space-1) var(--space-3);font-size:var(--text-xs);line-height:1.4;color:var(--fg-muted);border-top:1px solid var(--border-muted);flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:75rem){.process-time-navigator header>div>span:last-child{display:none}.process-time-controls{gap:0!important}.process-time-controls button{padding:var(--space-1)}.process-native{display:none}.process-error-count{font-size:var(--text-xs)}}
+@media(max-width:56.25rem){.process-time-navigator header{flex-wrap:wrap;gap:var(--space-1)}.process-time-overview,.process-time-chart{grid-template-columns:4rem minmax(0,1fr)}.process-time-axis{grid-template-columns:4rem repeat(5,minmax(0,1fr))}.process-observation time{display:none}.process-group-kind{max-width:7rem}.process-time-footer>span{max-width:70%}}
+@media(max-width:40rem){.process-time-navigator{padding:var(--space-1) var(--space-3)}.process-time-controls{flex-wrap:wrap}.process-time-overview{display:none}.process-time-axis time:nth-child(3),.process-time-axis time:nth-child(5){visibility:hidden}.process-ledger-summary>span{max-width:65%}.process-ledger-summary>div{gap:0}.process-row{gap:var(--space-1)}.process-group-kind{max-width:6rem}.process-time-footer>span{max-width:55%}.process-scope-note{display:none}.process-time-range-controls{position:static!important}.process-time-controls button{min-height:1.5rem}}
+@media(prefers-reduced-motion:reduce){.process-time-navigator *{scroll-behavior:auto}}
+
+/* Keep the process readable at an ordinary laptop viewport. */
+.task-context-header{padding:var(--space-2) var(--space-4)}
+.task-context-top>.btn{min-height:1.5rem;padding:var(--space-1) var(--space-2);font-size:var(--text-xs)}
+.task-context-header h1{font-size:var(--text-md);line-height:1.4;margin:var(--space-1) 0}
+.task-context-meta{gap:var(--space-1) var(--space-3);line-height:1.3}
+.task-context-meta .task-badge{padding:var(--space-1)}
+.task-scope-bar{padding:var(--space-1) var(--space-4)}
+.task-scope-bar select{padding:var(--space-1) var(--space-2)}
+.task-reading-toolbar{padding:0 var(--space-4);min-height:2rem}
+.task-mode-tabs button{padding:var(--space-2);min-height:2rem}
+.task-record-filters{padding:var(--space-1) var(--space-3)}
+.task-window-label{padding:var(--space-1) var(--space-3);min-height:1.75rem}
+.task-record-pager{min-height:2rem;padding:var(--space-1) var(--space-3)}
+.task-record-pager>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.process-time-navigator{padding:var(--space-1) var(--space-4)}
+.process-time-navigator>header{min-height:1.5rem}
+.process-time-overview{margin:0 0 var(--space-1)}
+.process-time-overview svg{height:0.875rem}
+.process-time-axis{padding-top:0;font-size:var(--text-xs)}
+.process-time-footer{min-height:1.25rem}
+.process-ledger-summary{min-height:1.75rem;padding:var(--space-1) var(--space-3)}
+.process-scope-note{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.task-related-source{font-size:var(--text-xs);line-height:1.6;padding:var(--space-2);background:var(--accent-subtle);border-left:0.125rem solid var(--accent-emphasis)}
+.task-related-source code{display:block;overflow-wrap:anywhere;font-size:var(--text-xs);color:var(--fg-muted)}
+.task-related-source button{border:0;background:none;color:var(--accent-fg);cursor:pointer;font:inherit;padding:0}
+.process-group-metrics{display:flex;gap:var(--space-2);align-items:center;color:var(--fg-muted);font:var(--text-xs)/1.3 var(--font-mono);white-space:nowrap;flex:none}
+.process-result{color:var(--success-fg)}.process-result-error{color:var(--danger-fg)}
+.process-result-unknown{color:var(--fg-muted)}
+.process-time-tooltip{position:absolute;left:6rem;top:100%;max-width:30rem;z-index:12;display:grid;gap:var(--space-2);padding:var(--space-3);background:var(--canvas-overlay);border:1px solid var(--border-default);border-radius:var(--radius-md);box-shadow:var(--shadow-md);pointer-events:none;color:var(--fg-default);font-size:var(--text-xs)}
+.process-time-tooltip strong{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.process-time-tooltip code{font-size:var(--text-xs)}.process-time-tooltip>span{color:var(--fg-muted);line-height:1.5}
+.process-time-navigator:not(:has(.process-time-range-controls>button)) .process-time-footer{padding-right:12rem}
+@media(max-width:40rem){.process-time-footer{padding-right:0!important}}
+@media(max-width:75rem){.process-group-metrics{display:none}}
+
+/* Keep enough process rows visible on laptop displays, including a time filter. */
+@media(max-height:50rem) and (min-width:56.25rem){
+  .task-context-header{padding-top:var(--space-1);padding-bottom:var(--space-1)}
+  .task-context-top>.btn{min-height:1.375rem;line-height:1.2;padding:0 var(--space-2)}
+  .task-context-meta .task-badge{padding:0 var(--space-1)}
+  .task-scope-bar .btn,.task-scope-bar select,.task-reading-toolbar .btn{min-height:1.5rem;line-height:1.2;padding:var(--space-1) var(--space-2)}
+  .task-mode-tabs button{min-height:1.5rem;line-height:1.3;padding:var(--space-1) var(--space-2)}
+  .task-record-filters>input,.task-record-filters>.btn{min-height:1.5rem;line-height:1.3;padding:var(--space-1) var(--space-2)}
+  .task-window-label{min-height:1.25rem;line-height:1.3;padding-top:0;padding-bottom:0}
+  .process-time-navigator{line-height:1.3}
+  .process-ledger-summary button{min-height:1.25rem;line-height:1.3;padding:0 var(--space-2)}
+}

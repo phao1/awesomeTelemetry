@@ -75,7 +75,8 @@ function request(
         });
       },
     );
-    req.on('error', reject);
+    req.on('error', error => reject(Object.assign(new Error(`${method} ${path} failed`, { cause: error }), { code: (error as NodeJS.ErrnoException).code })));
+    req.on('response', res => res.on('error', error => reject(new Error(`${method} ${path} response failed`, { cause: error }))));
     if (opts.body !== undefined) {
       req.write(opts.body);
     }
@@ -237,7 +238,8 @@ function proxyRequest(
         });
       },
     );
-    req.on('error', reject);
+    req.on('error', error => reject(Object.assign(new Error(`Proxy POST ${path} failed`, { cause: error }), { code: (error as NodeJS.ErrnoException).code })));
+    req.on('response', res => res.on('error', error => reject(new Error(`Proxy POST ${path} response failed`, { cause: error }))));
     req.write(body);
     req.end();
   });
@@ -2372,5 +2374,74 @@ describe('context-diff API（design D10 / §6.1-§6.5）', () => {
       expect(r.text).not.toContain('Error:');
       expect(r.text).not.toContain('{ not json');
     }
+  });
+});
+
+
+describe('Codex team monitoring', () => {
+  it('automatically discovers a child thread and updates team activities after file changes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-team-live-'));
+    staticDirs.push(dir);
+    const rootId = '00000000-0000-4000-8000-000000000001';
+    const childId = '00000000-0000-4000-8000-000000000002';
+    const jsonl = (row: unknown) => JSON.stringify(row) + '\n';
+    const meta = (id: string, parent?: string) => ({ type: 'session_meta', timestamp: '2026-10-25T00:00:00Z', payload: { id, timestamp: '2026-10-25T00:00:00Z', ...(parent ? { thread_source: 'subagent', forked_from_id: parent, parent_thread_id: parent, source: { subagent: { thread_spawn: { parent_thread_id: parent, depth: 1 } } } } : { source: 'cli', thread_source: 'user' }) } });
+    const prompt = (text: string) => ({ type: 'response_item', timestamp: '2026-10-25T00:00:01Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } });
+    writeFileSync(join(dir, 'root.jsonl'), jsonl(meta(rootId)) + jsonl(prompt('test live team')));
+    const config: LocalSessionConfig = { ...TEST_CONFIG, providers: { ...TEST_CONFIG.providers, claude: { ...TEST_CONFIG.providers.claude, enabled: false }, codex: { ...TEST_CONFIG.providers.codex, enabled: true, path: dir, watchStrategy: 'poll', pollIntervalMs: 100 } } };
+    const { port } = await boot(undefined, undefined, config);
+    const runs = async () => JSON.parse((await request(port, 'GET', '/api/team-runs?provider=codex')).text).items;
+    await waitFor(async () => (await runs()).length > 0);
+    writeFileSync(join(dir, 'child.jsonl'), jsonl(meta(childId, rootId)) + jsonl(prompt('child review')));
+    await waitFor(async () => (await runs()).some((run: { counts: { agents: number } }) => run.counts.agents === 2));
+    const run = (await runs()).find((item: { counts: { agents: number } }) => item.counts.agents === 2);
+    const snapshot = JSON.parse((await request(port, 'GET', '/api/team-runs/' + encodeURIComponent(run.id))).text).snapshot;
+    expect(snapshot.agents).toHaveLength(2);
+    expect(snapshot.agentEdges).toHaveLength(1);
+    const activitiesBefore = run.counts.activities;
+    appendFileSync(join(dir, 'child.jsonl'), jsonl({ type: 'event_msg', timestamp: '2026-10-25T00:00:02Z', payload: { type: 'task_started', turn_id: 'live-child-turn', started_at: 1792886402 } }));
+    await waitFor(async () => (await runs()).some((item: { id: string; counts: { activities: number } }) => item.id === run.id && item.counts.activities > activitiesBefore));
+  });
+});
+
+describe('task workbench API', () => {
+  it('resolves grouped tasks, loads an exact bounded anchor and keeps metadata free of bodies', async () => {
+    const app = await boot(db => { seedSession(db, 'task-main', 'codex'); seedEvent(db, 'task-main', 'target-event', 1); });
+    const list = await request(app.port, 'GET', '/api/tasks?origin=collected');
+    expect(list.status).toBe(200); expect(list.headers['cache-control']).toBe('no-store');
+    expect(JSON.parse(list.text).items[0].id).toBe('collected:task-main');
+    const context = await request(app.port, 'GET', '/api/tasks/collected%3Atask-main'); expect(context.status).toBe(200);
+    const page = await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?anchor=task-main%3Aevent%3Atarget-event&limit=100');
+    expect(page.status).toBe(200); expect(JSON.parse(page.text).items[0].event.id).toBe('target-event');
+    expect(page.text).not.toContain('inputSummary'); expect(page.text).not.toContain('outputSummary');
+    const semantic = await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?structure=true');
+    expect(semantic.status).toBe(200); expect(JSON.parse(semantic.text).structure.records).toHaveLength(1);
+    const timeline = await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/timeline?member=main&window=' + encodeURIComponent(JSON.parse(page.text).window));
+    expect(timeline.status).toBe(200); expect(timeline.headers['cache-control']).toBe('no-store');
+    expect(JSON.parse(timeline.text)).toMatchObject({ total: 1, bins: 160 });
+    expect((await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?from=2026-10-26T00:00:00Z')).status).toBe(400);
+    expect((await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?structure=invalid')).status).toBe(400);
+    expect((await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/timeline?member=all&window=' + encodeURIComponent(JSON.parse(page.text).window))).status).toBe(400);
+
+    const missing = await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?anchor=foreign');
+    expect(missing.status).toBe(404); expect(JSON.parse(missing.text).error.code).toBe('SESSION_NOT_FOUND');
+    expect((await request(app.port, 'GET', '/api/tasks?origin=unknown')).status).toBe(400);
+    expect((await request(app.port, 'GET', '/api/tasks?limit=1000')).status).toBe(400);
+    expect((await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?member=foreign')).status).toBe(400);
+  });
+  it('stops and restarts the actual native listener without enabling network capture', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'task-monitor-toggle-')); staticDirs.push(dir);
+    const config: LocalSessionConfig = { ...TEST_CONFIG, providers: { ...TEST_CONFIG.providers, claude: { ...TEST_CONFIG.providers.claude, enabled: false }, codex: { ...TEST_CONFIG.providers.codex, path: dir, watchStrategy: 'poll', pollIntervalMs: 100 } } };
+    const { port } = await boot(undefined, undefined, config);
+    const update = (enabled: boolean) => request(port, 'PUT', '/api/monitoring', { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled }) });
+    expect(JSON.parse((await update(false)).text)).toEqual({ enabled: false, state: 'idle' });
+    writeFileSync(join(dir, 'task.jsonl'), JSON.stringify({ type: 'session_meta', timestamp: '2026-10-25T00:00:00Z', payload: { id: 'task-toggle', timestamp: '2026-10-25T00:00:00Z', source: 'cli', thread_source: 'user' } }) + '\n' + JSON.stringify({ type: 'response_item', timestamp: '2026-10-25T00:00:01Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Test listener toggle' }] } }) + '\n');
+    await new Promise(resolve => setTimeout(resolve, 350));
+    expect(JSON.parse((await request(port, 'GET', '/api/tasks')).text).total).toBe(0);
+    expect(JSON.parse((await update(true)).text)).toEqual({ enabled: true, state: 'running' });
+    await waitFor(async () => JSON.parse((await request(port, 'GET', '/api/tasks')).text).total === 1);
+    expect(JSON.parse((await request(port, 'GET', '/api/health')).text).monitoringEnabled).toBe(true);
+    expect(JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).running).toBe(false);
+    expect((await request(port, 'PUT', '/api/monitoring', { headers: { 'content-type': 'application/json' }, body: '{"enabled":"yes"}' })).status).toBe(400);
   });
 });

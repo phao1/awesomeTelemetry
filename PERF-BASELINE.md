@@ -1589,3 +1589,62 @@ No favorable rerun, budget change, previous-relative-alert clearance, CSS-gap
 waiver, real Agent/Windows certification, hook-runtime certification, physical
 fault/soak or complete Web/scanner NFR claim follows. Existing alerts and
 unclosed functional clauses remain documented; this push is a branch snapshot.
+
+
+## Task observability workbench（2026-10-25，本地交付基线）
+
+环境：本机 macOS，Node v24.19.0；分支 `codex/task-observability-workbench`，未提交。现有 `perf:check` 九项通过；完整日志保留在忽略目录 `.local-runtime/task-perf-verified.log`。本次不是与旧 Node v26 基线的同环境 A/B，不据此认证全部指标的相对回归。
+
+| 现有性能检查 | 实测 | 说明 |
+|---|---|---|
+| listSessions(500) | 0.556ms | 合成参考库 |
+| worstDetailSlim(9,590) | 14.253ms | <15ms |
+| Overview 冷 / 热 | 73.58 / 0.442ms | <400 /20ms |
+| 数据库 | 29.57MB | 合成库不含正文 |
+| HTTP 抓包额外 E2E p95 | 6.34ms | 100 个温态配对样本 |
+| HTTPS CONNECT 额外 E2E p95 | 18.24ms | 同上 |
+| 接近 2MiB 请求额外 E2E p95 | 7.87ms | 同上 |
+| 抓包 event-loop p99 | 2.14–2.24ms | 三种 profile 均满足各自检查预算 |
+
+新任务 HTTP 接口另外在真实本地库测量：45 个会话、17 个主任务；选中任务 21 个成员、14,662 个事件。各接口预热一次后串行读取 10 次；p95 使用本组最大值，样本较少，包含 loopback/HTTP 序列化成本，不等同于独立服务端性能认证。
+
+| 接口 | p50 / 本组 p95 | gzip |
+|---|---|---|
+| 任务列表 17 行 | 35.31 /36.47ms | 2,749B |
+| 任务上下文 21 成员 | 53.55 /57.84ms | 1,480B |
+| 固定窗口 200 事件 | 95.52 /101.42ms | 11,001B |
+| 显式更新 200 事件，含原生指纹检查与刷新上下文 | 145.90 /151.29ms | 11,001B |
+
+记录读取已从全事件扫描改成按会话/序号索引查询；无筛选 COUNT 走 covering index，14,662 条现场查询约3.7ms（修正前约273ms）。先分页身份再读取该页可用性标志，避免对全部事件检查正文列。固定窗口 HTTP 的尾部耗时接近100ms目标，小样本最高略超，仍需在标准规模下做更完整的专项基准；不宣称该项已完整认证。首次/显式刷新包含异步本地来源检查，与纯 SQL 分页分别记录。
+
+真实持久库在重构前约272MB，按需补读历史后约496.5MB，已超过旧200MB稳态目标；未清除用户数据。它与合成性能检查库不能混为一个指标。正文和保留策略另行治理。
+
+
+## Task time/process increment（2026-10-27，本地交付）
+
+Node v24.19.0，现有 `perf:check` 九项通过。日志 `.local-runtime/task-process-perf-final.log`：list500 0.555ms，slim9590 14.248ms，overview 冷/热 74.75/0.447ms；三种真实转发 profile 的额外 E2E p95 为 HTTP 6.55ms、HTTPS CONNECT 9.54ms、接近2MiB HTTP 7.57ms，loop p99 2.15–2.38ms。转发为隔离测试服务，用户服务的监控/代理均关闭。
+
+新增接口在真实 496.6MB 本地库、21 成员/14,662 事件任务测量，各预热一次、串行10次，p95 使用组内最大值，含本机 HTTP/序列化：
+
+| 接口 | p50 / 本组 p95 | gzip |
+|---|---|---|
+| 200 slim records＋200 native facts | 114.65 /118.57ms | 15,810B |
+| 21 成员完整窗口时间密度，50 非空桶 | 129.72 /154.72ms | 2,075B |
+
+来源事实显式走来源索引；工具元组先物化后按来源扫描一次，避免每个元组重复扫描。前置输入按精确序号查找。相应查询计划有专项回归，未增加数据库结构。结构页诊断优化前本组 p95 346.29ms，优化后118.57ms。新接口250ms目标在这组现场测量中满足；这不是标准规模多平台认证，也不清除既有相对性能告警或旧200MB存储目标。完整方法与证据见 `openspec/changes/refactor-execution-workbench/time-process-20261026.md`。
+
+## 提交前复核（2026-10-28）
+
+本轮为 `codex/task-observability-workbench` 开发分支提交前复核，使用本机 Node v24.19.0。保留 2026-10-27 的已通过结果；以下是新的现场结果，不覆盖之前记录或放宽预算。
+
+`perf:check` 本次 **exit=1**：前八个诊断完成，实际抓包 A/B 的 HTTPS CONNECT 与接近2MiB HTTP profile 超限。完整日志 `.local-runtime/publish-perf-20261028.log`，原始诊断报告 `reports/capture-ab-2026-10-27T15-32-53.075Z-32602.json`（均保留本地、按既有规则忽略）。每个 profile 使用100个温态配对样本、104次抓包、208份独立验证的原文。
+
+| Profile | 额外首字节 p95 | 额外 E2E p95 | event-loop p99 | 本次结果 |
+|---|---|---|---|---|
+| HTTP | 4.59ms | 7.52ms | 2.06ms | 通过 |
+| HTTPS CONNECT | 44.24ms | 88.53ms | 5.66ms | 首字节与 E2E 超限 |
+| 接近2MiB HTTP | 8.76ms | 35.01ms | 4.94ms | E2E 超限 |
+
+额外延迟预算仍为20ms，event-loop p99预算仍为50ms。抓包使用隔离合成测试实例，不打开用户服务的监控或代理。这次未修改代理实现或放宽断言，也未通过再次挑选有利性能结果消除超限。单次现场结果不能独立归因于代码或环境；抓包性能问题继续跟踪，本开发分支不据此声明全部性能验收完成。
+
+完整功能回归第一次有 3,776 项通过、1项跳过，仅未改动的 `turn-ribbon` 5ms 微基准在一次测量达到9.65ms。该文件及实现与基线无差异，隔离23项复核通过；完整重跑结果另见本次交付记录。没有跳过该用例或降低阈值。

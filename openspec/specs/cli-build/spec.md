@@ -160,3 +160,6 @@ separately confirmed; pack/install tests do not publish. Validate the tarball in
 a fresh consumer directory without NODE_PATH/NODE_OPTIONS/repository dependencies,
 including actual HTTP resources/API, workers, occupied port and graceful exit.
 Platform-branch unit tests do not count as actual Windows validation.
+
+### REQ-012: Collection disabled on normal Web startup
+The Web CLI defaults to `--enable-monitoring` absent (false) and `--enable-proxy` absent (false). Without monitoring, skip initial session indexing/prewarm, team-source discovery/scanning, and automatic file watchers/polling. Historical data and explicit manual scans remain available. `--enable-monitoring` explicitly restores automatic startup collection. Never infer consent from enabled provider paths.

@@ -173,7 +173,9 @@ describe('REQ-025 命令面板', () => {
     };
     setValue('/nav');
     const navRows = Array.from(container.querySelectorAll('.palette-row'));
-    expect(navRows.length).toBe(5);
+    expect(navRows.length).toBe(7);
+    expect(navRows.map(row => row.textContent).join(' ')).toContain('任务中心');
+    expect(navRows.map(row => row.textContent).join(' ')).toContain('数据接入');
     const navHints = navRows.map((row) => row.querySelector('.palette-row-hint')?.textContent);
     expect(navHints.every((hint) => hint === 'nav')).toBe(true);
     setValue('/s fix');

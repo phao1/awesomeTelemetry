@@ -229,13 +229,11 @@ function findRootThread(
     return userRoot;
   }
   const childIds = new Set(activities.map((a) => a.agentThreadId).filter((v): v is string => v !== null));
-  const parentIds = new Set(
-    [...threads.values()]
-      .map((t) => t.forkedFromId ?? t.parentThreadId ?? t.spawnParentThreadId)
-      .filter((v): v is string => v !== null),
-  );
-  const root = ids.find((id) => !parentIds.has(id) && !childIds.has(id));
-  return root ?? ids[0] ?? null;
+  for (const meta of threads.values()) {
+    if (meta.forkedFromId !== null || meta.parentThreadId !== null || meta.spawnParentThreadId !== null) childIds.add(meta.threadId);
+  }
+  const roots = ids.filter(id => !childIds.has(id));
+  return roots.length === 1 ? roots[0]! : null;
 }
 
 const ROLE_CLASS_LEADER = 'leader';

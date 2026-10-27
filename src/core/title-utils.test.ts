@@ -45,3 +45,9 @@ describe('标题净化（侧栏可区分性）', () => {
     expect(extractTitleFromUserText('z'.repeat(200))?.length).toBe(120);
   });
 });
+
+
+it('ignores Codex app context and extracts the request following browser metadata', () => {
+  expect(extractTitleFromUserText('<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>')).toBeNull();
+  expect(extractTitleFromUserText('<in-app-browser-context source="ambient-ui-state">URL: localhost</in-app-browser-context>\n\n## My request:\n重构任务中心')).toBe('重构任务中心');
+});

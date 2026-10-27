@@ -1,3 +1,7 @@
+import { TaskWorkbench, type TaskChanges } from './components/task/TaskWorkbench.js';
+import { DataIntake } from './components/task/DataIntake.js';
+import { parseTaskRoute, serializeTaskRoute, type TaskRoute } from './task-route.js';
+import { copy as taskCopy } from './components/task/copy.js';
 import {
   lazy,
   Suspense,
@@ -105,8 +109,12 @@ export default function App() {
   // §7.3：team 视图与既有五视图平行；AppView 不含 'team'，故本地扩展
   const isInitialTeam = window.location.hash.startsWith('#/team');
   const [view, setView] = useState<AppView | 'team'>(() =>
-    isInitialTeam ? 'team' : (INITIAL_HASH?.view ?? 'session') as AppView | 'team',
+    window.location.hash === '' || window.location.hash === '#' || window.location.hash.startsWith('#/task') || (isInitialTeam && window.location.hash.includes('runId=')) || (window.location.hash.startsWith('#/session?') && parseTaskRoute(window.location.hash).task !== null) ? 'task' : isInitialTeam ? 'team' : (parseHash(window.location.hash)?.view ?? 'task') as AppView | 'team',
   );
+
+  const [taskRoute, setTaskRoute] = useState<TaskRoute>(() => parseTaskRoute(window.location.hash));
+  const [taskChanges, setTaskChanges] = useState<TaskChanges>({ version: 0, keys: [], runIds: [] });
+  const [intakeChannel, setIntakeChannel] = useState<'native' | 'proxy' | 'frida' | 'import'>('native');
 
   const [teamHash, setTeamHash] = useState<TeamHashState>(() =>
     isInitialTeam ? parseTeamHash(window.location.hash.replace(/^#\/team\/?/, '')) : DEFAULT_TEAM_HASH,
@@ -347,6 +355,7 @@ export default function App() {
       setProxyFocusedId(null); setLiveReset(value => value + 1);
       setTraceLinksVersion(value => value + 1);
       setMissionInvalidateKey(value => value + 1); setTeamInvalidateKey(value => value + 1);
+      setTaskChanges(previous => ({ version: previous.version + 1, keys: [], runIds: [], reset: true }));
       selectedKeyRef.current = null; setSelectedKey(null); setDetail(null); setSelectedTurn(null); setPending(false);
       setPromptContextKey(null); eventPageRequest.current = null; setLoadingMoreEvents(false); setMoreEventsError(null); setDetailError(null);
       void loadSessions('first');
@@ -404,6 +413,7 @@ export default function App() {
     listen('sessions_changed', (event) => {
       const epoch = metadataEpochRef.current;
       const data = JSON.parse((event as MessageEvent).data) as { keys: string[] };
+      setTaskChanges(previous => ({ version: previous.version + 1, keys: data.keys, runIds: [] }));
       setMissionInvalidateKey((k) => k + 1);
       for (const key of data.keys) {
         invalidateSessionDetail(key);
@@ -454,7 +464,9 @@ export default function App() {
         });
     });
     // §7.8 team_runs_changed → 本地 patch/reconnect（TeamShell 内部处理增量）
-    listen('team_runs_changed', () => {
+    listen('team_runs_changed', event => {
+      const data = JSON.parse(event.data) as { runIds: string[] };
+      setTaskChanges(previous => ({ version: previous.version + 1, keys: [], runIds: data.runIds }));
       setTeamInvalidateKey((k) => k + 1);
     });
     return () => es.close();
@@ -625,8 +637,8 @@ export default function App() {
     const add = (spec: Parameters<typeof registerShortcut>[0], handler: () => void): void => {
       unsubs.push(registerShortcut(spec, handler));
     };
-    add({ key: '1' }, () => switchView('session'));
-    add({ key: '2' }, () => switchView('agent'));
+    add({ key: '1' }, () => switchView('task'));
+    add({ key: '2' }, () => switchView('intake'));
     add({ key: '3' }, () => switchView('compare'));
     add({ key: '4' }, () => switchView('proxy'));
     add({ key: '5' }, () => switchView('frida'));
@@ -665,6 +677,7 @@ export default function App() {
 
   // REQ-024（D3）：状态变 → 写 hash（replaceState 不触发 hashchange，避免循环）
   useEffect(() => {
+    if (view === 'task') { history.replaceState(null, '', serializeTaskRoute(taskRoute)); return; }
     // §7.3 team 视图用独立 hash 序列化（与既有 session/agent/compare/... 分开）
     if (view === 'team') {
       history.replaceState(null, '', serializeTeamViewHash(teamHash));
@@ -683,16 +696,14 @@ export default function App() {
       ...(view === 'mission' ? { range: missionRange } : {}),
     };
     history.replaceState(null, '', serializeHash(state));
-  }, [view, selectedKey, providerFilter, statusFilter, sessionQ, sessionRange, selectedTurn, compareLeft, compareRight, missionRange, teamHash]);
+  }, [view, selectedKey, providerFilter, statusFilter, sessionQ, sessionRange, selectedTurn, compareLeft, compareRight, missionRange, teamHash, taskRoute]);
 
   // REQ-024：hashchange → 解析并应用（脏 hash 回落默认视图，不抛错）
   useEffect(() => {
     const onHashChange = (): void => {
-      // §7.3 team 视图 hash 独立解析
-      if (window.location.hash.startsWith('#/team')) {
-        switchView('team');
-        setTeamHash(parseTeamHash(window.location.hash.replace(/^#\/team\/?/, '')));
-        return;
+      if (window.location.hash === '#/team') { switchView('team'); setTeamHash(DEFAULT_TEAM_HASH); return; }
+      if (window.location.hash.startsWith('#/task') || window.location.hash.startsWith('#/team') || (window.location.hash.startsWith('#/session?') && parseTaskRoute(window.location.hash).task !== null)) {
+        setTaskRoute(parseTaskRoute(window.location.hash)); switchView('task'); return;
       }
       const state = parseHash(window.location.hash);
       if (state === null) {
@@ -762,7 +773,12 @@ export default function App() {
         />
         <LiveIndicator connected={live} locale={locale} />
       </AppHeader>
-      <ViewTabs active={view === 'team' ? 'session' : view} onChange={switchView} locale={locale} />
+      <nav className="task-primary-nav" aria-label={taskCopy(locale).tasks}>
+        <div><button type="button" aria-current={view === 'task' || view === 'session' || view === 'team' ? 'page' : undefined} onClick={() => switchView('task')}>{taskCopy(locale).tasks}</button>
+        <button type="button" aria-current={view === 'intake' || view === 'proxy' || view === 'frida' ? 'page' : undefined} onClick={() => { setIntakeChannel('native'); switchView('intake'); }}>{taskCopy(locale).intake}</button>
+        <button type="button" onClick={() => setSettingsOpen(true)}>{taskCopy(locale).settings}</button></div>
+        <details><summary>{taskCopy(locale).compat}</summary><div className="task-secondary-menu"><ViewTabs active={view === 'task' || view === 'intake' || view === 'team' ? 'session' : view} onChange={switchView} locale={locale} /></div></details>
+      </nav>
       {paletteLoadError && <div className="workbench-error" role="alert">
         <span>{t('workbench.searchUnavailable', locale)}</span>
         <button type="button" className="btn" onClick={openPalette}>{t('common.retry', locale)}</button>
@@ -772,6 +788,15 @@ export default function App() {
           team 视图保留用于团队任务详情：点击团队任务 → switchView('team')。
           D15：Sessions(任务) | Agents | ...，AppShell 不含 team */}
 
+      {view === 'task' && <ErrorBoundary label={taskCopy(locale).tasks}><TaskWorkbench locale={locale} route={taskRoute} onRoute={setTaskRoute} changes={taskChanges} providerPreset={providerFilter[0] ?? ''} onProviderPresetChange={value => setProviderFilter(value ? [value] : [])}
+        onIntake={() => { setIntakeChannel(taskRoute.origin === 'imported' ? 'import' : 'native'); switchView('intake'); }}
+        onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} /></ErrorBoundary>}
+      {view === 'intake' && <ErrorBoundary label={taskCopy(locale).intake}><DataIntake key={intakeChannel} locale={locale} initialChannel={intakeChannel}
+        onConfigure={() => setSettingsOpen(true)} onTasks={() => switchView('task')}
+        proxy={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates} latestHookId={latestHookId}
+          sessions={sessions} focusedRequestId={proxyFocusedId} onFocusedRequestHandled={clearProxyFocus} traceInvalidateKey={traceLinksVersion}
+          onOpenSession={key => { setTaskRoute({ ...taskRoute, task: 'collected:' + key, origin: 'collected', member: 'main', event: null }); switchView('task'); }} /></Suspense>}
+        frida={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><FridaView key={liveReset} locale={locale} liveStatus={fridaLiveStatus} savedNotifications={fridaSaved} connected={live} /></Suspense>} /></ErrorBoundary>}
       {view === 'session' && (
         <div className="view-body session-view-body">
           <SessionList
@@ -1011,7 +1036,7 @@ export default function App() {
               onLeftChange={setCompareLeft}
               onRightChange={setCompareRight}
               onOpenRun={(key,eventId)=>{
-                switchView('session');selectSession(key,eventId);
+                setTaskRoute({ ...taskRoute, task: 'collected:' + key, origin: 'collected', member: 'main', event: eventId === undefined ? null : key + ':event:' + eventId }); switchView('task');
                 if(eventId!==undefined){setFocusEventId(eventId);setFocusEventRequest(value=>value+1);}
               }}
               onOpenCalls={()=>switchView('proxy')}
@@ -1030,8 +1055,8 @@ export default function App() {
               latestHookId={latestHookId}
               sessions={sessions} focusedRequestId={proxyFocusedId} onFocusedRequestHandled={clearProxyFocus} traceInvalidateKey={traceLinksVersion}
               livePreview={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><ProxyLivePanel streams={proxyStreams} locale={locale} invalidateKey={traceLinksVersion}
-                onOpenSession={key => { switchView('session'); selectSession(key); }} /></Suspense>}
-              onOpenSession={key => { switchView('session'); selectSession(key); }} />
+                onOpenSession={key => { setTaskRoute({ ...taskRoute, task: 'collected:' + key, origin: 'collected', member: 'main', event: null }); switchView('task'); }} /></Suspense>}
+              onOpenSession={key => { setTaskRoute({ ...taskRoute, task: 'collected:' + key, origin: 'collected', member: 'main', event: null }); switchView('task'); }} />
             </Suspense>
             </ErrorBoundary>
           </main>
@@ -1114,7 +1139,7 @@ export default function App() {
             } else if (action.type === 'filter') {
               // REQ-113：再次选择同一 provider 取消过滤。
               setProviderFilter((prev) =>
-                prev.includes(action.provider)
+                view === 'task' ? prev.includes(action.provider) ? [] : [action.provider] : prev.includes(action.provider)
                   ? prev.filter((p) => p !== action.provider)
                   : [...prev, action.provider],
               );

@@ -1020,3 +1020,23 @@ reported success/failure/native duration, receipt time, agent lifecycle and
 unverified sender/history. Shared SSE hints drive only bounded active metadata;
 detail raw reads are explicit, inert, owned and bounded. Both locales and all
 loading/empty/error/uncertain/stale states are required.
+
+## Task workbench supersedes legacy navigation (2026-10-25)
+
+REQ-TASK-001: Task center is the default; primary navigation is Tasks, Data intake, Settings. Legacy analytics/compare links remain secondary. Old session/team paths resolve within the task context and preserve explicit event/member anchors; unresolved run links retain the legacy evidence view with an explanation.
+REQ-TASK-002: Collected/imported tabs share task list/detail. A native root is one row regardless of child count. Task header shows origin, recorded time/status and coverage, never claims a live Agent from log status.
+REQ-TASK-003: Conversation, Trajectory and Raw events share selected task/member/record. Native scope reads are paged; selected body and Raw are lazy. Multiagent all-scope is a labelled ledger, not an invented serial conversation. Member navigation retains parent anchors.
+REQ-TASK-004: Live hints preserve history; explicit refresh fixes a new sequence window. Replay is opt-in with pause/step controls and is independent of actual execution time. Stable event anchors restore a bounded page on reload. Metadata search/status filters remain scoped to the selected task/member and match metadata rather than unloaded body text. Shared links retain these filters and an explicit UTC time window. Ancestor context projection is deferred.
+REQ-TASK-005: Intake explains native logs/proxy/CDP/Frida/import applicability and actual support. Viewing does not start capture. Local monitoring and proxy runtime controls report actual server state; monitoring defaults off on a normal restart. Stop acquisition never stops an external Agent. Imported sessions show occurrence/import times separately.
+
+These requirements supersede REQ-001 six-view primary navigation and the old separate Session/Team replay composition. Existing single-evidence, privacy, i18n, virtual-scroll and cache constraints remain in force. App.tsx remains the only global shell; task components own only task-scoped request/reading state.
+
+REQ-TASK-006 (2026-10-26): Implement [task-process.md](../../contracts/task-process.md)
+TP-004/005. Process uses virtualized round/step/model-observation/native-tool
+groups; incomplete groups and absent attempt identities remain explicit. The
+fixed-window full-scope time overview and zoomable detail axis retain context
+through filtering, offer activity/member lanes, inclusive brush, exact selected
+marks and keyboard/pointer zoom/pan/reset. Histogram clicks read a bounded time
+page. Counts are observations, log intervals are not measured inference, and
+model-output completion cannot imply tool/round completion. Preserve original
+record selection, lazy single evidence, cancellation and explicit stale refresh.

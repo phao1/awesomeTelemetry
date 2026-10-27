@@ -7,7 +7,7 @@ export default tseslint.config(
     ignores: [
       'dist', 'server-dist', 'dist-binary', 'src/generated', 'node_modules', 'coverage', '.codex',
       // 临时/工具目录（非项目源码）
-      '.codex-tmp', '.tmp-ppt-*', '.codeartsdoer', '.arts', 'reports', 'tempspec0806',
+      '.local-runtime', '.codex-tmp', '.tmp-ppt-*', '.codeartsdoer', '.arts', 'reports', 'tempspec0806',
     ],
   },
 

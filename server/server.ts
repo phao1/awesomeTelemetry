@@ -1,3 +1,5 @@
+import { getTask, getTaskTimeline, listTasks, recordMembers, taskRecords, TaskReadError, validateTaskRange } from './storage/task-workbench.js';
+import type { TaskListQuery, TaskRecordQuery } from '../src/core/task-types.js';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { once } from 'node:events';
@@ -83,10 +85,12 @@ import { SCHEMA_VERSION } from './storage/schema.js';
 import { cachedStmt } from './storage/stmt-cache.js';
 import { OriginalDeletionQueue, OriginalDeletionError, getOriginalDeletionForProxy, PENDING_ORIGINAL_DELETION_SQL } from './proxy/original-deletions.js';
 import { addSseClient } from './realtime/sse.js';
-import { queueSessionChange, queueTraceLinkChange } from './realtime/coalescer.js';
+import { queueSessionChange, queueTraceLinkChange, queueTeamRunChange } from './realtime/coalescer.js';
 import { eventBus } from './realtime/event-bus.js';
 import { markForegroundRequest } from './realtime/frontline.js';
 import { scanAndStoreDetail, scanLocalSessions, SessionParseError } from './watch/scan-scheduler.js';
+import { scanTeamSources } from '../local-sessions/team-scanner.js';
+import { expandLocalSessionPath } from '../local-sessions/config.js';
 import { startFileWatcher } from './watch/file-watcher.js';
 import { Router } from './http/router.js';
 import { sendJson, sendCompressedOrPlain } from './http/send-json.js';
@@ -126,6 +130,7 @@ import { parseProxyRequest } from './proxy/parser-router.js';
 import { decideTraceAssociation, listProxyTraceLinks, listSessionCaptureLinks, listTraceDecisions, listTraceIdentities, TraceLinkError } from './storage/trace-links.js';
 import { ensureInterceptCa } from './proxy/ca-manager.js';
 import {
+  createTeamSink,
   deleteTeamRun,
   getTeamActivityDetail,
   getTeamCompareInputs,
@@ -161,6 +166,8 @@ const DEV_ONLY_ROUTES = [
 export interface AgentObservabilityServerOptions {
   /** Explicit installed CLI entry for embedders; default is relative to this module. */
   launcherCliPath?: string;
+  /** CLI opts out by default; embedders retain the existing watcher default. */
+  enableMonitoring?: boolean;
   db: Database;
   config: LocalSessionConfig;
   dbPath?: string;
@@ -191,6 +198,7 @@ const EMPTY_OVERRIDE: DesensitizationOverride = {
 
 export interface HealthResponse {
   ok: true;
+  monitoringEnabled: boolean;
   schemaVersion: number;
   uptimeMs: number;
   dbSizeBytes: number;
@@ -386,30 +394,50 @@ export function createAgentObservabilityServer(
   };
   const startedAt = Date.now();
   let closing = false;
+  let monitoringEnabled = opts.enableMonitoring !== false;
+  let monitoringState: 'idle' | 'running' | 'starting' | 'stopping' = monitoringEnabled ? 'running' : 'idle';
   const activeHandlers = new Set<Promise<void>>();
   const scanTasks = new Set<Promise<unknown>>();
   const ownSseClients = new Set<() => void>();
   let scanInProgress = false;
   const pendingAutomaticScans = new Set<ProviderKey>();
+  const teamSink = createTeamSink(db);
 
   const scanProviders = async (
     provider: ProviderKey | undefined,
     force: boolean,
-  ) => scanLocalSessions({
-    db,
-    config,
-    force,
-    providers: provider === undefined ? undefined : [provider],
-    notify: notifyMerged,
-    emit: (event) => { eventBus.emit(event.type, event); },
-    trackTask: task => {
-      scanTasks.add(task);
-      void task.then(() => scanTasks.delete(task), () => scanTasks.delete(task));
-    },
-  });
+  ) => {
+    const results = await scanLocalSessions({
+      db,
+      config,
+      force,
+      providers: provider === undefined ? undefined : [provider],
+      notify: notifyMerged,
+      emit: (event) => { eventBus.emit(event.type, event); },
+      trackTask: task => {
+        scanTasks.add(task);
+        void task.then(() => scanTasks.delete(task), () => scanTasks.delete(task));
+      },
+    });
+    // Refresh the same bounded team metadata after session discovery, so newly
+    // spawned Codex threads and their later activities reach the team UI.
+    const codex = config.providers.codex;
+    if ((provider === undefined || provider === 'codex') && codex.enabled && existsSync(expandLocalSessionPath(codex.path))) {
+      const teamResults = await scanTeamSources([{ provider: 'codex', root: codex.path }], {
+        db, force, sink: teamSink,
+        notify: runIds => {
+          for (const runId of runIds) queueTeamRunChange({ runId, stamp: new Date().toISOString() });
+        },
+      });
+      for (const result of teamResults) {
+        if (result.error) console.error(`[team scan] ${result.provider}: ${result.error}`);
+      }
+    }
+    return results;
+  };
 
   const runAutomaticScan = async (provider: ProviderKey): Promise<void> => {
-    if (closing) return;
+    if (closing || monitoringState !== 'running') return;
     if (scanInProgress) {
       pendingAutomaticScans.add(provider);
       return;
@@ -497,6 +525,99 @@ export function createAgentObservabilityServer(
     return rows.map(row => row.id);
   });
 
+  router.register('GET', '/api/monitoring', (req, res) => {
+    res.setHeader('cache-control', 'no-store');
+    sendJson(res, 200, { enabled: monitoringEnabled, state: monitoringState }, req);
+  });
+  router.register('PUT', '/api/monitoring', async (req, res) => {
+    const body = await readJsonBody(req);
+    if (closing) throw new HttpError(409, 'INTERNAL_ERROR', 'Server is closing');
+    if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'BAD_REQUEST', 'enabled must be boolean');
+    if (monitoringState === 'starting' || monitoringState === 'stopping') throw new HttpError(409, 'INTERNAL_ERROR', 'Monitoring transition in progress');
+    if (body.enabled !== monitoringEnabled) {
+      if (body.enabled) {
+        monitoringState = 'starting';
+        try { fileWatcher = createWatcher(); monitoringEnabled = true; monitoringState = 'running'; }
+        catch (error) { monitoringState = 'idle'; throw error; }
+      } else {
+        monitoringState = 'stopping'; pendingAutomaticScans.clear();
+        try {
+          await fileWatcher?.close(); fileWatcher = null;
+          while (scanInProgress) await new Promise(resolve => setTimeout(resolve, 5));
+          await Promise.allSettled(scanTasks);
+          monitoringEnabled = false; monitoringState = 'idle';
+        } catch (error) { monitoringState = 'running'; throw error; }
+      }
+    }
+    res.setHeader('cache-control', 'no-store');
+    sendJson(res, 200, { enabled: monitoringEnabled, state: monitoringState }, req);
+  });
+
+  const taskNumber = (value: string | null): number | undefined => {
+    if (value === null) return undefined;
+    if (!/^\d+$/.test(value)) throw new HttpError(400, 'BAD_REQUEST', 'Invalid task pagination');
+    return Number(value);
+  };
+  router.register('GET', '/api/tasks', (req, res) => {
+    const query = parseQuery(req), origin = query.get('origin') ?? 'collected';
+    if (origin !== 'collected' && origin !== 'imported') throw new HttpError(400, 'BAD_REQUEST', 'Invalid task origin');
+    const provider = query.get('provider'), range = query.get('range') ?? 'all';
+    if (provider !== null && !(PROVIDER_KEYS as readonly string[]).includes(provider) || !['today', '7d', '30d', 'all'].includes(range)) throw new HttpError(400, 'BAD_REQUEST', 'Invalid task filters');
+    const options: TaskListQuery = { origin, q: query.get('q') ?? undefined, provider: provider as ProviderKey | undefined ?? undefined,
+      range: range as TaskListQuery['range'], offset: taskNumber(query.get('offset')), limit: taskNumber(query.get('limit')) };
+    res.setHeader('cache-control', 'no-store'); sendJson(res, 200, listTasks(db, options), req);
+  });
+  router.register('GET', '/api/tasks/:id', (req, res, params) => {
+    res.setHeader('cache-control', 'no-store'); sendJson(res, 200, getTask(db, params.id!), req);
+  });
+  router.register('GET', '/api/tasks/:id/timeline', (req, res, params) => {
+    const query = parseQuery(req);
+    res.setHeader('cache-control', 'no-store');
+    sendJson(res, 200, getTaskTimeline(db, getTask(db, params.id!), query.get('member') ?? 'main', query.get('window') ?? ''), req);
+  });
+  const nativeTaskReads = new Map<string, Promise<void>>();
+  router.register('GET', '/api/tasks/:id/records', async (req, res, params) => {
+    const query = parseQuery(req), status = query.get('status');
+    if (status !== null && !(TRACE_STATUSES as readonly string[]).includes(status)) throw new HttpError(400, 'BAD_REQUEST', 'Invalid record status');
+    if (query.has('structure') && !['true','false'].includes(query.get('structure')!)) throw new HttpError(400,'BAD_REQUEST','Invalid structure option');
+    const options: TaskRecordQuery = { member: query.get('member') ?? 'main', q: query.get('q') ?? undefined, status: status as TraceStatus | undefined ?? undefined,
+      offset: taskNumber(query.get('offset')), limit: taskNumber(query.get('limit')), window: query.get('window') ?? undefined, anchor: query.get('anchor') ?? undefined,
+      from: query.get('from') ?? undefined, to: query.get('to') ?? undefined, structure: query.get('structure') === 'true' };
+    validateTaskRange(options);
+    const context = getTask(db, params.id!);
+    const members = recordMembers(context, options.member), warnings: string[] = [];
+    let cancelled = false; const cancel = (): void => { cancelled = true; }; res.once('close', cancel);
+    try {
+      // A page continuation uses its existing immutable sequence window.
+      if (!options.window && context.task.origin === 'collected') {
+        let index = 0;
+        const load = async (): Promise<void> => {
+          while (!cancelled && !closing && index < members.length) {
+            const member = members[index++]!;
+            if (member.sessionKey === null) continue;
+            const key = member.sessionKey;
+            let pending = nativeTaskReads.get(key);
+            if (!pending) {
+              pending = (async () => {
+                const meta = cachedStmt(db, 'SELECT provider,source_path FROM sessions WHERE id=?').get(key) as { provider: string; source_path: string } | undefined;
+                if (!meta || meta.provider === 'trae' || !existsSync(meta.source_path)) { warnings.push('native_source_unavailable'); return; }
+                await scanAndStoreDetail(db, key, { config, notify: notifyMerged });
+              })();
+              nativeTaskReads.set(key, pending);
+            }
+            try { await pending; } catch { warnings.push('native_parse_failed'); }
+            finally { if (nativeTaskReads.get(key) === pending) nativeTaskReads.delete(key); }
+          }
+        };
+        await Promise.all([load(), load()]);
+      }
+      if (cancelled) return;
+      const page = taskRecords(db, options.window ? context : getTask(db, context.task.id), options);
+      page.warnings = [...new Set([...page.warnings, ...warnings])];
+      res.setHeader('cache-control', 'no-store'); sendJson(res, 200, page, req);
+    } finally { res.removeListener('close', cancel); }
+  });
+
   router.register('POST', '/api/trace-imports', async (req, res) => {
     const controller = new AbortController(), cancel = (): void => controller.abort();
     res.once('close', cancel);
@@ -547,6 +668,7 @@ export function createAgentObservabilityServer(
     const body: HealthResponse = {
       ok: true,
       schemaVersion: SCHEMA_VERSION,
+      monitoringEnabled,
       uptimeMs: Date.now() - startedAt,
       dbSizeBytes,
       walSizeBytes,
@@ -2079,7 +2201,8 @@ export function createAgentObservabilityServer(
     }
     const handler = (async () => {
       try {
-        if (pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
+        if (pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
+          if (pathname.startsWith('/api/tasks') || pathname === '/api/monitoring') res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/hooks/')) res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/frida/')) res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/trace-imports')) res.setHeader('cache-control', 'no-store');
@@ -2106,6 +2229,9 @@ export function createAgentObservabilityServer(
         }
         await match.handler(req, res, match.params);
       } catch (err) {
+        if (err instanceof TaskReadError) {
+          sendApiError(res, err.code === 'BAD_REQUEST' ? 400 : 404, err.code, err.message, undefined, req); return;
+        }
         if (err instanceof TraceImportError) {
           const status = err.code === 'TRACE_IMPORT_INVALID' ? 400 : err.code === 'TRACE_IMPORT_LIMIT' ? 413 : err.code === 'TRACE_IMPORT_BUSY' ? 409 : err.code === 'TRACE_IMPORT_NOT_FOUND' ? 404 : 503;
           sendApiError(res, status, err.code, err.code, undefined, req); return;
@@ -2163,10 +2289,11 @@ export function createAgentObservabilityServer(
     })();
     void startupRecovery.catch(() => console.error('Capture recovery failed; original evidence retained'));
   });
-  const fileWatcher = startFileWatcher(
+  const createWatcher = () => startFileWatcher(
     Object.values(config.providers).filter((provider): provider is NonNullable<typeof provider> => provider !== undefined),
     runAutomaticScan,
   );
+  let fileWatcher = monitoringEnabled ? createWatcher() : null;
   // Keep the plain Node Server/return value, but make its close callback the
   // ownership boundary: callers may close SQLite only after it succeeds.
   const closeHttp = server.close.bind(server);
@@ -2194,7 +2321,7 @@ export function createAgentObservabilityServer(
         const proxy = proxyRuntime.status();
         const proxyStopped = proxy.running || proxy.starting || proxy.diagnostics?.cleanupPending ? proxyRuntime.stop() : Promise.resolve();
         await Promise.all([proxyStopped, fridaRuntime.stop(), (async () => {
-          await fileWatcher.close();
+          await fileWatcher?.close();
           // A handler may still be reading its request before starting a scan.
           // Observe all registered scan tasks only after those handlers settle.
           await Promise.all(activeHandlers);

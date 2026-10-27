@@ -14,6 +14,9 @@ const INJECTION_PREFIXES = [
   '<codex_internal_context',
   '<recommended_plugins>',
   '<app-context>',
+  '<external_codex_apps_',
+  '<send_user_message_question_reply>',
+  '<turn_aborted>',
 ] as const;
 
 export function isInjectedFirstLine(firstLine: string): boolean {
@@ -61,7 +64,9 @@ export function extractSlashCommand(text: string): string | null {
 
 /** 从用户消息正文提取标题：首个非空行，净化后截断 120 字符；注入内容返回 null。 */
 export function extractTitleFromUserText(text: string): string | null {
-  const firstLine = text
+  // Ambient browser metadata may precede the actual user request in the same message.
+  const requestText = text.replace(/<in-app-browser-context\b[^>]*>[\s\S]*?<\/in-app-browser-context>/gi, '').replace(/^\s*##\s*My request:\s*/i, '');
+  const firstLine = requestText
     .split('\n')
     .map((line) => line.trim())
     .find((line) => line !== '');

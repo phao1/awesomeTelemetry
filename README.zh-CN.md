@@ -170,3 +170,9 @@ Unix 用 `agent-observe.sh`。
 - 规格与契约：`openspec/`（类型/DDL/API/性能预算的权威来源）
 - 里程碑进度：`PROGRESS.md`；待决决策：`DECISIONS-PENDING.md`
 - 提交前必须：`npm run typecheck && npm run test && npm run lint` 全绿
+
+## 默认关闭采集
+
+Web 启动默认关闭自动监控与抓包，不扫描本机会话、团队源，也不注册文件监听/轮询；可继续查看历史数据与手动重扫。
+显式传 `--enable-monitoring` 才开启启动扫描与自动监听，`--enable-proxy` 才启动抓包代理。
+通过 `/api/health` 的 `monitoringEnabled` 和 `/api/proxy/status` 的 `running` / `starting` 可检查实际状态。

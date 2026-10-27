@@ -1,3 +1,4 @@
+import { copy as taskCopy } from './task/copy.js';
 import { useMemo, useRef, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -176,10 +177,10 @@ export function CommandPalette({
 
     const navCommands: Command[] =
       prefix === null || prefix === 'nav'
-        ? (['agent', 'compare', 'proxy', 'frida', 'mission'] as const)
+        ? (['task', 'intake', 'agent', 'compare', 'proxy', 'frida', 'mission'] as const)
             .map((target) => ({
               id: `view-${target}`,
-              label: t(`view.${target}`, locale),
+              label: target === 'task' ? taskCopy(locale).tasks : target === 'intake' ? taskCopy(locale).intake : t(`view.${target}`, locale),
               hint: 'nav',
               category: 'nav' as const,
               run: () => run({ type: 'view', view: target }),

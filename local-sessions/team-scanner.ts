@@ -464,12 +464,25 @@ function fillCodeArtsSessionKeys(evidence: NormalizedTeamEvidence, dbPath: strin
   }
 }
 
+/** Stat only JSONL members before parsing: directory stat alone misses appends. */
+function codexFingerprintPaths(root: string): string[] {
+  if (!existsSync(root)) return [];
+  const paths: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) paths.push(...codexFingerprintPaths(path));
+    else if (entry.isFile() && entry.name.endsWith('.jsonl')) paths.push(path);
+  }
+  return paths;
+}
+
 async function scanCodexSource(
   sessionsRoot: string,
   ctx: TeamScanContext,
   collectAffected: (runId: string) => void,
 ): Promise<TeamScanResult> {
-  const fpFn = (): FileFingerprint => teamDirectoryFingerprint([sessionsRoot]);
+  const fpFn = (): FileFingerprint => teamDirectoryFingerprint(codexFingerprintPaths(sessionsRoot));
   const gate = shouldRescan(ctx.db, sessionsRoot, fpFn);
   if (!gate.changed && !ctx.force) {
     return { provider: 'codex', runs: 0, skipped: true };

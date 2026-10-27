@@ -49,6 +49,7 @@ export interface CliOptions {
   dbPath: string;
   proxyPort: number;
   enableProxy: boolean;
+  enableMonitoring: boolean;
   prewarmRecent: number;
   proxyRetentionDays: number;
   noGzip: boolean;
@@ -90,6 +91,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   let dbPath = '';
   let proxyPort = DEFAULT_PROXY_PORT;
   let enableProxy = false;
+  let enableMonitoring = false;
   let prewarmRecent = 0; // G11.17：默认 0，完全按需
   let proxyRetentionDays = DEFAULT_PROXY_RETENTION_DAYS;
   let noGzip = false;
@@ -112,7 +114,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     const flag = arg.split('=')[0] ?? arg;
-    if (['--no-open', '--enable-proxy', '--no-gzip'].includes(flag) && arg !== flag) throw new Error(`${flag} does not take a value`);
+    if (['--no-open', '--enable-proxy', '--enable-monitoring', '--no-gzip'].includes(flag) && arg !== flag) throw new Error(`${flag} does not take a value`);
     if (flag === '--host') {
       ({ value: host, next: i } = takeValue('--host', i));
     } else if (flag === '--port') {
@@ -129,6 +131,8 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
       const taken = takeValue('--proxy-port', i);
       proxyPort = parsePort(taken.value);
       i = taken.next;
+    } else if (flag === '--enable-monitoring') {
+      enableMonitoring = true;
     } else if (flag === '--enable-proxy') {
       enableProxy = true;
     } else if (flag === '--prewarm-recent') {
@@ -167,6 +171,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     dbPath: dbPath === '' ? defaultDbPath(configRoot) : dbPath,
     proxyPort,
     enableProxy,
+    enableMonitoring,
     prewarmRecent,
     proxyRetentionDays,
     noGzip,
@@ -205,6 +210,7 @@ function printHelp(): void {
   --config-root <path>         config directory (default process.cwd())
   --db-path <path>             SQLite path (default <config-root>/awesome-telemetry-data/observe.sqlite)
   --proxy-port <port>          MITM port (default 7779)
+  --enable-monitoring          enable startup session/team scans and automatic watching (default off)
   --enable-proxy               start MITM proxy on launch
   --prewarm-recent <n>         prewarm the most recent N sessions (default 0 = fully on demand)
   --proxy-retention-days <n>   explicit metadata retention (default 0 = never purge)
@@ -310,7 +316,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   };
 
   // REQ-013/REQ-002：索引阶段同步完成，预热不 await；listen 不被预热阻塞
-  initialScanAndStore({
+  if (options.enableMonitoring) initialScanAndStore({
     db,
     config: enriched,
     notify: notifyMerged,
@@ -327,7 +333,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   // §4.15 team 源扫描：自动发现 ~/.codeartsdoer/agent-team/ + ~/.codex/sessions/。
   // 与 session scanner 并行的第二条路径；fingerprint/no-change 门禁后解析为
   // NormalizedTeamEvidence，交给 createTeamSink 差分摄入。失败不阻塞启动。
-  try {
+  if (options.enableMonitoring) try {
     const teamSources = defaultTeamSources().filter((source) => {
       const rootExpanded = expandLocalSessionPath(source.root);
       return existsSync(rootExpanded);
@@ -358,6 +364,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   const server: Server = createAgentObservabilityServer({
     db,
     config: enriched,
+    enableMonitoring: options.enableMonitoring,
     distDir: runtimeResourcePath('dist'),
     dbPath: options.dbPath,
     userConfigPath: configLoadOptions(options.configRoot).userConfigPath,
@@ -386,6 +393,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   if (boundAddress === null || typeof boundAddress === 'string') throw new Error('HTTP listener has no TCP address');
   const url = webUrl(options.host, boundAddress.port);
   console.log(`AwesomeTelemetry is running at ${url} (bind ${options.host}:${boundAddress.port})`);
+  console.log(`Automatic monitoring: ${options.enableMonitoring ? 'enabled' : 'disabled'}; proxy: ${options.enableProxy ? 'startup requested' : 'disabled'}`);
   const ssh = launchedThroughSsh();
   if (ssh) console.log('SSH session: browser opening disabled. This URL is on the server; use your own local forwarded address/port.');
   if (options.enableProxy) {

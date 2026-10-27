@@ -354,3 +354,14 @@ describe('§4.14 Codex malformed 记录', () => {
     expect(r.agents).toHaveLength(2);
   });
 });
+
+
+describe('task root resolution without thread_source', () => {
+  it('keeps the explicit parent as root even when the child file arrives first', () => {
+    const result = parseCodexTeam([file(SUB1, [subMeta(SUB1)]), file(ROOT, [rootMeta({ thread_source: undefined })])], '/fixture');
+    expect(result.run.nativeRunId).toBe(ROOT);
+  });
+  it('rejects cycles rather than selecting an arbitrary leaf', () => {
+    expect(() => parseCodexTeam([file(ROOT, [rootMeta({ thread_source: undefined, parent_thread_id: SUB1 })]), file(SUB1, [subMeta(SUB1)])], '/fixture')).toThrow('稳定 run 身份');
+  });
+});

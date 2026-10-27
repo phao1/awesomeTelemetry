@@ -259,7 +259,7 @@ function mapSession(row: Record<string, unknown>): TraceSession {
   };
 }
 
-function mapEvent(
+export function mapEvent(
   row: Record<string, unknown>,
   full: boolean,
 ): TraceEventSlim | TraceEvent {

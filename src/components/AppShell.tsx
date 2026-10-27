@@ -5,7 +5,7 @@ import { t } from '../i18n.js';
 import { IconAgents, IconCompare, IconFrida, IconProxy, IconSearch, IconSessions, IconStability } from './icons/index.js';
 import { Tabs } from './ui/Tabs.js';
 
-export type AppView = 'session' | 'agent' | 'compare' | 'proxy' | 'frida' | 'mission';
+export type AppView = 'session' | 'agent' | 'compare' | 'proxy' | 'frida' | 'mission' | 'task' | 'intake';
 
 export interface AppHeaderProps {
   locale: Locale;
@@ -40,7 +40,7 @@ export function AppHeader({ locale, onSearch, children }: AppHeaderProps): React
 }
 
 export interface ViewTabsProps {
-  active: AppView;
+  active: Exclude<AppView, 'task' | 'intake'>;
   onChange: (view: AppView) => void;
   locale: Locale;
 }
