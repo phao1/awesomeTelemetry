@@ -341,7 +341,16 @@ Byte-preserving decode: retain at most2MiB encoded bytes per direction for
 semantic processing in16KiB blocks (not one object per network chunk), plus
 at most64KiB display text per direction. Worker admission counts byte previews
 as well as compatibility text inputs; owned byte buffers may be transferred,
-never detach a caller's buffer. Decode in<=8KiB input slices with separate
+never detach a caller's buffer through ordinary `CaptureProcessor.submit`.
+The capture finalizer may explicitly hand off its dedicated full-buffer byte
+previews/arrival arrays through `submitOwned`: validate/admit before taking
+ownership, detach once at submission, then transfer to the worker without a
+second full-body copy. Reject pooled/subarray/shared views without detaching
+any input; queue/closed rejection also preserves input ownership. Headers and
+timing metadata remain copied. All existing byte/job/worker bounds apply.
+Schedule the completed-preview handoff off the forwarding callback independently
+of original-file flush; final metadata persistence still awaits both outcomes.
+Decode in<=8KiB input slices with separate
 2MiB decoded bound and64KiB output previews, incremental UTF-8 and SSE framing.
 The capture worker retains at most8192 dispatched SSE events; excess/dropped
 events are an explicit semantic decode failure, never an original-file loss.

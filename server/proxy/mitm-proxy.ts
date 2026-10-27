@@ -19,7 +19,7 @@ import { RequestContext } from './request-context.js';
 import type { CaptureBodyStore, CaptureBodyWriter } from './body-store.js';
 import { writeCaptureBodies, writeCaptureProcessing, writeCaptureTransport } from './capture-storage.js';
 import { createIdentityCollector } from '../../src/adapters/native-identities.js';
-import { CaptureProcessor, CaptureProcessingError } from './capture-processor.js';
+import { CaptureProcessor, CaptureProcessingError, type CaptureProjection } from './capture-processor.js';
 import { writeNativeIdentities } from '../storage/trace-links.js';
 import { TransportLifecycle } from './transport-lifecycle.js';
 import { captureResources, type CaptureResources } from './capture-resources.js';
@@ -526,11 +526,31 @@ export async function createMitmProxy(opts: MitmProxyOptions): Promise<ManagedPr
   return proxy;
 }
 
-/**
- * 在 onResponseEnd（或 onError 兜底）时把当前请求写为 proxy_requests 行。
- * 请求体来自 onRequestData 累积（ctx.body），响应体来自 onResponseData
- * 累积（chunks / streamedBody），状态码与 content-type 取自真实上游响应。
- */
+/** Hand off the completed previews off the forwarding callback. File durability
+ * and parsing proceed independently; the final metadata commit awaits both. */
+async function projectCompletedCapture(state: CaptureState, processor: CaptureProcessor, transport: CaptureTransportResult, responseHeaderValues: Record<string, string | string[]>, isStreaming: boolean): Promise<Omit<CaptureProjection, 'workerThreadId' | 'previews'> & { previews?: CaptureProjection['previews'] }> {
+  await yieldImmediate();
+  const requestCtx = state.requestCtx, hostname = requestCtx.hostname;
+  try {
+    if (requestCtx.previewResourceLimited) throw new CaptureProcessingError('resource_limit');
+    const pending = processor.submitOwned({ hostname, url: requestCtx.url, requestBody: '', responseBody: null, isStreaming, ...requestCtx.takeBytePreviews(),
+      ...(transport.websocket === undefined ? {} : { evidenceFormat: 'websocket_archive_v1' as const }),
+      requestHeaders: requestCtx.headers, responseHeaders: responseHeaderValues,
+      timing: transport.timing, responseTimeline: transport.websocket === undefined ? requestCtx.takeResponseTimeline() : undefined,
+      previewTruncated: requestCtx.requestPreviewTruncated || requestCtx.responsePreviewTruncated || !transport.requestEnded || !transport.responseEnded,
+      requestTruncated: requestCtx.requestPreviewTruncated || !transport.requestEnded, responseTruncated: requestCtx.responsePreviewTruncated || !transport.responseEnded });
+    requestCtx.releaseRawPreviews();
+    return await pending;
+  } catch (error) {
+    const failure = error instanceof CaptureProcessingError ? error : new CaptureProcessingError('worker_error');
+    const errorCode = failure.status === 'resource_limit' ? 'CAPTURE_PREVIEW_BUDGET_EXCEEDED' : failure.message;
+    const collector = createIdentityCollector(); collector.omit(errorCode);
+    return { parsed: { parserRoute: 'unknown', requestFormat: 'unknown' as const, model: null, systemPrompt: null, systemPromptLen: 0, inputTokens: null, outputTokens: null },
+      identities: collector.finish(), processing: { version: 1 as const, status: failure.status, error: errorCode } };
+  } finally { requestCtx.releaseRawPreviews(); }
+}
+
+/** Commit only after accepted originals and owned worker processing settle. */
 async function finalizeCapture(opts: MitmProxyOptions, state: CaptureState, responseHeaders: IncomingHttpHeaders | undefined, processor: CaptureProcessor, transport: CaptureTransportResult, reason?: string): Promise<string | null> {
   const requestCtx = state.requestCtx;
   requestCtx.finishRequestBody();
@@ -540,35 +560,18 @@ async function finalizeCapture(opts: MitmProxyOptions, state: CaptureState, resp
   const updateJournal = async (patch: Parameters<CaptureJournalTicket['update']>[0]): Promise<void> => {
     try { await state.journal?.update(patch); } catch { journalFailed = true; }
   };
+  const contentType = responseContentType(responseHeaders);
+  const isStreaming = (contentType ?? '').toLowerCase().includes('text/event-stream');
+  const responseBody = requestCtx.chunks.length > 0 ? requestCtx.streamedBody : null;
+  const responseHeaderValues = Object.fromEntries(Object.entries(responseHeaders ?? {}).filter(([, value]) => value !== undefined)) as Record<string, string | string[]>;
+  const projectionTask = projectCompletedCapture(state, processor, transport, responseHeaderValues, isStreaming);
   await updateJournal({ transport, responseStatus: transport.statusCode, requestEnded: transport.requestEnded, responseEnded: transport.responseEnded, completedAt, durationMs });
   const [requestRef, responseRef] = await Promise.all([
     state.requestWriter?.finish(!transport.requestEnded, reason) ?? Promise.resolve(null),
     state.responseWriter?.finish(!transport.responseEnded, reason) ?? Promise.resolve(null),
   ]);
   await updateJournal({ requestRef, responseRef });
-  const hostname = requestCtx.hostname;
-  const contentType = responseContentType(responseHeaders);
-  const isStreaming = (contentType ?? '').toLowerCase().includes('text/event-stream');
-  const responseBody = requestCtx.chunks.length > 0 ? requestCtx.streamedBody : null;
-  const responseHeaderValues = Object.fromEntries(Object.entries(responseHeaders ?? {}).filter(([, value]) => value !== undefined)) as Record<string, string | string[]>;
-  let projection;
-  try {
-    if (requestCtx.previewResourceLimited) throw new CaptureProcessingError('resource_limit');
-    const pending = processor.submit({ hostname, url: requestCtx.url, requestBody: '', responseBody: null, isStreaming, ...requestCtx.takeBytePreviews(),
-      ...(transport.websocket === undefined ? {} : { evidenceFormat: 'websocket_archive_v1' as const }),
-      requestHeaders: requestCtx.headers, responseHeaders: responseHeaderValues,
-      timing: transport.timing, responseTimeline: transport.websocket === undefined ? requestCtx.takeResponseTimeline() : undefined,
-      previewTruncated: requestCtx.requestPreviewTruncated || requestCtx.responsePreviewTruncated || !transport.requestEnded || !transport.responseEnded,
-      requestTruncated: requestCtx.requestPreviewTruncated || !transport.requestEnded, responseTruncated: requestCtx.responsePreviewTruncated || !transport.responseEnded });
-    requestCtx.releaseRawPreviews();
-    projection = await pending;
-  } catch (error) {
-    const failure = error instanceof CaptureProcessingError ? error : new CaptureProcessingError('worker_error');
-    const errorCode = failure.status === 'resource_limit' ? 'CAPTURE_PREVIEW_BUDGET_EXCEEDED' : failure.message;
-    const collector = createIdentityCollector(); collector.omit(errorCode);
-    projection = { parsed: { parserRoute: 'unknown', requestFormat: 'unknown' as const, model: null, systemPrompt: null, systemPromptLen: 0, inputTokens: null, outputTokens: null },
-      identities: collector.finish(), processing: { version: 1 as const, status: failure.status, error: errorCode } };
-  }
+  const projection = await projectionTask;
   const { parsed, identities } = projection;
   if ('timing' in projection && projection.timing !== undefined) {
     transport.timing = projection.timing;

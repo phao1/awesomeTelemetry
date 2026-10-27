@@ -185,7 +185,9 @@ export function writeNativeIdentities(db: Database, owner: IdentityOwner, bundle
     if (!NATIVE_KINDS.has(value.kind) || !value.namespace || value.namespace.length > 128 || !value.value || value.value.length > 1024 || (value.scope?.length ?? 0) > 1024 || !value.sourcePath || value.sourcePath.length > 512 || (owner.source === 'proxy' && value.eventId !== null)) bad('Invalid native identity');
     normalized.set(hash([sourceId(owner), value.namespace, value.kind, value.value, value.scope, value.eventId, value.sourcePath]), value);
   }
-  const entries = [...normalized.entries()].sort(([left], [right]) => left.localeCompare(right));
+  // SHA-256 keys contain only lowercase ASCII hex. Binary comparison preserves
+  // their existing order without initializing or consulting locale collation.
+  const entries = [...normalized.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
   const digest = hash([bundle.parserVersion, entries, bundle.completeness]);
   const id = sourceId(owner);
   const oldSource = cachedStmt(db, `SELECT ${TRACE_IDENTITY_SOURCE_COLS} FROM trace_identity_sources WHERE id=?`).get(id) as Row | undefined;
@@ -203,7 +205,10 @@ export function writeNativeIdentities(db: Database, owner: IdentityOwner, bundle
     const previous = new Set(oldRows.map(row => row.id as string));
     for (const [key, value] of entries) if (!previous.has(key)) insert.run(key, id, value.namespace, value.kind, value.value, value.scope, value.eventId, value.sourcePath);
     for (const row of oldRows) if (!normalized.has(row.id as string)) remove.run(row.id);
-    return reconcile(db, owner, [...nativeKeys(oldRows), ...nativeKeys(entries.map(([key, value]) => ({ id: key, ...value })))], now);
+    // Proxy reconciliation already targets its exact owner ID and never reads
+    // these discovery keys. Preserve the sorted scan-source path verbatim.
+    const keys = owner.source === 'proxy' ? [] : [...nativeKeys(oldRows), ...nativeKeys(entries.map(([key, value]) => ({ id: key, ...value })))];
+    return reconcile(db, owner, keys, now);
   })();
 }
 

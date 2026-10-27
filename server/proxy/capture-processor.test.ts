@@ -11,6 +11,39 @@ const job = (): CaptureJob => ({ hostname: 'synthetic.invalid', url: '/v1/messag
 const faultWorker = join(process.cwd(), 'server/proxy/capture-worker.fixture.mjs');
 
 describe('bounded real worker capture processor', () => {
+  it('consumes relinquished dedicated previews once and retains actual worker parsing', async () => {
+    const resources = new CaptureResources(), processor = new CaptureProcessor({ resources });
+    const input = job(), requestBytes = Uint8Array.from(Buffer.from(input.requestBody)), responseBytes = Uint8Array.from(Buffer.from(input.responseBody!));
+    const offsets = new Uint32Array([responseBytes.length]), elapsedMs = new Float64Array([2]);
+    try {
+      const pending = processor.submitOwned({ ...input, requestBody:'', responseBody:null, requestBytes,responseBytes,responseTimeline:{offsets,elapsedMs,count:1,limited:false} });
+      expect([requestBytes.byteLength,responseBytes.byteLength,offsets.byteLength,elapsedMs.byteLength]).toEqual([0,0,0,0]);
+      const result = await pending;
+      expect(result.workerThreadId).toBeGreaterThan(0);
+      expect(result.processing.status).toBe('ok');
+      expect(result.parsed).toMatchObject({model:'synthetic',systemPrompt:'你好',inputTokens:12,outputTokens:5});
+      expect(result.previews).toMatchObject({request:input.requestBody,response:input.responseBody});
+    } finally { await processor.close(); }
+    expect(resources.snapshot()).toMatchObject({queuedJobs:0,queuedBytes:0,workers:0});
+  });
+  it('rejects unsafe owned views and over-budget jobs before detaching any caller bytes', async () => {
+    const resources = new CaptureResources(), processor = new CaptureProcessor({ resources });
+    const requestBytes = Uint8Array.from(Buffer.from(job().requestBody)), original = requestBytes.slice();
+    try {
+      await expect(processor.submitOwned({...job(),requestBody:'',requestBytes,responseBytes:Uint8Array.of(1,2).subarray(1)})).rejects.toMatchObject({status:'worker_error'});
+      expect(requestBytes).toEqual(original);
+      await expect(processor.submitOwned({...job(),requestBody:'',requestBytes,responseBytes:Buffer.from('pooled')})).rejects.toMatchObject({status:'worker_error'});
+      expect(requestBytes).toEqual(original);
+      await expect(processor.submitOwned({...job(),requestBody:'',requestBytes,responseBytes:new Uint8Array(new SharedArrayBuffer(2))})).rejects.toMatchObject({status:'worker_error'});
+      expect(requestBytes).toEqual(original);
+    } finally { await processor.close(); }
+    await expect(processor.submitOwned({...job(),requestBytes})).rejects.toMatchObject({status:'closed'});
+    expect(requestBytes).toEqual(original);
+    const bounded = new CaptureProcessor({resources,maxBytes:1});
+    try { await expect(bounded.submitOwned({...job(),requestBytes})).rejects.toMatchObject({status:'queue_full'});expect(requestBytes).toEqual(original); }
+    finally { await bounded.close(); }
+    expect(resources.snapshot()).toMatchObject({queuedJobs:0,queuedBytes:0,workers:0});
+  });
   it('retains exact Codex WS session membership without turning a connection into a model call', async () => {
     const processor = new CaptureProcessor();
     const body = Buffer.from(JSON.stringify({ type: 'response.create', client_metadata: { session_id: 'codex-native',

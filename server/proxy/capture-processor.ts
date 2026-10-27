@@ -74,6 +74,16 @@ export class CaptureProcessor {
   status(): { jobs: number; bytes: number; closed: boolean } { return { jobs: this.jobs.size, bytes: this.bytes, closed: this.closed }; }
 
   submit(input: CaptureJob): Promise<CaptureProjection> {
+    return this.enqueue(input, false);
+  }
+
+  /** Consume only explicitly relinquished dedicated byte/arrival arrays.
+   * Ordinary callers retain the non-detaching submit() contract. */
+  submitOwned(input: CaptureJob): Promise<CaptureProjection> {
+    return this.enqueue(input, true);
+  }
+
+  private enqueue(input: CaptureJob, takeOwnership: boolean): Promise<CaptureProjection> {
     if (this.closed) return Promise.reject(new CaptureProcessingError('closed'));
     const requestBytes = Buffer.byteLength(input.requestBody) + (input.requestBytes?.byteLength ?? 0), responseBytes = Buffer.byteLength(input.responseBody ?? '') + (input.responseBytes?.byteLength ?? 0);
     const metadata = Buffer.byteLength(JSON.stringify([input.hostname, input.url, input.requestHeaders, input.responseHeaders, input.timing]));
@@ -88,10 +98,16 @@ export class CaptureProcessor {
     const release = this.resources.acquireJob(bytes);
     if (release === null) { this.resources.noteProcessingRejection(); return Promise.reject(new CaptureProcessingError('queue_full')); }
     let owned: CaptureJob;
-    try { owned = { ...input, requestBytes: input.requestBytes === undefined ? undefined : Uint8Array.from(input.requestBytes), responseBytes: input.responseBytes === undefined ? undefined : Uint8Array.from(input.responseBytes), requestHeaders: structuredClone(input.requestHeaders), responseHeaders: structuredClone(input.responseHeaders),
+    try {
+      if (takeOwnership) {
+        const views = [input.requestBytes, input.responseBytes, arrivals?.offsets, arrivals?.elapsedMs].filter((view): view is Uint8Array | Uint32Array | Float64Array => view !== undefined);
+        if (views.some(view => Buffer.isBuffer(view) || !(view.buffer instanceof ArrayBuffer) || view.byteOffset !== 0 || view.byteLength !== view.buffer.byteLength)) throw new TypeError('Dedicated capture arrays required');
+        owned = structuredClone(input, { transfer: [...new Set(views.map(view => view.buffer as ArrayBuffer))] });
+      } else owned = { ...input, requestBytes: input.requestBytes === undefined ? undefined : Uint8Array.from(input.requestBytes), responseBytes: input.responseBytes === undefined ? undefined : Uint8Array.from(input.responseBytes), requestHeaders: structuredClone(input.requestHeaders), responseHeaders: structuredClone(input.responseHeaders),
       timing: input.timing === undefined ? undefined : structuredClone(input.timing), responseTimeline: arrivals === undefined ? undefined : {
         offsets: Uint32Array.from(arrivals.offsets), elapsedMs: Float64Array.from(arrivals.elapsedMs), count: arrivals.count, limited: arrivals.limited,
-      } }; }
+      } };
+    }
     catch { release(); this.resources.noteProcessingRejection(); return Promise.reject(new CaptureProcessingError('worker_error')); }
     return new Promise((resolve, reject) => {
       const id = ++this.next;

@@ -42,6 +42,19 @@ function repeatedIdentities(value: string, namespace = 'agent:claude'): NativeId
 }
 
 describe('native identity and association storage', () => {
+  it('keeps mixed identity snapshots stable when source order changes, without extra writes', () => {
+    const db = database();session(db,'s1');proxy(db,1);bindScan(db,'s1','native');
+    const bundle=identities('native');
+    for(let index=0;index<80;index+=1)bundle.items.push({namespace:'protocol:anthropic',kind:'tool_call',value:'工具🙂-'+index,scope:'native',eventId:null,sourcePath:`tools[${index}]`});
+    writeNativeIdentities(db,{source:'proxy',key:'1'},bundle,time);
+    const before=listTraceIdentities(db,{source:'proxy',key:'1'},{limit:100}),links=listProxyTraceLinks(db,1);
+    const changes=db.prepare('SELECT total_changes() AS n').get();
+    writeNativeIdentities(db,{source:'proxy',key:'1'},{...bundle,items:[...bundle.items].reverse()},'2026-10-28T00:00:00.000Z');
+    expect(db.prepare('SELECT total_changes() AS n').get()).toEqual(changes);
+    expect(listTraceIdentities(db,{source:'proxy',key:'1'},{limit:100})).toEqual(before);
+    expect(listProxyTraceLinks(db,1)).toEqual(links);
+    expect(before.items).toHaveLength(81);
+  });
   it.each(['scan', 'proxy', 'both'])('counts repeated %s identity locators as one native session without deleting provenance', repeated => {
     const db = database(); session(db, 's1'); proxy(db, 1);
     const scan = repeated === 'proxy' ? identities('a') : repeatedIdentities('a');
