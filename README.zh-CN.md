@@ -1,5 +1,21 @@
 # Agent Observability
 
+## 任务模式实验：单 loop / 主子 Agent / Team
+
+顶部「任务模式实验」以同一个任务和独立验收为基线，支持每组不同提示词、配对并行或
+顺序执行、逐用例差异、用量与时间对比，以及成员活动和消息的同步回放。四种离线
+模拟与真实本地子进程流程验证均明确标注，不代表真实模型成绩。真实驱动经
+`npm run team:experiment -- <plan.json> --execute --output <new-directory>` 显式启动。
+监控和抓包继续默认关闭。设计依据、指标口径和接入方法见
+[任务模式实验说明](docs/team-experiment.md)。
+
+## 同任务自动评测（稳准快省）
+
+顶部「评测中心」支持任务/模型配置、重复运行报告、完整指标对照、规则诊断和泳道
+证据定位。先用 `npm run benchmark:demo` 验证本地执行与验收闭环，再接入真实 GUI
+驱动；Qoder / CodeArts 真实自动操控需要按安装环境适配，合成示例不代表产品成绩。
+详见 [任务评测与驱动接入](docs/benchmark.md)。
+
 ## npm / npx local Web UI (package preparation — unpublished)
 
 The intended public package name is `awesome-telemetry`; registry ownership has

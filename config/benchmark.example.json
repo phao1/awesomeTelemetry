@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Qoder GUI vs CodeArts GUI",
+  "repetitions": 3,
+  "task": {
+    "id": "ruoyi-perf-management",
+    "repository": "/absolute/path/to/task-repository",
+    "ref": "HEAD",
+    "prompt": "完成绩效管理任务，遵循仓库规范并运行验收用例。",
+    "expectedTests": 371,
+    "evaluator": ["/absolute/path/to/independent-evaluator"],
+    "timeoutMs": 5400000
+  },
+  "variants": [
+    { "id": "qoder", "product": "Qoder GUI", "model": "set-exact-model-id", "environment": "local", "parameters": "default", "toolSet": "fixed task tools", "driver": ["/absolute/path/to/qoder-gui-driver"] },
+    { "id": "codearts", "product": "CodeArts GUI", "model": "set-exact-model-id", "environment": "local", "parameters": "default", "toolSet": "fixed task tools", "driver": ["/absolute/path/to/codearts-gui-driver"] }
+  ]
+}

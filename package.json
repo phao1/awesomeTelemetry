@@ -7,10 +7,15 @@
     "node": ">=20.19.0"
   },
   "bin": {
+    "telemetry-team-experiment": "./bin/team-experiment.js",
+    "telemetry-benchmark": "./bin/benchmark.js",
     "awesome-telemetry": "./bin/agent-observe.js",
     "agent-observe": "./bin/agent-observe.js"
   },
   "scripts": {
+    "team:experiment": "node bin/team-experiment.js",
+    "benchmark": "node bin/benchmark.js",
+    "benchmark:demo": "node scripts/benchmark-demo.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build && vite build --config vite.cli.config.ts",
     "typecheck": "tsc -b --noEmit",
@@ -52,6 +57,13 @@
   "description": "Local Web UI for AI coding-agent telemetry",
   "license": "Apache-2.0",
   "files": [
+    "bin/team-experiment.js",
+    "config/team-experiment.example.json",
+    "docs/team-experiment.md",
+    "bin/benchmark.js",
+    "config/benchmark.example.json",
+    "docs/benchmark.md",
+    "scripts/benchmark-demo.mjs",
     "bin/agent-observe.js",
     "server-dist/**/*.js",
     "dist/**",
