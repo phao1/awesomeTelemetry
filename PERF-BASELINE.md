@@ -1677,3 +1677,27 @@ Node v24.19.0，现有 `perf:check` 九项通过。日志 `.local-runtime/task-p
 | 接近2MiB HTTP | 2.86ms | 5.69ms | 2.23ms |
 
 以上为最终源码的受控硬预算复核；初次失败、部分ABBA及前次检查均未覆盖/删除。测量范围与相对性能/真实Agent/存储治理边界仍按前述限制保留，详见 `openspec/changes/refactor-execution-workbench/checks-fix-20261028.md`。
+
+
+## DSH 轨迹阅读提交复核（2026-10-28）
+
+验证范围为 `dadc214` 加本次 DSH 轨迹、正文阅读及必要检查修复的冻结快照；使用 Node v24.19.0、独立临时 checkout/数据库。主工作区中另一个任务的 benchmark、watcher 和测试配置草稿未纳入本次提交或验证快照。用户运行服务的监控/代理/Frida 始终关闭。
+
+列表计数仅在标签筛选时连接 annotations；关联前序记录先取最新 UTC instant，再沿既有 session/id 索引倒序取该时刻最大合格 ID。唯一 owner、时间同义表示和歧义排除不变，不改 DDL、返回字段或正文读取范围。大 Buffer 校验使用完整长度与全部字节的原生相等比较；WebSocket 集成夹具等待真实 journal recovery 后才允许外部代理写入，未使用 sleep、mock、降负载或放宽断言。
+
+完整回归 **316 文件、3,807 通过、1 个既有 SQLCipher 环境用例跳过**，605.53 秒；typecheck、三阶段构建、lint 通过。日志 `.local-runtime/publish-dsh-{tests,typecheck,build,lint}-verified-20261028.log`。构建主块499.22kB，无500kB告警。
+
+抓包检查此前出现超限，保留三个完整失败报告及缺少临时 Git 元数据的一次中止日志：`publish-dsh-perf-concurrent-20261028.log`、`publish-dsh-perf-before-renderer-exit-20261028.log`、`publish-dsh-perf-after-renderer-exit-20261028.log`、`publish-dsh-perf-no-git-20261028.log`。现场先后观察到其他性能任务及约420%CPU的独立3D软件渲染截图进程；截图进程退出后仍曾超限，不能声称它是唯一原因。CPU/分段诊断未证实新的同步解析回归；无采样的HTTPS原实现10.64/13.07ms通过，noDelay对照17.79/19.86ms未显示稳定收益，因此未加入猜测性抓包生产改动。
+
+随后预先固定为**连续两轮完整 `perf:check`，两轮都须通过**，不挑选有利profile、不改样本/并发/阈值。两轮均 **exit=0，九项脚本完成**。每轮每种profile仍100个温态配对样本、并发4、104次抓包/208份原文；应用头/状态/全部字节、协议投影、早帧转发与资源归零断言全部通过。
+
+| 轮次 / Profile | 额外首字节p95 | 额外E2E p95 | loop p99 |
+|---|---:|---:|---:|
+| 1 / HTTP | 5.26ms | 9.41ms | 2.53ms |
+| 1 / HTTPS CONNECT | 10.95ms | 15.35ms | 2.61ms |
+| 1 / 近2MiB HTTP | 7.36ms | 9.91ms | 3.51ms |
+| 2 / HTTP | 3.24ms | 11.53ms | 2.44ms |
+| 2 / HTTPS CONNECT | 12.90ms | 18.18ms | 3.00ms |
+| 2 / 近2MiB HTTP | 9.39ms | 13.32ms | 3.74ms |
+
+日志为 `.local-runtime/publish-dsh-perf-confirmation-{1,2}-20261028.log`，原始报告为验证目录的 `reports/capture-ab-2026-10-28T06-33-55.782Z-229.json` 与 `reports/capture-ab-2026-10-28T06-34-18.338Z-277.json`。两轮 list500 分别0.855/0.632ms，overview冷82.13/94.42ms、热0.621/0.615ms，合成库29.57MB。04只报告数值的slim9590分别19.618/16.862ms，仍高于旧15ms目标；本次不将脚本exit=0当成该目标、相对性能告警、真实库200MB目标或全平台/长时负载均已认证。此前所有失败和诊断均保留，不能从这两轮通过推断任意并行负载下都满足20ms预算。

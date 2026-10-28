@@ -31,11 +31,14 @@ const NATIVE_KINDS = new Set(['session', 'turn', 'message', 'request', 'response
 const UNIQUE_LINKED_SESSION_SQL = "SELECT session_key FROM trace_associations WHERE proxy_id=? AND state IN ('direct','confirmed') LIMIT 2";
 const ELIGIBLE_PREDECESSOR_FROM = `FROM trace_associations a INDEXED BY idx_trace_associations_session CROSS JOIN proxy_requests p
   WHERE p.id=a.proxy_id AND a.session_key=? AND a.state IN ('direct','confirmed') AND p.request_format=?
-    AND (julianday(p.started_at)<julianday(?) OR (julianday(p.started_at)=julianday(?) AND p.id<?))
-    AND NOT EXISTS (SELECT 1 FROM trace_associations other WHERE other.proxy_id=p.id
+    AND (julianday(p.started_at)<julianday(?) OR (julianday(p.started_at)=julianday(?) AND p.id<?))`;
+const UNIQUE_PREDECESSOR_OWNER = `NOT EXISTS (SELECT 1 FROM trace_associations other WHERE other.proxy_id=p.id
       AND other.session_key<>a.session_key AND other.state IN ('direct','confirmed'))`;
-export const LINKED_PREDECESSOR_TIME_SQL = `SELECT MAX(julianday(p.started_at)) AS instant ${ELIGIBLE_PREDECESSOR_FROM}`;
-export const LINKED_PREDECESSOR_ID_SQL = `SELECT MAX(p.id) AS id ${ELIGIBLE_PREDECESSOR_FROM} AND julianday(p.started_at)=?`;
+export const LINKED_PREDECESSOR_TIME_SQL = `SELECT MAX(julianday(p.started_at)) AS instant ${ELIGIBLE_PREDECESSOR_FROM} AND ${UNIQUE_PREDECESSOR_OWNER}`;
+// Resolve ties only at the selected instant before doing reverse-owner reads.
+// The session index already orders ids; LIMIT stops the joined scan as soon
+// as the greatest eligible tie is found (MAX over a join still scans all rows).
+export const LINKED_PREDECESSOR_ID_SQL = `SELECT a.proxy_id AS id ${ELIGIBLE_PREDECESSOR_FROM} AND julianday(p.started_at)=? AND ${UNIQUE_PREDECESSOR_OWNER} ORDER BY a.proxy_id DESC LIMIT 1`;
 
 /** Membership is independent of parsed_session_id, model, timing and capture run. */
 export function getUniqueLinkedSession(db: Database, proxyId: number): string | null {
@@ -53,8 +56,8 @@ export function findLinkedCapturePredecessor(
   const params = [sessionKey, target.requestFormat, target.startedAt, target.startedAt, target.id];
   const { instant } = cachedStmt(db, LINKED_PREDECESSOR_TIME_SQL).get(...params) as { instant: number | null };
   if (instant === null) return null;
-  const { id } = cachedStmt(db, LINKED_PREDECESSOR_ID_SQL).get(...params, instant) as { id: number | null };
-  return id === null ? null : { id, sessionKey };
+  const row = cachedStmt(db, LINKED_PREDECESSOR_ID_SQL).get(...params, instant) as { id: number } | undefined;
+  return row === undefined ? null : { id: row.id, sessionKey };
 }
 
 function bad(message: string): never { throw new TraceLinkError('BAD_REQUEST', message); }

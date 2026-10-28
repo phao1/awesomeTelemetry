@@ -123,10 +123,14 @@ function sessionListSql(flags: SessionsWhereFlags): string {
 }
 
 function sessionCountSql(flags: SessionsWhereFlags): string {
-  // 标签过滤需要 joined 行；session_annotations.session_id 是主键，每会话至多
-  // 一行，COUNT(*) 仍与会话数一致。
+  // Only tag filtering reads annotations. Without it, count sessions directly
+  // so the metadata index avoids one annotation lookup per matching session.
+  // With tags, the annotation primary key still contributes at most one row.
+  const annotations = flags.tags > 0
+    ? 'LEFT JOIN session_annotations AS sa ON sa.session_id = sessions.id '
+    : '';
   return `SELECT COUNT(*) AS c FROM sessions ` +
-    'LEFT JOIN session_annotations AS sa ON sa.session_id = sessions.id ' +
+    annotations +
     `WHERE ${sessionsWhere(flags)}`;
 }
 
