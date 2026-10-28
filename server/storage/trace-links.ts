@@ -182,17 +182,20 @@ function reconcile(db: Database, owner: IdentityOwner, keys: Array<[string, stri
 export function writeNativeIdentities(db: Database, owner: IdentityOwner, bundle: NativeIdentitySet, updatedAt: string): string[] {
   assertIdentityOwner(db, owner);
   if (!Number.isSafeInteger(bundle.parserVersion) || bundle.parserVersion < 1 || bundle.items.length > (owner.source === 'scan' ? 50_000 : 2048)) bad('Invalid identity snapshot');
+  const id = sourceId(owner);
   const normalized = new Map<string, NativeIdentity>();
   for (const item of bundle.items) {
     const value: NativeIdentity = { namespace: item.namespace, kind: item.kind, value: item.value, scope: item.scope ?? null, eventId: item.eventId ?? null, sourcePath: item.sourcePath };
     if (!NATIVE_KINDS.has(value.kind) || !value.namespace || value.namespace.length > 128 || !value.value || value.value.length > 1024 || (value.scope?.length ?? 0) > 1024 || !value.sourcePath || value.sourcePath.length > 512 || (owner.source === 'proxy' && value.eventId !== null)) bad('Invalid native identity');
-    normalized.set(hash([sourceId(owner), value.namespace, value.kind, value.value, value.scope, value.eventId, value.sourcePath]), value);
+    normalized.set(hash([id, value.namespace, value.kind, value.value, value.scope, value.eventId, value.sourcePath]), value);
   }
   // SHA-256 keys contain only lowercase ASCII hex. Binary comparison preserves
   // their existing order without initializing or consulting locale collation.
-  const entries = [...normalized.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
-  const digest = hash([bundle.parserVersion, entries, bundle.completeness]);
-  const id = sourceId(owner);
+  const identityIds = [...normalized.keys()].sort();
+  // Every identity SHA already covers its owner and all six normalized fields.
+  // Hash their ordered keys instead of allocating/encoding the long fields a
+  // second time. The versioned domain changes only this internal snapshot key.
+  const digest = hash(['native-identity-snapshot', 2, id, bundle.parserVersion, identityIds, bundle.completeness]);
   const oldSource = cachedStmt(db, `SELECT ${TRACE_IDENTITY_SOURCE_COLS} FROM trace_identity_sources WHERE id=?`).get(id) as Row | undefined;
   if (oldSource?.content_sha256 === digest) return [];
   const now = new Date(updatedAt).toISOString();
@@ -206,11 +209,14 @@ export function writeNativeIdentities(db: Database, owner: IdentityOwner, bundle
     const insert = cachedStmt(db, 'INSERT OR IGNORE INTO trace_identities (id, source_id, namespace, kind, value, scope, event_id, source_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     const remove = cachedStmt(db, 'DELETE FROM trace_identities WHERE id=?');
     const previous = new Set(oldRows.map(row => row.id as string));
-    for (const [key, value] of entries) if (!previous.has(key)) insert.run(key, id, value.namespace, value.kind, value.value, value.scope, value.eventId, value.sourcePath);
+    for (const key of identityIds) if (!previous.has(key)) {
+      const value = normalized.get(key)!;
+      insert.run(key, id, value.namespace, value.kind, value.value, value.scope, value.eventId, value.sourcePath);
+    }
     for (const row of oldRows) if (!normalized.has(row.id as string)) remove.run(row.id);
     // Proxy reconciliation already targets its exact owner ID and never reads
     // these discovery keys. Preserve the sorted scan-source path verbatim.
-    const keys = owner.source === 'proxy' ? [] : [...nativeKeys(oldRows), ...nativeKeys(entries.map(([key, value]) => ({ id: key, ...value })))];
+    const keys = owner.source === 'proxy' ? [] : [...nativeKeys(oldRows), ...nativeKeys(identityIds.map(key => ({ id: key, ...normalized.get(key)! })))];
     return reconcile(db, owner, keys, now);
   })();
 }

@@ -1720,3 +1720,78 @@ Node v24.19.0，现有 `perf:check` 九项通过。日志 `.local-runtime/task-p
 | 近2MiB HTTP | 8.00ms | 8.64ms | 2.74ms |
 
 合成库29.57MB；list500 0.629ms、slim9590 14.366ms、overview冷76.75ms/热0.452ms。本组slim低于15ms，但不清除先前超限、相对性能告警、真实库稳态目标或真实Agent/全平台/长时负载的未覆盖项。完整日志为 `.local-runtime/single-row-full-tests-node-20261028.log`；静态检查为 `single-row-{typecheck,lint,build}-final-20261028.log`。用户服务监控、代理与Frida保持关闭；抓包检查均使用隔离合成实例。
+
+
+## 2026-10-29 · Task-mode experiments and capture identity snapshot repair
+
+Scope: isolated checkout at base1862408 plus the explicitly selected task-mode/
+benchmark foundation files; unrelated watcher, predecessor-test and bundle-test
+working drafts excluded. Node24.19.0. No added runtime dependency or DB migration.
+Final typecheck, lint, three-stage build, package-artifact verification and CLI
+plan validation passed. Full regression: **330 files;3966 passed,0 failed,1 existing
+conditional SQLCipher skip**,255.55s (05:25:20 Pacific/Auckland start).
+
+The first full regression passed3953 tests. A later regression after adding two
+route tests exposed an unchanged identity-count-ceiling loop p99=52.559871ms
+against the original50ms limit. That failure and the controlled diagnostic
+baseline remain retained; passing an earlier p99 did not establish absence of a
+long event-loop turn (an earlier workload also had a54ms maximum).
+
+Stage measurements identified repeated serialization of the full multi-MiB
+identity fields and17–23ms outside the transaction callback in durable SQLite
+COMMIT. The repair keeps each identity's exact SHA(owner+all six canonical
+fields), sorts its64hex keys with native binary string order, and hashes the
+versioned domain/owner/parserVersion/ordered keys/full completeness object.
+No changed identity ID, dropped evidence, relaxed assertion, shortened sampling,
+reduced workload, changed SQLite durability or delete/reinsert of the source.
+Legacy fingerprints refresh source metadata once on normal ingestion; identical
+or reordered manifests remain zero-write. Eleven new semantic cases cover field,
+parser/completeness and legacy/idempotence behavior. Controlled uninstrumented
+pressure+storage checks:43/43 pass. Final full-regression pressure reports:
+
+| Actual admitted profile | Tools / identities / candidates | Loop samples | p99 / max ms | WAL bytes |
+| --- | --- | --- | --- | --- |
+| Wide scope |1900 /1902 /32|50|41.320447 /41.320447|17093912|
+| Identity ceiling |2046 /2048 /32|50|37.781503 /37.781503|17806672|
+
+All9 performance scripts pass on the final source. Actual forwarding A/B retains
+100 warm paired samples/profile,concurrency4,104captures and208 exact-original
+checks/profile, plus admission/cleanup assertions:
+
+| Profile | Extra first-body-byte p95 ms | Extra E2E p95 ms | Loop p99 ms |
+| --- | --- | --- | --- |
+| HTTP |2.721875|8.345125|2.117631|
+| HTTPS CONNECT |7.730875|10.473500|2.201599|
+| HTTP near2MiB |4.814124|9.902875|2.453503|
+
+Synthetic DB29.57MB; list500=0.608ms; slim9590=15.132ms; overview cold83.05ms/hot0.560ms.
+The slim result satisfies the current60ms budget; this does not close the older
+15ms regression alarm. Source-file stats are explicitly unavailable without the
+real config; the empty synthetic Mission fixture is not populated-dashboard or
+all-platform certification. The initial bundle still has Vite's advisory500kB
+uncompressed chunk warning; no warning threshold was increased.
+
+UI/protocol bounds: reports16MiB/30trials/64agents per trial/2000events per trial/
+20000events or telemetry spans per report; DOM<=64member lanes and100record/case
+rows per page, dependencies20/page. Closed run details mount no case bodies;
+30trials×1000cases import/selection/paging is tested. Overflowed report captures
+become explicitly unavailable per trial, with complete original local files
+retained; independent acceptance still runs. Malformed or reserved runner-* span
+IDs never suppress acceptance or erase the previous report.
+
+Browser checks on the built final source: exact direct route/reload, explicit
+2variants×3repeats with6/6 independent acceptance and all3 driver pairs overlapping,
+quality-first synthetic guidance, exact event location, play/pause/step, filters,
+public message details below the sticky chart at691×611, and no console errors.
+Blob/FileReader export/reimport uses actual browser primitives in component tests;
+native file-dialog completion and real vendor models/GUI remain unverified.
+No model invocation, OS proxy or certificate/trust change. Runtime monitoring,
+proxy and Frida remain disabled/stopped after the smoke.
+
+Local evidence (not committed private/generated artifacts):
+`.local-runtime/team-experiment-{typecheck,lint,build,full-tests,perf}-final.log`,
+`.local-runtime/team-experiment-verification.json`,
+`.local-runtime/team-experiment-perf-report-final.json`,
+`.local-runtime/team-experiment-browser-fixture-evidence.json`,
+`.local-runtime/capacity-delay-evidence/manifest.json`; final forwarding report
+`capture-ab-2026-10-28T16-29-42.150Z-29986.json`.
