@@ -757,7 +757,8 @@ describe('API 契约（contracts/api.md §8）', () => {
       expect(detail.requestHeaders.authorization).toBe('Bearer original-synthetic');
       const downloaded = await request(port, 'GET', `/api/proxy/requests/${id}/body/request`);
       expect(downloaded.status).toBe(200);
-      expect(downloaded.raw).toEqual(Buffer.from(originalRequest));
+      // Exact full-length byte equality without multi-megabyte object traversal.
+      expect(downloaded.raw.equals(Buffer.from(originalRequest))).toBe(true);
       expect(downloaded.headers['x-capture-status']).toBe('complete');
       expect(downloaded.headers['x-capture-sha256']).toBe(createHash('sha256').update(originalRequest).digest('hex'));
       const segment = await request(port, 'GET', `/api/proxy/requests/${id}/body/request`, { headers: { range: 'bytes=2097152-2097183' } });
@@ -776,7 +777,7 @@ describe('API 契约（contracts/api.md §8）', () => {
       const resume = await request(port, 'GET', `/api/proxy/requests/${id}/body/request`, { headers: { range: 'bytes=0-3', 'if-range': etag } });
       expect(resume.status).toBe(206); expect(resume.raw).toEqual(Buffer.from(originalRequest).subarray(0, 4));
       const restart = await request(port, 'GET', `/api/proxy/requests/${id}/body/request`, { headers: { range: 'bytes=0-3', 'if-range': '"other-capture"' } });
-      expect(restart.status).toBe(200); expect(restart.raw).toEqual(downloaded.raw);
+      expect(restart.status).toBe(200); expect(restart.raw.equals(downloaded.raw)).toBe(true);
       const outside = await request(port, 'GET', `/api/proxy/requests/${id}/body/response`, { headers: { range: 'bytes=99999-' } });
       expect(outside.status).toBe(416); expect(outside.headers['content-range']).toBe(`bytes */${Buffer.byteLength(originalResponse)}`);
       expect(JSON.parse(outside.text)).toEqual({ error: { code: 'RANGE_NOT_SATISFIABLE', message: 'Requested byte range does not overlap retained original bytes' } });

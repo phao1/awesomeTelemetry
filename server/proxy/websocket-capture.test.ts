@@ -290,6 +290,12 @@ describe('native real-engine WS capture', () => {
         const chunks: Buffer[] = []; res.on('data', (chunk: Buffer) => chunks.push(chunk)); res.once('error', reject); res.once('end', () => resolve({ status: res.statusCode!, bytes: Buffer.concat(chunks) }));
       }); req.once('error', reject); req.end(body === undefined ? undefined : JSON.stringify(body));
     });
+    // This fixture owns an already-running external proxy. Await the Web
+    // server's real journal recovery before allowing that proxy to write;
+    // normal production proxy/start already performs this readiness step.
+    const initial = await call('/api/proxy/requests?limit=50');
+    expect(initial.status).toBe(200);
+    expect(JSON.parse(initial.bytes.toString()).items).toEqual([]);
     const client = new WebSocket(`ws://127.0.0.1:${f.proxyPort}/v1/responses`, { headers: { host: `127.0.0.1:${f.originPort}` } });
     try {
       await once(client, 'open'); const received = once(client, 'message'); client.send('synthetic API evidence'); await received;

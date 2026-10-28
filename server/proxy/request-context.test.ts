@@ -73,8 +73,10 @@ describe('REQ-006/011 request-context', () => {
     expect(ctx.displayPreviewsTruncated).toEqual({ request: true, response: true });
     expect(ctx.requestPreviewTruncated).toBe(true); expect(ctx.responsePreviewTruncated).toBe(true);
     const previews = ctx.takeBytePreviews();
-    expect(Buffer.from(previews.requestBytes)).toEqual(bytes.subarray(0, 2 * 1024 * 1024));
-    expect(Buffer.from(previews.responseBytes)).toEqual(bytes.subarray(0, 2 * 1024 * 1024));
+    // Buffer.equals checks length and every byte natively. Generic deep object
+    // comparison enumerates millions of numeric properties in the DOM harness.
+    expect(Buffer.from(previews.requestBytes).equals(bytes.subarray(0, 2 * 1024 * 1024))).toBe(true);
+    expect(Buffer.from(previews.responseBytes).equals(bytes.subarray(0, 2 * 1024 * 1024))).toBe(true);
   });
   it('freezes transport end and monotonic duration before delayed processing or storage', async () => {
     const ctx = new RequestContext({ method: 'POST', url: '/', hostname: 'synthetic', headers: {}, startedAt: '2020-01-01T00:00:00.000Z' });
