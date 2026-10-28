@@ -1,0 +1,35 @@
+import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { EMPTY_QUALITY, EMPTY_USAGE } from '../../src/core/benchmark-types.js';
+import type { TeamExperimentDemoInput, TeamExperimentPlan, TeamExperimentReport } from '../../src/core/team-experiment-types.js';
+import { validateTeamExperimentDemo } from '../../src/core/team-experiment-validation.js';
+import { runCommand } from '../benchmark/runner.js';
+import { runTeamExperiment } from './runner.js';
+
+/** Trusted fixed fixture. User text is recorded as data and is never executed. */
+export async function runTeamExperimentDemo(value: TeamExperimentDemoInput, parent: string, signal?: AbortSignal): Promise<TeamExperimentReport> {
+  const input = validateTeamExperimentDemo(value), root = join(parent, randomUUID()), repository = join(root, 'task');
+  await mkdir(repository, { recursive: true, mode: 0o700 });
+  const git = async (args: string[]) => {
+    const result = await runCommand(['git', ...args], repository, process.env, 10000, signal);
+    if (result.status !== 'completed') throw new Error('Cannot prepare the local team experiment fixture.');
+  };
+  await git(['init']); await git(['config', 'user.name', 'Telemetry Example']); await git(['config', 'user.email', 'example@example.invalid']);
+  await writeFile(join(repository, 'add.cjs'), 'module.exports=(a,b)=>0;\n');
+  await writeFile(join(repository, 'multiply.cjs'), 'module.exports=(a,b)=>0;\n');
+  await git(['add', 'add.cjs', 'multiply.cjs']); await git(['commit', '-m', 'Synthetic arithmetic task']);
+  const driver = join(root, 'driver.cjs'), worker = join(root, 'worker.cjs'), evaluator = join(root, 'evaluator.cjs');
+  await writeFile(worker, `const fs=require('node:fs');process.on('message',m=>{const begin=Date.now();const file=m.operation==='add'?'add.cjs':'multiply.cjs';fs.writeFileSync(file,m.operation==='add'?'module.exports=(a,b)=>a+b;':'module.exports=(a,b)=>a*b;');process.send({operation:m.operation,begin,end:Date.now(),pid:process.pid});process.disconnect();});`, { mode: 0o600 });
+  const driverSource = `const fs=require('node:fs'),{fork}=require('node:child_process'),{performance}=require('node:perf_hooks');
+const c=JSON.parse(fs.readFileSync(process.env.BENCHMARK_CONTEXT)),origin=Date.now(),start=performance.now(),agents=[{id:'lead',name:'Fixture lead',parentId:null,sessionKey:null}],events=[];let next=0;
+function event(agentId,kind,name,detail,startMs,durationMs,targetAgentId=null,dependsOn=[]){const id='event-'+(++next);events.push({id,agentId,targetAgentId,kind,name,detail,startMs,durationMs,timing:'measured',status:'ok',dependsOn,tokens:null,sessionKey:null,eventId:null});return id;}
+function work(operation,id){return new Promise((resolve,reject)=>{const child=fork(${JSON.stringify(worker)},[],{cwd:process.cwd(),stdio:['ignore','ignore','pipe','ipc']});let received=false;const sent=Date.now();const dispatch=event('lead','message','Dispatch '+operation,'Actual IPC request to fixture worker',Math.max(0,sent-origin),0,id);child.once('error',reject);child.once('message',m=>{received=true;const task=event(id,'tool','Write '+operation,'Actual file write in isolated trial workspace; child pid '+m.pid,Math.max(0,m.begin-origin),Math.max(0,m.end-m.begin),null,[dispatch]);event(id,'message','Report '+operation,'Actual IPC result received by fixture lead',Math.max(0,Date.now()-origin),0,'lead',[task]);});child.once('exit',code=>{if(code===0&&received)resolve();else reject(Error('Fixture worker failed'));});child.send({operation});});}
+(async()=>{if(c.mode==='single_loop'){const begin=performance.now();fs.writeFileSync('add.cjs','module.exports=(a,b)=>a+b;');event('lead','tool','Write addition','Actual sequential local file write',begin-start,performance.now()-begin);const b=performance.now();fs.writeFileSync('multiply.cjs','module.exports=(a,b)=>a*b;');event('lead','tool','Write multiplication','Actual sequential local file write',b-start,performance.now()-b);}else{agents.push({id:'add',name:'Addition worker',parentId:'lead',sessionKey:null},{id:'multiply',name:'Multiplication worker',parentId:'lead',sessionKey:null});await Promise.all([work('add','add'),work('multiply','multiply')]);if(c.mode==='agent_team'){const begin=performance.now();const add=require(process.cwd()+'/add.cjs'),multiply=require(process.cwd()+'/multiply.cjs');if(add(2,3)!==5||multiply(2,3)!==6)throw Error('Peer check failed');event('lead','verification','Integrate worker results','Actual local check of both worker outputs',begin-start,performance.now()-begin,null,events.filter(e=>e.kind==='tool').map(e=>e.id));}}const elapsed=performance.now()-start;fs.writeFileSync(process.env.BENCHMARK_RESULT_PATH,JSON.stringify({actualModel:null,sessionKey:null,complete:true,usage:${JSON.stringify(EMPTY_USAGE)},spans:events.filter(e=>e.kind==='tool').map(e=>({id:e.id,kind:'tool',name:e.name,startMs:e.startMs,durationMs:e.durationMs,timing:'measured',status:'ok',firstTokenMs:null,outputTokens:null,sessionKey:null,eventId:null}))}));fs.writeFileSync(process.env.TEAM_EXPERIMENT_EVIDENCE_PATH,JSON.stringify({coverage:{roster:true,activities:true,communication:true},agents,events}));fs.writeFileSync('fixture-process.json',JSON.stringify({pid:process.pid,mode:c.mode,origin,completed:Date.now(),elapsed}));})().catch(e=>{console.error(e.message);process.exitCode=1;});`;
+  await writeFile(driver, driverSource, { mode: 0o600 });
+  await writeFile(evaluator, `const fs=require('node:fs');const add=require(process.env.BENCHMARK_WORKSPACE+'/add.cjs'),multiply=require(process.env.BENCHMARK_WORKSPACE+'/multiply.cjs');const cases=[{id:'addition',status:add(2,3)===5?'passed':'failed',detail:'2 + 3 = 5'},{id:'negative',status:add(-1,1)===0?'passed':'failed',detail:'-1 + 1 = 0'},{id:'multiplication',status:multiply(2,3)===6?'passed':'failed',detail:'2 * 3 = 6'}];const passed=cases.filter(c=>c.status==='passed').length;fs.writeFileSync(process.env.TEAM_EXPERIMENT_CASES_PATH,JSON.stringify(cases));fs.writeFileSync(process.env.BENCHMARK_VERDICT_PATH,JSON.stringify({passed,total:3,quality:${JSON.stringify(EMPTY_QUALITY)}}));process.exitCode=passed===3?0:1;`, { mode: 0o600 });
+  const plan: TeamExperimentPlan = { version: 1, kind: 'team-experiment', name: `SYNTHETIC ${input.name}`.slice(0, 120), repetitions: input.repetitions, schedule: input.schedule,
+    task: { id: 'synthetic-arithmetic', repository, ref: 'HEAD', prompt: 'Implement addition and multiplication. Local fixture only; no model invocation.', expectedTests: 3, caseIds: ['addition', 'negative', 'multiplication'], evaluator: [process.execPath, evaluator], timeoutMs: 10000 },
+    variants: input.variants.map((v, i) => ({ id: `fixture-${i}`, mode: v.mode, prompt: v.prompt, product: 'Local process fixture', model: 'No model invoked', environment: 'Synthetic local fixture', parameters: 'Fixed fixture; supplied prompt is recorded only', toolSet: 'Local writes and IPC workers', driver: [process.execPath, driver] })) };
+  return runTeamExperiment(plan, { output: join(root, 'results'), signal, synthetic: true });
+}

@@ -122,6 +122,8 @@ import { handleTraceExport } from './http/trace-export-route.js';
 import { handleLinkedTraceExport } from './http/linked-trace-export-route.js';
 import { ExperimentRegistry } from './experiments/registry.js';
 import { registerExperimentRoutes } from './http/experiment-routes.js';
+import { registerBenchmarkRoutes } from './http/benchmark-routes.js';
+import { registerTeamExperimentRoutes } from './http/team-experiment-routes.js';
 import { registerFridaCaptureRoutes } from './http/frida-capture-routes.js';
 import { registerCaptureBundleRoutes } from './http/capture-bundle-routes.js';
 import { CaptureBundleExporter } from './proxy/capture-bundle.js';
@@ -516,6 +518,8 @@ export function createAgentObservabilityServer(
   };
 
   const router = new Router();
+  const stopBenchmarks = registerBenchmarkRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'benchmark-demos'));
+  const stopTeamExperiments = registerTeamExperimentRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'team-experiment-demos'));
   registerClaudeHookRoutes(router, hookReceiver);
   registerFridaCaptureRoutes(router, db);
   const experimentRegistry = new ExperimentRegistry(dirname(opts.userConfigPath ?? (dbPath || join(process.cwd(), '.agent-observe', 'state.sqlite'))));
@@ -2201,7 +2205,7 @@ export function createAgentObservabilityServer(
     }
     const handler = (async () => {
       try {
-        if (pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
+        if (pathname.startsWith('/api/team-experiments/') || pathname.startsWith('/api/benchmarks/') || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
           if (pathname.startsWith('/api/tasks') || pathname === '/api/monitoring') res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/hooks/')) res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/frida/')) res.setHeader('cache-control', 'no-store');
@@ -2302,6 +2306,8 @@ export function createAgentObservabilityServer(
   server.close = (callback) => {
     if (shutdown === null) {
       closing = true;
+      stopBenchmarks();
+      stopTeamExperiments();
       pendingAutomaticScans.clear();
       for (const cleanup of ownSseClients) cleanup();
       ownSseClients.clear();
