@@ -168,3 +168,20 @@ DSH 的 Session Inspector 属于可选实验开发工具。另一个 NodeJS Insp
 新增紧凑活动泳道、全范围密度/局部精确事件双层导航、缩放平移与有界时间筛选，以及按成员轮次→步骤→模型观察/可识别尝试→工具记录阅读。明确区分原生身份、步骤内关联、局部窗口和缺口；没有复制 DSH 运行时，也没有假造内部请求、TTFT 或重试记录。保留按原始记录懒读的检查器。
 
 本轮具体参考 `TrajectoryTimeline.tsx`、`timeline.ts`、`TrajectoryTimeline.module.css`、`TrajectoryTurnHeader.tsx`、`TrajectoryGroupHeader.tsx`，版本仍为本文固定的 `687f282e8625c6b8d11ff58211a90524be2e4317`。重写组件以适应外部采集的多成员与固定分页；原文级导入适配、完整尝试流及因果关键路径仍未实现。功能、证据与性能见 [本轮交付说明](time-process-20261026.md)。
+
+## 九 2026-10-28 按 DSH 截图修订阅读交互
+
+用户通过两张 DSH 截图指出上一版的具体问题：多层图表与控制区挤占高度，图块难以定位，记录及正文只能在很小的区域内滚动。本次明确替代本文此前的“双图、成员泳道”方案，改为单张紧凑输入/模型/工具图、连续记录阅读、任务名与图吸顶，以及可拖宽的右侧正文检查器。完整设计与待验收项见 [DSH 阅读交互重构](dsh-reading-20261028.md)。以下是源码阅读结论，不代表本轮浏览器验收已完成。
+
+| 交互 | 固定版本源码定位 | 本次采用方式 |
+|---|---|---|
+| 单图和细行 | [TrajectoryTimeline.module.css 第 14–50 行](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/client/ui-trajectory/src/client/TrajectoryTimeline.module.css#L14-L50)：plot 高 50px，输入、模型、工具三细行 | 只有一张紧凑图；不再额外展示密度总览、成员泳道和泳道翻页 |
+| 易识别色块 | [同文件第 153–247 行](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/client/ui-trajectory/src/client/TrajectoryTimeline.module.css#L153-L247)：细条保留最小可见宽度，hover/selected 有明确描边 | 一块对应一条当前页原始记录，颜色帮助区分输入/模型/工具，选中状态同时反映在图和列表 |
+| 默认等宽阅读 | [timeline.ts 第 75–118 行](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/client/ui-trajectory/src/client/timeline.ts#L75-L118)：sequence 投影按记录等宽排列 | 当前页最多 200 条记录可逐块定位，默认不让几天的空闲时间挤压有用记录；切换时长时才使用已知日志区间 |
+| 控件语义 | [TrajectoryToolbar.tsx 第 55–123 行](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/client/ui-trajectory/src/client/TrajectoryToolbar.tsx#L55-L123)：“时长”切换宽度，“轮次”“调用”折叠列表，搜索与它们同排 | 不将这三个按钮解释成三种时间尺度；减少单独占行的次要控制 |
+| 点图定位 | [TrajectoryTimeline.tsx 第 538–568 行](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/client/ui-trajectory/src/client/TrajectoryTimeline.tsx#L538-L568)、[TrajectoryTable.tsx 第 2388–2464 行](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/client/ui-trajectory/src/client/TrajectoryTable.tsx#L2388-L2464)：精确块选择记录，列表揭示祖先并滚动到目标 | 精确原始 ID 驱动选择、分组展开和列表定位；不能用未加载密度桶或相邻记录冒充所点记录 |
+| 直接读正文 | [TrajectoryTable.tsx 第 3092 行起的详情标签与第 3456 行起的参数预览](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/client/ui-trajectory/src/client/TrajectoryTable.tsx#L3092-L3475) | 选中后的摘要直接显示可用参数/结果或思考/输出；来源、计时、原文仍可按需进入，正文仅对所选记录及一个精确工具配对懒读 |
+
+DSH 同时实现了滚轮锚点缩放、右键拖动平移、左键框选和清除选择；其原生运行时还能够提供完整的助手请求计时。本项目继续保留“记录区间不等于推理计时”的边界，不增加缺少证据的 TTFT/生成分段，也不压缩后再将横轴宣称为完整墙钟。多 Agent 的入口仍是主会话/全任务/单成员范围，成员身份显示在记录中，不靠增加图表数量表达。
+
+参考仓库的根许可证为 MIT，版权方为 DeepSeek（2026）。本次按交互与视觉规则自行实现，未实质复制 DSH 源文件、样式文件或运行时包；不引入 DSH 依赖。若后续改为直接移植实质源码，必须保留其版权与许可声明。

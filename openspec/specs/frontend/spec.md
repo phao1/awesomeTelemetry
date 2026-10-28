@@ -1031,12 +1031,29 @@ REQ-TASK-005: Intake explains native logs/proxy/CDP/Frida/import applicability a
 
 These requirements supersede REQ-001 six-view primary navigation and the old separate Session/Team replay composition. Existing single-evidence, privacy, i18n, virtual-scroll and cache constraints remain in force. App.tsx remains the only global shell; task components own only task-scoped request/reading state.
 
-REQ-TASK-006 (2026-10-26): Implement [task-process.md](../../contracts/task-process.md)
-TP-004/005. Process uses virtualized round/step/model-observation/native-tool
-groups; incomplete groups and absent attempt identities remain explicit. The
-fixed-window full-scope time overview and zoomable detail axis retain context
-through filtering, offer activity/member lanes, inclusive brush, exact selected
-marks and keyboard/pointer zoom/pan/reset. Histogram clicks read a bounded time
-page. Counts are observations, log intervals are not measured inference, and
-model-output completion cannot imply tool/round completion. Preserve original
-record selection, lazy single evidence, cancellation and explicit stale refresh.
+REQ-TASK-006 (2026-10-28 presentation amendment): Implement
+[task-process.md](../../contracts/task-process.md) TP-004/005. Replace the earlier
+dual density/detail charts and member lanes with one compact input/model/tool
+chart for the current <=200 metadata records. Default blocks use equal-width
+reading order; a duration toggle shows retained log intervals, with unknown
+durations as markers. Display current-page/count coverage and retain the
+existing full-scope timeline metadata read. The outer scope selects main/all/one
+member; all-scope rows keep original member identity. Exact block/hover/keyboard
+selection maps to the same ledger record, reveals its ancestors and locates its
+row. Round/call controls fold groups; zoom/pan/reset and inclusive selections
+must not turn sequence positions or unloaded bins into real timestamps/records.
+
+Use the task process as the shared vertical reading scroll root. Only its
+compact task title and the one chart remain sticky while reading; scope, modes,
+metadata search, errors and secondary controls occupy compact horizontal rows
+that scroll away. The virtual ledger shares that scroll root and accounts for
+sticky offsets, leaving the main height to readable records. Incomplete groups,
+page-local labels and absent attempt identities remain explicit. A wide,
+resizable right-side evidence panel defaults to available parameters/results
+or public reasoning/output rather than metadata-only navigation. Its selected
+summary may lazily read at most the selected record and one exact same-tool
+partner; raw remains explicit. Preserve original selection, cancellation,
+stale-result suppression, accessible controls and explicit history refresh.
+Counts are observations, log intervals are not measured inference, and model
+output cannot imply tool/round completion. No viewing interaction starts
+monitoring, proxy capture, CDP, Frida or an upstream Agent.

@@ -53,20 +53,52 @@ Unknown-time records remain readable. Current result and historical failures
 remain separate; completed model output cannot finish a tool/round. Selected
 input/output/raw remain the existing lazy single-record reads.
 
-TP-005: A fixed full-scope density overview plus a zoomable detail axis retains
-its domain during selection/filtering. Drag selects inclusive time; explicit
-zoom/pan/reset, keyboard equivalents and pointer cancellation are available.
-Click a density bin reads one bounded time-filtered page, not an arbitrary
-nearby record. Exact loaded marks select exact native evidence. Activity lanes
-and member lanes distinguish parallel sources. Unknown durations are points;
-no fabricated TTFT/decoding segment or compressed wall clock. Search/errors
-retain round/step headers without counting context as matches. Expanding groups,
-timeline zoom and locale changes do not fetch bodies or unrelated sources.
+TP-005 (user-directed reading amendment, 2026-10-28): Render one compact
+DSH-style trajectory chart with input/model/tool rows, not a second density
+overview or per-member chart. The chart projects only the current bounded page
+of at most200 metadata records. Disclose its page/count boundary; the existing
+full-scope timeline response supplies retained extent/count/coverage without
+turning unloaded histogram bins into selectable original records. Main/all/one
+member remains an outer scope choice, and every selected record retains its
+member and original identity. Equal-width record order is the default; the
+duration toggle uses retained log intervals and does not claim model inference
+timing. Unknown durations remain start markers. No fabricated TTFT/decoding
+segment or compressed wall clock is introduced.
+
+Exact loaded blocks select that exact evidence, expand its ancestors and locate
+its ledger row. Hover and keyboard selection identify the same record. Zoom,
+pan/reset, inclusive range selection and pointer cancellation stay bounded to
+the displayed projection; only an actual UTC time range may become a server
+time filter. Equal-width positions are reading order, not timestamps. Round
+and call controls fold ledger groups, not alternative clock domains. Search
+and errors retain useful round/step context without counting context as matches.
+Expanding groups, chart zoom, folding and locale changes do not fetch bodies or
+unrelated sources.
+
+The task process owns one vertical reading scroll root. The compact task title
+sticks at its top; the single chart sticks directly below the measured title.
+Metadata, scope/mode/filter controls and page summaries use compact horizontal
+rows and scroll away. The virtual ledger uses this same scroll root, with
+correct offsets for sticky content, rather than a second short scroll box.
+The wide right-side selected-evidence panel stays usable while reading and can
+be resized; narrow layouts must retain a reachable close/return action. Its
+default summary shows available tool parameters/results or model public
+reasoning/output through selected-record body reads. At most the selected
+record plus one exact same-tool related record may be read for that summary;
+missing/conflicting/ambiguous partners remain unavailable. Raw is a separate
+explicit read. All reads retain cancellation, stale-result suppression and
+loading/error/retry/empty states. Viewing or scrolling never enables collection.
 
 Budgets: ordinary record read retains its existing budget. Explicit structure
 read target250ms after source hydration; timeline target250ms/200KiB gzip at
 reference scale, max16000 sparse bins, no per-row SQL/HTTP or original IO.
-Two scoped metadata reads (records plus histogram), no polling; stale hints do
-not change history. Virtualized flattened process rows and batched SVG paths
-keep DOM bounded. Tests cover boundaries, pairing ambiguity, paging, malformed
-times, cancellation, navigation and rendering. Verify with real multiagent data.
+Two scoped metadata reads (records plus retained timeline extent/count), no
+polling; stale hints do not change history. The single chart contains only the
+current <=200 exact metadata records; virtualized flattened process rows share
+the main reading scroll root and keep DOM bounded. Selected summary body reads
+are capped as above, cached per evidence identity and never fanned out from
+list rows or chart rendering. Tests cover page boundaries, pairing ambiguity,
+malformed/unknown times, cancellation, exact block-to-row navigation, folding,
+shared-scroll offsets and rendering. Browser acceptance must verify sticky
+title/chart and usable record/detail height with real multiagent data; tests or
+this contract alone do not certify that visual result.
