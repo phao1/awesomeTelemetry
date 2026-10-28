@@ -1033,8 +1033,11 @@ These requirements supersede REQ-001 six-view primary navigation and the old sep
 
 REQ-TASK-006 (2026-10-28 presentation amendment): Implement
 [task-process.md](../../contracts/task-process.md) TP-004/005. Replace the earlier
-dual density/detail charts and member lanes with one compact input/model/tool
-chart for the current <=200 metadata records. Default blocks use equal-width
+dual density/detail charts and member lanes with one compact single-row
+input/model/tool chart for the current <=200 metadata records. Use distinct
+colors and inline text legends, including context when present. Overlapping
+retained intervals offer an exact-record chooser and keep the selected block
+visible above others; keyboard order remains the original record order. Default blocks use equal-width
 reading order; a duration toggle shows retained log intervals, with unknown
 durations as markers. Display current-page/count coverage and retain the
 existing full-scope timeline metadata read. The outer scope selects main/all/one

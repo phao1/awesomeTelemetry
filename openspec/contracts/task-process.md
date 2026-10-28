@@ -54,7 +54,8 @@ remain separate; completed model output cannot finish a tool/round. Selected
 input/output/raw remain the existing lazy single-record reads.
 
 TP-005 (user-directed reading amendment, 2026-10-28): Render one compact
-DSH-style trajectory chart with input/model/tool rows, not a second density
+single-row trajectory chart with colored input/model/tool blocks and an inline
+text legend, not a second density
 overview or per-member chart. The chart projects only the current bounded page
 of at most200 metadata records. Disclose its page/count boundary; the existing
 full-scope timeline response supplies retained extent/count/coverage without
@@ -64,6 +65,12 @@ member and original identity. Equal-width record order is the default; the
 duration toggle uses retained log intervals and does not claim model inference
 timing. Unknown durations remain start markers. No fabricated TTFT/decoding
 segment or compressed wall clock is introduced.
+
+Overlapping real intervals remain one visual row: a pointer hit with multiple
+loaded records opens an exact-identity choice list rather than guessing which
+record was intended. The selected block is painted above overlapping blocks;
+keyboard selection remains in original record order. Context retains its own
+legend entry when present. No interval is trimmed into a false execution order.
 
 Exact loaded blocks select that exact evidence, expand its ancestors and locate
 its ledger row. Hover and keyboard selection identify the same record. Zoom,

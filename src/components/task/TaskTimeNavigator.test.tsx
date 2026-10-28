@@ -34,6 +34,40 @@ describe('compact DSH-style exact record navigation', () => {
     expect(host.querySelector('.process-time-overview')).toBeNull();
     expect(host.textContent).not.toContain('Member lanes');
   });
+  it('reads input, model and tool records as one colored row with text type hints', () => {
+    const input = { ...earlier, event: { ...earlier.event!, kind: 'user_prompt' as const, title: 'User input' } };
+    const model = { ...latest, event: { ...latest.event!, kind: 'llm' as const, title: 'Model output' } };
+    render([input, model, record]);
+    const marks = [...host.querySelectorAll('.task-timeline-mark')];
+    expect(new Set(marks.map(mark => mark.getAttribute('y'))).size).toBe(1);
+    expect(marks.map(mark => ['input', 'model', 'tool'].find(kind => mark.classList.contains(kind)))).toEqual(['input', 'model', 'tool']);
+    expect(host.querySelector('.task-timeline-labels')).toBeNull();
+    expect(host.querySelector('.task-timeline-legend')?.textContent).toBe('InputModelTools');
+    expect(marks[0]?.getAttribute('aria-label')).toContain('Input');
+    expect(marks[1]?.getAttribute('aria-label')).toContain('Model');
+    expect(marks[2]?.getAttribute('aria-label')).toContain('Tools');
+  });
+  it('keeps every overlapping duration record selectable by exact identity in the single row', () => {
+    const input = { ...record, id: 'input', event: { ...record.event!, kind: 'user_prompt' as const, title: 'User input' } };
+    const model = { ...record, id: 'model', event: { ...record.event!, kind: 'llm' as const, title: 'Model output' } };
+    const { onSelect } = render([input, model, record]);
+    act(() => duration().click());
+    const open = () => act(() => { const mark = host.querySelector('[data-record-id="s:event:record"]')!; pointer(mark, 'pointerdown', 2); pointer(mark, 'pointerup', 2); mark.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })); });
+    open();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(host.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Overlapping records here');
+    expect([...host.querySelectorAll('[data-record-choice]')].map(button => button.getAttribute('data-record-choice'))).toEqual(['input', 'model', record.id]);
+    act(() => host.querySelector<HTMLButtonElement>('[data-record-choice="model"]')!.click());
+    expect(onSelect).toHaveBeenLastCalledWith(model);
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    open(); act(() => host.querySelector<HTMLButtonElement>('[data-record-choice="input"]')!.click());
+    expect(onSelect).toHaveBeenLastCalledWith(input);
+    open(); act(() => host.querySelector<HTMLButtonElement>('[data-record-choice="s:event:record"]')!.click());
+    expect(onSelect).toHaveBeenLastCalledWith(record);
+    act(() => host.querySelector('[data-record-id="model"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(onSelect).toHaveBeenLastCalledWith(model);
+    expect(onSelect).toHaveBeenCalledTimes(4);
+  });
   it('selects an exact loaded block once for pointer and accessible clicks', () => {
     const { onSelect, onRangeChange } = render();
     const mark = host.querySelector('[data-record-id]')!;

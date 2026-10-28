@@ -1701,3 +1701,22 @@ Node v24.19.0，现有 `perf:check` 九项通过。日志 `.local-runtime/task-p
 | 2 / 近2MiB HTTP | 9.39ms | 13.32ms | 3.74ms |
 
 日志为 `.local-runtime/publish-dsh-perf-confirmation-{1,2}-20261028.log`，原始报告为验证目录的 `reports/capture-ab-2026-10-28T06-33-55.782Z-229.json` 与 `reports/capture-ab-2026-10-28T06-34-18.338Z-277.json`。两轮 list500 分别0.855/0.632ms，overview冷82.13/94.42ms、热0.621/0.615ms，合成库29.57MB。04只报告数值的slim9590分别19.618/16.862ms，仍高于旧15ms目标；本次不将脚本exit=0当成该目标、相对性能告警、真实库200MB目标或全平台/长时负载均已认证。此前所有失败和诊断均保留，不能从这两轮通过推断任意并行负载下都满足20ms预算。
+
+
+## 单行轨迹与验证环境复核（2026-10-28）
+
+单行图改动以 `78f5586` 加本次冻结文件集独立验证，未纳入 benchmark/watcher 草稿。默认读图、重叠精确选择、键盘顺序和正文联动已通过52项相关回归及真实页面检查；图高57px、绘图区28px、图块14px。
+
+初次完整回归发现图例圆角使用裸2px，已改为统一尺寸变量，原断言不变。修复后旧配置把后端也放在jsdom中，压力用例分别出现55.083ms和独立复测51.937ms的p99（原预算<50ms）。功能、原文、身份数/完整性、关联与存储断言均正确。保留失败日志 `single-row-full-tests-before-style-fix-20261028.log`、`single-row-full-tests-parallel-timing-20261028.log`、`single-row-capacity-isolated-20261028.log`。身份处理诊断约26–29ms；分块摘要对照未给出稳定改善，因此未修改代理/身份生产算法，亦未改负载、采样窗口、超时或阈值。
+
+本次纳入必要的测试环境修正：后端/扫描/脚本测试使用与生产一致的Node环境，前端保留jsdom及原DOM setup；所有原include的并集不变，文件级性能工作负载串行执行。6项压力对照原样通过。默认 `npm run test` 最终 **316文件、3,809通过、1个既有SQLCipher环境用例跳过**，228.51秒；完整压力两种profile的p99为5.067/43.680ms。typecheck、lint、三阶段构建均通过。测试环境修正不代表任意机器/并行负载下都没有GC或调度停顿，原失败继续保留。
+
+随后串行 `perf:check` **exit=0，九项脚本通过**，日志 `.local-runtime/single-row-perf-final-20261028.log`，报告 `reports/capture-ab-2026-10-28T08-06-04.477Z-3762.json`。每种profile仍100个温态配对样本、并发4、104次抓包/208份原文；应用头/状态/全部字节、协议投影、早帧及资源归零断言全部通过。
+
+| Profile | 额外首字节p95 | 额外E2E p95 | loop p99 |
+|---|---:|---:|---:|
+| HTTP | 3.63ms | 6.97ms | 2.12ms |
+| HTTPS CONNECT | 8.08ms | 9.99ms | 2.07ms |
+| 近2MiB HTTP | 8.00ms | 8.64ms | 2.74ms |
+
+合成库29.57MB；list500 0.629ms、slim9590 14.366ms、overview冷76.75ms/热0.452ms。本组slim低于15ms，但不清除先前超限、相对性能告警、真实库稳态目标或真实Agent/全平台/长时负载的未覆盖项。完整日志为 `.local-runtime/single-row-full-tests-node-20261028.log`；静态检查为 `single-row-{typecheck,lint,build}-final-20261028.log`。用户服务监控、代理与Frida保持关闭；抓包检查均使用隔离合成实例。
