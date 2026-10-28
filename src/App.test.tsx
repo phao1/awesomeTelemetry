@@ -928,6 +928,27 @@ describe('team 视图入口 + URL restore + SSE（§7.3 / §7.8）', () => {
     history.replaceState(null, '', originalHash || '#/session');
   });
 
+  it.each(['initial', 'hashchange'])('keeps the task mode experiment route separate from legacy teams: %s', async entry => {
+    history.replaceState(null, '', entry === 'initial' ? '#/team-experiment' : '#/session');
+    const { container, unmount } = renderAppWithUnmount();
+    try {
+      await act(async () => {
+        if (entry === 'hashchange') {
+          history.replaceState(null, '', '#/team-experiment');
+          window.dispatchEvent(new HashChangeEvent('hashchange'));
+        }
+        await import('./components/team-experiment/TeamExperimentCenter.js');
+        await Promise.resolve();
+      });
+      expect(container.querySelector('.team-exp-center')).not.toBeNull();
+      expect(container.querySelector('.team-shell')).toBeNull();
+      expect(window.location.hash).toMatch(/^#\/team-experiment(?:\?|$)/);
+      const paths = vi.mocked(fetch).mock.calls.map(([path]) => String(path));
+      expect(paths.some(path => path.includes('/api/team-runs'))).toBe(false);
+      expect(paths.some(path => path.includes('/api/team-experiments/demo'))).toBe(false);
+    } finally { unmount(); }
+  });
+
   it('§7.3 team nav 按钮已移除（UI 架构调整：Teams 页签移除，Sessions 改名为任务）', async () => {
     const { container, unmount } = renderAppWithUnmount();
     await act(async () => {

@@ -45,6 +45,8 @@ import { SessionVisuals } from './components/SessionVisuals.js';
 import { TrajectoryPane } from './components/trajectory/TrajectoryPane.js';
 import { AgentCollabReplay } from './components/AgentCollabReplay.js';
 const AgentOverview = lazy(() => import('./components/AgentOverview.js').then(module => ({ default: module.AgentOverview })));
+const BenchmarkCenter = lazy(() => import('./components/benchmark/BenchmarkCenter.js').then(module => ({ default: module.BenchmarkCenter })));
+const TeamExperimentCenter = lazy(() => import('./components/team-experiment/TeamExperimentCenter.js').then(module => ({ default: module.TeamExperimentCenter })));
 const CompareBoard = lazy(() => import('./components/CompareBoard.js').then(module => ({ default: module.CompareBoard })));
 const ProxyView = lazy(() => import('./components/ProxyView.js').then(module => ({ default: module.ProxyView })));
 import type { LiveStreamEntry } from './components/ProxyLivePanel.js';
@@ -99,6 +101,7 @@ import {
 const BASE_FONT_PX = 13;
 /** 首帧 hash 在模块加载时解析一次：避免 state→hash 写入 effect 先把它覆盖掉。 */
 const INITIAL_HASH = parseHash(window.location.hash);
+const isTeamHash = (hash: string): boolean => /^#\/team(?:[/?]|$)/.test(hash);
 
 interface PaletteModule {
   CommandPalette: (props: CommandPaletteProps) => React.JSX.Element;
@@ -107,7 +110,7 @@ interface PaletteModule {
 /** REQ-001：五视图 shell，App.tsx 是唯一 stateful shell。 */
 export default function App() {
   // §7.3：team 视图与既有五视图平行；AppView 不含 'team'，故本地扩展
-  const isInitialTeam = window.location.hash.startsWith('#/team');
+  const isInitialTeam = isTeamHash(window.location.hash);
   const [view, setView] = useState<AppView | 'team'>(() =>
     window.location.hash === '' || window.location.hash === '#' || window.location.hash.startsWith('#/task') || (isInitialTeam && window.location.hash.includes('runId=')) || (window.location.hash.startsWith('#/session?') && parseTaskRoute(window.location.hash).task !== null) ? 'task' : isInitialTeam ? 'team' : (parseHash(window.location.hash)?.view ?? 'task') as AppView | 'team',
   );
@@ -702,7 +705,7 @@ export default function App() {
   useEffect(() => {
     const onHashChange = (): void => {
       if (window.location.hash === '#/team') { switchView('team'); setTeamHash(DEFAULT_TEAM_HASH); return; }
-      if (window.location.hash.startsWith('#/task') || window.location.hash.startsWith('#/team') || (window.location.hash.startsWith('#/session?') && parseTaskRoute(window.location.hash).task !== null)) {
+      if (window.location.hash.startsWith('#/task') || isTeamHash(window.location.hash) || (window.location.hash.startsWith('#/session?') && parseTaskRoute(window.location.hash).task !== null)) {
         setTaskRoute(parseTaskRoute(window.location.hash)); switchView('task'); return;
       }
       const state = parseHash(window.location.hash);
@@ -776,8 +779,10 @@ export default function App() {
       <nav className="task-primary-nav" aria-label={taskCopy(locale).tasks}>
         <div><button type="button" aria-current={view === 'task' || view === 'session' || view === 'team' ? 'page' : undefined} onClick={() => switchView('task')}>{taskCopy(locale).tasks}</button>
         <button type="button" aria-current={view === 'intake' || view === 'proxy' || view === 'frida' ? 'page' : undefined} onClick={() => { setIntakeChannel('native'); switchView('intake'); }}>{taskCopy(locale).intake}</button>
+        <button type="button" aria-current={view === 'benchmark' ? 'page' : undefined} onClick={() => switchView('benchmark')}>{locale === 'zh' ? '评测中心' : 'Benchmarks'}</button>
+        <button type="button" aria-current={view === 'team-experiment' ? 'page' : undefined} onClick={() => switchView('team-experiment')}>{locale === 'zh' ? '任务模式实验' : 'Task mode experiments'}</button>
         <button type="button" onClick={() => setSettingsOpen(true)}>{taskCopy(locale).settings}</button></div>
-        <details><summary>{taskCopy(locale).compat}</summary><div className="task-secondary-menu"><ViewTabs active={view === 'task' || view === 'intake' || view === 'team' ? 'session' : view} onChange={switchView} locale={locale} /></div></details>
+        <details><summary>{taskCopy(locale).compat}</summary><div className="task-secondary-menu"><ViewTabs active={view === 'task' || view === 'intake' || view === 'team' || view === 'benchmark' || view === 'team-experiment' ? 'session' : view} onChange={switchView} locale={locale} /></div></details>
       </nav>
       {paletteLoadError && <div className="workbench-error" role="alert">
         <span>{t('workbench.searchUnavailable', locale)}</span>
@@ -791,6 +796,8 @@ export default function App() {
       {view === 'task' && <ErrorBoundary label={taskCopy(locale).tasks}><TaskWorkbench locale={locale} route={taskRoute} onRoute={setTaskRoute} changes={taskChanges} providerPreset={providerFilter[0] ?? ''} onProviderPresetChange={value => setProviderFilter(value ? [value] : [])}
         onIntake={() => { setIntakeChannel(taskRoute.origin === 'imported' ? 'import' : 'native'); switchView('intake'); }}
         onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} /></ErrorBoundary>}
+      {view === 'benchmark' && <ErrorBoundary label={locale === 'zh' ? '评测中心' : 'Benchmarks'}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><BenchmarkCenter locale={locale}/></Suspense></ErrorBoundary>}
+      {view === 'team-experiment' && <ErrorBoundary label={locale === 'zh' ? '任务模式实验' : 'Task mode experiments'}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><TeamExperimentCenter locale={locale}/></Suspense></ErrorBoundary>}
       {view === 'intake' && <ErrorBoundary label={taskCopy(locale).intake}><DataIntake key={intakeChannel} locale={locale} initialChannel={intakeChannel}
         onConfigure={() => setSettingsOpen(true)} onTasks={() => switchView('task')}
         proxy={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates} latestHookId={latestHookId}
