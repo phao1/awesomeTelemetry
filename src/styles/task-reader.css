@@ -33,3 +33,12 @@
 @media(max-width:40rem){.task-workbench .task-context-header{padding-left:calc(var(--space-1) * 2.5);padding-right:calc(var(--space-1) * 1.5);gap:var(--space-1)}.task-workbench .task-context-header h1{font-size:var(--text-base)}.task-list-collapsed .task-context-header{padding-left:calc(var(--space-1) * 25.5)}.task-workbench .task-evidence,.task-workbench .task-evidence.is-wide{width:100%;max-width:100%;min-width:0;border-left:0}.task-process-body:has(.task-evidence)>.task-ledger{display:none}.task-workbench .task-context-header .task-member-select{width:calc(var(--space-1) * 25)}.task-workbench .task-record-pager>span{display:none}.task-workbench .task-record-filters{min-width:calc(var(--space-1) * 32.5)}.task-evidence-resize{display:none}}
 .task-evidence-network{font-size:var(--text-xs);border:0;background:none;color:var(--accent-fg);cursor:pointer;white-space:nowrap}
 .task-system-filter{display:inline-flex;align-items:center;gap:calc(var(--space-1) * 0.75);white-space:nowrap;font-size:var(--text-xs);color:var(--fg-muted);cursor:pointer}.task-system-filter input{margin:0;width:var(--space-3);height:var(--space-3)}
+
+/* Keep evidence readable when the actual process pane is narrow, even with a rail. */
+.task-workbench .task-process { container-type: inline-size; }
+.task-workbench .task-evidence-error { max-height: calc(var(--leading-base) * 5); overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; padding: var(--space-2); border-left: var(--space-1) solid var(--danger-fg); background: var(--danger-subtle); overscroll-behavior: contain; }
+@container (max-width: 40rem) {
+  .task-process-body:has(.task-evidence) > .task-ledger { display: none; }
+  .task-workbench .task-evidence, .task-workbench .task-evidence.is-wide { width: 100%; max-width: 100%; min-width: 0; border-left: 0; }
+  .task-evidence-resize { display: none; }
+}

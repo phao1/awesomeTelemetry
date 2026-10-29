@@ -59,3 +59,7 @@
 .team-main .team-panel-content:has(> .team-workbench) { flex: 0 0 auto; overflow: visible; }
 .team-main .team-summary-title, .team-main .team-summary-provenance { overflow-wrap: anywhere; }
 @container (max-width: 38em) { .tw-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } .tw-member { align-items: flex-start; flex-direction: column; gap: var(--space-1); } }
+
+/* Keep the selected member/task context and close action visible during long reads. */
+.tw-detail-head { position: sticky; top: 0; z-index: var(--z-sticky); background: var(--canvas-subtle); }
+.tw-meta > div > * { min-width: 0; overflow-wrap: anywhere; }

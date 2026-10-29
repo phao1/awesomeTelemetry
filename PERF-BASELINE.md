@@ -1795,3 +1795,35 @@ Local evidence (not committed private/generated artifacts):
 `.local-runtime/team-experiment-browser-fixture-evidence.json`,
 `.local-runtime/capacity-delay-evidence/manifest.json`; final forwarding report
 `capture-ab-2026-10-28T16-29-42.150Z-29986.json`.
+
+## 2026-10-30 — M10 page layout and evidence readability
+
+UI-only update: responsive shared controls, consistent experiment forms,
+container-aware evidence reader, bounded keyboard-scrollable error summaries,
+font-relative capture line height, sticky detail controls and native theme support.
+No query, API, virtual-row-height, or runtime-dependency changes.
+
+`perf:check` passed using the synthetic 29.57MB fixture (524 sessions,
+73,588 events). Source-file statistics remain unavailable without real config.
+List500 median: 0.665ms; slim9,590: 18.660ms; overview cold/hot: 75.70/0.453ms.
+Mission empty-fixture cold/hot: 0.95/0.028ms; not populated-dashboard certification.
+
+Actual forwarding A/B, 100 samples per profile:
+
+| Profile | Extra first body byte p95 ms | Extra E2E p95 ms | Loop p99 ms |
+|---|---:|---:|---:|
+| HTTP | 5.283 | 11.159 | 2.587 |
+| HTTPS CONNECT | 10.263 | 14.183 | 2.114 |
+| HTTP near2MiB | 5.771 | 8.883 | 2.458 |
+
+All three profiles qualified and passed. Browser review used isolated synthetic
+session/tool/team/capture data at desktop, tablet and narrow widths; retained
+preview JSON is not proof of original-byte capture. Initial Vite bundle warning
+above500kB remains unchanged in scope. Screenshots and full logs remain local.
+
+Validation: typecheck and full ESLint passed. Full Vitest run:329 files passed,
+1 file failed (3965 tests passed,1 failed,1 skipped). The sole failure was the
+existing query-engine list join timing delta guard (0.934ms versus0.673ms allowed).
+Immediate isolated rerun of that entire file passed31/31 tests in406ms; no test
+assertions or database code were changed. Frontend build and targeted73 tests
+also passed during the layout audit.

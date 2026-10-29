@@ -88,3 +88,14 @@
 .team-exp-inspector dd { margin: 0; overflow-wrap: anywhere; color: var(--fg-muted); }
 .team-exp-research { padding-block: var(--space-4); }
 @media (max-width: 50rem) { .team-exp-reading-grid { grid-template-columns: minmax(0,1fr); } .team-exp-inspector { border-left: 0; border-top: 1px solid var(--border-default); } .team-exp-trajectories { grid-template-columns: minmax(0,1fr); } }
+
+/* Shared page rhythm with the benchmark and intake workbenches. */
+.team-exp-center { padding: var(--space-6); }
+.team-exp-heading { align-items: flex-start; margin-bottom: var(--space-5); }
+.team-exp-heading h1 { line-height: var(--leading-xl); }
+.team-exp-setup { padding: var(--space-5); background: var(--canvas-subtle); }
+.team-exp-variant-forms > section { padding: var(--space-3); border: 1px solid var(--border-muted); border-radius: var(--radius-md); background: var(--canvas-default); }
+.team-exp-center .team-exp-file-label { align-items: flex-start; margin: 0; padding: var(--space-2); }
+.team-exp-file-label input { max-width: 100%; min-width: 0; }
+.team-exp-file-label input::file-selector-button { border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-subtle); color: var(--fg-default); padding: var(--space-1) var(--space-2); margin-right: var(--space-2); font: inherit; cursor: pointer; }
+@media (max-width: 40em) { .team-exp-center { padding: var(--space-3); } .team-exp-heading > div { min-width: 0; flex-basis: 100%; } .team-exp-setup { padding: var(--space-3); } }

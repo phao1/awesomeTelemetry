@@ -77,7 +77,7 @@ export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpe
       {tasks.error && <div className="task-inline-state" role="alert"><p>{tasks.error}</p><button type="button" className="btn" onClick={tasks.retry}>{c.retry}</button></div>}
       {tasks.value && <TaskList items={tasks.value.items} selected={context.value?.task.id ?? route.task} locale={locale} onSelect={selectTask} />}
       {tasks.value?.items.length === 0 && <div className="task-inline-state"><p>{c.empty}</p><button type="button" className="btn" onClick={() => { setQ(''); setProvider(''); setRange('all'); }}>{c.clear}</button></div>}
-      <footer><button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>←</button><span>{offset + 1}–{offset + (tasks.value?.items.length ?? 0)}</span><button type="button" disabled={!tasks.value?.hasMore} onClick={() => setOffset(offset + 50)}>→</button><button type="button" className="btn" onClick={onIntake}>＋ {c.intake}</button></footer>
+      <footer><button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>←</button><span>{offset + (tasks.value?.items.length ? 1 : 0)}–{offset + (tasks.value?.items.length ?? 0)}</span><button type="button" disabled={!tasks.value?.hasMore} onClick={() => setOffset(offset + 50)}>→</button><button type="button" className="btn" onClick={onIntake}>＋ {c.intake}</button></footer>
     </aside>
     <main className="task-main">
       {route.task && <button type="button" className="btn task-mobile-back" onClick={() => onRoute({ ...route, task: null, event: null, member: 'main' })}>← {c.showList}</button>}
