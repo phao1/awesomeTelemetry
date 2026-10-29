@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>任务页架构页签</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#1f4fb8}a:hover{color:#163a87}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; font-family: system-ui, -apple-system, 'PingFang SC', sans-serif; color: #222; background: #fff; display: flex; flex-direction: column">
+<div style="height: 48px; border-bottom: 1px solid #bbb; display: flex; align-items: center; gap: 24px; padding: 0 20px; font-size: 14px; color: #555">
+<strong style="color: #222">AwesomeTelemetry</strong>
+<span style="color: #222; border-bottom: 2px solid #222; padding: 13px 0">任务中心</span><span>数据接入</span><span>评测中心</span><span>任务模式实验</span><span>设置</span>
+</div>
+<div style="flex: 1; display: flex; min-height: 0">
+<div style="width: 240px; border-right: 1px solid #bbb; background: #f6f6f6; padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 12px; color: #666">任务列表</div>
+<div style="border: 2px solid #222; background: #fff; height: 52px; font-size: 12px; padding: 6px; box-sizing: border-box">修复登录超时 · 4 成员</div>
+<div style="border: 1px solid #ccc; background: #fff; height: 52px"></div>
+<div style="border: 1px solid #ccc; background: #fff; height: 52px"></div>
+</div>
+<div style="flex: 1; padding: 16px 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; min-width: 0">
+<div style="font-size: 18px; font-weight: 700">修复登录超时 <span style="font-size: 12px; font-weight: 400; color: #555">Claude Code · 4 个成员 · 38 分钟 · 示意数据</span></div>
+<div style="display: flex; gap: 0; border-bottom: 1px solid #bbb; font-size: 14px">
+<span style="padding: 8px 16px; color: #555">轨迹</span><span style="padding: 8px 16px; color: #555">对话</span><span style="padding: 8px 16px; color: #555">原始</span><span style="padding: 8px 16px; border-bottom: 3px solid #222; font-weight: 700">架构 ●</span>
+<span style="margin-left: auto; font-size: 12px; color: #555; padding: 8px 0">打开任务时已自动计算 · 只读本地记录 · 未调用模型</span>
+</div>
+<div style="display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 16px; flex: 1; min-height: 0">
+<div style="border: 1px solid #999; padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px">
+<div style="font-weight: 700">本任务的调用链</div>
+<div style="border: 1px solid #555; padding: 6px 8px">主循环</div>
+<div style="margin-left: 24px; border: 1px solid #555; padding: 6px 8px">├ planner <span style="float: right; font-size: 11px">已确认</span></div>
+<div style="margin-left: 24px; border: 1px solid #555; padding: 6px 8px">├ implementer <span style="float: right; font-size: 11px">已确认</span></div>
+<div style="margin-left: 24px; border: 1px solid #555; padding: 6px 8px">├ code-reviewer ×2 <span style="float: right; font-size: 11px">已确认</span></div>
+<div style="margin-left: 24px; border: 1px dashed #8a4b00; padding: 6px 8px; color: #8a4b00">└ （1 次委派）<span style="float: right; font-size: 11px">只有父侧</span></div>
+<div style="font-size: 11px; color: #8a4b00">⚠ 1 次委派找不到子会话，下面的统计不含它</div>
+<div style="font-weight: 700; margin-top: 8px">本任务指标</div>
+<div style="font-size: 12px; color: #444; line-height: 1.7">模型调用 86 · 工具调用 140 · E2E 38.2 分钟<br>子 Agent 占 Token 41% · 主 Agent 等待 7.5 分钟<br>TTFT / TPOT：未知（没有代理抓包）</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
+<div style="font-weight: 700; font-size: 13px">每条边界的账（本任务）</div>
+<table style="border-collapse: collapse; font-size: 12px; width: 100%">
+<thead><tr style="background: #eee; text-align: left"><th style="border: 1px solid #bbb; padding: 6px">边界</th><th style="border: 1px solid #bbb; padding: 6px">次数</th><th style="border: 1px solid #bbb; padding: 6px">冷启动</th><th style="border: 1px solid #bbb; padding: 6px">前置重复</th><th style="border: 1px solid #bbb; padding: 6px">父等待</th><th style="border: 1px solid #bbb; padding: 6px">读入:返回</th><th style="border: 1px solid #bbb; padding: 6px">这个定义跨任务的判定</th></tr></thead>
+<tbody>
+<tr><td style="border: 1px solid #bbb; padding: 6px">主 → planner</td><td style="border: 1px solid #bbb; padding: 6px">1</td><td style="border: 1px solid #bbb; padding: 6px">5.1k</td><td style="border: 1px solid #bbb; padding: 6px">40%</td><td style="border: 1px solid #bbb; padding: 6px">0:48</td><td style="border: 1px solid #bbb; padding: 6px">3:1</td><td style="border: 1px solid #bbb; padding: 6px"><a href="#">merge:implementer · 21 个任务 ›</a></td></tr>
+<tr><td style="border: 1px solid #bbb; padding: 6px">主 → implementer</td><td style="border: 1px solid #bbb; padding: 6px">1</td><td style="border: 1px solid #bbb; padding: 6px">9.8k</td><td style="border: 1px solid #bbb; padding: 6px">55%</td><td style="border: 1px solid #bbb; padding: 6px">4:12</td><td style="border: 1px solid #bbb; padding: 6px">4:1</td><td style="border: 1px solid #bbb; padding: 6px"><a href="#">merge:planner · 21 个任务 ›</a></td></tr>
+<tr><td style="border: 1px solid #bbb; padding: 6px">主 → code-reviewer</td><td style="border: 1px solid #bbb; padding: 6px">2</td><td style="border: 1px solid #bbb; padding: 6px">14.0k</td><td style="border: 1px solid #bbb; padding: 6px">81%</td><td style="border: 1px solid #bbb; padding: 6px">2:30</td><td style="border: 1px solid #bbb; padding: 6px">6:1</td><td style="border: 1px solid #bbb; padding: 6px"><a href="#">fold · 31 个任务 ›</a></td></tr>
+</tbody>
+</table>
+<div style="border: 2px dashed #8a4b00; padding: 10px 12px; font-size: 13px">本任务是 code-reviewer 的<strong>反证</strong>：第 2 次审查发现了主 Agent 漏掉的空指针（<a href="#">事件 #412 ›</a>）</div>
+<div style="border: 1px solid #999; padding: 10px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-weight: 700">任务内检查（原「分析拆分与合并」面板挪到这里）</div>
+<div style="color: #555">交接锚点 · 重复读取 · 返回是否被采用</div>
+</div>
+<div style="display: flex; gap: 10px; margin-top: auto">
+<button type="button" style="border: 1px solid #999; background: #fff; padding: 8px 14px; font-size: 13px">对这个任务的某条边界做 AI 复核</button>
+<button type="button" style="border: 1px solid #999; background: #fff; padding: 8px 14px; font-size: 13px">在架构概况里查看</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>改造计划与互通</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#1f4fb8}a:hover{color:#163a87}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; font-family: system-ui, -apple-system, 'PingFang SC', sans-serif; color: #222; background: #fff; padding: 24px 32px; display: flex; flex-direction: column; gap: 16px">
+<div style="font-size: 12px; color: #555">架构概况 › 改造计划（与 kit 的 single-loop/PLAN.md 一一对应 · 示意数据）</div>
+<h1 style="margin: 0; font-size: 20px">改造计划 · telemetry 项目</h1>
+<div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; font-size: 12px">
+<div style="border: 2px solid #222; background: #222; color: #fff; padding: 10px"><div style="font-weight: 700">0 审计 ✓</div>判定已同意</div>
+<div style="border: 2px solid #222; background: #222; color: #fff; padding: 10px"><div style="font-weight: 700">1 基线 ✓</div>12 题 × 3 次</div>
+<div style="border: 2px solid #1f4fb8; padding: 10px"><div style="font-weight: 700; color: #1f4fb8">2 合并 ●</div>planner + implementer</div>
+<div style="border: 1px solid #999; padding: 10px"><div style="font-weight: 700">3 折回</div>code-reviewer、test-runner</div>
+<div style="border: 1px solid #999; padding: 10px"><div style="font-weight: 700">4 改成工具</div>researcher</div>
+<div style="border: 1px solid #999; padding: 10px"><div style="font-weight: 700">5 维护</div>主提示、skill</div>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; flex: 1; min-height: 0">
+<div style="display: flex; flex-direction: column; gap: 10px; font-size: 13px">
+<div style="font-weight: 700">工作清单（kit 的顺序：先合并，再折回，最后改成工具）</div>
+<div style="border: 1px solid #999; padding: 10px 12px; display: flex; gap: 10px"><span>☑</span><span>v1 · 合并 planner + implementer</span><span style="margin-left: auto; color: #555">已对比 · 保留</span></div>
+<div style="border: 2px solid #1f4fb8; padding: 10px 12px; display: flex; gap: 10px"><span>☐</span><span>v2 · 折回 code-reviewer → skill「code-review」</span><span style="margin-left: auto; color: #1f4fb8">等待运行 ›</span></div>
+<div style="border: 1px solid #999; padding: 10px 12px; display: flex; gap: 10px"><span>☐</span><span>v3 · 折回 test-runner → 工具</span></div>
+<div style="border: 1px solid #999; padding: 10px 12px; display: flex; gap: 10px"><span>☐</span><span>v4 · researcher 改成工具，返回固定结构</span></div>
+<div style="font-weight: 700; margin-top: 6px">四个检查点</div>
+<div style="font-size: 12px; color: #444; line-height: 1.8">① 审计后：判定对吗 ✓<br>② 付费运行前：附 Token 估算 ✓<br>③ 基线后：分数可信吗 ✓<br>④ 每次改动对比后：保留、修还是回退（v2 进行中）</div>
+<div style="border: 1px dashed #999; padding: 10px 12px; font-size: 12px">分界点：v1 于 10-28 14:02 记录。之后的任务自动归入 v1。<a href="#">对比分界点前后 ›</a></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px; font-size: 13px">
+<div style="font-weight: 700">与 single-agent-loop-kit 互通</div>
+<div style="border: 1px solid #999; padding: 10px 12px"><div style="font-weight: 700; margin-bottom: 4px">导出给 kit</div>traces.jsonl（coupling_map 格式）· results.jsonl（build-eval 布局）· inventory.tsv · PLAN.md</div>
+<div style="border: 1px solid #999; padding: 10px 12px"><div style="font-weight: 700; margin-bottom: 4px">从 kit 导入</div>PLAN.md 进度 · inventory.tsv 判定 · 各版本的 results.jsonl</div>
+<div style="border: 1px solid #999; padding: 10px 12px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.7"><div style="font-family: system-ui, sans-serif; font-weight: 700; margin-bottom: 4px">给 kit skill 用的只读 CLI</div>telemetry-agent-folding coupling --cwd .<br>telemetry-agent-folding coverage --eval baseline<br>telemetry-agent-folding compare baseline v1<br>telemetry-agent-folding estimate --reps 3</div>
+<div style="border: 1px solid #bbb; background: #f6f6f6; padding: 10px 12px; font-size: 12px; color: #444">代码由你或任意 coding agent（Claude Code、Codex、OpenCode，可配合 kit 的流程）修改；telemetry 不改代码、不自动跑付费评测。</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

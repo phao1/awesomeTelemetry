@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>多选分组</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#1f4fb8}a:hover{color:#163a87}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; font-family: system-ui, -apple-system, 'PingFang SC', sans-serif; color: #222; background: #fff; display: flex; flex-direction: column">
+<div style="height: 48px; border-bottom: 1px solid #bbb; display: flex; align-items: center; gap: 24px; padding: 0 20px; font-size: 14px; color: #555">
+<strong style="color: #222">AwesomeTelemetry</strong>
+<span style="color: #222; border-bottom: 2px solid #222; padding: 13px 0">任务中心</span><span>数据接入</span><span>评测中心</span><span>任务模式实验</span><span>设置</span>
+</div>
+<div style="flex: 1; display: flex; min-height: 0">
+<div style="width: 560px; border-right: 1px solid #bbb; background: #f6f6f6; padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; gap: 8px; font-size: 12px"><span style="border: 1px solid #999; padding: 4px 8px; background: #fff">题目：ruoyi-perf-management</span><span style="border: 1px solid #999; padding: 4px 8px; background: #fff">全部工具 ▾</span><span style="border: 1px solid #999; padding: 4px 8px; background: #fff">架构概况</span></div>
+<div style="border: 2px solid #1f4fb8; background: #fff; padding: 8px 10px; display: flex; gap: 8px; align-items: center; font-size: 13px">
+<span>已选 3</span>
+<button type="button" style="border: 1px solid #222; background: #fff; padding: 4px 10px; font-size: 12px">设为 A 组</button>
+<button type="button" style="border: 1px solid #222; background: #fff; padding: 4px 10px; font-size: 12px">设为 B 组</button>
+<span style="color: #555">A：3 · B：3</span>
+<button type="button" style="margin-left: auto; border: 2px solid #1f4fb8; background: #1f4fb8; color: #fff; padding: 4px 14px; font-size: 12px; font-weight: 600">对比 ›</button>
+</div>
+<div style="font-size: 11px; color: #555">空格切换勾选 · Shift 连选 · A、B 两组不能有重叠</div>
+<div style="border: 1px solid #ccc; background: #fff; padding: 8px 10px; font-size: 12px; display: flex; gap: 10px; align-items: center"><span style="border: 1px solid #222; width: 14px; height: 14px; text-align: center; line-height: 14px">✓</span><span style="border: 1px solid #222; padding: 0 6px; font-weight: 700">A</span><span>普通版 · ds-v4.1-flash · 现网 · 10.159.226.80</span><span style="margin-left: auto; color: #555">204/371 · 72.2 分</span></div>
+<div style="border: 1px solid #ccc; background: #fff; padding: 8px 10px; font-size: 12px; display: flex; gap: 10px; align-items: center"><span style="border: 1px solid #222; width: 14px; height: 14px; text-align: center; line-height: 14px">✓</span><span style="border: 1px solid #222; padding: 0 6px; font-weight: 700">A</span><span>普通版 · ds-v4.1-flash · 现网 · 10.182.120.183</span><span style="margin-left: auto; color: #555">194/371 · 45.0 分</span></div>
+<div style="border: 1px solid #ccc; background: #fff; padding: 8px 10px; font-size: 12px; display: flex; gap: 10px; align-items: center"><span style="border: 1px solid #222; width: 14px; height: 14px; text-align: center; line-height: 14px">✓</span><span style="border: 1px solid #222; padding: 0 6px; font-weight: 700">A</span><span>普通版 · ds-v4.1-flash · 现网 · 10.182.121.151</span><span style="margin-left: auto; color: #555">201/371 · 56.5 分</span></div>
+<div style="border: 2px solid #1f4fb8; background: #fff; padding: 8px 10px; font-size: 12px; display: flex; gap: 10px; align-items: center"><span style="border: 1px solid #222; width: 14px; height: 14px; text-align: center; line-height: 14px">✓</span><span style="border: 1px solid #1f4fb8; color: #1f4fb8; padding: 0 6px; font-weight: 700">B</span><span>极速版 · ds-v4.1-flash · 测试</span><span style="margin-left: auto; color: #555">258/371 · 31.2 分</span></div>
+<div style="border: 2px solid #1f4fb8; background: #fff; padding: 8px 10px; font-size: 12px; display: flex; gap: 10px; align-items: center"><span style="border: 1px solid #222; width: 14px; height: 14px; text-align: center; line-height: 14px">✓</span><span style="border: 1px solid #1f4fb8; color: #1f4fb8; padding: 0 6px; font-weight: 700">B</span><span>极速版 · ds-v4.1-flash · 测试</span><span style="margin-left: auto; color: #555">256/371 · 18.6 分</span></div>
+<div style="border: 2px solid #1f4fb8; background: #fff; padding: 8px 10px; font-size: 12px; display: flex; gap: 10px; align-items: center"><span style="border: 1px solid #222; width: 14px; height: 14px; text-align: center; line-height: 14px">✓</span><span style="border: 1px solid #1f4fb8; color: #1f4fb8; padding: 0 6px; font-weight: 700">B</span><span>极速版 · ds-v4.1-flash · 测试</span><span style="margin-left: auto; color: #555">247/371 · 19.9 分</span></div>
+<div style="border: 1px solid #ccc; background: #fff; padding: 8px 10px; font-size: 12px; display: flex; gap: 10px; align-items: center"><span style="border: 1px solid #222; width: 14px; height: 14px"></span><span>码道GUI · 智速模式 · 现网</span><span style="margin-left: auto; color: #555">245/371 · 23.2 分</span></div>
+<div style="border: 1px solid #ccc; background: #fff; padding: 8px 10px; font-size: 12px; display: flex; gap: 10px; align-items: center"><span style="border: 1px solid #222; width: 14px; height: 14px"></span><span>码道GUI · 智速模式 · 现网</span><span style="margin-left: auto; color: #555">259/371 · 20.4 分</span></div>
+</div>
+<div style="flex: 1; padding: 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; font-size: 13px">
+<div style="font-size: 16px; font-weight: 700">另外两种建组方式</div>
+<div style="border: 1px solid #999; padding: 12px"><div style="font-weight: 700; margin-bottom: 4px">分界点前后</div>在判定卡或改造计划里点「对比分界点前后」：分界点之前的任务自动进 A 组，之后的进 B 组。</div>
+<div style="border: 1px solid #999; padding: 12px"><div style="font-weight: 700; margin-bottom: 4px">实验两臂</div>任务模式实验或评测中心的结果页 →「在任务中心对比」：两臂直接成为 A、B 组。</div>
+<div style="border: 1px dashed #999; padding: 12px"><div style="font-weight: 700; margin-bottom: 4px">导入 kit 的评测结果</div>导入 baseline/ 和 v1/ 下的 results.jsonl，作为 A、B 两组。</div>
+<div style="border: 2px dashed #8a4b00; padding: 12px; color: #5c3300"><div style="font-weight: 700; margin-bottom: 4px">点「对比」之前就提示</div>A 和 B 之间改了 2 处：产品模式（普通版 → 极速版）和环境（现网 → 测试）。差异不能只归因于一处改动。</div>
+<div style="color: #555; font-size: 12px">示意：数据来自你提供的三组 × 3 次运行</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

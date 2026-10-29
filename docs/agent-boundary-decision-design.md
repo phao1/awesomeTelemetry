@@ -1,5 +1,7 @@
 # Agent 边界决策 · 详细设计（OpenSpec change：`add-agent-boundary-decision`）
 
+> ⚠️ **已被 [`docs/agent-architecture/spec-r4.md`](agent-architecture/spec-r4.md) 取代（2026-10-30）。** 本文只作背景参考；凡与 r4 冲突处以 r4 为准。特别是：新 `agent-boundary` 模块、`ab_*` 表、`/api/agent-boundary/*` 路由**不再实现**，改为扩展现有 `agent-folding` 模块。
+
 > 版本：2026-10-30 r2（信息架构按原型 r3 改为「全部放进任务中心」，见 §1.4）。读者：负责实现的编码 Agent（Codex）和项目负责人。
 > 产品依据：[`docs/agent-boundary-decision-prd.md`](agent-boundary-decision-prd.md)（r3，已确认：主用户是 Agent 构建者；决策单位是跨会话的 Agent 定义；首批 Claude Code、Codex、OpenCode；AI 复核在 v1）。
 > 本文是实现规格。和 PRD 冲突时以本文为准；和 `openspec/contracts/*` 冲突时按 `AGENTS.md` 的优先级处理，并在输出中列出冲突。
@@ -273,7 +275,7 @@
 
 ### 5.4 运行级事实（`ab_runs`）
 
-`started_at`（成员最早开始）、`ended_at`（成员最晚更新）、`duration_ms`、`member_count`、`token_total`（成员 `token_total` 之和；任一成员缺失则为 `null`）、`models_json`（成员 `primary_model` 去重排序）、`input_fingerprint`、`input_label`（首条输入前 80 字符，展示用）、`delegation_count`、`status`。
+`started_at`（成员最早开始）、`ended_at`（成员最晚更新）、`duration_ms`、`member_count`、`token_total`（成员 `token_total` 之和；任一成员缺失则为 `null`）、`models_json`（成员 `primary_model` 去重排序）、`input_fingerprint`、`input_label`（首条输入前 80 字符，展示用）、`delegation_count`、`status`、`host`（会话元数据中的主机，没有时为本机主机名）、`metrics_json`（`AbRunMetrics`，§11.5，≤8KiB）。
 
 ### 5.5 失效
 
@@ -403,6 +405,8 @@ CREATE TABLE IF NOT EXISTS ab_runs (
   input_fingerprint TEXT,
   input_label       TEXT,
   delegation_count  INTEGER NOT NULL,
+  host              TEXT,
+  metrics_json      TEXT,                              -- AbRunMetrics，§11.5
   status            TEXT NOT NULL CHECK (status IN ('ok','partial','unsupported')),
   indexed_at        TEXT NOT NULL
 ) WITHOUT ROWID;
@@ -498,6 +502,11 @@ CREATE TABLE IF NOT EXISTS ab_acceptance (
   root_session_key TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
   case_id          TEXT,
   passed           INTEGER CHECK (passed IN (0,1)),   -- NULL = 未知
+  tests_passed     INTEGER,                           -- 通过用例数
+  tests_total      INTEGER,                           -- 用例总数
+  quality_json     TEXT NOT NULL DEFAULT '{}',        -- Partial<BenchmarkQuality>，照原样导入
+  quality_source   TEXT,                              -- 扫描器名称/版本，用于可比性判断
+  labels_json      TEXT NOT NULL DEFAULT '{}',        -- { product?, environment?, host? }
   checks_json      TEXT NOT NULL DEFAULT '[]',
   source           TEXT NOT NULL CHECK (source IN ('import','manual')),
   import_id        TEXT,
@@ -681,6 +690,10 @@ export interface AbAcceptanceDocument {
   results: Array<{
     match: { sessionKey: string } | { provider: AbProvider; nativeSessionId: string };
     caseId?: string; passed: boolean | null;
+    tests?: { passed: number; total: number };          // 通过用例 / 总数
+    quality?: Partial<BenchmarkQuality>;                 // 11 个代码质量字段，照原样导入
+    qualitySource?: string;                              // 扫描器名称/版本，≤64
+    labels?: { product?: string; environment?: string; host?: string };  // 各 ≤64，覆盖会话元数据
     checks?: Array<{ id: string; passed: boolean | null }>;
     note?: string;
   }>;
@@ -730,6 +743,33 @@ export interface AbChainCoverage {
 export type AbChangeFactorKey = 'definition' | 'model' | 'instructions' | 'tool_permissions' | 'acceptance' | 'provider_version';
 export interface AbChangeFactor { key: AbChangeFactorKey; state: 'same' | 'different' | 'unknown'; detail: AbText; definitionIds?: string[] }
 
+// import type { BenchmarkMetric, BenchmarkMetrics, BenchmarkQuality } from './benchmark-types.js' / './benchmark-analysis.js'
+// import type { BenchmarkStats } from './benchmark-analysis.js'
+/** 每个任务的指标：评测中心的 BenchmarkMetrics 加上本功能的派生指标。§11.5 */
+export interface AbRunMetrics {
+  rootSessionKey: string;
+  labels: { product: string; environment: string | null; model: string[]; caseId: string | null; host: string | null };
+  base: BenchmarkMetrics;          // 来自 src/core/benchmark-analysis.ts，不复制公式
+  usageCaliber: { inputIncludesCache: boolean | null; outputIncludesReasoning: boolean | null; cacheWriteReported: boolean | null };
+  ttftSource: 'proxy' | 'none';
+  qualitySource: string | null;
+  derived: {
+    uncachedInput: number | null; tokensPerPassedCase: number | null; staticWarningsPerKloc: number | null;
+    e2eShare: { model: number | null; tool: number | null; other: number | null };
+    subagents: number; delegations: number;
+    subagentShare: { modelCalls: number | null; tokens: number | null; durationMs: number | null };
+    parentIdleMs: number | null; chainCoverage: number | null;
+  };
+}
+export type AbMetricKey = BenchmarkMetric | `derived.${string}`;
+export interface AbMetricStats extends BenchmarkStats { known: number; total: number; min: number | null; max: number | null; highVariance: boolean }
+export interface AbMetricRow {
+  key: AbMetricKey; section: 'result' | 'latency' | 'tokens' | 'architecture';
+  a: AbMetricStats; b: AbMetricStats;
+  deltaMedian: number | null; ratioMedian: number | null;
+  comparable: boolean; reason: AbText | null;
+}
+
 export interface AbGroupComparison {
   scope: AbScope;
   groups: { a: { spec: AbGroupSpec; label: string; runs: number }; b: { spec: AbGroupSpec; label: string; runs: number } };
@@ -743,6 +783,8 @@ export interface AbGroupComparison {
   coverage: { a: AbChainCoverage; b: AbChainCoverage; comparable: boolean };
   process: Array<{ key: 'delegations' | 'parent_idle_ms' | 'pre_overlap_ratio' | 'compactions' | 'main_steps'; a: number | null; b: number | null }>;
   cost: { medianDurationDeltaMs: number | null; medianTokensDelta: number | null; cacheHitDelta: number | null };
+  metrics: AbMetricRow[];                      // PRD §10.6 全部指标的组内汇总和组间差值
+  runs: { a: AbRunMetrics[]; b: AbRunMetrics[] };  // 明细表，每组 ≤500
   changes: AbChangeFactor[];                   // 「一次改了几处」
   changedCount: number;                        // state === 'different' 的个数
   summary: { pairedInputs: number; regressions: number; improvements: number; unknown: number; singleSampleInputs: number };
@@ -1001,6 +1043,7 @@ User：`<evidence id="F1" kind="definition_file" label="...">…</evidence>` 逐
   - 匹配到的不是根会话 → `not_root`。
   - 已有手工标记 → 不覆盖，返回冲突。
   - 校验：严格字段；`caseId` ≤128；`checks` ≤64；`note` ≤2KiB。
+- **用例数、代码质量和标签**：同一份导入文件可带 `tests`、`quality`、`qualitySource`、`labels`，用于 §11.5 的指标；字段缺失时对应指标为「未知」。
 - **手工标记**：在对比页逐个运行标记通过、失败或未知。
 - **兼容 benchmark 报告**：把 `src/core/benchmark-types.ts` 报告中带明确原生会话引用的运行，按 verdict 转成上述结构导入（转换器 `server/agent-boundary/acceptance.ts`）；没有会话引用的运行列为未匹配。
 
@@ -1027,8 +1070,10 @@ User：`<evidence id="F1" kind="definition_file" label="...">…</evidence>` 逐
    - 在 B 组配对输入的运行里，按签名查找执行者：主会话 → `main`；其他子 Agent → `other_definition`（附定义 ID）；skill 或非委派工具调用 → `tool_or_skill`；都没有 → `none`。
    - 排序：`bCoveredRuns / bPairedRuns` 升序，「无人」在前。
    - 这是规则匹配，不判断语义是否等价；语义判断交给 AI 复核（§10），复核证据包可以带上这张表。
-6. **过程**：两侧中位数：委派次数、父等待、前置重复比例、上下文压缩次数、主循环步数。
-7. **开销**：两侧中位数之差（B 减 A），耗时、token、缓存命中率。只在最后展示。
+6. **过程**：两侧中位数：委派次数、父等待、前置重复比例、上下文压缩次数、主循环步数；外加 §11.5 的时延类指标。
+7. **开销**：§11.5 的 Token 和缓存类指标（组内汇总和 B − A）。只在最后展示。
+
+`metrics` 和 `runs` 两个字段按 §11.5 计算。
 8. **改动处数**：逐项比较两组：
    - `definition`：两组出现过的定义集合，以及关联仓库时各定义的文件 sha；Codex 用精确指纹。
    - `model`：`models_json` 并集。
@@ -1045,6 +1090,59 @@ User：`<evidence id="F1" kind="definition_file" label="...">…</evidence>` 逐
    - `insufficient`：其他情况。
    - 每个状态都附带具体原因文案，例如「两组之间改了 2 处：code-reviewer 定义、模型」。
 10. 状态为 `supported` 时，界面允许把关联决策的置信度显示为 `verified`。这是展示层的组合，不修改 `ab_decisions`。
+
+### 11.5 对比指标的计算（`src/core/agent-boundary-metrics.ts`，纯函数）
+
+PRD §10.6 列出的指标全部在这里算。**原则：只有一套公式。** 能用评测中心 `src/core/benchmark-analysis.ts` 的就直接调用，不复制。
+
+1. **把任务转成评测运行的形状**（服务端 `server/agent-boundary/run-metrics.ts`，索引时执行，结果写进 `ab_runs.metrics_json`）：
+   - 根会话和它全部子会话（关联等级 `exact` 或 `parent_only` 的都算）合在一起，构造一个 `BenchmarkTelemetry`：
+     - `usage`：各会话的输入、输出、思考、缓存读、缓存写分别求和，附上该工具的口径标记（见第 2 步）。
+     - `spans`：每次模型调用一个 `kind: 'model'`，每次工具调用一个 `kind: 'tool'`。耗时来自事件本身的为 `measured`，由前后事件推出的为 `derived`。
+     - `firstTokenMs` / `outputTokens`：只从关联到这次调用的代理抓包记录里取；没有抓包时为 `null`。**不使用** `speed-metrics.ts` 里「首条输入到首个模型事件」的旧 TTFT。
+   - 再构造一个 `BenchmarkRun`：
+     - `e2eMs` = 根会话第一条用户输入到全部成员最后一个事件；
+     - `host` 取会话元数据，没有时取本机主机名；
+     - `verdict` 由 `ab_acceptance` 组装（第 4 步）。
+   - 调用 `benchmarkMetrics(run, total)` 得到 `BenchmarkMetrics`，也就是 PRD §10.6 里除派生指标外的全部指标。
+2. **各工具的 Token 口径**（M1 必须用真实记录逐项核实，写进 `openspec/research/agent-boundary-evidence.md`）：
+
+   | 工具 | 输入已含缓存 | 输出已含思考 | 缓存写入 | 预期依据 |
+   |---|---|---|---|---|
+   | Claude Code | 否 | 是 | 有（`cache_creation_input_tokens`） | Anthropic usage 字段 |
+   | Codex | 是（`cached_input_tokens` 是 `input_tokens` 的一部分） | 是（`reasoning_output_tokens`） | 不单独报告 | OpenAI usage 字段 |
+   | OpenCode | 待核实 | 待核实 | 待核实 | 取决于底层模型服务商，按消息里的 `tokens` 字段核实 |
+
+   核实结果和预期不同时，按 §21 第 1 条停下来问。
+3. **对 `correctedUsage` 做两处最小修改**（`src/core/benchmark-analysis.ts`，评测中心的行为也随之更正，需补测试）：
+   - `outputIncludesReasoning === true` 且 `reasoning === null` 时，不再让总量变成 `null`：思考已经算在输出里，不影响总量，界面上思考 Token 仍显示「未知」。
+   - `BenchmarkUsage` 增加 `cacheWriteReported: boolean | null`。为 `false` 时，缓存写按 0 参与计算，界面注明「该工具不单独报告缓存写入」。旧报告里没有这个字段时，按 `null` 处理，行为不变。
+4. **验收结果和代码质量**：`ab_acceptance` 存放：
+   - 通过用例 / 总数；
+   - `BenchmarkQuality` 的 11 个字段（照原样导入，不重算）；
+   - 标签：产品、环境、执行机、题目 ID（覆盖会话元数据）。
+
+   组装成 `BenchmarkVerdict`。只有 `passed: boolean` 而没有用例数时，用例数按 1 / 1 或 0 / 1 处理，并标「仅二值验收」。
+5. **派生指标**（本文件新增，不改 `METRIC_LABELS`）：
+   - `uncachedInput`：口径统一后，`allInput − cacheRead − cacheWrite`。
+   - `tokensPerPassedCase`：`tokens / passed`；`passed = 0` 时为 `null`。
+   - `staticWarningsPerKloc`：`staticWarnings / loc × 1000`。
+   - `e2eShare`：`{ model: modelSum / e2e, tool: toolSum / e2e, other: 1 − 两者 }`。两者之和超过 1 时，说明模型调用和工具调用有并行，`other` 记为 `null` 并标注。
+   - 架构指标：子 Agent 数、委派次数、子会话的模型调用、Token、耗时各占全任务的比例、主 Agent 等待（来自 §5.3）、调用链覆盖（§11.4 第 4 步）。
+6. **组内汇总**：每个指标调用 `benchmarkStats()`，得到 n、均值、中位数、p95、标准差、CV，再加上最小值和最大值（在本文件里补）。
+   - n < 2 时只给值，标「单样本」。
+   - CV > 30% 标「组内波动大」。
+   - 只统计已知值，并返回 `known / total`。
+7. **组间差值和可比性**：每个指标给出 `deltaMedian`（B − A）和 `ratioMedian`（B / A，A 为 0 时为 `null`）。以下情况该指标标 `comparable: false`，不给差值：
+   - 两组 Token 口径标记不同；
+   - TTFT / TPOT 一组有实测、另一组没有；
+   - 代码质量指标的导入来源不同（不同扫描器）。
+8. **报告导出**（`src/core/agent-boundary-report.ts`，纯函数，在前端生成，不新增路由）：
+   - 输入 `AbGroupComparison`，输出 HTML、Markdown、CSV 三种格式。
+   - HTML 复用 `src/core/compare-report.ts` 的外壳和样式。
+   - 章节顺序与对比页一致，末尾附每个任务一行的明细表（PRD §10.6 全部列）。
+   - CSV 只放明细表，列名用中文标签，单位写在列名里。
+   - 所有文本做 HTML 转义；导出不包含会话正文。
 
 ---
 
@@ -1209,7 +1307,8 @@ User：`<evidence id="F1" kind="definition_file" label="...">…</evidence>` 逐
 | `/overview` | <300ms，≤256KiB gzip，1 次请求；SQL 次数固定，与定义数量无关 |
 | `/definitions/:id` | <200ms，≤256KiB |
 | `/definitions/:id/delegations` | <100ms，≤20 行 |
-| `/compare` | 每侧 ≤500 个运行，<500ms（含职责去向），≤256KiB |
+| `/compare` | 每侧 ≤500 个运行，<500ms（含职责去向和指标汇总；单任务指标在索引时预先算好，读 `ab_runs.metrics_json`），≤512KiB（含明细表） |
+| 报告导出 | 前端生成，1000 行明细 <300ms；不发请求 |
 | `/runs/:root/index` | 委派 ≤500 时同步 <1s；不阻塞事件循环（分片让出） |
 | `/runs/:root/architecture` | <150ms，≤128KiB |
 | `/scope-status`、`/projects` | <100ms |
@@ -1251,7 +1350,10 @@ User：`<evidence id="F1" kind="definition_file" label="...">…</evidence>` 逐
 | 复核结果校验 | 合法结果通过；不存在的引用、越界的 definitionId、未知枚举、超长、被截断、非 JSON、trace 中的提示注入文本未被当作指令 |
 | 复核客户端 | 两种协议的请求构造和用量解析；401/404/429/超时/3xx/协议错误分类；取消；密钥不出现在任何响应和日志中 |
 | URL 校验 | https 允许；http 公网拒绝；带用户名密码拒绝；指向自身拒绝；勾选后允许回环和私网 http；非官方主机不使用环境变量密钥 |
-| 验收导入 | 两种匹配方式；not_root；不覆盖手工标记；benchmark 报告转换 |
+| 验收导入 | 两种匹配方式；not_root；不覆盖手工标记；benchmark 报告转换；用例数、11 个质量字段、标签的校验和落库；只有二值验收时标「仅二值验收」 |
+| 对比指标 | 用你提供的三组 × 3 次数据做 fixture：对齐后每个指标的单任务值、均值、中位数、最小–最大、CV 与手算一致；Token 口径三种组合各一例（含「输入已含缓存」「输出已含思考且思考未知」「不报告缓存写入」）；缓存命中率不把写入算作命中；缺失项为「未知」不为 0；口径不同 → `comparable=false`；TTFT 无抓包时为未知；`e2eShare` 并行时 `other=null` |
+| `correctedUsage` 修改 | 评测中心原有测试全部通过；新增两种情况的测试 |
+| 报告导出 | HTML 转义；三种格式的列和章节顺序；CSV 列名含单位；不含会话正文 |
 | 分组对比 | 三种分组来源的解析与重叠拒绝；五种状态各一例；回归排序在前；单侧数据为 one_sided；单样本标记且不计入门槛；改了 2 处 → confounded；覆盖率不足 → comparable=false；职责去向四类执行者各一例，「无人」排前；验收未知不算改善 |
 | 路由 | 每个路由的参数校验、错误码、no-store、Host/Origin 守卫；GET 请求不触发作业 |
 | 前端组件 | 「架构」页签打开即算且修订未变时不重复请求；抽屉自动索引与超限提示；多选、A / B 分组和重叠禁止；对比页顺序固定、回归置顶、改动处数提示；证据跳转后恢复状态；复核确认流程和防重复点击；中英文切换不重新请求 |
@@ -1328,9 +1430,11 @@ User：`<evidence id="F1" kind="definition_file" label="...">…</evidence>` 逐
 
 - [ ] M6.1 分界点的增删查和规则（同一范围时间唯一、被引用时不可删）。
 - [ ] M6.2 验收导入（含 benchmark 报告转换）和手工标记。
+- [ ] M6.3a `server/agent-boundary/run-metrics.ts`、`src/core/agent-boundary-metrics.ts`、`correctedUsage` 两处修改；索引时写 `ab_runs.metrics_json`；用 §18 的三组数据 fixture 核对。
 - [ ] M6.3 `server/agent-boundary/compare-groups.ts`（三种分组解析）、`src/core/agent-boundary-compare.ts`（质量、职责去向、调用链覆盖、过程、开销、改动处数、状态）和 `POST /compare`。
 - [ ] M6.4 决策记录与快照，「采纳」时可创建分界点。
 - [ ] M6.5 任务列表多选与 A / B 操作条、`TaskCompareView`、职责去向表、「还没有对照组？」入口；任务模式实验结果页「在任务中心对比」。
+- [ ] M6.5a 对比页「指标」章节和明细表；`src/core/agent-boundary-report.ts` 导出 HTML / Markdown / CSV。
 - [ ] M6.6 决策对话框、判定卡内的决策列表、最近决策和回归提示。
 - 阶段验收：浏览器验收第 4 项通过。**M-c 演示点。**
 
@@ -1352,8 +1456,8 @@ User：`<evidence id="F1" kind="definition_file" label="...">…</evidence>` 逐
   - `openspec/contracts/agent-boundary.md`
   - `openspec/specs/agent-boundary/spec.md`
   - `openspec/research/agent-boundary-evidence.md`
-- 核心（src/core）：`src/core/agent-boundary-{types,resources,ledger,rules,copy,compare,review-pack,review-validation}.ts`，以及相邻测试。
-- 服务端：`server/agent-boundary/{extract-claude,extract-codex,extract-opencode,metrics,index-job,store,repo,mapping,cutovers,acceptance,compare-groups,decisions,review-config,review-client,review-prompt,review-job}.ts`，以及相邻测试。
+- 核心（src/core）：`src/core/agent-boundary-{types,resources,ledger,rules,copy,compare,metrics,report,review-pack,review-validation}.ts`，以及相邻测试。
+- 服务端：`server/agent-boundary/{extract-claude,extract-codex,extract-opencode,metrics,index-job,store,repo,mapping,cutovers,acceptance,compare-groups,run-metrics,decisions,review-config,review-client,review-prompt,review-job}.ts`，以及相邻测试。
 - 路由：`server/http/agent-boundary-routes.ts`，以及测试。
 - 前端：`src/components/agent-boundary/*.tsx`，以及测试；`src/components/agent-boundary/agent-boundary-copy.ts`。
 - 样式：`src/styles/components/agent-boundary.css`。
@@ -1369,6 +1473,7 @@ User：`<evidence id="F1" kind="definition_file" label="...">…</evidence>` 逐
 - 核心与工具函数：
   - `src/core/trace-types.ts`（SSE 事件类型）。
   - `src/core/architecture-diagnosis-analysis.ts`（只把 `anchors` 改为导出函数，行为不变）。
+  - `src/core/benchmark-types.ts`、`src/core/benchmark-analysis.ts`（只做 §11.5 第 3 步的两处修改，补测试）。
 - 服务与入口：`server/server.ts`（路由注册和守卫）、`src/api/client.ts`。`src/App.tsx` 只在 Mission Control 链接跳转需要时修改，不加视图和导航。
 - 集成点：
   - `src/task-route.ts`（新增模式和字段）。

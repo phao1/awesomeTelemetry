@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>判定卡</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#1f4fb8}a:hover{color:#163a87}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; font-family: system-ui, -apple-system, 'PingFang SC', sans-serif; color: #222; background: #fff; padding: 24px 32px; display: flex; flex-direction: column; gap: 14px">
+<div style="font-size: 12px; color: #555">架构概况 › code-reviewer（抽屉内展开 · 示意数据）</div>
+<div style="display: flex; align-items: baseline; gap: 12px">
+<h1 style="margin: 0; font-size: 22px">code-reviewer</h1>
+<span style="font-size: 12px; color: #555">Claude Code · agents/code-reviewer.md · 指纹 a1f3… · 31 个任务 · 47 次委派</span>
+</div>
+<div style="display: flex; gap: 10px; align-items: center">
+<span style="border: 2px solid #222; padding: 4px 10px; font-weight: 700">判定：fold（折回为 skill + 工具）</span>
+<span style="border: 1px solid #999; padding: 4px 10px; font-size: 13px">置信度 high：代码和 trace 都支持</span>
+<span style="border: 1px solid #999; padding: 4px 10px; font-size: 13px">规则版本 kit-c437962</span>
+</div>
+<div style="border: 1px solid #bbb; background: #f6f6f6; padding: 10px 12px; font-size: 14px">一句话：它每次都重读主 Agent 刚改过的文件，独立上下文没有换来 kit 认可的任何一条理由。</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+<div style="border: 1px solid #999; padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px">
+<div style="font-weight: 700">kit 的三条「值得独立上下文」理由</div>
+<div style="display: flex; justify-content: space-between; border-bottom: 1px solid #ddd; padding-bottom: 6px"><span>① 读得远多于主 Agent 之后需要的</span><span>✗ 读入 14k，返回 2.3k（6:1，阈值 10:1）</span></div>
+<div style="display: flex; justify-content: space-between; border-bottom: 1px solid #ddd; padding-bottom: 6px"><span>② 并行，或独立验证</span><span>△ 从不并行；5 次独立发现问题</span></div>
+<div style="display: flex; justify-content: space-between"><span>③ 工具冲突，skill 解决不了</span><span style="color: #8a4b00">? 规则看不出 → 问负责人</span></div>
+<div style="font-weight: 700; margin-top: 6px">不算理由（kit 明确排除）</div>
+<div style="color: #555">不同团队负责 · 有自己的人设 · 提示词长 · 工具多 · 步骤固定</div>
+</div>
+<div style="border: 1px solid #999; padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px">
+<div style="font-weight: 700">协作成本（每个数字都能点回原始事件）</div>
+<div style="display: flex; justify-content: space-between; border-bottom: 1px solid #ddd; padding-bottom: 6px"><span>冷启动</span><span>14.2k token/次 · 缓存命中 19% <a href="#">证据 ›</a></span></div>
+<div style="display: flex; justify-content: space-between; border-bottom: 1px solid #ddd; padding-bottom: 6px"><span>前置重复读取</span><span>72% 的文件主 Agent 已读过 <a href="#">证据 ›</a></span></div>
+<div style="display: flex; justify-content: space-between; border-bottom: 1px solid #ddd; padding-bottom: 6px"><span>主 Agent 等待</span><span>中位数 2 分 10 秒/次 <a href="#">证据 ›</a></span></div>
+<div style="display: flex; justify-content: space-between"><span>交接</span><span style="color: #555">字面检查通过；语义交给 AI 复核</span></div>
+</div>
+</div>
+<div style="border: 2px dashed #8a4b00; padding: 10px 12px; font-size: 13px"><strong>反证</strong>：47 次中有 5 次发现了主 Agent 漏掉的问题（任务 #12、#19 …）。如果看重独立审查，选方案 B。</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; font-size: 13px">
+<div style="border: 1px solid #999; padding: 12px"><div style="font-weight: 700; margin-bottom: 6px">方案 A · fold</div>定义正文转为 skill「code-review」；主提示删去「改完代码调用 code-reviewer」。对应 kit steps/03-fold.md</div>
+<div style="border: 1px solid #999; padding: 12px"><div style="font-weight: 700; margin-bottom: 6px">方案 B · as-tool</div>保留独立上下文，委派时附改动清单和 diff，返回固定结构（kit 模板 subagent_response.schema.json）</div>
+</div>
+<div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto">
+<button type="button" style="border: 1px solid #999; background: #fff; padding: 8px 14px; font-size: 13px">AI 复核（约 18k token，手动）</button>
+<button type="button" style="border: 1px solid #999; background: #fff; padding: 8px 14px; font-size: 13px">生成迁移草稿</button>
+<button type="button" style="border: 1px solid #999; background: #fff; padding: 8px 14px; font-size: 13px">查看涉及的 31 个任务</button>
+<button type="button" style="border: 2px solid #1f4fb8; background: #fff; color: #1f4fb8; padding: 8px 14px; font-size: 13px; font-weight: 600">同意判定 → 加入改造计划</button>
+<button type="button" style="border: 1px solid #999; background: #fff; padding: 8px 14px; font-size: 13px">不同意（写原因）</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

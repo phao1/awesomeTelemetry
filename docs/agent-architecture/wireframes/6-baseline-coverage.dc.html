@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>基线与链覆盖</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#1f4fb8}a:hover{color:#163a87}
+td,th{border:1px solid #bbb;padding:5px 8px;text-align:left}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; font-family: system-ui, -apple-system, 'PingFang SC', sans-serif; color: #222; background: #fff; padding: 24px 32px; display: flex; flex-direction: column; gap: 14px">
+<div style="font-size: 12px; color: #555">改造计划 › 第 1 步 基线（对应 kit steps/01-baseline.md · 示意数据）</div>
+<h1 style="margin: 0; font-size: 20px">先给现在的系统打一个可信的分</h1>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; font-size: 13px">
+<div style="border: 2px solid #222; padding: 12px"><div style="font-weight: 700; margin-bottom: 4px">○ 导入已有评测</div>kit / build-eval 的 results.jsonl，或评测中心报告</div>
+<div style="border: 1px solid #999; padding: 12px"><div style="font-weight: 700; margin-bottom: 4px">○ 用评测中心跑</div>选题目集、重复次数、隔离运行</div>
+<div style="border: 1px solid #999; padding: 12px"><div style="font-weight: 700; margin-bottom: 4px">○ 从真实任务挑候选题</div>按输入指纹去重，列出 23 个代表性请求，由你补「什么算做对」</div>
+</div>
+<div style="font-size: 15px; font-weight: 700; border-bottom: 2px solid #222; padding-bottom: 4px">调用链覆盖（= kit chain_coverage）</div>
+<div style="font-size: 12px; color: #555">生产中出现过的每一条子 Agent 链，评测里都要有一道题走过它。否则改动后交接丢信息，评测也发现不了。</div>
+<table style="border-collapse: collapse; font-size: 12px; width: 100%">
+<thead><tr style="background: #eee"><th>生产中的链</th><th>出现在多少任务</th><th>覆盖它的题</th><th>这些题现在通过吗</th></tr></thead>
+<tbody>
+<tr><td>planner → implementer → code-reviewer</td><td>18</td><td>t01、t04、t09</td><td>3 / 3</td></tr>
+<tr><td>researcher</td><td>41</td><td>t02、t05</td><td>2 / 2</td></tr>
+<tr><td>planner → implementer → test-runner</td><td>12</td><td>t03</td><td>1 / 1</td></tr>
+<tr style="background: #fff7ec"><td>researcher → implementer</td><td>9</td><td style="color: #8a4b00">⚠ 没有</td><td>—</td></tr>
+<tr style="background: #fff7ec"><td>implementer → code-reviewer → implementer</td><td>6</td><td style="color: #8a4b00">⚠ 没有</td><td>—</td></tr>
+</tbody>
+</table>
+<div style="font-size: 12px"><a href="#">从这 2 条链的真实任务里各挑一个，生成候选题 ›</a></div>
+<div style="border: 2px solid #1f4fb8; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; font-size: 13px">
+<div style="font-weight: 700; font-size: 14px">检查点 ② 付费运行前（= kit estimate.py）</div>
+<div>将运行：12 道题 × 3 次重复 = 36 次对话 · 模型 ds-v4.1-flash · 环境：测试</div>
+<div>估算：输入 <strong>2.1M – 3.4M</strong> token，输出 <strong>0.18M – 0.29M</strong>，可能值 2.6M / 0.22M</div>
+<div style="color: #555">依据：上次 probe 跑了 4 道题，其中最重的是 t09。费用：未设置单价，不估算。</div>
+<div style="display: flex; gap: 10px; margin-top: 4px">
+<button type="button" style="border: 2px solid #1f4fb8; background: #1f4fb8; color: #fff; padding: 8px 16px; font-size: 13px; font-weight: 600">确认运行基线</button>
+<button type="button" style="border: 1px solid #999; background: #fff; padding: 8px 16px; font-size: 13px">先减到 2 次重复</button>
+</div>
+</div>
+<div style="font-size: 12px; color: #555">跑完后：显示「估算 vs 实际」，并进入检查点 ③「这个基线可信吗？」</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
