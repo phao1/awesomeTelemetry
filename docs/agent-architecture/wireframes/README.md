@@ -1,6 +1,6 @@
 # Agent 架构 · 低保真线框（r4）
 
-7 张画板，`.dc.html` 是画板源文件（静态 HTML 加一层 `<x-dc>` 包装），用来看布局、字段和文案。**只当参考，不要照抄样式**：实现要用项目现有的设计令牌和组件（`openspec/contracts/design-tokens.md`、`src/styles/`）。
+7 张画板，用浏览器直接打开 `.dc.html` 就能看到渲染效果（引用的 `support.js` 不存在，不影响显示）。`.dc.html` 是画板源文件（静态 HTML 加一层 `<x-dc>` 包装），用来看布局、字段和文案。**只当参考，不要照抄样式**：实现要用项目现有的设计令牌和组件（`openspec/contracts/design-tokens.md`、`src/styles/`）。
 
 画板里的数字：
 - ④、⑤ 用的是用户给的真实评测数据（ruoyi-perf-management，三组 × 3 次）；⑤ 是这些数据的中位数。
