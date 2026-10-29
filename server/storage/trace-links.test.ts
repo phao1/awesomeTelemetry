@@ -128,6 +128,28 @@ describe('native identity and association storage', () => {
     expect(JSON.stringify(page)).not.toMatch(/PRIVATE_BODY|PRIVATE_OUTPUT|PRIVATE_SYSTEM/);
   });
 
+  it('orders predecessor instants before id ties and skips ambiguous or unaccepted owners', () => {
+    const db = database(); session(db, 's1'); session(db, 's2');
+    const update = cachedStmt(db, 'UPDATE proxy_requests SET started_at=?, request_format=? WHERE id=?');
+    const link = cachedStmt(db, "INSERT INTO trace_associations (id, session_key, proxy_id, state, reason, created_at, updated_at) VALUES (?, ?, ?, 'direct', 'synthetic', ?, ?)");
+    const started = (seconds: number) => new Date(Date.parse(time) + seconds * 1000).toISOString();
+    for (const [id, seconds] of [[2, 2], [3, 3], [4, 4], [5, 5], [7, 5], [8, 3], [9, 6]]) {
+      proxy(db, id!); update.run(started(seconds!), 'anthropic_messages', id);
+      link.run('s1-' + id, 's1', id, time, time);
+    }
+    link.run('s2-4', 's2', 4, time, time);
+    const target = { id: 5, startedAt: started(5), requestFormat: 'anthropic_messages' };
+    // A late-finalized id8 is earlier than id5 by timestamp, and wins the id3 tie.
+    expect(findLinkedCapturePredecessor(db, target)).toEqual({ id: 8, sessionKey: 's1' });
+    update.run(started(5), 'anthropic_messages', 2);
+    expect(findLinkedCapturePredecessor(db, target)).toEqual({ id: 2, sessionKey: 's1' });
+    cachedStmt(db, "UPDATE trace_associations SET state='rejected' WHERE id='s1-2'").run();
+    link.run('s2-8', 's2', 8, time, time);
+    expect(findLinkedCapturePredecessor(db, target)).toEqual({ id: 3, sessionKey: 's1' });
+    link.run('s2-5', 's2', 5, time, time);
+    expect(findLinkedCapturePredecessor(db, target)).toBeNull();
+  });
+
   it('selects a predecessor at10000 captures with fixed indexed metadata reads and no sorting tree', () => {
     const log: string[] = []; const db = database(':memory:', sql => log.push(sql)); session(db, 'long-session');
     const insertProxy = cachedStmt(db, "INSERT INTO proxy_requests (id, request_id, method, url, hostname, started_at, request_format) VALUES (?, ?, 'POST', '/v1/messages', 'synthetic.test', ?, 'anthropic_messages')");

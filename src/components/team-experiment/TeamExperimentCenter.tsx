@@ -10,6 +10,8 @@ import type { TeamExperimentMode, TeamExperimentPlan, TeamExperimentReport, Team
 import { TEAM_MODE_LABELS, TeamExperimentReplay } from './TeamExperimentReplay.js';
 import type { TeamExperimentReplayHandle } from './TeamExperimentReplay.js';
 import '../../styles/components/team-experiment.css';
+import { RealTaskDiagnosisEntry } from '../diagnosis/ArchitectureDiagnosisPanel.js';
+import { AgentFoldingWorkbench } from '../agent-folding/AgentFoldingWorkbench.js';
 
 const MAX_BYTES = 16 * 1024 * 1024;
 const MODES: TeamExperimentMode[] = ['single_loop', 'subagents', 'agent_team'];
@@ -34,7 +36,12 @@ function download(name: string, value: unknown): void {
 }
 
 /** Task-centred configuration and evidence. All execution is an explicit action. */
-export function TeamExperimentCenter({ locale }: { locale: Locale }): React.JSX.Element {
+export function TeamExperimentCenter({ locale, diagnosisInvalidateKey = 0 }: { locale: Locale; diagnosisInvalidateKey?: number }): React.JSX.Element {
+  return <AgentFoldingWorkbench locale={locale} diagnosisInvalidateKey={diagnosisInvalidateKey} advanced={<TeamModeExperimentAdvanced locale={locale} diagnosisInvalidateKey={diagnosisInvalidateKey}/>}/>;
+}
+
+/** Compatible v1 mode reports remain available as an advanced workflow. */
+export function TeamModeExperimentAdvanced({ locale, diagnosisInvalidateKey = 0 }: { locale: Locale; diagnosisInvalidateKey?: number }): React.JSX.Element {
   const zh = locale === 'zh', text = (cn: string, en: string) => zh ? cn : en;
   const [plan, setPlan] = useState<TeamExperimentPlan>(() => structuredClone(DEFAULT_PLAN));
   const [driverText, setDriverText] = useState(() => DEFAULT_PLAN.variants.map(v => JSON.stringify(v.driver)));
@@ -109,11 +116,12 @@ export function TeamExperimentCenter({ locale }: { locale: Locale }): React.JSX.
   const inspectedTrial = report?.trials.find(t => t.id === inspectedTrialId) ?? report?.trials[0] ?? null;
   const inspectedCaseIndex = Math.min(trialCasePage, Math.max(0, Math.ceil((inspectedTrial?.cases?.length ?? 0) / 100) - 1));
   const caseWords = { both_passed: ['双方通过', 'Both pass'], left_only: ['仅左侧通过', 'Left only'], right_only: ['仅右侧通过', 'Right only'], both_failed: ['双方失败', 'Both fail'], unknown: ['未知', 'Unknown'] } as const;
-  return <main className="team-exp-center">
+  return <section className="team-exp-center">
     <header className="team-exp-heading"><div><h1>{text('任务模式实验', 'Task mode experiments')}</h1><p>{text('同一任务，比较单 loop、主子 Agent 与团队协作；从验收结果追溯过程。', 'Compare single loop, subagents and teams on one task; trace acceptance back to evidence.')}</p></div>
       <label className="btn team-exp-file-label">{text('导入报告', 'Import report')}<input aria-label={text('导入任务模式报告', 'Import task-mode report')} type="file" accept=".json,application/json" onChange={e => { importReport(e.target.files?.[0]); e.target.value = ''; }}/></label>
       {report && <button className="btn" onClick={() => download('team-experiment-report.json', report)}>{text('导出报告', 'Export report')}</button>}
     </header>
+    <RealTaskDiagnosisEntry locale={locale} invalidateKey={diagnosisInvalidateKey}/>
     <div className="team-exp-scenarios"><span>{text('离线模拟：', 'Offline scenarios:')}</span>{Object.entries(SCENARIOS).map(([id, title]) => <button className="btn" key={id} onClick={() => preview(id as TeamExperimentScenario)}>{title[zh ? 0 : 1]}</button>)}</div>
     {error && <p role="alert" className="team-exp-alert">{error}</p>}{message && <p role="status">{message}</p>}
     {reading && <p role="status">{text('正在读取本地报告…', 'Reading local report…')} <button className="btn" onClick={() => { disposeReader(); setReading(false); }}>{text('取消读取', 'Cancel read')}</button></p>}
@@ -156,5 +164,5 @@ export function TeamExperimentCenter({ locale }: { locale: Locale }): React.JSX.
       <TeamExperimentReplay key={reportVersion} ref={replayRef} report={report} locale={locale}/>
       <details className="team-exp-research"><summary>{text('设计依据与下一次实验', 'Research basis and the next experiment')}</summary><p>{text('每次只折叠一个分工边界，固定任务与验收，记录失败翻转再决定保留。不同配置得到的建议只适用于本次任务范围。', 'Fold one delegation boundary at a time, keep task and acceptance fixed, and inspect regressions before deciding. Configuration findings apply to this task scope.')}</p><a href="https://claude.com/resources/articles/building-agents-when-to-fold-subagents-into-your-main-agent-loop" target="_blank" rel="noreferrer">When to fold subagents into your main agent loop</a> · <a href="https://code.claude.com/docs/en/agent-teams" target="_blank" rel="noreferrer">Agent teams</a></details>
     </section>}
-  </main>;
+  </section>;
 }

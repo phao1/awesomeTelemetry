@@ -1463,6 +1463,24 @@ local guards, foreground marking and no-store apply. The v1 route is unchanged.
 
 ## Task workbench read APIs (2026-10-25)
 
+### Evidence-backed architecture diagnosis (2026-10-29)
+
+`GET /api/tasks/:id/architecture-diagnosis?member=all` follows
+[architecture-diagnosis.md](architecture-diagnosis.md) AD-001..003. Optional
+numeric query keys are exactly ArchitectureThresholds; duplicates/unknowns and
+out-of-range values return BAD_REQUEST. Response is ArchitectureDiagnosisReport
+from `src/core/architecture-diagnosis-types.ts`, <=512KiB. One explicit owned
+analysis, no-store, loopback Host/Origin guard; no collection or execution.
+Missing scope returns SESSION_NOT_FOUND; invalid membership returns BAD_REQUEST;
+busy/changed source reports a bounded ApiError with reason; unavailable/aborted
+analysis uses 503. Original deletion immediately emits a metadata-only existing
+`trace_links_changed` hint (empty sessionKeys, exact proxyIds) to clear derived
+conclusions without body refetch. Body-backed evidence remains guarded before
+and after asynchronous work. Imported evidence unsupported by the collector is
+explicitly unavailable, not promoted from experiment driver declarations.
+
+### Existing task reader
+
 The optional `structure=true`, inclusive UTC `from`/`to`, and fixed-window
 `GET /api/tasks/:id/timeline?member=&window=` follow [task-process.md](task-process.md)
 TP-001..003. Ordinary slim reads remain compatible; no source/body IO in timeline.
@@ -1475,3 +1493,22 @@ TP-001..003. Ordinary slim reads remain compatible; no source/body IO in timelin
 - Every task route is no-store and uses the existing unified ApiError envelope. Query sizes and source counts are bounded. Runtime API types are TaskPage, TaskContext and TaskRecordPage in the data-model task section.
 
 `GET /api/monitoring` returns `{ enabled: boolean, state: idle|starting|running|stopping }`; `PUT /api/monitoring` with `{ enabled: boolean }` serializes shared native listener transitions. Stop waits for watcher cleanup and automatic scans; viewing tasks and reading evidence never invokes these mutations. Both routes are loopback-only and no-store. Configuration persistence and current runtime state are separate.
+
+## Agent boundary evaluation (2026-10-29)
+
+[agent-folding.md](agent-folding.md) AF-001..005 defines canonical portable
+project/plan/evidence DTOs. All /api/agent-folding/* routes share loopback Host /
+Origin and foreground guards, no-store and ApiError. GET /example explicitly
+loads the pinned, licensed official recordings (not new model execution). GET
+/status returns FoldingProviderStatus booleans/model name, never credentials.
+GET /tasks/:id?member=all reads bounded retained native evidence and creates a
+candidate inventory, never eval grades; member follows existing task scope.
+POST /smoke accepts only {} and starts the fixed unscored fictional local
+fixture, one owned cancellable job with45s server/50s browser ceiling. It cannot
+execute a supplied plan or call a paid model. POST /artifacts accepts only
+{project:FoldingProject} <=8MiB and returns FoldingArtifact[] as inert reviewable
+texts, without file/path/URL execution. Real and external execution are explicit
+CLI only; portable imported provenance is downgraded to user-reported.
+No background scans/body fan-out/paid requests on viewing, importing, analysis,
+export or replay. Missing native scope, changing/deleted evidence, capacity and
+malformed inputs stay visible; a source claim is not execution attestation.

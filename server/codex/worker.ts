@@ -7,7 +7,7 @@ const input = workerData as { source: CodexSource; selected?: number; window?: C
 if (parentPort !== null) {
   const port = parentPort;
   void projectCodex(input.source, input.selected, undefined, input.window).then(result => {
-    if (Buffer.byteLength(JSON.stringify(result)) > 1024 * 1024) throw new CodexInspectionError('CODEX_INSPECTION_LIMIT');
+    if (Buffer.byteLength(JSON.stringify(result)) > (input.window?.diagnosis ? 4 : 1) * 1024 * 1024) throw new CodexInspectionError('CODEX_INSPECTION_LIMIT');
     port.postMessage({ result });
   }).catch((error: unknown) => port.postMessage({ error: error instanceof CodexInspectionError ? error.code : 'CODEX_INSPECTION_FAILED' }));
 }

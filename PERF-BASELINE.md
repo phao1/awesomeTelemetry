@@ -1795,3 +1795,57 @@ Local evidence (not committed private/generated artifacts):
 `.local-runtime/team-experiment-browser-fixture-evidence.json`,
 `.local-runtime/capacity-delay-evidence/manifest.json`; final forwarding report
 `capture-ab-2026-10-28T16-29-42.150Z-29986.json`.
+
+## 2026-10-29 — Evidence-backed task architecture diagnosis
+
+Post-M12 M8/M9/M10 additive work on codex/agent-team-observability, base7b0a4d5.
+Scope implements architecture-diagnosis REQ-001..004 / AD-001..003; no database
+migration, new runtime dependency, automatic acquisition or upstream execution.
+Verification used a clean HEAD archive plus the32 scoped changed/new files;
+unrelated watcher, bundle-test and trace-links-test drafts were excluded and
+preserved. The forwarding harness reads the original repository HEAD metadata,
+while its report fingerprints the actual built working-tree artifacts.
+
+Typecheck, ESLint and production build passed. Full regression:336 files,
+4051 passed /1 existing conditional SQLCipher skip (236.82s). After a CSS-only
+narrow-layout adjustment, all6 relevant component/style suites (67 tests) and
+the production build passed again. No source rule/assertion or NFR threshold was
+weakened. ESLint now excludes the ignored app-owned runtime data directory,
+including generated experiment workspaces, while retaining all source checks.
+
+All9 perf:check diagnostics completed. Synthetic524-session/73588-event fixture:
+listSessions500 median0.543ms; worst9590-event slim14.724ms (<60ms hard budget);
+event body0.008ms; proxy list50 1.227ms. Overview cold71.83ms/cache0.473ms;
+Mission cold0.87ms/cache0.024ms (empty synthetic fixture, not populated-dashboard
+certification). Query plans retain indexes and no temp B-tree. Source-file stats
+are explicitly N/A without a real config; the historical15ms slim alarm and
+Vite advisory500kB uncompressed chunk warning are not universal certifications.
+
+Actual loopback forwarding A/B,100 warm paired samples/profile,concurrency4:
+HTTP extraE2E P95=6.199ms, HTTPS CONNECT=12.422ms, near2MiB=5.180ms; event-loop
+P99=2.077/2.171/2.234ms, maxima16.261/13.001/7.492ms. Each profile persisted104
+captures and verified208 originals. All unchanged20ms/50ms hard gates passed.
+Report capture-ab-2026-10-29T03-33-10.215Z-48204.json. This remains controlled
+forwarding, not a30-minute soak, all-platform or real-model performance claim.
+
+New analysis budgets:400 native metadata/64 bodies64KiB each/8 captures/32 logical
+calls and handoffs/512 refs/64 findings/512KiB report; WS64KiB request+response per
+call,3MiB accumulated projection plus4MiB worker-envelope ceiling. One shared WS
+worker pass per connection; explicit caller cancellation, server45s/browser50s,
+late suppression and source-change/deletion guards. Positive and benign controls
+exercise actual SQLite native handoffs, HTTP originals and WS worker projection;
+not hand-authored driver labels promoted into native evidence.
+
+Built UI verified in both task reader and experiment real-task entry. The user's
+retained21-member task has14664 events: an explicit read examined64 native bodies,
+0 associated HTTP/WS captures, and reported all3 categories insufficient, with
+14600 omitted and missing receiver coverage visible. Readonly API returned200
+in284.4ms during regression work. This observation does not prove absence of
+context/tool/handoff issues. Exact evidence jumps, rule findings, deadline and
+invalidation behavior are covered by component and real HTTP/worker tests. No
+raw private payloads were committed. Final runtime monitoring=false/idle;
+proxy and Frida running=false/starting=false.
+
+Local-only evidence: .local-runtime/architecture-{build,full-tests,layout-tests,
+perf}.log, architecture-perf-report.json, architecture-real-smoke.json,
+architecture-diagnosis-verification.json and architecture-diagnosis-preview.png.

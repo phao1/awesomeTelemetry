@@ -71,7 +71,10 @@ describe('CB-001..005 real capture bundle routes', () => {
     const list = await promisify(execFile)('tar', ['-tf', archive]);
     expect(list.stdout.trim().split('\n')).toEqual(['manifest.json', 'evidence.json', 'README.txt', 'originals/request.body', 'originals/response.body', 'receipt.json']);
     const extracted = join(f.directory, 'extracted'); await mkdir(extracted); await promisify(execFile)('tar', ['-xf', archive, '-C', extracted]);
-    expect(await readFile(join(extracted, 'originals/request.body'))).toEqual(f.requestBytes); expect(await readFile(join(extracted, 'originals/response.body'))).toEqual(f.responseBytes);
+    // Compare the complete extracted bytes, without generic object traversal
+    // of millions of Buffer indices in the DOM test environment.
+    expect((await readFile(join(extracted, 'originals/request.body'))).equals(f.requestBytes)).toBe(true);
+    expect((await readFile(join(extracted, 'originals/response.body'))).equals(f.responseBytes)).toBe(true);
     expect(JSON.parse(await readFile(join(extracted, 'manifest.json'), 'utf8'))).toEqual(plan);
     const receipt = JSON.parse(await readFile(join(extracted, 'receipt.json'), 'utf8')) as CaptureBundleReceipt;
     expect(receipt.integrity).toBe('verified_in_transfer'); expect(receipt.revision).toBe(plan.revision);

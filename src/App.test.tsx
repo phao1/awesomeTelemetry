@@ -940,7 +940,8 @@ describe('team 视图入口 + URL restore + SSE（§7.3 / §7.8）', () => {
         await import('./components/team-experiment/TeamExperimentCenter.js');
         await Promise.resolve();
       });
-      expect(container.querySelector('.team-exp-center')).not.toBeNull();
+      expect(container.querySelector('.agent-folding-workbench')).not.toBeNull();
+      expect(container.querySelector('.team-exp-center')).toBeNull();
       expect(container.querySelector('.team-shell')).toBeNull();
       expect(window.location.hash).toMatch(/^#\/team-experiment(?:\?|$)/);
       const paths = vi.mocked(fetch).mock.calls.map(([path]) => String(path));

@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createTeamExperimentDemo } from '../../core/team-experiment-demo.js';
 import { validateTeamExperimentPlan, validateTeamExperimentReport } from '../../core/team-experiment-validation.js';
-import { TeamExperimentCenter } from './TeamExperimentCenter.js';
+import { TeamExperimentCenter, TeamModeExperimentAdvanced as Advanced } from './TeamExperimentCenter.js';
 
 let host: HTMLDivElement, root: Root;
 beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); vi.stubGlobal('fetch', vi.fn()); });
@@ -22,7 +22,7 @@ function change(input: HTMLInputElement | HTMLTextAreaElement, value: string): v
 }
 
 it('opens structured configuration without executing a model or fetching', () => {
-  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  act(() => root.render(<Advanced locale="en"/>));
   expect(host.textContent).toContain('Start with a synthetic scenario');
   expect(host.querySelectorAll('textarea')).toHaveLength(4);
   expect(host.textContent).toContain('Independent evaluator argv');
@@ -30,8 +30,20 @@ it('opens structured configuration without executing a model or fetching', () =>
   expect(fetch).not.toHaveBeenCalled();
 });
 
+it('keeps real telemetry analysis separate from illustrative reports and loads only metadata at its explicit entry', async () => {
+  vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ items: [{ id: 'collected:actual', origin: 'collected', title: 'Actual retained task', provider: 'codex', memberCount: 3 }], total: 1, offset: 0, limit: 100, hasMore: false }), { status: 200 }));
+  act(() => root.render(<Advanced locale="en"/>));
+  act(() => button('Subagent parallel gains').click()); expect(fetch).not.toHaveBeenCalled();
+  await act(async () => { button('Analyze real task telemetry').click(); for (let i = 0; i < 12; i++) await Promise.resolve(); });
+  expect(fetch).toHaveBeenCalledTimes(1); expect(String(vi.mocked(fetch).mock.calls[0]![0])).toContain('/api/tasks?origin=collected&limit=100');
+  const selector = host.querySelector<HTMLSelectElement>('.architecture-real-controls select')!;
+  act(() => { selector.value = 'collected:actual'; selector.dispatchEvent(new Event('change', { bubbles: true })); });
+  expect(host.textContent).toContain('do not automatically become verified evidence'); expect(button('Analyze split and merge')).toBeDefined(); expect(fetch).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain('SYNTHETIC');
+});
+
 it('loads all four scenarios, shows synthetic recommendation and retains locale without IO', () => {
-  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  act(() => root.render(<Advanced locale="en"/>));
   for (const scenario of ['Single loop fits better', 'Subagent parallel gains', 'Team acceptance gains', 'Insufficient evidence']) {
     act(() => button(scenario).click());
     expect(host.textContent).toContain('SYNTHETIC');
@@ -39,12 +51,12 @@ it('loads all four scenarios, shows synthetic recommendation and retains locale 
     expect(host.textContent).toContain('Corrected tokens');
     expect(host.textContent).toContain('Per-case comparison');
   }
-  act(() => root.render(<TeamExperimentCenter locale="zh"/>));
+  act(() => root.render(<Advanced locale="zh"/>));
   expect(host.textContent).toContain('模拟结果'); expect(fetch).not.toHaveBeenCalled();
 });
 
 it('imports a local report with the actual FileReader and rejects malformed input', async () => {
-  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  act(() => root.render(<Advanced locale="en"/>));
   const report = createTeamExperimentDemo('subagents_win'); report.plan.name = 'Imported task comparison';
   await importFile(new File([JSON.stringify(report)], 'trial.json', { type: 'application/json' }));
   expect(host.textContent).toContain('Imported task comparison');
@@ -58,14 +70,14 @@ it('exports every report field and reimports the same Blob through FileReader', 
   let emitted: Blob | undefined, filename = '';
   vi.stubGlobal('URL', class extends URL { static override createObjectURL(blob: Blob) { emitted = blob; return 'blob:team-report'; } static override revokeObjectURL = vi.fn(); });
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { filename = this.download; });
-  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  act(() => root.render(<Advanced locale="en"/>));
   act(() => button('Team acceptance gains').click());
   act(() => button('Export report').click());
   expect(filename).toBe('team-experiment-report.json');
   let raw: unknown;
   await act(async () => { raw = JSON.parse(await read(emitted!)) as unknown; });
   expect(validateTeamExperimentReport(raw)).toEqual(createTeamExperimentDemo('team_quality'));
-  act(() => root.render(<TeamExperimentCenter key="reimport" locale="en"/>));
+  act(() => root.render(<Advanced key="reimport" locale="en"/>));
   await importFile(new File([emitted!], filename));
   expect(host.textContent).toContain('模拟 · team_quality');
   expect(host.querySelectorAll('.team-exp-variant-lanes')).toHaveLength(3);
@@ -76,7 +88,7 @@ it('exports an editable executable plan retaining distinct prompts and argv', as
   let emitted: Blob | undefined;
   vi.stubGlobal('URL', class extends URL { static override createObjectURL(blob: Blob) { emitted = blob; return 'blob:team-plan'; } static override revokeObjectURL = vi.fn(); });
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  act(() => root.render(<Advanced locale="en"/>));
   const prompts = [...host.querySelectorAll('textarea')];
   act(() => { change(prompts[1]!, 'Keep all work in one context.'); change(prompts[2]!, 'Delegate independent evidence checks.'); });
   act(() => button('Validate and export real plan').click());
@@ -92,7 +104,7 @@ it('exports an editable executable plan retaining distinct prompts and argv', as
 it('runs only the fixed fixture on explicit action with the bounded non-executable DTO', async () => {
   const report = createTeamExperimentDemo('single_wins');
   vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(report), { status: 200 }));
-  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  act(() => root.render(<Advanced locale="en"/>));
   await act(async () => { button('Run built-in paired fixture (6 trials)').click(); await new Promise(resolve => setTimeout(resolve, 0)); });
   expect(fetch).toHaveBeenCalledTimes(1);
   const [url, options] = vi.mocked(fetch).mock.calls[0]!;
@@ -107,7 +119,7 @@ it('runs only the fixed fixture on explicit action with the bounded non-executab
 it('ignores late cancelled fixture results after the user chooses another scenario', async () => {
   let resolveRequest!: (value: Response) => void;
   vi.mocked(fetch).mockImplementation(() => new Promise(resolve => { resolveRequest = resolve; }));
-  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  act(() => root.render(<Advanced locale="en"/>));
   act(() => button('Run built-in paired fixture (6 trials)').click());
   const signal = vi.mocked(fetch).mock.calls[0]![1]!.signal as AbortSignal;
   act(() => button('Subagent parallel gains').click());
@@ -119,7 +131,7 @@ it('ignores late cancelled fixture results after the user chooses another scenar
 
 it('aborts an owned fixture when the view unmounts', () => {
   vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
-  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  act(() => root.render(<Advanced locale="en"/>));
   act(() => button('Run built-in paired fixture (6 trials)').click());
   const signal = vi.mocked(fetch).mock.calls[0]![1]!.signal as AbortSignal;
   act(() => root.render(<div/>));
@@ -127,7 +139,7 @@ it('aborts an owned fixture when the view unmounts', () => {
 });
 
 it('links an illustrative recommendation to the exact retained collaboration event', () => {
-  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  act(() => root.render(<Advanced locale="en"/>));
   act(() => button('Subagent parallel gains').click());
   const locate = button('Locate recommendation evidence');
   expect(locate).toBeDefined();
@@ -139,7 +151,7 @@ it('links an illustrative recommendation to the exact retained collaboration eve
 });
 
 it('rejects over-limit files before any read or execution', async () => {
-  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  act(() => root.render(<Advanced locale="en"/>));
   const file = new File(['{}'], 'large.json'); Object.defineProperty(file, 'size', { value: 16 * 1024 * 1024 + 1 });
   const readSpy = vi.spyOn(FileReader.prototype, 'readAsText');
   await importFile(file);
@@ -162,7 +174,7 @@ it('mounts at most one selected trial and 100 acceptance rows for a 30-trial by 
     return trial;
   })).flat();
   expect(validateTeamExperimentReport(report).trials).toHaveLength(30);
-  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  act(() => root.render(<Advanced locale="en"/>));
   await importFile(new File([JSON.stringify(report)], 'large-valid-report.json'));
   expect(host.querySelector('[role=alert]')).toBeNull();
   expect(host.querySelectorAll('.team-exp-case-detail')).toHaveLength(0);
@@ -180,5 +192,17 @@ it('mounts at most one selected trial and 100 acceptance rows for a 30-trial by 
   await act(async () => { details.querySelector('summary')!.click(); await new Promise(resolve => setTimeout(resolve, 5)); });
   expect(host.querySelectorAll('.team-exp-case-detail')).toHaveLength(0);
   expect(host.querySelectorAll('.team-exp-selected-trial')).toHaveLength(0);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+
+it('makes boundary evaluation primary and keeps mode reports explicitly advanced', async () => {
+  act(() => root.render(<TeamExperimentCenter locale="en"/>));
+  expect(host.querySelector('h1')!.textContent).toBe('Agent boundary evaluation');
+  expect(host.textContent).toContain('Load official recorded example');
+  expect(host.querySelector('.team-exp-center')).toBeNull();
+  const advanced = host.querySelector<HTMLDetailsElement>('.af-advanced')!;
+  await act(async () => { advanced.open = true; advanced.dispatchEvent(new Event('toggle')); await new Promise(resolve => setTimeout(resolve, 5)); });
+  expect(host.querySelector('.team-exp-center')).not.toBeNull();
   expect(fetch).not.toHaveBeenCalled();
 });

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "kind": "agent-folding-plan",
+  "title": "Support desk: fold returns only",
+  "adapter": "support-desk",
+  "provider": "fixture",
+  "model": null,
+  "boundaryId": "returns",
+  "operation": "fold",
+  "targetAgentIds": ["returns"],
+  "caseIds": ["t04", "t05", "t06", "t13", "t14", "t15"],
+  "repetitions": 3,
+  "schedule": "sequential",
+  "budgets": { "maxCallsPerCase": 48, "maxOutputTokens": 2048, "maxInputChars": 250000, "maxTotalTokensPerCase": 200000, "timeoutMs": 30000, "maxToolBatch": 8 },
+  "external": null
+}

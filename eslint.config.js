@@ -8,6 +8,8 @@ export default tseslint.config(
       'dist', 'server-dist', 'dist-binary', 'src/generated', 'node_modules', 'coverage', '.codex',
       // 临时/工具目录（非项目源码）
       '.local-runtime', '.codex-tmp', '.tmp-ppt-*', '.codeartsdoer', '.arts', 'reports', 'tempspec0806',
+      // App-owned telemetry, imported artifacts and generated experiment workspaces.
+      'awesome-telemetry-data',
     ],
   },
 

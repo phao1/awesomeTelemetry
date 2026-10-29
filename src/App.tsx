@@ -401,6 +401,7 @@ export default function App() {
     });
     listen('proxy_request', (event) => {
       const update = JSON.parse((event as MessageEvent).data) as BusEvents['proxy_request'];
+      setTraceLinksVersion(version => version + 1);
       if (update.item !== undefined) startTransition(() => setProxyLiveUpdates(previous => [...previous.slice(-49), update]));
     });
     listen('hook_events_changed', event => {
@@ -410,7 +411,7 @@ export default function App() {
       } catch { return; /* malformed hints never trigger IO */ }
     });
     listen('trace_links_changed', () => {
-      // Relation-only invalidation: no source-detail/body refetch and no polling.
+      // Metadata/body-availability hint: invalidate conclusions without body IO.
       setTraceLinksVersion(version => version + 1);
     });
     listen('sessions_changed', (event) => {
@@ -469,6 +470,7 @@ export default function App() {
     // §7.8 team_runs_changed → 本地 patch/reconnect（TeamShell 内部处理增量）
     listen('team_runs_changed', event => {
       const data = JSON.parse(event.data) as { runIds: string[] };
+      setTraceLinksVersion(version => version + 1);
       setTaskChanges(previous => ({ version: previous.version + 1, keys: [], runIds: data.runIds }));
       setTeamInvalidateKey((k) => k + 1);
     });
@@ -793,11 +795,11 @@ export default function App() {
           team 视图保留用于团队任务详情：点击团队任务 → switchView('team')。
           D15：Sessions(任务) | Agents | ...，AppShell 不含 team */}
 
-      {view === 'task' && <ErrorBoundary label={taskCopy(locale).tasks}><TaskWorkbench locale={locale} route={taskRoute} onRoute={setTaskRoute} changes={taskChanges} providerPreset={providerFilter[0] ?? ''} onProviderPresetChange={value => setProviderFilter(value ? [value] : [])}
+      {view === 'task' && <ErrorBoundary label={taskCopy(locale).tasks}><TaskWorkbench locale={locale} route={taskRoute} onRoute={setTaskRoute} changes={taskChanges} diagnosisInvalidateKey={traceLinksVersion} providerPreset={providerFilter[0] ?? ''} onProviderPresetChange={value => setProviderFilter(value ? [value] : [])}
         onIntake={() => { setIntakeChannel(taskRoute.origin === 'imported' ? 'import' : 'native'); switchView('intake'); }}
         onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} /></ErrorBoundary>}
       {view === 'benchmark' && <ErrorBoundary label={locale === 'zh' ? '评测中心' : 'Benchmarks'}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><BenchmarkCenter locale={locale}/></Suspense></ErrorBoundary>}
-      {view === 'team-experiment' && <ErrorBoundary label={locale === 'zh' ? '任务模式实验' : 'Task mode experiments'}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><TeamExperimentCenter locale={locale}/></Suspense></ErrorBoundary>}
+      {view === 'team-experiment' && <ErrorBoundary label={locale === 'zh' ? '任务模式实验' : 'Task mode experiments'}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><TeamExperimentCenter locale={locale} diagnosisInvalidateKey={traceLinksVersion}/></Suspense></ErrorBoundary>}
       {view === 'intake' && <ErrorBoundary label={taskCopy(locale).intake}><DataIntake key={intakeChannel} locale={locale} initialChannel={intakeChannel}
         onConfigure={() => setSettingsOpen(true)} onTasks={() => switchView('task')}
         proxy={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates} latestHookId={latestHookId}

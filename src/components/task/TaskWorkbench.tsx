@@ -14,12 +14,14 @@ const TaskEvidence = lazy(() => import('./TaskEvidence.js').then(module => ({ de
 import { ProcessLedger, type ProcessLedgerHandle } from './ProcessLedger.js';
 const TaskTimeNavigator = lazy(() => import('./TaskTimeNavigator.js').then(module => ({ default: module.TaskTimeNavigator })));
 import type { TaskTimeline } from '../../core/task-types.js';
+import { ArchitectureDiagnosisPanel } from '../diagnosis/ArchitectureDiagnosisPanel.js';
 
 export interface TaskChanges { version: number; keys: string[]; runIds: string[]; reset?: boolean }
 export interface TaskWorkbenchProps {
   providerPreset?: ProviderKey | ''; onProviderPresetChange?: (provider: ProviderKey | '') => void;
   locale: Locale; route: TaskRoute; onRoute: (route: TaskRoute) => void; changes: TaskChanges;
   onIntake: () => void; onOpenRequest: (id: number) => void;
+  diagnosisInvalidateKey?: number;
 }
 const recordTitle = (record: TaskRecord) => record.event ? record.event.title || record.event.tool || record.event.kind : record.importedTurn?.turnId ?? `${record.importedTurn?.model ?? 'TraceLog'} · #${record.importedTurn?.sequence ?? ''}`;
 const recordTime = (record: TaskRecord) => record.event?.startedAt ?? record.importedTurn?.requestTime ?? null;
@@ -48,7 +50,7 @@ function TaskList({ items, selected, locale, onSelect }: { items: TaskSummary[];
 }
 
 /** Task-scoped reading state. App retains global navigation, locale, runtime and SSE ownership. */
-export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpenRequest, providerPreset, onProviderPresetChange }: TaskWorkbenchProps): React.JSX.Element {
+export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpenRequest, providerPreset, onProviderPresetChange, diagnosisInvalidateKey = 0 }: TaskWorkbenchProps): React.JSX.Element {
   const c = copy(locale), [q, setQ] = useState(''), [localProvider, setLocalProvider] = useState(''), [range, setRange] = useState<'all' | '7d' | '30d' | 'today'>('all');
   const provider = providerPreset ?? localProvider;
   const setProvider = (value: string) => { if (onProviderPresetChange) onProviderPresetChange(value as ProviderKey | ''); else setLocalProvider(value); };
@@ -86,20 +88,22 @@ export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpe
       {context.error && <div className="task-empty" role="alert"><h2>{context.error}</h2><button type="button" className="btn" onClick={context.retry}>{c.retry}</button></div>}
       {!route.task && <div className="task-empty"><div className="task-empty-symbol">⌘</div><span className="task-eyebrow">TASK OBSERVABILITY</span><h1>{c.summaryTitle}</h1><p>{c.chooseHint}</p><div className="task-empty-flow"><span>01 · {c.tasks}</span><span>02 · {c.trajectory}</span><span>03 · {c.inspect}</span></div><button type="button" className="btn ui-btn-primary" onClick={onIntake}>{c.openIntake} ↗</button></div>}
       {context.value && <TaskProcess key={context.value.task.id} context={context.value} route={resolvedRoute} onRoute={onRoute} locale={locale} changes={changes}
-        onRefreshContext={context.retry} onOpenRequest={onOpenRequest} onNotice={setNotice} />}
+        diagnosisInvalidateKey={diagnosisInvalidateKey} onRefreshContext={context.retry} onOpenRequest={onOpenRequest} onNotice={setNotice} />}
       {notice && <div className="task-toast" role="status">{notice}</div>}
     </main>
   </div>;
 }
 
-function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContext, onOpenRequest, onNotice }: {
+function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContext, onOpenRequest, onNotice, diagnosisInvalidateKey }: {
   context: TaskContext; route: TaskRoute; onRoute: (route: TaskRoute) => void; locale: Locale; changes: TaskChanges;
   onRefreshContext: () => void; onOpenRequest: (id: number) => void; onNotice: (value: string) => void;
+  diagnosisInvalidateKey: number;
 }): React.JSX.Element {
   const c = copy(locale), [membersOpen, setMembersOpen] = useState(false), [q, setQ] = useState(route.q ?? ''), [search, setSearch] = useState(route.q ?? ''), [errors, setErrors] = useState(route.errors === true);
   const [paging, setPaging] = useState<{ offset?: number; window?: string }>({}), [revision, setRevision] = useState(0), [stale, setStale] = useState(false), [playing, setPlaying] = useState(false), [following, setFollowing] = useState(false);
   const [savedRecord, setSavedRecord] = useState<TaskRecord | null>(null), [timeRange, setTimeRange] = useState<[number, number] | null>(() => route.from && route.to ? [Date.parse(route.from), Date.parse(route.to)] : null);
   const [showSystem, setShowSystem] = useState(false);
+  const [diagnosisRevision, setDiagnosisRevision] = useState(0);
   const seenChanges = useRef(changes.version);
   const resetVersion = useRef(0);
   if (changes.reset && changes.version > resetVersion.current) resetVersion.current = changes.version;
@@ -170,7 +174,14 @@ function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContex
   const list = useVirtualizer({ count: route.mode === 'trajectory' ? 0 : visible.length, getScrollElement: () => scrollElement, estimateSize: () => rowHeight, overscan: 5, getItemKey: index => visible[index]!.id, scrollMargin: recordOffset, scrollPaddingStart: stickySize.total });
   useLayoutEffect(() => { list.measure(); }, [list, rowHeight]);
   useLayoutEffect(() => {
-    if (scrollElement && scroller.current) setRecordOffset(scroller.current.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top + scrollElement.scrollTop);
+    const node = scroller.current;
+    if (!scrollElement || !node) return;
+    const measure = () => { const offset = node.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top + scrollElement.scrollTop; setRecordOffset(previous => Math.abs(previous - offset) < 0.5 ? previous : offset); };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(scrollElement); observer?.observe(node); const ledger = node.closest('.task-ledger'); if (ledger) observer?.observe(ledger);
+    scrollElement.addEventListener('scroll', measure, { passive: true });
+    return () => { observer?.disconnect(); scrollElement.removeEventListener('scroll', measure); };
   }, [scrollElement, route.mode, page, stickySize.total, membersOpen, stale, records.loading]);
   useEffect(() => {
     if (!page || route.mode === 'trajectory') return;
@@ -183,6 +194,7 @@ function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContex
     seenChanges.current = changes.version;
     if (changes.reset || changes.keys.some(key => context.members.some(member => member.sessionKey === key)) || context.task.runId && changes.runIds.includes(context.task.runId)) {
       setStale(true);
+      setDiagnosisRevision(value => value + 1);
     }
   }, [changes, context]);
   const refresh = useCallback(() => { setPlaying(false); setPaging({}); setAnchor(null); setRevision(value => value + 1); setStale(false); userScroll.current = false; onRefreshContext(); }, [onRefreshContext]);
@@ -236,6 +248,15 @@ function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContex
         onSelect={item => { setPlaying(false); setFollowing(false); userScroll.current = false; selectRecord(item); if (route.mode === 'trajectory') ledgerRef.current?.locate(item.id); else { const index = visible.findIndex(value => value.id === item.id); if (index >= 0) list.scrollToIndex(index, { align: 'start' }); } }} onRangeChange={changeTimeRange} /></Suspense>
     </div>
     <div className="task-process-body"><section className="task-ledger">
+      {displayContext.task.origin === 'collected' && <ArchitectureDiagnosisPanel taskId={displayContext.task.id} member={route.member} locale={locale}
+        invalidateKey={JSON.stringify([displayContext.task, displayContext.members, page?.window, revision, diagnosisRevision, diagnosisInvalidateKey])}
+        onLocate={ref => {
+          if (ref.source !== 'native_event') { if (ref.captureId !== null) onOpenRequest(ref.captureId); return; }
+          if (!ref.sessionKey || !ref.eventId) return;
+          userScroll.current = false; setFollowing(false);
+          const id = `${ref.sessionKey}:event:${ref.eventId}`; openAnchor(id); ledgerRef.current?.locate(id);
+        }}
+      />}
       {stale && <div className="task-new-records" role="status"><span>● {c.newer}</span><button type="button" onClick={refresh}>{c.update} ↻</button></div>}
       {([...context.warnings, ...(page?.warnings ?? [])].some(warning => warning !== 'origin_unconfirmed')) && <details className="task-warning"><summary>{c.warnings}</summary><span className="mono">{[...new Set([...context.warnings, ...(page?.warnings ?? [])])].join(' · ')}</span></details>}
       {records.loading && <div className="task-loading" role="status">{c.loadingScope}</div>}{records.error && <div className="task-inline-state" role="alert"><p>{records.error}</p><button type="button" className="btn" onClick={() => { setAnchor(null); onRoute({ ...route, event: null }); records.retry(); }}>{c.retry}</button></div>}

@@ -10,7 +10,8 @@
     "telemetry-team-experiment": "./bin/team-experiment.js",
     "telemetry-benchmark": "./bin/benchmark.js",
     "awesome-telemetry": "./bin/agent-observe.js",
-    "agent-observe": "./bin/agent-observe.js"
+    "agent-observe": "./bin/agent-observe.js",
+    "telemetry-agent-folding": "./bin/agent-folding.js"
   },
   "scripts": {
     "team:experiment": "node bin/team-experiment.js",
@@ -27,7 +28,8 @@
     "pack:binary": "node scripts/pack-binary.mjs",
     "gen:samples": "node scripts/generate-local-samples.mjs",
     "prepack": "node scripts/verify-package.mjs",
-    "pack:smoke": "node scripts/smoke-packed-install.mjs"
+    "pack:smoke": "node scripts/smoke-packed-install.mjs",
+    "agent:folding": "node bin/agent-folding.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
@@ -71,7 +73,11 @@
     "scripts/trae-extract-key.py",
     "scripts/frida-chat-monitor-v2.js",
     "scripts/frida-check-module.js",
-    "README.zh-CN.md"
+    "README.zh-CN.md",
+    "bin/agent-folding.js",
+    "config/agent-folding.example.json",
+    "docs/agent-folding.md",
+    "data/agent-folding/**"
   ],
   "exports": {
     "./package.json": "./package.json"

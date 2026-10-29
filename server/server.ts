@@ -19,6 +19,11 @@ import { listImports, listImportTurns } from './storage/trace-import.js';
 import { ClaudeHookControl } from './hooks/claude-control.js';
 import { ClaudeHookReceiver } from './hooks/claude-receiver.js';
 import { registerClaudeHookRoutes } from './http/claude-hook-routes.js';
+import { createArchitectureDiagnosisCollector, type ArchitectureCaptureSource } from './architecture-diagnosis/collector.js';
+import { registerArchitectureDiagnosisRoutes } from './http/architecture-diagnosis-routes.js';
+import { registerAgentFoldingRoutes } from './http/agent-folding-routes.js';
+import { nativeFoldingProject } from './agent-folding/native.js';
+import { analyzeArchitectureDiagnosis } from '../src/core/architecture-diagnosis-analysis.js';
 
 import type { Database } from 'better-sqlite3';
 
@@ -1221,6 +1226,8 @@ export function createAgentObservabilityServer(
     const result = await proxyRuntime.withStoppedMonitor(async () => {
       try {
         const queue = new OriginalDeletionQueue(db, await getFileStore()), job = await queue.request(id, expected);
+        // Invalidate body-derived conclusions as soon as deletion intent is durable.
+        eventBus.emit('trace_links_changed', { sessionKeys: [], proxyIds: [id], truncated: false });
         return await queue.run(job.id);
       } catch (error) {
         if (error instanceof OriginalDeletionError && error.code === 'CAPTURE_DELETE_LIMIT') throw new HttpError(503, 'CAPTURE_DELETE_LIMIT', 'Retained deletion-job capacity reached; no new intent was recorded');
@@ -1233,16 +1240,34 @@ export function createAgentObservabilityServer(
     sendJson(res, 200, result, req);
   });
 
-  const readCaptureAnalysis = async (id: number): Promise<ProxyProtocolAnalysis> => {
+  const readCaptureAnalysisSource = async (id: number, signal?: AbortSignal): Promise<ArchitectureCaptureSource> => {
+    signal?.throwIfAborted();
     if (getOriginalDeletionForProxy(db, id) !== null) throw new HttpError(409, 'CAPTURE_ORIGINALS_DELETED', 'Original bodies were explicitly deleted; retained metadata is not body evidence');
     const request = getProxyRequestById(db, id)!;
     const capture = readCaptureBodies(db, id);
+    const fingerprintFor = (bodies: typeof capture): string | null => {
+      const metadata = cachedStmt(db, `SELECT request_id,method,request_format,request_headers,is_streaming,ttnet_encrypted
+        FROM proxy_requests WHERE id=?`).get(id);
+      return metadata === undefined ? null : createHash('sha256').update(JSON.stringify({ metadata,
+        request: bodies.request, response: bodies.response, responseHeaders: bodies.responseHeaders, transport: bodies.transport,
+      })).digest('hex');
+    };
+    const fingerprint = fingerprintFor(capture)!;
+    const guard = (): void => {
+      signal?.throwIfAborted();
+      if (getOriginalDeletionForProxy(db, id) !== null) throw new HttpError(409, 'CAPTURE_ORIGINALS_DELETED', 'Original bodies were explicitly deleted during analysis');
+      if (fingerprintFor(readCaptureBodies(db, id)) !== fingerprint) {
+        throw new HttpError(409, 'CODEX_SOURCE_CHANGED', 'Capture source changed during analysis; retry against current evidence');
+      }
+    };
     if (request.method === 'WS' || capture.transport?.websocket !== undefined) {
       const analysis = await analyzeProtocol({ format: 'unknown', requestBody: '', responseBody: null, streaming: false, transport: capture.transport });
       analysis.state = 'unknown'; analysis.completeness = { complete: false, omittedCount: 1, reasons: ['websocket_connection_not_model_call'] };
-      return analysis;
+      guard();
+      return { analysis, requestBody: null, fingerprint, requestComplete: false };
     }
     const reasons: string[] = [];
+    let requestComplete = false;
     const readDirection = async (direction: 'request' | 'response'): Promise<string | null> => {
       const ref = capture[direction];
       if (ref === null) {
@@ -1253,9 +1278,10 @@ export function createAgentObservabilityServer(
       const source = await readAnalysisBody(await getFileStore(), ref, 2 * 1024 * 1024, {
         allowIncomplete: true, contentEncoding: Array.isArray(encoding) ? encoding.join(',') : encoding,
       });
-      if (getOriginalDeletionForProxy(db, id) !== null) throw new HttpError(409, 'CAPTURE_ORIGINALS_DELETED', 'Original bodies were explicitly deleted during analysis');
+      guard();
       if (ref.status !== 'complete') reasons.push(direction + ':' + ref.status);
       if (!source.ok) { reasons.push(direction + ':' + source.reason); return null; }
+      if (direction === 'request') requestComplete = ref.status === 'complete';
       return source.body;
     };
     const [requestBody, responseBody] = await Promise.all([readDirection('request'), readDirection('response')]);
@@ -1263,7 +1289,7 @@ export function createAgentObservabilityServer(
       ? parseProxyRequest({ hostname: request.hostname, url: request.url, requestBody }).requestFormat ?? 'unknown'
       : request.requestFormat;
     const analysis = await analyzeProtocol({ format, requestBody: requestBody ?? '', responseBody, streaming: request.isStreaming, transport: capture.transport });
-    if (getOriginalDeletionForProxy(db, id) !== null) throw new HttpError(409, 'CAPTURE_ORIGINALS_DELETED', 'Original bodies were explicitly deleted during analysis');
+    guard();
     if (reasons.length > 0) {
       analysis.completeness.complete = false;
       analysis.completeness.reasons.push(...reasons);
@@ -1271,8 +1297,21 @@ export function createAgentObservabilityServer(
         analysis.state = 'incomplete';
       }
     }
-    return analysis;
+    return { analysis, requestBody, fingerprint, requestComplete };
   };
+  const readCaptureAnalysis = async (id: number): Promise<ProxyProtocolAnalysis> => (await readCaptureAnalysisSource(id)).analysis;
+  const architectureCollector = createArchitectureDiagnosisCollector({
+    db, loadCapture: readCaptureAnalysisSource, loadCodex: (id, signal) => codexInspector.readDiagnosis({ id }, signal),
+  });
+  const stopArchitectureDiagnosis = registerArchitectureDiagnosisRoutes(router, architectureCollector);
+  const stopAgentFolding = registerAgentFoldingRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'agent-folding-runs'), {
+    loadNative: async (id, member, signal) => {
+      const input = await architectureCollector.collect(id, member, signal);
+      signal.throwIfAborted();
+      const context = getTask(db, input.taskId);
+      return nativeFoldingProject({ ...context, members: recordMembers(context, member) }, input, analyzeArchitectureDiagnosis(input));
+    },
+  });
 
   router.register('GET', '/api/proxy/requests/:id/analysis', async (req, res, params) => {
     sendJson(res, 200, await readCaptureAnalysis(captureRequestId(params.id)), req);
@@ -2205,7 +2244,7 @@ export function createAgentObservabilityServer(
     }
     const handler = (async () => {
       try {
-        if (pathname.startsWith('/api/team-experiments/') || pathname.startsWith('/api/benchmarks/') || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
+        if (pathname.startsWith('/api/agent-folding/') || pathname.startsWith('/api/team-experiments/') || pathname.startsWith('/api/benchmarks/') || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
           if (pathname.startsWith('/api/tasks') || pathname === '/api/monitoring') res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/hooks/')) res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/frida/')) res.setHeader('cache-control', 'no-store');
@@ -2308,6 +2347,8 @@ export function createAgentObservabilityServer(
       closing = true;
       stopBenchmarks();
       stopTeamExperiments();
+      stopArchitectureDiagnosis();
+      stopAgentFolding();
       pendingAutomaticScans.clear();
       for (const cleanup of ownSseClients) cleanup();
       ownSseClients.clear();

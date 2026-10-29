@@ -3335,3 +3335,18 @@ export interface TaskTimeline {
   coverage: { loadedMembers: number; totalMembers: number };
 }
 ```
+
+## Additive agent boundary evaluation DTOs (2026-10-29)
+
+The canonical types in src/core/agent-folding-types.ts implement
+[agent-folding.md](agent-folding.md) AF-001..005. FoldingProject separates agent
+inventory/boundaries, independent multi-turn cases, trial assertions, ordered
+traffic, experiment+variant+case+zero-based-repetition identity, real/source/
+synthetic/import provenance and source evidence. Per-boundary proposal and
+experimental disposition differ; human adoption notes never rewrite grades.
+Optional retained toolDefinitions preserve actual schemas; unknowns stay null.
+Explicit chainChecks/variant chainMappings retain terminal fact and logical
+replacement evidence; optional third ablation variant changes skill loading
+alone. Portable external plans may contain their own user-reported project,
+never silently replace it with a support-desk graph. No native TraceEvent or
+stored SQLite schema is changed by these additive DTOs.

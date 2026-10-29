@@ -5,6 +5,7 @@ import type { TaskContext, TaskRecord, TaskRecordPage } from '../../core/task-ty
 import { makeEvent, makeMessage } from '../trajectory/investigation-test-fixtures.js';
 import { DEFAULT_TASK_ROUTE, type TaskRoute } from '../../task-route.js';
 import { TaskWorkbench, type TaskChanges } from './TaskWorkbench.js';
+import { DEFAULT_ARCHITECTURE_THRESHOLDS } from '../../core/architecture-diagnosis-analysis.js';
 
 const task: TaskContext['task'] = { id: 'collected:main', origin: 'collected', provenanceKnown: true, rootSessionKey: 'main', runId: 'run', title: 'Investigate a task', provider: 'codex', startedAt: '2026-10-25T00:00:00.000Z', updatedAt: '2026-10-25T00:00:00.000Z', recordedStatus: 'unknown', memberCount: 2, eventCount: 2, loadedMemberCount: 2 };
 const context: TaskContext = { task, members: [{ id: 'root-agent', name: 'Main', role: 'main', sessionKey: 'main', parentId: null, detailLoaded: true, eventCount: 1 }, { id: 'child-agent', name: 'Researcher', role: 'subagent', sessionKey: 'child', parentId: 'root-agent', detailLoaded: true, eventCount: 1 }], importSession: null, warnings: [] };
@@ -281,5 +282,28 @@ describe('task context restoration', () => {
     expect(host.querySelector('.task-context-header h1')?.textContent).toBe('Second task');
     await act(async () => finish!(json(context))); await settle();
     expect(host.querySelector('.task-context-header h1')?.textContent).toBe('Second task');
+  });
+});
+
+describe('real task architecture analysis', () => {
+  it('analyzes only the selected scope on request and invalidates on relevant source hints or capture changes', async () => {
+    const original = fetch;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.includes('/architecture-diagnosis?')) { calls.push(path); return Promise.resolve(json({ version: 1, taskId: task.id, member: 'main', title: 'Bounded actual task analysis', origin: 'collected', revision: 'source-v1', analyzedAt: '2026-10-29T00:00:00.000Z', thresholds: DEFAULT_ARCHITECTURE_THRESHOLDS, coverage: { context: 'partial', tools: 'partial', handoffs: 'unavailable', nativeEvents: 2, nativeEventTotal: 2, captures: 0, logicalCalls: 0, omitted: 0, reasons: ['communication_unavailable'] }, categories: { context_bloat: 'insufficient', tool_conflict: 'insufficient', handoff_loss: 'insufficient' }, findings: [], evidence: [], limitations: [] })); }
+      return original(input, init);
+    }));
+    let notify!: (value: TaskChanges) => void, invalidate!: (value: number) => void;
+    function Harness() { const [route, setRoute] = useState<TaskRoute>({ ...DEFAULT_TASK_ROUTE, task: task.id }), [changes, setChanges] = useState<TaskChanges>({ version: 0, keys: [], runIds: [] }), [captureVersion, setCaptureVersion] = useState(0); notify = setChanges; invalidate = setCaptureVersion; return <TaskWorkbench locale="en" route={route} onRoute={setRoute} changes={changes} diagnosisInvalidateKey={captureVersion} onIntake={() => {}} onOpenRequest={() => {}}/>; }
+    act(() => root.render(<Harness/>)); await readyTimeline();
+    expect(calls.some(path => path.includes('architecture-diagnosis'))).toBe(false);
+    act(() => button('Analyze split and merge').click()); await settle(); expect(host.textContent).toContain('Bounded actual task analysis');
+    expect(calls.filter(path => path.includes('architecture-diagnosis'))).toHaveLength(1);
+    act(() => notify({ version: 1, keys: ['other'], runIds: [] })); await settle(); expect(host.textContent).toContain('Bounded actual task analysis');
+    act(() => notify({ version: 2, keys: ['main'], runIds: [] })); await settle(); expect(host.textContent).not.toContain('Bounded actual task analysis');
+    expect(calls.filter(path => path.includes('architecture-diagnosis'))).toHaveLength(1);
+    act(() => button('Analyze split and merge').click()); await settle(); expect(host.textContent).toContain('Bounded actual task analysis');
+    act(() => invalidate(1)); await settle(); expect(host.textContent).not.toContain('Bounded actual task analysis');
+    expect(calls.filter(path => path.includes('/events/'))).toHaveLength(0); expect(calls.every(path => !path.includes('/start'))).toBe(true);
   });
 });

@@ -18,6 +18,24 @@ const completed = (id: string, extra = {}) => ({ type: 'response.completed', res
   input_tokens: 100, output_tokens: 20, input_tokens_details: { cached_tokens: 40 }, output_tokens_details: { reasoning_tokens: 5 }, total_tokens: 120, ...extra } } });
 
 describe('Codex Responses per-call projection', () => {
+  it('diagnoses at most32 logical calls in one archive pass and retains call usage despite bounded body sampling', async () => {
+    const entries: Array<['request' | 'response', unknown]> = [];
+    for (let i = 0; i < 40; i++) entries.push(['request', create({ previous_response_id: i ? 'diag-' + (i - 1) : undefined })], ['response', created('diag-' + i)], ['response', completed('diag-' + i, { input_tokens: i + 100 })]);
+    let observed = 0;
+    const records = { async *[Symbol.asyncIterator]() { for await (const row of fixture(entries)) { observed += 1; yield row; } } };
+    const result = await projectCodex(source, undefined, records, { diagnosis: true, detailOnly: true });
+    expect(observed).toBe(120); expect(result.diagnosis).toMatchObject({ total: 40, complete: false, reasons: ['diagnosis_call_limit'] });
+    expect(result.diagnosis?.calls).toHaveLength(32); expect(result.diagnosis?.calls[31]?.analysis.usage.inputTokens).toBe(131);
+    expect(result.page.items).toEqual([]); expect(result.detail).toBeNull();
+  });
+  it('rechecks the semantic request size after custom-tool normalization expands the transmitted fields', async () => {
+    const request = create({ input: [{ type: 'custom_tool_call', call_id: 'custom', name: 'patch', input: 'x'.repeat(40000) }] });
+    expect(Buffer.byteLength(JSON.stringify(request))).toBeLessThan(64 * 1024);
+    const result = await projectCodex(source, undefined, fixture([['request', request], ['response', created('semantic')], ['response', completed('semantic')]]), { diagnosis: true });
+    expect(result.diagnosis?.calls[0]).toMatchObject({ requestBody: null, requestComplete: false });
+    expect(result.diagnosis?.calls[0]?.analysis.completeness.reasons).toContain('diagnosis_request_limit');
+    expect(result.diagnosis?.complete).toBe(false);
+  });
   it('projects custom tool input/output and compares only explicitly linked transmitted payloads', async () => {
     const result = await projectCodex(source, 1, fixture([
       ['request', create({ instructions: 'SYNTHETIC_SYSTEM', input: [{ type: 'message', role: 'user', content: 'x'.repeat(1000) }], tools: [{ type: 'custom', name: 'patch', format: { type: 'text' } }] })],

@@ -1,4 +1,4 @@
-import type { CodexCallDetail, CodexCallPage, CodexCallSummary, ProxyNativeUsage } from '../../src/core/trace-types.js';
+import type { CodexCallDetail, CodexCallPage, CodexCallSummary, ProxyNativeUsage, ProxyProtocolAnalysis } from '../../src/core/trace-types.js';
 import { analyzeProtocol } from '../proxy/protocol-analysis.js';
 import { normalizeRequestContext } from '../proxy/context-normalizer.js';
 import { diffContexts } from '../proxy/context-diff.js';
@@ -25,7 +25,9 @@ function updateUsage(target: Usage, value: unknown): void {
 interface Call { summary: CodexCallSummary; reasons: Set<string>; request: string | null; events: string[]; eventBytes: number; indexBytes: number }
 export const MAX_CODEX_CALLS = 4096;
 const MAX_INDEX_BYTES = 4 * 1024 * 1024;
-export interface CodexProjectionWindow { offset?: number; limit?: number; detailOnly?: boolean }
+export interface CodexProjectionWindow { offset?: number; limit?: number; detailOnly?: boolean; diagnosis?: boolean }
+export interface CodexDiagnosisCall { call: CodexCallSummary; analysis: ProxyProtocolAnalysis; requestBody: string | null; requestComplete: boolean }
+export interface CodexDiagnosisBatch { requestId: string; fingerprint: string; calls: CodexDiagnosisCall[]; total: number; complete: boolean; reasons: string[] }
 function semanticItem(value: unknown): unknown {
   const item = object(value); if (item === null) return value;
   if (item.type === 'custom_tool_call') return { ...item, type: 'function_call', arguments: item.input };
@@ -53,7 +55,7 @@ function carriesContent(value: Record<string, unknown>): boolean {
     return Array.isArray(blocks) && blocks.some(block => { const content = object(block); return typeof content?.text === 'string' && content.text !== '' || typeof content?.refusal === 'string' && content.refusal !== ''; });
   });
 }
-export interface CodexProjection { page: Omit<CodexCallPage, 'fingerprint' | 'offset' | 'limit' | 'hasMore'>; detail: Omit<CodexCallDetail, 'fingerprint' | 'native'> | null }
+export interface CodexProjection { page: Omit<CodexCallPage, 'fingerprint' | 'offset' | 'limit' | 'hasMore'>; detail: Omit<CodexCallDetail, 'fingerprint' | 'native'> | null; diagnosis?: Omit<CodexDiagnosisBatch, 'fingerprint'> }
 
 /** Only explicit source fields and ordered lanes. No network calls or SQL. */
 export async function projectCodex(source: CodexSource, selected?: number, records?: AsyncIterable<DirectedRecord>, window: CodexProjectionWindow = {}): Promise<CodexProjection> {
@@ -109,13 +111,15 @@ export async function projectCodex(source: CodexSource, selected?: number, recor
       const ms = Math.round(frame.elapsedMs), epoch = Date.parse(source.startedAt) + ms;
       if (!Number.isSafeInteger(ms) || !Number.isFinite(epoch) || Math.abs(epoch) > 8.64e15) throw new CodexInspectionError('CODEX_SOURCE_UNAVAILABLE');
       const identity = codexIdentity(source.headers, value);
-      const call: Call = { reasons: new Set(), request: selected === calls.length ? text : null, events: [], eventBytes: 0, indexBytes: 0,
+      const diagnosisSelected = window.diagnosis === true && calls.length < 32;
+      const call: Call = { reasons: new Set(), request: selected === calls.length || diagnosisSelected && Buffer.byteLength(text) <= 64 * 1024 ? text : null, events: [], eventBytes: 0, indexBytes: 0,
         summary: { sequence: calls.length, streamId: lane === '' ? null : lane, responseId: null,
           previousResponseId: identifier(value.previous_response_id), predecessorSequence: null, model: identifier(value.model),
           warmup: value.generate === false, nativeSessionId: identity.sessionId, nativeTurnId: identity.turnId,
           startedAt: new Date(epoch).toISOString(), startedMs: ms, firstContentMs: null, durationMs: null, state: 'pending',
           usage: emptyUsage(), proposedToolIds: [], returnedToolIds: [], reasons: [] } };
       if (identity.conflict) warn(call, 'native_session_conflict');
+      if (diagnosisSelected && call.request === null) warn(call, 'diagnosis_request_limit');
       if (value.previous_response_id !== undefined && call.summary.previousResponseId === null) warn(call, 'invalid_previous_response_id');
       if (call.summary.previousResponseId !== null) {
         const parents = responses.get(call.summary.previousResponseId);
@@ -158,10 +162,11 @@ export async function projectCodex(source: CodexSource, selected?: number, recor
     } else call = active.get(lane);
     if (call === undefined) { unassigned += 1; reasons.add('unassigned_response_event'); continue; }
     if ((call.summary.streamId ?? '') !== lane) { warn(call, 'response_lane_conflict'); unassigned += 1; continue; }
-    if (call.summary.sequence === selected) {
+    if (call.summary.sequence === selected || window.diagnosis === true && call.summary.sequence < 32) {
       const bytes = Buffer.byteLength(text) + 8;
       const semantic = JSON.stringify(semanticFrame(value)), semanticBytes = Buffer.byteLength(semantic) + 8;
-      if (call.eventBytes + Math.max(bytes, semanticBytes) <= MAX_FRAME && call.events.length < 8192) { call.events.push('data: ' + semantic + '\n\n'); call.eventBytes += Math.max(bytes, semanticBytes); }
+      const eventLimit = window.diagnosis ? 64 * 1024 : MAX_FRAME;
+      if (call.eventBytes + Math.max(bytes, semanticBytes) <= eventLimit && call.events.length < 8192) { call.events.push('data: ' + semantic + '\n\n'); call.eventBytes += Math.max(bytes, semanticBytes); }
       else warn(call, 'selected_event_limit');
     }
     if (call.summary.firstContentMs === null && carriesContent(value)) {
@@ -221,7 +226,30 @@ export async function projectCodex(source: CodexSource, selected?: number, recor
       }) };
   }
   const offset = window.offset ?? 0, limit = window.limit ?? 20;
+  let diagnosis: CodexProjection['diagnosis'];
+  if (window.diagnosis) {
+    const projected: CodexDiagnosisCall[] = [];
+    const diagnosisReasons = new Set<string>(); let projectedBytes = 0;
+    for (const call of calls.slice(0, 32)) {
+      const semanticRequest = call.request === null ? null : JSON.stringify(semanticFrame(object(JSON.parse(call.request) as unknown) ?? {}));
+      const requestBody = semanticRequest !== null && Buffer.byteLength(semanticRequest) <= 64 * 1024 ? semanticRequest : null;
+      const analysis = await analyzeProtocol({ format: 'openai_responses', requestBody: requestBody ?? '{}', responseBody: call.events.join(''), streaming: true });
+      analysis.usage = { ...call.summary.usage, snapshots: [] };
+      const callReasons = [...new Set([...reasons, ...call.summary.reasons, ...(requestBody === null ? ['diagnosis_request_limit'] : [])])];
+      if (callReasons.length) { analysis.completeness.complete = false; analysis.completeness.reasons.push(...callReasons); }
+      if (callReasons.some(reason => ['response_id_reused', 'overlapping_lane', 'response_lane_conflict'].includes(reason))) {
+        analysis.state = 'unknown'; analysis.usage = { ...emptyUsage(), snapshots: [] };
+      }
+      const value = { call: { ...call.summary, reasons: callReasons }, analysis, requestBody, requestComplete: requestBody !== null && callReasons.length === 0 };
+      const bytes = Buffer.byteLength(JSON.stringify(value));
+      if (projectedBytes + bytes > 3 * 1024 * 1024) { diagnosisReasons.add('diagnosis_output_limit'); break; }
+      projected.push(value); projectedBytes += bytes;
+    }
+    diagnosis = { requestId: source.requestId, calls: projected, total: calls.length,
+      complete: !source.active && reasons.size === 0 && calls.length <= 32 && projected.length === calls.length && projected.every(call => call.requestComplete && call.call.state === 'completed'),
+      reasons: [...reasons, ...diagnosisReasons, ...(calls.length > 32 ? ['diagnosis_call_limit'] : []), ...(source.active ? ['active_source'] : [])] };
+  }
   return { page: { requestId: source.requestId, active: source.active, items: window.detailOnly ? [] : calls.slice(offset, offset + limit).map(call => call.summary), total: calls.length,
     complete: !source.active && reasons.size === 0 && calls.every(call => call.reasons.size === 0 && call.summary.state !== 'incomplete'),
-    reasons: [...reasons], unassignedEvents: unassigned }, detail };
+    reasons: [...reasons], unassignedEvents: unassigned }, detail, ...(diagnosis ? { diagnosis } : {}) };
 }

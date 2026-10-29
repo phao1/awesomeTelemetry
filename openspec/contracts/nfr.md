@@ -849,7 +849,32 @@ sources fail explicitly and remain available through individual downloads.
 
 ## Task workbench budgets (2026-10-25)
 
+Explicit architecture diagnosis follows
+[architecture-diagnosis.md](architecture-diagnosis.md) AD-001..003: <=400 native
+metadata rows, <=64 native bodies of64KiB each, <=8 captures, <=32 logical calls /
+handoffs, <=512 refs, <=64 findings, <=512KiB reply. HTTP original decode remains
+bounded to2MiB per direction; Codex uses the shared bounded worker and one parse
+per connection, no per-call reparsing. Native processing yields between bounded
+batches; statements are cached. One server job with45s ceiling, browser50s owned
+wait/cancel/late suppression; metadata-only invalidation, no polling or eager
+body reads. Lists and ordinary task reads keep their existing slim budgets.
+No existing hard budget or performance acceptance is waived.
+
 The additive explicit process-metadata and full-scope histogram budgets follow
 [task-process.md](task-process.md) TP-001..005; ordinary slim-read budgets stay in force.
 
 Task list: maximum100 metadata rows, one fixed-count SQL aggregation, no per-task HTTP reads, target <100ms /200KB gzip. Task context: maximum100 members, <100ms /200KB gzip excluding explicit source hydration. Records: maximum200 slim rows, <100ms /200KB gzip after native parsing; source hydration asynchronous and bounded to2 concurrent reads. First render <2s after scope metadata is ready. Native body and Raw read only for the selected record. Steady state <15 API reads in30s; SSE marks only affected scope stale, with no polling. Virtualized lists keep DOM bounded.
+
+## Agent boundary evaluation budgets (2026-10-29)
+
+Explicit project<=8MiB UTF8,32agents/64boundaries/200cases/20experiments/4000trials/
+20000events/2000evidence refs and10000traffic rows. Text<=16KiB per event/evidence,
+64checks/case,16turns/64KiB combined. No implicit full-body or per-row reads.
+Browser list/read10s owned waits; fixed smoke server45s/browser50s with one owned
+job, cancellation/late suppression and atomic completed trial preservation.
+DOM<=50cases/100events/20decisions visible per page. Official catalog integrity
+is verified against its pinned manifest; files read asynchronously. Per-case
+execution enforces wall/call/request-output/input-character/tool-batch limits
+and measured nested-token budget; post-response charges are not invoice caps.
+No existing storage/forwarding/event-loop hard budget is waived. Full source and
+provenance/decision bounds: [agent-folding.md](agent-folding.md) AF-001..005.
