@@ -1894,3 +1894,57 @@ The user explicitly deferred performance work; this result is **not** a pass.
 Functional implementation continues with unchanged thresholds. This run overlapped
 local functional validation, so scheduler contention remains a possible contributor,
 not an established explanation. No relative performance improvement is claimed.
+
+## 2026-10-30 — M10 page layout and evidence readability
+
+UI-only update: responsive shared controls, consistent experiment forms,
+container-aware evidence reader, bounded keyboard-scrollable error summaries,
+font-relative capture line height, sticky detail controls and native theme support.
+No query, API, virtual-row-height, or runtime-dependency changes.
+
+`perf:check` passed using the synthetic 29.57MB fixture (524 sessions,
+73,588 events). Source-file statistics remain unavailable without real config.
+List500 median: 0.665ms; slim9,590: 18.660ms; overview cold/hot: 75.70/0.453ms.
+Mission empty-fixture cold/hot: 0.95/0.028ms; not populated-dashboard certification.
+
+Actual forwarding A/B, 100 samples per profile:
+
+| Profile | Extra first body byte p95 ms | Extra E2E p95 ms | Loop p99 ms |
+|---|---:|---:|---:|
+| HTTP | 5.283 | 11.159 | 2.587 |
+| HTTPS CONNECT | 10.263 | 14.183 | 2.114 |
+| HTTP near2MiB | 5.771 | 8.883 | 2.458 |
+
+All three profiles qualified and passed. Browser review used isolated synthetic
+session/tool/team/capture data at desktop, tablet and narrow widths; retained
+preview JSON is not proof of original-byte capture. Initial Vite bundle warning
+above500kB remains unchanged in scope. Screenshots and full logs remain local.
+
+Validation: typecheck and full ESLint passed. Full Vitest run:329 files passed,
+1 file failed (3965 tests passed,1 failed,1 skipped). The sole failure was the
+existing query-engine list join timing delta guard (0.934ms versus0.673ms allowed).
+Immediate isolated rerun of that entire file passed31/31 tests in406ms; no test
+assertions or database code were changed. Frontend build and targeted73 tests
+also passed during the layout audit.
+
+## 2026-10-30 — M12 dev1030 branch integration
+
+Integrated local agent-architecture-r4 (92428a0) and page-layout-audit (c03add2).
+Agent-team-observability (4031f90) was already an ancestor of the local branch.
+The only textual conflict was this append-only record; both histories are kept.
+No backend, metric formula, dependency, assertion or performance budget changed.
+
+Build, typecheck and lint passed. Final full suite: 359 files passed, 4236 tests
+passed, 1 existing skip. An initial restricted-environment run could not bind
+local test ports. The first unrestricted full run had one controlled recovery
+child-probe failure; its complete file rerun passed 5/5 and the subsequent full
+run passed unchanged. This is recorded as an intermittent test observation,
+not a demonstrated production defect or a weakened assertion.
+
+All nine perf:check diagnostics passed. Loopback extra E2E p95: HTTP 7.082 ms,
+HTTPS CONNECT 12.696 ms, near-2MiB 10.547 ms; event-loop p99 respectively
+2.234/2.132/2.466 ms. Each profile used 100 paired samples, persisted 104 captures,
+and verified 208 originals. Report (ignored):
+reports/capture-ab-2026-10-30T06-38-00.189Z-59834.json.
+This passing sample does not resolve the earlier deferred relative regression
+or erase the P6 absolute-budget failure; historical evidence remains above.

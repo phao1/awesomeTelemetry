@@ -1075,3 +1075,5 @@ button.token-stack-seg { cursor: pointer; }
 .sparkline-tip-at {
   color: var(--fg-muted);
 }
+
+.compare > .btn { align-self: flex-start; margin: var(--space-2) var(--space-3); }

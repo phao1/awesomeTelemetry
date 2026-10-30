@@ -45,3 +45,18 @@
 .benchmark-span-row { display: flex; justify-content: space-between; gap: var(--space-3); width: 100%; min-height: var(--row-md); padding: var(--space-2); border: 0; border-bottom: 1px solid var(--border-muted); background: var(--canvas-default); color: var(--fg-default); text-align: left; cursor: pointer; }
 .benchmark-span-row[aria-pressed=true] { background: var(--accent-subtle); }
 @media (max-width: 55rem) { .benchmark-lane-layout { grid-template-columns: 1fr; } .benchmark-heading { align-items: flex-start; } }
+
+/* Match the task/intake title scale and separate setup from evidence. */
+.benchmark-center { padding: var(--space-6); }
+.benchmark-heading { margin-bottom: var(--space-5); align-items: flex-start; }
+.benchmark-heading h1 { font-size: var(--text-xl); line-height: var(--leading-xl); }
+.benchmark-center h2 { font-size: var(--text-lg); line-height: var(--leading-lg); }
+.benchmark-center h3 { font-size: var(--text-md); }
+.benchmark-setup { padding: var(--space-5); background: var(--canvas-subtle); }
+.benchmark-variant-form { padding: var(--space-3); border: 1px solid var(--border-muted); border-radius: var(--radius-md); background: var(--canvas-default); }
+.benchmark-heading > label { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.benchmark-heading input[type=file] { max-width: 100%; min-width: 0; }
+.benchmark-heading input::file-selector-button { border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-subtle); color: var(--fg-default); padding: var(--space-1) var(--space-2); margin-right: var(--space-2); font: inherit; cursor: pointer; }
+.benchmark-run-action > button { background: var(--accent-emphasis); color: var(--fg-on-emphasis); border-color: var(--accent-emphasis); }
+.benchmark-scorecards, .benchmark-findings { grid-template-columns: repeat(auto-fit,minmax(min(100%,var(--dims-card-min)),1fr)); }
+@media (max-width: 40em) { .benchmark-center { padding: var(--space-3); } .benchmark-heading > div { min-width: 0; flex-basis: 100%; } .benchmark-setup { padding: var(--space-3); } }

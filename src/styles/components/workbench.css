@@ -190,7 +190,7 @@
 .capture-request-meta { font-size: var(--text-sm); overflow-wrap: anywhere; }
 .capture-maintenance { border: 1px solid var(--border-default); padding: var(--space-2); border-radius: var(--radius-md); }
 .capture-body-text { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); }
-.capture-body-content { margin: 0; font-family: var(--font-mono); line-height: var(--leading-base); padding: var(--space-3); white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; max-height: 60vh; background: var(--canvas-inset); border: 1px solid var(--border-default); border-radius: var(--radius-md); }
+.capture-body-content { margin: 0; font-family: var(--font-mono); line-height: 1.6; padding: var(--space-3); white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; max-height: 60vh; background: var(--canvas-inset); border: 1px solid var(--border-default); border-radius: var(--radius-md); }
 .capture-detail-drawer table { width: 100%; table-layout: fixed; }
 .capture-detail-drawer td { overflow-wrap: anywhere; white-space: pre-wrap; }
 .monitor-setup, .monitor-recipe, .monitor-actions, .monitor-command { display: grid; gap: var(--space-2); min-width: 0; }
@@ -206,3 +206,18 @@
 .monitor-command textarea { width: 100%; resize: vertical; font-family: var(--font-mono); }
 .monitor-setup summary { cursor: pointer; font-size: var(--text-sm); }
 @media (max-width: 40em) { .monitor-fields { grid-template-columns: minmax(0, 1fr); } }
+
+/* Audit: keep shared controls reachable when the viewport narrows. */
+@media (max-width: 50em) {
+  .app-header { flex-wrap: wrap; min-height: calc(var(--header-height) * 2); padding-block: var(--space-2); }
+  .app-header-actions { flex-basis: 100%; flex-wrap: wrap; }
+  .app-header-search { margin-left: auto; }
+  .app-header-search-label, .app-header-search kbd { display: none; }
+  .task-primary-nav { min-height: var(--tabs-height); height: auto; flex-wrap: wrap; padding-block: var(--space-2); }
+  .task-primary-nav > div { flex-wrap: wrap; gap: var(--space-1); }
+  .task-primary-nav > div > button { min-height: var(--row-md); }
+  .statusbar { flex-wrap: wrap; min-height: var(--statusbar-height); height: auto; }
+}
+
+.capture-detail-drawer .ui-tabs { position: sticky; top: 0; z-index: var(--z-sticky); background: var(--canvas-overlay); padding-block: var(--space-2); border-bottom: 1px solid var(--border-default); }
+.capture-body-content { overscroll-behavior: contain; }
