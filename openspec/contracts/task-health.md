@@ -403,6 +403,17 @@ its facets `{component:'active'}` row gives the explicitly wait-excluded value.
 Step6's “active E2E” refers only to that facet. The default partition includes
 userWait and sums to the default raw overview.e2e_ms. No wait is present in G1–G7.
 
+### Engine entry point
+
+```ts
+analyzeTaskHealth(input: HealthInput, thresholds: Partial<HealthThresholds> | undefined,
+  meta: { id: string; generatedAt: string }): HealthReport
+```
+
+The caller supplies meta (the server supplies its report UUID and generation
+timestamp). The engine copies both fields verbatim, never reads the clock or
+creates a UUID. HealthInput and HealthReport types remain unchanged.
+
 ## TH-005 Metric dictionary (and timing-layer summary)
 
 Only these plan §1.2 keys and its stated distribution variants are permitted.
