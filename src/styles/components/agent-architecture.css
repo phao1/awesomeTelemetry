@@ -21,3 +21,5 @@
 
 @media(max-width:40rem){.task-workbench:has(.task-main>.architecture-panel)>.task-sidebar,.task-workbench:has(.architecture-drawer)>.task-sidebar{display:none}.task-workbench:has(.task-main>.architecture-panel)>.task-main,.task-workbench:has(.architecture-drawer)>.task-main{display:flex!important}}
 .task-record-filters[hidden],.task-playback[hidden]{display:none}
+.architecture-review textarea{display:block;box-sizing:border-box;width:100%;padding:var(--space-2);border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--canvas-subtle);color:var(--fg-default);font:inherit}
+.architecture-review pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto;padding:var(--space-3);background:var(--canvas-subtle)}

@@ -1524,3 +1524,14 @@ no-store, ApiError apply. Scope cache is source/database revision keyed.
 Owned request cancellation/deadline=30s, max response8MiB; invalid scope/group
 is400, read failure503. No per-row frontend requests. Imported reports remain
 client-local; no source credentials/bodies are transferred in these responses.
+
+### Architecture P7 review (manual only)
+- POST `/api/agent-folding/review/preview`: FoldingReviewPack (64KiB maximum)
+  => FoldingReviewPreview, no model request.
+- POST `/api/agent-folding/review`: `{pack:FoldingReviewPack,digest:string}`
+  (64KiB maximum) => FoldingReviewResult. Digest must match preview; changed
+  evidence is 400. Uses configured server model and key; absent configuration is
+  503. One owned request, 30s deadline, abort on disconnect/shutdown, no retry.
+  Invalid model citations/tool-use/shape return a rejected result with usage,
+  never the unvalidated model content. No monitoring/proxy startup or tool run.
+Both use existing loopback/Origin guards, no-store and ApiError for non-2xx.

@@ -56,3 +56,11 @@ it('validates read-only scope and comparison requests before loading and bounds 
   for (const body of [{ a: [], b: [] }, { a: ['collected:a'], b: ['collected:a'] }, { a: ['imported:a'], b: ['collected:b'] }]) expect((await f.post('compare', body)).status).toBe(400);
   expect((await f.post('compare', { a: ['collected:a'], b: ['collected:b'] })).status).toBe(200);
 });
+
+it('previews redacted evidence without a model and refuses unpreviewed review requests', async () => {
+  const f = await setup(), pack = { boundaryId: 'boundary', proposed: 'fold', evidence: [{ id: 'source', text: 'sk-abcdefghijklmnopqrstuvwxyz' }] };
+  const response = await f.post('review/preview', pack); expect(response.status).toBe(200); const preview = await response.json() as { digest: string; pack: unknown };
+  expect(preview.digest).toMatch(/^[a-f0-9]{64}$/); expect(JSON.stringify(preview.pack)).not.toContain('abcdefghijklmnopqrstuvwxyz');
+  expect((await f.post('review', { pack, digest: 'made-up' })).status).toBe(400);
+  expect((await f.post('review/preview', { ...pack, endpoint: 'https://outside.invalid' })).status).toBe(400);
+});

@@ -476,3 +476,55 @@ P6 local inventory edits use existing owner/talksToUser/externalOwner fields and
 are exported through kit files. Threshold controls reuse FoldingRuleThresholds;
 a user edit uses version architecture-r4-1-user and does not modify defaults.
 Overview scope applies the list's provider/time and explicit cwd/task selection.
+
+## Architecture r4 P7 — manual semantic review
+
+Files: src/core/agent-folding-review.ts (+ adjacent tests),
+server/agent-folding/review.ts (+ adjacent local HTTP tests),
+src/components/agent-folding/ArchitectureReview.tsx (+ adjacent tests), existing
+agent-folding routes/client/TaskArchitecture and phase evidence documentation.
+No tables, dependencies or execution configuration writes.
+
+```ts
+interface FoldingReviewPack {
+  boundaryId: string; proposed: FoldingAction;
+  evidence: Array<{ id: string; text: string }>;
+}
+interface FoldingReviewStatement { text: string; evidenceIds: string[] }
+interface FoldingSemanticReview {
+  claims: FoldingReviewStatement[];
+  skill: FoldingReviewStatement;
+  tool: FoldingReviewStatement;
+  returnStructure: FoldingReviewStatement;
+}
+interface FoldingReviewPreview { pack: FoldingReviewPack; digest: string }
+interface FoldingReviewResult {
+  model: string;
+  usage: { inputTokens: number; outputTokens: number };
+  review: FoldingSemanticReview | null;
+  rejection: string | null;
+}
+```
+
+Pack: exact keys, boundary ID <=200 chars; 1..20 unique evidence IDs <=200 chars,
+IDs only [A-Za-z0-9_.:-]; text 1..2000 chars each, <=64KiB overall. Proposed is
+an existing FoldingAction. Review: exact keys, 1..12 claims; statement text
+1..8000 chars and 1..20 unique citations, all in the previewed pack. Explicit
+[[id]] references also must belong to the pack. Drafts are inert text, never
+executed, installed, or written into Agent configuration. Model output is limited
+to 64KiB JSON and must finish normally without any tool-use block. Invalid output
+returns review:null plus a fixed rejection and the separately retained usage.
+
+Preview redacts built-in secret patterns (fail closed if redaction exceeds its
+budget) plus credentials, email, private paths/IPs; the browser also applies the
+shared deterministic redaction before showing editable evidence. Server returns
+a SHA256 digest of the exact redacted pack. Review requires that digest to match;
+changing/deleting evidence invalidates the preview. No prompt/response storage.
+
+Uses AnthropicFoldingClient and server environment ANTHROPIC_API_KEY/FOLDING_MODEL.
+No endpoint, key or model can be supplied in a browser request. Status's existing
+paidExecution:'cli_only' applies to business/evaluation runs; this manual,
+non-executing semantic review is the sole P7 browser model-call exception. The UI
+shows the configured model, outbound evidence and a manual submit control; opening
+an audit or preview never calls a model. No automatic retries. Claims are model
+opinions supported only by supplied IDs, not verified facts; no quality upgrade.

@@ -1,3 +1,4 @@
+import type { FoldingReviewPack, FoldingReviewPreview, FoldingReviewResult } from '../../core/agent-folding-review.js';
 import type { BenchmarkReport } from '../../core/benchmark-types.js';
 import type { TeamExperimentReport } from '../../core/team-experiment-types.js';
 import { parseArchitectureTransfer } from '../../core/agent-folding-transfer.js';
@@ -6,6 +7,8 @@ import type { FoldingNativeScope, FoldingProject } from '../../core/agent-foldin
 import type { FoldingMetricRun } from '../../core/agent-folding-metrics.js';
 import { validateFoldingProject } from '../../core/agent-folding-validation.js';
 export const architectureApi = {
+  preview: (pack: FoldingReviewPack, signal?: AbortSignal) => fetchJson<FoldingReviewPreview>('/agent-folding/review/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(pack), signal }),
+  review: (preview: FoldingReviewPreview, signal?: AbortSignal) => fetchJson<FoldingReviewResult>('/agent-folding/review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(preview), signal }),
   scope: async (scope: FoldingNativeScope, signal?: AbortSignal) => validateFoldingProject(await fetchJson<FoldingProject>('/agent-folding/scope', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(scope), signal })),
   compare: (a: string[], b: string[], signal?: AbortSignal) => fetchJson<{ a: FoldingMetricRun[]; b: FoldingMetricRun[] }>('/agent-folding/compare', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ a, b }), signal }),
 };

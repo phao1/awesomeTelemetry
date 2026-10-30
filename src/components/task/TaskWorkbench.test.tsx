@@ -297,13 +297,13 @@ describe('real task architecture analysis', () => {
     function Harness() { const [route, setRoute] = useState<TaskRoute>({ ...DEFAULT_TASK_ROUTE, task: task.id }), [changes, setChanges] = useState<TaskChanges>({ version: 0, keys: [], runIds: [] }), [captureVersion, setCaptureVersion] = useState(0); notify = setChanges; invalidate = setCaptureVersion; return <TaskWorkbench locale="en" route={route} onRoute={setRoute} changes={changes} diagnosisInvalidateKey={captureVersion} onIntake={() => {}} onOpenRequest={() => {}}/>; }
     act(() => root.render(<Harness/>)); await readyTimeline();
     expect(calls.some(path => path.includes('architecture-diagnosis'))).toBe(false);
-    if (!host.textContent?.includes('Analyze split and merge')) { act(() => button('Architecture').click()); await settle(); }
+    expect(host.textContent).not.toContain('Analyze split and merge');
+    act(() => button('Architecture').click()); await settle();
     act(() => button('Analyze split and merge').click()); await settle(); expect(host.textContent).toContain('Bounded actual task analysis');
     expect(calls.filter(path => path.includes('architecture-diagnosis'))).toHaveLength(1);
     act(() => notify({ version: 1, keys: ['other'], runIds: [] })); await settle(); expect(host.textContent).toContain('Bounded actual task analysis');
     act(() => notify({ version: 2, keys: ['main'], runIds: [] })); await settle(); expect(host.textContent).not.toContain('Bounded actual task analysis');
     expect(calls.filter(path => path.includes('architecture-diagnosis'))).toHaveLength(1);
-    if (!host.textContent?.includes('Analyze split and merge')) { act(() => button('Architecture').click()); await settle(); }
     act(() => button('Analyze split and merge').click()); await settle(); expect(host.textContent).toContain('Bounded actual task analysis');
     act(() => invalidate(1)); await settle(); expect(host.textContent).not.toContain('Bounded actual task analysis');
     expect(calls.filter(path => path.includes('/events/'))).toHaveLength(0); expect(calls.every(path => !path.includes('/start'))).toBe(true);

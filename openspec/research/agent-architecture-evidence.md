@@ -238,3 +238,63 @@ one existing skip); final merge-target integration and workbench checks also pas
   The prior launcher timeout did not recur; its implementation and assertions
   were unchanged. Final targeted transfer/task/style checks add 2 new transfer
   cases; typecheck/lint/build pass. Performance remains deferred as above.
+
+## P7 manual semantic review (2026-10-30)
+
+- Added bounded evidence preview and manual review routes in agent-folding.
+  Preview uses shared redaction plus existing server rules, fails closed on a
+  redaction overrun, and hashes the exact outbound pack. Editing/removing evidence
+  invalidates preview. Only configured server Anthropic credentials/model are used;
+  browser input cannot override endpoint or credentials. No automatic model call.
+- Reused AnthropicFoldingClient. Review has no tools, retries, filesystem actions,
+  configuration changes or persistent prompts. System instructions distinguish
+  untrusted evidence from instructions and reference the pinned kit's skill,
+  tool-spec and SubagentResponse templates. Drafts remain inert human-review text.
+- Model statements require citations from the pack; fabricated structured/inline
+  references, tool-use and truncation are rejected. Rejected content is withheld
+  while token usage remains separate from original task metrics. This validates
+  citation membership, not truth or semantic entailment; human review is required.
+- Local HTTP tests exercise actual protocol, credential handling, redaction,
+  injection-as-data, invented citations, truncation, attempted tool calls, changed
+  preview and cancellation. UI tests verify mounting only reads status, preview
+  sends no model request, sending is explicit, and deletion invalidates preview.
+  No real model call, business task, or user Agent configuration change occurred.
+- Browser verified real-record evidence preview and disabled send when no model
+  is configured. Local screenshot: /private/tmp/agent-r4-p7-review.png. Model
+  generation was tested only against local HTTP stand-ins, as required.
+
+## Independent browser acceptance
+
+1. Open Task Center with locally indexed Claude root and child recordings. Select
+   the provider and, when needed, time/project directory or up to 40 root tasks.
+   Open Architecture Overview; verify delegation/source counts and unknown fields.
+2. Select a child card. Inspect rule values, threshold version, counter-evidence
+   and original-event locator. A single observed call must not become proven gain.
+   The individual task's Architecture tab contains the same audit and the retained
+   split/merge diagnosis component.
+3. Select root tasks with checkboxes (Shift extends a contiguous range), assign
+   disjoint A and B groups. The comparison opens once both groups are populated;
+   its URL preserves both groups. Check quality first, then responsibility, chain,
+   timing, tokens and run details. Missing per-case results and incomparable token
+   conventions remain explicit; no model is called.
+4. Download HTML, Markdown and CSV. Verify the same section order, group summaries,
+   unknowns, confounding and individual-run values. No session bodies are exported.
+5. For semantic review, open a decision card, edit/remove evidence and preview.
+   Preview never calls a model. A future manual send requires the user's configured
+   model and key; it can incur cost. Do not send in offline acceptance. Inspect
+   the local HTTP fixture tests for model output, citation rejection and usage.
+
+Known limits: OpenCode verification deferred by user; absent per-case acceptance,
+config fingerprints, source timings and native Codex model-call counts remain
+unknown. No automatic business execution or code/config migration. Rule thresholds
+are heuristics. Native metadata often cannot justify a semantic migration; the
+user can supply a limited excerpt in preview. Automatic redaction is not a proof
+that all sensitive content is removed. Real-model quality remains unverified.
+Performance is explicitly deferred, including the P6 absolute overhead failure;
+no budget was loosened. Original source logs and downloaded real reports remain
+local and uncommitted. Independent validation is still expected.
+
+Final P7 checks: 359 test files passed, 4236 tests passed, 1 pre-existing skip;
+typecheck, lint and build passed. After the final wording and stricter tab
+regression assertion, 19 targeted tests also passed. No dependency, database table,
+agent-boundary module/route, remote push or pull request was introduced.

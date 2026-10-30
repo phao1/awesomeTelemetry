@@ -1,3 +1,4 @@
+import { previewFoldingReview, runFoldingReview } from '../agent-folding/review.js';
 import { validateFoldingNativeScope } from '../agent-folding/native-scope.js';
 import type { IncomingMessage } from 'node:http';
 import { importFoldingProject } from '../../src/core/agent-folding-validation.js';
@@ -54,6 +55,18 @@ export function registerAgentFoldingRoutes(router: Router, directory: string, op
     }
     finally { clearTimeout(timer); res.off('close', cancel); reads.delete(controller); if (active === controller) active = null; }
   };
+  router.register('POST', '/api/agent-folding/review/preview', async (req, res) => {
+    res.setHeader('cache-control', 'no-store');
+    try { sendJson(res, 200, previewFoldingReview(await readJson(req, 65536)), req); }
+    catch { sendApiError(res, 400, 'BAD_REQUEST', 'Invalid bounded review evidence.', undefined, req); }
+  });
+  router.register('POST', '/api/agent-folding/review', async (req, res) => {
+    res.setHeader('cache-control', 'no-store'); let body: unknown;
+    try { body = await readJson(req, 65536); if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).sort().join() !== 'digest,pack') throw new Error();
+      const request = body as { pack: unknown; digest: unknown }; if (previewFoldingReview(request.pack).digest !== request.digest) throw new Error();
+    } catch { sendApiError(res, 400, 'BAD_REQUEST', 'Review evidence changed; preview again.', undefined, req); return; }
+    await runOwned(req, res, signal => runFoldingReview(body, signal), 30000);
+  });
   router.register('POST', '/api/agent-folding/scope', async (req, res) => {
     res.setHeader('cache-control', 'no-store');
     let body: unknown;
