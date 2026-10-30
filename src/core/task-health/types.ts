@@ -103,6 +103,8 @@ export interface HealthThresholds {
 export interface HealthReport {
   version: 1; id: string; taskId: string; mode: 'standard'; scope: HealthScope;
   revision: string; generatedAt: string; snapshotAt: string; running: boolean;
+  /** ISO UTC of HealthInput.t0; older saved reports omit the origin. */
+  t0?: string | null;
   thresholds: HealthThresholds; calcVersion: number; ruleVersion: number;
   coverage: { members: { loaded: number; total: number };
     timing: Record<Timing, number>; limits: string[]; reasons: string[] };

@@ -1,6 +1,6 @@
 import type { TaskOrigin } from './core/task-types.js';
 export type TaskMode = 'trajectory' | 'conversation' | 'raw' | 'architecture';
-export interface TaskRoute { overview?: boolean; compareA?: string[]; compareB?: string[]; compareImport?: boolean; task: string | null; origin: TaskOrigin; member: string; mode: TaskMode; event: string | null; q?: string; errors?: boolean; from?: string; to?: string }
+export interface TaskRoute { health?: string; overview?: boolean; compareA?: string[]; compareB?: string[]; compareImport?: boolean; task: string | null; origin: TaskOrigin; member: string; mode: TaskMode; event: string | null; q?: string; errors?: boolean; from?: string; to?: string }
 export const DEFAULT_TASK_ROUTE: TaskRoute = { task: null, origin: 'collected', member: 'main', mode: 'trajectory', event: null };
 /** Legacy session/team references retain their native identity until server resolution. */
 export function parseTaskRoute(hash: string): TaskRoute {
@@ -12,12 +12,13 @@ export function parseTaskRoute(hash: string): TaskRoute {
   const groups = valid(a) && valid(b) && !a.some(id => b.includes(id)) ? { ...(a.length ? { compareA: a } : {}), ...(b.length ? { compareB: b } : {}) } : {};
   const from = q.get('from'), to = q.get('to');
   const time = from && to && Number.isFinite(Date.parse(from)) && Number.isFinite(Date.parse(to)) && Date.parse(from) <= Date.parse(to) ? { from: new Date(from).toISOString(), to: new Date(to).toISOString() } : {};
-  return { ...groups, ...(q.get('overview') === '1' ? { overview: true } : {}), ...(q.get('compareImport') === '1' ? { compareImport: true } : {}), ...time, ...(q.has('q') ? { q: q.get('q')!.slice(0, 200) } : {}), ...(q.get('errors') === '1' ? { errors: true } : {}), task, origin: q.get('origin') === 'imported' || task?.startsWith('imported:') ? 'imported' : 'collected',
+  return { ...(q.get('health') ? { health: q.get('health')!.slice(0, 128) } : {}), ...groups, ...(q.get('overview') === '1' ? { overview: true } : {}), ...(q.get('compareImport') === '1' ? { compareImport: true } : {}), ...time, ...(q.has('q') ? { q: q.get('q')!.slice(0, 200) } : {}), ...(q.get('errors') === '1' ? { errors: true } : {}), task, origin: q.get('origin') === 'imported' || task?.startsWith('imported:') ? 'imported' : 'collected',
     member: q.get('member') ?? q.get('replayAgent') ?? (q.get('sel')?.startsWith('agent:') ? q.get('sel')!.slice(6) : 'main'),
     mode: mode === 'architecture' || mode === 'conversation' || mode === 'raw' ? mode : q.get('panel') === 'ledger' ? 'raw' : 'trajectory', event: q.get('event') };
 }
 export function serializeTaskRoute(route: TaskRoute): string {
   const q = new URLSearchParams({ origin: route.origin });
+  if (route.health) q.set('health', route.health);
   if (route.overview) q.set('overview', '1');
   if (route.compareImport) q.set('compareImport', '1');
   for (const id of route.compareA ?? []) q.append('a', id);

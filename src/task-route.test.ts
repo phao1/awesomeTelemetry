@@ -27,3 +27,11 @@ it('round-trips architecture scope and disjoint repeated comparison groups', () 
   }
   expect(parseTaskRoute('#/task?mode=broken&overview=x')).toMatchObject({ mode: 'trajectory' });
 });
+
+it('round-trips a shared health report and its exact evidence record', () => {
+  for (const health of ['new', 'e48979c8-1988-47ce-8838-0e1cded73cbb']) {
+    const route = { task: 'collected:main', origin: 'collected' as const, member: 'all', mode: 'trajectory' as const, event: 'main:event:e13', health };
+    expect(parseTaskRoute(serializeTaskRoute(route))).toEqual(route);
+  }
+  expect(parseTaskRoute('#/task?health=').health).toBeUndefined();
+});

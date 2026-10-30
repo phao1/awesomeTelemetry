@@ -1,3 +1,4 @@
+import { formatFact } from './format.js';
 import type { Dimension, HealthEvidence, HealthFinding, HealthInput, HealthReport, HealthThresholds, Timing } from './types.js';
 import type { FindingDraft, RuleContext } from './metrics.js';
 import { computeMetrics, evidenceId, metric, scopePartial } from './metrics.js';
@@ -42,8 +43,12 @@ const templates: Record<string, [
 };
 export function renderFinding(draft: FindingDraft): HealthFinding {
     const [action, conditions, retest] = templates[draft.rule]!;
-    const fill = (s: string) => s.replace(/\{(\w+)\}/g, (_, key: string) => String(draft.facts[key] ?? 'unknown'));
-    return { ...draft, recommendation: { action: fill(action), conditions: fill(conditions), retest: [...retest] } };
+    const fillPart = (s: string, locale: 'zh' | 'en') => s.replace(/\{(\w+)\}/g, (_, key: string) => formatFact(key, draft.facts[key] ?? null, locale));
+    const fill = (s: string) => s.split(' / ').map((part, i) => fillPart(part, i === 0 ? 'zh' : 'en')).join(' / ');
+    const cause = String(draft.facts.cause ?? 'unattributed');
+    const advice = cause === 'model' ? ['长思考期间输出阶段提示', 'Show stage updates during long reasoning'] : cause === 'unattributed' ? ['核对该空窗两端记录，补齐计时数据', 'Inspect both gap endpoints and complete timing evidence'] : ['长工具期间输出进度', 'Show progress during long tools'];
+    const actionTemplate = draft.rule === 'perceived.long_gap' ? `最大日志空窗{gap}，归因为{cause}；${advice[0]}。 / Maximum log gap is {gap}, attributed to {cause}; ${advice[1]}.` : action;
+    return { ...draft, recommendation: { action: fill(actionTemplate), conditions: fill(conditions), retest: [...retest] } };
 }
 function states(c: RuleContext, findings: HealthFinding[]): HealthReport['dimensions'] {
     const s = c.snapshot, result = {} as HealthReport['dimensions'];
@@ -121,7 +126,7 @@ export function analyzeTaskHealth(input: HealthInput, thresholds: Partial<Health
         resultPartition = partition(s.bounds, [{ key: 'userWait', intervals: s.userWait }, { key: 'delegateWait', intervals: s.delegateWait }, { key: 'undivided', intervals: s.undivided }, { key: 'overlap', intervals: overlaps }, { key: 'modelOnly', intervals: models }, { key: 'toolOnly', intervals: tools }], 'unattributed');
     }
     const timing = Object.fromEntries((['measured', 'observed', 'derived', 'reported', 'model_judged', 'unknown', 'unavailable'] as Timing[]).map(t => [t, s.spans.filter(x => x.timing === t).length])) as Record<Timing, number>;
-    const report: HealthReport = { version: 1, id: meta.id, taskId: input.taskId, mode: 'standard', scope: { ...input.scope }, revision: input.revision, generatedAt: meta.generatedAt, snapshotAt: input.snapshotAt, running: input.running, thresholds: resolved, calcVersion: HEALTH_CALC_VERSION, ruleVersion: HEALTH_RULE_VERSION, coverage: { members: { loaded: s.members.filter(m => m.detailLoaded).length, total: s.totalMembers }, timing, limits: s.limits, reasons: [...new Set(s.reasons)] }, metrics, partition: resultPartition, rounds: s.rounds, spans: s.spans, dimensions: states(context, findings), findings, evidence, limitations: [...coverageReasons(context), '日志指标是代理；无独立验收来源时质量未知。 / Log metrics are proxies; acceptance is unknown without independent evidence.'] };
+    const report: HealthReport = { version: 1, id: meta.id, taskId: input.taskId, mode: 'standard', scope: { ...input.scope }, revision: input.revision, generatedAt: meta.generatedAt, snapshotAt: input.snapshotAt, running: input.running, t0: input.t0 ?? null, thresholds: resolved, calcVersion: HEALTH_CALC_VERSION, ruleVersion: HEALTH_RULE_VERSION, coverage: { members: { loaded: s.members.filter(m => m.detailLoaded).length, total: s.totalMembers }, timing, limits: s.limits, reasons: [...new Set(s.reasons)] }, metrics, partition: resultPartition, rounds: s.rounds, spans: s.spans, dimensions: states(context, findings), findings, evidence, limitations: [...coverageReasons(context), '日志指标是代理；无独立验收来源时质量未知。 / Log metrics are proxies; acceptance is unknown without independent evidence.'] };
     if (new TextEncoder().encode(JSON.stringify(report)).length > 1024 * 1024) {
         report.coverage.limits.push('report_bytes');
         report.limitations.push('Verbose span/evidence projection omitted to meet report budget');

@@ -1987,3 +1987,24 @@ event-loop p99 2.198/2.140/2.218 ms; 100 paired samples, 104 captures, 208
 originals each. Report (ignored): reports/capture-ab-2026-10-30T12-41-22.680Z-4353.json.
 
 Real local data (read-only CLI, largest three Codex tasks): 2.07 s / 1.73 s / 0.78 s.
+
+## 2026-10-31 — M12 task-health P3 (health entry, drawer, report view)
+
+Frontend-only plus presentation: HealthButton/HealthDrawer/HealthReportView, shared
+src/core/task-health/format.ts for UI and HTML/Markdown export, optional report t0
+for local clock times. No metric value, rule threshold, schema, index or dependency
+change; existing budgets unchanged.
+
+Build, typecheck and lint passed. Full suite: 387 files passed, 4437 tests passed,
+1 existing skip.
+
+All ten perf:check diagnostics passed. 10-task-health: 20000 events / 5 members,
+792 ms (budget 3 s), event-loop p99 2.82 ms, max 8.04 ms, 0 external requests.
+Loopback extra E2E p95: HTTP 5.839 ms, HTTPS CONNECT 13.137 ms, near-2MiB 5.032 ms;
+event-loop p99 1.958/2.038/2.099 ms. Report (ignored):
+reports/capture-ab-2026-10-30T13-17-30.371Z-16693.json.
+
+Browser check against a copied local DB: single-agent and 21-member Codex tasks
+generate reports, evidence jumps to the trajectory record, history/downloads work,
+375 px drawer is full screen without horizontal page overflow. The 21-member report
+drawer shrank from ~20,000 px to ~5,800 px after collapsing empty rows.

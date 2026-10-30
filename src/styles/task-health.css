@@ -1,0 +1,15 @@
+.health-workspace{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden}.health-workspace>.task-process{min-width:0}.health-drawer{position:relative;flex:none;width:min(44%,calc(var(--space-10) * 17));max-width:100vw;box-sizing:border-box;overflow:auto;z-index:var(--z-dropdown);background:var(--canvas-default);color:var(--fg-default);border-left:1px solid var(--border-default);padding:var(--space-4);overflow-wrap:anywhere}
+.health-drawer>header,.health-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--space-2);margin-bottom:var(--space-3)}
+.health-drawer h2{font-size:var(--text-lg);margin:0;flex:1;min-width:0}.health-drawer h3{font-size:var(--text-md)}.health-drawer h4{font-size:inherit}
+.health-drawer button,.health-drawer a,.health-drawer select{max-width:100%;white-space:normal;overflow-wrap:anywhere}.health-drawer label{display:flex;flex-wrap:wrap;gap:var(--space-2)}
+.health-drawer :is(button,a,select,summary):focus-visible{box-shadow:var(--focus-ring)}
+.health-report{font-size:var(--user-font-size);line-height:1.6}.health-report section{margin-block:var(--space-4)}
+.health-report table{width:100%;table-layout:fixed;border-collapse:collapse}.health-report th,.health-report td{padding:var(--space-2);border:1px solid var(--border-default);text-align:start;vertical-align:top;overflow-wrap:anywhere}
+.health-report dl{margin:var(--space-2) 0}.health-report dd{margin-inline-start:var(--space-3)}.health-report details{margin-block:var(--space-2)}
+.health-card{border:1px solid var(--border-default);border-radius:var(--radius-md);padding:var(--space-3);background:var(--canvas-subtle)}
+.health-card h4{margin-top:0}.health-report p,.health-report li{overflow-wrap:anywhere}.health-report ul{padding-inline-start:var(--space-5)}
+.health-log-label{display:inline-block;font-size:var(--text-xs);color:var(--fg-muted);border:1px solid var(--border-muted);border-radius:var(--radius-sm);padding:0 var(--space-1);margin-inline-start:var(--space-1)}
+.health-report footer{color:var(--fg-muted);border-top:1px solid var(--border-default);padding-top:var(--space-3)}
+@media(max-width:48rem){.health-drawer{position:fixed;inset:0;width:100%;border:0}.task-context-header:has([aria-controls="task-health-drawer"]){flex-wrap:wrap}}
+
+.health-toolbar{font-size:var(--text-base)}.health-metric-key{color:var(--fg-muted);font-size:var(--text-sm)}

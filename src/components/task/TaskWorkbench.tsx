@@ -1,3 +1,7 @@
+import '../../styles/task-health.css';
+import { HealthButton } from './health/HealthButton.js';
+import { HealthDrawer } from './health/HealthDrawer.js';
+import { healthCopy } from './health/health-copy.js';
 import '../../styles/task-workbench.css';
 import '../../styles/task-process.css';
 import '../../styles/task-reader.css';
@@ -74,8 +78,8 @@ export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpe
   useEffect(() => { if (changes.version > 0) setListStale(true); }, [changes.version]);
   const nativeMember = context.value && route.member === 'main' && route.task?.startsWith('collected:') && route.task !== context.value.task.id ? context.value.members.find(member => member.sessionKey === route.task!.slice(10)) : null;
   const resolvedRoute = nativeMember ? { ...route, member: nativeMember.id } : route;
-  const changeOrigin = (origin: TaskRoute['origin']) => { setOffset(0); onRoute({ ...route, origin, task: null, event: null, member: 'main', q: undefined, errors: undefined, from: undefined, to: undefined }); };
-  const selectTask = (task: TaskSummary) => { setNotice(''); onRoute({ ...route, overview: undefined, compareImport: undefined, compareA: undefined, compareB: undefined, task: task.id, origin: task.origin, member: 'main', event: null, q: undefined, errors: undefined, from: undefined, to: undefined }); };
+  const changeOrigin = (origin: TaskRoute['origin']) => { setOffset(0); onRoute({ ...route, origin, task: null, health: undefined, event: null, member: 'main', q: undefined, errors: undefined, from: undefined, to: undefined }); };
+  const selectTask = (task: TaskSummary) => { setNotice(''); onRoute({ ...route, overview: undefined, compareImport: undefined, compareA: undefined, compareB: undefined, task: task.id, health: undefined, origin: task.origin, member: 'main', event: null, q: undefined, errors: undefined, from: undefined, to: undefined }); };
   const refresh = () => { tasks.retry(); context.retry(); setListStale(false); };
   return <div className={`task-workbench ${collapsed ? 'task-list-collapsed' : ''}`}>
     <aside className="task-sidebar">
@@ -239,7 +243,7 @@ function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContex
   const changeTimeRange = (value: [number, number] | null) => { setTimeRange(value); setPaging({}); setAnchor(null); setPlaying(false); setFollowing(false); onRoute({ ...route, event: null, from: value ? new Date(value[0]).toISOString() : undefined, to: value ? new Date(value[1]).toISOString() : undefined }); };
   const openAnchor = (id: string) => { setPaging({}); setAnchor(id); setTimeRange(null); setPlaying(false); onRoute({ ...route, event: id, q: undefined, errors: undefined, from: undefined, to: undefined }); };
 
-  return <div className="task-process" ref={setScrollElement} style={{ '--task-title-height': `${stickySize.title}px`, '--task-sticky-height': `${stickySize.total}px`, '--task-reader-height': `${stickySize.viewport}px` } as React.CSSProperties}
+  return <div className="health-workspace"><div className="task-process" ref={setScrollElement} style={{ '--task-title-height': `${stickySize.title}px`, '--task-sticky-height': `${stickySize.total}px`, '--task-reader-height': `${stickySize.viewport}px` } as React.CSSProperties}
     onWheel={() => { userScroll.current = true; setFollowing(false); }} onTouchStart={() => { userScroll.current = true; setFollowing(false); }}>
     <header className="task-context-header" ref={titleElement}>
       <h1 title={displayContext.task.title}>{displayContext.task.title || displayContext.task.provider}</h1>
@@ -249,6 +253,8 @@ function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContex
         <span className="task-badge">{displayContext.task.provenanceKnown ? c[displayContext.task.origin] : c.originUnknown}</span><span>{displayContext.task.memberCount > 1 ? `${c.multi} · ${displayContext.task.memberCount}` : c.single}</span><span>{c.coverage} · {displayContext.task.loadedMemberCount}/{displayContext.task.memberCount} {c.parsed}</span><span>{c.occurred} {stamp(displayContext.task.startedAt, locale)}</span><span>{displayContext.task.origin === 'imported' ? c.importedAt : c.received} {stamp(displayContext.task.updatedAt, locale)}</span><span>{c.recordState} · {displayContext.task.recordedStatus}</span><p>{c.readBoundary}</p>
         <button type="button" className="btn" onClick={() => void navigator.clipboard.writeText(window.location.href).then(() => onNotice(c.copied)).catch(() => onNotice(c.copyFailed))}>{c.share} ↗</button>
       </div></details>
+      <button type="button" className="btn" onClick={() => void navigator.clipboard.writeText(window.location.href).then(() => onNotice(c.copied)).catch(() => onNotice(c.copyFailed))}>{healthCopy(locale).share} ↗</button>
+      <HealthButton locale={locale} open={Boolean(route.health)} onClick={() => onRoute({ ...route, health: route.health ? undefined : 'new' })}/>
     </header>
     <div className="task-reading-toolbar">
       <div className="task-mode-tabs" role="tablist" aria-label={c.trajectory}>{(['trajectory', 'conversation', 'raw', 'architecture'] as const).map(mode => <button type="button" role="tab" aria-selected={route.mode === mode} key={mode} onClick={() => changeMode(mode)}>{mode === 'architecture' ? (locale === 'zh' ? '架构' : 'Architecture') : c[mode]}</button>)}</div>
@@ -300,5 +306,10 @@ function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContex
       onOpenSession={key => { const member = displayContext.members.find(item => item.sessionKey === key); if (member) changeMember(member.id); else onRoute({ ...route, task: 'collected:' + key, member: 'main', event: null, q: undefined, errors: undefined, from: undefined, to: undefined }); }} /></Suspense>
       : null}
     </div></> }
+  </div>
+    {route.health && <HealthDrawer key={context.task.id} context={displayContext} locale={locale} reportId={route.health} from={route.from} to={route.to} sourceVersion={diagnosisRevision + diagnosisInvalidateKey}
+      evidenceUnavailable={Boolean(route.event && !records.loading && (records.error || page && !page.items.some(item => item.id === route.event)))}
+      onReport={id => onRoute({ ...currentRoute.current, health: id })} onClose={() => onRoute({ ...currentRoute.current, health: undefined })}
+      onLocate={(_evidence, id) => { userScroll.current = false; setFollowing(false); setPlaying(false); setPaging({}); setAnchor(id); onRoute({ ...route, mode: 'trajectory', member: 'all', event: id, q: undefined, errors: undefined, from: undefined, to: undefined }); }}/>}
   </div>;
 }

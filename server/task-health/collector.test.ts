@@ -130,6 +130,7 @@ it('uses full-input statistics in bounded reports and never exposes authenticati
   const sample = structuredClone(input.records[0]!); sample.event!.kind = 'system';
   for (let i = 0; i < 4001; i++) input.records.push({ ...sample, recordId: 'context' + i, event: { ...sample.event!, id: 'context' + i, sequence: 100 + i } });
   const bounded = calculateHealthReport(input); expect(bounded.metrics.find(m => m.key === 'plan.rounds')?.value).toBe(5); expect(bounded.coverage.limits).toContain('report_bytes');
+  expect(bounded.t0).toBe(input.t0);
   expect(bounded.findings.some(f => f.rule === 'cov.incomplete')).toBe(true); const ids = new Set(bounded.evidence.map(e => e.id)); for (const item of [...bounded.findings, ...bounded.metrics]) for (const id of item.evidenceIds) expect(ids.has(id)).toBe(true);
 });
 it('links a real spawn result to a unique confirmed member, without inferring from parent roles', async () => {

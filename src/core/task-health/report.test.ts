@@ -29,3 +29,8 @@ it('member-budget prefixes keep omitted members in the coverage denominator', ()
     const i=fixture();i.members=Array.from({length:101},(_,index)=>({...i.members[0]!,id:index===0?'main':'m'+index,detailLoaded:index===0}));
     const r=analyze(i);expect(r.coverage.members).toEqual({loaded:1,total:101});expect(r.coverage.limits).toContain('members');expect(Object.values(r.dimensions).every(x=>x==='insufficient')).toBe(true);
 });
+it('retains the input origin for presentation and uses null if the origin field is absent', () => {
+  const input = fixture(); expect(analyze(input).t0).toBe(input.t0);
+  const missingOrigin = { ...input, t0: undefined } as unknown as HealthInput;
+  expect(analyze(missingOrigin).t0).toBeNull();
+});
