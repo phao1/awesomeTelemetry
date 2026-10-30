@@ -3,10 +3,10 @@ import type { BenchmarkDemoInput, BenchmarkManifest, BenchmarkReport, BenchmarkR
 
 export const BENCHMARK_MAX_BYTES = 16 * 1024 * 1024;
 function invalid(path: string): never { throw new Error(`Invalid benchmark: ${path}`); }
-function obj(v: unknown, keys: string[], path: string): Record<string, unknown> {
+function obj(v: unknown, keys: string[], path: string, optional: string[] = []): Record<string, unknown> {
   if (!v || typeof v !== 'object' || Array.isArray(v)) invalid(path);
   const r = v as Record<string, unknown>;
-  if (Object.keys(r).length !== keys.length || keys.some(k => !(k in r))) invalid(path);
+  if (Object.keys(r).some(k => !keys.includes(k) && !optional.includes(k)) || keys.some(k => !(k in r))) invalid(path);
   return r;
 }
 function str(v: unknown, path: string, max = 1000): string {
@@ -63,21 +63,33 @@ export function validateBenchmarkSpan(value: unknown): BenchmarkSpan {
 }
 export function validateBenchmarkTelemetry(value: unknown): BenchmarkTelemetry {
   const v = obj(value, ['actualModel', 'sessionKey', 'complete', 'usage', 'spans'], 'telemetry');
-  const u = obj(v.usage, ['input', 'output', 'reasoning', 'cacheRead', 'cacheWrite', 'inputIncludesCache', 'outputIncludesReasoning'], 'usage');
+  const u = obj(v.usage, ['input', 'output', 'reasoning', 'cacheRead', 'cacheWrite', 'inputIncludesCache', 'outputIncludesReasoning'], 'usage', ['cacheWriteReported']);
   const usage = Object.fromEntries(['input', 'output', 'reasoning', 'cacheRead', 'cacheWrite'].map(k => [k, nullable(u[k], k, undefined, true)])) as unknown as BenchmarkUsage;
   for (const k of ['inputIncludesCache', 'outputIncludesReasoning'] as const) usage[k] = u[k] === null ? null : bool(u[k], k);
+  if ('cacheWriteReported' in u) usage.cacheWriteReported = u.cacheWriteReported === null ? null : bool(u.cacheWriteReported, 'cacheWriteReported');
   const spans = list(v.spans, 'spans', 2000).map(validateBenchmarkSpan);
   if (spans.some(s => s.kind === 'runner')) invalid('driver runner span');
   unique(spans.map(s => s.id), 'span ids');
   return { actualModel: textOrNull(v.actualModel, 'actualModel'), sessionKey: textOrNull(v.sessionKey, 'sessionKey'), complete: bool(v.complete, 'complete'), usage, spans };
 }
 export function validateBenchmarkVerdict(value: unknown): BenchmarkVerdict {
-  const v = obj(value, ['passed', 'total', 'quality'], 'verdict');
+  const v = obj(value, ['passed', 'total', 'quality'], 'verdict', ['qualitySource', 'labels', 'cases']);
   const q = obj(v.quality, [...QUALITY_KEYS], 'quality');
   const quality = Object.fromEntries(QUALITY_KEYS.map(k => [k, nullable(q[k], k, k === 'duplicationPct' ? 100 : undefined, !['duplicationPct', 'complexity'].includes(k))])) as BenchmarkVerdict['quality'];
   const passed = num(v.passed, 'passed', 1000000, true), total = num(v.total, 'total', 1000000, true);
   if (passed > total || total < 1) invalid('passed/total');
-  return { passed, total, quality };
+  const result: BenchmarkVerdict = { passed, total, quality };
+  if ('qualitySource' in v) result.qualitySource = textOrNull(v.qualitySource, 'qualitySource');
+  if ('labels' in v) {
+    const labels = obj(v.labels, ['product', 'environment', 'host', 'caseId'], 'labels');
+    result.labels = Object.fromEntries(Object.entries(labels).map(([k, x]) => [k, textOrNull(x, k)])) as NonNullable<BenchmarkVerdict['labels']>;
+  }
+  if ('cases' in v) {
+    result.cases = list(v.cases, 'cases', 1000000).map(x => { const r = obj(x, ['id', 'passed'], 'case'); return { id: str(r.id, 'case.id', 256), passed: bool(r.passed, 'case.passed') }; });
+    unique(result.cases.map(c => c.id), 'case ids');
+    if (result.cases.length !== total || result.cases.filter(c => c.passed).length !== passed) invalid('case results disagree with counts');
+  }
+  return result;
 }
 export function validateBenchmarkReport(value: unknown): BenchmarkReport {
   const v = obj(value, ['version', 'synthetic', 'manifest', 'commit', 'promptSha256', 'createdAt', 'runs'], 'report');

@@ -374,3 +374,63 @@ one provider's main-loop identity. Choose the tool filter before auditing across
 many roots; cross-tool architecture ranking is outside r4. Native-scope.ts/tests
 are included for this validation clarification. Import progress overflow fails,
 not silently truncates.
+
+## Architecture r4 P5 metrics and reports
+
+Files: server/agent-folding/run-metrics.ts + tests;
+src/core/agent-folding-{metrics,report}.ts + tests; benchmark accounting/types/
+validation + tests; compare-report.ts shared HTML shell; fixture JSON under
+src/core/__fixtures__, user-supplied docs/agent-architecture/data/*.md.
+
+`FoldingMetricRun`: {id:string,taskId:string|null,run:BenchmarkRun,
+expectedTests:number|null,labels:FoldingMetricLabels,architecture:{subAgents:number|null,
+delegations:number|null,linkedDelegations:number|null,subagentTokens:number|null,
+mainWaitMs:number|null},recorded?:Partial<BenchmarkMetrics>&{cacheCombined?:number|null,
+reportedTokens?:number|null,reportedCacheHit?:number|null},limitations:string[]}.
+Labels: productMode,environment,model,definitionFingerprint,instructionFile,
+toolPermissions,acceptanceSource,cliVersion,caseId,host,qualitySource,qualityScope
+(all string|null); ttftSource:'proxy'|'reported'|'unknown'. Recorded values are
+explicitly imported per-run aggregates, never synthetic spans or raw conversations.
+They do not override corrected tokens/hit/cache-read/cache-write accounting.
+
+`foldingRunMetrics` calls benchmarkMetrics/correctedUsage, then supplies recorded
+aggregate values and derived uncachedInput,tokensPerPassed,warningsPerKloc,
+modelShare,toolShare,otherShare,subAgents,delegations,subagentShare,mainWaitMs,
+linkCompleteness. Derived unknowns remain null; overlapping model/tool sums do
+not imply disjoint wall-clock shares (negative residual => all three unavailable).
+Native TTFT/TPOT require exact call-bound proxy evidence; reported aggregates are
+labelled reported and never presented as proxy measurements.
+`foldingComparison(a,b)` accepts 1..40 runs/group and returns {rows,changes,
+confounded,limitations,regressions}. Each row {key,label,section,a,b,comparable,
+reason,delta,ratio}; summary {n,mean,median,min,max,cv,single,variable} uses
+benchmarkStats; variable iff CV>30; single iff n<2. Delta/ratio compare medians;
+zero denominator => null. Unknown or mixed token conventions, timing source, or
+quality scanner/scope makes those rows incomparable. Confound dimensions are the
+eight identifiers in r4 §4; missing metadata is a limitation, never sameness.
+Per-case flips require verdict.cases in every run; otherwise explicitly unknown.
+
+Report order: quality, responsibilities, chains, process/timing, tokens/cost,
+per-run details. HTML reuses compare-report.ts's new shared static shell;
+Markdown/HTML/CSV escape all user text (CSV also spreadsheet-formula prefixes).
+No session body, prompt or generated answer in reports. No price => no cost.
+
+`collectFoldingMetricRun(db, taskId, project, signal?)` reads only existing members
+and bounded source metadata, returns FoldingMetricRun for root+all linked children.
+No new SQL table. Explicit columns, cached statements, <=2000 model/tool spans
+per task; exceeding bound is an explicit error. Raw JSONL is streamed up to32MiB
+per task. Claude usage is last snapshot per message.id; Codex cumulative totals
+use the last token_count snapshot. Missing fields stay null. Measured source
+inclusion flags come from P0; counts remain unavailable when source evidence is
+missing, not guessed from legacy zero counters. Original per-event duration
+inference does not become measured latency. Exact proxy matches reuse existing
+linked-execution metadata; no capture is started. Unknown acceptance and runtime
+configuration remain unknown. No raw file contents are returned or committed.
+
+Metric diagnostics expose configurable `FoldingMetricThresholds` with version
+`architecture-metrics-r4-1`, durationToleranceMinutes=.11, duplicationPct=30,
+toolAvgSeconds=3. These only flag aggregate-data review hints and are not article
+formulas. `foldingDataIssues(item,thresholds?)` retains the version in its notes.
+The r4-defined CV>30% flag remains the specified fixed reporting convention.
+Raw reported combined-cache/total/hit columns remain in per-run report details,
+separate from corrected metrics. Source-file/database revisions are checked before
+returning native metrics; a concurrent source change requires refresh.

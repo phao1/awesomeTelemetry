@@ -1871,3 +1871,15 @@ Repeat report: reports/capture-ab-2026-10-30T02-03-59.900Z-99674.json.
 Source stats remain N/A without real configured source enumeration. This is not
 a production load/soak or cross-platform certification.
 Local report: reports/capture-ab-2026-10-30T02-02-53.968Z-99640.json (not committed).
+
+## 2026-10-30 · Architecture r4 P5
+
+`npm run perf:check` completed with all nine diagnostic hard gates passing.
+Core detail (9,590 events) 14.411ms; overview cold 75.00ms / hit 0.446ms;
+event-loop p99 0ms in query diagnostic. Loopback capture extra E2E p95:
+HTTP 6.469ms, HTTPS CONNECT 10.085ms, near-2MiB 9.774ms; all absolute
+capture budgets passed. Report: reports/capture-ab-2026-10-30T03-06-27.582Z-28194.json.
+The known relative capture performance regression remains unresolved and explicitly
+user-deferred ("先不管性能 先搞"); this is not a claim that relative baseline
+acceptance passed. No assertion, threshold or budget changed. Build passed with
+existing bundle-size and catalog static/dynamic import warnings.

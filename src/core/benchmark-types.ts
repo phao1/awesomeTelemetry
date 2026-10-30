@@ -13,6 +13,7 @@ export interface BenchmarkManifest {
 export interface BenchmarkUsage {
   input: number | null; output: number | null; reasoning: number | null;
   cacheRead: number | null; cacheWrite: number | null;
+  cacheWriteReported?: boolean | null;
   inputIncludesCache: boolean | null; outputIncludesReasoning: boolean | null;
 }
 export interface BenchmarkSpan {
@@ -29,7 +30,11 @@ export interface BenchmarkTelemetry {
 }
 export const QUALITY_KEYS = ['loc', 'vulnerabilities', 'duplicationPct', 'complexity', 'redundancy', 'buildWarnings', 'staticWarnings', 'critical', 'major', 'minor', 'suggestion'] as const;
 export type BenchmarkQuality = Record<typeof QUALITY_KEYS[number], number | null>;
-export interface BenchmarkVerdict { passed: number; total: number; quality: BenchmarkQuality }
+export interface BenchmarkVerdict {
+  passed: number; total: number; quality: BenchmarkQuality; qualitySource?: string | null;
+  labels?: { product: string | null; environment: string | null; host: string | null; caseId: string | null };
+  cases?: Array<{ id: string; passed: boolean }>;
+}
 export interface BenchmarkRun {
   id: string; variantId: string; repetition: number; startedAt: string;
   status: 'completed' | 'failed' | 'timeout' | 'cancelled';

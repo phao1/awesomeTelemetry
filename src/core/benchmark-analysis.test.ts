@@ -80,3 +80,22 @@ describe('BENCH-003 report validation', () => {
     expect(() => validateBenchmarkManifest(manifest)).toThrow();
   });
 });
+
+it('r4 keeps included unknown reasoning from poisoning totals and treats unreported cache writes as zero', () => {
+  const base = { input: 100, output: 20, reasoning: null, cacheRead: 50, cacheWrite: null, inputIncludesCache: false, outputIncludesReasoning: true, cacheWriteReported: false };
+  expect(correctedUsage(base)).toEqual({ total: 170, hit: 50 / 150 * 100 });
+  expect(correctedUsage({ ...base, cacheWriteReported: true }).total).toBeNull();
+  expect(correctedUsage({ ...base, outputIncludesReasoning: false }).total).toBeNull();
+  expect(correctedUsage({ ...base, reasoning: 21 }).total).toBeNull();
+});
+
+it('preserves optional independent verdict source/labels/case results and rejects inconsistent case totals', async () => {
+  const { validateBenchmarkVerdict, validateBenchmarkTelemetry } = await import('./benchmark-validation.js');
+  const report = demoBenchmarkReport(), verdict = { ...report.runs[0]!.verdict!, passed: 1, total: 2, qualitySource: 'scanner-v1', labels: { product: 'test', environment: 'local', host: null, caseId: 'case' }, cases: [{ id: 'a', passed: true }, { id: 'b', passed: false }] };
+  expect(validateBenchmarkVerdict(verdict)).toEqual(verdict);
+  expect(() => validateBenchmarkVerdict({ ...verdict, passed: 2 })).toThrow('disagree');
+  expect(() => validateBenchmarkVerdict({ ...verdict, cases: [verdict.cases[0], verdict.cases[0]] })).toThrow();
+  const telemetry = { ...report.runs[0]!.telemetry!, usage: { ...report.runs[0]!.telemetry!.usage, cacheWriteReported: false, cacheWrite: null } };
+  expect(validateBenchmarkTelemetry(telemetry).usage.cacheWriteReported).toBe(false);
+  expect(() => validateBenchmarkTelemetry({ ...telemetry, usage: { ...telemetry.usage, cacheWriteReported: 'false' } })).toThrow();
+});

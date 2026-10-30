@@ -174,3 +174,37 @@ one existing skip); final merge-target integration and workbench checks also pas
 - Phase checks: typecheck/build/lint passed; 352 test files, 4213 passed,
   1 pre-existing skip. Build retains existing bundle-size/dynamic-import warnings.
   The user-supplied ruoyi 3×3 Markdown is reserved for the P5 commit.
+
+## P5 metrics and reports (2026-10-30)
+
+- The user supplied the original 3×3 aggregate table as
+  docs/agent-architecture/data/ruoyi-perf-management-3x3.md. The fixture preserves
+  all 32 columns (group/repetition plus 30 original columns), empty G3 host cells,
+  original reported totals/cache percentages and average rows. No source trace
+  or individual acceptance results exist for this dataset. Unknown token flags
+  remain null. A clearly synthetic small accounting case tests known flags.
+- Every original numeric metric is checked against independent Python population
+  statistics. Corrected tokens/cache hit remain unknown for the original table;
+  original reported values remain separately visible. Conflicting token formulas,
+  combined cache, duration inconsistencies, outliers, quality-scope differences
+  and product-mode/environment confounding are reported, not repaired silently.
+- Benchmark accounting now supports included-but-unknown reasoning and explicitly
+  unreported cache writes. Verdicts can preserve scanner/labels/per-case results;
+  missing per-case results explicitly prevent pass-to-fail conclusions.
+- Native metrics stream metadata from root and child sources, deduplicate Claude
+  message snapshots and use final Codex cumulative usage. Model/tool durations
+  are not inferred from adjacent log timestamps. Only exact retained proxy call
+  matches can supply measured first-content timing; partial timing never becomes
+  a whole-task average. Tests exercise the real scanner/database/link machinery.
+- Read-only smoke on the P0 real Claude recording: three child members, three
+  delegations, 100% linked, corrected usage available, acceptance and TTFT unknown.
+  No original text is retained in metrics output. The optional Vite dev socket
+  was denied as before; source conversion completed without a model call.
+- HTML/Markdown/CSV reports use the required section order, include each run and
+  original reported accounting columns, escape text/formula prefixes and omit
+  session bodies. Native code still cannot establish Codex unique model-call
+  counts, actual runtime configuration, unknown acceptance, or main-loop waiting;
+  those remain explicitly unknown. OpenCode remains deferred.
+- Full phase test suite: 355 files, 4222 passed, 1 pre-existing skip. Additional
+  proxy-link and UI annotation checks passed; typecheck/build/lint checked again
+  after final diagnostic/report edits. Screenshots and UI acceptance start at P6.

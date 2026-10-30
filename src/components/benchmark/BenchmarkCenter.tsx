@@ -81,6 +81,7 @@ export function BenchmarkCenter({ locale }: { locale: Locale }): React.JSX.Eleme
           {groups.map(g => <p key={g.variant.id}>{g.variant.product}: {g.variant.model} · {g.variant.environment} · {g.variant.parameters} · {g.variant.toolSet} · {g.modelVerified ? text('实际模型匹配', 'Actual model matches') : text('实际模型未确认 / 不一致', 'Actual model unknown / mismatched')}</p>)}
         </details>
       </section>
+      {report.runs.some(r => r.telemetry?.usage.cacheWriteReported === false) && <p className="benchmark-warning">{text('部分运行的工具不单独报告缓存写入；已按明确声明计为 0。', 'Some tools do not separately report cache writes; their explicit declaration counts these as zero.')}</p>}
       <div className="benchmark-scorecards">{groups.map(g => <section key={g.variant.id}><h3>{g.variant.product} · {g.variant.model}</h3>
         <p><strong>{text('稳', 'Stability')}</strong> {g.successes}/{g.known} {text('已知验收成功', 'known acceptance successes')} · {text('未知', 'unknown')} {g.runs.length - g.known} · CV {fmt(g.metrics.e2e.cv)}%</p>
         <p><strong>{text('准', 'Accuracy')}</strong> {fmt(g.metrics.passRate.mean)}% {text('平均用例通过率', 'mean test pass rate')}</p>

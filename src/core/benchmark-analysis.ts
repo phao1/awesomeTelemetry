@@ -16,11 +16,12 @@ export const METRIC_LABELS = {
 export type BenchmarkMetric = keyof typeof METRIC_LABELS;
 export type BenchmarkMetrics = Record<BenchmarkMetric, number | null>;
 export function correctedUsage(u: BenchmarkUsage): { total: number | null; hit: number | null } {
-  const { input, output, reasoning, cacheRead, cacheWrite, inputIncludesCache, outputIncludesReasoning } = u;
-  if (input === null || output === null || reasoning === null || cacheRead === null || cacheWrite === null || inputIncludesCache === null || outputIncludesReasoning === null) return { total: null, hit: null };
-  if ((inputIncludesCache && cacheRead + cacheWrite > input) || (outputIncludesReasoning && reasoning > output)) return { total: null, hit: null };
+  const { input, output, reasoning, cacheRead, inputIncludesCache, outputIncludesReasoning } = u;
+  const cacheWrite = u.cacheWriteReported === false ? 0 : u.cacheWrite;
+  if (input === null || output === null || (reasoning === null && outputIncludesReasoning !== true) || cacheRead === null || cacheWrite === null || inputIncludesCache === null || outputIncludesReasoning === null) return { total: null, hit: null };
+  if ((inputIncludesCache && cacheRead + cacheWrite > input) || (outputIncludesReasoning && reasoning !== null && reasoning > output)) return { total: null, hit: null };
   const allInput = input + (inputIncludesCache ? 0 : cacheRead + cacheWrite);
-  const total = allInput + output + (outputIncludesReasoning ? 0 : reasoning);
+  const total = allInput + output + (outputIncludesReasoning ? 0 : reasoning!);
   return { total: Number.isSafeInteger(total) ? total : null, hit: allInput > 0 ? cacheRead / allInput * 100 : null };
 }
 export function runSuccess(run: BenchmarkRun, expectedTests: number): boolean | null {
@@ -43,7 +44,8 @@ export function benchmarkMetrics(run: BenchmarkRun, expectedTests: number): Benc
   if (!telemetry?.complete) return m;
   const u = telemetry.usage, normalized = correctedUsage(u);
   for (const key of ['input', 'output', 'reasoning', 'cacheRead', 'cacheWrite'] as const) m[key] = u[key];
-  m.cache = u.cacheRead !== null && u.cacheWrite !== null ? u.cacheRead + u.cacheWrite : null;
+  m.cacheWrite = u.cacheWriteReported === false ? 0 : u.cacheWrite;
+  m.cache = u.cacheRead !== null && m.cacheWrite !== null ? u.cacheRead + m.cacheWrite : null;
   m.tokens = normalized.total; m.cacheHit = normalized.hit;
   const models = telemetry.spans.filter(s => s.kind === 'model'), tools = telemetry.spans.filter(s => s.kind === 'tool');
   m.modelCalls = models.length; m.toolCalls = tools.length;

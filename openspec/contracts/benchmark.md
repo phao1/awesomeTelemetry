@@ -108,3 +108,20 @@ and cannot claim rollback. Browser owns65s deadline/single-flight/cancel/late
 suppression. Viewing/importing/locale never executes. Form handles common fields;
 advanced manifest JSON remains for real CLI driver configuration. Completed
 example loads immediately into the existing comparison and evidence view.
+
+## Architecture r4 P5 accounting and verdict extensions
+
+BenchmarkUsage adds optional cacheWriteReported:boolean|null (legacy omission
+retains previous behavior). Explicit false treats cacheWrite as zero in totals,
+cache sum and display, with a visible not-reported annotation. reasoning=null no
+longer invalidates correctedUsage when outputIncludesReasoning=true; included
+known reasoning still cannot exceed output. Other unknown inclusion/counts remain
+unknown. Existing tests must continue to pass.
+
+BenchmarkVerdict optionally carries qualitySource:string|null,
+labels:{product:string|null,environment:string|null,host:string|null,caseId:string|null},
+cases:Array<{id:string,passed:boolean}> (<=1000000, unique IDs, counts consistent
+with passed/total when provided). No fields infer success from assistant prose.
+Validation preserves these optional fields and rejects other unknown fields.
+The existing BenchmarkCenter.tsx also displays the unreported-cache-write note
+when any retained run explicitly declares cacheWriteReported=false.

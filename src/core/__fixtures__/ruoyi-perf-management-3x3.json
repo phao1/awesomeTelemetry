@@ -1,0 +1,1860 @@
+{
+  "source": "docs/agent-architecture/data/ruoyi-perf-management-3x3.md",
+  "synthetic": false,
+  "limitations": [
+    "Only aggregate measurements; no traces or per-case verdicts",
+    "Null token conventions; raw totals/hit are not corrected values"
+  ],
+  "rows": [
+    {
+      "group": "G1",
+      "raw": {
+        "组": "G1",
+        "次": "1",
+        "产品": "码道GUI",
+        "环境": "现网",
+        "模型": "智速模式",
+        "题目ID": "ruoyi-perf-management",
+        "通过用例/总数": "245/371",
+        "是否成功": "否",
+        "E2E时间(m)": "23.180",
+        "TTFT(ms)": "2405.7",
+        "TPOT(ms)": "4.7",
+        "单任务模型调用次数": "145.0",
+        "单次模型推理平均耗时(s)": "7.6",
+        "单任务模型总耗时(分钟)": "18.2",
+        "单任务工具调用次数均值(次)": "192.0",
+        "单次工具平均耗时(s)": "0.7",
+        "单任务工具总耗时(分钟)": "2.3",
+        "输入Token": "342626.0",
+        "输出Token": "116387.0",
+        "思考Token": "48040.0",
+        "缓存Token(命中+写入)": "23052544.0",
+        "Token总消耗(修正)": "23511557.0",
+        "缓存命中率(%)": "98.54%",
+        "代码规模(LOC)": "5260",
+        "漏洞": "0",
+        "函数重复率%": "13.4",
+        "平均圈复杂度": "1.69",
+        "冗余": "0",
+        "编译告警": "0",
+        "静态告警": "1303",
+        "问题分布": "Critical 0 / Major 0 / Minor 152 / Suggestion 1151",
+        "执行机ip": "10.159.226.80"
+      },
+      "item": {
+        "id": "G1-1",
+        "taskId": null,
+        "expectedTests": 371,
+        "labels": {
+          "productMode": "码道GUI · 智速模式",
+          "environment": "现网",
+          "model": null,
+          "definitionFingerprint": null,
+          "instructionFile": null,
+          "toolPermissions": null,
+          "acceptanceSource": "用户提供汇总表",
+          "cliVersion": null,
+          "caseId": "ruoyi-perf-management",
+          "host": "10.159.226.80",
+          "qualitySource": null,
+          "qualityScope": "G1/G2 原表范围",
+          "ttftSource": "reported"
+        },
+        "architecture": {
+          "subAgents": null,
+          "delegations": null,
+          "linkedDelegations": null,
+          "subagentTokens": null,
+          "mainWaitMs": null
+        },
+        "recorded": {
+          "e2e": 23.18,
+          "ttft": 2405.7,
+          "tpot": 4.7,
+          "modelCalls": 145.0,
+          "modelAvg": 7.6,
+          "modelSum": 18.2,
+          "toolCalls": 192.0,
+          "toolAvg": 0.7,
+          "toolSum": 2.3,
+          "input": 342626.0,
+          "output": 116387.0,
+          "reasoning": 48040.0,
+          "cacheCombined": 23052544.0,
+          "reportedTokens": 23511557.0,
+          "reportedCacheHit": 98.54,
+          "loc": 5260.0,
+          "vulnerabilities": 0.0,
+          "duplicationPct": 13.4,
+          "complexity": 1.69,
+          "redundancy": 0.0,
+          "buildWarnings": 0.0,
+          "staticWarnings": 1303.0,
+          "critical": 0,
+          "major": 0,
+          "minor": 152,
+          "suggestion": 1151
+        },
+        "limitations": [
+          "用户导入汇总，无原始会话和逐用例结果；单位按列标题保留，命中率统一显示为百分数",
+          "运行日期未知；占位日期仅满足 DTO，不表示测量时间"
+        ],
+        "run": {
+          "id": "G1-1",
+          "variantId": "G1",
+          "repetition": 1,
+          "startedAt": "1970-01-01T00:00:00.000Z",
+          "status": "completed",
+          "host": "10.159.226.80",
+          "e2eMs": 1390800.0,
+          "telemetry": {
+            "actualModel": null,
+            "sessionKey": null,
+            "complete": true,
+            "usage": {
+              "input": 342626.0,
+              "output": 116387.0,
+              "reasoning": 48040.0,
+              "cacheRead": null,
+              "cacheWrite": null,
+              "inputIncludesCache": null,
+              "outputIncludesReasoning": null,
+              "cacheWriteReported": null
+            },
+            "spans": []
+          },
+          "verdict": {
+            "passed": 245,
+            "total": 371,
+            "quality": {
+              "loc": 5260.0,
+              "vulnerabilities": 0.0,
+              "duplicationPct": 13.4,
+              "complexity": 1.69,
+              "redundancy": 0.0,
+              "buildWarnings": 0.0,
+              "staticWarnings": 1303.0,
+              "critical": 0,
+              "major": 0,
+              "minor": 152,
+              "suggestion": 1151
+            },
+            "qualitySource": null
+          },
+          "phases": [],
+          "error": null
+        }
+      }
+    },
+    {
+      "group": "G1",
+      "raw": {
+        "组": "G1",
+        "次": "2",
+        "产品": "码道GUI",
+        "环境": "现网",
+        "模型": "智速模式",
+        "题目ID": "ruoyi-perf-management",
+        "通过用例/总数": "259/371",
+        "是否成功": "否",
+        "E2E时间(m)": "20.360",
+        "TTFT(ms)": "2301.0",
+        "TPOT(ms)": "5.1",
+        "单任务模型调用次数": "92.0",
+        "单次模型推理平均耗时(s)": "10.9",
+        "单任务模型总耗时(分钟)": "14.9",
+        "单任务工具调用次数均值(次)": "156.0",
+        "单次工具平均耗时(s)": "1.1",
+        "单任务工具总耗时(分钟)": "2.8",
+        "输入Token": "321682.0",
+        "输出Token": "105828.0",
+        "思考Token": "58452.0",
+        "缓存Token(命中+写入)": "12700160.0",
+        "Token总消耗(修正)": "13127670.0",
+        "缓存命中率(%)": "97.53%",
+        "代码规模(LOC)": "5206",
+        "漏洞": "0",
+        "函数重复率%": "6.92",
+        "平均圈复杂度": "1.68",
+        "冗余": "0",
+        "编译告警": "0",
+        "静态告警": "1007",
+        "问题分布": "Critical 0 / Major 0 / Minor 153 / Suggestion 854",
+        "执行机ip": "10.182.120.183"
+      },
+      "item": {
+        "id": "G1-2",
+        "taskId": null,
+        "expectedTests": 371,
+        "labels": {
+          "productMode": "码道GUI · 智速模式",
+          "environment": "现网",
+          "model": null,
+          "definitionFingerprint": null,
+          "instructionFile": null,
+          "toolPermissions": null,
+          "acceptanceSource": "用户提供汇总表",
+          "cliVersion": null,
+          "caseId": "ruoyi-perf-management",
+          "host": "10.182.120.183",
+          "qualitySource": null,
+          "qualityScope": "G1/G2 原表范围",
+          "ttftSource": "reported"
+        },
+        "architecture": {
+          "subAgents": null,
+          "delegations": null,
+          "linkedDelegations": null,
+          "subagentTokens": null,
+          "mainWaitMs": null
+        },
+        "recorded": {
+          "e2e": 20.36,
+          "ttft": 2301.0,
+          "tpot": 5.1,
+          "modelCalls": 92.0,
+          "modelAvg": 10.9,
+          "modelSum": 14.9,
+          "toolCalls": 156.0,
+          "toolAvg": 1.1,
+          "toolSum": 2.8,
+          "input": 321682.0,
+          "output": 105828.0,
+          "reasoning": 58452.0,
+          "cacheCombined": 12700160.0,
+          "reportedTokens": 13127670.0,
+          "reportedCacheHit": 97.53,
+          "loc": 5206.0,
+          "vulnerabilities": 0.0,
+          "duplicationPct": 6.92,
+          "complexity": 1.68,
+          "redundancy": 0.0,
+          "buildWarnings": 0.0,
+          "staticWarnings": 1007.0,
+          "critical": 0,
+          "major": 0,
+          "minor": 153,
+          "suggestion": 854
+        },
+        "limitations": [
+          "用户导入汇总，无原始会话和逐用例结果；单位按列标题保留，命中率统一显示为百分数",
+          "运行日期未知；占位日期仅满足 DTO，不表示测量时间"
+        ],
+        "run": {
+          "id": "G1-2",
+          "variantId": "G1",
+          "repetition": 2,
+          "startedAt": "1970-01-01T00:00:00.000Z",
+          "status": "completed",
+          "host": "10.182.120.183",
+          "e2eMs": 1221600.0,
+          "telemetry": {
+            "actualModel": null,
+            "sessionKey": null,
+            "complete": true,
+            "usage": {
+              "input": 321682.0,
+              "output": 105828.0,
+              "reasoning": 58452.0,
+              "cacheRead": null,
+              "cacheWrite": null,
+              "inputIncludesCache": null,
+              "outputIncludesReasoning": null,
+              "cacheWriteReported": null
+            },
+            "spans": []
+          },
+          "verdict": {
+            "passed": 259,
+            "total": 371,
+            "quality": {
+              "loc": 5206.0,
+              "vulnerabilities": 0.0,
+              "duplicationPct": 6.92,
+              "complexity": 1.68,
+              "redundancy": 0.0,
+              "buildWarnings": 0.0,
+              "staticWarnings": 1007.0,
+              "critical": 0,
+              "major": 0,
+              "minor": 153,
+              "suggestion": 854
+            },
+            "qualitySource": null
+          },
+          "phases": [],
+          "error": null
+        }
+      }
+    },
+    {
+      "group": "G1",
+      "raw": {
+        "组": "G1",
+        "次": "3",
+        "产品": "码道GUI",
+        "环境": "现网",
+        "模型": "智速模式",
+        "题目ID": "ruoyi-perf-management",
+        "通过用例/总数": "258/371",
+        "是否成功": "否",
+        "E2E时间(m)": "20.080",
+        "TTFT(ms)": "2555.7",
+        "TPOT(ms)": "4.8",
+        "单任务模型调用次数": "67.0",
+        "单次模型推理平均耗时(s)": "15.9",
+        "单任务模型总耗时(分钟)": "17.5",
+        "单任务工具调用次数均值(次)": "199.0",
+        "单次工具平均耗时(s)": "0.5",
+        "单任务工具总耗时(分钟)": "1.6",
+        "输入Token": "334551.0",
+        "输出Token": "152925.0",
+        "思考Token": "48570.0",
+        "缓存Token(命中+写入)": "11802624.0",
+        "Token总消耗(修正)": "12290100.0",
+        "缓存命中率(%)": "97.24%",
+        "代码规模(LOC)": "4285",
+        "漏洞": "0",
+        "函数重复率%": "2.01",
+        "平均圈复杂度": "1.61",
+        "冗余": "0",
+        "编译告警": "0",
+        "静态告警": "2071",
+        "问题分布": "Critical 0 / Major 0 / Minor 130 / Suggestion 1941",
+        "执行机ip": "10.182.121.151"
+      },
+      "item": {
+        "id": "G1-3",
+        "taskId": null,
+        "expectedTests": 371,
+        "labels": {
+          "productMode": "码道GUI · 智速模式",
+          "environment": "现网",
+          "model": null,
+          "definitionFingerprint": null,
+          "instructionFile": null,
+          "toolPermissions": null,
+          "acceptanceSource": "用户提供汇总表",
+          "cliVersion": null,
+          "caseId": "ruoyi-perf-management",
+          "host": "10.182.121.151",
+          "qualitySource": null,
+          "qualityScope": "G1/G2 原表范围",
+          "ttftSource": "reported"
+        },
+        "architecture": {
+          "subAgents": null,
+          "delegations": null,
+          "linkedDelegations": null,
+          "subagentTokens": null,
+          "mainWaitMs": null
+        },
+        "recorded": {
+          "e2e": 20.08,
+          "ttft": 2555.7,
+          "tpot": 4.8,
+          "modelCalls": 67.0,
+          "modelAvg": 15.9,
+          "modelSum": 17.5,
+          "toolCalls": 199.0,
+          "toolAvg": 0.5,
+          "toolSum": 1.6,
+          "input": 334551.0,
+          "output": 152925.0,
+          "reasoning": 48570.0,
+          "cacheCombined": 11802624.0,
+          "reportedTokens": 12290100.0,
+          "reportedCacheHit": 97.24,
+          "loc": 4285.0,
+          "vulnerabilities": 0.0,
+          "duplicationPct": 2.01,
+          "complexity": 1.61,
+          "redundancy": 0.0,
+          "buildWarnings": 0.0,
+          "staticWarnings": 2071.0,
+          "critical": 0,
+          "major": 0,
+          "minor": 130,
+          "suggestion": 1941
+        },
+        "limitations": [
+          "用户导入汇总，无原始会话和逐用例结果；单位按列标题保留，命中率统一显示为百分数",
+          "运行日期未知；占位日期仅满足 DTO，不表示测量时间"
+        ],
+        "run": {
+          "id": "G1-3",
+          "variantId": "G1",
+          "repetition": 3,
+          "startedAt": "1970-01-01T00:00:00.000Z",
+          "status": "completed",
+          "host": "10.182.121.151",
+          "e2eMs": 1204800.0,
+          "telemetry": {
+            "actualModel": null,
+            "sessionKey": null,
+            "complete": true,
+            "usage": {
+              "input": 334551.0,
+              "output": 152925.0,
+              "reasoning": 48570.0,
+              "cacheRead": null,
+              "cacheWrite": null,
+              "inputIncludesCache": null,
+              "outputIncludesReasoning": null,
+              "cacheWriteReported": null
+            },
+            "spans": []
+          },
+          "verdict": {
+            "passed": 258,
+            "total": 371,
+            "quality": {
+              "loc": 4285.0,
+              "vulnerabilities": 0.0,
+              "duplicationPct": 2.01,
+              "complexity": 1.61,
+              "redundancy": 0.0,
+              "buildWarnings": 0.0,
+              "staticWarnings": 2071.0,
+              "critical": 0,
+              "major": 0,
+              "minor": 130,
+              "suggestion": 1941
+            },
+            "qualitySource": null
+          },
+          "phases": [],
+          "error": null
+        }
+      }
+    },
+    {
+      "group": "G2",
+      "raw": {
+        "组": "G2",
+        "次": "1",
+        "产品": "",
+        "环境": "现网",
+        "模型": "普通版+ds-v4.1-flash",
+        "题目ID": "ruoyi-perf-management",
+        "通过用例/总数": "204/371",
+        "是否成功": "否",
+        "E2E时间(m)": "72.220",
+        "TTFT(ms)": "2177.2",
+        "TPOT(ms)": "5.4",
+        "单任务模型调用次数": "307.0",
+        "单次模型推理平均耗时(s)": "13.4",
+        "单任务模型总耗时(分钟)": "68.7",
+        "单任务工具调用次数均值(次)": "723.0",
+        "单次工具平均耗时(s)": "0.6",
+        "单任务工具总耗时(分钟)": "3.0",
+        "输入Token": "25277262.0",
+        "输出Token": "666009.0",
+        "思考Token": "350721.0",
+        "缓存Token(命中+写入)": "18745856.0",
+        "Token总消耗(修正)": "45039848.0",
+        "缓存命中率(%)": "42.58%",
+        "代码规模(LOC)": "6012",
+        "漏洞": "0",
+        "函数重复率%": "10.55",
+        "平均圈复杂度": "1.75",
+        "冗余": "0",
+        "编译告警": "0",
+        "静态告警": "1179",
+        "问题分布": "Critical 0 / Major 0 / Minor 138 / Suggestion 1041",
+        "执行机ip": "10.159.226.80"
+      },
+      "item": {
+        "id": "G2-1",
+        "taskId": null,
+        "expectedTests": 371,
+        "labels": {
+          "productMode": "普通版",
+          "environment": "现网",
+          "model": "ds-v4.1-flash",
+          "definitionFingerprint": null,
+          "instructionFile": null,
+          "toolPermissions": null,
+          "acceptanceSource": "用户提供汇总表",
+          "cliVersion": null,
+          "caseId": "ruoyi-perf-management",
+          "host": "10.159.226.80",
+          "qualitySource": null,
+          "qualityScope": "G1/G2 原表范围",
+          "ttftSource": "reported"
+        },
+        "architecture": {
+          "subAgents": null,
+          "delegations": null,
+          "linkedDelegations": null,
+          "subagentTokens": null,
+          "mainWaitMs": null
+        },
+        "recorded": {
+          "e2e": 72.22,
+          "ttft": 2177.2,
+          "tpot": 5.4,
+          "modelCalls": 307.0,
+          "modelAvg": 13.4,
+          "modelSum": 68.7,
+          "toolCalls": 723.0,
+          "toolAvg": 0.6,
+          "toolSum": 3.0,
+          "input": 25277262.0,
+          "output": 666009.0,
+          "reasoning": 350721.0,
+          "cacheCombined": 18745856.0,
+          "reportedTokens": 45039848.0,
+          "reportedCacheHit": 42.58,
+          "loc": 6012.0,
+          "vulnerabilities": 0.0,
+          "duplicationPct": 10.55,
+          "complexity": 1.75,
+          "redundancy": 0.0,
+          "buildWarnings": 0.0,
+          "staticWarnings": 1179.0,
+          "critical": 0,
+          "major": 0,
+          "minor": 138,
+          "suggestion": 1041
+        },
+        "limitations": [
+          "用户导入汇总，无原始会话和逐用例结果；单位按列标题保留，命中率统一显示为百分数",
+          "运行日期未知；占位日期仅满足 DTO，不表示测量时间"
+        ],
+        "run": {
+          "id": "G2-1",
+          "variantId": "G2",
+          "repetition": 1,
+          "startedAt": "1970-01-01T00:00:00.000Z",
+          "status": "completed",
+          "host": "10.159.226.80",
+          "e2eMs": 4333200.0,
+          "telemetry": {
+            "actualModel": "ds-v4.1-flash",
+            "sessionKey": null,
+            "complete": true,
+            "usage": {
+              "input": 25277262.0,
+              "output": 666009.0,
+              "reasoning": 350721.0,
+              "cacheRead": null,
+              "cacheWrite": null,
+              "inputIncludesCache": null,
+              "outputIncludesReasoning": null,
+              "cacheWriteReported": null
+            },
+            "spans": []
+          },
+          "verdict": {
+            "passed": 204,
+            "total": 371,
+            "quality": {
+              "loc": 6012.0,
+              "vulnerabilities": 0.0,
+              "duplicationPct": 10.55,
+              "complexity": 1.75,
+              "redundancy": 0.0,
+              "buildWarnings": 0.0,
+              "staticWarnings": 1179.0,
+              "critical": 0,
+              "major": 0,
+              "minor": 138,
+              "suggestion": 1041
+            },
+            "qualitySource": null
+          },
+          "phases": [],
+          "error": null
+        }
+      }
+    },
+    {
+      "group": "G2",
+      "raw": {
+        "组": "G2",
+        "次": "2",
+        "产品": "",
+        "环境": "现网",
+        "模型": "普通版+ds-v4.1-flash",
+        "题目ID": "ruoyi-perf-management",
+        "通过用例/总数": "194/371",
+        "是否成功": "否",
+        "E2E时间(m)": "45.013",
+        "TTFT(ms)": "2378.2",
+        "TPOT(ms)": "5.3",
+        "单任务模型调用次数": "238.0",
+        "单次模型推理平均耗时(s)": "9.2",
+        "单任务模型总耗时(分钟)": "36.2",
+        "单任务工具调用次数均值(次)": "553.0",
+        "单次工具平均耗时(s)": "0.5",
+        "单任务工具总耗时(分钟)": "5.0",
+        "输入Token": "4626180.0",
+        "输出Token": "211632.0",
+        "思考Token": "145234.0",
+        "缓存Token(命中+写入)": "15879424.0",
+        "Token总消耗(修正)": "20717236.0",
+        "缓存命中率(%)": "77.44%",
+        "代码规模(LOC)": "5730",
+        "漏洞": "0",
+        "函数重复率%": "9.74",
+        "平均圈复杂度": "1.64",
+        "冗余": "0",
+        "编译告警": "0",
+        "静态告警": "1492",
+        "问题分布": "Critical 0 / Major 0 / Minor 150 / Suggestion 1342",
+        "执行机ip": "10.182.120.183"
+      },
+      "item": {
+        "id": "G2-2",
+        "taskId": null,
+        "expectedTests": 371,
+        "labels": {
+          "productMode": "普通版",
+          "environment": "现网",
+          "model": "ds-v4.1-flash",
+          "definitionFingerprint": null,
+          "instructionFile": null,
+          "toolPermissions": null,
+          "acceptanceSource": "用户提供汇总表",
+          "cliVersion": null,
+          "caseId": "ruoyi-perf-management",
+          "host": "10.182.120.183",
+          "qualitySource": null,
+          "qualityScope": "G1/G2 原表范围",
+          "ttftSource": "reported"
+        },
+        "architecture": {
+          "subAgents": null,
+          "delegations": null,
+          "linkedDelegations": null,
+          "subagentTokens": null,
+          "mainWaitMs": null
+        },
+        "recorded": {
+          "e2e": 45.013,
+          "ttft": 2378.2,
+          "tpot": 5.3,
+          "modelCalls": 238.0,
+          "modelAvg": 9.2,
+          "modelSum": 36.2,
+          "toolCalls": 553.0,
+          "toolAvg": 0.5,
+          "toolSum": 5.0,
+          "input": 4626180.0,
+          "output": 211632.0,
+          "reasoning": 145234.0,
+          "cacheCombined": 15879424.0,
+          "reportedTokens": 20717236.0,
+          "reportedCacheHit": 77.44,
+          "loc": 5730.0,
+          "vulnerabilities": 0.0,
+          "duplicationPct": 9.74,
+          "complexity": 1.64,
+          "redundancy": 0.0,
+          "buildWarnings": 0.0,
+          "staticWarnings": 1492.0,
+          "critical": 0,
+          "major": 0,
+          "minor": 150,
+          "suggestion": 1342
+        },
+        "limitations": [
+          "用户导入汇总，无原始会话和逐用例结果；单位按列标题保留，命中率统一显示为百分数",
+          "运行日期未知；占位日期仅满足 DTO，不表示测量时间"
+        ],
+        "run": {
+          "id": "G2-2",
+          "variantId": "G2",
+          "repetition": 2,
+          "startedAt": "1970-01-01T00:00:00.000Z",
+          "status": "completed",
+          "host": "10.182.120.183",
+          "e2eMs": 2700780.0,
+          "telemetry": {
+            "actualModel": "ds-v4.1-flash",
+            "sessionKey": null,
+            "complete": true,
+            "usage": {
+              "input": 4626180.0,
+              "output": 211632.0,
+              "reasoning": 145234.0,
+              "cacheRead": null,
+              "cacheWrite": null,
+              "inputIncludesCache": null,
+              "outputIncludesReasoning": null,
+              "cacheWriteReported": null
+            },
+            "spans": []
+          },
+          "verdict": {
+            "passed": 194,
+            "total": 371,
+            "quality": {
+              "loc": 5730.0,
+              "vulnerabilities": 0.0,
+              "duplicationPct": 9.74,
+              "complexity": 1.64,
+              "redundancy": 0.0,
+              "buildWarnings": 0.0,
+              "staticWarnings": 1492.0,
+              "critical": 0,
+              "major": 0,
+              "minor": 150,
+              "suggestion": 1342
+            },
+            "qualitySource": null
+          },
+          "phases": [],
+          "error": null
+        }
+      }
+    },
+    {
+      "group": "G2",
+      "raw": {
+        "组": "G2",
+        "次": "3",
+        "产品": "",
+        "环境": "现网",
+        "模型": "普通版+ds-v4.1-flash",
+        "题目ID": "ruoyi-perf-management",
+        "通过用例/总数": "201/371",
+        "是否成功": "否",
+        "E2E时间(m)": "56.478",
+        "TTFT(ms)": "2332.0",
+        "TPOT(ms)": "8.1",
+        "单任务模型调用次数": "177.0",
+        "单次模型推理平均耗时(s)": "18.5",
+        "单任务模型总耗时(分钟)": "47.2",
+        "单任务工具调用次数均值(次)": "484.0",
+        "单次工具平均耗时(s)": "0.2",
+        "单任务工具总耗时(分钟)": "1.2",
+        "输入Token": "3396094.0",
+        "输出Token": "189698.0",
+        "思考Token": "186698.0",
+        "缓存Token(命中+写入)": "11278592.0",
+        "Token总消耗(修正)": "14864384.0",
+        "缓存命中率(%)": "76.86%",
+        "代码规模(LOC)": "2589",
+        "漏洞": "0",
+        "函数重复率%": "41.99",
+        "平均圈复杂度": "1",
+        "冗余": "0",
+        "编译告警": "0",
+        "静态告警": "833",
+        "问题分布": "Critical 0 / Major 0 / Minor 74 / Suggestion 759",
+        "执行机ip": "10.182.121.151"
+      },
+      "item": {
+        "id": "G2-3",
+        "taskId": null,
+        "expectedTests": 371,
+        "labels": {
+          "productMode": "普通版",
+          "environment": "现网",
+          "model": "ds-v4.1-flash",
+          "definitionFingerprint": null,
+          "instructionFile": null,
+          "toolPermissions": null,
+          "acceptanceSource": "用户提供汇总表",
+          "cliVersion": null,
+          "caseId": "ruoyi-perf-management",
+          "host": "10.182.121.151",
+          "qualitySource": null,
+          "qualityScope": "G1/G2 原表范围",
+          "ttftSource": "reported"
+        },
+        "architecture": {
+          "subAgents": null,
+          "delegations": null,
+          "linkedDelegations": null,
+          "subagentTokens": null,
+          "mainWaitMs": null
+        },
+        "recorded": {
+          "e2e": 56.478,
+          "ttft": 2332.0,
+          "tpot": 8.1,
+          "modelCalls": 177.0,
+          "modelAvg": 18.5,
+          "modelSum": 47.2,
+          "toolCalls": 484.0,
+          "toolAvg": 0.2,
+          "toolSum": 1.2,
+          "input": 3396094.0,
+          "output": 189698.0,
+          "reasoning": 186698.0,
+          "cacheCombined": 11278592.0,
+          "reportedTokens": 14864384.0,
+          "reportedCacheHit": 76.86,
+          "loc": 2589.0,
+          "vulnerabilities": 0.0,
+          "duplicationPct": 41.99,
+          "complexity": 1.0,
+          "redundancy": 0.0,
+          "buildWarnings": 0.0,
+          "staticWarnings": 833.0,
+          "critical": 0,
+          "major": 0,
+          "minor": 74,
+          "suggestion": 759
+        },
+        "limitations": [
+          "用户导入汇总，无原始会话和逐用例结果；单位按列标题保留，命中率统一显示为百分数",
+          "运行日期未知；占位日期仅满足 DTO，不表示测量时间"
+        ],
+        "run": {
+          "id": "G2-3",
+          "variantId": "G2",
+          "repetition": 3,
+          "startedAt": "1970-01-01T00:00:00.000Z",
+          "status": "completed",
+          "host": "10.182.121.151",
+          "e2eMs": 3388680.0,
+          "telemetry": {
+            "actualModel": "ds-v4.1-flash",
+            "sessionKey": null,
+            "complete": true,
+            "usage": {
+              "input": 3396094.0,
+              "output": 189698.0,
+              "reasoning": 186698.0,
+              "cacheRead": null,
+              "cacheWrite": null,
+              "inputIncludesCache": null,
+              "outputIncludesReasoning": null,
+              "cacheWriteReported": null
+            },
+            "spans": []
+          },
+          "verdict": {
+            "passed": 201,
+            "total": 371,
+            "quality": {
+              "loc": 2589.0,
+              "vulnerabilities": 0.0,
+              "duplicationPct": 41.99,
+              "complexity": 1.0,
+              "redundancy": 0.0,
+              "buildWarnings": 0.0,
+              "staticWarnings": 833.0,
+              "critical": 0,
+              "major": 0,
+              "minor": 74,
+              "suggestion": 759
+            },
+            "qualitySource": null
+          },
+          "phases": [],
+          "error": null
+        }
+      }
+    },
+    {
+      "group": "G3",
+      "raw": {
+        "组": "G3",
+        "次": "1",
+        "产品": "",
+        "环境": "测试",
+        "模型": "极速版+生产ds-v4.1-flash",
+        "题目ID": "ruoyi-perf-management",
+        "通过用例/总数": "258/371",
+        "是否成功": "否",
+        "E2E时间(m)": "31.2",
+        "TTFT(ms)": "2645",
+        "TPOT(ms)": "10.2",
+        "单任务模型调用次数": "85",
+        "单次模型推理平均耗时(s)": "13.4",
+        "单任务模型总耗时(分钟)": "18.9",
+        "单任务工具调用次数均值(次)": "206",
+        "单次工具平均耗时(s)": "3.5",
+        "单任务工具总耗时(分钟)": "12.2",
+        "输入Token": "8035240",
+        "输出Token": "115470",
+        "思考Token": "66965",
+        "缓存Token(命中+写入)": "6787328",
+        "Token总消耗(修正)": "15005003",
+        "缓存命中率(%)": "45.7905",
+        "代码规模(LOC)": "44704",
+        "漏洞": "0",
+        "函数重复率%": "3.56",
+        "平均圈复杂度": "3.55",
+        "冗余": "17",
+        "编译告警": "0",
+        "静态告警": "1459",
+        "问题分布": "Critical 0 / Major 0 / Minor 54 / Suggestion 1405",
+        "执行机ip": ""
+      },
+      "item": {
+        "id": "G3-1",
+        "taskId": null,
+        "expectedTests": 371,
+        "labels": {
+          "productMode": "极速版",
+          "environment": "测试",
+          "model": "ds-v4.1-flash",
+          "definitionFingerprint": null,
+          "instructionFile": null,
+          "toolPermissions": null,
+          "acceptanceSource": "用户提供汇总表",
+          "cliVersion": null,
+          "caseId": "ruoyi-perf-management",
+          "host": null,
+          "qualitySource": null,
+          "qualityScope": "G3 原表范围",
+          "ttftSource": "reported"
+        },
+        "architecture": {
+          "subAgents": null,
+          "delegations": null,
+          "linkedDelegations": null,
+          "subagentTokens": null,
+          "mainWaitMs": null
+        },
+        "recorded": {
+          "e2e": 31.2,
+          "ttft": 2645.0,
+          "tpot": 10.2,
+          "modelCalls": 85.0,
+          "modelAvg": 13.4,
+          "modelSum": 18.9,
+          "toolCalls": 206.0,
+          "toolAvg": 3.5,
+          "toolSum": 12.2,
+          "input": 8035240.0,
+          "output": 115470.0,
+          "reasoning": 66965.0,
+          "cacheCombined": 6787328.0,
+          "reportedTokens": 15005003.0,
+          "reportedCacheHit": 45.7905,
+          "loc": 44704.0,
+          "vulnerabilities": 0.0,
+          "duplicationPct": 3.56,
+          "complexity": 3.55,
+          "redundancy": 17.0,
+          "buildWarnings": 0.0,
+          "staticWarnings": 1459.0,
+          "critical": 0,
+          "major": 0,
+          "minor": 54,
+          "suggestion": 1405
+        },
+        "limitations": [
+          "用户导入汇总，无原始会话和逐用例结果；单位按列标题保留，命中率统一显示为百分数",
+          "运行日期未知；占位日期仅满足 DTO，不表示测量时间"
+        ],
+        "run": {
+          "id": "G3-1",
+          "variantId": "G3",
+          "repetition": 1,
+          "startedAt": "1970-01-01T00:00:00.000Z",
+          "status": "completed",
+          "host": "unknown",
+          "e2eMs": 1872000.0,
+          "telemetry": {
+            "actualModel": "ds-v4.1-flash",
+            "sessionKey": null,
+            "complete": true,
+            "usage": {
+              "input": 8035240.0,
+              "output": 115470.0,
+              "reasoning": 66965.0,
+              "cacheRead": null,
+              "cacheWrite": null,
+              "inputIncludesCache": null,
+              "outputIncludesReasoning": null,
+              "cacheWriteReported": null
+            },
+            "spans": []
+          },
+          "verdict": {
+            "passed": 258,
+            "total": 371,
+            "quality": {
+              "loc": 44704.0,
+              "vulnerabilities": 0.0,
+              "duplicationPct": 3.56,
+              "complexity": 3.55,
+              "redundancy": 17.0,
+              "buildWarnings": 0.0,
+              "staticWarnings": 1459.0,
+              "critical": 0,
+              "major": 0,
+              "minor": 54,
+              "suggestion": 1405
+            },
+            "qualitySource": null
+          },
+          "phases": [],
+          "error": null
+        }
+      }
+    },
+    {
+      "group": "G3",
+      "raw": {
+        "组": "G3",
+        "次": "2",
+        "产品": "",
+        "环境": "测试",
+        "模型": "极速版+生产ds-v4.1-flash",
+        "题目ID": "ruoyi-perf-management",
+        "通过用例/总数": "256/371",
+        "是否成功": "否",
+        "E2E时间(m)": "18.6",
+        "TTFT(ms)": "2280.4",
+        "TPOT(ms)": "8.1",
+        "单任务模型调用次数": "66",
+        "单次模型推理平均耗时(s)": "15.9",
+        "单任务模型总耗时(分钟)": "17.5",
+        "单任务工具调用次数均值(次)": "160",
+        "单次工具平均耗时(s)": "0.4",
+        "单任务工具总耗时(分钟)": "1.1",
+        "输入Token": "5783817",
+        "输出Token": "115280",
+        "思考Token": "66423",
+        "缓存Token(命中+写入)": "4787200",
+        "Token总消耗(修正)": "10752720",
+        "缓存命中率(%)": "45.28608742",
+        "代码规模(LOC)": "43952",
+        "漏洞": "0",
+        "函数重复率%": "2.42",
+        "平均圈复杂度": "3.75",
+        "冗余": "17",
+        "编译告警": "0",
+        "静态告警": "1143",
+        "问题分布": "Critical 0 / Major 0 / Minor 142 / Suggestion 1001",
+        "执行机ip": ""
+      },
+      "item": {
+        "id": "G3-2",
+        "taskId": null,
+        "expectedTests": 371,
+        "labels": {
+          "productMode": "极速版",
+          "environment": "测试",
+          "model": "ds-v4.1-flash",
+          "definitionFingerprint": null,
+          "instructionFile": null,
+          "toolPermissions": null,
+          "acceptanceSource": "用户提供汇总表",
+          "cliVersion": null,
+          "caseId": "ruoyi-perf-management",
+          "host": null,
+          "qualitySource": null,
+          "qualityScope": "G3 原表范围",
+          "ttftSource": "reported"
+        },
+        "architecture": {
+          "subAgents": null,
+          "delegations": null,
+          "linkedDelegations": null,
+          "subagentTokens": null,
+          "mainWaitMs": null
+        },
+        "recorded": {
+          "e2e": 18.6,
+          "ttft": 2280.4,
+          "tpot": 8.1,
+          "modelCalls": 66.0,
+          "modelAvg": 15.9,
+          "modelSum": 17.5,
+          "toolCalls": 160.0,
+          "toolAvg": 0.4,
+          "toolSum": 1.1,
+          "input": 5783817.0,
+          "output": 115280.0,
+          "reasoning": 66423.0,
+          "cacheCombined": 4787200.0,
+          "reportedTokens": 10752720.0,
+          "reportedCacheHit": 45.28608742,
+          "loc": 43952.0,
+          "vulnerabilities": 0.0,
+          "duplicationPct": 2.42,
+          "complexity": 3.75,
+          "redundancy": 17.0,
+          "buildWarnings": 0.0,
+          "staticWarnings": 1143.0,
+          "critical": 0,
+          "major": 0,
+          "minor": 142,
+          "suggestion": 1001
+        },
+        "limitations": [
+          "用户导入汇总，无原始会话和逐用例结果；单位按列标题保留，命中率统一显示为百分数",
+          "运行日期未知；占位日期仅满足 DTO，不表示测量时间"
+        ],
+        "run": {
+          "id": "G3-2",
+          "variantId": "G3",
+          "repetition": 2,
+          "startedAt": "1970-01-01T00:00:00.000Z",
+          "status": "completed",
+          "host": "unknown",
+          "e2eMs": 1116000.0,
+          "telemetry": {
+            "actualModel": "ds-v4.1-flash",
+            "sessionKey": null,
+            "complete": true,
+            "usage": {
+              "input": 5783817.0,
+              "output": 115280.0,
+              "reasoning": 66423.0,
+              "cacheRead": null,
+              "cacheWrite": null,
+              "inputIncludesCache": null,
+              "outputIncludesReasoning": null,
+              "cacheWriteReported": null
+            },
+            "spans": []
+          },
+          "verdict": {
+            "passed": 256,
+            "total": 371,
+            "quality": {
+              "loc": 43952.0,
+              "vulnerabilities": 0.0,
+              "duplicationPct": 2.42,
+              "complexity": 3.75,
+              "redundancy": 17.0,
+              "buildWarnings": 0.0,
+              "staticWarnings": 1143.0,
+              "critical": 0,
+              "major": 0,
+              "minor": 142,
+              "suggestion": 1001
+            },
+            "qualitySource": null
+          },
+          "phases": [],
+          "error": null
+        }
+      }
+    },
+    {
+      "group": "G3",
+      "raw": {
+        "组": "G3",
+        "次": "3",
+        "产品": "",
+        "环境": "测试",
+        "模型": "极速版+生产ds-v4.1-flash",
+        "题目ID": "ruoyi-perf-management",
+        "通过用例/总数": "247/371",
+        "是否成功": "否",
+        "E2E时间(m)": "19.87",
+        "TTFT(ms)": "1898.1",
+        "TPOT(ms)": "8.2",
+        "单任务模型调用次数": "89",
+        "单次模型推理平均耗时(s)": "12",
+        "单任务模型总耗时(分钟)": "17.7",
+        "单任务工具调用次数均值(次)": "228",
+        "单次工具平均耗时(s)": "0.5",
+        "单任务工具总耗时(分钟)": "2.1",
+        "输入Token": "5134049",
+        "输出Token": "110965",
+        "思考Token": "61791",
+        "缓存Token(命中+写入)": "5727232",
+        "Token总消耗(修正)": "11034037",
+        "缓存命中率(%)": "52.73072302",
+        "代码规模(LOC)": "43925",
+        "漏洞": "0",
+        "函数重复率%": "2.34",
+        "平均圈复杂度": "3.73",
+        "冗余": "17",
+        "编译告警": "0",
+        "静态告警": "1209",
+        "问题分布": "Critical 0 / Major 0 / Minor 133 / Suggestion 1076",
+        "执行机ip": ""
+      },
+      "item": {
+        "id": "G3-3",
+        "taskId": null,
+        "expectedTests": 371,
+        "labels": {
+          "productMode": "极速版",
+          "environment": "测试",
+          "model": "ds-v4.1-flash",
+          "definitionFingerprint": null,
+          "instructionFile": null,
+          "toolPermissions": null,
+          "acceptanceSource": "用户提供汇总表",
+          "cliVersion": null,
+          "caseId": "ruoyi-perf-management",
+          "host": null,
+          "qualitySource": null,
+          "qualityScope": "G3 原表范围",
+          "ttftSource": "reported"
+        },
+        "architecture": {
+          "subAgents": null,
+          "delegations": null,
+          "linkedDelegations": null,
+          "subagentTokens": null,
+          "mainWaitMs": null
+        },
+        "recorded": {
+          "e2e": 19.87,
+          "ttft": 1898.1,
+          "tpot": 8.2,
+          "modelCalls": 89.0,
+          "modelAvg": 12.0,
+          "modelSum": 17.7,
+          "toolCalls": 228.0,
+          "toolAvg": 0.5,
+          "toolSum": 2.1,
+          "input": 5134049.0,
+          "output": 110965.0,
+          "reasoning": 61791.0,
+          "cacheCombined": 5727232.0,
+          "reportedTokens": 11034037.0,
+          "reportedCacheHit": 52.73072302,
+          "loc": 43925.0,
+          "vulnerabilities": 0.0,
+          "duplicationPct": 2.34,
+          "complexity": 3.73,
+          "redundancy": 17.0,
+          "buildWarnings": 0.0,
+          "staticWarnings": 1209.0,
+          "critical": 0,
+          "major": 0,
+          "minor": 133,
+          "suggestion": 1076
+        },
+        "limitations": [
+          "用户导入汇总，无原始会话和逐用例结果；单位按列标题保留，命中率统一显示为百分数",
+          "运行日期未知；占位日期仅满足 DTO，不表示测量时间"
+        ],
+        "run": {
+          "id": "G3-3",
+          "variantId": "G3",
+          "repetition": 3,
+          "startedAt": "1970-01-01T00:00:00.000Z",
+          "status": "completed",
+          "host": "unknown",
+          "e2eMs": 1192200.0,
+          "telemetry": {
+            "actualModel": "ds-v4.1-flash",
+            "sessionKey": null,
+            "complete": true,
+            "usage": {
+              "input": 5134049.0,
+              "output": 110965.0,
+              "reasoning": 61791.0,
+              "cacheRead": null,
+              "cacheWrite": null,
+              "inputIncludesCache": null,
+              "outputIncludesReasoning": null,
+              "cacheWriteReported": null
+            },
+            "spans": []
+          },
+          "verdict": {
+            "passed": 247,
+            "total": 371,
+            "quality": {
+              "loc": 43925.0,
+              "vulnerabilities": 0.0,
+              "duplicationPct": 2.34,
+              "complexity": 3.73,
+              "redundancy": 17.0,
+              "buildWarnings": 0.0,
+              "staticWarnings": 1209.0,
+              "critical": 0,
+              "major": 0,
+              "minor": 133,
+              "suggestion": 1076
+            },
+            "qualitySource": null
+          },
+          "phases": [],
+          "error": null
+        }
+      }
+    }
+  ],
+  "expectedStats": {
+    "G1": {
+      "e2e": {
+        "mean": 21.206666666666667,
+        "median": 20.36,
+        "cv": 6.601847276038144,
+        "min": 20.08,
+        "max": 23.18
+      },
+      "ttft": {
+        "mean": 2420.7999999999997,
+        "median": 2405.7,
+        "cv": 4.317895076406914,
+        "min": 2301.0,
+        "max": 2555.7
+      },
+      "tpot": {
+        "mean": 4.866666666666666,
+        "median": 4.8,
+        "cv": 3.4924791188991637,
+        "min": 4.7,
+        "max": 5.1
+      },
+      "modelCalls": {
+        "mean": 101.33333333333333,
+        "median": 92.0,
+        "cv": 32.09218348752902,
+        "min": 67.0,
+        "max": 145.0
+      },
+      "modelAvg": {
+        "mean": 11.466666666666667,
+        "median": 10.9,
+        "cv": 29.756425105277195,
+        "min": 7.6,
+        "max": 15.9
+      },
+      "modelSum": {
+        "mean": 16.866666666666667,
+        "median": 17.5,
+        "cv": 8.417209264445393,
+        "min": 14.9,
+        "max": 18.2
+      },
+      "toolCalls": {
+        "mean": 182.33333333333334,
+        "median": 192.0,
+        "cv": 10.331898465041894,
+        "min": 156.0,
+        "max": 199.0
+      },
+      "toolAvg": {
+        "mean": 0.7666666666666667,
+        "median": 0.7,
+        "cv": 32.536151189338625,
+        "min": 0.5,
+        "max": 1.1
+      },
+      "toolSum": {
+        "mean": 2.2333333333333334,
+        "median": 2.3,
+        "cv": 22.03704934363194,
+        "min": 1.6,
+        "max": 2.8
+      },
+      "input": {
+        "mean": 332953.0,
+        "median": 334551.0,
+        "cv": 2.590363423313846,
+        "min": 321682.0,
+        "max": 342626.0
+      },
+      "output": {
+        "mean": 125046.66666666667,
+        "median": 116387.0,
+        "cv": 16.136992636315238,
+        "min": 105828.0,
+        "max": 152925.0
+      },
+      "reasoning": {
+        "mean": 51687.333333333336,
+        "median": 48570.0,
+        "cv": 9.263841994931314,
+        "min": 48040.0,
+        "max": 58452.0
+      },
+      "cacheCombined": {
+        "mean": 15851776.0,
+        "median": 12700160.0,
+        "cv": 32.20383133029711,
+        "min": 11802624.0,
+        "max": 23052544.0
+      },
+      "reportedTokens": {
+        "mean": 16309775.666666666,
+        "median": 13127670.0,
+        "cv": 31.293473662384656,
+        "min": 12290100.0,
+        "max": 23511557.0
+      },
+      "reportedCacheHit": {
+        "mean": 97.77,
+        "median": 97.53,
+        "cv": 0.5699042218694409,
+        "min": 97.24,
+        "max": 98.54
+      },
+      "loc": {
+        "mean": 4917.0,
+        "median": 5206.0,
+        "cv": 9.099754148211892,
+        "min": 4285.0,
+        "max": 5260.0
+      },
+      "vulnerabilities": {
+        "mean": 0.0,
+        "median": 0.0,
+        "cv": null,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "duplicationPct": {
+        "mean": 7.443333333333333,
+        "median": 6.92,
+        "cv": 62.668825312147966,
+        "min": 2.01,
+        "max": 13.4
+      },
+      "complexity": {
+        "mean": 1.66,
+        "median": 1.68,
+        "cv": 2.143991616873753,
+        "min": 1.61,
+        "max": 1.69
+      },
+      "redundancy": {
+        "mean": 0.0,
+        "median": 0.0,
+        "cv": null,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "buildWarnings": {
+        "mean": 0.0,
+        "median": 0.0,
+        "cv": null,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "staticWarnings": {
+        "mean": 1460.3333333333333,
+        "median": 1303.0,
+        "cv": 30.705089007357905,
+        "min": 1007.0,
+        "max": 2071.0
+      },
+      "critical": {
+        "mean": 0,
+        "median": 0,
+        "cv": null,
+        "min": 0,
+        "max": 0
+      },
+      "major": {
+        "mean": 0,
+        "median": 0,
+        "cv": null,
+        "min": 0,
+        "max": 0
+      },
+      "minor": {
+        "mean": 145,
+        "median": 152,
+        "cv": 7.320314173834784,
+        "min": 130,
+        "max": 153
+      },
+      "suggestion": {
+        "mean": 1315.3333333333333,
+        "median": 1151,
+        "cv": 34.875377615339644,
+        "min": 854,
+        "max": 1941
+      },
+      "passed": {
+        "mean": 254,
+        "median": 258,
+        "cv": 2.510646518334513,
+        "min": 245,
+        "max": 259
+      }
+    },
+    "G2": {
+      "e2e": {
+        "mean": 57.903666666666666,
+        "median": 56.478,
+        "cv": 19.261069175871057,
+        "min": 45.013,
+        "max": 72.22
+      },
+      "ttft": {
+        "mean": 2295.7999999999997,
+        "median": 2332.0,
+        "cv": 3.744126840231744,
+        "min": 2177.2,
+        "max": 2378.2
+      },
+      "tpot": {
+        "mean": 6.266666666666667,
+        "median": 5.4,
+        "cv": 20.696889849301826,
+        "min": 5.3,
+        "max": 8.1
+      },
+      "modelCalls": {
+        "mean": 240.66666666666666,
+        "median": 238.0,
+        "cv": 22.066107129414764,
+        "min": 177.0,
+        "max": 307.0
+      },
+      "modelAvg": {
+        "mean": 13.7,
+        "median": 13.4,
+        "cv": 27.756428236250436,
+        "min": 9.2,
+        "max": 18.5
+      },
+      "modelSum": {
+        "mean": 50.7,
+        "median": 47.2,
+        "cv": 26.621130625940626,
+        "min": 36.2,
+        "max": 68.7
+      },
+      "toolCalls": {
+        "mean": 586.6666666666666,
+        "median": 553.0,
+        "cv": 17.119347411193104,
+        "min": 484.0,
+        "max": 723.0
+      },
+      "toolAvg": {
+        "mean": 0.43333333333333335,
+        "median": 0.5,
+        "cv": 39.2232270276368,
+        "min": 0.2,
+        "max": 0.6
+      },
+      "toolSum": {
+        "mean": 3.0666666666666664,
+        "median": 3.0,
+        "cv": 50.6106379427079,
+        "min": 1.2,
+        "max": 5.0
+      },
+      "input": {
+        "mean": 11099845.333333334,
+        "median": 4626180.0,
+        "cv": 90.4293453387423,
+        "min": 3396094.0,
+        "max": 25277262.0
+      },
+      "output": {
+        "mean": 355779.6666666667,
+        "median": 211632.0,
+        "cv": 61.70896543673321,
+        "min": 189698.0,
+        "max": 666009.0
+      },
+      "reasoning": {
+        "mean": 227551.0,
+        "median": 186698.0,
+        "cv": 38.99086955974281,
+        "min": 145234.0,
+        "max": 350721.0
+      },
+      "cacheCombined": {
+        "mean": 15301290.666666666,
+        "median": 15879424.0,
+        "cv": 20.101478814880583,
+        "min": 11278592.0,
+        "max": 18745856.0
+      },
+      "reportedTokens": {
+        "mean": 26873822.666666668,
+        "median": 20717236.0,
+        "cv": 48.61855052414772,
+        "min": 14864384.0,
+        "max": 45039848.0
+      },
+      "reportedCacheHit": {
+        "mean": 65.62666666666667,
+        "median": 76.86,
+        "cv": 24.83468265475559,
+        "min": 42.58,
+        "max": 77.44
+      },
+      "loc": {
+        "mean": 4777.0,
+        "median": 5730.0,
+        "cv": 32.477016641761054,
+        "min": 2589.0,
+        "max": 6012.0
+      },
+      "vulnerabilities": {
+        "mean": 0.0,
+        "median": 0.0,
+        "cv": null,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "duplicationPct": {
+        "mean": 20.76,
+        "median": 10.55,
+        "cv": 72.32908785675042,
+        "min": 9.74,
+        "max": 41.99
+      },
+      "complexity": {
+        "mean": 1.4633333333333334,
+        "median": 1.64,
+        "cv": 22.598372346671358,
+        "min": 1.0,
+        "max": 1.75
+      },
+      "redundancy": {
+        "mean": 0.0,
+        "median": 0.0,
+        "cv": null,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "buildWarnings": {
+        "mean": 0.0,
+        "median": 0.0,
+        "cv": null,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "staticWarnings": {
+        "mean": 1168.0,
+        "median": 1179.0,
+        "cv": 23.043496453004554,
+        "min": 833.0,
+        "max": 1492.0
+      },
+      "critical": {
+        "mean": 0,
+        "median": 0,
+        "cv": null,
+        "min": 0,
+        "max": 0
+      },
+      "major": {
+        "mean": 0,
+        "median": 0,
+        "cv": null,
+        "min": 0,
+        "max": 0
+      },
+      "minor": {
+        "mean": 120.66666666666667,
+        "median": 138,
+        "cv": 27.64640000706476,
+        "min": 74,
+        "max": 150
+      },
+      "suggestion": {
+        "mean": 1047.3333333333333,
+        "median": 1041,
+        "cv": 22.729237579490956,
+        "min": 759,
+        "max": 1342
+      },
+      "passed": {
+        "mean": 199.66666666666666,
+        "median": 201,
+        "cv": 2.0984649565904063,
+        "min": 194,
+        "max": 204
+      }
+    },
+    "G3": {
+      "e2e": {
+        "mean": 23.223333333333333,
+        "median": 19.87,
+        "cv": 24.38984381426728,
+        "min": 18.6,
+        "max": 31.2
+      },
+      "ttft": {
+        "mean": 2274.5,
+        "median": 2280.4,
+        "cv": 13.407306529967544,
+        "min": 1898.1,
+        "max": 2645.0
+      },
+      "tpot": {
+        "mean": 8.833333333333332,
+        "median": 8.2,
+        "cv": 10.949900474375026,
+        "min": 8.1,
+        "max": 10.2
+      },
+      "modelCalls": {
+        "mean": 80.0,
+        "median": 85.0,
+        "cv": 12.541597452743675,
+        "min": 66.0,
+        "max": 89.0
+      },
+      "modelAvg": {
+        "mean": 13.766666666666667,
+        "median": 13.4,
+        "cv": 11.717727489164998,
+        "min": 12.0,
+        "max": 15.9
+      },
+      "modelSum": {
+        "mean": 18.03333333333333,
+        "median": 17.7,
+        "cv": 3.4283247672812185,
+        "min": 17.5,
+        "max": 18.9
+      },
+      "toolCalls": {
+        "mean": 198.0,
+        "median": 206.0,
+        "cv": 14.308773980387729,
+        "min": 160.0,
+        "max": 228.0
+      },
+      "toolAvg": {
+        "mean": 1.4666666666666668,
+        "median": 0.5,
+        "cv": 98.07022277450643,
+        "min": 0.4,
+        "max": 3.5
+      },
+      "toolSum": {
+        "mean": 5.133333333333333,
+        "median": 2.1,
+        "cv": 97.66630967330316,
+        "min": 1.1,
+        "max": 12.2
+      },
+      "input": {
+        "mean": 6317702.0,
+        "median": 5783817.0,
+        "cv": 19.676695076116285,
+        "min": 5134049.0,
+        "max": 8035240.0
+      },
+      "output": {
+        "mean": 113905.0,
+        "median": 115280.0,
+        "cv": 1.826382087703577,
+        "min": 110965.0,
+        "max": 115470.0
+      },
+      "reasoning": {
+        "mean": 65059.666666666664,
+        "median": 66423.0,
+        "cv": 3.568822174606763,
+        "min": 61791.0,
+        "max": 66965.0
+      },
+      "cacheCombined": {
+        "mean": 5767253.333333333,
+        "median": 5727232.0,
+        "cv": 14.16686647144309,
+        "min": 4787200.0,
+        "max": 6787328.0
+      },
+      "reportedTokens": {
+        "mean": 12263920.0,
+        "median": 11034037.0,
+        "cv": 15.832115163644907,
+        "min": 10752720.0,
+        "max": 15005003.0
+      },
+      "reportedCacheHit": {
+        "mean": 47.93577014666667,
+        "median": 45.7905,
+        "cv": 7.0861308742254066,
+        "min": 45.28608742,
+        "max": 52.73072302
+      },
+      "loc": {
+        "mean": 44193.666666666664,
+        "median": 43952.0,
+        "cv": 0.8169235467585526,
+        "min": 43925.0,
+        "max": 44704.0
+      },
+      "vulnerabilities": {
+        "mean": 0.0,
+        "median": 0.0,
+        "cv": null,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "duplicationPct": {
+        "mean": 2.7733333333333334,
+        "median": 2.42,
+        "cv": 20.091897782660446,
+        "min": 2.34,
+        "max": 3.56
+      },
+      "complexity": {
+        "mean": 3.6766666666666667,
+        "median": 3.73,
+        "cv": 2.4461899480021856,
+        "min": 3.55,
+        "max": 3.75
+      },
+      "redundancy": {
+        "mean": 17.0,
+        "median": 17.0,
+        "cv": 0.0,
+        "min": 17.0,
+        "max": 17.0
+      },
+      "buildWarnings": {
+        "mean": 0.0,
+        "median": 0.0,
+        "cv": null,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "staticWarnings": {
+        "mean": 1270.3333333333333,
+        "median": 1209.0,
+        "cv": 10.713823365426379,
+        "min": 1143.0,
+        "max": 1459.0
+      },
+      "critical": {
+        "mean": 0,
+        "median": 0,
+        "cv": null,
+        "min": 0,
+        "max": 0
+      },
+      "major": {
+        "mean": 0,
+        "median": 0,
+        "cv": null,
+        "min": 0,
+        "max": 0
+      },
+      "minor": {
+        "mean": 109.66666666666667,
+        "median": 133,
+        "cv": 36.04868347536298,
+        "min": 54,
+        "max": 142
+      },
+      "suggestion": {
+        "mean": 1160.6666666666667,
+        "median": 1076,
+        "cv": 15.117340324002331,
+        "min": 1001,
+        "max": 1405
+      },
+      "passed": {
+        "mean": 253.66666666666666,
+        "median": 256,
+        "cv": 1.8860315498564157,
+        "min": 247,
+        "max": 258
+      }
+    }
+  },
+  "rawAverageRows": [
+    "组\t通过用例/总数\tE2E时间(m)\tTTFT(ms)\tTPOT(ms)\t单任务模型调用次数\t单次模型推理平均耗时(s)\t单任务模型总耗时(分钟)\t单任务工具调用次数均值(次)\t单次工具平均耗时(s)\t单任务工具总耗时(分钟)\t输入Token\t输出Token\t思考Token\t缓存Token(命中+写入)\tToken总消耗(修正)\t缓存命中率\t代码规模(LOC)\t漏洞\t函数重复率%\t平均圈复杂度\t冗余\t编译告警\t静态告警",
+    "G1\t254/371\t21.207\t2420.800\t4.867\t101.333\t11.467\t16.867\t182.333\t0.767\t2.233\t332953.000\t125046.667\t51687.333\t15851776.000\t16309775.667\t0.978\t4917.000\t0.000\t7.443\t1.660\t0.000\t0.000\t1460.333",
+    "G2\t200/371\t57.904\t2295.800\t6.267\t240.667\t13.700\t50.700\t586.667\t0.433\t3.067\t11099845.333\t355779.667\t227551.000\t15301290.667\t26873822.667\t0.656\t4777.000\t0.000\t20.760\t1.463\t0.000\t0.000\t1168.000",
+    "G3\t253.6/371\t23.223\t2274.500\t8.833\t80.000\t13.767\t18.033\t198.000\t1.467\t5.133\t6317702.000\t113905.000\t65059.667\t5767253.333\t12263920.000\t47.936\t44193.667\t0.000\t2.773\t3.677\t17.000\t0.000\t1270.333"
+  ]
+}

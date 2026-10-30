@@ -137,7 +137,11 @@ export function buildCompareReportHtml(
   right: TraceRecord,
   locale: ReportLocale = 'zh',
 ): string {
-  return `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><title>Compare</title>
-<style>.columns{display:flex;gap:24px}.column{flex:1;border:1px solid rgb(204, 204, 204);padding:12px}</style></head>
-<body><h1>${reportLabel('title', locale)}</h1><div class="columns">${column('Left', left, locale)}${column('Right', right, locale)}</div></body></html>`;
+  return buildComparisonShell('Compare', `<h1>${reportLabel('title', locale)}</h1><div class="columns">${column('Left', left, locale)}${column('Right', right, locale)}</div>`, locale);
+}
+
+/** Shared static HTML shell; callers must escape every data cell in trustedBody. */
+export function buildComparisonShell(title: string, trustedBody: string, locale: ReportLocale = 'zh'): string {
+  return `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+<style>body{font-family:system-ui,sans-serif;max-width:1200px;margin:24px auto;padding:16px;color:#222}.columns{display:flex;gap:24px}.column{flex:1;border:1px solid #ccc;padding:12px}table{border-collapse:collapse;width:100%;margin:12px 0}th,td{border:1px solid #ccc;padding:6px;text-align:left}h2{margin-top:28px}</style></head><body>${trustedBody}</body></html>`;
 }
