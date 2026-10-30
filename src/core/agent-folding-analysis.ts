@@ -1,3 +1,5 @@
+import { kitCoupling, kitCoverage, kitCompare, kitEstimate } from './agent-folding-kit.js';
+import type { FoldingKitResult } from './agent-folding-kit.js';
 import type {
   FoldingAnalysis, FoldingBoundaryDecision, FoldingEstimate, FoldingExperiment,
   FoldingExperimentAnalysis, FoldingJson, FoldingMetricSummary, FoldingPair, FoldingProject, FoldingRunPlan, FoldingText, FoldingTrial,
@@ -216,9 +218,23 @@ function analyzeExperiment(project: FoldingProject, experiment: FoldingExperimen
     detail: text('先计算每个独立任务在重复中的平均通过率，再让任务等权。未知使均分不可用；95% 区间使用任务层 Hoeffding 界并假定任务独立，不代表普遍因果证明。',
       'Average repetitions within each independent task, then weight tasks equally. Unknowns make the score unavailable. The 95% interval uses a task-level Hoeffding bound assuming independent tasks; it is not universal causal proof.'), evidenceIds: [] });
   const unscored = selected.length > 0 && selected.every(trial => !realKinds.has(sources.get(trial.sourceId)?.kind ?? '') && grade(trial, project) === null);
+  const kitRows = (variantId: string): FoldingKitResult[] => selected.filter(t => t.variantId === variantId).map(t => ({
+    prompt_id: t.caseId, status: t.harnessError === null && grade(t, project) !== null ? 'ok' : 'unscored',
+    ...(grade(t, project) === null ? {} : { grade: { passed: grade(t, project)! } }),
+    latency_s: t.latencyMs === null ? null : t.latencyMs / 1000, in_tokens: t.inputTokens,
+    out_tokens: t.outputTokens, model_calls: t.modelCalls,
+    ...(Object.keys(t.byAgent).length ? { by_agent: Object.fromEntries(Object.entries(t.byAgent).map(([id, use]) => [id, { calls: use.calls, input_tokens: use.inputTokens }])) } : {}),
+    ...(actionsComplete(t) ? { actions: t.actions.map(a => ({ name: a.name })) } : {}),
+  }));
+  const before = kitRows(experiment.baselineVariantId), after = kitRows(experiment.candidateVariantId);
+  const hasCommon = before.some(a => a.status === 'ok' && after.some(b => b.status === 'ok' && a.prompt_id === b.prompt_id));
+  const kitComparison = hasCommon ? kitCompare(before, after) : null;
+  const kitCoverageResult = before.some(r => r.status === 'ok' && r.by_agent !== undefined)
+    ? kitCoverage(project.traffic.map(r => ({ trace_id: r.traceId, ts: r.timestamp ?? r.sequence, agent: r.agentId })), before,
+      { exclude: project.agents.filter(a => a.isMain).map(a => a.id) }) : null;
   return { experimentId: experiment.id, boundaryId: experiment.boundaryId,
     status: regressions.length ? 'regression' : unscored ? 'unscored' : blockers.length === 0 ? 'supported' : 'needs_evidence',
-    baseline, candidate, pairs, regressions, improvements, metrics, coverage, blockers, observations,
+    baseline, candidate, pairs, regressions, improvements, metrics, coverage, blockers, observations, kitComparison, kitCoverage: kitCoverageResult,
     ...(ablation === undefined ? {} : { ablation }) };
 }
 
@@ -248,24 +264,22 @@ export function analyzeFoldingProject(value: FoldingProject): FoldingAnalysis {
       experimentIds: related.map(experiment => experiment.experimentId), evidenceIds: refs([...boundary.evidenceIds, ...targets.flatMap(agent => agent.evidenceIds), ...related.flatMap(experiment => experiment.regressions.flatMap(pair => pair.evidenceIds))]),
       nextChecks: unique(nextChecks.map(item => JSON.stringify(item))).slice(0, 32).map(item => JSON.parse(item) as FoldingText) };
   });
-  const traces = new Map<string, typeof project.traffic>();
-  for (const row of project.traffic) { const list = traces.get(row.traceId) ?? []; list.push(row); traces.set(row.traceId, list); }
-  const visits = new Map<string, Set<string>>(), adjacent = new Map<string, { left: string; right: string; traces: Set<string>; evidenceIds: string[] }>();
-  for (const [traceId, rows] of traces) {
-    rows.sort((a, b) => a.sequence - b.sequence);
-    for (const row of rows) { const set = visits.get(row.agentId) ?? new Set<string>(); set.add(traceId); visits.set(row.agentId, set); }
-    for (let index = 1; index < rows.length; index += 1) {
-      const before = rows[index - 1]!, after = rows[index]!; if (before.agentId === after.agentId) continue;
-      const key = JSON.stringify([before.agentId, after.agentId]); const item = adjacent.get(key)
-        ?? { left: before.agentId, right: after.agentId, traces: new Set<string>(), evidenceIds: [] };
-      item.traces.add(traceId); item.evidenceIds.push(before.evidenceId, after.evidenceId); adjacent.set(key, item);
-    }
+  // Same pinned-kit formula as exports/CLI; evidence remains attached to actual adjacent calls.
+  const sortedTraffic = [...project.traffic].sort((a, b) =>
+    (a.timestamp === null ? a.sequence : Date.parse(a.timestamp) / 1000)
+    - (b.timestamp === null ? b.sequence : Date.parse(b.timestamp) / 1000));
+  const adjacentEvidence = new Map<string, string[]>(), last = new Map<string, typeof project.traffic[number]>();
+  for (const row of sortedTraffic) {
+    const before = last.get(row.traceId); last.set(row.traceId, row);
+    if (!before || before.agentId === row.agentId) continue;
+    const key = JSON.stringify([before.agentId, row.agentId]), evidence = adjacentEvidence.get(key) ?? [];
+    evidence.push(before.evidenceId, row.evidenceId); adjacentEvidence.set(key, evidence);
   }
-  const coupling = [...adjacent.values()].map(item => {
-    const left = visits.get(item.left) ?? new Set<string>(), right = visits.get(item.right) ?? new Set<string>();
-    return { left: item.left, right: item.right, traces: item.traces.size,
-      coupling: item.traces.size / new Set([...left, ...right]).size, share: item.traces.size / traces.size, evidenceIds: refs(item.evidenceIds) };
-  }).sort((a, b) => b.traces - a.traces || a.left.localeCompare(b.left) || a.right.localeCompare(b.right));
+  const coupling = sortedTraffic.length ? kitCoupling(sortedTraffic.map(r => ({ trace_id: r.traceId,
+    ts: r.timestamp ?? r.sequence, agent: r.agentId, duration_ms: r.durationMs, input_tokens: r.inputTokens }))).pairs.map(p => ({
+      left: p.first, right: p.then, traces: p.traces, coupling: p.coupling, share: p.share,
+      evidenceIds: refs(adjacentEvidence.get(JSON.stringify([p.first, p.then])) ?? []),
+    })) : [];
   const warnings = [text('组织、角色名、提示词长度、工具数量与共用流量只能形成候选，不能证明拆分或合并更好。主循环不会成为折叠目标。',
     'Organization, personas, prompt length, tool counts, and shared traffic only create candidates; they do not prove folding or merging is better. The main loop is never a folding target.'),
   text('人工保留、回滚、修复与重跑记录独立保存，不会覆盖失败、回归或证据限制。', 'Human keep, revert, fix, and rerun notes are separate and never overwrite failures, regressions, or evidence limits.')];
@@ -293,10 +307,14 @@ export function estimateFoldingPlan(value: FoldingRunPlan, project?: FoldingProj
       && experiment.trialIds.includes(trial.id)) && trial.model === plan.model) ?? [];
   const complete = plan.caseIds.every(id => eligible.some(trial => trial.caseId === id && trial.modelCalls !== null && trial.inputTokens !== null && trial.outputTokens !== null));
   const variants = plan.skillAblation ? 3 : 2;
-  const estimate = (key: 'modelCalls' | 'inputTokens' | 'outputTokens') => !complete ? null : Math.ceil(plan.caseIds.reduce((sum, id) => {
-    const samples = eligible.filter(trial => trial.caseId === id && trial[key] !== null);
-    return sum + samples.reduce((sum, trial) => sum + trial[key]!, 0) / samples.length;
-  }, 0) * plan.repetitions * variants);
+  const perVersion = complete ? kitEstimate(eligible.map(t => ({ prompt_id: t.caseId,
+    in_tokens: t.inputTokens, out_tokens: t.outputTokens })), { reps: plan.repetitions }) : null;
+  const estimate = (key: 'modelCalls' | 'inputTokens' | 'outputTokens') => !complete ? null
+    : key === 'modelCalls' ? Math.ceil(plan.caseIds.reduce((sum, id) => {
+      const samples = eligible.filter(t => t.caseId === id && t.modelCalls !== null);
+      return sum + samples.reduce((n, t) => n + t.modelCalls!, 0) / samples.length;
+    }, 0) * plan.repetitions * variants)
+    : Math.ceil(perVersion![key === 'inputTokens' ? 'input' : 'output'].likely! * variants);
   return { cases: plan.caseIds.length, repetitions: plan.repetitions, variants, modelCalls: estimate('modelCalls'), inputTokens: estimate('inputTokens'), outputTokens: estimate('outputTokens'),
     basis: complete ? 'measured_baseline' : 'unknown', limitations: [
       'Candidate costs are estimated from the measured baseline and may differ. Nested calls must be included by the runner; do not add overlapping per-agent totals.',

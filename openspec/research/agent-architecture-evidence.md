@@ -127,3 +127,29 @@ claims or UI browser screenshots are made at this stage.
 
 P2 checks: typecheck, full test suite and lint passed (350 files; 4,197 passed,
 one existing skip); final merge-target integration and workbench checks also passed.
+
+## P3 kit parity (2026-10-30)
+
+- Golden generator executes only the four pinned local Python analysis scripts;
+  it records their hashes, output/exit status, and the licensed example fields
+  consumed by the algorithms. No model call, business execution, or native
+  conversation content is involved. Tests subsequently read committed JSON.
+- Reported before implementation: the old union denominator gave orders →
+  shipping 96/112 instead of kit's 96/96. Coupling now shares the kit function;
+  distinct adjacent trace counts and actual evidence locators are preserved.
+  The corresponding existing test's exact expected value changed from 1/3 to
+  1/2 for two visits per agent and one adjacent trace, as required by r4;
+  no tolerance or assertion was weakened.
+- Set-based chain coverage and kit task-weighted comparison are separate fields
+  from existing ordered, per-repetition terminal checks and stricter adoption
+  blockers. All those independent diagnostics remain active.
+- A kit estimate is for one variant. Whole-experiment estimates reuse that token
+  total and multiply by two or three planned variants; existing provenance/model
+  checks and budget tests remain intact. Partial probes retain uncertainty.
+- Both published baseline/v1 datasets match Python coverage rows, verdicts,
+  action-name changes, task scores, metric means and displayed token estimates;
+  full coupling JSON also matches. These are reference examples, not claims
+  about the user's production performance.
+- Phase checks: typecheck and lint passed; full suite 351 files, 4208 passed,
+  1 pre-existing skipped test. No P3 browser changes; screenshots start at P6.
+  OpenCode and the known performance follow-up remain user-deferred.

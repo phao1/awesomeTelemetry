@@ -269,3 +269,58 @@ FoldingRuleDecision[] without mutating the project. It never interprets tool cou
 name/persona or prompt length as isolation evidence. Missing per-call return-token
 measurements keep the volume ratio unknown. Scope proposals use these decisions;
 full reasons remain available through the shared rule function for P6 rendering.
+
+## Architecture r4 P3 kit parity
+
+Implementation files: src/core/agent-folding-kit.ts and adjacent tests,
+scripts/kit-parity-golden.mjs, src/core/__fixtures__/agent-folding-kit-golden.json;
+existing analysis/types and tests integrate the same functions. Apache-2.0
+algorithm attribution is retained. Golden values come only from the pinned
+Python scripts, never from TS. Tests require no Python.
+
+`FoldingKitResult`: prompt_id:string; status?:string; grade?:Record<string,number>;
+latency_s?:number|null; in_tokens?:number|null; out_tokens?:number|null;
+model_calls?:number|null; by_agent?:Record<string,{calls?:number,input_tokens?:number}>;
+actions?:Array<{name:string}>. Missing metrics remain null. Failed harness rows
+are excluded from kit calculations, separately retained in original diagnostics.
+`FoldingKitTrace`: trace_id:string; ts:string|number; agent:string;
+duration_ms?:number|null; input_tokens?:number|null.
+
+`kitCoupling(traces, {exclude?,minCoupling?,minShare?}?)` returns the Python JSON
+shape: traces,calls,first_ts,last_ts; volume[{agent,calls,trace_share,median_ms,
+time_share,median_input_tokens}]; sequences:[string,number][];
+pairs and candidates [{first,then,traces,rarer,rarer_traces,coupling,share}].
+Default thresholds .5/.05. Coupling denominator is the smaller number of traces
+visiting either agent. Calls are ordered by timestamp; native null timestamps
+use retained sequence for ordering, with no invented measured time.
+
+`kitCoverage(traces, results, {exclude?,minTraces?,agents?}?)` returns
+{traces,tasks,chains:[{chain:string[],traces,share,covering:[{caseId,passes,reps}]}],
+status:'covered'|'gaps'|'no_chains'}. Default minTraces=2. Chains are sets;
+representative order is first observed. by_agent is unioned across each task's
+non-error rows. No chains is never a claim of coverage.
+
+`kitCompare(before,after)` returns {common:string[],onlyBefore:string[],
+onlyAfter:string[],before,after,worse:string[],better:string[],
+writesChanged:[{caseId,before:string,after:string}],
+status:'missing_tasks'|'worse'|'mixed'|'holds'}. Each summary contains
+score:number,perCase:Record<string,number>,latency_s,model_calls,in_tokens,out_tokens
+(number|null). Scores are task-weighted; other means are row-weighted.
+Missing grades/nonfinite grades and no common cases fail explicitly. Actions
+compare sorted names per repetition, independent of full-argument diagnostics.
+No cost is shown without explicit prices.
+
+`kitEstimate(results,{tasks?,reps?,heavy?,only?}?)` returns
+{tasks,reps,covered,rows,input:{low,high,likely},output:{low,high,likely}};
+token numbers are unrounded numbers or null. Full coverage uses sum of case means
+times reps. Partial probe input bounds use smallest/largest measured case;
+output has no upper bound with multiple probe tasks; a single probe has only a
+conditional likely value, not an asserted upper bound. `kitRoundEstimate` formats
+the Python two-significant-digit, ties-to-even display. Existing whole-experiment
+estimate multiplies shared per-version totals by planned variants, retaining its
+provenance/model safeguards and unrounded budget figures.
+
+FoldingExperimentAnalysis adds `kitComparison` (kitCompare result or null when
+unscored/no common cases) and `kitCoverage` (kitCoverage result or null when no
+by_agent measurements). Existing coverage and adoption blockers remain distinct
+ordered/per-repetition diagnostics. No persisted schema or new route.

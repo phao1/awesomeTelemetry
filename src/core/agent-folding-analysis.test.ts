@@ -199,7 +199,7 @@ describe('AF-003 per-boundary repeated task evaluation', () => {
       { traceId: 'c', sequence: 0, agentId: 'specialist', callerId: null, timestamp: null, durationMs: null, inputTokens: null, evidenceId: 'graph' },
     ];
     const coupling = analyzeFoldingProject(project).coupling.find(item => item.left === 'main' && item.right === 'specialist')!;
-    expect(coupling.traces).toBe(1); expect(coupling.share).toBeCloseTo(1 / 3); expect(coupling.coupling).toBeCloseTo(1 / 3);
+    expect(coupling.traces).toBe(1); expect(coupling.share).toBeCloseTo(1 / 3); expect(coupling.coupling).toBeCloseTo(1 / 2);
   });
   it('retains official recorded extra reps and honest historical limitations', () => {
     const project = validateFoldingProject(JSON.parse(readFileSync('data/agent-folding/support-desk-project.json', 'utf8')));

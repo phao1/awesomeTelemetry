@@ -1,3 +1,4 @@
+import type { kitCompare, kitCoverage } from './agent-folding-kit.js';
 /** Canonical additive DTOs: openspec/contracts/agent-folding.md AF-001..005. */
 export type FoldingJson = null | boolean | number | string | FoldingJson[] | { [key: string]: FoldingJson };
 export interface FoldingText { zh: string; en: string }
@@ -95,6 +96,8 @@ export interface FoldingExperimentAnalysis {
   pairs: FoldingPair[]; regressions: FoldingPair[]; improvements: FoldingPair[];
   metrics: Record<'latencyMs' | 'inputTokens' | 'outputTokens' | 'modelCalls' | 'toolCalls', { baseline: FoldingMetricSummary; candidate: FoldingMetricSummary }>;
   coverage: Array<{ variantId: string; chain: string[]; trialsSeen: number; trialsSuccessful: number; caseIds: string[]; evidenceIds: string[] }>;
+  kitComparison: ReturnType<typeof kitCompare> | null;
+  kitCoverage: ReturnType<typeof kitCoverage> | null;
   blockers: FoldingText[]; observations: Array<{ title: FoldingText; detail: FoldingText; evidenceIds: string[] }>;
   ablation?: { variantId: string; passed: number; known: number; expected: number; taskScore: number | null; regressions: number; evidenceIds: string[] };
 }
