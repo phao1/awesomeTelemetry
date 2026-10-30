@@ -1,3 +1,5 @@
+import { registerTaskHealthRoutes } from './http/task-health-routes.js';
+import { createHealthReportStore } from './task-health/store.js';
 import { createNativeScopeCollector } from './agent-folding/native-scope.js';
 import { collectFoldingMetricRun } from './agent-folding/run-metrics.js';
 import { getTask, getTaskTimeline, listTasks, recordMembers, taskRecords, TaskReadError, validateTaskRange } from './storage/task-workbench.js';
@@ -1306,6 +1308,7 @@ export function createAgentObservabilityServer(
     db, loadCapture: readCaptureAnalysisSource, loadCodex: (id, signal) => codexInspector.readDiagnosis({ id }, signal),
   });
   const stopArchitectureDiagnosis = registerArchitectureDiagnosisRoutes(router, architectureCollector);
+  const stopTaskHealth = registerTaskHealthRoutes(router, { db, store: createHealthReportStore(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite'))) });
   const foldingScopeCollector = createNativeScopeCollector(db);
   const stopAgentFolding = registerAgentFoldingRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'agent-folding-runs'), {
     loadScope: (scope, signal) => foldingScopeCollector.collect(scope, signal),
@@ -2364,6 +2367,7 @@ export function createAgentObservabilityServer(
       stopBenchmarks();
       stopTeamExperiments();
       stopArchitectureDiagnosis();
+      stopTaskHealth();
       stopAgentFolding(); foldingScopeCollector.close();
       pendingAutomaticScans.clear();
       for (const cleanup of ownSseClients) cleanup();

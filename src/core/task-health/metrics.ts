@@ -3,7 +3,7 @@ import type { BenchmarkUsage } from '../benchmark-types.js';
 import type { HealthFinding, HealthMetric, HealthRecord, HealthThresholds, Timing, TtftLayer } from './types.js';
 import type { Snapshot, ToolObservation } from './snapshot.js';
 import { isBookkeeping, isProduction, located, nativeKey, sequence } from './snapshot.js';
-import { intersect, unionDuration } from './intervals.js';
+import { intersect, unionDuration, subtract } from './intervals.js';
 import type { Interval } from './intervals.js';
 import { relativeTime } from './snapshot-tracelog.js';
 export const sum = (a: readonly number[]): number => a.reduce((n, v) => n + v, 0);
@@ -118,7 +118,8 @@ export function computeMetrics(s: Snapshot, thresholds: HealthThresholds): Healt
     const model = s.spans.filter(x => x.kind === 'model'), tools = s.tools;
     add('overview.e2e_ms', e2e, 'ms', s.records.some(r => r.importedTurn) ? 'reported' : 'observed');
     add('overview.e2e_ms', e2e === null ? null : e2e - unionDuration(s.userWait.flatMap(i => { const c = clip(i); return c ? [c] : []; })), 'ms', 'observed', { facets: { component: 'active' } });
-    add('plan.rounds', partial ? null : s.rounds.length, 'count', s.records.some(r => r.importedTurn) ? 'reported' : 'observed', { samples: s.rounds.length });
+    const roundsHidden = s.members.some(m => !m.detailLoaded) || s.limits.some(limit => ['members', 'events', 'member_limit', 'event_limit'].includes(limit));
+    add('plan.rounds', roundsHidden ? null : s.rounds.length, 'count', s.records.some(r => r.importedTurn) ? 'reported' : 'observed', { samples: s.rounds.length, reason: roundsHidden ? 'rounds_may_be_omitted' : partial ? [...s.input.reasons, ...s.limits].join(', ') || 'partial_scope' : null });
     const imported = s.records.filter(r => r.importedTurn), native = s.records.filter(r => r.event);
     const identities = new Set(native.flatMap(r => r.native.modelCall ? [JSON.stringify([r.memberId, nativeKey(r.native.modelCall)])] : []));
     add('model.calls', imported.length ? imported.length : identities.size ? identities.size : null, 'count', imported.length ? 'reported' : 'observed', { samples: imported.length || identities.size });
@@ -173,21 +174,28 @@ export function computeMetrics(s: Snapshot, thresholds: HealthThresholds): Healt
     add('act.single_file_write_round_rate', fileCounts.length && knownTargets ? 100 * fileCounts.filter(n => n === 1).length / fileCounts.length : null, 'pct', 'observed', { samples: fileCounts.length });
     const observations = s.records.filter(r => !isBookkeeping(r)).flatMap(r => { const a = relativeTime(s.input, r.event?.startedAt ?? r.importedTurn?.requestTime ?? null), b = relativeTime(s.input, r.importedTurn?.responseTime ?? null); return [a, b].filter((n): n is number => n !== null && (!bounds || n >= bounds[0] && n <= bounds[1])); });
     observations.push(...s.spans.filter(x => ['measured', 'reported'].includes(x.timing)).flatMap(x => x.endMs === null ? [] : [x.endMs]));
-    const sorted = [...new Set(observations)].sort((a, b) => a - b), gaps = sorted.slice(1).map((n, i) => n - sorted[i]!);
-    const max = gaps.length ? Math.max(...gaps) : null, idx = max === null ? -1 : gaps.indexOf(max);
-    const interval: Interval | null = idx < 0 ? null : [sorted[idx]!, sorted[idx + 1]!];
+    const sorted = [...new Set(observations)].sort((a, b) => a - b);
+    const gaps = sorted.slice(1).flatMap((n, i) => subtract([[sorted[i]!, n]], s.userWait).filter(([a, b]) => b > a));
+    const lengths = gaps.map(([a, b]) => b - a), max = lengths.length ? Math.max(...lengths) : null;
+    const interval: Interval | null = max === null ? null : gaps[lengths.indexOf(max)]!;
     const cause = interval ? tools.find(t => { const l = located(t.span); return l && l[0] <= interval[0] && l[1] >= interval[1]; }) : undefined;
-    add('ux.max_gap_log', max, 'ms', 'observed', { samples: gaps.length, facets: { cause: cause?.command.command ?? cause?.span.toolClass ?? (interval && model.some(x => x.startMs! <= interval[0] && x.endMs! >= interval[1]) ? 'model' : 'unattributed'), ...(interval ? { startMs: String(interval[0]), endMs: String(interval[1]) } : {}) }, evidenceIds: cause ? toolEvidence([cause]) : s.records.filter(r => interval?.includes(relativeTime(s.input, r.event?.startedAt ?? r.importedTurn?.requestTime ?? null) ?? NaN)).map(r => evidenceId(r.recordId)) });
+    const endpoints = interval ? s.records.filter(r => interval.includes(relativeTime(s.input, r.event?.startedAt ?? r.importedTurn?.requestTime ?? null) ?? NaN)).map(r => evidenceId(r.recordId)) : [];
+    add('ux.max_gap_log', max, 'ms', 'observed', { samples: gaps.length, facets: { cause: cause?.command.command ?? cause?.span.toolClass ?? (interval && model.some(x => x.startMs! <= interval[0] && x.endMs! >= interval[1]) ? 'model' : 'unattributed'), ...(interval ? { startMs: String(interval[0]), endMs: String(interval[1]) } : {}) }, evidenceIds: [...new Set([...endpoints, ...(cause ? toolEvidence([cause]) : [])])] });
+    const activeMilestone = (at: number | null): number | null => at === null ? null : at - unionDuration(s.userWait.flatMap(i => { const c = intersect(i, [0, at]); return c ? [c] : []; }));
+    const milestone = (key: string, at: number | null) => {
+        add(key, activeMilestone(at), 'ms');
+        add(key, at, 'ms', 'observed', { facets: { component: 'raw' } });
+    };
     const firstProduction = s.records.filter(isProduction).map(r => relativeTime(s.input, r.event?.startedAt ?? null)).filter((n): n is number => n !== null && (!bounds || n >= bounds[0] && n <= bounds[1]));
-    add('ux.ttfr_log', firstProduction.length ? Math.min(...firstProduction) : null, 'ms');
+    milestone('ux.ttfr_log', firstProduction.length ? Math.min(...firstProduction) : null);
     const completedWrites = writes.filter(t => eligible(t) && t.span.endMs !== null), writeEnds = completedWrites.map(t => t.span.endMs!), firstWrite = writeEnds.length ? Math.min(...writeEnds) : null, lastWrite = writeEnds.length ? Math.max(...writeEnds) : null;
     const modified = new Set(writes.flatMap(t => t.targets));
     const locatedReads = reads.filter(t => eligible(t) && t.targets.some(x => modified.has(x)) && t.span.endMs !== null);
-    add('ux.first_locate_log', locatedReads.length ? Math.min(...locatedReads.map(t => t.span.endMs!)) : null, 'ms');
+    milestone('ux.first_locate_log', locatedReads.length ? Math.min(...locatedReads.map(t => t.span.endMs!)) : null);
     for (const key of ['ux.first_write_log', 'ux.first_reviewable_log'])
-        add(key, firstWrite, 'ms');
+        milestone(key, firstWrite);
     const verification = tools.filter(t => eligible(t) && ['test', 'build', 'lint/typecheck'].includes(t.span.toolClass!) && t.span.status === 'ok' && t.span.endMs !== null && lastWrite !== null && t.span.endMs >= lastWrite && t.span.startMs! >= lastWrite);
-    add('ux.first_verified_log', verification.length ? Math.min(...verification.map(t => t.span.endMs!)) : null, 'ms');
+    milestone('ux.first_verified_log', verification.length ? Math.min(...verification.map(t => t.span.endMs!)) : null);
     add('ux.ttfmp_judged', null, 'ms');
     for (const component of ['assistant', 'reasoning', 'tool']) {
         const rs = s.records.filter(r => r.event && !isBookkeeping(r) && (component === 'tool' ? r.event.hasOutput && tools.some(t => t.records.includes(r)) : component === 'reasoning' ? r.event.kind === 'reasoning' : !['reasoning', 'user_prompt'].includes(r.event.kind) && !tools.some(t => t.records.includes(r))));

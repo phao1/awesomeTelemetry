@@ -1966,3 +1966,24 @@ HTTPS CONNECT 12.850 ms, near-2MiB 6.230 ms; event-loop p99 respectively
 2.177/2.222/2.142 ms. Each profile used 100 paired samples, persisted 104
 captures and verified 208 originals. Report (ignored):
 reports/capture-ab-2026-10-30T11-11-49.445Z-85195.json.
+
+## 2026-10-31 — M12 task-health P2b (collector, store, routes, export, CLI)
+
+Adds server/task-health collector (fixed snapshot, 200-row pages, cached batched
+statements, slim columns only), atomic report store, four standard-report routes,
+HTML/Markdown export and the read-only `telemetry-task-health` CLI. Engine updated
+to contract TH-004a (user turns, between-turn idle as userWait), calc/rule v2.
+No schema, index or dependency change; existing budgets unchanged.
+
+Build, typecheck and lint passed. Full suite: 381 files passed, 4397 tests passed,
+1 existing skip. An earlier full run had one file-watcher debounce timing failure
+(chokidar, 2.5s); its isolated rerun passed 4/4 and the final run passed unchanged.
+
+All ten perf:check diagnostics passed. New 10-task-health: 20000 events / 5 members,
+standard analysis 808 ms (budget 3 s), collection 217 ms, event-loop p99 3.56 ms,
+max 18.04 ms, 0 external requests, limits events+report_bytes as designed.
+Loopback extra E2E p95: HTTP 7.572 ms, HTTPS CONNECT 11.359 ms, near-2MiB 5.984 ms;
+event-loop p99 2.198/2.140/2.218 ms; 100 paired samples, 104 captures, 208
+originals each. Report (ignored): reports/capture-ab-2026-10-30T12-41-22.680Z-4353.json.
+
+Real local data (read-only CLI, largest three Codex tasks): 2.07 s / 1.73 s / 0.78 s.

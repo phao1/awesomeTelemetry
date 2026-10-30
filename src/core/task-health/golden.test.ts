@@ -7,7 +7,7 @@ import type { HealthInput, HealthReport } from './types.js';
 import { analyzeTaskHealth } from './report.js';
 import { located } from './snapshot.js';
 import { unionDuration } from './intervals.js';
-const names = ['g1-serial', 'g2-parallel', 'g3-install', 'g4-subagent', 'g5-missing', 'g6-tracelog', 'g7-capped'];
+const names = ['g1-serial', 'g2-parallel', 'g3-install', 'g4-subagent', 'g5-missing', 'g6-tracelog', 'g7-capped', 'g8-multiturn'];
 export function fixture(name = 'g1-serial'): HealthInput { return JSON.parse(readFileSync(resolve(`src/core/__fixtures__/task-health/${name}.input.json`), 'utf8')) as HealthInput; }
 export function analyze(input: HealthInput = fixture()): HealthReport { return analyzeTaskHealth(input, undefined, { id: 'golden-' + input.taskId, generatedAt: '2026-10-30T00:10:00.000Z' }); }
 function equal(actual: unknown, expected: unknown): void {
@@ -33,6 +33,8 @@ function projection(r: HealthReport, expected: Record<string, unknown>): Record<
         const rows = r.metrics.filter(m => m.key === key);
         if (value === null || typeof value === 'number')
             metrics[key] = rows.find(m => Object.keys(m.facets).length === 0)?.value ?? null;
+        else if (key === 'overview.e2e_ms' || key === 'ux.first_write_log')
+            metrics[key] = { raw: rows.find(m => key === 'overview.e2e_ms' ? !m.facets.component : m.facets.component === 'raw')?.value, active: rows.find(m => key === 'overview.e2e_ms' ? m.facets.component === 'active' : !m.facets.component)?.value };
         else if (key === 'ux.max_gap_log')
             metrics[key] = { value: rows[0]?.value, command: rows[0]?.facets.cause };
         else if (key === 'model.reasoning_rounds')

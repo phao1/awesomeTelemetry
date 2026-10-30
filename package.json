@@ -11,14 +11,15 @@
     "telemetry-benchmark": "./bin/benchmark.js",
     "awesome-telemetry": "./bin/agent-observe.js",
     "agent-observe": "./bin/agent-observe.js",
-    "telemetry-agent-folding": "./bin/agent-folding.js"
+    "telemetry-agent-folding": "./bin/agent-folding.js",
+    "telemetry-task-health": "./bin/task-health.js"
   },
   "scripts": {
     "team:experiment": "node bin/team-experiment.js",
     "benchmark": "node bin/benchmark.js",
     "benchmark:demo": "node scripts/benchmark-demo.mjs",
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build && vite build --config vite.cli.config.ts",
+    "build": "tsc -b && vite build && vite build --config vite.cli.config.ts && npm run build:task-health",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -29,7 +30,9 @@
     "gen:samples": "node scripts/generate-local-samples.mjs",
     "prepack": "node scripts/verify-package.mjs",
     "pack:smoke": "node scripts/smoke-packed-install.mjs",
-    "agent:folding": "node bin/agent-folding.js"
+    "agent:folding": "node bin/agent-folding.js",
+    "task-health": "node bin/task-health.js",
+    "build:task-health": "node --input-type=module -e \"import { build } from 'vite'; await build({configFile:false,build:{ssr:'server/task-health/cli.ts',outDir:'server-dist/task-health',emptyOutDir:false,target:'node20',rollupOptions:{external:['better-sqlite3'],output:{entryFileNames:'cli.js'}}}})\""
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

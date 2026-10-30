@@ -94,3 +94,16 @@ it('duplicate install time facets stay null when install durations are unknown',
     expect(rows).toHaveLength(2);
     expect(rows.every(m => m.value === null)).toBe(true);
 });
+it('TH-004a10 keeps counted rounds under native metadata and public projection limits', () => {
+    const input = fixture(); input.reasons.push('native_line_limit'); input.limits.push('report_bytes');
+    const r = metrics(input).find(m => m.key === 'plan.rounds')!;
+    expect(r).toMatchObject({ value: 5, samples: 5, coverage: 'partial' }); expect(r.reason).toContain('native_line_limit');
+    input.limits.push('events'); expect(metrics(input).find(m => m.key === 'plan.rounds')).toMatchObject({ value: null, reason: 'rounds_may_be_omitted', samples: 5 });
+});
+it('G8 milestones carry active/default and raw facets without changing wall-clock evidence positions', () => {
+    const rows = metrics(fixture('g8-multiturn'));
+    expect(rows.find(m => m.key === 'ux.first_write_log' && !m.facets.component)?.value).toBe(21000);
+    expect(rows.find(m => m.key === 'ux.first_write_log' && m.facets.component === 'raw')?.value).toBe(3622000);
+    expect(rows.find(m => m.key === 'ux.first_reviewable_log' && !m.facets.component)?.value).toBe(21000);
+    expect(rows.find(m => m.key === 'ux.max_gap_log')).toMatchObject({ value: 10000, facets: { startMs: '3000', endMs: '13000', cause: 'npm test' }, evidenceIds: ['evidence:main:event:e2', 'evidence:main:event:e3'] });
+});

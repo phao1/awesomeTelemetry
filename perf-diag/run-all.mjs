@@ -14,6 +14,7 @@ const scripts = [
   '07-event-loop.mjs',
   '08-mission.mjs',
   '09-capture-ab.mjs',
+  '10-task-health.mjs',
 ];
 
 async function runScript(script) {

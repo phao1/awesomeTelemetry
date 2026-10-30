@@ -6,9 +6,9 @@ export function planRules(c: RuleContext): FindingDraft[] {
     const n = metric(c, 'plan.rounds')?.value;
     if (n != null && t.roundBaseline !== null && n > t.roundBaseline * t.roundMultiplier)
         out.push(fact('plan.many_rounds', 'plan', { N: n, baseline: t.roundBaseline }, [], s.records.map(r => 'evidence:' + r.recordId)));
-    const write = metric(c, 'ux.first_write_log')?.value, e2e = metric(c, 'overview.e2e_ms')?.value;
+    const write = metric(c, 'ux.first_write_log')?.value, rawWrite = metric(c, 'ux.first_write_log', { component: 'raw' })?.value, e2e = metric(c, 'overview.e2e_ms', { component: 'active' })?.value;
     if (write != null && e2e != null && e2e > 0 && 100 * write / e2e > t.explorePct)
-        out.push(fact('plan.explore_heavy', 'plan', { pct: 100 * write / e2e }, s.tools.filter(x => x.span.endMs !== null && x.span.endMs <= write)));
+        out.push(fact('plan.explore_heavy', 'plan', { pct: 100 * write / e2e }, s.tools.filter(x => x.span.endMs !== null && rawWrite != null && x.span.endMs <= rawWrite)));
     const reads = new Map<string, typeof s.tools>();
     for (const x of [...s.tools].sort((a, b) => sequence(a.source) - sequence(b.source))) {
         for (const target of x.targets) {

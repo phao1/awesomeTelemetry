@@ -133,3 +133,10 @@ export const TRACE_ASSOCIATION_DECISION_COLS = 'sequence, association_id, state,
 export const PROXY_ORIGINAL_DELETION_COLS = 'id, proxy_id, request_id, request_ref, response_ref, store_directory, state, error, created_at, updated_at, completed_at';
 export const PROXY_ORIGINAL_REF_COLS = 'request_ref, response_ref';
 export const ORIGINAL_DELETION_STATUS_COLS = 'id, proxy_id, request_id, state, error, created_at, updated_at, completed_at';
+
+/** Health collection never evaluates body columns, including availability flags. */
+export const HEALTH_EVENT_SLIM_COLS = [
+  'session_id', 'id', 'sequence', 'kind', 'phase', 'title', 'started_at',
+  'duration_ms', 'status', 'actor', 'tool', 'tokens_json', 'error', 'model', 'turn_key',
+  'input_len', 'output_len', 'input_len>0 AS has_input', 'output_len>0 AS has_output',
+].join(', ');
