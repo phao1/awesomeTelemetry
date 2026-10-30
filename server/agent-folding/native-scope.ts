@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import type { Database } from 'better-sqlite3';
 import type { FoldingAgent, FoldingNativeScope, FoldingProject } from '../../src/core/agent-folding-types.js';
+import { decideFoldingInventory } from '../../src/core/agent-folding-rules.js';
 import { validateFoldingProject } from '../../src/core/agent-folding-validation.js';
 import { getTask, listTasks } from '../storage/task-workbench.js';
 import { cachedStmt } from '../storage/stmt-cache.js';
@@ -122,7 +123,7 @@ export function createNativeScopeCollector(db: Database) {
       const agent = (provider: string, name: string, isMain: boolean, unknownKey?: string): FoldingAgent => {
         const id = 'agent-' + hash([provider, name, isMain, unknownKey ?? null]);
         let found = project.agents.find(a => a.id === id);
-        if (!found) { found = { id, name, owner: null, isMain, prompt: null, tools: [], invokedBy: [], returns: null, talksToUser: null, externalOwner: null, contextNeed: 'unknown', proposed: isMain ? 'main' : 'fold', rationale: { zh: '待核实独立上下文理由。', en: 'Independent context reasons require verification.' }, evidenceIds: [] }; project.agents.push(found); }
+        if (!found) { found = { id, name, owner: null, isMain, prompt: null, tools: [], invokedBy: [], returns: null, talksToUser: null, externalOwner: null, contextNeed: 'unknown', proposed: isMain ? 'main' : 'insufficient', rationale: { zh: '待核实独立上下文理由。', en: 'Independent context reasons require verification.' }, evidenceIds: [] }; project.agents.push(found); }
         return found;
       };
       for (const context of contexts) {
@@ -166,7 +167,7 @@ export function createNativeScopeCollector(db: Database) {
             const boundaryId = 'boundary-' + hash([caller.id, callee.id]);
             let boundary = project.boundaries.find(b => b.id === boundaryId);
             if (!boundary) {
-              boundary = { id: boundaryId, fromAgentId: caller.id, targetAgentIds: [callee.id], proposed: 'fold', title: { zh: callee.name, en: callee.name }, rationale: callee.rationale, requirements: ['Verify independent context reasons and baseline coverage.'], evidenceIds: [] };
+              boundary = { id: boundaryId, fromAgentId: caller.id, targetAgentIds: [callee.id], proposed: 'insufficient', title: { zh: callee.name, en: callee.name }, rationale: callee.rationale, requirements: ['Verify independent context reasons and baseline coverage.'], evidenceIds: [] };
               project.boundaries.push(boundary);
             }
             boundary.evidenceIds.push(evidenceId);
@@ -180,6 +181,13 @@ export function createNativeScopeCollector(db: Database) {
       project.limitations = [...new Set(project.limitations)];
       if (revision() !== stamp || JSON.stringify(await fingerprints()) !== before) throw new Error('Native sources changed during collection.');
       signal?.throwIfAborted();
+      const decisions = decideFoldingInventory(project);
+      for (const agent of project.agents) agent.proposed = decisions.find(d => d.agentId === agent.id)!.action;
+      for (const boundary of project.boundaries) {
+        const decision = decisions.find(d => d.agentId === boundary.targetAgentIds[0])!;
+        boundary.proposed = decision.action === 'main' ? 'insufficient' : decision.action;
+        if (decision.action === 'merge' && decision.mergeWith && !boundary.targetAgentIds.includes(decision.mergeWith)) boundary.targetAgentIds.push(decision.mergeWith);
+      }
       const valid = validateFoldingProject(project);
       if (cache.size >= 8) cache.delete(cache.keys().next().value!);
       cache.set(key, { revision: fullRevision, project: structuredClone(valid) });

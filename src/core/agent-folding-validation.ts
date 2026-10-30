@@ -55,7 +55,7 @@ function json(value: unknown, path: string, depth = 0): FoldingJson {
   }
   return result;
 }
-const actions = ['fold', 'merge', 'as_tool', 'keep'] as const;
+const actions = ['fold', 'merge', 'as_tool', 'keep', 'insufficient'] as const;
 
 export function validateFoldingCases(value: unknown): FoldingCase[] {
   const result = array(value, 'cases', 200).map(item => {
@@ -164,7 +164,7 @@ export function validateFoldingProject(value: unknown): FoldingProject {
       return { variantId, before, after, verified, evidenceIds };
     });
     return { id: string(e.id, 'experiment.id', 256), title: string(e.title, 'experiment.title'), boundaryId: string(e.boundaryId, 'experiment.boundaryId', 256),
-      operation: choice(e.operation, actions, 'operation'), baselineVariantId, candidateVariantId, caseIds, expectedRepetitions, controls, trialIds, evidenceIds: strings(e.evidenceIds, 'experiment.evidenceIds', 2000, 256),
+      operation: choice(e.operation, ['fold', 'merge', 'as_tool', 'keep'], 'operation'), baselineVariantId, candidateVariantId, caseIds, expectedRepetitions, controls, trialIds, evidenceIds: strings(e.evidenceIds, 'experiment.evidenceIds', 2000, 256),
       ...(chainMappings === undefined ? {} : { chainMappings }), ...(ablationVariantId === undefined ? {} : { ablationVariantId }) };
   });
   let eventCount = 0;

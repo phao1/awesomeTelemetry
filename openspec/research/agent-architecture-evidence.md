@@ -109,3 +109,21 @@ is still pending; P1 does not certify the existing coupling formula as kit parit
 P1 checks: npm run typecheck, npm run test and npm run lint passed: 349 test files,
 4,191 tests passed, one existing skip. Performance investigation remains deferred
 by the user; no threshold was changed. Browser screenshots remain scheduled for P6.
+
+## P2 decision rules
+
+Added versioned configurable heuristic rules with sample counts, evidence support,
+three independent-context checks, declared protected boundaries, merge partners,
+reasons/numeric thresholds, counter-evidence and owner questions. Main stays main;
+unsupported/undersampled non-main members are insufficient, not automatically tools.
+Insufficient is not an executable plan operation. Native scope proposals share
+these rules; merge proposals retain both targets. Unknown per-call input/return
+measurements are not fabricated from session totals. Existing coupling calculations
+are reused here and will be checked against the kit in P3.
+
+Six adjacent rule tests include positive, counterexample and insufficient-evidence
+paths; native scope and workbench regressions cover integration. No real-model
+claims or UI browser screenshots are made at this stage.
+
+P2 checks: typecheck, full test suite and lint passed (350 files; 4,197 passed,
+one existing skip); final merge-target integration and workbench checks also passed.

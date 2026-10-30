@@ -18,14 +18,14 @@ export function nativeFoldingProject(context: TaskContext, input: ArchitectureDi
       native: { taskId: input.taskId, sessionKey: member.sessionKey, eventId: null, captureId: null, callSequence: null } });
     const isMain = member.role === 'main';
     return { id: member.id, name: member.name, owner: null, isMain, prompt: null, tools: [...new Set(observedTools)], invokedBy: member.parentId ? [member.parentId] : [], returns: null,
-      talksToUser: null, externalOwner: null, contextNeed: 'unknown', proposed: isMain ? 'main' : 'as_tool',
+      talksToUser: null, externalOwner: null, contextNeed: 'unknown', proposed: isMain ? 'main' : 'insufficient',
       rationale: isMain ? { zh: '保留主循环；需要共享端到端任务集验证任何边界变更。', en: 'Retain the main loop; evaluate boundary changes on shared end-to-end cases.' }
         : { zh: '已观察到成员身份；是否需要独立上下文和完整交接仍待核实。先建立基线，不据父子关系决定折叠。', en: 'Member identity is observed; context isolation and handoff needs remain unverified. Build a baseline before changing a parent-child boundary.' },
       evidenceIds: [refId, ...input.evidence.filter(ref => ref.sessionKey === member.sessionKey).slice(0, 7).map(ref => ref.id)] };
   });
   const memberIds = new Set(agents.map(agent => agent.id));
   const boundaries = context.members.filter(member => member.parentId && memberIds.has(member.parentId) && member.role !== 'main').map(member => ({
-    id: 'native-boundary-' + createHash('sha256').update(member.id).digest('hex').slice(0, 20), fromAgentId: member.parentId!, targetAgentIds: [member.id], proposed: 'as_tool' as const,
+    id: 'native-boundary-' + createHash('sha256').update(member.id).digest('hex').slice(0, 20), fromAgentId: member.parentId!, targetAgentIds: [member.id], proposed: 'insufficient' as const,
     title: { zh: member.name, en: member.name }, rationale: agents.find(agent => agent.id === member.id)!.rationale,
     requirements: ['Confirm ownership, dialogue and independent-context need.', 'Provide replayable task inputs and independent completion checks.', 'Collect baseline and one-boundary comparison including neighboring tasks.'],
     evidenceIds: agents.find(agent => agent.id === member.id)!.evidenceIds,

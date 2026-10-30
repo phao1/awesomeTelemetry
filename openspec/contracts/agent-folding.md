@@ -228,3 +228,44 @@ Repeated retained instances of the same native tool-call ID use the earliest
 matching input event as their locator while counting the delegation once.
 
 P1 validation observations also extend openspec/research/agent-architecture-evidence.md.
+
+## Architecture r4 P2 decisions
+
+FoldingAction adds `insufficient`; it is an audit result, never an executable run
+operation. Existing native member-only inventories use insufficient for non-main
+members until independent context evidence is supplied. No model execution.
+
+`FoldingRuleEvidence`: agentId:string; sampleCount:number; codeSupported:boolean;
+traceSupported:boolean; inputTokens:number|null; returnTokens:number|null;
+parallel:boolean|null; independentVerification:boolean|null;
+filteringSuffices:boolean|null; skillCannotResolveConflict:boolean|null;
+talksToUser:boolean|null; externalControl:boolean|null;
+mergeCandidate:{agentId:string,coupling:number,share:number}|null;
+counterEvidence:string[]; evidenceIds:string[]. Booleans are explicit evidence,
+not guessed from names/teams/personas/prompt length/tool count/fixed steps.
+
+`FoldingRuleThresholds`: version:string (default architecture-r4-1), minSamples:2,
+largeInputTokens:10000, inputReturnRatio:10, minCoupling:0.5, minShare:0.05.
+These are configurable heuristic defaults, not formulas attributed to the article.
+`FoldingRuleDecision`: agentId; action:FoldingAction; mergeWith:string|null;
+confidence:'high'|'medium'|'low'; sampleCount; thresholds:FoldingRuleThresholds;
+reasons:Array<{rule:string,met:boolean|null,value:number|null,threshold:number|null}>;
+counterEvidence:string[]; evidenceIds:string[]; ownerQuestions:string[].
+
+Rules: main stays main. Explicit multi-turn direct-user dialogue or external
+control protects keep. Adequate supported samples permit as_tool for large input
+and ratio when filtering does not suffice, observed parallel/independent verification,
+or explicit skill-unresolvable conflict. A qualifying merge candidate is considered
+when no independent-context reason is met. Otherwise fold is the default when
+samples/support are adequate; missing samples/support means insufficient.
+Confidence: code+trace high, either medium, neither low. Counter-evidence is always
+retained, never converted to a success grade. Missing skill-conflict assessment
+produces an owner question. Implementation: src/core/agent-folding-rules.ts and
+adjacent tests; types/validation, native.ts/native-scope.ts, workbench action labels.
+
+`decideFoldingInventory(project, overrides?)` derives rule evidence from retained
+traffic counts, source-kind evidence and explicit inventory declarations, returning
+FoldingRuleDecision[] without mutating the project. It never interprets tool count,
+name/persona or prompt length as isolation evidence. Missing per-call return-token
+measurements keep the volume ratio unknown. Scope proposals use these decisions;
+full reasons remain available through the shared rule function for P6 rendering.

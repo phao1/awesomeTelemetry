@@ -1,7 +1,7 @@
 /** Canonical additive DTOs: openspec/contracts/agent-folding.md AF-001..005. */
 export type FoldingJson = null | boolean | number | string | FoldingJson[] | { [key: string]: FoldingJson };
 export interface FoldingText { zh: string; en: string }
-export type FoldingAction = 'fold' | 'merge' | 'as_tool' | 'keep' | 'main';
+export type FoldingAction = 'fold' | 'merge' | 'as_tool' | 'keep' | 'main' | 'insufficient';
 export type FoldingSourceKind = 'official_recording' | 'synthetic_traffic' | 'offline_smoke' | 'live_api' | 'user_import' | 'native_telemetry' | 'source_code';
 export interface FoldingSource {
   id: string; kind: FoldingSourceKind; title: string; url: string | null; revision: string | null;
@@ -64,7 +64,7 @@ export interface FoldingControls {
   skillAblation: 'complete' | 'not_run' | 'not_applicable'; notes: string[];
 }
 export interface FoldingExperiment {
-  id: string; title: string; boundaryId: string; operation: Exclude<FoldingAction, 'main'>;
+  id: string; title: string; boundaryId: string; operation: Exclude<FoldingAction, 'main' | 'insufficient'>;
   baselineVariantId: string; candidateVariantId: string; caseIds: string[]; expectedRepetitions: number;
   controls: FoldingControls; trialIds: string[]; evidenceIds: string[];
   chainMappings?: Array<{ variantId: string; before: string[]; after: string[]; verified: boolean; evidenceIds: string[] }>;
@@ -133,4 +133,25 @@ export interface FoldingNativeScope {
   from?: string;
   to?: string;
   taskIds?: string[];
+}
+
+export interface FoldingRuleThresholds {
+  version: string; minSamples: number; largeInputTokens: number;
+  inputReturnRatio: number; minCoupling: number; minShare: number;
+}
+export interface FoldingRuleEvidence {
+  agentId: string; sampleCount: number; codeSupported: boolean; traceSupported: boolean;
+  inputTokens: number | null; returnTokens: number | null;
+  parallel: boolean | null; independentVerification: boolean | null;
+  filteringSuffices: boolean | null; skillCannotResolveConflict: boolean | null;
+  talksToUser: boolean | null; externalControl: boolean | null;
+  mergeCandidate: { agentId: string; coupling: number; share: number } | null;
+  counterEvidence: string[]; evidenceIds: string[];
+}
+export interface FoldingRuleDecision {
+  agentId: string; action: FoldingAction; mergeWith: string | null;
+  confidence: 'high' | 'medium' | 'low'; sampleCount: number;
+  thresholds: FoldingRuleThresholds;
+  reasons: Array<{ rule: string; met: boolean | null; value: number | null; threshold: number | null }>;
+  counterEvidence: string[]; evidenceIds: string[]; ownerQuestions: string[];
 }

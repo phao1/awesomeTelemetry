@@ -45,6 +45,8 @@ it('merges named definitions across roots and produces real coupling with native
   const project = await collector.collect({ taskIds: roots });
   expect(project.agents.map(a => a.name).sort()).toEqual(['main', 'researcher', 'reviewer']);
   expect(project.traffic).toHaveLength(4);
+  expect(project.agents.filter(a => !a.isMain).every(a => a.proposed === 'merge')).toBe(true);
+  expect(project.boundaries.every(b => b.proposed === 'merge' && b.targetAgentIds.length === 2)).toBe(true);
   expect(new Set(project.traffic.map(t => t.traceId))).toEqual(new Set(roots));
   expect(project.evidence.every(e => e.native?.sessionKey && e.native.taskId && e.native.eventId)).toBe(true);
   expect(project.traffic.every(t => t.durationMs === null && t.inputTokens === null)).toBe(true);
