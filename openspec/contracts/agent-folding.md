@@ -324,3 +324,53 @@ FoldingExperimentAnalysis adds `kitComparison` (kitCompare result or null when
 unscored/no common cases) and `kitCoverage` (kitCoverage result or null when no
 by_agent measurements). Existing coverage and adoption blockers remain distinct
 ordered/per-repetition diagnostics. No persisted schema or new route.
+
+## Architecture r4 P4 kit interchange and read-only CLI
+
+Files: src/core/agent-folding-interchange.ts + tests; server/agent-folding/cli.ts
++ tests and artifacts.ts; docs/agent-folding.md. No table or schema migration.
+`buildKitArtifacts(project)` returns FoldingArtifact[] with traces.jsonl,
+inventory.tsv, PLAN.md and results/<experiment-id>/<variant-id>/results.jsonl.
+Safe encoded path segments prevent traversal. JSONL rows use FoldingKitTrace and
+FoldingKitResult; missing grade stays omitted with status unscored/error.
+Original call sequence is exported as numeric ts only when time is unknown;
+README/PLAN explicitly distinguishes sequence ordering from measured time.
+Exported results retain observed by_agent and action names, never invent them.
+Only measured/official/user-import grades can be exported as scored.
+
+`parseKitResults(lines:Iterable<string>)` validates and normalizes bounded JSONL
+records (<=4000 rows, <=8MiB), accepting prompt_id/id/case_id aliases and kit fields;
+extra prose is discarded. Finite nonnegative usage/latency, finite grade values,
+<=32 agent records and <=64 action names per row. Duplicate task IDs differing
+only in report escaping are rejected by comparison. Error rows remain retained.
+`parseKitInventory(text)` returns rows {agent,owner:string|null,talksToUser:boolean|null,
+action:FoldingAction,mergeWith:string|null,evals:string|null}; recognizes all pinned
+headers and verdict aliases as-tool/as_tool, merge:<agent>. Unknown names or
+merge targets fail when applying to a project. `applyKitInventory(project,rows)`
+returns a validated cloned project updating only owner/dialogue/proposed decisions
+and adding user-supplied eval mappings to an independent `FoldingKitImport` result.
+It never upgrades source provenance or measurement confidence.
+`parseKitPlan(text)` extracts checkbox progress [{text:string,done:boolean}] only;
+all remaining Markdown is inert. `FoldingKitImport` = {project:FoldingProject,
+evalsByAgent:Record<string,string|null>,progress:Array<{text,done}>,
+variants:Record<string,FoldingKitResult[]>}. This is an in-memory/import-export
+workspace, not a new database table. Main remains main; non-main cannot become main.
+
+CLI: `telemetry-agent-folding <coupling|coverage|compare|estimate|export>
+--db <existing sqlite> [--scope <scope.json>] [--before <results.jsonl>]
+[--after <results.jsonl>] [--reps <positive integer>] [--output <new directory>]`.
+All five open SQLite readonly and collect existing scoped native records;
+coverage/estimate require --before; compare requires --before and --after.
+No scanning, capture, evaluator, driver or model execution. JSON output to stdout;
+export alone writes review artifacts into a new directory, exclusive creation,
+never overwrites files. Existing plan validation and --execute semantics unchanged.
+Input JSONL is streamed. Abort/close cleanup releases collector and database.
+
+`kitLines(text)` is a bounded line iterator for browser text inputs;
+`projectKitTraces` and `projectKitResults` are the shared adapters for analysis,
+export and CLI (agent-folding-analysis.ts integration). Native collection rejects
+empty scopes and mixed-provider scopes explicitly: each audit project retains
+one provider's main-loop identity. Choose the tool filter before auditing across
+many roots; cross-tool architecture ranking is outside r4. Native-scope.ts/tests
+are included for this validation clarification. Import progress overflow fails,
+not silently truncates.

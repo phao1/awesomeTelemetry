@@ -1,5 +1,5 @@
 import { kitCoupling, kitCoverage, kitCompare, kitEstimate } from './agent-folding-kit.js';
-import type { FoldingKitResult } from './agent-folding-kit.js';
+import { projectKitResults, projectKitTraces } from './agent-folding-interchange.js';
 import type {
   FoldingAnalysis, FoldingBoundaryDecision, FoldingEstimate, FoldingExperiment,
   FoldingExperimentAnalysis, FoldingJson, FoldingMetricSummary, FoldingPair, FoldingProject, FoldingRunPlan, FoldingText, FoldingTrial,
@@ -218,19 +218,11 @@ function analyzeExperiment(project: FoldingProject, experiment: FoldingExperimen
     detail: text('先计算每个独立任务在重复中的平均通过率，再让任务等权。未知使均分不可用；95% 区间使用任务层 Hoeffding 界并假定任务独立，不代表普遍因果证明。',
       'Average repetitions within each independent task, then weight tasks equally. Unknowns make the score unavailable. The 95% interval uses a task-level Hoeffding bound assuming independent tasks; it is not universal causal proof.'), evidenceIds: [] });
   const unscored = selected.length > 0 && selected.every(trial => !realKinds.has(sources.get(trial.sourceId)?.kind ?? '') && grade(trial, project) === null);
-  const kitRows = (variantId: string): FoldingKitResult[] => selected.filter(t => t.variantId === variantId).map(t => ({
-    prompt_id: t.caseId, status: t.harnessError === null && grade(t, project) !== null ? 'ok' : 'unscored',
-    ...(grade(t, project) === null ? {} : { grade: { passed: grade(t, project)! } }),
-    latency_s: t.latencyMs === null ? null : t.latencyMs / 1000, in_tokens: t.inputTokens,
-    out_tokens: t.outputTokens, model_calls: t.modelCalls,
-    ...(Object.keys(t.byAgent).length ? { by_agent: Object.fromEntries(Object.entries(t.byAgent).map(([id, use]) => [id, { calls: use.calls, input_tokens: use.inputTokens }])) } : {}),
-    ...(actionsComplete(t) ? { actions: t.actions.map(a => ({ name: a.name })) } : {}),
-  }));
-  const before = kitRows(experiment.baselineVariantId), after = kitRows(experiment.candidateVariantId);
+  const before = projectKitResults(project, experiment.id, experiment.baselineVariantId), after = projectKitResults(project, experiment.id, experiment.candidateVariantId);
   const hasCommon = before.some(a => a.status === 'ok' && after.some(b => b.status === 'ok' && a.prompt_id === b.prompt_id));
   const kitComparison = hasCommon ? kitCompare(before, after) : null;
   const kitCoverageResult = before.some(r => r.status === 'ok' && r.by_agent !== undefined)
-    ? kitCoverage(project.traffic.map(r => ({ trace_id: r.traceId, ts: r.timestamp ?? r.sequence, agent: r.agentId })), before,
+    ? kitCoverage(projectKitTraces(project), before,
       { exclude: project.agents.filter(a => a.isMain).map(a => a.id) }) : null;
   return { experimentId: experiment.id, boundaryId: experiment.boundaryId,
     status: regressions.length ? 'regression' : unscored ? 'unscored' : blockers.length === 0 ? 'supported' : 'needs_evidence',

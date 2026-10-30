@@ -146,3 +146,29 @@ owner/upkeep 约定和下一步 CLI 配方。缺原始 Schema/权限约束会明
 容量和验证契约见 [agent-folding.md](../openspec/contracts/agent-folding.md) 与
 [spec](../openspec/specs/agent-folding/spec.md)。历史原生过程诊断仍有自己的覆盖限制，见
 [过程证据说明](architecture-diagnosis.md)。
+
+### Architecture r4: kit interchange and read-only commands
+
+`traces.jsonl`, `inventory.tsv`, `PLAN.md`, and
+`results/<experiment>/<variant>/results.jsonl` are included in artifact exports.
+The trace/result layouts work with the pinned kit Python scripts. Numeric trace
+`ts` means sequence ordering when native timestamps are absent, not measured time.
+Missing grade, action or agent evidence stays unknown. Importing inventory or
+plan checkboxes does not certify an evaluation or execute the plan.
+
+After a normal build, inspect an already collected local database:
+
+```sh
+node bin/agent-folding.js coupling --db /path/to/state.sqlite --scope scope.json
+node bin/agent-folding.js coverage --db /path/to/state.sqlite --scope scope.json --before baseline/results.jsonl
+node bin/agent-folding.js compare --db /path/to/state.sqlite --scope scope.json --before baseline/results.jsonl --after v1/results.jsonl
+node bin/agent-folding.js estimate --db /path/to/state.sqlite --scope scope.json --before baseline/results.jsonl --reps 2
+node bin/agent-folding.js export --db /path/to/state.sqlite --scope scope.json --output /path/to/new-review-directory
+```
+
+A scope selects one provider (`claude` or `codex`), optionally `cwd`, UTC `from` /
+`to`, or up to 40 collected root `taskIds`. Empty and mixed-provider scopes fail
+with a request to narrow/select the scope. These commands open SQLite readonly;
+they never scan, monitor, start capture or execute a model/evaluator. Only export
+writes files, exclusively inside a new destination. Existing plan.json and
+explicit `--execute` behavior is unchanged. OpenCode verification is deferred.

@@ -153,3 +153,24 @@ one existing skip); final merge-target integration and workbench checks also pas
 - Phase checks: typecheck and lint passed; full suite 351 files, 4208 passed,
   1 pre-existing skipped test. No P3 browser changes; screenshots start at P6.
   OpenCode and the known performance follow-up remain user-deferred.
+
+## P4 interchange verification (2026-10-30)
+
+- Exported the retained official example project into a fresh temporary directory
+  and ran all four unmodified Python scripts over the exported files.
+  Coupling retained four pairs and orders→shipping=1. Returns-fold comparison
+  is mixed (t01 regression despite overall improvement), chain coverage has gaps;
+  diagnostics-as-tool is worse, coverage complete. Both token estimates agree.
+- Inventory imports retain owner, direct-dialogue declaration, verdict/merge
+  target and eval mapping; PLAN checkboxes remain unverified human declarations.
+  No original conversation/answer is in kit results exports.
+- CLI integration uses a real temporary scanner/database and verifies database
+  bytes remain unchanged; export refuses an existing directory and read-only
+  commands reject execution flags. Empty/mixed-provider audits now fail clearly
+  rather than failing the one-main-loop project invariant.
+- Python compatibility smoke used Vite solely to load TS modules. Its optional
+  development WebSocket bind was denied; all file exports and Python checks
+  completed successfully. No model, business task or capture service ran.
+- Phase checks: typecheck/build/lint passed; 352 test files, 4213 passed,
+  1 pre-existing skip. Build retains existing bundle-size/dynamic-import warnings.
+  The user-supplied ruoyi 3×3 Markdown is reserved for the P5 commit.

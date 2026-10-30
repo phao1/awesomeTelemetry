@@ -68,6 +68,7 @@ it('intersects filters, invalidates after database changes, and rejects bad sele
   expect((await collector.collect({ cwd: '/project' })).traffic).toHaveLength(2);
   await expect(collector.collect({ taskIds: [roots[0]!, roots[0]!] })).rejects.toThrow();
   await expect(collector.collect({ from: 'bad' })).rejects.toThrow();
+  await expect(collector.collect({ cwd: '/missing' })).rejects.toThrow('No tasks');
   await expect(collector.collect({}, AbortSignal.abort())).rejects.toThrow();
 });
 
@@ -85,6 +86,7 @@ it('reads Codex spawn results and definition roles without guessing from names',
   await codexScanner.scanFile({ ...config, key: 'codex' }, parent, { db });
   await codexScanner.scanFile({ ...config, key: 'codex' }, child, { db });
   const collector = createNativeScopeCollector(db);
+  await expect(collector.collect({})).rejects.toThrow('one provider');
   const p = await collector.collect({ provider: 'codex' });
   expect(p.traffic).toHaveLength(1);
   expect(p.agents.find(a => a.id === p.traffic[0]!.agentId)?.name).toBe('reviewer');

@@ -1,3 +1,4 @@
+import { buildKitArtifacts } from '../../src/core/agent-folding-interchange.js';
 import { analyzeFoldingProject } from '../../src/core/agent-folding-analysis.js';
 import { FOLDING_MAX_BYTES, validateFoldingProject } from '../../src/core/agent-folding-validation.js';
 import type { FoldingAnalysis, FoldingArtifact, FoldingProject } from '../../src/core/agent-folding-types.js';
@@ -13,6 +14,7 @@ export function buildFoldingArtifacts(value: FoldingProject, suppliedAnalysis?: 
     throw new TypeError('Folding artifacts require current project analysis');
   }
   const artifacts: FoldingArtifact[] = [
+    ...buildKitArtifacts(project),
     { path: 'README.md', purpose: purpose('审阅入口与来源限制', 'Review entry point and source limitations'), content: `# Agent boundary review\n\n${project.title.replace(/[\r\n]/gu, ' ')}\n\nThese files are proposals for human review. Nothing has been applied to an Agent repository. Human adoption notes do not replace measurements or regression blockers.\n\nSources are preserved in inventory.json, including reported provenance, revision, and limitations. User imports cannot authenticate official or native origins. Fictional tasks, synthetic traffic, offline smoke, and measured model runs remain distinct. Offline smoke has no grade.\n\nReview analysis.json and decision-log.json first, then the shared and confirmation cases, boundary plans, skill/tool specifications, and upkeep ownership. A task is one independent input; checks are assertions within it.\n\nNo generated recipe has been executed. A measured token budget is checked after a response and cannot guarantee an exact maximum API bill.\n` },
     { path: 'inventory.json', purpose: purpose('逐 Agent 审计与真实来源清单', 'Per-agent audit and retained source inventory'), content: pretty({
       projectId: project.id, agents: project.agents, boundaries: project.boundaries, sources: project.sources,

@@ -108,6 +108,8 @@ export function createNativeScopeCollector(db: Database) {
         const root = cachedStmt(db, 'SELECT cwd FROM sessions WHERE id = ?').get(task.rootSessionKey) as { cwd: string | null } | undefined;
         return !scope.cwd || root?.cwd === scope.cwd;
       });
+      if (!contexts.length) throw new Error('No tasks match the native scope.');
+      if (new Set(contexts.map(c => c.task.provider)).size > 1) throw new Error('Select one provider for an architecture audit.');
       if (contexts.length > 40) throw new Error('Native scope exceeds 40 tasks.');
       const keys = [...new Set(contexts.flatMap(c => c.members.flatMap(m => m.sessionKey ? [m.sessionKey] : [])))];
       const sessions = cachedStmt(db, 'SELECT id,source_path,cwd,provider FROM sessions WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id').all(JSON.stringify(keys)) as Session[];
