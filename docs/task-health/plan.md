@@ -451,6 +451,8 @@ interface HealthReport {
 
 **G7 推导封顶**：Codex 未配对工具 durationMs = 300000。期望：`capped: true`；`long_tool` 写“≥300s（推导值封顶）”；不进 `act.p95_ms`。
 
+**G8 多轮与轮间空闲**（2026-10-31 补，真实 Codex 数据暴露）：第一轮 0–15s 完成并记 `task_complete`，闲置一小时后经 `thread_settings_applied`/`task_started` 在 3616s 收到第二个提问，3625s 完成。期望：轮间 3601s 记为 `userWait`（between_turns），不算模型思考；模型 Σ 12s、工具 Σ 12s；E2E 原值 3625s、活跃 24s；`ux.max_gap_log` 10s，不触发 `perceived.long_gap`。精确定义见契约 TH-004a。
+
 另外把 GPT 版（[../task-health-monitoring-plan.md](../task-health-monitoring-plan.md)）§15.1 的反例逐条写成单测（完全重叠工具、usage 缺失、原生与抓包重复、一逻辑调用三次尝试、2000 条记录只开 200 条、时间窗交集、深度模型伪造引用等）。
 
 ---

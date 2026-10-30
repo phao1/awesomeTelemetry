@@ -414,6 +414,53 @@ The caller supplies meta (the server supplies its report UUID and generation
 timestamp). The engine copies both fields verbatim, never reads the clock or
 creates a UUID. HealthInput and HealthReport types remain unchanged.
 
+## TH-004a User turns and between-turn idle (amendment, 2026-10-31)
+
+Found on real Codex data in P2b: a session idled 17 days after `task_complete`,
+resumed with `thread_settings_applied`/`task_started` and a new user_prompt, and
+steps 3/6 attributed the whole gap to model thinking. This section amends TH-004
+steps 3, 6 and 11 and the partition clarification; where they conflict, this
+section wins.
+
+1. User turn. Per member, each genuine user_prompt (not bookkeeping, not a
+   parent→child subagent prompt) opens a user turn that lasts until the next
+   genuine user_prompt of the same member or the end of scope. Step 3 restarts
+   in every user turn: its first round's ready = that user_prompt; later rounds
+   as before. A round, think interval or tool span never crosses a turn boundary.
+2. Turn end = latest end of the turn's non-bookkeeping production records and
+   located tool intervals; a running tool keeps the turn open. Bookkeeping and
+   system records (task_complete, task_started, thread_settings_applied,
+   environment/skills/tools injections, token_count) neither end nor extend it.
+3. Between-turn idle. For consecutive user turns, the positive interval
+   [previous turn end, next user_prompt] is userWait with component
+   `between_turns`; explicit requested waits keep component `requested`. Both
+   take the explicit user-input wait priority in step 6. If the previous turn
+   end is unknown, no interval is created and coverage records
+   `turn_end_unknown`.
+4. No model think interval, round or tool span covers userWait; model.sum/union
+   and act.sum/union never include it.
+5. overview.e2e_ms keeps the raw span (first genuine prompt → last semantic
+   completion) and the partition still sums to it. Its `{component:'active'}`
+   facet = raw − |∪ userWait ∩ scope|, counting both components.
+6. ux.*_log milestones are reported in active time:
+   (milestone − t0) − |userWait ∩ [t0, milestone]|, with a `{component:'raw'}`
+   facet carrying the unsubtracted value.
+7. ux.max_gap_log removes userWait intervals first; only gap parts outside
+   userWait count. perceived.long_gap therefore never fires on between-turn idle.
+
+G8 (normative, Codex-shaped, single member, completion semantics, seconds from
+t0, Codex call/result records share one tool_call ref with pairing=exact):
+0 user_prompt; 3 call c1 exec_command `npm test`; 13 result c1; 15 llm "done A";
+15.2 system task_complete; 3615 system thread_settings_applied; 3615.5 system
+task_started; 3616 user_prompt; 3620 call c2 apply_patch writing `src/b.ts`;
+3622 result c2; 3625 llm "done B"; 3625.1 system task_complete.
+Expected: rounds think 3000/2000/4000/3000 (ready 0, 13, 3616, 3622);
+plan.rounds 4; model.sum_ms 12000; act.sum_ms 12000; overview.e2e_ms 3625000,
+active facet 24000; partition modelOnly 12000, toolOnly 12000, userWait 3601000,
+overlap/undivided/delegateWait/unattributed 0; ux.ttfr_log 3000;
+ux.first_write_log 21000 (raw facet 3622000); ux.max_gap_log 10000 cause
+`npm test`; no perceived.long_gap finding.
+
 ## TH-005 Metric dictionary (and timing-layer summary)
 
 Only these plan §1.2 keys and its stated distribution variants are permitted.
