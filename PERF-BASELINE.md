@@ -1849,3 +1849,25 @@ proxy and Frida running=false/starting=false.
 Local-only evidence: .local-runtime/architecture-{build,full-tests,layout-tests,
 perf}.log, architecture-perf-report.json, architecture-real-smoke.json,
 architecture-diagnosis-verification.json and architecture-diagnosis-preview.png.
+
+## 2026-10-30 — M12 agent-folding architecture r4 P0
+
+Local macOS / Node 24.19.0. Typecheck, full tests (348 files; 4188 passed,
+1 existing skip), lint and build passed. All nine perf:check diagnostics passed
+unchanged hard budgets. Synthetic DB 29.57MiB; overview cold 75.12ms / hit
+0.476ms; event-loop diagnostic p99 0ms; Mission cold 0.99ms / hit 0.030ms.
+Loopback forwarding (100 paired samples/profile) extra E2E p95:
+HTTP 4.910ms, HTTPS CONNECT 13.059ms, near-2MiB 7.068ms; event-loop p99
+2.059/2.038/2.253ms. Each profile: 104 captures, 208 originals; no violations.
+Compared with the preceding local sample, near-2MiB forwarding rose from
+5.180ms to 7.068ms (>20% relative, +1.888ms absolute); no forwarding code changed
+in P0. A repeat measured 8.226ms, still above the relative regression line;
+the cause is unresolved and must not be labelled harmless noise. The unchanged
+20ms/50ms hard gates passed. The relative baseline gate initially blocked
+committing; on 2026-10-30 the user explicitly deferred performance investigation
+("先不管性能 先搞") and authorized proceeding. This is a disclosed delivery
+exception, not a resolved regression or a changed budget.
+Repeat report: reports/capture-ab-2026-10-30T02-03-59.900Z-99674.json.
+Source stats remain N/A without real configured source enumeration. This is not
+a production load/soak or cross-platform certification.
+Local report: reports/capture-ab-2026-10-30T02-02-53.968Z-99640.json (not committed).

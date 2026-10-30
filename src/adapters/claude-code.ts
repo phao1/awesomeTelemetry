@@ -20,7 +20,7 @@ import {
 } from './helpers.js';
 import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
-import { collectClaudeIdentities, collectNativeEventBindings, trackNativeEvent } from './native-identities.js';
+import { claudeSidechainIdentity, collectClaudeIdentities, collectNativeEventBindings, trackNativeEvent } from './native-identities.js';
 
 export interface ClaudeContentPart {
   type: string;
@@ -55,6 +55,8 @@ export interface ClaudeRawRow {
   requestId?: string;
   uuid?: string;
   sessionId?: string;
+  isSidechain?: boolean;
+  agentId?: string;
   timestamp?: string;
   /** 每行都带工作目录；此前从未被读取，导致 cwd 全库为 NULL。 */
   cwd?: string;
@@ -125,7 +127,8 @@ export function normalizeClaudeSample(
   let sourceRow: ClaudeRawRow | null = null;
   const pushEvent = (event: EventWithRaw): void => { events.push(sourceRow === null ? event : trackNativeEvent(event, sourceRow)); };
   let messageCount = 0;
-  const sessionId =
+  const sidechain = claudeSidechainIdentity(rows);
+  const sessionId = sidechain.isSubagent ? (sidechain.child ?? `claude-${sourcePath}`) :
     rows.find((r) => r.sessionId !== undefined && r.sessionId !== '')?.sessionId ??
     `claude-${sourcePath}`;
 
@@ -355,7 +358,7 @@ export function normalizeClaudeSample(
     dataSource: 'scan',
     sourcePath,
     totalDurationMs: wallClockDurationMs(classified),
-    isSubagent: false,
+    isSubagent: sidechain.isSubagent,
     primaryModel,
     costSource: cost.costSource,
     costCurrency: cost.currency,

@@ -72,8 +72,11 @@ and full relevant-case/chain/check coverage are necessary for a supported
 recommendation, not universal causal proof. Offline fake runs cannot be scored.
 
 Inspect ordered routes per individual rep, tool/skill discovery/load/call,
-full action name+arguments and failed checks. Do not union agents across reps
-or ignore order when checking a chain. Distinguish chain occurrence from a
+full action name+arguments and failed checks. For the independent ordered,
+per-repetition diagnostic, do not union agents across reps or ignore order.
+Architecture r4 chain coverage instead matches the pinned kit: production chains
+are agent sets; evaluation agents are unioned across successful rows of each case.
+These are distinct results, never interchangeable (user confirmed 2026-10-30). Distinguish chain occurrence from a
 successful end-to-end assertion of its terminal fact. New direct tools may
 replace logical steps, but only declared verified mappings establish equivalent
 chain coverage; absence is unknown otherwise.
@@ -170,3 +173,20 @@ openspec/contracts/{api,nfr,data-model}.md. Preserve existing32-file uncommitted
 architecture-diagnosis increment and unrelated watcher/bundle/predecessor drafts.
 Add necessary extensions to this scope before editing; no silent dependency or
 schema expansion.
+
+## Architecture r4 P0 source mapping
+
+Scope: src/adapters/claude-code.ts, native-identities.ts and adjacent tests;
+local-sessions/claude.ts and scanner-utils.test.ts; sanitized adapter fixtures;
+openspec/research/agent-architecture-evidence.md; this contract and data-model.md.
+Existing native identity types and storage suffice; no new tables or routes.
+Claude sidechain rows carry the parent sessionId and their own agentId. A unique
+nonempty agentId on isSidechain=true rows is the child session identity. The
+parent sessionId becomes parent_session scoped to that agentId; it must not
+also be emitted as the child's session identity. Conflicting/missing identifiers
+remain incomplete and must not create a resolved parent relationship.
+
+When explicitly scanning Claude, an existing identity snapshot older than parser
+version 3 must be refreshed even if the source fingerprint is unchanged. This
+uses trace_identity_sources.parser_version, not a new table or eager startup scan.
+After refresh, unchanged scans remain write-free.

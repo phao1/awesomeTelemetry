@@ -3350,3 +3350,14 @@ replacement evidence; optional third ablation variant changes skill loading
 alone. Portable external plans may contain their own user-reported project,
 never silently replace it with a support-desk graph. No native TraceEvent or
 stored SQLite schema is changed by these additive DTOs.
+
+## Architecture r4 P0 Claude sidechain identities
+
+Claude native rows may contain isSidechain:boolean and agentId:string.
+A unique agentId from explicit sidechain rows supplies TraceSession.id and
+isSubagent=true; sessionId on those rows supplies parent_session, scoped to
+the child agentId, with the original events[i].sessionId locator. Message and
+protocol identities use child scope. Normal root rows retain existing semantics.
+Conflicting sidechain IDs/parent IDs or missing child ID produce incomplete
+identity evidence; never assign the parent's session identity to the child.
+Parser version advances to 3 for Claude. Scanner storage keys remain path-based.

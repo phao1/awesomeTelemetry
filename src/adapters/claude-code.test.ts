@@ -4,6 +4,8 @@ import { computeMetrics } from '../core/metrics.js';
 import { normalizeClaudeSample, type ClaudeRawRow } from './claude-code.js';
 import { claudeFixture } from './__fixtures__/claude.js';
 
+import sidechainRows from './__fixtures__/claude-sidechain.json';
+
 const SRC = '/tmp/claude.jsonl';
 
 // fix-adapter-turn-semantics A3 rule 3（§6 验证修复，2026-08-08）：claude 的
@@ -389,5 +391,24 @@ describe('Claude Code adapter（REQ-004）', () => {
       expect(a.events[0]?.turnKey).toBe(`${a.session.id}:msg-shared`);
       expect(b.events[0]?.turnKey).toBe(`${b.session.id}:msg-shared`);
     });
+  });
+});
+
+
+describe('architecture r4 Claude sidechains', () => {
+  it('uses the observed child agent identity and scopes its parent without aliasing the root', () => {
+    const r = normalizeClaudeSample(sample(sidechainRows), '/redacted/subagents/agent-child-a.jsonl');
+    expect(r.session.id).toBe('child-a');
+    expect(r.session.isSubagent).toBe(true);
+    expect(r.nativeIdentities?.completeness.complete).toBe(true);
+    expect(r.nativeIdentities?.items.filter(x => x.kind === 'session').map(x => x.value)).toEqual(['child-a']);
+    expect(r.nativeIdentities?.items).toContainEqual(expect.objectContaining({ kind: 'parent_session', value: 'parent-a', scope: 'child-a', sourcePath: 'events[0].sessionId' }));
+    expect(r.events.every(x => x.sessionId === 'child-a')).toBe(true);
+  });
+  it.each([undefined, 'other-child'])('does not resolve missing or conflicting child identifiers: %s', agentId => {
+    const rows = sidechainRows.map((r, i) => ({ ...r, agentId: i === 0 ? agentId : r.agentId }));
+    const r = normalizeClaudeSample(sample(rows), '/redacted/child.jsonl');
+    expect(r.nativeIdentities?.completeness.complete).toBe(false);
+    expect(r.nativeIdentities?.items.some(x => x.kind === 'session' || x.kind === 'parent_session')).toBe(false);
   });
 });

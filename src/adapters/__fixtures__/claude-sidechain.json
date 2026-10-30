@@ -1,0 +1,38 @@
+[
+  {
+    "type": "user",
+    "isSidechain": true,
+    "agentId": "child-a",
+    "sessionId": "parent-a",
+    "uuid": "row-0",
+    "timestamp": "2026-10-30T00:00:00.000Z",
+    "message": {
+      "id": "message-0",
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "[redacted]"
+        }
+      ]
+    }
+  },
+  {
+    "type": "user",
+    "isSidechain": true,
+    "agentId": "child-a",
+    "sessionId": "parent-a",
+    "uuid": "row-1",
+    "timestamp": "2026-10-30T00:00:01.000Z",
+    "message": {
+      "id": "message-1",
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "[redacted]"
+        }
+      ]
+    }
+  }
+]

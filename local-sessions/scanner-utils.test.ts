@@ -14,6 +14,9 @@ import { qoderFixture } from '../src/adapters/__fixtures__/qoder.js';
 import { workbuddyFixture } from '../src/adapters/__fixtures__/workbuddy.js';
 import { initSchema } from '../server/storage/schema.js';
 import { normalizeClaudeSample } from '../src/adapters/claude-code.js';
+import sidechainRows from '../src/adapters/__fixtures__/claude-sidechain.json';
+import { writeNativeIdentities } from '../server/storage/trace-links.js';
+import { getTask } from '../server/storage/task-workbench.js';
 import { claudeScanner } from './claude.js';
 import { codeagentScanner } from './codeagent.js';
 import { codexScanner } from './codex.js';
@@ -347,4 +350,29 @@ describe('T-02 统一 session key', () => {
     expect(ids.map((r) => r.id)).toEqual([keptId]);
     db.close();
   });
+});
+
+
+it('scans observed Claude sidechains into one task with separate path keys', async () => {
+  const dir = tempDir();
+  const parent = join(dir, 'parent.jsonl');
+  const child = join(dir, 'child.jsonl');
+  writeFileSync(parent, JSON.stringify({ type: 'user', sessionId: 'parent-a', timestamp: '2026-10-30T00:00:00.000Z', message: { content: 'redacted' } }) + '\n');
+  writeFileSync(child, sidechainRows.map(r => JSON.stringify(r)).join('\n') + '\n');
+  const db = newDb();
+  const config: ProviderConfig = { key: 'claude', enabled: false, path: dir, sourceKind: 'jsonl', watchStrategy: 'chokidar', pollIntervalMs: 0, label: 'Claude Code' };
+  try {
+    await claudeScanner.scanFile(config, child, { db });
+    await claudeScanner.scanFile(config, parent, { db });
+    const rootKey = deriveSessionKey('claude', parent);
+    const childKey = deriveSessionKey('claude', child);
+    const task = getTask(db, 'collected:' + rootKey);
+    expect(task.members).toHaveLength(2);
+    expect(task.members.find(m => m.sessionKey === childKey)?.parentId).toBe(rootKey);
+    expect(task.members.find(m => m.sessionKey === childKey)?.role).toBe('subagent');
+    expect(await claudeScanner.scanFile(config, child, { db })).toMatchObject({ skipped: true });
+    writeNativeIdentities(db, { source: 'scan', key: childKey }, { parserVersion: 2, items: [{ namespace: 'agent:claude', kind: 'session', value: 'parent-a', scope: null, eventId: null, sourcePath: 'events[0].sessionId' }], completeness: { complete: true, omittedCount: 0, reasons: [] } }, '2026-10-30T00:00:00.000Z');
+    expect(await claudeScanner.scanProvider(config, { db })).toMatchObject({ scanned: 1, skipped: 1 });
+    expect(await claudeScanner.scanProvider(config, { db })).toMatchObject({ scanned: 0, skipped: 2 });
+  } finally { db.close(); }
 });

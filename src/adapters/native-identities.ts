@@ -72,16 +72,34 @@ function uniqueSession(values: Array<string | null>): string | null {
   return ids.size === 1 ? [...ids][0]! : null;
 }
 
+/** Native sidechain markers, never a filename or title guess. */
+export function claudeSidechainIdentity(rows: readonly unknown[]) {
+  const sidechains = rows.map(identityRecord).filter(row => row?.isSidechain === true);
+  const isSubagent = sidechains.length > 0;
+  const child = uniqueSession(sidechains.map(row => string(row?.agentId)));
+  const parent = uniqueSession(sidechains.map(row => string(row?.sessionId)));
+  const complete = !isSubagent || (child !== null && parent !== null && child !== parent
+    && sidechains.every(row => string(row?.agentId) === child && string(row?.sessionId) === parent));
+  return { isSubagent, child, parent, complete };
+}
+
 export function collectClaudeIdentities(rows: readonly unknown[], provider: 'claude' | 'codeagent' = 'claude', bindings?: NativeEventBindings): NativeIdentitySet {
   const collector = createIdentityCollector();
   const namespace = 'agent:' + provider;
-  const scope = uniqueSession(rows.map(row => string(identityRecord(row)?.sessionId)));
+  const sidechain = claudeSidechainIdentity(rows);
+  const scope = sidechain.isSubagent ? sidechain.child : uniqueSession(rows.map(row => string(identityRecord(row)?.sessionId)));
+  if (!sidechain.complete) collector.omit('ambiguous_sidechain_identity');
   rows.forEach((value, i) => {
     const row = identityRecord(value);
     if (row === null) return;
     const path = 'events[' + i + ']';
-    const nativeScope = string(row.sessionId) ?? scope;
-    collector.add(namespace, 'session', row.sessionId, path + '.sessionId');
+    const nativeScope = sidechain.isSubagent ? scope : string(row.sessionId) ?? scope;
+    if (sidechain.isSubagent) {
+      if (sidechain.complete && row.isSidechain === true) {
+        collector.add(namespace, 'session', row.agentId, path + '.agentId');
+        collector.add(namespace, 'parent_session', row.sessionId, path + '.sessionId', scope);
+      }
+    } else collector.add(namespace, 'session', row.sessionId, path + '.sessionId');
     addBound(collector, bindings, row, namespace, 'message', row.uuid, path + '.uuid', nativeScope);
     addBound(collector, bindings, row, 'protocol:anthropic', 'request', row.requestId, path + '.requestId', nativeScope);
     const message = identityRecord(row.message);
@@ -92,7 +110,7 @@ export function collectClaudeIdentities(rows: readonly unknown[], provider: 'cla
       if (block?.type === 'tool_result') addBound(collector, bindings, block, 'protocol:anthropic', 'tool_call', block.tool_use_id, path + '.message.content[' + j + '].tool_use_id', nativeScope);
     });
   });
-  return { ...collector.finish(), parserVersion: 2 };
+  return { ...collector.finish(), parserVersion: 3 };
 }
 
 export function collectCodexIdentities(rows: readonly unknown[], bindings?: NativeEventBindings): NativeIdentitySet {
