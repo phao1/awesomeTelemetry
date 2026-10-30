@@ -357,7 +357,7 @@ interface HealthReport {
 
 **思考三态**：本轮有 reasoning 记录或 reasoning token > 0 → present；来源明确报告 reasoning=0 → zero；否则 unknown。占比只在 unknown = 0 时给。
 
-**统计**：P50/P95 从原始样本算；样本 < 5 时只给 max 与列表，不给 P95。
+**统计**：P50/P95 从原始样本算，算法与 `benchmarkStats` 一致（P50 = 中位数，偶数个取中间两值均值；P95 = 最近秩 `a[ceil(0.95n) − 1]`）。样本 ≥ 1 即给 P50；样本 < 5 时不给 P95（null），同时展示 max 与原始样本列表。
 
 ### 5.4 普通监测首批规则（16 条）
 
