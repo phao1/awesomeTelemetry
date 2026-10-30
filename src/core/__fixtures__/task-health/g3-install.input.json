@@ -1,0 +1,452 @@
+{
+  "version": 1,
+  "taskId": "g3",
+  "t0": "2026-10-30T00:00:00.000Z",
+  "scope": {
+    "member": "all",
+    "from": null,
+    "to": null
+  },
+  "revision": "synthetic:g3",
+  "snapshotAt": "2026-10-30T00:05:56.000Z",
+  "running": false,
+  "recordedStatus": "success",
+  "window": "synthetic-fixed-ceiling:g3",
+  "members": [
+    {
+      "id": "main",
+      "parentId": null,
+      "role": "main",
+      "sessionKey": "main",
+      "provider": "codex",
+      "detailLoaded": true,
+      "durationSource": "derived",
+      "tokenSemantics": {
+        "cacheRead": "incremental",
+        "reasoning": "incremental",
+        "reasoningInTotal": false
+      },
+      "timestampSemantics": "completion",
+      "cwd": "/fixture"
+    }
+  ],
+  "records": [
+    {
+      "recordId": "main:event:e1",
+      "memberId": "main",
+      "event": {
+        "id": "e1",
+        "sessionId": "main",
+        "sequence": 1,
+        "turnKey": null,
+        "kind": "user_prompt",
+        "phase": "implement",
+        "title": "Install dependencies",
+        "startedAt": "2026-10-30T00:00:00.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "user",
+        "tool": null,
+        "tokens": null,
+        "error": null,
+        "hasInput": true,
+        "hasOutput": false,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 1,
+      "outputLen": 0,
+      "round": null,
+      "attempt": null,
+      "tool": null,
+      "pairing": "unavailable",
+      "relatedRecordIds": [],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e2",
+      "memberId": "main",
+      "event": {
+        "id": "e2",
+        "sessionId": "main",
+        "sequence": 2,
+        "turnKey": "main:r1",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "exec_command",
+        "startedAt": "2026-10-30T00:00:01.000Z",
+        "durationMs": 128000,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "exec_command",
+        "tokens": null,
+        "error": null,
+        "hasInput": true,
+        "hasOutput": false,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 1,
+      "outputLen": 0,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r1",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "install-0",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e2",
+        "main:event:e3"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": "cd web && npm install",
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e3",
+      "memberId": "main",
+      "event": {
+        "id": "e3",
+        "sessionId": "main",
+        "sequence": 3,
+        "turnKey": "main:r1",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "exec_command",
+        "startedAt": "2026-10-30T00:02:09.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "exec_command",
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r1",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "install-0",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e2",
+        "main:event:e3"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": "cd web && npm install",
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e4",
+      "memberId": "main",
+      "event": {
+        "id": "e4",
+        "sessionId": "main",
+        "sequence": 4,
+        "turnKey": "main:r2",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "exec_command",
+        "startedAt": "2026-10-30T00:02:10.000Z",
+        "durationMs": 95000,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "exec_command",
+        "tokens": null,
+        "error": null,
+        "hasInput": true,
+        "hasOutput": false,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 1,
+      "outputLen": 0,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r2",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "install-1",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e4",
+        "main:event:e5"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": "cd web && npm install",
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e5",
+      "memberId": "main",
+      "event": {
+        "id": "e5",
+        "sessionId": "main",
+        "sequence": 5,
+        "turnKey": "main:r2",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "exec_command",
+        "startedAt": "2026-10-30T00:03:45.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "exec_command",
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r2",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "install-1",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e4",
+        "main:event:e5"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": "cd web && npm install",
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e6",
+      "memberId": "main",
+      "event": {
+        "id": "e6",
+        "sessionId": "main",
+        "sequence": 6,
+        "turnKey": "main:r3",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "exec_command",
+        "startedAt": "2026-10-30T00:03:46.000Z",
+        "durationMs": 130000,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "exec_command",
+        "tokens": null,
+        "error": null,
+        "hasInput": true,
+        "hasOutput": false,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 1,
+      "outputLen": 0,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r3",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "install-2",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e6",
+        "main:event:e7"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": "cd web && npm install",
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e7",
+      "memberId": "main",
+      "event": {
+        "id": "e7",
+        "sessionId": "main",
+        "sequence": 7,
+        "turnKey": "main:r3",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "exec_command",
+        "startedAt": "2026-10-30T00:05:56.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "exec_command",
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r3",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "install-2",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e6",
+        "main:event:e7"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": "cd web && npm install",
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    }
+  ],
+  "captures": [],
+  "limits": [],
+  "reasons": []
+}

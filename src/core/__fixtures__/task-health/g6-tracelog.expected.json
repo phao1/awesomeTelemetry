@@ -1,0 +1,27 @@
+{
+  "metrics": {
+    "model.reasoning_rounds": {
+      "present": 2,
+      "total": 4,
+      "pct": 50
+    },
+    "model.reasoning_split": {
+      "zero": {
+        "samples": 2,
+        "firstOutputMeanMs": 750
+      },
+      "present": {
+        "samples": 2,
+        "firstOutputMeanMs": 5650
+      }
+    },
+    "model.ttft": {
+      "layer": "exporter",
+      "p50": 3000,
+      "p95": null
+    }
+  },
+  "findings": {
+    "model.reasoning_split": null
+  }
+}

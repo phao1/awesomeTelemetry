@@ -1,0 +1,20 @@
+{
+  "rounds": [
+    {
+      "id": "main:r2",
+      "actSumMs": 6000,
+      "actUnionMs": 3000,
+      "parallelTools": 3
+    },
+    {
+      "id": "main:r3",
+      "readyMs": 19000
+    }
+  ],
+  "metrics": {
+    "act.parallel_rounds": 1
+  },
+  "findings": {
+    "act.serial_independent": null
+  }
+}

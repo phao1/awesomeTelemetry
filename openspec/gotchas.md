@@ -521,3 +521,51 @@ prewarm** ⚠️
   `publish-task` tool
 - **Fix**: To-Do is agent-local metadata/activity, never a team DAG task unless
   the source explicitly promotes it (design D16)
+
+---
+
+## 13. Task health (P0 contract and source inspection, 2026-10-30)
+
+### G13.1 Timestamp is not automatically event start
+- Codex/Claude source records are completion observations under the health
+  declaration; next-record duration cannot be attributed to the preceding item.
+- OpenCode-family db parts currently share message.time.created; treat as start,
+  not model/tool interval. OTel/native part endpoints require path-specific checks.
+- Unknown semantics disables partition/think. Source declarations are not a claim
+  of calibration: current observe.sqlite has zero accepted associations/transports.
+
+### G13.2 Pair exact native call/result identities before timing
+- Codex call and output are two records, one call; result's derived duration is
+  not tool work. taskStructure exact must be scoped to member+namespace+scope+ID.
+- Claude adapter collapses matched tool_result into tool_use and loses its result
+  timestamp from slim rows. Retain native endpoints via bounded source metadata;
+  do not promote the call's adjacent duration to observed.
+- Unpaired/ambiguous/incomplete durations stay derived or unavailable.
+
+### G13.3 Derived 300s cap is a lower bound
+- DERIVED_DURATION_CAP_MS=300000. Mark capped=true and display
+  “≥300s（推导值封顶）”; never feed derived/capped tools into act P50/P95.
+- Exact/measured durations have no300s cap. P50 needs>=1 eligible sample;
+  P95 needs>=5; both use raw samples and benchmarkStats algorithms.
+
+### G13.4 TTFT layer and reasoning zero need explicit evidence
+- Log ready→first completed model record is log_upper_bound, not first token.
+- Proxy/exporter/MaaS/InferHub/Kernel layers never mix; missing platform source
+  stays unavailable. Kernel duration may include tools (G4.1).
+- Adapter default reasoning=0 is not a reported zero. Preserve present/zero/unknown;
+  unknown prevents thinking percentage, missing usage never means cache hit0%.
+
+### G13.5 Full task statistics are not the opened page or diagnosis sample
+- taskRecords defaults to last page; health explicitly starts offset0 and keeps
+  fixed window through200-row pages, includes all selected members up to budgets.
+- Existing forward-duration time filters are not completion-semantic pairing;
+  collect needed prefix/partners before clipping reconstructed intervals.
+- Σ and ∪ are different; child Σ remains included when partition labels main
+  delegation wait. Never call unattributed gaps queue or E2E−Σ idle.
+
+### G13.6 Deep evidence remains untrusted and ordinary facts immutable
+- Preview digest binds redacted bounded pack; explicit confirmation makes one
+  cancellable model call without retries. Reject foreign refs and unfounded numbers.
+- Include adjacent normal evidence and precise finding record IDs, not first400.
+- Save report/index atomically, retain history at revision change;50-report cap
+  never auto-deletes. Model secrets and complete bodies never enter exports.

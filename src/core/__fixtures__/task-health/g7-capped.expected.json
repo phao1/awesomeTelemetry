@@ -1,0 +1,16 @@
+{
+  "spans": [
+    {
+      "recordId": "main:event:e2",
+      "capped": true
+    }
+  ],
+  "findings": {
+    "act.long_tool": {
+      "messageContains": "≥300s（推导值封顶）"
+    }
+  },
+  "metrics": {
+    "act.p95_ms": null
+  }
+}

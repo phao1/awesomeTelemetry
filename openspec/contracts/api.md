@@ -1535,3 +1535,86 @@ client-local; no source credentials/bodies are transferred in these responses.
   Invalid model citations/tool-use/shape return a rejected result with usage,
   never the unvalidated model content. No monitoring/proxy startup or tool run.
 Both use existing loopback/Origin guards, no-store and ApiError for non-2xx.
+
+## Task health reports (M12 P0 contract; implementation P2/P4)
+
+Normative DTOs/algorithms: [task-health.md](task-health.md) TH-001..008;
+requirements: task-health REQ-001..019. Existing local connection/Host/Origin
+protection, foreground accounting, gzip and Cache-Control:no-store apply.
+Every non2xx uses §0.3 ApiError; messages are static English, no source excerpts,
+local paths, credentials or model raw output. Existing architecture-diagnosis
+routes are unchanged. Viewing/history/export never starts analysis/model work.
+
+### Requests and successful responses
+
+| Method/path | Request | 200 response |
+|---|---|---|
+| POST `/api/tasks/:id/health-reports` | JSON `{mode:'standard',member:string,from?:string,to?:string,profile?:'codearts-perf-v1',thresholds?:Partial<HealthThresholds>}` (thresholds excludes profile) | HealthReport, after atomic report+index save, or exact cached report |
+| GET `/api/tasks/:id/health-reports` | no query/body | `{items:HealthReportIndexItem[]}` <=50 metadata rows |
+| GET `/api/health-reports/:reportId` | no query/body | HealthReport or DeepHealthReport as saved |
+| GET `/api/health-reports/:reportId/export?format=html\|md\|json` | exactly one format | download saved report via escaped renderer; JSON exact saved bytes |
+| GET `/api/task-health/model-status` | no query/body | `{configured:boolean,provider:'anthropic'\|'openai-compatible'\|null,model:string\|null}`; no key/base URL |
+| POST `/api/health-reports/:reportId/deep/preview` | empty JSON `{}` | `{pack:DeepHealthPack,digest:string,estimate:{inputTokens:number,outputTokens:number,bytes:number,approximate:true}}` |
+| POST `/api/health-reports/:reportId/deep` | JSON `{digest:string}` | saved DeepHealthReport, including rejected/partial schema-validation outcomes |
+
+HealthReportIndexItem is `{id:string,generatedAt:string,mode:'standard'|'deep',
+revision:string,expired:boolean,reportId:string|null}`; reportId is the parent
+ordinary ID for deep, null for ordinary. Sort generatedAt descending, id tie-break;
+no metrics/bodies/paths. Expired compares current revision to saved revision;
+missing current source also expires it, with no historical report mutation.
+
+Task ID is an opaque existing getTask ID; decode once and validate using existing
+task resolver. reportId is server-generated UUID, not a path. member is required
+all/main/accepted member ID, <=512chars. from/to both omitted or both valid
+ISO UTC, from<=to. Unknown fields/duplicates/unsafe numbers rejected; JSON POST
+body<=16KiB incl. chunked input. Overrides use exact TH-006 numeric keys, either
+body thresholds or query keys; if both supply same key reject400 rather than
+resolve silently. Only POST standard allows threshold query keys. Profile is
+versioned, unknown profile fails400. Report echoes fully resolved thresholds.
+Deep digest is lowercase64hex, bound to regenerated current redacted pack;
+changed parent/source/pack requires another preview. Estimates are conservative
+local character-based estimates (ceil(pack UTF-8 bytes/3) input, configured
+output ceiling), never billed tokens or a money quote; actual usage is in deep
+analysis metadata. Deep endpoints require an ordinary parent report.
+
+### Concurrency, cancellation and size
+
+One active health generation/preview/deep job per server, no queue; a concurrent
+job gets409 BUSY. Standard hard deadline45s, deep preview45s, deep model120s;
+owned AbortSignal on disconnect/server shutdown/deadline, no retry. UI owned
+wait50s standard/preview and125s deep, cancels/suppresses stale results when
+scope/source changes. Cancellation after atomic persistence is uncertain, refresh
+history; do not automatically resubmit. No polling or per-session SSE additions.
+
+Limits TH-007: standard UTF-8 JSON<=1MiB, history<=50/64KiB, model status<=4KiB,
+pack<=48KiB (whole preview<=64KiB), deep model output and saved deep report each
+<=64KiB, export HTML/MD<=4MiB after escaping, JSON saved-report limit. Rendering
+size overflow fails visibly, never truncated markup. Bound collection to100
+members/20000 events/2000 spans with explicit partial coverage; existing NFR
+slim/worker/original safeguards still apply. No body collection configuration,
+model secret, native writes or tool execution is accepted by any request.
+
+### Error codes (additive to §0.4)
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| BAD_REQUEST | 400 | invalid JSON/scope/range/profile/override/digest or deep parent type |
+| SESSION_NOT_FOUND | 404 | existing TaskReadError: task or member record unavailable |
+| HEALTH_REPORT_NOT_FOUND | 404 | unknown saved report ID |
+| BUSY | 409 | another health analysis/preview/deep job active |
+| SOURCE_CHANGED | 409 | source/membership/revision changed while collecting or previewing |
+| HEALTH_REPORT_LIMIT | 409 |50 saved reports; user must manually remove reports; never auto-evict |
+| HEALTH_INPUT_LIMIT | 413 | POST body exceeds16KiB |
+| HEALTH_MODEL_UNAVAILABLE | 503 | model environment configuration missing/invalid |
+| HEALTH_TIMEOUT | 503 | owned deadline expired |
+| HEALTH_SIZE_LIMIT | 503 | report/pack/model-output/export cannot fit allowed serialized bound |
+| HEALTH_SOURCE_UNAVAILABLE | 503 | retained source missing/unreadable/deleted; no fabricated evidence |
+| HEALTH_STORAGE_FAILED | 503 | report/index atomic persistence failed |
+| HEALTH_MODEL_FAILED | 503 | single upstream request failed; ordinary report unaffected |
+
+Existing authorization/original-deletion/integrity ApiErrors retain their own
+status/code. Disconnected clients receive no attempted error write; owned work
+stops. Valid model JSON that fails semantic/schema validation is saved as a
+rejected DeepHealthReport with static reasons and returned200; malformed/oversize
+transport output fails HEALTH_MODEL_FAILED/HEALTH_SIZE_LIMIT without replacing
+ordinary report. All limits, failure and cancellation paths release job ownership.

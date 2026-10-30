@@ -1,0 +1,62 @@
+{
+  "metrics": {
+    "overview.e2e_ms": 170000,
+    "plan.rounds": 5,
+    "model.sum_ms": 48300,
+    "act.sum_ms": 121700,
+    "act.union_ms": 121700,
+    "act.long_tool_count": 1,
+    "ux.ttfr_log": 4000,
+    "ux.first_locate_log": 16500,
+    "ux.first_write_log": 31200,
+    "ux.first_verified_log": 160000,
+    "ux.max_gap_log": {
+      "value": 120000,
+      "command": "npm test"
+    },
+    "model.reasoning_rounds": {
+      "present": 2,
+      "zero": 0,
+      "unknown": 3,
+      "pct": null
+    }
+  },
+  "rounds": [
+    {
+      "id": "main:r1",
+      "thinkMs": 6000
+    },
+    {
+      "id": "main:r2",
+      "thinkMs": 9000
+    },
+    {
+      "id": "main:r3",
+      "thinkMs": 14500
+    },
+    {
+      "id": "main:r4",
+      "thinkMs": 8800
+    },
+    {
+      "id": "main:r5",
+      "thinkMs": 10000
+    }
+  ],
+  "partition": {
+    "modelOnly": 48300,
+    "toolOnly": 121700,
+    "overlap": 0,
+    "undivided": 0,
+    "delegateWait": 0,
+    "userWait": 0,
+    "unattributed": 0
+  },
+  "findings": {
+    "act.long_tool": {
+      "command": "npm test",
+      "durationMs": 120000,
+      "toolClass": "test"
+    }
+  }
+}

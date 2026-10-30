@@ -1,0 +1,1099 @@
+{
+  "version": 1,
+  "taskId": "g2",
+  "t0": "2026-10-30T00:00:00.000Z",
+  "scope": {
+    "member": "all",
+    "from": null,
+    "to": null
+  },
+  "revision": "synthetic:g2",
+  "snapshotAt": "2026-10-30T00:02:50.000Z",
+  "running": false,
+  "recordedStatus": "success",
+  "window": "synthetic-fixed-ceiling:g2",
+  "members": [
+    {
+      "id": "main",
+      "parentId": null,
+      "role": "main",
+      "sessionKey": "main",
+      "provider": "codex",
+      "detailLoaded": true,
+      "durationSource": "derived",
+      "tokenSemantics": {
+        "cacheRead": "incremental",
+        "reasoning": "incremental",
+        "reasoningInTotal": false
+      },
+      "timestampSemantics": "completion",
+      "cwd": "/fixture"
+    }
+  ],
+  "records": [
+    {
+      "recordId": "main:event:e1",
+      "memberId": "main",
+      "event": {
+        "id": "e1",
+        "sessionId": "main",
+        "sequence": 1,
+        "turnKey": null,
+        "kind": "user_prompt",
+        "phase": "implement",
+        "title": "Modify a.ts and verify",
+        "startedAt": "2026-10-30T00:00:00.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "user",
+        "tool": null,
+        "tokens": null,
+        "error": null,
+        "hasInput": true,
+        "hasOutput": false,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 1,
+      "outputLen": 0,
+      "round": null,
+      "attempt": null,
+      "tool": null,
+      "pairing": "unavailable",
+      "relatedRecordIds": [],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e2",
+      "memberId": "main",
+      "event": {
+        "id": "e2",
+        "sessionId": "main",
+        "sequence": 2,
+        "turnKey": "main:r1",
+        "kind": "reasoning",
+        "phase": "implement",
+        "title": "Inspect",
+        "startedAt": "2026-10-30T00:00:04.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": null,
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r1",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": null,
+      "pairing": "unavailable",
+      "relatedRecordIds": [],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "present",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e3",
+      "memberId": "main",
+      "event": {
+        "id": "e3",
+        "sessionId": "main",
+        "sequence": 3,
+        "turnKey": "main:r1",
+        "kind": "llm",
+        "phase": "implement",
+        "title": "List",
+        "startedAt": "2026-10-30T00:00:05.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": null,
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r1",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": null,
+      "pairing": "unavailable",
+      "relatedRecordIds": [],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e4",
+      "memberId": "main",
+      "event": {
+        "id": "e4",
+        "sessionId": "main",
+        "sequence": 4,
+        "turnKey": "main:r1",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "exec_command",
+        "startedAt": "2026-10-30T00:00:06.000Z",
+        "durationMs": 1000,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "exec_command",
+        "tokens": null,
+        "error": null,
+        "hasInput": true,
+        "hasOutput": false,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 1,
+      "outputLen": 0,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r1",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-ls",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e4",
+        "main:event:e5"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": "ls",
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e5",
+      "memberId": "main",
+      "event": {
+        "id": "e5",
+        "sessionId": "main",
+        "sequence": 5,
+        "turnKey": "main:r1",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "exec_command",
+        "startedAt": "2026-10-30T00:00:07.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "exec_command",
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r1",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-ls",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e4",
+        "main:event:e5"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": "ls",
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e6",
+      "memberId": "main",
+      "event": {
+        "id": "e6",
+        "sessionId": "main",
+        "sequence": 6,
+        "turnKey": "main:r2",
+        "kind": "reasoning",
+        "phase": "implement",
+        "title": "Read targets",
+        "startedAt": "2026-10-30T00:00:15.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": null,
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r2",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": null,
+      "pairing": "unavailable",
+      "relatedRecordIds": [],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "present",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e7",
+      "memberId": "main",
+      "event": {
+        "id": "e7",
+        "sessionId": "main",
+        "sequence": 7,
+        "turnKey": "main:r2",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "read_file",
+        "startedAt": "2026-10-30T00:00:16.000Z",
+        "durationMs": 1000,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "read_file",
+        "tokens": null,
+        "error": null,
+        "hasInput": true,
+        "hasOutput": false,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 1,
+      "outputLen": 0,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r2",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-read-0",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e7",
+        "main:event:e10"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [
+          "/fixture/a.ts"
+        ],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e8",
+      "memberId": "main",
+      "event": {
+        "id": "e8",
+        "sessionId": "main",
+        "sequence": 8,
+        "turnKey": "main:r2",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "read_file",
+        "startedAt": "2026-10-30T00:00:16.000Z",
+        "durationMs": 2000,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "read_file",
+        "tokens": null,
+        "error": null,
+        "hasInput": true,
+        "hasOutput": false,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 1,
+      "outputLen": 0,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r2",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-read-1",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e8",
+        "main:event:e11"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [
+          "/fixture/b.ts"
+        ],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e9",
+      "memberId": "main",
+      "event": {
+        "id": "e9",
+        "sessionId": "main",
+        "sequence": 9,
+        "turnKey": "main:r2",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "read_file",
+        "startedAt": "2026-10-30T00:00:16.000Z",
+        "durationMs": 3000,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "read_file",
+        "tokens": null,
+        "error": null,
+        "hasInput": true,
+        "hasOutput": false,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 1,
+      "outputLen": 0,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r2",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-read-2",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e9",
+        "main:event:e12"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [
+          "/fixture/c.ts"
+        ],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e10",
+      "memberId": "main",
+      "event": {
+        "id": "e10",
+        "sessionId": "main",
+        "sequence": 10,
+        "turnKey": "main:r2",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "read_file",
+        "startedAt": "2026-10-30T00:00:17.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "read_file",
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r2",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-read-0",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e7",
+        "main:event:e10"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [
+          "/fixture/a.ts"
+        ],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e11",
+      "memberId": "main",
+      "event": {
+        "id": "e11",
+        "sessionId": "main",
+        "sequence": 11,
+        "turnKey": "main:r2",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "read_file",
+        "startedAt": "2026-10-30T00:00:18.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "read_file",
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r2",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-read-1",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e8",
+        "main:event:e11"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [
+          "/fixture/b.ts"
+        ],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e12",
+      "memberId": "main",
+      "event": {
+        "id": "e12",
+        "sessionId": "main",
+        "sequence": 12,
+        "turnKey": "main:r2",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "read_file",
+        "startedAt": "2026-10-30T00:00:19.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "read_file",
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r2",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-read-2",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e9",
+        "main:event:e12"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [
+          "/fixture/c.ts"
+        ],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e13",
+      "memberId": "main",
+      "event": {
+        "id": "e13",
+        "sessionId": "main",
+        "sequence": 13,
+        "turnKey": "main:r3",
+        "kind": "llm",
+        "phase": "implement",
+        "title": "Apply change",
+        "startedAt": "2026-10-30T00:00:30.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": null,
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r3",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": null,
+      "pairing": "unavailable",
+      "relatedRecordIds": [],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e14",
+      "memberId": "main",
+      "event": {
+        "id": "e14",
+        "sessionId": "main",
+        "sequence": 14,
+        "turnKey": "main:r3",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "write_file",
+        "startedAt": "2026-10-30T00:00:31.000Z",
+        "durationMs": 200,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "write_file",
+        "tokens": null,
+        "error": null,
+        "hasInput": true,
+        "hasOutput": false,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 1,
+      "outputLen": 0,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r3",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-write",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e14",
+        "main:event:e15"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [
+          "/fixture/a.ts"
+        ],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e15",
+      "memberId": "main",
+      "event": {
+        "id": "e15",
+        "sessionId": "main",
+        "sequence": 15,
+        "turnKey": "main:r3",
+        "kind": "tool",
+        "phase": "implement",
+        "title": "write_file",
+        "startedAt": "2026-10-30T00:00:31.200Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "write_file",
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r3",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-write",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e14",
+        "main:event:e15"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [
+          "/fixture/a.ts"
+        ],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e16",
+      "memberId": "main",
+      "event": {
+        "id": "e16",
+        "sessionId": "main",
+        "sequence": 16,
+        "turnKey": "main:r4",
+        "kind": "tool",
+        "phase": "verify",
+        "title": "exec_command",
+        "startedAt": "2026-10-30T00:00:40.000Z",
+        "durationMs": 120000,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "exec_command",
+        "tokens": null,
+        "error": null,
+        "hasInput": true,
+        "hasOutput": false,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 1,
+      "outputLen": 0,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r4",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-test",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e16",
+        "main:event:e17"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": "npm test",
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e17",
+      "memberId": "main",
+      "event": {
+        "id": "e17",
+        "sessionId": "main",
+        "sequence": 17,
+        "turnKey": "main:r4",
+        "kind": "tool",
+        "phase": "verify",
+        "title": "exec_command",
+        "startedAt": "2026-10-30T00:02:40.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": "exec_command",
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r4",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": {
+        "namespace": "agent:codex",
+        "kind": "tool_call",
+        "value": "call-test",
+        "scope": "main"
+      },
+      "pairing": "exact",
+      "relatedRecordIds": [
+        "main:event:e16",
+        "main:event:e17"
+      ],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": "npm test",
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    },
+    {
+      "recordId": "main:event:e18",
+      "memberId": "main",
+      "event": {
+        "id": "e18",
+        "sessionId": "main",
+        "sequence": 18,
+        "turnKey": "main:r5",
+        "kind": "llm",
+        "phase": "implement",
+        "title": "Summary",
+        "startedAt": "2026-10-30T00:02:50.000Z",
+        "durationMs": 0,
+        "status": "success",
+        "actor": "assistant",
+        "tool": null,
+        "tokens": null,
+        "error": null,
+        "hasInput": false,
+        "hasOutput": true,
+        "hasRaw": true,
+        "model": null
+      },
+      "importedTurn": null,
+      "inputLen": 0,
+      "outputLen": 1,
+      "round": {
+        "namespace": "agent:codex",
+        "kind": "turn",
+        "value": "r5",
+        "scope": "main"
+      },
+      "attempt": null,
+      "tool": null,
+      "pairing": "unavailable",
+      "relatedRecordIds": [],
+      "native": {
+        "modelCall": null,
+        "toolStartedAt": null,
+        "toolCompletedAt": null,
+        "modelStartedAt": null,
+        "modelCompletedAt": null,
+        "firstContentAt": null,
+        "command": null,
+        "targets": [],
+        "cwd": "/fixture",
+        "delegateMemberId": null,
+        "requestsUserInput": null,
+        "environmentReset": null,
+        "reasoning": "unknown",
+        "usage": null
+      }
+    }
+  ],
+  "captures": [],
+  "limits": [],
+  "reasons": []
+}
