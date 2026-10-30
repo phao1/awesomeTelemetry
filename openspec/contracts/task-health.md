@@ -447,6 +447,17 @@ section wins.
    facet carrying the unsubtracted value.
 7. ux.max_gap_log removes userWait intervals first; only gap parts outside
    userWait count. perceived.long_gap therefore never fires on between-turn idle.
+8. Round identity. When the same opaque turnKey reappears in a later user turn
+   of the same member, its first round keeps round.id = turnKey; each later
+   split round gets the deterministic id `<turnKey>@<userPromptRecordId>`. The
+   source event's turnKey is never rewritten.
+9. Multi-member wait. Member waits are kept per member. Task-level userWait
+   (partition and active E2E) is the union of member waits minus every part
+   covered by another selected member's located model/tool/delegate activity;
+   the covered parts follow the normal step-6 order.
+10. plan.rounds is null only when an unloaded member or a member/event ceiling
+    could hide rounds. Native-metadata limits (e.g. native_line_limit) and
+    public-projection omissions keep the counted value and only add a reason.
 
 G8 (normative, Codex-shaped, single member, completion semantics, seconds from
 t0, Codex call/result records share one tool_call ref with pairing=exact):
