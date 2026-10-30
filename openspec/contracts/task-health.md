@@ -191,6 +191,10 @@ interface HealthThresholds {
 interface HealthReport {
   version: 1; id: string; taskId: string; mode: 'standard'; scope: HealthScope;
   revision: string; generatedAt: string; snapshotAt: string; running: boolean;
+  /** ISO UTC of HealthInput.t0, the origin of every relative *Ms offset in this
+   *  report; null when unknown. Reports saved before 2026-10-31 omit it and
+   *  viewers then show offsets instead of local clock times. */
+  t0?: string | null;
   thresholds: HealthThresholds; calcVersion: number; ruleVersion: number;
   coverage: { members: { loaded: number; total: number };
     timing: Record<Timing, number>; limits: string[]; reasons: string[] };
