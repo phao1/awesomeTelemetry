@@ -7,6 +7,10 @@ import { collectTaskHealth, generateHealthReport, healthRevision, HealthError } 
 import type { HealthReportStore } from '../task-health/store.js';
 import { TaskReadError, validateTaskRange, getTask } from '../storage/task-workbench.js';
 import { sendJson } from './send-json.js';
+import { collectDeepPreview, runDeepHealth } from '../task-health/deep.js';
+import type { DeepHealthPreview } from '../task-health/deep.js';
+import { healthModelStatus } from '../task-health/model-client.js';
+import type { HealthModelClient } from '../task-health/model-client.js';
 import type { Router } from './router.js';
 
 // JSON.parse normally loses duplicate object keys. This small token walk checks
@@ -59,6 +63,8 @@ const messages: Record<string, string> = { BAD_REQUEST: 'Invalid health report r
 /** The caller installs the existing loopback Host/Origin and foreground guards. */
 export function registerTaskHealthRoutes(router: Router, deps: {
   db: Database; store: HealthReportStore;
+  env?: NodeJS.ProcessEnv; modelClient?: HealthModelClient;
+  preview?: (report: HealthReport, signal: AbortSignal) => Promise<DeepHealthPreview>;
   collect?: (id: string, scope: HealthScope, signal: AbortSignal) => Promise<HealthInput>;
   generate?: (input: HealthInput, thresholds: HealthThresholds, signal: AbortSignal) => Promise<HealthReport>;
 }): () => void {
@@ -105,6 +111,38 @@ export function registerTaskHealthRoutes(router: Router, deps: {
       })();
       const report = await Promise.race([work, stopped]);
       if (!res.destroyed) sendJson(res, 200, report, req);
+    } catch (e) { error(req, res, e, timedOut); }
+    finally { clearTimeout(timer); res.off('close', cancel); req.off('aborted', cancel); if (active === controller) active = null; }
+  });
+  router.register('GET', '/api/task-health/model-status', async (req, res) => {
+    res.setHeader('cache-control', 'no-store'); if (!guard(req, res)) return;
+    try { if (new URL(req.url ?? '/', 'http://localhost').search) throw new HealthError('BAD_REQUEST', 400); sendJson(res, 200, healthModelStatus(deps.env), req); }
+    catch (e) { error(req, res, e); }
+  });
+  for (const previewOnly of [true, false]) router.register('POST', '/api/health-reports/:reportId/deep' + (previewOnly ? '/preview' : ''), async (req, res, params) => {
+    res.setHeader('cache-control', 'no-store'); if (!guard(req, res)) return;
+    if (closed || active) { error(req, res, new HealthError('BUSY', 409)); return; }
+    const controller = new AbortController(); active = controller; let timedOut = false;
+    const cancel = () => controller.abort(); res.once('close', cancel); req.once('aborted', cancel);
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, previewOnly ? 45000 : 120000); timer.unref();
+    try {
+      if (new URL(req.url ?? '/', 'http://localhost').search) throw new HealthError('BAD_REQUEST', 400);
+      const request = object(await body(req, controller.signal));
+      if (previewOnly ? Object.keys(request).length !== 0 : Object.keys(request).join() !== 'digest' || typeof request.digest !== 'string' || !/^[a-f0-9]{64}$/.test(request.digest)) throw new HealthError('BAD_REQUEST', 400);
+      if (!healthModelStatus(deps.env).configured) throw new HealthError('HEALTH_MODEL_UNAVAILABLE');
+      const stopped = new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => reject(new HealthError(timedOut ? 'HEALTH_TIMEOUT' : 'HEALTH_SOURCE_UNAVAILABLE')), { once: true }));
+      const work = (async () => {
+        const parent = await deps.store.get(params.reportId!);
+        if (!('mode' in parent) || parent.mode !== 'standard') throw new HealthError('BAD_REQUEST', 400);
+        const preview = await (deps.preview ?? ((r, signal) => collectDeepPreview(deps.db, r, signal)))(parent, controller.signal);
+        controller.signal.throwIfAborted();
+        if (previewOnly) return preview;
+        const report = await runDeepHealth(parent, preview, request.digest as string, controller.signal, { client: deps.modelClient, env: deps.env });
+        controller.signal.throwIfAborted();
+        return deps.store.saveDeep(report, controller.signal);
+      })();
+      const result = await Promise.race([work, stopped]);
+      if (!res.destroyed) sendJson(res, 200, result, req);
     } catch (e) { error(req, res, e, timedOut); }
     finally { clearTimeout(timer); res.off('close', cancel); req.off('aborted', cancel); if (active === controller) active = null; }
   });

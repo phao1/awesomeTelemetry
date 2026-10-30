@@ -2008,3 +2008,27 @@ Browser check against a copied local DB: single-agent and 21-member Codex tasks
 generate reports, evidence jumps to the trajectory record, history/downloads work,
 375 px drawer is full screen without horizontal page overflow. The 21-member report
 drawer shrank from ~20,000 px to ~5,800 px after collapsing empty rows.
+
+## 2026-10-31 — M12 task-health P4 (evidence-bound deep monitoring)
+
+Adds deep-pack builder/validator, HealthModelClient (anthropic wrapper and
+openai-compatible: 2 MiB response cap, 120 s deadline, no retry, redirect:error),
+deep preview/run routes, independent deep report storage and UI tabs. The
+evidence pack is built to the 48 KiB budget (compact facts, then staged trims of
+rounds/normal samples/excerpt length, recorded in limitations); a real local report
+packs to ~33 KB. No schema, index or dependency change; no network on the standard
+path; deep runs only after explicit confirmation.
+
+Build, typecheck and lint passed. Full suite: 390 files passed, 4492 tests passed,
+1 existing skip.
+
+All ten perf:check diagnostics passed. 10-task-health: 20000 events / 5 members,
+773 ms (budget 3 s), event-loop p99 2.95 ms, max 7.34 ms, 0 external requests.
+Loopback extra E2E p95: HTTP 8.802 ms, HTTPS CONNECT 15.086 ms, near-2MiB 5.570 ms;
+event-loop p99 2.173/2.265/2.167 ms. Report (ignored):
+reports/capture-ab-2026-10-30T13-50-57.328Z-28549.json.
+
+Browser check against a copied local DB with a stub provider pointed at an
+unreachable loopback port: preview 200 (33,034 bytes, redacted), run 503 with a
+specific "model request failed" message, standard report SHA-256 unchanged, stub
+key absent from data dir, reports and server logs. No real model was called.

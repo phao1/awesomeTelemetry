@@ -1,5 +1,5 @@
 import { coverageReason, formatDuration, formatFact, healthLabel, metricText, reconciliationRows, basisMetrics, dimensionMetrics, compactMetricRows, missingMetricsText, dominantAgentPartition } from './format.js';
-import type { HealthFinding, HealthMetric, HealthReport } from './types.js';
+import type { DeepHealthReport, HealthFinding, HealthMetric, HealthReport } from './types.js';
 import { unionDuration } from './intervals.js';
 /** Authentication material is never a public evidence excerpt. */
 export const redactHealthText = (text: string): string => text
@@ -36,7 +36,8 @@ function sections(r: HealthReport): [string, string[]][] {
     ['证据', r.evidence.map(e => `${e.id}；${e.recordIds.join(', ')}；${e.title.slice(0, 200)}；${(e.summary ?? '').slice(0, 1500)}${e.truncated || (e.summary?.length ?? 0) > 1500 ? ' （截断）' : ''}`)],
   ];
 }
-export function renderTaskHealthMarkdown(report: HealthReport): string {
+export function renderTaskHealthMarkdown(report: HealthReport | DeepHealthReport): string {
+  if (!('mode' in report)) return `# 深度健康报告\n\n${deepSections(report).map(([title, lines]) => `## ${escapeMd(title)}\n\n${lines.map(x => `- ${escapeMd(x)}`).join('\n')}`).join('\n\n')}\n`;
   const list = (lines: string[]) => lines.map(line => `- ${escapeMd(line).replace(' （截断）', ' [截断]')}`).join('\n');
   return `# 健康监测\n\n${sections(report).map(([title, lines], i) => {
     const table = i === 1 ? `| 项 | 值 | 层级 |\n| --- | --- | --- |\n${reconciliationRows(report).map(row => `| ${row.map(escapeMd).join(' | ')} |`).join('\n')}\n\n` : '';
@@ -44,11 +45,17 @@ export function renderTaskHealthMarkdown(report: HealthReport): string {
     return `## ${escapeMd(title)}\n\n${table}${cards}${list(lines)}`;
   }).join('\n\n')}\n`;
 }
-export function renderTaskHealthHtml(report: HealthReport): string {
+export function renderTaskHealthHtml(report: HealthReport | DeepHealthReport): string {
+  if (!('mode' in report)) return `<!doctype html><html lang="zh"><meta charset="utf-8"><title>深度健康报告</title><body><h1>深度健康报告</h1>${deepSections(report).map(([title, lines]) => `<section><h2>${escapeHtml(title)}</h2><ul>${lines.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></section>`).join('')}</body></html>`;
   const list = (lines: string[]) => `<ul>${lines.map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`;
   return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>健康监测</title><style>body{font:16px/1.6 system-ui,sans-serif;max-width:1000px;margin:2rem auto;padding:0 1rem;color:#17243a}h2{border-bottom:1px solid #cbd5e1}li,td{overflow-wrap:anywhere;margin:.5rem 0}table{width:100%;border-collapse:collapse;table-layout:fixed}td,th,.health-card{border:1px solid #cbd5e1;padding:.5rem}.health-card{margin:1rem 0}</style></head><body><h1>健康监测</h1>${sections(report).map(([title, lines], i) => {
     const table = i === 1 ? `<table><thead><tr><th>项</th><th>值</th><th>层级</th></tr></thead><tbody>${reconciliationRows(report).map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '';
     const cards = i === 2 ? dimensions.map(d => `<section class="health-card"><h3>${healthLabel(d)}</h3>${list(dimensionLines(report, d))}</section>`).join('') : '';
     return `<section><h2>${escapeHtml(title)}</h2>${table}${cards}${list(lines)}</section>`;
   }).join('')}</body></html>`;
+}
+
+function deepSections(r: DeepHealthReport): [string, string[]][] {
+  const items = (rows: object[]) => rows.map(row => Object.entries(row).map(([k,v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`).join('；'));
+  return [['最值得验证的原因', items(r.causes)], ['价值时刻判定', items(r.valueMoments)], ['必要性判定', items(r.necessity)], ['优化假设与实验', items(r.experiments)], ['被拒绝 / 未采纳', items(r.rejected)], ['分析记录', [`${r.provider} / ${r.model}; ${r.status}; model_judged`, `promptVersion ${r.promptVersion}; digest ${r.digest}`, `inputTokens ${r.analysis.inputTokens ?? 'unknown'}; outputTokens ${r.analysis.outputTokens ?? 'unknown'}; durationMs ${r.analysis.durationMs}`, ...r.limitations]]];
 }
