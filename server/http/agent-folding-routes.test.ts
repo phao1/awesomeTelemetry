@@ -47,3 +47,12 @@ it('owns one cancellable job, accepts long native identities, validates query an
   const missing = await setup({ loadNative: async () => { throw new TaskReadError('SESSION_NOT_FOUND', 'Missing task'); } }); expect((await fetch(`${missing.base}/tasks/missing`)).status).toBe(404);
   const valid = await setup({ loadNative: async () => loadFoldingExample() }); expect((await fetch(`${valid.base}/tasks/a`)).status).toBe(200);
 });
+
+it('validates read-only scope and comparison requests before loading and bounds concurrency independently', async () => {
+  const project = await loadFoldingExample(); let calls = 0;
+  const f = await setup({ loadScope: async () => { calls++; return project; }, loadComparison: async (a, b) => ({ a, b }) });
+  for (const scope of [{ bad: true }, { provider: 'opencode' }, { taskIds: [1] }, { taskIds: 'oops' }, { from: 'bad' }, { cwd: 1 }]) expect((await f.post('scope', scope)).status).toBe(400);
+  expect(calls).toBe(0); const valid = await f.post('scope', { provider: 'claude' }); expect(valid.status).toBe(200); expect(valid.headers.get('cache-control')).toBe('no-store'); expect(calls).toBe(1);
+  for (const body of [{ a: [], b: [] }, { a: ['collected:a'], b: ['collected:a'] }, { a: ['imported:a'], b: ['collected:b'] }]) expect((await f.post('compare', body)).status).toBe(400);
+  expect((await f.post('compare', { a: ['collected:a'], b: ['collected:b'] })).status).toBe(200);
+});

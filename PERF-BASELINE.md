@@ -1883,3 +1883,14 @@ The known relative capture performance regression remains unresolved and explici
 user-deferred ("先不管性能 先搞"); this is not a claim that relative baseline
 acceptance passed. No assertion, threshold or budget changed. Build passed with
 existing bundle-size and catalog static/dynamic import warnings.
+
+### 2026-10-30 — Agent architecture r4 P6
+
+`npm run perf:check` ran without changing budgets. Capture HTTP extra E2E p95
+7.380 ms and HTTPS 15.280 ms passed. Near-2MiB extra E2E p95 23.609 ms failed
+its absolute gate (first body p95 15.217 ms; event-loop p99 4.727 ms).
+Full report: `reports/capture-ab-2026-10-30T03-22-21.686Z-34208.json` (ignored).
+The user explicitly deferred performance work; this result is **not** a pass.
+Functional implementation continues with unchanged thresholds. This run overlapped
+local functional validation, so scheduler contention remains a possible contributor,
+not an established explanation. No relative performance improvement is claimed.

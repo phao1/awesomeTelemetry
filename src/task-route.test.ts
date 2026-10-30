@@ -18,3 +18,12 @@ it('restores evidence filters and an explicit UTC time interval', () => {
   expect(parseTaskRoute(serializeTaskRoute(route))).toEqual(route);
   expect(parseTaskRoute('#/task?from=bad&to=bad').from).toBeUndefined();
 });
+
+it('round-trips architecture scope and disjoint repeated comparison groups', () => {
+  const route = { task: null, origin: 'collected' as const, member: 'main', mode: 'architecture' as const, event: null, overview: true, compareA: ['collected:a', 'collected:b'], compareB: ['collected:c'] };
+  expect(parseTaskRoute(serializeTaskRoute(route))).toEqual(route);
+  for (const query of ['a=collected:a&b=collected:a', 'a=bogus', 'a=collected:a&a=collected:a', Array.from({ length: 41 }, (_, i) => `a=collected:${i}`).join('&')]) {
+    const parsed = parseTaskRoute('#/task?' + query); expect(parsed.compareA).toBeUndefined(); expect(parsed.compareB).toBeUndefined();
+  }
+  expect(parseTaskRoute('#/task?mode=broken&overview=x')).toMatchObject({ mode: 'trajectory' });
+});

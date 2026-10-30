@@ -1,3 +1,4 @@
+import { transferArchitectureReport } from '../agent-folding/architecture-client.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Locale } from '../../i18n.js';
 import { fetchJson } from '../../api/client.js';
@@ -119,6 +120,7 @@ export function TeamModeExperimentAdvanced({ locale, diagnosisInvalidateKey = 0 
   return <section className="team-exp-center">
     <header className="team-exp-heading"><div><h1>{text('任务模式实验', 'Task mode experiments')}</h1><p>{text('同一任务，比较单 loop、主子 Agent 与团队协作；从验收结果追溯过程。', 'Compare single loop, subagents and teams on one task; trace acceptance back to evidence.')}</p></div>
       <label className="btn team-exp-file-label">{text('导入报告', 'Import report')}<input aria-label={text('导入任务模式报告', 'Import task-mode report')} type="file" accept=".json,application/json" onChange={e => { importReport(e.target.files?.[0]); e.target.value = ''; }}/></label>
+      {report && <button className="btn" onClick={() => { try { transferArchitectureReport(report); } catch { setError('报告过大或浏览器无法保存临时报告'); } }}>在任务中心对比</button>}
       {report && <button className="btn" onClick={() => download('team-experiment-report.json', report)}>{text('导出报告', 'Export report')}</button>}
     </header>
     <RealTaskDiagnosisEntry locale={locale} invalidateKey={diagnosisInvalidateKey}/>

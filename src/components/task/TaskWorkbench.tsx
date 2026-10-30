@@ -14,6 +14,9 @@ const TaskEvidence = lazy(() => import('./TaskEvidence.js').then(module => ({ de
 import { ProcessLedger, type ProcessLedgerHandle } from './ProcessLedger.js';
 const TaskTimeNavigator = lazy(() => import('./TaskTimeNavigator.js').then(module => ({ default: module.TaskTimeNavigator })));
 import type { TaskTimeline } from '../../core/task-types.js';
+import { TaskArchitecture } from '../agent-folding/TaskArchitecture.js';
+import { ArchitectureCompare, ImportedArchitectureCompare } from '../agent-folding/ArchitectureCompare.js';
+import { architectureApi } from '../agent-folding/architecture-client.js';
 import { ArchitectureDiagnosisPanel } from '../diagnosis/ArchitectureDiagnosisPanel.js';
 
 export interface TaskChanges { version: number; keys: string[]; runIds: string[]; reset?: boolean }
@@ -32,7 +35,7 @@ const isBookkeeping = (record: TaskRecord) => {
 };
 const stamp = (value: string | null, locale: Locale) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
-function TaskList({ items, selected, locale, onSelect }: { items: TaskSummary[]; selected: string | null; locale: Locale; onSelect: (task: TaskSummary) => void }) {
+function TaskList({ items, selected, locale, onSelect, checked, onCheck }: { items: TaskSummary[]; selected: string | null; locale: Locale; onSelect: (task: TaskSummary) => void; checked: string[]; onCheck: (id: string, shift: boolean) => void }) {
   const parent = useRef<HTMLDivElement>(null), c = copy(locale);
   const list = useVirtualizer({ count: items.length, getScrollElement: () => parent.current, estimateSize: () => 112, overscan: 3 });
   return <div className="task-list-scroll" ref={parent} role="list" aria-label={c.tasks}>
@@ -43,7 +46,7 @@ function TaskList({ items, selected, locale, onSelect }: { items: TaskSummary[];
           <span className="task-list-meta"><span className="task-provider">{task.provider}</span><span>{stamp(task.updatedAt, locale)}</span></span>
           <strong title={task.title}>{task.title || task.provider}</strong>
           <span className="task-list-meta"><span>{task.memberCount > 1 ? `${task.memberCount} ${c.members}` : c.single}</span><span>{task.eventCount.toLocaleString()} {c.records}</span></span>
-        </button>
+        </button><input className="architecture-select" type="checkbox" aria-label={`选择 ${task.title || task.id}`} checked={checked.includes(task.id)} onChange={event => onCheck(task.id, (event.nativeEvent as MouseEvent).shiftKey)} />
       </div>;
     })}</div>
   </div>;
@@ -52,6 +55,8 @@ function TaskList({ items, selected, locale, onSelect }: { items: TaskSummary[];
 /** Task-scoped reading state. App retains global navigation, locale, runtime and SSE ownership. */
 export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpenRequest, providerPreset, onProviderPresetChange, diagnosisInvalidateKey = 0 }: TaskWorkbenchProps): React.JSX.Element {
   const c = copy(locale), [q, setQ] = useState(''), [localProvider, setLocalProvider] = useState(''), [range, setRange] = useState<'all' | '7d' | '30d' | 'today'>('all');
+  const [checked, setChecked] = useState<string[]>([]), lastCheck = useRef<string | null>(null);
+  const comparing = route.compareImport || Boolean(route.compareA?.length && route.compareB?.length);
   const provider = providerPreset ?? localProvider;
   const setProvider = (value: string) => { if (onProviderPresetChange) onProviderPresetChange(value as ProviderKey | ''); else setLocalProvider(value); };
   const [offset, setOffset] = useState(0), [listQuery, setListQuery] = useState(''), [collapsed, setCollapsed] = useState(false);
@@ -59,13 +64,18 @@ export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpe
   useEffect(() => { const timer = setTimeout(() => { setListQuery(q); setOffset(0); }, 250); return () => clearTimeout(timer); }, [q]);
   const readList = useCallback((signal: AbortSignal) => taskApi.list({ origin: route.origin, q: listQuery, provider: provider === '' ? undefined : provider as ProviderKey, range, offset, limit: 50 }, signal), [route.origin, listQuery, provider, range, offset]);
   const tasks = useTaskRead(JSON.stringify([route.origin, listQuery, provider, range, offset]), readList, 10000);
+  const onCheck = (id: string, shift: boolean) => { const ids = tasks.value?.items.map(t => t.id) ?? []; const start = ids.indexOf(lastCheck.current ?? ''), end = ids.indexOf(id); const range = shift && start >= 0 ? ids.slice(Math.min(start, end), Math.max(start, end) + 1) : [id]; setChecked(old => old.includes(id) ? old.filter(x => !range.includes(x)) : [...new Set([...old, ...range])].slice(0, 40)); lastCheck.current = id; };
+  const [auditCwd, setAuditCwd] = useState('');
+  const overviewRead = useCallback((signal: AbortSignal) => architectureApi.scope({ provider: provider === 'codex' ? 'codex' : 'claude', ...(checked.length ? { taskIds: checked } : {}), ...(auditCwd ? { cwd: auditCwd } : {}), ...(range !== 'all' ? { from: new Date(Date.now() - (range === 'today' ? 1 : range === '7d' ? 7 : 30) * 86400000).toISOString() } : {}) }, signal), [provider, checked, range, auditCwd]);
+  const overview = useTaskRead(route.overview ? JSON.stringify([provider, checked, range, auditCwd]) : null, overviewRead, 35000);
+  const locateArchitecture = (task: string, sessionKey: string | null = null, eventId: string | null = null) => onRoute({ ...route, overview: undefined, compareImport: undefined, compareA: undefined, compareB: undefined, task, member: sessionKey ? 'all' : 'main', mode: 'trajectory', event: sessionKey && eventId ? `${sessionKey}:event:${eventId}` : null });
   const readContext = useCallback((signal: AbortSignal) => taskApi.context(route.task!, signal), [route.task]);
   const context = useTaskRead(route.task, readContext, 10000);
   useEffect(() => { if (changes.version > 0) setListStale(true); }, [changes.version]);
   const nativeMember = context.value && route.member === 'main' && route.task?.startsWith('collected:') && route.task !== context.value.task.id ? context.value.members.find(member => member.sessionKey === route.task!.slice(10)) : null;
   const resolvedRoute = nativeMember ? { ...route, member: nativeMember.id } : route;
   const changeOrigin = (origin: TaskRoute['origin']) => { setOffset(0); onRoute({ ...route, origin, task: null, event: null, member: 'main', q: undefined, errors: undefined, from: undefined, to: undefined }); };
-  const selectTask = (task: TaskSummary) => { setNotice(''); onRoute({ ...route, task: task.id, origin: task.origin, member: 'main', event: null, q: undefined, errors: undefined, from: undefined, to: undefined }); };
+  const selectTask = (task: TaskSummary) => { setNotice(''); onRoute({ ...route, overview: undefined, compareImport: undefined, compareA: undefined, compareB: undefined, task: task.id, origin: task.origin, member: 'main', event: null, q: undefined, errors: undefined, from: undefined, to: undefined }); };
   const refresh = () => { tasks.retry(); context.retry(); setListStale(false); };
   return <div className={`task-workbench ${collapsed ? 'task-list-collapsed' : ''}`}>
     <aside className="task-sidebar">
@@ -75,9 +85,10 @@ export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpe
         <div><select aria-label={c.provider} value={provider} onChange={event => { setProvider(event.target.value); setOffset(0); }} disabled={route.origin === 'imported'}><option value="">{c.allProviders}</option>{PROVIDER_KEYS.map(key => <option key={key} value={key}>{key}</option>)}</select><select aria-label={c.time} value={range} onChange={event => { setRange(event.target.value as typeof range); setOffset(0); }} disabled={route.origin === 'imported'}><option value="all">{c.allTime}</option><option value="today">{c.today}</option><option value="7d">{c.recent}</option><option value="30d">{c.month}</option></select></div>
       </div>
       <div className="task-list-count"><span>{tasks.value?.total ?? '—'} {c.taskCount}</span><button type="button" onClick={refresh}>{listStale ? `${c.newer} ↻` : c.refresh}</button></div>
+      <div className="architecture-toolbar"><button className="btn" onClick={() => onRoute({ ...route, overview: true })}>架构概况</button><span>{checked.length} 已选</span>{(['A', 'B'] as const).map(group => <button className="btn" key={group} disabled={!checked.length} onClick={() => { onRoute({ ...route, overview: undefined, [group === 'A' ? 'compareA' : 'compareB']: checked, [group === 'A' ? 'compareB' : 'compareA']: (group === 'A' ? route.compareB : route.compareA)?.filter(id => !checked.includes(id)) }); setChecked([]); }}>设为 {group}</button>)}<small>A {route.compareA?.length ?? 0} / B {route.compareB?.length ?? 0}</small></div>
       {tasks.loading && <p role="status" className="task-inline-state">{c.loading}</p>}
       {tasks.error && <div className="task-inline-state" role="alert"><p>{tasks.error}</p><button type="button" className="btn" onClick={tasks.retry}>{c.retry}</button></div>}
-      {tasks.value && <TaskList items={tasks.value.items} selected={context.value?.task.id ?? route.task} locale={locale} onSelect={selectTask} />}
+      {tasks.value && <TaskList items={tasks.value.items} selected={context.value?.task.id ?? route.task} locale={locale} onSelect={selectTask} checked={checked} onCheck={onCheck} />}
       {tasks.value?.items.length === 0 && <div className="task-inline-state"><p>{c.empty}</p><button type="button" className="btn" onClick={() => { setQ(''); setProvider(''); setRange('all'); }}>{c.clear}</button></div>}
       <footer><button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>←</button><span>{offset + 1}–{offset + (tasks.value?.items.length ?? 0)}</span><button type="button" disabled={!tasks.value?.hasMore} onClick={() => setOffset(offset + 50)}>→</button><button type="button" className="btn" onClick={onIntake}>＋ {c.intake}</button></footer>
     </aside>
@@ -86,9 +97,12 @@ export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpe
       {collapsed && <button type="button" className="task-restore-list btn" onClick={() => setCollapsed(false)}>☰ {c.showList}</button>}
       {context.loading && <div className="task-loading" role="status">{c.loading}</div>}
       {context.error && <div className="task-empty" role="alert"><h2>{context.error}</h2><button type="button" className="btn" onClick={context.retry}>{c.retry}</button></div>}
-      {!route.task && <div className="task-empty"><div className="task-empty-symbol">⌘</div><span className="task-eyebrow">TASK OBSERVABILITY</span><h1>{c.summaryTitle}</h1><p>{c.chooseHint}</p><div className="task-empty-flow"><span>01 · {c.tasks}</span><span>02 · {c.trajectory}</span><span>03 · {c.inspect}</span></div><button type="button" className="btn ui-btn-primary" onClick={onIntake}>{c.openIntake} ↗</button></div>}
-      {context.value && <TaskProcess key={context.value.task.id} context={context.value} route={resolvedRoute} onRoute={onRoute} locale={locale} changes={changes}
+      {!route.task && !comparing && <div className="task-empty"><div className="task-empty-symbol">⌘</div><span className="task-eyebrow">TASK OBSERVABILITY</span><h1>{c.summaryTitle}</h1><p>{c.chooseHint}</p><div className="task-empty-flow"><span>01 · {c.tasks}</span><span>02 · {c.trajectory}</span><span>03 · {c.inspect}</span></div><button type="button" className="btn ui-btn-primary" onClick={onIntake}>{c.openIntake} ↗</button></div>}
+      {route.compareImport && <ImportedArchitectureCompare onLocate={locateArchitecture} onClose={() => onRoute({ ...route, compareImport: undefined })} />}
+      {comparing && !route.compareImport && <ArchitectureCompare a={route.compareA!} b={route.compareB!} locale={locale} onLocate={locateArchitecture} onClose={() => onRoute({ ...route, compareA: undefined, compareB: undefined })} />}
+      {context.value && !comparing && <TaskProcess key={context.value.task.id} context={context.value} route={resolvedRoute} onRoute={onRoute} locale={locale} changes={changes}
         diagnosisInvalidateKey={diagnosisInvalidateKey} onRefreshContext={context.retry} onOpenRequest={onOpenRequest} onNotice={setNotice} />}
+      {route.overview && <aside className="architecture-drawer" aria-label="架构概况"><header><strong>架构概况 · {provider === 'codex' ? 'Codex' : 'Claude'}</strong><button className="btn" onClick={() => onRoute({ ...route, overview: undefined })}>关闭</button></header><p>使用左侧工具、时间和已选任务限定审计范围。</p><label>项目目录<input aria-label="审计项目目录" value={auditCwd} maxLength={4096} onChange={e => setAuditCwd(e.target.value)} /></label>{overview.loading && <p role="status">读取本地记录…</p>}{overview.error && <p role="alert">{overview.error}<button className="btn" onClick={overview.retry}>重试</button></p>}{overview.value && <TaskArchitecture key={overview.value.sources[0]?.revision} project={overview.value} locale={locale} onLocate={locateArchitecture} />}</aside>}
       {notice && <div className="task-toast" role="status">{notice}</div>}
     </main>
   </div>;
@@ -99,6 +113,8 @@ function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContex
   onRefreshContext: () => void; onOpenRequest: (id: number) => void; onNotice: (value: string) => void;
   diagnosisInvalidateKey: number;
 }): React.JSX.Element {
+  const auditRead = useCallback((signal: AbortSignal) => architectureApi.scope({ taskIds: [context.task.id] }, signal), [context.task.id]);
+  const audit = useTaskRead(context.task.origin === 'collected' ? context.task.id : null, auditRead, 35000);
   const c = copy(locale), [membersOpen, setMembersOpen] = useState(false), [q, setQ] = useState(route.q ?? ''), [search, setSearch] = useState(route.q ?? ''), [errors, setErrors] = useState(route.errors === true);
   const [paging, setPaging] = useState<{ offset?: number; window?: string }>({}), [revision, setRevision] = useState(0), [stale, setStale] = useState(false), [playing, setPlaying] = useState(false), [following, setFollowing] = useState(false);
   const [savedRecord, setSavedRecord] = useState<TaskRecord | null>(null), [timeRange, setTimeRange] = useState<[number, number] | null>(() => route.from && route.to ? [Date.parse(route.from), Date.parse(route.to)] : null);
@@ -235,11 +251,22 @@ function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContex
       </div></details>
     </header>
     <div className="task-reading-toolbar">
-      <div className="task-mode-tabs" role="tablist" aria-label={c.trajectory}>{(['trajectory', 'conversation', 'raw'] as const).map(mode => <button type="button" role="tab" aria-selected={route.mode === mode} key={mode} onClick={() => changeMode(mode)}>{c[mode]}</button>)}</div>
-      <div className="task-record-filters"><input maxLength={200} aria-label={c.metadataSearch} placeholder={locale === 'zh' ? '搜索记录…' : 'Search records…'} value={q} onChange={event => setQ(event.target.value)} /><label title={c.errors}><input type="checkbox" checked={errors} onChange={event => { setErrors(event.target.checked); onRoute({ ...route, errors: event.target.checked, event: null }); setPaging({}); setAnchor(null); setPlaying(false); }} />{c.errors}</label></div>
-      <div className="task-playback"><button type="button" className="ui-icon-btn" title={playing ? c.pause : c.play} aria-label={playing ? c.pause : c.play} disabled={!playbackRecords.length || route.mode !== 'trajectory'} onClick={() => { setFollowing(false); if (!playing && playbackRecords[0] && (playbackRecords.findIndex(item => item.id === route.event) < 0 || playbackRecords.at(-1)?.id === route.event)) selectRecord(playbackRecords[0]); setPlaying(!playing); }}>{playing ? 'Ⅱ' : '▷'}</button><button type="button" className="ui-icon-btn" title={c.step} aria-label={c.step} disabled={!playbackRecords.length} onClick={() => { setPlaying(false); const index = playbackRecords.findIndex(item => item.id === route.event); const next = playbackRecords[index + 1]; if (next) { userScroll.current = false; selectRecord(next); } }}>›</button><button type="button" className="ui-icon-btn" title={c.latest} aria-label={c.latest} onClick={goLatest}>↓</button>
+      <div className="task-mode-tabs" role="tablist" aria-label={c.trajectory}>{(['trajectory', 'conversation', 'raw', 'architecture'] as const).map(mode => <button type="button" role="tab" aria-selected={route.mode === mode} key={mode} onClick={() => changeMode(mode)}>{mode === 'architecture' ? (locale === 'zh' ? '架构' : 'Architecture') : c[mode]}</button>)}</div>
+      <div className="task-record-filters" hidden={route.mode === 'architecture'}><input maxLength={200} aria-label={c.metadataSearch} placeholder={locale === 'zh' ? '搜索记录…' : 'Search records…'} value={q} onChange={event => setQ(event.target.value)} /><label title={c.errors}><input type="checkbox" checked={errors} onChange={event => { setErrors(event.target.checked); onRoute({ ...route, errors: event.target.checked, event: null }); setPaging({}); setAnchor(null); setPlaying(false); }} />{c.errors}</label></div>
+      <div className="task-playback" hidden={route.mode === 'architecture'}><button type="button" className="ui-icon-btn" title={playing ? c.pause : c.play} aria-label={playing ? c.pause : c.play} disabled={!playbackRecords.length || route.mode !== 'trajectory'} onClick={() => { setFollowing(false); if (!playing && playbackRecords[0] && (playbackRecords.findIndex(item => item.id === route.event) < 0 || playbackRecords.at(-1)?.id === route.event)) selectRecord(playbackRecords[0]); setPlaying(!playing); }}>{playing ? 'Ⅱ' : '▷'}</button><button type="button" className="ui-icon-btn" title={c.step} aria-label={c.step} disabled={!playbackRecords.length} onClick={() => { setPlaying(false); const index = playbackRecords.findIndex(item => item.id === route.event); const next = playbackRecords[index + 1]; if (next) { userScroll.current = false; selectRecord(next); } }}>›</button><button type="button" className="ui-icon-btn" title={c.latest} aria-label={c.latest} onClick={goLatest}>↓</button>
       {displayContext.members.length > 1 && <button type="button" className="ui-icon-btn" title={c.membersToggle} aria-label={c.membersToggle} aria-expanded={membersOpen} onClick={() => setMembersOpen(!membersOpen)}>⑂</button>}</div>
     </div>
+    {route.mode === 'architecture' ? <section className="architecture-panel">{audit.loading && <p role="status">正在审计本地记录…</p>}{audit.error && <p role="alert">{audit.error}<button className="btn" onClick={audit.retry}>重试</button></p>}{audit.value && <TaskArchitecture key={audit.value.sources[0]?.revision} project={audit.value} locale={locale} onLocate={(task, session, event) => onRoute({ ...route, task, mode: 'trajectory', member: 'all', event: session && event ? `${session}:event:${event}` : null })} />}
+      {displayContext.task.origin === 'collected' && <ArchitectureDiagnosisPanel taskId={displayContext.task.id} member={route.member} locale={locale}
+        invalidateKey={JSON.stringify([displayContext.task, displayContext.members, page?.window, revision, diagnosisRevision, diagnosisInvalidateKey])}
+        onLocate={ref => {
+          if (ref.source !== 'native_event') { if (ref.captureId !== null) onOpenRequest(ref.captureId); return; }
+          if (!ref.sessionKey || !ref.eventId) return;
+          userScroll.current = false; setFollowing(false);
+          const id = `${ref.sessionKey}:event:${ref.eventId}`; setAnchor(id); onRoute({ ...route, mode: 'trajectory', member: 'all', event: id });
+        }}
+      />}
+    </section> : <>
     {membersOpen && <section className="task-members" aria-label={c.hierarchy}><div className="task-member-strip">{[...displayContext.members].sort((a, b) => Number(b.role === 'main') - Number(a.role === 'main')).map(member => <button type="button" className={`task-member ${member.id === route.member ? 'is-selected' : ''}`} key={member.id} disabled={!member.sessionKey && displayContext.task.origin !== 'imported'} onClick={() => changeMember(member.role === 'main' ? 'main' : member.id)} title={member.parentId ? `${displayContext.members.find(item => item.id === member.parentId)?.name ?? member.parentId} → ${member.name}` : c.main}><span className="task-avatar">{member.role === 'main' ? 'M' : member.name.slice(0, 1)}</span><span><strong>{member.name}</strong><small>{member.parentId ? `${displayContext.members.find(item => item.id === member.parentId)?.name ?? '?'} → ` : ''}{member.role === 'main' ? c.main : member.role} · {member.detailLoaded ? `${member.eventCount} ${c.records}` : c.indexPending}</small></span></button>)}</div><p className="hint">{c.graphHint}</p></section>}
     <div className="task-time-sticky" ref={timeElement}>
       <Suspense fallback={<div className="process-time-loading" role="status">{c.loading}</div>}><TaskTimeNavigator key={context.task.id + ':' + route.member} timeline={timeline.value ?? retainedTimeline.current} loading={records.loading || timeline.loading} error={timeline.error} onRetry={timeline.retry}
@@ -248,15 +275,6 @@ function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContex
         onSelect={item => { setPlaying(false); setFollowing(false); userScroll.current = false; selectRecord(item); if (route.mode === 'trajectory') ledgerRef.current?.locate(item.id); else { const index = visible.findIndex(value => value.id === item.id); if (index >= 0) list.scrollToIndex(index, { align: 'start' }); } }} onRangeChange={changeTimeRange} /></Suspense>
     </div>
     <div className="task-process-body"><section className="task-ledger">
-      {displayContext.task.origin === 'collected' && <ArchitectureDiagnosisPanel taskId={displayContext.task.id} member={route.member} locale={locale}
-        invalidateKey={JSON.stringify([displayContext.task, displayContext.members, page?.window, revision, diagnosisRevision, diagnosisInvalidateKey])}
-        onLocate={ref => {
-          if (ref.source !== 'native_event') { if (ref.captureId !== null) onOpenRequest(ref.captureId); return; }
-          if (!ref.sessionKey || !ref.eventId) return;
-          userScroll.current = false; setFollowing(false);
-          const id = `${ref.sessionKey}:event:${ref.eventId}`; openAnchor(id); ledgerRef.current?.locate(id);
-        }}
-      />}
       {stale && <div className="task-new-records" role="status"><span>● {c.newer}</span><button type="button" onClick={refresh}>{c.update} ↻</button></div>}
       {([...context.warnings, ...(page?.warnings ?? [])].some(warning => warning !== 'origin_unconfirmed')) && <details className="task-warning"><summary>{c.warnings}</summary><span className="mono">{[...new Set([...context.warnings, ...(page?.warnings ?? [])])].join(' · ')}</span></details>}
       {records.loading && <div className="task-loading" role="status">{c.loadingScope}</div>}{records.error && <div className="task-inline-state" role="alert"><p>{records.error}</p><button type="button" className="btn" onClick={() => { setAnchor(null); onRoute({ ...route, event: null }); records.retry(); }}>{c.retry}</button></div>}
@@ -281,6 +299,6 @@ function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContex
       onClose={() => onRoute({ ...route, event: null })} onLocate={() => { userScroll.current = false; const index = visible.findIndex(item => item.id === selected.id); if (route.mode === 'trajectory' && ledgerRef.current?.locate(selected.id)) return; if (index >= 0) list.scrollToIndex(index, { align: 'center' }); else { setTimeRange(null); setQ(''); setSearch(''); setErrors(false); setPaging({}); setAnchor(selected.id); onRoute({ ...route, q: undefined, errors: undefined, from: undefined, to: undefined }); } }} onOpenRequest={onOpenRequest}
       onOpenSession={key => { const member = displayContext.members.find(item => item.sessionKey === key); if (member) changeMember(member.id); else onRoute({ ...route, task: 'collected:' + key, member: 'main', event: null, q: undefined, errors: undefined, from: undefined, to: undefined }); }} /></Suspense>
       : null}
-    </div>
+    </div></> }
   </div>;
 }

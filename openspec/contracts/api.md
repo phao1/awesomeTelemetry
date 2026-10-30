@@ -1512,3 +1512,15 @@ CLI only; portable imported provenance is downgraded to user-reported.
 No background scans/body fan-out/paid requests on viewing, importing, analysis,
 export or replay. Missing native scope, changing/deleted evidence, capacity and
 malformed inputs stay visible; a source claim is not execution attestation.
+
+## Architecture r4 task-center read projections
+
+POST /api/agent-folding/scope accepts FoldingNativeScope (<=64KiB) and returns
+FoldingProject. POST /api/agent-folding/compare accepts exactly {a:string[],b:string[]}
+(<=128KiB), each 1..40 unique collected root task IDs, no overlap, returns
+{a:FoldingMetricRun[],b:FoldingMetricRun[]}. Both read existing local records only,
+no capture/scan/model/evaluator execution. Existing loopback Host/Origin guard,
+no-store, ApiError apply. Scope cache is source/database revision keyed.
+Owned request cancellation/deadline=30s, max response8MiB; invalid scope/group
+is400, read failure503. No per-row frontend requests. Imported reports remain
+client-local; no source credentials/bodies are transferred in these responses.

@@ -1,3 +1,4 @@
+import { transferArchitectureReport } from '../agent-folding/architecture-client.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Locale } from '../../i18n.js';
 import { benchmarkGroups, benchmarkMetrics, diagnoseBenchmarkRun, DIAGNOSIS_COPY, METRIC_LABELS, runSuccess } from '../../core/benchmark-analysis.js';
@@ -61,6 +62,7 @@ export function BenchmarkCenter({ locale }: { locale: Locale }): React.JSX.Eleme
     <header className="benchmark-heading"><div><h1>{text('评测中心', 'Benchmark center')}</h1><p>{text('同一任务 · 多工具 / 模型 · 重复验收 · 从问题定位到泳道', 'One task · tools / models · repeated acceptance · evidence-linked lanes')}</p></div>
       <label className="btn">{text('导入评测报告', 'Import report')}<input aria-label={text('导入评测报告', 'Import report')} type="file" accept=".json,application/json" onChange={e => { importReport(e.target.files?.[0]); e.target.value = ''; }} /></label>
       <button className="btn" onClick={() => { const old = reader.current; reader.current = null; old?.abort(); setReading(false); load(demoBenchmarkReport()); }}>{text('查看合成示例', 'View synthetic example')}</button>
+      {report && <button className="btn" onClick={() => { try { transferArchitectureReport(report); } catch { setError('报告过大或浏览器无法保存临时报告'); } }}>在任务中心对比</button>}
       {report && <button className="btn" onClick={() => download('benchmark-report.json', report)}>{text('导出报告', 'Export report')}</button>}
     </header>
     {reading && <p role="status">{text('正在读取本地报告…', 'Reading local report…')} <button className="btn" onClick={() => { const old = reader.current; reader.current = null; old?.abort(); setReading(false); }}>{text('取消', 'Cancel')}</button></p>}

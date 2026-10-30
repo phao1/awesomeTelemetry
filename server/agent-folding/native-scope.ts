@@ -64,13 +64,13 @@ async function readSource(path: string, budget: { bytes: number }, signal?: Abor
   return result;
 }
 
-function canonical(scope: FoldingNativeScope): FoldingNativeScope {
+export function validateFoldingNativeScope(scope: FoldingNativeScope): FoldingNativeScope {
   if (Object.keys(scope).some(k => !['provider', 'cwd', 'from', 'to', 'taskIds'].includes(k))) throw new Error('Unknown scope field.');
   if (scope.provider !== undefined && !['claude', 'codex'].includes(scope.provider)) throw new Error('Unsupported provider.');
   for (const v of [scope.from, scope.to]) if (v !== undefined && (!/^\d{4}-\d{2}-\d{2}T.*Z$/.test(v) || !Number.isFinite(Date.parse(v)))) throw new Error('Scope dates must be ISO UTC.');
   if (scope.from && scope.to && Date.parse(scope.from) > Date.parse(scope.to)) throw new Error('Invalid time range.');
   if (scope.cwd !== undefined && (typeof scope.cwd !== 'string' || !scope.cwd || scope.cwd.length > 4096)) throw new Error('Invalid project directory.');
-  if (scope.taskIds && (!scope.taskIds.length || scope.taskIds.length > 40 || new Set(scope.taskIds).size !== scope.taskIds.length || scope.taskIds.some(id => !id.startsWith('collected:') || id.length > 1024))) throw new Error('Invalid root tasks.');
+  if (scope.taskIds !== undefined && (!Array.isArray(scope.taskIds) || !scope.taskIds.length || scope.taskIds.length > 40 || new Set(scope.taskIds).size !== scope.taskIds.length || scope.taskIds.some(id => typeof id !== 'string' || !id.startsWith('collected:') || id.length > 1024))) throw new Error('Invalid root tasks.');
   return { provider: scope.provider, cwd: scope.cwd, from: scope.from, to: scope.to, ...(scope.taskIds ? { taskIds: [...scope.taskIds].sort() } : {}) };
 }
 
@@ -83,7 +83,7 @@ export function createNativeScopeCollector(db: Database) {
     async collect(selection: FoldingNativeScope, signal?: AbortSignal): Promise<FoldingProject> {
       if (closed) throw new Error('Collector closed.');
       signal?.throwIfAborted();
-      const scope = canonical(selection), stamp = revision();
+      const scope = validateFoldingNativeScope(selection), stamp = revision();
       const ids = scope.taskIds ?? (() => {
         const all: string[] = [];
         let offset = 0;
@@ -116,6 +116,8 @@ export function createNativeScopeCollector(db: Database) {
       const fingerprints = async () => Promise.all(sessions.map(async s => { const v = await stat(s.source_path); return [s.id, v.size, v.mtimeMs]; }));
       const before = JSON.stringify(await fingerprints()), key = JSON.stringify(scope), fullRevision = stamp + before;
       const hit = cache.get(key);
+      if (signal?.aborted) throw new Error('Cancelled');
+      if (revision() !== stamp) throw new Error('Source changed; refresh audit');
       if (hit?.revision === fullRevision) return structuredClone(hit.project);
       const project: FoldingProject = { version: 1, kind: 'agent-folding-project', id: 'scope-' + hash(scope), title: 'Native architecture scope', createdAt: new Date().toISOString(),
         sources: [{ id: 'native', kind: 'native_telemetry', title: 'Retained native records', url: null, revision: hash(fullRevision), observedAt: null, model: null, limitations: [] }],

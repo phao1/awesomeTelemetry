@@ -208,3 +208,33 @@ one existing skip); final merge-target integration and workbench checks also pas
 - Full phase test suite: 355 files, 4222 passed, 1 pre-existing skip. Additional
   proxy-link and UI annotation checks passed; typecheck/build/lint checked again
   after final diagnostic/report edits. Screenshots and UI acceptance start at P6.
+
+## P6 task-center acceptance (2026-10-30)
+
+- Architecture scope/compare routes read native sources through owned bounded
+  requests, with no model calls. Task opening starts its local audit; the existing
+  diagnosis component is unchanged and moved to the architecture tab. Group IDs
+  round-trip in the URL, reject overlaps/duplicates and cap each side at 40.
+- Inventory owner/context annotations and versioned heuristic thresholds are
+  editable locally. Baseline results/inventory/PLAN import and kit export are
+  accessible in the overview. Benchmark and mode-experiment results transfer to
+  the same comparison UI through validated bounded temporary browser storage.
+- Browser acceptance used two actual Claude root recordings and three linked
+  children in an isolated temporary database, with monitoring/proxy disabled.
+  Only display titles in that temporary database were replaced with neutral
+  labels; original files were untouched. Audit found 3 delegations, the decision
+  card correctly remained insufficient at n=1, and A/B metrics retained unknown
+  acceptance and TTFT. No paid request or business execution occurred.
+- Downloaded actual HTML, Markdown and CSV reports (15166/11809/11289 bytes).
+  Screenshots retained locally at /private/tmp/agent-r4-p6-decision.png and
+  /private/tmp/agent-r4-p6-compare.png; neither original conversations nor real
+  exports are committed. Narrow-window comparison visibility was corrected
+  after browser verification exposed the previous task-only mobile selector.
+- The first full run exposed a design-token violation (fixed) and an existing
+  standalone launcher help-probe timeout under load. No assertions were changed.
+  Performance near-2MiB p95 overhead was 23.609ms, exceeding the absolute gate;
+  this remains reported under the user's explicit performance deferral.
+- Full repeated suite passed: 355 files, 4224 tests, 1 pre-existing skip.
+  The prior launcher timeout did not recur; its implementation and assertions
+  were unchanged. Final targeted transfer/task/style checks add 2 new transfer
+  cases; typecheck/lint/build pass. Performance remains deferred as above.

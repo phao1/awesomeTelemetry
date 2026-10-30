@@ -1,3 +1,5 @@
+import { createNativeScopeCollector } from './agent-folding/native-scope.js';
+import { collectFoldingMetricRun } from './agent-folding/run-metrics.js';
 import { getTask, getTaskTimeline, listTasks, recordMembers, taskRecords, TaskReadError, validateTaskRange } from './storage/task-workbench.js';
 import type { TaskListQuery, TaskRecordQuery } from '../src/core/task-types.js';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
@@ -1304,7 +1306,21 @@ export function createAgentObservabilityServer(
     db, loadCapture: readCaptureAnalysisSource, loadCodex: (id, signal) => codexInspector.readDiagnosis({ id }, signal),
   });
   const stopArchitectureDiagnosis = registerArchitectureDiagnosisRoutes(router, architectureCollector);
+  const foldingScopeCollector = createNativeScopeCollector(db);
   const stopAgentFolding = registerAgentFoldingRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'agent-folding-runs'), {
+    loadScope: (scope, signal) => foldingScopeCollector.collect(scope, signal),
+    loadComparison: async (a, b, signal) => {
+      const collect = async (ids: string[]) => {
+        const result = [];
+        for (const id of ids) {
+          signal.throwIfAborted();
+          const project = await foldingScopeCollector.collect({ taskIds: [id] }, signal);
+          result.push(await collectFoldingMetricRun(db, id, project, signal));
+        }
+        return result;
+      };
+      return { a: await collect(a), b: await collect(b) };
+    },
     loadNative: async (id, member, signal) => {
       const input = await architectureCollector.collect(id, member, signal);
       signal.throwIfAborted();
@@ -2348,7 +2364,7 @@ export function createAgentObservabilityServer(
       stopBenchmarks();
       stopTeamExperiments();
       stopArchitectureDiagnosis();
-      stopAgentFolding();
+      stopAgentFolding(); foldingScopeCollector.close();
       pendingAutomaticScans.clear();
       for (const cleanup of ownSseClients) cleanup();
       ownSseClients.clear();

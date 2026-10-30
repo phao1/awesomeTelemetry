@@ -434,3 +434,45 @@ The r4-defined CV>30% flag remains the specified fixed reporting convention.
 Raw reported combined-cache/total/hit columns remain in per-run report details,
 separate from corrected metrics. Source-file/database revisions are checked before
 returning native metrics; a concurrent source change requires refresh.
+
+## Architecture r4 P6 task-center integration
+
+TaskMode adds architecture. TaskRoute optional overview:boolean, compareA:string[],
+compareB:string[],compareImport:boolean. URL uses overview=1, repeated a/b values,
+compareImport=1 for a client-local report transfer. Groups contain 1..40 unique
+collected/imported task refs each, <=1024chars/ref; overlapping/malformed groups
+are discarded, never truncated. Native compare API accepts collected refs only.
+Up to40 selected tasks form A or B; groups cannot overlap. Keyboard checkbox
+selection and Shift contiguous selection; route survives reload for native groups.
+
+New UI files src/components/agent-folding/TaskArchitecture.tsx,
+ArchitectureCompare.tsx, architecture-client.ts and adjacent tests, shared CSS.
+TaskWorkbench starts one owned local audit read for an opened collected task,
+renders it only in architecture mode. Existing ArchitectureDiagnosisPanel moves
+there unchanged. Overview drawer uses explicit scope selection, exposes inventory,
+rule evidence and source locators, coupling/chain gap imports and kit files.
+Inventory/PLAN/results import is client-local and bounded. Reports use shared P5
+functions. No top-level menu. Task-route.ts + tests, TaskWorkbench + tests,
+server/server.ts and agent-folding-routes.ts + tests integrate projections.
+
+BenchmarkCenter and TeamExperimentCenter retain their existing entry points,
+adding "在任务中心对比" links. Bounded validated report transfers use sessionStorage
+key agent-architecture-comparison; URLs contain only compareImport=1, with a
+visible temporary-import notice. Canonical `benchmarkToFoldingRuns(report)` and
+`teamExperimentToFoldingRuns(report)` adapt retained declarations; missing flags,
+scanner, original evidence and metadata stay unknown. No synthetic timing spans.
+Source warnings and synthetic provenance remain visible. All P5/P6 additions
+stay inside agent-folding and existing benchmark/task modules.
+
+P6 result transfer stores only a validated existing BenchmarkReport or
+TeamExperimentReport in sessionStorage (8 MiB max); the task comparison view
+revalidates it and adapts runs in memory. It never persists session bodies.
+The view offers explicit variant A/B selectors; synthetic status stays visible.
+Benchmark labels use declared variant configuration, verdict metadata and report
+fingerprints. Unknown scanner scope and telemetry source remain unknown.
+Read-only scope/compare jobs have a separate pool of at most four owned requests;
+they do not block the existing single smoke/native job slot.
+P6 local inventory edits use existing owner/talksToUser/externalOwner fields and
+are exported through kit files. Threshold controls reuse FoldingRuleThresholds;
+a user edit uses version architecture-r4-1-user and does not modify defaults.
+Overview scope applies the list's provider/time and explicit cwd/task selection.
