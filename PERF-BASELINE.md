@@ -1948,3 +1948,21 @@ and verified 208 originals. Report (ignored):
 reports/capture-ab-2026-10-30T06-38-00.189Z-59834.json.
 This passing sample does not resolve the earlier deferred relative regression
 or erase the P6 absolute-budget failure; historical evidence remains above.
+
+## 2026-10-31 — M12 task-health P1 (OpenCode native part timing)
+
+Adapter-only change: OpenCode/CodeArts/CodeAgent2 now read native part
+`time`/`state.time` intervals; the dataCols DB reader keeps `part.data.time`.
+No SQL, schema, index, dependency, assertion or performance budget changed.
+Existing sessions pick up native timing only after a forced rescan.
+
+Build, typecheck and lint passed. Full suite: 359 files passed, 4250 tests
+passed, 1 existing skip. A first run in the fresh worktree failed 109 tests
+because `dist/` was absent ("AwesomeTelemetry build is missing"); after
+`npm run build` the unchanged suite passed.
+
+All nine perf:check diagnostics passed. Loopback extra E2E p95: HTTP 4.857 ms,
+HTTPS CONNECT 12.850 ms, near-2MiB 6.230 ms; event-loop p99 respectively
+2.177/2.222/2.142 ms. Each profile used 100 paired samples, persisted 104
+captures and verified 208 originals. Report (ignored):
+reports/capture-ab-2026-10-30T11-11-49.445Z-85195.json.

@@ -99,3 +99,26 @@ export const opencodeCarrierFixture: {
     },
   ],
 };
+
+/** Synthetic native timing sample; public OpenCode shape, not calibrated CodeArts data. */
+export const opencodeNativeTimingFixture: typeof opencodeFixture = {
+  sourceAgent: 'OpenCode',
+  session: { id: 'native-timing', title: 'native part timing' },
+  events: [
+    {
+      id: 'native-user', role: 'user', sessionID: 'native-timing',
+      time: { created: 1754000000000 },
+      content: [{ type: 'text', text: 'run tests' }],
+    },
+    {
+      id: 'native-model', role: 'assistant', sessionID: 'native-timing',
+      time: { created: 1754000001000, completed: 1754000606000 },
+      content: [
+        { type: 'reasoning', text: 'plan', time: { start: 1754000002000, end: 1754000003000 } },
+        { type: 'text', text: 'testing', time: { start: 1754000003000, end: 1754000005000 } },
+        { type: 'tool', tool: 'Bash', state: { status: 'completed', title: 'npm test', time: { start: 1754000005000, end: 1754000606000 } } },
+        { type: 'step-finish', tokens: { input: 10, output: 2 } },
+      ],
+    },
+  ],
+};

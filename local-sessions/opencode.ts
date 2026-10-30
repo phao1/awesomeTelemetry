@@ -119,12 +119,19 @@ export function readOpenCodeDb(dbPath: string): OpenCodeSessionSample[] {
       const list = partsByMessage.get(messageID) ?? [];
       if (dialect.dataCols) {
         const data = parseJson<Record<string, unknown>>(part.data as string | null) ?? {};
+        const nativeTime = typeof data.time === 'object' && data.time !== null && !Array.isArray(data.time)
+          ? data.time as Record<string, unknown>
+          : undefined;
+        const time: OpenCodePart['time'] = {};
+        if (typeof nativeTime?.start === 'number' && Number.isFinite(nativeTime.start)) time.start = nativeTime.start;
+        if (typeof nativeTime?.end === 'number' && Number.isFinite(nativeTime.end)) time.end = nativeTime.end;
         list.push({
           type: typeof data.type === 'string' ? data.type : 'text',
           text: typeof data.text === 'string' ? data.text : undefined,
           tool: typeof data.tool === 'string' ? data.tool : undefined,
           callID: typeof data.callID === 'string' ? data.callID : undefined,
           state: data.state as OpenCodePart['state'] | undefined,
+          ...(Object.keys(time).length > 0 ? { time } : {}),
           tokens:
             typeof data.tokens === 'object' && data.tokens !== null
               ? (data.tokens as OpenCodeTokenData)

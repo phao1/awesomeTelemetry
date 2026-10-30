@@ -159,6 +159,40 @@ never dropped.
 - **THEN** llm events get `model: null` and `primaryModel: null`
 - **AND** the pipeline must not throw or fabricate a model
 
+### REQ-015: OpenCode-family native part timing (task-health P1)
+
+The shared OpenCode/CodeArts/CodeAgent2 adapter SHALL accept optional
+`message.time.completed`, `part.time.start/end`, and `part.state.time.start/end`.
+Tool events use complete native `state.time` intervals; text/reasoning parts use
+complete native `part.time` intervals. Native durations, including zero, MUST NOT
+be overwritten by adjacent-event derivation or capped at 300000ms. Keep existing
+event kinds, IDs and stable source sequence for equal start times.
+
+Missing, non-finite, out-of-Date-range or reversed interval endpoints SHALL use
+the existing message creation timestamp and capped `deriveDurations` fallback.
+An unfinished running tool with a valid native start and missing end SHALL keep
+its native start, zero duration and running status; it is not a complete measured
+interval. Message completion alone does not replace missing part endpoints.
+
+For db/jsonl sessions, `durationSource` is measured only when at least one
+tool/llm/reasoning event exists and every such event has a complete native
+interval. User prompts and agent step bookkeeping do not affect that coverage.
+Otherwise it remains derived. OTel parsing and its existing mixed-source
+durationSource behavior SHALL remain unchanged.
+
+Timing provenance / limitations: a derived session may be partially measured;
+native raw endpoints remain available, but TraceRecord has no per-event timing
+provenance/limitations field. Do not add one or infer that all events in a
+derived session used gap derivation. Real CodeArts timing remains uncalibrated
+until a real source sample is verified.
+
+The dataCols SQLite reader SHALL retain only finite numeric start/end fields
+from top-level `part.data.time`; absent/invalid fields are discarded. The legacy
+column reader remains unchanged. Previously stored CodeArts sessions require
+one forced rescan (`POST /api/scan`, `force: true`) to acquire native timing;
+event content hashes include startedAt/durationMs and trigger differential writes.
+No migration or metric-version change is required to perform that rescan.
+
 ## Gotchas
 - G4.4: cacheRead incremental uses sum (2026-08-03 calibration overturns the
   max assumption)

@@ -49,7 +49,11 @@ export interface OpenCodePart {
   type: string;
   text?: string;
   tool?: string;
-  state?: { status?: string; title?: string; input?: unknown; output?: unknown };
+  time?: { start?: number; end?: number };
+  state?: {
+    status?: string; title?: string; input?: unknown; output?: unknown;
+    time?: { start?: number; end?: number };
+  };
   /** 真实 CodeArts step-finish part 顶层自带 tokens（与 message.tokens 并存）。 */
   tokens?: OpenCodeTokenData | null;
   [key: string]: unknown;
@@ -215,13 +219,38 @@ function summaryFrom(value: unknown): string | null {
   return serialized === undefined || serialized === '' ? null : serialized;
 }
 
+// Internal only: survives ordering/deduplication spreads, removed before returning.
+// Protects native zero-length and unfinished intervals from gap derivation.
+const NATIVE_PART_TIMING = Symbol('nativePartTiming');
+type NativeTimedEvent = EventWithRaw & { [NATIVE_PART_TIMING]?: true };
+
+function partTiming(part: OpenCodePart): { start: number; duration: number; complete: boolean } | null {
+  const time = part.type === 'tool'
+    ? part.state?.time
+    : part.type === 'text' || part.type === 'reasoning' ? part.time : undefined;
+  const start = time?.start;
+  const end = time?.end;
+  // Invalid clocks cannot establish native intervals. Keep the old fallback.
+  const validTimestamp = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 8.64e15;
+  if (!validTimestamp(start)) return null;
+  if (validTimestamp(end) && end >= start) {
+    return { start, duration: end - start, complete: true };
+  }
+  if (end === undefined && part.type === 'tool' && normalizeStatus(part.state?.status) === 'running') {
+    return { start, duration: 0, complete: false };
+  }
+  return null;
+}
+
 function partToEvent(
   message: OpenCodeMessage,
   part: OpenCodePart,
   partIndex: number,
   tokens: TokenUsage | null,
+  timing: ReturnType<typeof partTiming>,
 ): EventWithRaw | null {
-  const startedAt = toIsoFromMs(message.time?.created ?? 0);
+  const startedAt = toIsoFromMs(timing?.start ?? message.time?.created ?? 0);
   const status = normalizeStatus(message.error ?? part.state?.status ?? 'completed');
   const base = {
     id: `${message.id}-${partIndex}`,
@@ -234,7 +263,7 @@ function partToEvent(
     phase: 'understand' as const,
     title: '',
     startedAt,
-    durationMs: 0,
+    durationMs: timing?.duration ?? 0,
     status,
     actor: message.role,
     tool: null,
@@ -363,6 +392,8 @@ export function createOpencodeAdapter(
       );
       const reasoningInTotal = inferReasoningInTotal(messages, dialect.reasoningInTotal);
       const events: EventWithRaw[] = [];
+      let relevantParts = 0;
+      let measuredParts = 0;
       for (const message of messages) {
         const parts = message.content ?? [{ type: 'text' as const, text: '' }];
         if (parts.length === 0) {
@@ -390,13 +421,20 @@ export function createOpencodeAdapter(
             partIndex === carrierIndex
               ? toEventTokens(message.tokens, reasoningInTotal)
               : null;
+          const timing = partTiming(part);
           const event = partToEvent(
             message,
             part,
             partIndex,
             partTokens ?? messageTokens,
+            timing,
           );
           if (event !== null) {
+            if (event.kind !== 'user_prompt' && event.kind !== 'agent') {
+              relevantParts += 1;
+              if (timing?.complete) measuredParts += 1;
+            }
+            if (timing !== null) (event as NativeTimedEvent)[NATIVE_PART_TIMING] = true;
             events.push(trackNativeEvent(event, message, part));
           }
         }
@@ -409,11 +447,19 @@ export function createOpencodeAdapter(
       const times = minMaxIso(events);
       const ordered = orderEventsByTime(events);
       const deduped = dedupeEventIds(ordered);
-      // P0-A：OTel span 自带真实起止（measured）；db/jsonl 源无耗时，按相邻时间戳推导。
-      // ⚠️ durationSource 按实际解析路径取值，禁止按 provider 硬编码 —— 同一个
-      // opencode provider 走 otel 源时是 measured，走 db 源时是 derived。
-      const hasMeasured = otelSpans.length > 0;
-      const timed = hasMeasured ? deduped : deriveDurations(deduped);
+      // Timing provenance / limitations (REQ-015): db/jsonl may be partially
+      // measured. Only complete native tool/llm/reasoning intervals certify the
+      // session; missing intervals remain derived, running tools are unfinished.
+      // TraceRecord has no per-event timing provenance field: retain native raw
+      // endpoints, never interpret session 'derived' as every event being derived.
+      // Preserve the existing OTel path, including its mixed-source semantics.
+      const hasOtel = otelSpans.length > 0;
+      const derived = hasOtel ? deduped : deriveDurations(deduped);
+      const timed = derived.map((event, index) => {
+        const { [NATIVE_PART_TIMING]: native, ...rest } = event as NativeTimedEvent;
+        return native ? { ...rest, durationMs: deduped[index]!.durationMs } : rest;
+      });
+      const hasMeasured = hasOtel || (relevantParts > 0 && measuredParts === relevantParts);
       const classified = classifyEvents(timed);
       // #4（审查 P0）：OpenCode/CodeArts/CodeAgent2 的 cache.read 实测为每步增量值，
       // 必须 sum；旧 gotcha G4.4 的 cumulative/max 假设已由校准数据推翻。

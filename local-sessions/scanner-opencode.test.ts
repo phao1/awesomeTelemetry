@@ -194,6 +194,29 @@ function createRealSchemaDb(dir: string): string {
 }
 
 describe('REQ-010 OpenCode 系 scanner（sqlite）', () => {
+  it('P1 dataCols preserves only finite numeric part.data.time endpoints', () => {
+    const dbPath = createRealSchemaDb(tempDir());
+    const source = new Database(dbPath);
+    const update = source.prepare('UPDATE part SET data = ? WHERE id = ?');
+    try {
+      for (const [time, expected] of [
+        [{ start: 1754000001000, end: 1754000002000, extra: 42 }, { start: 1754000001000, end: 1754000002000 }],
+        [{ start: 0, end: 'bad' }, { start: 0 }],
+        [{ start: 'bad', end: 42 }, { end: 42 }],
+        [{ start: '1000', end: null }, undefined],
+        [null, undefined], [[], undefined], ['bad', undefined],
+      ] as const) {
+        update.run(JSON.stringify({ type: 'text', text: 'timed', time }), 'p1');
+        expect(readOpenCodeDb(dbPath)[0]?.messages[0]?.content?.[0]?.time).toEqual(expected);
+      }
+      // JSON supports overflowing numeric literals; they parse to Infinity.
+      update.run('{"type":"text","time":{"start":1e999,"end":-1e999}}', 'p1');
+      expect(readOpenCodeDb(dbPath)[0]?.messages[0]?.content?.[0]?.time).toBeUndefined();
+    } finally {
+      source.close();
+    }
+  });
+
   it('keeps optional legacy session.parentID and part.callID without inventing fields for old schemas', () => {
     const dir = tempDir();
     const dbPath = createOpenCodeDb(dir);
