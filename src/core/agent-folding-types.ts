@@ -125,3 +125,12 @@ export interface FoldingEstimate {
 }
 export interface FoldingArtifact { path: string; content: string; purpose: FoldingText }
 export interface FoldingProviderStatus { anthropicConfigured: boolean; modelConfigured: boolean; model: string | null; paidExecution: 'cli_only' }
+
+/** Architecture r4 P1 explicit read-only source selection. */
+export interface FoldingNativeScope {
+  provider?: 'claude' | 'codex';
+  cwd?: string;
+  from?: string;
+  to?: string;
+  taskIds?: string[];
+}

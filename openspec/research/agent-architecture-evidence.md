@@ -87,3 +87,25 @@ the previous local baseline by more than 20% in two measurements; see
 PERF-BASELINE.md. On 2026-10-30 the user explicitly deferred performance
 investigation ("先不管性能 先搞"), authorizing P0 delivery with this unresolved
 relative regression disclosed. No assertion, threshold or performance budget changed.
+
+## P1 native scope verification
+
+On 2026-10-30, an isolated in-memory database was populated by the real Claude
+scanner from the same local parent and child files. The scope collector returned
+four definition entries, three distinct delegations, three confirmed child
+relationships, three retained event locators and two coupling pairs. Only these
+aggregate observations are retained here, not the original records. A Vite
+module-loader hot-reload socket was denied by the environment; collection itself
+completed successfully without a model or monitoring service. This is service-level
+verification, not browser acceptance (scheduled for P6).
+
+Adjacent tests use real temporary JSONL files, scanners, SQLite and task projection:
+Claude definition merging across two roots, duplicate delegation deduplication,
+filters, cache isolation/invalidation, invalid inputs and cancellation; Codex spawn
+result/child-role matching. No tested collector logic is mocked. Scope traffic has
+unknown timing/token values rather than fabricated zeroes. The P3 kit parity work
+is still pending; P1 does not certify the existing coupling formula as kit parity.
+
+P1 checks: npm run typecheck, npm run test and npm run lint passed: 349 test files,
+4,191 tests passed, one existing skip. Performance investigation remains deferred
+by the user; no threshold was changed. Browser screenshots remain scheduled for P6.

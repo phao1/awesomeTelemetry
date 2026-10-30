@@ -190,3 +190,41 @@ When explicitly scanning Claude, an existing identity snapshot older than parser
 version 3 must be refreshed even if the source fingerprint is unchanged. This
 uses trace_identity_sources.parser_version, not a new table or eager startup scan.
 After refresh, unchanged scans remain write-free.
+
+## Architecture r4 P1 native scope
+
+User authorized continuous P1–P7 delivery on 2026-10-30; routine stage confirmation
+is no longer required. OpenCode real-record work and the disclosed P0 performance
+investigation remain deferred. Each stage still has its own checks and commit.
+
+`FoldingNativeScope` selects optional provider (`claude` or `codex`), exact project
+working directory, inclusive ISO UTC `from`/`to`, or `taskIds` (1..40 unique collected
+root task IDs). Filters intersect. Missing filters mean all retained collected
+roots, bounded at 40; excess is an explicit error, never a silent partial sample.
+`createNativeScopeCollector(db).collect(scope, signal?)` returns FoldingProject;
+`close()` drops its cache. No execution, model calls, new tables or HTTP routes.
+Scope builder lives in server/agent-folding/native-scope.ts with adjacent tests.
+
+Read retained task membership and source locations, then stream existing local
+JSONL on explicit collection. At most 32MiB of source bytes per collection;
+existing project limits also apply. Cancellation and source changes fail the read.
+Cache at most 8 scopes, keyed by canonical scope, database data_version plus
+connection total_changes and source size/mtime. Never silently reuse a stale read.
+
+Claude Agent/Task calls use unique tool-use IDs and result-row toolUseResult.agentId;
+Codex spawn_agent calls use call_id and the returned agent_id. Only a uniquely
+resolved child with the declared parent counts as a confirmed target. Missing
+results remain traffic with an explicitly unknown definition and a limitation.
+Definition identity is provider plus declared subagent_type (Claude), or child
+session metadata agent_role/thread_spawn.agent_role (Codex); unknown definitions
+are isolated by task and call instead of merged by display name. Main loops merge
+only within a provider. Every unique delegation supplies one traffic row with
+traceId=root task ID and an exact caller sessionKey/eventId evidence locator.
+Unknown duration and input token values stay null. No task outcomes are invented.
+
+A delegation present on disk but absent from retained event identities fails with
+a refresh-scan requirement; source text must not produce an invented event locator.
+Repeated retained instances of the same native tool-call ID use the earliest
+matching input event as their locator while counting the delegation once.
+
+P1 validation observations also extend openspec/research/agent-architecture-evidence.md.
