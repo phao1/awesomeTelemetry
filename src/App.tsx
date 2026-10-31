@@ -782,7 +782,7 @@ export default function App() {
         <div><button type="button" aria-current={view === 'task' || view === 'session' || view === 'team' ? 'page' : undefined} onClick={() => switchView('task')}>{taskCopy(locale).tasks}</button>
         <button type="button" aria-current={view === 'intake' || view === 'proxy' || view === 'frida' ? 'page' : undefined} onClick={() => { setIntakeChannel('native'); switchView('intake'); }}>{taskCopy(locale).intake}</button>
         <button type="button" aria-current={view === 'benchmark' ? 'page' : undefined} onClick={() => switchView('benchmark')}>{locale === 'zh' ? '评测中心' : 'Benchmarks'}</button>
-        <button type="button" aria-current={view === 'team-experiment' ? 'page' : undefined} onClick={() => switchView('team-experiment')}>{locale === 'zh' ? '任务模式实验' : 'Task mode experiments'}</button>
+        <button type="button" aria-current={view === 'team-experiment' ? 'page' : undefined} onClick={() => switchView('team-experiment')}>{t('view.team-experiment', locale)}</button>
         <button type="button" onClick={() => setSettingsOpen(true)}>{taskCopy(locale).settings}</button></div>
         <details><summary>{taskCopy(locale).compat}</summary><div className="task-secondary-menu"><ViewTabs active={view === 'task' || view === 'intake' || view === 'team' || view === 'benchmark' || view === 'team-experiment' ? 'session' : view} onChange={switchView} locale={locale} /></div></details>
       </nav>
@@ -799,7 +799,7 @@ export default function App() {
         onIntake={() => { setIntakeChannel(taskRoute.origin === 'imported' ? 'import' : 'native'); switchView('intake'); }}
         onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} /></ErrorBoundary>}
       {view === 'benchmark' && <ErrorBoundary label={locale === 'zh' ? '评测中心' : 'Benchmarks'}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><BenchmarkCenter locale={locale}/></Suspense></ErrorBoundary>}
-      {view === 'team-experiment' && <ErrorBoundary label={locale === 'zh' ? '任务模式实验' : 'Task mode experiments'}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><TeamExperimentCenter locale={locale} diagnosisInvalidateKey={traceLinksVersion}/></Suspense></ErrorBoundary>}
+      {view === 'team-experiment' && <ErrorBoundary label={t('view.team-experiment', locale)}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><TeamExperimentCenter locale={locale} diagnosisInvalidateKey={traceLinksVersion}/></Suspense></ErrorBoundary>}
       {view === 'intake' && <ErrorBoundary label={taskCopy(locale).intake}><DataIntake key={intakeChannel} locale={locale} initialChannel={intakeChannel}
         onConfigure={() => setSettingsOpen(true)} onTasks={() => switchView('task')}
         proxy={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates} latestHookId={latestHookId}

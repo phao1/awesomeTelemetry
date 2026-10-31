@@ -1060,3 +1060,28 @@ stale-result suppression, accessible controls and explicit history refresh.
 Counts are observations, log intervals are not measured inference, and model
 output cannot imply tool/round completion. No viewing interaction starts
 monitoring, proxy capture, CDP, Frida or an upstream Agent.
+
+
+### REQ-035: Phase A task summary and readable tool rows
+
+Task detail displays a summary under its title: localized recorded status, local
+start time, wall-clock duration, members/events/tool-input/error observations,
+normalized input/output/cache-read and corrected total tokens, reported USD cost
+and model. Every field exposes its basis; unknown is localized, never fabricated0.
+Complete multiple-model coverage shows “多个 / Multiple” with names on hover.
+Partial token values show known sums and “部分（n/m 成员） / Partial (n/m members)”,
+with missing member names and reasons on hover. Partial models list known names
+with the same coverage indicator; only entirely missing values show unknown.
+Wrap at375px. Narrow tool rows use measured multi-line grids with bounded text
+tracks, keeping preview, status and a single ↗/↙ evidence pair reachable.
+Only all-member cost_source=reported and cost_currency=USD permits a cost sum.
+This narrow summary requirement supersedes the older monetary presentation
+removal; no price estimates or other monetary views are introduced.
+
+Implement task-process.md TP-006 merged rows with existing navigation/virtualization.
+Health projection limitations use a stable localized code, including legacy English
+reports; empty deep rejected sections disappear from UI and MD/HTML exports.
+Unknown architecture definitions use a known member with role-unknown marking,
+otherwise numbered unknown Agents; IDs, merge logic and field meaning stay intact.
+Navigation and command palette name the entry Agent 边界评测 / Agent boundary
+evaluation. Comparison UI states and source actions respect locale.

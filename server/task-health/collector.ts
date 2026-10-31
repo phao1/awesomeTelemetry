@@ -375,7 +375,7 @@ export function calculateHealthReport(input: HealthInput, thresholds?: Partial<H
     coverage: { members: { loaded: snapshot.members.filter(m => m.detailLoaded).length, total: snapshot.totalMembers }, timing: { measured: 0, observed: 0, derived: 0, reported: 0, model_judged: 0, unknown: 0, unavailable: 0 }, limits: snapshot.limits, reasons: [...new Set([...snapshot.reasons, 'public_projection_omitted'])] },
     metrics, findings, evidence, spans: [], rounds: snapshot.rounds.map(r => ({ ...r, toolSpanIds: [] })), dimensions: { perceived: 'insufficient', plan: 'insufficient', act: 'insufficient', model: 'insufficient', startup: 'insufficient', quality: 'insufficient', coverage: 'insufficient' },
     partition: snapshot.bounds && snapshot.members.every(m => m.timestampSemantics !== 'unknown') ? partition(snapshot.bounds, [{ key: 'userWait', intervals: snapshot.userWait }, { key: 'delegateWait', intervals: snapshot.delegateWait }, { key: 'undivided', intervals: snapshot.undivided }, { key: 'overlap', intervals: overlap }, { key: 'modelOnly', intervals: models }, { key: 'toolOnly', intervals: tools }], 'unattributed') : null,
-    limitations: [...snapshot.reasons, 'Partial public projection: all statistics use retained full input; spans and round span links omitted; each metric/finding retains at most 16 evidence references; evidence titles only. Quality acceptance remains unknown.'] };
+    limitations: [...snapshot.reasons, 'partial_public_projection'] };
   for (const span of snapshot.spans) result.coverage.timing[span.timing]++;
   if (Buffer.byteLength(JSON.stringify(result)) > 1024 * 1024) throw new HealthError('HEALTH_SIZE_LIMIT');
   return publicReport(result, input);

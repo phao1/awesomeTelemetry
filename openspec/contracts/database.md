@@ -1,3 +1,17 @@
+# Phase A additive schema22 (2026-10-31)
+
+Current SCHEMA_VERSION=22. Add only the following covering indexes. Upgrade21→22
+creates both indexes and writes version22 atomically; no row rewriting, source
+reparse, scanner reset or destructive migration. initSchema remains idempotent.
+These indexes bound task-summary COUNT queries to selected session/kind or status
+metadata, avoiding body pages. Two narrow indexes add write/storage overhead;
+the coordinator runs perf:check outside the sandbox before integration.
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_events_task_tools ON events(session_id,kind,input_len);
+CREATE INDEX IF NOT EXISTS idx_events_task_errors ON events(session_id,status);
+```
+
 # Contract: Database
 
 ## v21 local Claude hook observations

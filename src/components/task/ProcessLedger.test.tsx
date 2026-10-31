@@ -153,3 +153,31 @@ describe('DSH-style task process ledger', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+it('merges a complete exact pair with preview, failure, elapsed time and separate evidence actions', async () => {
+  const p = page([call, result]);
+  p.items = [{ ...call, toolInputPreview: 'node script.js' }, { ...result, event: { ...result.event!, status: 'error', startedAt: new Date(Date.parse(call.event!.startedAt!) + 1200).toISOString() } }];
+  p.structure!.records.forEach(f => { f.relatedRecordIds = [call.id, result.id]; });
+  render(p); await settle();
+  expect(rows()).toHaveLength(1); expect(host.textContent).toContain('node script.js'); expect(host.textContent).toContain('1200 ms'); expect(host.textContent).toContain('Failed'); expect(host.querySelector('.is-error')).not.toBeNull();
+  const evidence = host.querySelectorAll<HTMLButtonElement>('.process-pair-evidence button'); expect(evidence).toHaveLength(2);
+  expect(host.querySelector('.process-record-evidence')).toBeNull();
+  expect([...host.querySelectorAll('.process-record-line')].flatMap(row => row.textContent!.match(/[↗↙]/g) ?? [])).toEqual(['↗', '↙']);
+  act(() => evidence[0]!.click()); expect(select).toHaveBeenLastCalledWith(p.items[0]);
+  act(() => evidence[1]!.click()); expect(select).toHaveBeenLastCalledWith(p.items[1]);
+  const disclosure = [...host.querySelectorAll<HTMLButtonElement>('.process-disclosure')].find(b => b.getAttribute('aria-label')?.includes('Record information:'))!;
+  act(() => disclosure.click()); await settle();
+  expect(host.querySelectorAll('.process-record-metadata button')).toHaveLength(2); expect(fetch).not.toHaveBeenCalled();
+  act(() => { expect(handle.current!.locate(call.id)).toBe(true); }); await settle();
+  expect(rows().some(r => r.dataset.recordId === call.id)).toBe(true);
+});
+it('preserves separate evidence when pairing is ambiguous or a partner is off-page', async () => {
+  const p = page([call, result]); p.structure!.records.forEach(f => { f.pairing = 'ambiguous'; });
+  render(p); await settle(); expect(rows()).toHaveLength(2); expect(host.querySelector('.process-pair-evidence')).toBeNull();
+  render(page([call, result])); await settle(); expect(rows()).toHaveLength(2);
+});
+it('labels an input-only tool as unfinished and keeps an unknown duration unknown', async () => {
+  render(page([call])); await settle();
+  expect(host.querySelector('.process-tool-status')!.textContent).toBe('Unfinished');
+  expect(host.querySelector('.process-tool-duration')!.textContent).toBe('Unknown');
+});

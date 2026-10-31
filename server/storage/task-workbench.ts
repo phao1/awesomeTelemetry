@@ -4,6 +4,8 @@ import type { TraceEventSlim, TraceLogTurn } from '../../src/core/trace-types.js
 import { cachedStmt } from './stmt-cache.js';
 import { importManifest } from './trace-import.js';
 import { EVENT_SLIM_COLS } from './columns.js';
+import { taskMetrics } from './task-summary.js';
+import { redactHealthText } from '../../src/core/task-health/render.js';
 import { mapEvent } from './query-engine.js';
 import { taskStructure, taskTimeline, TASK_LOG_DURATION_SQL } from './task-process.js';
 
@@ -107,6 +109,10 @@ export function listTasks(db: Database, query: TaskListQuery): TaskPage {
   return { items: rows.slice(0, limit).map(summary), total: count.n, offset, limit, hasMore: rows.length > limit };
 }
 export function getTask(db: Database, id: string): TaskContext {
+  const context = readTask(db, id);
+  return { ...context, metrics: taskMetrics(db, context) };
+}
+function readTask(db: Database, id: string): TaskContext {
   if (id.length > 1024) invalid('Task identity too long');
   if (id.startsWith('imported:')) {
     const entry = importManifest(db, id.slice(9)); if (entry === null) return missing();
@@ -216,11 +222,11 @@ export function taskRecords(db: Database, context: TaskContext, query: TaskRecor
   // Limit identity rows before evaluating body-availability flags on the selected page.
   const rows = cachedStmt(db, `WITH page AS MATERIALIZED (
     SELECT e.session_id,e.id,e.started_at,e.sequence ${from} ORDER BY e.started_at,e.session_id,e.sequence LIMIT ? OFFSET ?
-  ) SELECT ${cols} FROM page p JOIN events e ON e.session_id=p.session_id AND e.id=p.id
+  ) SELECT ${cols},CASE WHEN e.kind='tool' THEN substr(e.input_summary,1,4096) ELSE NULL END AS tool_preview FROM page p JOIN events e ON e.session_id=p.session_id AND e.id=p.id
     ORDER BY p.started_at,p.session_id,p.sequence`).all(...params, limit, offset) as Row[];
   const byKey = new Map(selected.map(item => [item.sessionKey, item]));
   const items = rows.map(row => { const event = mapEvent(row, false) as TraceEventSlim, owner = byKey.get(event.sessionId)!;
-    return { id: event.sessionId + ':event:' + event.id, memberId: owner.id, memberName: owner.name, sessionKey: event.sessionId, event, importedTurn: null }; });
+    return { id: event.sessionId + ':event:' + event.id, memberId: owner.id, memberName: owner.name, sessionKey: event.sessionId, event, importedTurn: null, ...(event.kind === 'tool' && row.tool_preview ? { toolInputPreview: redactHealthText(String(row.tool_preview)).replace(/\s+/g, ' ').trim().slice(0, 120) } : {}) }; });
   return { context, items, ...(query.structure ? { structure: taskStructure(db,items) } : {}),
     total, offset, limit, hasMore: offset + limit < total, hasPrevious: offset > 0,
     window: Buffer.from(JSON.stringify(cut)).toString('base64url'), warnings: context.warnings };

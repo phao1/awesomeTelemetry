@@ -177,7 +177,7 @@ export function CommandPalette({
 
     const navCommands: Command[] =
       prefix === null || prefix === 'nav'
-        ? (['task', 'intake', 'agent', 'compare', 'proxy', 'frida', 'mission'] as const)
+        ? (['task', 'intake', 'team-experiment', 'agent', 'compare', 'proxy', 'frida', 'mission'] as const)
             .map((target) => ({
               id: `view-${target}`,
               label: target === 'task' ? taskCopy(locale).tasks : target === 'intake' ? taskCopy(locale).intake : t(`view.${target}`, locale),

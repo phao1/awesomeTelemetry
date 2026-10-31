@@ -42,7 +42,7 @@ import { cachedStmt } from './stmt-cache.js';
  * team 表族内部 FK 级联；session 删除只清 junction 链接不清 team，team 删除只删
  * team-owned 行绝不删 session。
  */
-export const SCHEMA_VERSION = 21;
+export const SCHEMA_VERSION = 22;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -579,6 +579,8 @@ CREATE INDEX IF NOT EXISTS idx_claude_hooks_session ON claude_hook_events(native
 CREATE INDEX IF NOT EXISTS idx_claude_hooks_tool ON claude_hook_events(native_session_id,tool_use_id,agent_id,id DESC);
 CREATE INDEX IF NOT EXISTS idx_trace_identities_parent ON trace_identities(namespace, value, source_id, id) WHERE kind='parent_session';
 CREATE INDEX IF NOT EXISTS idx_trace_log_imported ON trace_log_imports(imported_at DESC,id);
+CREATE INDEX IF NOT EXISTS idx_events_task_tools ON events(session_id,kind,input_len);
+CREATE INDEX IF NOT EXISTS idx_events_task_errors ON events(session_id,status);
 CREATE INDEX IF NOT EXISTS idx_events_session_seq    ON events(session_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_events_session_phase  ON events(session_id, phase);
 CREATE INDEX IF NOT EXISTS idx_events_kind           ON events(kind);
@@ -1174,6 +1176,10 @@ export function migrateSchema(db: Database, fromVersion: number): void {
   if (fromVersion < 20) db.transaction(() => {
     db.exec("CREATE INDEX IF NOT EXISTS idx_trace_identities_parent ON trace_identities(namespace, value, source_id, id) WHERE kind='parent_session';");
     cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('20');
+  })();
+  if (fromVersion < 22) db.transaction(() => {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_events_task_tools ON events(session_id,kind,input_len); CREATE INDEX IF NOT EXISTS idx_events_task_errors ON events(session_id,status)');
+    cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('22');
   })();
   cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
 }

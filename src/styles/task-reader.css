@@ -42,3 +42,7 @@
   .task-workbench .task-evidence, .task-workbench .task-evidence.is-wide { width: 100%; max-width: 100%; min-width: 0; border-left: 0; }
   .task-evidence-resize { display: none; }
 }
+
+.task-summary-bar{display:flex;flex-wrap:wrap;gap:calc(var(--space-1) * 1.5) var(--space-4);margin:0;padding:var(--space-2) var(--space-3);border-bottom:1px solid var(--border-muted);min-width:0;max-width:100%;font-size:var(--text-xs)}
+.task-summary-bar>div{display:flex;flex-wrap:wrap;gap:var(--space-1);min-width:0;max-width:100%;overflow-wrap:anywhere}
+.task-summary-bar dt{color:var(--fg-muted)}.task-summary-bar dd{margin:0;min-width:0;overflow-wrap:anywhere}

@@ -2,7 +2,7 @@
 
 ## Agent 边界评测：该合并谁、保留谁
 
-「任务模式实验」默认进入逐 Agent 决策工作台。已接入 Anthropic
+「Agent 边界评测」默认进入逐 Agent 决策工作台。已接入 Anthropic
 single-agent-loop-kit 的两个公开历史模型实验（132 条运行记录）、19 个任务定义及
 标明来源的生成流量。逐边界审计 fold / merge / as-tool / keep，任一任务退步优先
 阻止采纳，支持追到具体重复、失败检查、完整动作参数和调用序列。
@@ -12,14 +12,14 @@ single-agent-loop-kit 的两个公开历史模型实验（132 条运行记录）
 显式 CLI 执行，密钥只在环境中读取。监控、抓包和 Frida 继续默认关闭。
 详见[逐边界评测与 API 接入](docs/agent-folding.md)。
 
-## 任务模式实验：单 loop / 主子 Agent / Team
+## Agent 边界评测内的任务模式对比
 
-顶部「任务模式实验」以同一个任务和独立验收为基线，支持每组不同提示词、配对并行或
+顶部「Agent 边界评测」以同一个任务和独立验收为基线，支持每组不同提示词、配对并行或
 顺序执行、逐用例差异、用量与时间对比，以及成员活动和消息的同步回放。四种离线
 模拟与真实本地子进程流程验证均明确标注，不代表真实模型成绩。真实驱动经
 `npm run team:experiment -- <plan.json> --execute --output <new-directory>` 显式启动。
 监控和抓包继续默认关闭。设计依据、指标口径和接入方法见
-[任务模式实验说明](docs/team-experiment.md)。
+[任务模式对比说明](docs/team-experiment.md)。
 
 任务页「分析拆分与合并」及实验页「分析真实任务 telemetry」可检查上下文增长、
 工具契约冲突和交接引用缺口，逐项定位真实事件 / 捕获 / Codex 逻辑调用，并给出

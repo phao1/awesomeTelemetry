@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Locale } from '../../../i18n.js';
 import type { HealthEvidence, HealthFinding, HealthMetric, HealthReport } from '../../../core/task-health/types.js';
-import { coverageReason, formatDuration, formatFact, healthLabel, metricValue, metricFacets, metricName, reconciliationRows, basisMetrics, dimensionMetrics, compactMetricRows, emptyLayersText, dominantAgentPartition } from '../../../core/task-health/format.js';
+import { deepLimitation, coverageReason, formatDuration, formatFact, healthLabel, metricValue, metricFacets, metricName, reconciliationRows, basisMetrics, dimensionMetrics, compactMetricRows, emptyLayersText, dominantAgentPartition } from '../../../core/task-health/format.js';
 import { unionDuration } from '../../../core/task-health/intervals.js';
 import { healthApi } from './health-client.js';
 import { healthCopy, healthProse } from './health-copy.js';
@@ -30,6 +30,6 @@ export function HealthReportView({ report: r, locale, onLocate }: { report: Heal
     <section><h3>{c.experience}</h3><p>{c.logHint}</p>{metricList(r.metrics.filter(m => m.key.startsWith('ux.')))}</section>
     <section><h3>{c.quality}</h3><p>{healthLabel(r.dimensions.quality, locale)} · {c.qualityHint}</p>{ranked.filter(f => f.dimension === 'quality').map(finding)}</section>
     <section><h3>{c.recommendations}</h3>{dimensions.map(d => <div key={d}><h4>{healthLabel(d, locale)}</h4>{ranked.filter(f => f.dimension === d).map(f => <p key={f.id}>{healthProse(f.recommendation.action, locale)} · {c.conditions}: {healthProse(f.recommendation.conditions, locale)} · {c.retest}: {f.recommendation.retest.join(' / ')}</p>)}</div>)}</section>
-    <section><h3>{c.basis}</h3><p>calcVersion: {r.calcVersion} · ruleVersion: {r.ruleVersion}</p><details><summary>{c.thresholds} · {r.thresholds.profile}</summary><dl>{Object.entries(r.thresholds).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{key.endsWith('Ms') ? formatDuration(value as number | null, locale) : value ?? '—'}</dd></div>)}</dl></details><p>{c.metricsReference}</p>{metricList(basisMetrics(r))}{r.limitations.map((line, i) => <p key={i}>{line.includes(' / ') ? healthProse(line, locale) : coverageReason(line, locale)}</p>)}</section><footer>{c.footer}</footer>
+    <section><h3>{c.basis}</h3><p>calcVersion: {r.calcVersion} · ruleVersion: {r.ruleVersion}</p><details><summary>{c.thresholds} · {r.thresholds.profile}</summary><dl>{Object.entries(r.thresholds).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{key.endsWith('Ms') ? formatDuration(value as number | null, locale) : value ?? '—'}</dd></div>)}</dl></details><p>{c.metricsReference}</p>{metricList(basisMetrics(r))}{r.limitations.map((line, i) => <p key={i}>{line === 'partial_public_projection' || line.startsWith('Partial public projection:') ? deepLimitation(line, locale).text : line.includes(' / ') ? healthProse(line, locale) : coverageReason(line, locale)}</p>)}</section><footer>{c.footer}</footer>
   </article>;
 }

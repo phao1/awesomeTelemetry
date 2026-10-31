@@ -109,3 +109,20 @@ malformed/unknown times, cancellation, exact block-to-row navigation, folding,
 shared-scroll offsets and rendering. Browser acceptance must verify sticky
 title/chart and usable record/detail height with real multiagent data; tests or
 this contract alone do not certify that visual result.
+
+
+## Phase A task readability (2026-10-31)
+
+TP-006: A complete exact native tool group with one input-only and one output-only
+record and no off-page observations is displayed as one row by default: tool
+name, bounded TaskRecord.toolInputPreview, call-to-result log interval and status.
+Unknown clocks stay unknown; log intervals never imply measured execution time.
+Failures remain prominent. Input-only observations are unfinished in this page,
+not a claim about the live process. Ambiguous/multiple/off-page groups stay
+separate. No adjacency fallback overrides native ambiguity (TP-002).
+A merged row renders exactly one actionable ↗/↙ pair, with no duplicate legacy
+evidence marker. Narrow rows use a measured multi-line grid at375px.
+Explicit ↗/↙ evidence controls and expansion preserve both originals; selecting
+or locating an exact original reveals it. Existing keyboard/playback, bounded
+virtual rows and shared reading scroll root remain unchanged; no body fan-out.
+Preview transport bounds are in api.md; TaskMetrics is in data-model.md.

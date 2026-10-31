@@ -190,3 +190,27 @@ it('honors cancellation while waiting for a detail loader that ignores the signa
   await ready; controller.abort();
   await expect(pending).rejects.toThrow();
 });
+
+it('labels unknown definitions with linked member names and numbers unresolved targets without changing identity', async () => {
+  const { db, directory, config } = await fixture();
+  const { codexScanner } = await import('../../local-sessions/codex.js');
+  const parent = join(directory, 'unknown-root.jsonl'), child = join(directory, 'unknown-child.jsonl'), timestamp = '2026-10-30T00:00:00.000Z';
+  const rows = [
+    { type: 'session_meta', timestamp, payload: { id: 'unknown-root', cwd: '/unknown' } },
+    { type: 'response_item', timestamp, payload: { type: 'function_call', name: 'spawn_agent', call_id: 'spawn-known', arguments: '{}' } },
+    { type: 'response_item', timestamp, payload: { type: 'function_call_output', call_id: 'spawn-known', output: JSON.stringify({ agent_id: 'unknown-child' }) } },
+    { type: 'response_item', timestamp, payload: { type: 'function_call', name: 'spawn_agent', call_id: 'spawn-missing', arguments: '{}' } },
+  ];
+  await writeFile(parent, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+  await writeFile(child, JSON.stringify({ type: 'session_meta', timestamp, payload: { id: 'unknown-child', source: { subagent: { thread_spawn: { parent_thread_id: 'unknown-root' } } } } }) + '\n');
+  await codexScanner.scanFile({ ...config, key: 'codex' }, parent, { db });
+  await codexScanner.scanFile({ ...config, key: 'codex' }, child, { db });
+  const collector = createNativeScopeCollector(db), scope = { taskIds: ['collected:' + deriveSessionKey('codex', parent)] };
+  const before = await collector.collect(scope);
+  db.prepare('UPDATE sessions SET source_agent=? WHERE id=?').run('Maxwell', deriveSessionKey('codex', child));
+  const after = await collector.collect(scope);
+  expect(after.agents.map(a => a.id)).toEqual(before.agents.map(a => a.id));
+  expect(after.agents.some(a => a.name.includes('Maxwell · 角色未知'))).toBe(true);
+  expect(after.agents.some(a => /^未知 Agent #\d+ \/ Unknown Agent #\d+$/.test(a.name))).toBe(true);
+  expect(after.traffic).toEqual(before.traffic); expect(after.agents.some(a => a.name === 'unknown')).toBe(false);
+});

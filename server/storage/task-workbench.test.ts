@@ -13,7 +13,7 @@ function agent(id: string, key: string, root: boolean) {
 }
 function event(key: string, n: number, status = 'success', title = 'Read source') {
   db.prepare('INSERT INTO events(session_id,id,sequence,kind,phase,title,started_at,duration_ms,status,actor,input_summary,output_summary) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
-    .run(key, 'e' + n, n, 'tool', 'implement', title, new Date(Date.parse(when) + n * 1000).toISOString(), 10, status, 'Read', 'SECRET INPUT', 'SECRET OUTPUT');
+    .run(key, 'e' + n, n, 'tool', 'implement', title, new Date(Date.parse(when) + n * 1000).toISOString(), 10, status, 'Read', 'password=SECRET', 'SECRET OUTPUT');
 }
 beforeEach(() => { db = new Database(':memory:'); initSchema(db); });
 afterEach(() => db.close());
@@ -135,4 +135,17 @@ describe('native parent evidence outside team projections', () => {
     identities('a', 'a', 'b'); identities('b', 'b', 'a'); identities('c', 'c', 'missing');
     expect(listTasks(db, {}).total).toBe(3);
   });
+});
+
+it('adds only a redacted single-line bounded tool preview, with bounded list overhead', () => {
+  session('preview'); event('preview', 1);
+  db.prepare('UPDATE events SET input_summary=?,input_len=10000 WHERE session_id=?').run('password="SUPER_SECRET"\nnode script.js ' + 'x'.repeat(10000), 'preview');
+  const record = taskRecords(db, getTask(db, 'collected:preview'), {}).items[0]!;
+  expect(record.toolInputPreview).toContain('[redacted]');
+  expect(record.toolInputPreview).not.toContain('SUPER_SECRET'); expect(record.toolInputPreview).not.toMatch(/[\r\n]/); expect(record.toolInputPreview).toHaveLength(120);
+  const { toolInputPreview: preview, ...slim } = record;
+  expect(Buffer.byteLength(JSON.stringify(record)) - Buffer.byteLength(JSON.stringify(slim))).toBeLessThan(150);
+  expect(preview).toBeDefined(); expect(record.event).not.toHaveProperty('inputSummary');
+  db.prepare("UPDATE events SET kind='llm'").run();
+  expect(taskRecords(db, getTask(db, 'collected:preview'), {}).items[0]).not.toHaveProperty('toolInputPreview');
 });

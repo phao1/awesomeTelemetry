@@ -32,7 +32,7 @@ function sections(r: HealthReport): [string, string[]][] {
     ['体验（日志代理）', ['日志口径，非界面实测。', ...metricLines(r, r.metrics.filter(m => m.key.startsWith('ux.')))]],
     ['质量门', [`状态 ${healthLabel(r.dimensions.quality)}；验收来源未知；收尾总结未评估。`, ...r.findings.filter(f => f.dimension === 'quality').flatMap(findingLines)]],
     ['建议汇总（感→少→并→快）', dimensions.map(d => `${healthLabel(d)}: ${ranked(r).filter(f => f.dimension === d).map(f => `${f.recommendation.action} 条件：${f.recommendation.conditions}；复测：${f.recommendation.retest.join(', ')}`).join('；') || healthLabel(r.dimensions[d])}`)],
-    ['计算依据', [`calcVersion=${r.calcVersion}; ruleVersion=${r.ruleVersion}`, ...Object.entries(r.thresholds).map(([key, value]) => `阈值 ${key}: ${key.endsWith('Ms') ? formatDuration(value as number | null) : value ?? '—'}`), '各指标及有效样本数见对应板块。', ...metricLines(r, basisMetrics(r)), ...r.limitations.map(x => /^[a-z_]+(?::|$)/.test(x) ? coverageReason(x) : x), '单任务诊断，不代表产品整体。']],
+    ['计算依据', [`calcVersion=${r.calcVersion}; ruleVersion=${r.ruleVersion}`, ...Object.entries(r.thresholds).map(([key, value]) => `阈值 ${key}: ${key.endsWith('Ms') ? formatDuration(value as number | null) : value ?? '—'}`), '各指标及有效样本数见对应板块。', ...metricLines(r, basisMetrics(r)), ...r.limitations.map(x => x === 'partial_public_projection' || x.startsWith('Partial public projection:') ? deepLimitation(x).text : /^[a-z_]+(?::|$)/.test(x) ? coverageReason(x) : x), '单任务诊断，不代表产品整体。']],
     ['证据', r.evidence.map(e => `${e.id}；${e.recordIds.join(', ')}；${e.title.slice(0, 200)}；${(e.summary ?? '').slice(0, 1500)}${e.truncated || (e.summary?.length ?? 0) > 1500 ? ' （截断）' : ''}`)],
   ];
 }
@@ -47,7 +47,7 @@ export function renderTaskHealthMarkdown(report: HealthReport | DeepHealthReport
 }
 export function renderTaskHealthHtml(report: HealthReport | DeepHealthReport, parent?: HealthReport): string {
   if (!('mode' in report)) return `<!doctype html><html lang="zh"><meta charset="utf-8"><title>深度健康报告</title><body><h1>深度健康报告</h1>${deepSections(report, parent).map(([title, lines], sectionIndex) => `<section><h2>${escapeHtml(title)}</h2><ul>${lines.map((x, index) => {
-    const rows = [report.causes, report.valueMoments, report.necessity, report.experiments, report.rejected][sectionIndex];
+    const rows = [report.causes, report.valueMoments, report.necessity, report.experiments, ...(report.rejected.length ? [report.rejected] : [])][sectionIndex];
     const row = rows?.[index];
     if (!row) return `<li>${escapeHtml(x)}</li>`;
     return `<li>${deepFields(row, 'zh', parent).map(field => `<p><strong>${escapeHtml(field.label)}: </strong><span${field.title ? ` title="${escapeHtml(field.title)}"` : ''}>${escapeHtml(field.text)}</span></p>`).join('')}</li>`;
@@ -62,5 +62,5 @@ export function renderTaskHealthHtml(report: HealthReport | DeepHealthReport, pa
 
 function deepSections(r: DeepHealthReport, parent?: HealthReport): [string, string[]][] {
   const items = (rows: object[]) => rows.map(row => deepFields(row, 'zh', parent).map(f => `${f.label}: ${f.text}`).join('；'));
-  return [['最值得验证的原因', items(r.causes)], ['价值时刻判定', items(r.valueMoments)], ['必要性判定', items(r.necessity)], ['优化假设与实验', items(r.experiments)], ['被拒绝 / 未采纳', items(r.rejected)], ['分析记录', [`${r.provider} / ${r.model}; ${deepLabel(r.status)}; ${healthLabel(r.timing)}`, `提示词版本 ${r.promptVersion}; digest ${r.digest}`, deepAnalysisText(r.analysis), ...r.limitations.map(code => deepLimitation(code).text)]]];
+  return [['最值得验证的原因', items(r.causes)], ['价值时刻判定', items(r.valueMoments)], ['必要性判定', items(r.necessity)], ['优化假设与实验', items(r.experiments)], ...(r.rejected.length ? [['被拒绝 / 未采纳', items(r.rejected)] as [string, string[]]] : []), ['分析记录', [`${r.provider} / ${r.model}; ${deepLabel(r.status)}; ${healthLabel(r.timing)}`, `提示词版本 ${r.promptVersion}; digest ${r.digest}`, deepAnalysisText(r.analysis), ...r.limitations.map(code => deepLimitation(code).text)]]];
 }

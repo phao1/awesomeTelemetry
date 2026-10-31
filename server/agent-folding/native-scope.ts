@@ -181,10 +181,10 @@ export function createNativeScopeCollector(db: Database, options: { byteLimit?: 
         const matches = target !== undefined ? children.filter(m => records.get(m.sessionKey!)?.nativeId === target) : indexed && source.calls.get(callId)?.indexedIdentity && source.calls.size === 1 ? children : [];
         return matches.length === 1 ? matches[0] : undefined;
       };
-      const agent = (provider: string, name: string, isMain: boolean, unknownKey?: string): FoldingAgent => {
+      const agent = (provider: string, name: string, isMain: boolean, unknownKey?: string, memberName?: string): FoldingAgent => {
         const id = 'agent-' + hash([provider, name, isMain, unknownKey ?? null]);
         let found = project.agents.find(a => a.id === id);
-        if (!found) { found = { id, name, owner: null, isMain, prompt: null, tools: [], invokedBy: [], returns: null, talksToUser: null, externalOwner: null, contextNeed: 'unknown', proposed: isMain ? 'main' : 'insufficient', rationale: { zh: '待核实独立上下文理由。', en: 'Independent context reasons require verification.' }, evidenceIds: [] }; project.agents.push(found); }
+        if (!found) { found = { id, name: name === 'unknown' ? memberName ? `${memberName} · 角色未知 / ${memberName} · Role unknown` : `未知 Agent #${project.agents.length + 1} / Unknown Agent #${project.agents.length + 1}` : name, owner: null, isMain, prompt: null, tools: [], invokedBy: [], returns: null, talksToUser: null, externalOwner: null, contextNeed: 'unknown', proposed: isMain ? 'main' : 'insufficient', rationale: { zh: '待核实独立上下文理由。', en: 'Independent context reasons require verification.' }, evidenceIds: [] }; project.agents.push(found); }
         return found;
       };
       let unresolved = 0, unindexed = 0;
@@ -203,7 +203,7 @@ export function createNativeScopeCollector(db: Database, options: { byteLimit?: 
             const child = resolveChild(context.members, parent.id, source, call.id, missing.has(parent.sessionKey!));
             if (!child?.sessionKey) continue;
             const name = call.definition ?? records.get(child.sessionKey)?.role;
-            memberAgents.set(child.sessionKey, agent(provider, name ?? 'unknown', false, name ? undefined : context.task.id + ':' + call.id));
+            memberAgents.set(child.sessionKey, agent(provider, name ?? 'unknown', false, name ? undefined : context.task.id + ':' + call.id, child?.name));
           }
         }
         for (const member of context.members) {
@@ -212,11 +212,11 @@ export function createNativeScopeCollector(db: Database, options: { byteLimit?: 
           // An unresolved target already has a per-call unknown definition. Do not
           // invent another definition for an unassigned leaf in a degraded scope.
           if (missing.size && !source.calls.size && !memberAgents.has(member.sessionKey)) continue;
-          const caller = memberAgents.get(member.sessionKey) ?? agent(provider, source.role ?? 'unknown', false, source.role ? undefined : member.sessionKey);
+          const caller = memberAgents.get(member.sessionKey) ?? agent(provider, source.role ?? 'unknown', false, source.role ? undefined : member.sessionKey, member.name);
           for (const call of source.calls.values()) {
             const child = resolveChild(context.members, member.id, source, call.id, missing.has(member.sessionKey));
             const name = call.definition ?? (child?.sessionKey ? records.get(child.sessionKey)?.role : null) ?? null;
-            const callee = agent(provider, name ?? 'unknown', false, name ? undefined : context.task.id + ':' + call.id);
+            const callee = agent(provider, name ?? 'unknown', false, name ? undefined : context.task.id + ':' + call.id, child?.name);
             if (child?.sessionKey) memberAgents.set(child.sessionKey, callee);
             const evidenceId = 'e-' + hash([context.task.id, member.sessionKey, call.id]);
             const refs = cachedStmt(db, `SELECT DISTINCT i.event_id FROM trace_identity_sources s JOIN trace_identities i ON i.source_id=s.id JOIN events e ON e.session_id=s.session_key AND e.id=i.event_id WHERE s.session_key=? AND i.kind='tool_call' AND i.value=? AND e.kind='tool' ORDER BY e.sequence`).all(member.sessionKey, call.id) as { event_id: string }[];

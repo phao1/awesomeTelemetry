@@ -32,3 +32,12 @@ it('reads old rejection entries and falls back to short finding IDs without a pa
     expect(host.textContent).toContain('模型输出结构不符合要求'); expect(host.querySelector(`[title="${id}"]`)!.textContent).toBe('aaaaaaaaaaaa…aaaaaa');
   } finally { act(() => root.unmount()); }
 });
+it('omits an empty rejected section consistently from UI and both text exports', () => {
+  const value = { ...report, rejected: [] }, host = document.createElement('div'), root = createRoot(host);
+  try {
+    act(() => root.render(<DeepHealthReportView report={value} locale="zh"/>));
+    for (const text of [host.textContent!, renderTaskHealthHtml(value), renderTaskHealthMarkdown(value)]) {
+      expect(text).not.toContain('被拒绝 / 未采纳'); expect(text).toContain('分析记录'); expect(text).toContain('digest');
+    }
+  } finally { act(() => root.unmount()); }
+});

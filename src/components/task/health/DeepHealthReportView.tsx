@@ -13,7 +13,7 @@ export function DeepHealthReportView({ report: r, locale, parent }: { report: De
     <section><h3>{c.valueMoments}</h3>{rows(r.valueMoments)}</section>
     <section><h3>{c.necessity}</h3>{rows(r.necessity)}</section>
     <section><h3>{c.experiments}</h3>{rows(r.experiments)}</section>
-    <section><h3>{c.rejected}</h3>{rows(r.rejected)}</section>
+    {r.rejected.length > 0 && <section><h3>{c.rejected}</h3>{rows(r.rejected)}</section>}
     <section><h3>{c.analysis}</h3><p>{r.provider} / {r.model} · {locale === 'zh' ? '提示词版本' : 'Prompt version'} {r.promptVersion}</p><p>digest: {r.digest}</p><p>{deepAnalysisText(r.analysis, locale)}</p>{r.limitations.map((code, i) => { const limitation = deepLimitation(code, locale); return limitation.detail ? <details key={i}><summary>{limitation.text}</summary><p>{limitation.detail}</p></details> : <p key={i}>{limitation.text}</p>; })}</section>
   </article>;
 }

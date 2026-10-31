@@ -1,5 +1,12 @@
 # AwesomeTelemetry
 
+## Agent boundary evaluation
+
+Open **Agent boundary evaluation** in the top navigation or command palette to
+review individual Agent boundaries, inspect retained task evidence and compare
+controlled evaluations. The workbench includes the task-mode comparison workflow.
+See [boundary evaluation](docs/agent-folding.md) and [task-mode comparison](docs/team-experiment.md).
+
 ## npm / npx local Web UI (package preparation — unpublished)
 
 The intended public package name is `awesome-telemetry`; registry ownership has

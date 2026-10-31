@@ -1,3 +1,4 @@
+import { TaskSummaryBar } from './TaskSummaryBar.js';
 import { ArchitectureReadError } from '../agent-folding/ArchitectureReadError.js';
 import '../../styles/task-health.css';
 import { HealthButton } from './health/HealthButton.js';
@@ -257,6 +258,7 @@ function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContex
       <button type="button" className="btn" onClick={() => void navigator.clipboard.writeText(window.location.href).then(() => onNotice(c.copied)).catch(() => onNotice(c.copyFailed))}>{healthCopy(locale).share} ↗</button>
       <HealthButton locale={locale} open={Boolean(route.health)} onClick={() => onRoute({ ...route, health: route.health ? undefined : 'new' })}/>
     </header>
+    <TaskSummaryBar context={displayContext} locale={locale} />
     <div className="task-reading-toolbar">
       <div className="task-mode-tabs" role="tablist" aria-label={c.trajectory}>{(['trajectory', 'conversation', 'raw', 'architecture'] as const).map(mode => <button type="button" role="tab" aria-selected={route.mode === mode} key={mode} onClick={() => changeMode(mode)}>{mode === 'architecture' ? (locale === 'zh' ? '架构' : 'Architecture') : c[mode]}</button>)}</div>
       <div className="task-record-filters" hidden={route.mode === 'architecture'}><input maxLength={200} aria-label={c.metadataSearch} placeholder={locale === 'zh' ? '搜索记录…' : 'Search records…'} value={q} onChange={event => setQ(event.target.value)} /><label title={c.errors}><input type="checkbox" checked={errors} onChange={event => { setErrors(event.target.checked); onRoute({ ...route, errors: event.target.checked, event: null }); setPaging({}); setAnchor(null); setPlaying(false); }} />{c.errors}</label></div>

@@ -1630,3 +1630,27 @@ stops. Valid model JSON that fails semantic/schema validation is saved as a
 rejected DeepHealthReport with static reasons and returned200; malformed/oversize
 transport output fails HEALTH_MODEL_FAILED/HEALTH_SIZE_LIMIT without replacing
 ordinary report. All limits, failure and cancellation paths release job ownership.
+
+
+## Phase A task readability (2026-10-31)
+
+`GET /api/tasks/:id` and record-page context add optional `metrics: TaskMetrics`
+(data-model.md). Null means no trusted values. Native token/model metrics include
+optional per-field `coverage` with known/total member counts and missing member
+IDs, names and stable reasons (`session_unavailable`, `detail_not_loaded`,
+`not_reported`, `accounting_unknown`). Available compatible members contribute
+partial sums; unknown conventions never enter corrected totals. Model lists keep
+known names even with incomplete coverage. Imports retain session-only semantics.
+Cost, duration and indexed count completeness requirements remain unchanged.
+Summary aggregation is revision-cached (data_version + total_changes, max32 tasks
+per database), using only <=100 session rows and covering indexed event counts.
+No native-source hydration or event-body aggregation. No additional client request.
+
+TaskRecord may carry `toolInputPreview` only for kind=tool: take at most4096 input
+characters from each selected page row, apply existing redactHealthText, collapse
+whitespace and truncate to120 UTF-16 code units. This bounded preview is an
+explicit list-tier exception; inputSummary/outputSummary/raw remain absent.
+For <=200 tools, added JSON is <=29KiB with ordinary ASCII or <150KiB including
+worst-case JSON escaping. Selected evidence still loads lazily.
+
+See task-process.md Phase A, storage/frontend specs and database.md schema22.

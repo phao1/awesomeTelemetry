@@ -69,3 +69,14 @@ it('exports gap local clock endpoints using report t0 and explicitly falls back 
   delete r.t0;
   for (const output of [renderTaskHealthMarkdown(r), renderTaskHealthHtml(r)]) expect(output).toContain('开始 21.0 天（相对任务起点）');
 });
+it('maps the stable projection code and old saved English prose identically without changing reports', async () => {
+  const { deepLimitation } = await import('./format.js');
+  const legacy = 'Partial public projection: all statistics use retained full input; spans and round span links omitted; each metric/finding retains at most 16 evidence references; evidence titles only. Quality acceptance remains unknown.';
+  expect(deepLimitation(legacy)).toEqual(deepLimitation('partial_public_projection'));
+  expect(deepLimitation('partial_public_projection', 'en').text).toContain('Partial public projection');
+  expect(deepLimitation('future_projection')).toEqual({ text: 'future_projection' });
+  for (const limitation of [legacy, 'partial_public_projection']) {
+    const r = report(); r.limitations = [limitation];
+    for (const text of [renderTaskHealthHtml(r), renderTaskHealthMarkdown(r)]) { expect(text).toContain('公开投影已精简'); expect(text).not.toContain('Partial public projection'); }
+  }
+});

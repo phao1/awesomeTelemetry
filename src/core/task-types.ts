@@ -26,9 +26,28 @@ export interface TaskMember {
   detailLoaded: boolean;
   eventCount: number;
 }
+export type TaskMetricKey = 'input' | 'output' | 'cacheRead' | 'correctedTotal' | 'models';
+export interface TaskMetricCoverage {
+  known: number;
+  total: number;
+  missing: Array<{ memberId: string; name: string; reason: 'session_unavailable' | 'detail_not_loaded' | 'not_reported' | 'accounting_unknown' }>;
+}
+export interface TaskMetrics {
+  durationMs: number | null;
+  toolCalls: number | null;
+  errors: number | null;
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  correctedTotal: number | null;
+  costUsd: number | null;
+  models: string[];
+  coverage?: Record<TaskMetricKey, TaskMetricCoverage>;
+}
 export interface TaskContext {
   task: TaskSummary;
   members: TaskMember[];
+  metrics?: TaskMetrics;
   importSession: TraceLogSession | null;
   warnings: string[];
 }
@@ -46,6 +65,7 @@ export interface TaskRecord {
   sessionKey: string | null;
   event: TraceEventSlim | null;
   importedTurn: TraceLogTurn | null;
+  toolInputPreview?: string;
 }
 export interface TaskRecordPage {
   context: TaskContext;

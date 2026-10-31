@@ -36,3 +36,28 @@
 .dsh-process-ledger .process-record-metadata p{margin:var(--space-2) 0 0}
 .dsh-process-ledger .process-record-metadata button{color:var(--accent-fg)}
 @media(max-width:56.25rem){.dsh-process-ledger time{display:none}.dsh-process-ledger .process-member-chip{max-width:5rem}.dsh-process-ledger .process-record-metadata{padding-left:var(--space-5)}.dsh-process-ledger .process-record-metadata dl{grid-template-columns:minmax(0,1fr)}}
+
+.dsh-process-ledger .process-stream-row.process-observation.is-error{background:var(--danger-subtle);border-left:calc(var(--space-1) * 0.75) solid var(--danger-fg);color:var(--danger-fg)}
+.process-tool-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:36ch;color:var(--fg-muted)}
+
+.process-tool-duration,.process-tool-status{white-space:nowrap;flex:none;font-size:var(--text-xs)}
+.process-pair-evidence{display:flex;gap:calc(var(--space-1) * 1.5);flex:none}
+
+/* 375px reading: preserve preview/status/evidence in measured grid rows. */
+@media(max-width:40rem){
+  .dsh-process-ledger .process-record-line{display:grid;grid-template-columns:var(--space-4) var(--space-5) auto minmax(0,1fr) auto;gap:var(--space-1);height:auto;min-height:calc(var(--space-1) * 8.25);padding:var(--space-1) var(--space-2);max-width:100%}
+  .dsh-process-ledger .process-record-line>*{min-width:0;max-width:100%}
+  .dsh-process-ledger .process-record-line>.process-disclosure{grid-column:1;grid-row:1}
+  .dsh-process-ledger .process-step-number{grid-column:2;grid-row:1}
+  .dsh-process-ledger .process-kind-chip{grid-column:3;grid-row:1}
+  .dsh-process-ledger .process-record-button{grid-column:4;grid-row:1;overflow:hidden}
+  .dsh-process-ledger .process-error-count{grid-column:5;grid-row:1}
+  .dsh-process-ledger .process-tool-preview{grid-column:2/-1;grid-row:2;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .dsh-process-ledger .process-tool-duration{grid-column:2/4;grid-row:3}
+  .dsh-process-ledger .process-tool-status{grid-column:4;grid-row:3}
+  .dsh-process-ledger .process-pair-evidence,.dsh-process-ledger .process-record-evidence{grid-column:5;grid-row:3}
+  .dsh-process-ledger .process-record-line>.process-member-chip{grid-column:2/4;grid-row:4}
+  .dsh-process-ledger .process-call-expand{grid-column:4;grid-row:4;overflow:hidden;text-overflow:ellipsis}
+  .dsh-process-ledger .process-original-link{grid-column:5;grid-row:4}
+  .dsh-process-ledger .process-record-metadata{min-width:0;overflow-wrap:anywhere}
+}
