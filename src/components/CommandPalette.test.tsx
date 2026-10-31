@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionIndexEntry, TraceEventSlim } from '../core/trace-types.js';
 import { CommandPalette, type PaletteAction } from './CommandPalette.js';
@@ -178,7 +178,7 @@ describe('REQ-025 命令面板', () => {
     expect(navRows.map(row => row.textContent).join(' ')).toContain('数据接入');
     expect(navRows.map(row => row.textContent).join(' ')).toContain('Agent 边界评测');
     const navHints = navRows.map((row) => row.querySelector('.palette-row-hint')?.textContent);
-    expect(navHints.every((hint) => hint === 'nav')).toBe(true);
+    expect(navHints.every((hint) => hint === '↵')).toBe(true);
     setValue('/s fix');
     const sessionRows = Array.from(container.ownerDocument.body.querySelectorAll('.palette-row'));
     expect(sessionRows.length).toBe(1);
@@ -338,4 +338,14 @@ describe('REQ-113 /filter 按 provider 过滤', () => {
     expect(rows[0]!.querySelector('.palette-row-hint')?.textContent).toBe('on');
     expect(rows[0]!.className).toContain('palette-row-on');
   });
+});
+
+it('navigates grouped page results from the search field with ArrowDown and Enter',()=>{
+ const onAction=vi.fn();const view=render(<CommandPalette sessions={[]} locale="en" onClose={()=>undefined} onAction={onAction}/>);
+ const input=view.ownerDocument.body.querySelector<HTMLInputElement>('input[type=search]')!;
+ act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'/nav');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ expect(view.ownerDocument.body.textContent).toContain('Pages');
+ act(()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true})));
+ act(()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
+ expect(onAction).toHaveBeenCalledWith({type:'view',view:'task'});
 });

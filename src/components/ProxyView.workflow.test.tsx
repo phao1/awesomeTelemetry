@@ -1,3 +1,4 @@
+import { chooseOption } from './ui/test-controls.js';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -246,10 +247,10 @@ it('guards dirty setup close with a safe nested confirmation, keeps its draft on
     : String(input).endsWith('/profiles') ? { items: [] } : { items: [], nextCursor: null, hasMore: false }));vi.stubGlobal('fetch', fetcher);const { container } = mount();
   await act(async () => { await Promise.resolve(); });
   await act(async () => { button(container, t('monitor.title', 'en')).click();await import('./MonitorSetupPanel.js'); });
-  act(() => { const input = container.ownerDocument.body.querySelector<HTMLInputElement>('.monitor-setup input')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Unsent setup draft');input.dispatchEvent(new Event('input', { bubbles: true })); });
+  act(() => { const input = container.ownerDocument.body.querySelector<HTMLInputElement>('.monitor-setup input:not([type=hidden])')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Unsent setup draft');input.dispatchEvent(new Event('input', { bubbles: true })); });
   act(() => container.ownerDocument.body.querySelector<HTMLButtonElement>('.monitor-setup-drawer .ui-drawer-header button')!.click());
   expect(container.ownerDocument.body.querySelector('[aria-label="Close connection setup?"]')).not.toBeNull();expect(document.activeElement?.textContent).not.toBe('Discard draft and close waiting');
-  act(() => button(container, 'Keep editing').click());expect(container.ownerDocument.body.querySelector<HTMLInputElement>('.monitor-setup input')!.value).toBe('Unsent setup draft');
+  act(() => button(container, 'Keep editing').click());expect(container.ownerDocument.body.querySelector<HTMLInputElement>('.monitor-setup input:not([type=hidden])')!.value).toBe('Unsent setup draft');
   act(() => container.ownerDocument.body.querySelector<HTMLButtonElement>('.monitor-setup-drawer .ui-drawer-header button')!.click());act(() => button(container, 'Discard draft and close waiting').click());
   expect(container.ownerDocument.body.querySelector('.monitor-setup')).toBeNull();expect(fetcher.mock.calls.every(([, init]) => init?.method === undefined)).toBe(true);
 });
@@ -263,7 +264,7 @@ it('does not allow parent listener controls to bypass a cancelled setup start, a
     return response(path.endsWith('/status') ? idle : path.endsWith('/profiles') ? { items: [profile] } : { items: [], nextCursor: null, hasMore: false });
   });vi.stubGlobal('fetch', fetcher);const { container } = mount();await act(async () => { await Promise.resolve(); });
   await act(async () => { button(container, t('monitor.title', 'en')).click();await import('./MonitorSetupPanel.js'); });
-  act(() => { const select = container.ownerDocument.body.querySelector<HTMLSelectElement>('.monitor-setup select')!;select.value = profile.id;select.dispatchEvent(new Event('change', { bubbles: true })); });
+  act(() => { chooseOption(container.ownerDocument.body.querySelector('.monitor-setup [role=combobox]')!,profile.id); });
   act(() => button(container, t('monitor.startListener', 'en')).click());act(() => button(container, 'Cancel waiting').click());
   expect(signal?.aborted).toBe(true);expect(button(container, 'Start proxy').disabled).toBe(true);
   act(() => container.ownerDocument.body.querySelector<HTMLButtonElement>('.monitor-setup-drawer .ui-drawer-header button')!.click());

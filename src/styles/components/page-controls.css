@@ -1,0 +1,9 @@
+.ui-dropzone { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-6); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); background: var(--canvas-raised); color: var(--fg-muted); text-align: center; }
+.ui-dropzone[data-dragging=true] { background: var(--accent-subtle); border-color: var(--accent-fg); }
+.ui-dropzone p { margin: 0; }
+.ui-file-picker { display: inline-flex; min-width: 0; }
+.ui-option-select { display: inline-grid; min-width: 0; max-width: 100%; }
+.ui-accordion > [hidden] { display: none; }
+.ui-accordion-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.ui-accordion > button > svg { flex-shrink: 0; }
+.ui-dropzone-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-3); }

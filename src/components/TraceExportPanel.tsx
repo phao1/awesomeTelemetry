@@ -1,3 +1,6 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Disclosure } from './ui/PageControls.js';
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import { fetchTraceExport, TraceExportReadError } from '../api/trace-export.js';
@@ -86,17 +89,17 @@ function ExportPage({ sessionKey, locale }: TraceExportPanelProps) {
       if (owned === generation.current) { operation.current = null; setPending(false); }
     }
   };
-  return <details className="trace-export-panel">
-    <summary>{copy.title}</summary>
+  return <Disclosure className="trace-export-panel" title={<>{copy.title}</>}>
+
     <p>{copy.scope}</p><p>{copy.timing}</p><p>{copy.page}</p>
     <div className="trace-export-range">
-      <label>{copy.offset}<input type="text" inputMode="numeric" value={offsetText} onChange={event => changeRange('offset', event.target.value)} /></label>
-      <label>{copy.limit}<input type="text" inputMode="numeric" value={limitText} onChange={event => changeRange('limit', event.target.value)} /></label>
+      <label>{copy.offset}<Input type="text" inputMode="numeric" value={offsetText} onChange={event => changeRange('offset', event.target.value)} /></label>
+      <label>{copy.limit}<Input type="text" inputMode="numeric" value={limitText} onChange={event => changeRange('limit', event.target.value)} /></label>
     </div>
     {!validRange && <p role="alert">{copy.range}</p>}
     <div className="trace-export-actions">
-      <button type="button" className="btn" disabled={!validRange || pending} onClick={() => void download()}>{error ? copy.retry : copy.action}</button>
-      {pending && <button type="button" className="btn" onClick={() => { invalidate(); setPending(false); setCancelled(true); }}>{copy.cancel}</button>}
+      <Button type="button"  disabled={!validRange || pending} onClick={() => void download()}>{error ? copy.retry : copy.action}</Button>
+      {pending && <Button type="button"  onClick={() => { invalidate(); setPending(false); setCancelled(true); }}>{copy.cancel}</Button>}
     </div>
     {pending && <p role="status">{copy.pending}</p>}
     {cancelled && <p role="status">{copy.cancelled}</p>}
@@ -107,9 +110,9 @@ function ExportPage({ sessionKey, locale }: TraceExportPanelProps) {
       {coverage.returned === coverage.omittedInvalidTime && <p>{copy.empty}</p>}
       {!coverage.detailLoaded && <p>{copy.unloaded}</p>}
       {coverage.countMismatch && <p>{copy.mismatch}</p>}
-      {coverage.nextOffset !== null && coverage.nextOffset <= TRACE_EXPORT_MAX_OFFSET && <button type="button" className="btn" onClick={() => changeRange('offset', String(coverage.nextOffset))}>{copy.next}</button>}
+      {coverage.nextOffset !== null && coverage.nextOffset <= TRACE_EXPORT_MAX_OFFSET && <Button type="button"  onClick={() => changeRange('offset', String(coverage.nextOffset))}>{copy.next}</Button>}
     </div>}
-  </details>;
+  </Disclosure>;
 }
 
 /** Parent invalidation/remount cancels ownership without reading or restoring stale downloads. */

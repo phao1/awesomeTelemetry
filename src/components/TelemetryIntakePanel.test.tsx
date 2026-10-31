@@ -15,11 +15,11 @@ describe('telemetry intake controls',()=>{
     let enabled=false;const requests:Array<{url:string;method:string;body:unknown}>=[];
     vi.spyOn(globalThis,'fetch').mockImplementation(async(input,init)=>{const method=init?.method??'GET';requests.push({url:String(input),method,body:init?.body?JSON.parse(init.body as string):null});if(method==='PUT'){enabled=(JSON.parse(init!.body as string) as {enabled:boolean}).enabled;return response({...status,enabled,requireToken:true,...(enabled?{token:'one-time-token'}:{})});}return response({...status,enabled,requireToken:enabled});});
     const writeText=vi.fn().mockResolvedValue(undefined);Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText}});
-    act(()=>root.render(<TelemetryIntakePanel locale="en"/>));await settle();expect(host.textContent).toContain(status.endpoint);expect(host.textContent).toContain('TELEMETRY_LIMIT');expect(requests).toHaveLength(1);
-    const button=(text:string)=>[...host.querySelectorAll('button')].find(b=>b.textContent===text)!;
-    await act(async()=>button('Enable').click());await settle();expect(requests.filter(r=>r.method==='PUT')[0]?.body).toEqual({enabled:true,requireToken:true});expect(host.querySelector<HTMLInputElement>('input[readonly]')?.value).toBe('one-time-token');
-    await act(async()=>button('Copy token').click());expect(writeText).toHaveBeenCalledWith('one-time-token');expect(host.textContent).toContain('Copied');
-    await act(async()=>button('Disable').click());await settle();expect(host.querySelector('input[readonly]')).toBeNull();expect(requests.filter(r=>r.method==='PUT')).toHaveLength(2);
+    act(()=>root.render(<TelemetryIntakePanel locale="en"/>));await settle();expect(host.querySelector<HTMLInputElement>('[aria-label="Receiver endpoint"]')!.value).toBe(status.endpoint);expect(host.textContent).toContain('TELEMETRY_LIMIT');expect(requests).toHaveLength(1);
+
+    await act(async()=>host.querySelector<HTMLInputElement>('[role=switch][aria-label="Enable receiver"]')!.click());await settle();expect(requests.filter(r=>r.method==='PUT')[0]?.body).toEqual({enabled:true,requireToken:true});expect(host.querySelector<HTMLInputElement>('input[aria-label="One-time token"]')?.value).toBe('one-time-token');
+    await act(async()=>host.querySelector<HTMLInputElement>('input[aria-label="One-time token"]')!.parentElement!.querySelector<HTMLButtonElement>('button[aria-label="Copy"]')!.click());expect(writeText).toHaveBeenCalledWith('one-time-token');expect(document.body.textContent).toContain('Copied');
+    await act(async()=>host.querySelector<HTMLInputElement>('[role=switch][aria-label="Enable receiver"]')!.click());await settle();expect(host.querySelector('input[aria-label="One-time token"]')).toBeNull();expect(requests.filter(r=>r.method==='PUT')).toHaveLength(2);
   });
   it('imports a vendor JSONL file directly, shows clear errors and never enables collection',async()=>{
     const calls:Array<{url:string;init?:RequestInit}>=[];
@@ -32,10 +32,13 @@ describe('telemetry intake controls',()=>{
   it('adds an OpenTelemetry channel and keeps its status lazy',async()=>{
     const calls:string[]=[];vi.spyOn(globalThis,'fetch').mockImplementation(async input=>{calls.push(String(input));return response(String(input).includes('telemetry')?status:{enabled:false,state:'idle'});});
     act(()=>root.render(<DataIntake locale="en" onConfigure={()=>undefined} proxy={null} frida={null} onTasks={()=>undefined}/>));await settle();expect(calls).not.toContain('/api/telemetry');
-    const channel=[...host.querySelectorAll('button')].find(b=>b.textContent?.includes('OpenTelemetry'))!;await act(async()=>channel.click());await settle();expect(calls.filter(c=>c==='/api/telemetry')).toHaveLength(1);expect(host.textContent).toContain('Receiver disabled');
+    const channel=[...host.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')?.includes('OpenTelemetry'))!;await act(async()=>channel.click());await settle();expect(calls.filter(c=>c==='/api/telemetry')).toHaveLength(1);expect(host.textContent).toContain('Receiver disabled');
   });
   it('shows failed configuration and allows status refresh without secret recovery',async()=>{
     vi.spyOn(globalThis,'fetch').mockImplementation(async(_input,init)=>init?.method==='PUT'?new Response(JSON.stringify({error:{code:'TELEMETRY_CONFIG',message:'Cannot save local settings'}}),{status:503,headers:{'content-type':'application/json'}}):response(status));
-    act(()=>root.render(<TelemetryIntakePanel locale="en"/>));await settle();const button=[...host.querySelectorAll('button')].find(b=>b.textContent==='Enable')!;await act(async()=>button.click());await settle();expect(host.querySelector('[role=alert]')?.textContent).toContain('Cannot save local settings');expect(host.querySelector('input[readonly]')).toBeNull();
+    act(()=>root.render(<TelemetryIntakePanel locale="en"/>));await settle();const button=host.querySelector<HTMLInputElement>('[role=switch][aria-label="Enable receiver"]')!;await act(async()=>button.click());await settle();expect(host.querySelector('[role=alert]')?.textContent).toContain('Cannot save local settings');expect(host.querySelector('input[aria-label="One-time token"]')).toBeNull();
   });
+});
+it('names the intake page and avoids an ambiguous task action in its header',async()=>{
+ vi.spyOn(globalThis,'fetch').mockResolvedValue(response({enabled:false,state:'idle'}));act(()=>root.render(<DataIntake locale="zh" onConfigure={()=>{}} onTasks={()=>{}} proxy={null} frida={null}/>));await settle();expect(host.querySelector('h1')!.textContent).toBe('数据接入');expect(host.querySelector('.page-heading p')!.textContent).toBe('选择数据来源，数据只保存在本机');expect(host.querySelector('.page-actions')!.textContent).not.toMatch(/任务/);
 });

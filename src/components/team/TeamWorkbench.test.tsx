@@ -1,3 +1,4 @@
+import { chooseOption } from '../ui/test-controls.js';
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,7 +40,7 @@ function mount(data: TeamRunSnapshot, extra: Partial<React.ComponentProps<typeof
 }
 function click(selector: string): void { act(() => (container.ownerDocument.body.querySelector(selector) as HTMLButtonElement).click()); }
 function search(value: string): void {
-  const input = container.ownerDocument.body.querySelector('input')!;
+  const input = container.ownerDocument.body.querySelector('input:not([type=hidden])')!;
   act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); });
 }
 
@@ -93,8 +94,8 @@ describe('Team workbench observed responsibility and evidence workflow', () => {
   });
   it('keeps status filtering separate from member search and restores all rows explicitly', () => {
     mount(snapshot());
-    const select = container.ownerDocument.body.querySelector('select')!;
-    act(() => { select.value = 'blocked'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+    const select = container.ownerDocument.body.querySelector('[role=combobox]')!;
+    act(() => { chooseOption(select,'blocked'); });
     expect(container.ownerDocument.body.querySelectorAll('.tw-task')).toHaveLength(1);
     search('no such member'); expect(container.ownerDocument.body.textContent).toContain('没有匹配项');
     click('.tw-toolbar > button'); expect(container.ownerDocument.body.querySelectorAll('.tw-task')).toHaveLength(3);

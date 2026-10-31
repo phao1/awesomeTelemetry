@@ -2282,3 +2282,16 @@ export interface CdpDevCapturePage {
   rejectedCount: number;
   lastIssue: string | null;
 }
+
+/** Provider status metadata: contracts/data-model.md F5 review. */
+export interface ProviderStatusResponse {
+  providers: Array<{
+    key: ProviderKey;
+    enabled: boolean;
+    sessionCount: number;
+    lastScanAt: string | null;
+    ready: boolean;
+    blockedBy: string | null;
+    pathExists: boolean | null;
+  }>;
+}

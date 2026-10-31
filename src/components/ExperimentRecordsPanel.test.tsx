@@ -1,3 +1,4 @@
+import { chooseOption, selectedValue } from './ui/test-controls.js';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
@@ -22,6 +23,7 @@ async function click(c: Element, label: string, exact = true) {
 }
 async function setValue(c: Element, label: string, value: string) {
   const el = c.ownerDocument.body.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(`[aria-label="${label}"]`)!; expect(el).not.toBeNull();
+  if(el.getAttribute('role')==='combobox'){chooseOption(el,value);return;}
   const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
   await act(async () => { Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, value); el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true })); });
 }
@@ -46,7 +48,7 @@ describe('manual experiment panel', () => {
   it('retains an unavailable reference and manual result without enabling compare', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(snapshot()))); const f = render([session('scan-a')]); await flush(); await click(f.container, 'Manual trial', false);
     expect(f.container.ownerDocument.body.textContent).toContain('scan-b'); expect(f.container.ownerDocument.body.textContent).toContain('Unavailable in loaded index'); expect(f.container.ownerDocument.body.querySelector<HTMLInputElement>('[aria-label="Compare selected runs: scan-b"]')!.disabled).toBe(true);
-    expect(f.container.ownerDocument.body.querySelector<HTMLSelectElement>('[aria-label="Manual result label 1"]')!.value).toBe('pass');
+    expect(selectedValue(f.container.ownerDocument.body.querySelector<HTMLSelectElement>('[aria-label="Manual result label 1"]')!)).toBe('pass');
   });
   it('preserves dirty fields on close cancellation and escapes manual text', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(snapshot()))); const f = render(); await flush(); await click(f.container, 'Manual trial', false);

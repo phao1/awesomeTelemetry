@@ -1,3 +1,7 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Switch } from './ui/Controls.js';
+import { OptionSelect } from './ui/PageControls.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionIndexEntry } from '../core/trace-types.js';
 import type { Locale } from '../i18n.js';
@@ -77,43 +81,43 @@ export function ExperimentRecordsPanel({ sessions, locale, onClose, onCompare }:
   return <Drawer open title={labels.title} onClose={close} width={850} className="experiment-records">
     <p>{labels.intro}</p>
     <div className="experiment-actions">
-      <button className="btn" disabled={!!busy} onClick={refresh}>{error && !uncertain ? labels.retry : labels.refresh}</button>
-      <button className="btn" disabled={!snapshot || !!busy || uncertain} onClick={() => select(null)}>{labels.create}</button>
-      <button className="btn" disabled={!snapshot || !!busy || uncertain} onClick={download}>{labels.export}</button>
-      <button className="btn" onClick={close}>{labels.close}</button>
+      <Button  disabled={!!busy} onClick={refresh}>{error && !uncertain ? labels.retry : labels.refresh}</Button>
+      <Button  disabled={!snapshot || !!busy || uncertain} onClick={() => select(null)}>{labels.create}</Button>
+      <Button  disabled={!snapshot || !!busy || uncertain} onClick={download}>{labels.export}</Button>
+      <Button  onClick={close}>{labels.close}</Button>
     </div>
-    {busy && <p role="status">{busy === 'read' ? labels.loading : labels.writing} <button className="btn" onClick={cancelWait}>{labels.cancel}</button></p>}
+    {busy && <p role="status">{busy === 'read' ? labels.loading : labels.writing} <Button  onClick={cancelWait}>{labels.cancel}</Button></p>}
     {error && <p role="alert">{labels.error} {labels[error as keyof typeof labels] ?? labels.UNAVAILABLE}</p>}
     {uncertain && <p role="alert">{labels.uncertain}</p>}
     {notice && <p role="status">{labels[notice]}</p>}
     {snapshot && <>
       {snapshot.records.length === 0 && <p>{labels.empty}</p>}
-      <nav aria-label={labels.title} className="experiment-list">{snapshot.records.slice(page * 20, page * 20 + 20).map(record => <button className="btn" key={record.id} aria-pressed={draft?.id === record.id} disabled={!!busy || uncertain} onClick={() => select(record)}>{record.name} · {labels[record.mode]}</button>)}</nav>
-      {snapshot.records.length > 20 && <div className="experiment-actions"><button className="btn" disabled={page === 0} onClick={() => setPage(p => p - 1)}>{labels.previous}</button><span>{page + 1}</span><button className="btn" disabled={(page + 1) * 20 >= snapshot.records.length} onClick={() => setPage(p => p + 1)}>{labels.next}</button></div>}
+      <nav aria-label={labels.title} className="experiment-list">{snapshot.records.slice(page * 20, page * 20 + 20).map(record => <Button  key={record.id} aria-pressed={draft?.id === record.id} disabled={!!busy || uncertain} onClick={() => select(record)}>{record.name} · {labels[record.mode]}</Button>)}</nav>
+      {snapshot.records.length > 20 && <div className="experiment-actions"><Button  disabled={page === 0} onClick={() => setPage(p => p - 1)}>{labels.previous}</Button><span>{page + 1}</span><Button  disabled={(page + 1) * 20 >= snapshot.records.length} onClick={() => setPage(p => p + 1)}>{labels.next}</Button></div>}
     </>}
     {!draft && <p>{labels.readSaved}</p>}
     {draft && <>
       {stale && <p role="alert">{labels.conflict}</p>}
       <fieldset disabled={!!busy || confirmation !== null} className="experiment-form"><legend>{draft.id ? draft.value.name : labels.create}</legend>
-        <label>{labels.name}<input aria-label={labels.name} maxLength={120} required value={draft.value.name} onChange={e => update({ name: e.target.value })} /></label>
-        <label>{labels.mode}<select aria-label={labels.mode} value={draft.value.mode} onChange={e => update({ mode: e.target.value as ExperimentInput['mode'] })}><option value="natural">{labels.natural}</option><option value="controlled">{labels.controlled}</option></select></label>
+        <label>{labels.name}<Input aria-label={labels.name} maxLength={120} required value={draft.value.name} onChange={e => update({ name: e.target.value })} /></label>
+        <label>{labels.mode}<OptionSelect aria-label={labels.mode} value={draft.value.mode} onChange={e => update({ mode: e.target.value as ExperimentInput['mode'] })}><option value="natural">{labels.natural}</option><option value="controlled">{labels.controlled}</option></OptionSelect></label>
         {(['task', 'inputVersion', 'modelParameters', 'toolSet'] as const).map(key => <label key={key}>{labels[key]}<textarea aria-label={labels[key]} maxLength={key === 'inputVersion' ? 256 : 2000} placeholder={labels.unknown} value={draft.value[key] ?? ''} onChange={e => update({ [key]: e.target.value.trim() ? e.target.value : null })} /></label>)}
         <h3>{labels.runs}</h3><p>{labels.scope}</p>
-        <label>{labels.search}<input aria-label={labels.search} value={search} onChange={e => setSearch(e.target.value)} /></label>
-        <div className="experiment-matches">{matches.map(session => <button className="btn" key={session.id} title={session.id} disabled={draft.value.runs.length >= 16 || draft.value.runs.some(r => r.sessionKey === session.id)} onClick={() => update({ runs: [...draft.value.runs, { sessionKey: session.id, label: 'unrated', note: null }] })}>{labels.add}: {session.title || session.id}</button>)}</div>
+        <label>{labels.search}<Input aria-label={labels.search} value={search} onChange={e => setSearch(e.target.value)} /></label>
+        <div className="experiment-matches">{matches.map(session => <Button  key={session.id} title={session.id} disabled={draft.value.runs.length >= 16 || draft.value.runs.some(r => r.sessionKey === session.id)} onClick={() => update({ runs: [...draft.value.runs, { sessionKey: session.id, label: 'unrated', note: null }] })}>{labels.add}: {session.title || session.id}</Button>)}</div>
         {!draft.value.runs.length && <p>{labels.noRuns}</p>}
         {draft.value.runs.map((run, index) => <fieldset key={run.sessionKey} className="experiment-run"><legend>{labels.run} {index + 1}: {available.get(run.sessionKey)?.title || run.sessionKey}</legend><p className="mono">{run.sessionKey}{!available.has(run.sessionKey) && <> · {labels.unavailable}</>}</p>
-          <label><input type="checkbox" aria-label={`${labels.compare}: ${run.sessionKey}`} disabled={!available.has(run.sessionKey) || (!pair.includes(run.sessionKey) && pair.length >= 2)} checked={pair.includes(run.sessionKey)} onChange={e => setPair(keys => e.target.checked ? [...keys, run.sessionKey] : keys.filter(k => k !== run.sessionKey))} />{labels.compare}</label>
-          <label>{labels.label}<select aria-label={`${labels.label} ${index + 1}`} value={run.label} onChange={e => update({ runs: draft.value.runs.map((r, i) => i === index ? { ...r, label: e.target.value as ExperimentLabel } : r) })}>{(['unrated', 'pass', 'fail', 'mixed'] as const).map(label => <option key={label} value={label}>{labels[label]}</option>)}</select></label>
+          <div ><Switch aria-label={`${labels.compare}: ${run.sessionKey}`} disabled={!available.has(run.sessionKey) || (!pair.includes(run.sessionKey) && pair.length >= 2)} checked={pair.includes(run.sessionKey)} onChange={e => setPair(keys => e.target.checked ? [...keys, run.sessionKey] : keys.filter(k => k !== run.sessionKey))} label={<>{labels.compare}</>}/></div>
+          <label>{labels.label}<OptionSelect aria-label={`${labels.label} ${index + 1}`} value={run.label} onChange={e => update({ runs: draft.value.runs.map((r, i) => i === index ? { ...r, label: e.target.value as ExperimentLabel } : r) })}>{(['unrated', 'pass', 'fail', 'mixed'] as const).map(label => <option key={label} value={label}>{labels[label]}</option>)}</OptionSelect></label>
           <label>{labels.note}<textarea aria-label={`${labels.note} ${index + 1}`} maxLength={2000} value={run.note ?? ''} onChange={e => update({ runs: draft.value.runs.map((r, i) => i === index ? { ...r, note: e.target.value.trim() ? e.target.value : null } : r) })} /></label>
-          <button className="btn" onClick={() => { update({ runs: draft.value.runs.filter((_, i) => i !== index) }); setPair(keys => keys.filter(k => k !== run.sessionKey)); }}>{labels.unlink}</button>
+          <Button  onClick={() => { update({ runs: draft.value.runs.filter((_, i) => i !== index) }); setPair(keys => keys.filter(k => k !== run.sessionKey)); }}>{labels.unlink}</Button>
         </fieldset>)}
       </fieldset>
       <p>{labels.compareHint}</p>
       {chosen.map((key, index) => <p key={key}>{index === 0 ? labels.left : labels.right}: {available.get(key)?.title || key}</p>)}
-      <div className="experiment-actions"><button className="btn" disabled={chosen.length !== 2 || !!busy || dirty || uncertain || stale} onClick={() => { onCompare(chosen[0]!, chosen[1]!); onClose(); }}>{labels.compare}</button><button className="btn" disabled={!canWrite || !draft.value.name.trim()} onClick={() => setConfirmation('save')}>{labels.save}</button>{draft.id && <button className="btn" disabled={!canWrite} onClick={() => setConfirmation('delete')}>{labels.remove}</button>}</div>
+      <div className="experiment-actions"><Button  disabled={chosen.length !== 2 || !!busy || dirty || uncertain || stale} onClick={() => { onCompare(chosen[0]!, chosen[1]!); onClose(); }}>{labels.compare}</Button><Button  disabled={!canWrite || !draft.value.name.trim()} onClick={() => setConfirmation('save')}>{labels.save}</Button>{draft.id && <Button  disabled={!canWrite} onClick={() => setConfirmation('delete')}>{labels.remove}</Button>}</div>
     </>}
-    {confirmation && <Modal title={confirmation === 'delete' ? labels.remove : labels.save} onClose={() => setConfirmation(null)} size="sm"><p>{confirmation === 'delete' ? labels.deleteHint : labels.saveHint}</p><p>{draft?.value.name} · {draft?.id ?? labels.create} · revision {draft?.revision}</p><div className="experiment-actions"><button className="btn" onClick={() => setConfirmation(null)}>{labels.cancel}</button><button className="btn" onClick={write}>{labels.confirm}</button></div></Modal>}
-    {discardAction && <Modal title={labels.dirty} onClose={() => setDiscardAction(null)} size="sm"><p>{labels.dirty}</p>{(busy === 'write' || uncertain) && <p>{labels.uncertain}</p>}<div className="experiment-actions"><button className="btn" onClick={() => setDiscardAction(null)}>{labels.cancel}</button><button className="btn" onClick={() => { const action = discardAction; setDiscardAction(null); action(); }}>{labels.discard}</button></div></Modal>}
+    {confirmation && <Modal title={confirmation === 'delete' ? labels.remove : labels.save} onClose={() => setConfirmation(null)} size="sm"><p>{confirmation === 'delete' ? labels.deleteHint : labels.saveHint}</p><p>{draft?.value.name} · {draft?.id ?? labels.create} · revision {draft?.revision}</p><div className="experiment-actions"><Button  onClick={() => setConfirmation(null)}>{labels.cancel}</Button><Button  onClick={write}>{labels.confirm}</Button></div></Modal>}
+    {discardAction && <Modal title={labels.dirty} onClose={() => setDiscardAction(null)} size="sm"><p>{labels.dirty}</p>{(busy === 'write' || uncertain) && <p>{labels.uncertain}</p>}<div className="experiment-actions"><Button  onClick={() => setDiscardAction(null)}>{labels.cancel}</Button><Button  onClick={() => { const action = discardAction; setDiscardAction(null); action(); }}>{labels.discard}</Button></div></Modal>}
   </Drawer>;
 }

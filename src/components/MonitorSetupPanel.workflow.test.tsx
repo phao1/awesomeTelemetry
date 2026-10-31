@@ -1,3 +1,4 @@
+import { chooseOption, selectedValue, optionsText } from './ui/test-controls.js';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -16,7 +17,7 @@ async function mount(props: Partial<React.ComponentProps<typeof MonitorSetupPane
 const button = (container: HTMLElement, label: string) => [...container.ownerDocument.body.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === label)!;
 const edit = (input: HTMLInputElement, text: string): void => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text);input.dispatchEvent(new Event('input', { bubbles: true })); };
 async function choose(container: HTMLElement, id = profile.id) {
-  await act(async () => { const select = container.ownerDocument.body.querySelector('select')!;select.value = id;select.dispatchEvent(new Event('change', { bubbles: true })); });
+  await act(async () => { const select = container.ownerDocument.body.querySelector('[role=combobox]')!;chooseOption(select,id); });
 }
 afterEach(() => { act(() => { for (const root of roots) root.unmount();roots.clear(); });document.body.replaceChildren();vi.useRealTimers();vi.unstubAllGlobals(); });
 
@@ -30,7 +31,7 @@ it('releases an abort-ignoring profile read at5s, retries explicitly and rejects
   expect(signal?.aborted).toBe(true);expect(container.ownerDocument.body.textContent).toContain('MONITOR_PROFILES_TIMEOUT');expect(button(container, 'Reload connections').disabled).toBe(false);
   await act(async () => button(container, 'Reload connections').click());
   await act(async () => finish(response({ items: [{ ...profile, label: 'LATE_RECIPE_NEVER_SHOWN' }] })));
-  expect(container.ownerDocument.body.textContent).not.toContain('LATE_RECIPE_NEVER_SHOWN');expect(container.ownerDocument.body.textContent).toContain('Synthetic recipe');expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(container.ownerDocument.body.textContent).not.toContain('LATE_RECIPE_NEVER_SHOWN');expect(optionsText(container.ownerDocument.body.querySelector('[role=combobox]')!)).toContain('Synthetic recipe');expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
 it('preserves a timed-out save draft, blocks duplicate writes and recovers only after explicit successful profile reload', async () => {
@@ -39,38 +40,38 @@ it('preserves a timed-out save draft, blocks duplicate writes and recovers only 
     if (init?.method === 'PUT') { signal = init.signal as AbortSignal;return new Promise<Response>(resolve => { finish = resolve; }); }
     return response({ items: [profile] });
   });vi.stubGlobal('fetch', fetcher);const { container } = await mount();await choose(container);
-  act(() => edit(container.ownerDocument.body.querySelector('input')!, 'Retained user draft'));
+  act(() => edit(container.ownerDocument.body.querySelector('input:not([type=hidden])')!, 'Retained user draft'));
   act(() => container.ownerDocument.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
   expect(signal?.aborted).toBe(true);expect(container.ownerDocument.body.textContent).toContain('MONITOR_SAVE_TIMEOUT');
   act(() => container.ownerDocument.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
-  expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input')!.value).toBe('Retained user draft');
+  expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input:not([type=hidden])')!.value).toBe('Retained user draft');
   await act(async () => button(container, 'Reload connections').click());
-  expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input')!.value).toBe('Retained user draft');
+  expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input:not([type=hidden])')!.value).toBe('Retained user draft');
   await act(async () => finish(response({ ...profile, label: 'LATE_SAVE_NEVER_ADOPTED', revision: 2 })));
-  expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input')!.value).toBe('Retained user draft');expect(container.ownerDocument.body.textContent).not.toContain('LATE_SAVE_NEVER_ADOPTED');
+  expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input:not([type=hidden])')!.value).toBe('Retained user draft');expect(container.ownerDocument.body.textContent).not.toContain('LATE_SAVE_NEVER_ADOPTED');
 });
 
 it('does not silently adopt a newer revision during reload, and requires explicit review before another write', async () => {
   let revision = 1;
   const fetcher = vi.fn(async () => response({ items: [{ ...profile, revision }] }));vi.stubGlobal('fetch', fetcher);const { container } = await mount();await choose(container);
-  act(() => edit(container.ownerDocument.body.querySelector('input')!, 'Unsent draft'));
+  act(() => edit(container.ownerDocument.body.querySelector('input:not([type=hidden])')!, 'Unsent draft'));
   revision = 2;await act(async () => button(container, 'Reload connections').click());
-  expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input')!.value).toBe('Unsent draft');expect(container.ownerDocument.body.textContent).toContain('Saved revision changed');
+  expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input:not([type=hidden])')!.value).toBe('Unsent draft');expect(container.ownerDocument.body.textContent).toContain('Saved revision changed');
   act(() => container.ownerDocument.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   expect(fetcher).toHaveBeenCalledTimes(2);
   act(() => button(container, 'Review saved version').click());expect(container.ownerDocument.body.querySelector('[role="dialog"]')).not.toBeNull();
   await act(async () => button(container, 'Discard draft and switch').click());
-  expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input')!.value).toBe(profile.label);expect(container.ownerDocument.body.textContent).not.toContain('Saved revision changed');
+  expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input:not([type=hidden])')!.value).toBe(profile.label);expect(container.ownerDocument.body.textContent).not.toContain('Saved revision changed');
 });
 
 it('confirms switching away from a dirty recipe and keeps the prior draft when cancelled', async () => {
   const other = { ...profile, id: '00000000-0000-4000-8000-000000000002', label: 'Other saved recipe' };
   const fetcher = vi.fn(async () => response({ items: [profile, other] }));vi.stubGlobal('fetch', fetcher);const { container } = await mount();await choose(container);
-  act(() => edit(container.ownerDocument.body.querySelector('input')!, 'Keep my draft'));await choose(container, other.id);
+  act(() => edit(container.ownerDocument.body.querySelector('input:not([type=hidden])')!, 'Keep my draft'));await choose(container, other.id);
   expect(container.ownerDocument.body.querySelector('[role="dialog"]')).not.toBeNull();expect(document.activeElement?.textContent).not.toBe('Discard draft and switch');
-  act(() => button(container, 'Keep editing').click());expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input')!.value).toBe('Keep my draft');expect(fetcher).toHaveBeenCalledTimes(1);
+  act(() => button(container, 'Keep editing').click());expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input:not([type=hidden])')!.value).toBe('Keep my draft');expect(fetcher).toHaveBeenCalledTimes(1);
 });
 
 it('owns a plan timeout even if fetch ignores abort and never restores its late command after cancellation', async () => {
@@ -122,11 +123,11 @@ it('does not call a failed profile refresh recovery after an uncertain network w
     if (init?.method === 'PUT') throw new Error('SYNTHETIC_WRITE_RESPONSE_LOST');
     if (failRead) throw new Error('SYNTHETIC_PROFILE_READ_LOST');
     return response({ items: [profile] });
-  });vi.stubGlobal('fetch', fetcher);const { container } = await mount();await choose(container);act(() => edit(container.ownerDocument.body.querySelector('input')!, 'Keep uncertain draft'));
+  });vi.stubGlobal('fetch', fetcher);const { container } = await mount();await choose(container);act(() => edit(container.ownerDocument.body.querySelector('input:not([type=hidden])')!, 'Keep uncertain draft'));
   await act(async () => container.ownerDocument.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   failRead = true;await act(async () => button(container, 'Reload connections').click());
   act(() => container.ownerDocument.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
-  expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input')!.value).toBe('Keep uncertain draft');
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);expect(container.ownerDocument.body.querySelector<HTMLInputElement>('input:not([type=hidden])')!.value).toBe('Keep uncertain draft');
   expect(container.ownerDocument.body.textContent).toContain('Recipe write outcome unconfirmed');
 });
 
@@ -147,7 +148,7 @@ it('requires scoped safe-focus recipe-delete confirmation and only removes the s
   act(() => button(container, 'Delete connection').click());expect(fetcher).toHaveBeenCalledTimes(1);expect(container.ownerDocument.body.textContent).toContain('not Agent configuration or capture originals');
   expect(document.activeElement?.textContent).not.toBe('Confirm');
   await act(async () => button(container, 'Confirm').click());
-  expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(1);expect(container.ownerDocument.body.querySelector('select')!.value).toBe('');
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(1);expect(selectedValue(container.ownerDocument.body.querySelector('[role=combobox]')!)).toBe('');
   expect(container.ownerDocument.body.textContent).not.toContain('Synthetic recipe');
 });
 

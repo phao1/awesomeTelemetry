@@ -1137,3 +1137,52 @@ rankings use BarList. Shared select/chart copy follows locale independently of
 UiKit; null dates break lines, isolated points show values, bars cap40SVG units.
 Selected chips may retain off-page labels in the option registry, but hidden
 registry entries never appear as search results or crowd out the paged list.
+
+## Phase F5 presentation amendment
+
+REQ-F5-001: Benchmark center uses PageHeader, button-triggered hidden JSON input,
+local report dropzone, bounded in-memory report list (20 per mounted visit),
+stat cards, pass-rate and token BarLists, and shared evidence tables. Existing
+validation, export fidelity, cancellation, unknown metrics and source links stand.
+
+REQ-F5-002: Agent boundary evaluation's actual page implementation is
+agent-folding/AgentFoldingWorkbench, mounted by TeamExperimentCenter. It uses
+five Steps, library disclosures, a searchable retained-task picker and shared
+cards/tables. Own-agent, offline-smoke and advanced sections remain explicit;
+no page load or UI migration starts a model, capture or fixture execution.
+
+REQ-F5-003: Intake shows native/OTel/file cards and collapsed advanced channels;
+existing proxy/frida hash redirects remain. Provider counts, scan times and path evidence reuse
+the existing providers/status aggregate, never per-session fetches.
+Unknown status stays unknown. OTel uses its existing TD-002 explicit off/on token
+rotation, one-time in-memory secret and CopyField. Vendor import history is
+bounded to20 successful operations for the mounted visit; retained TraceLog
+history uses the existing paginated endpoint. No durable vendor-history API is
+invented. Hidden native file inputs remain the browser file-selection boundary.
+
+REQ-F5-004: Settings uses the full-page #/settings route and presents six sections:
+general/appearance/health/alerts/storage/about. Appearance receives the shell's
+existing theme, locale and font state/setters, including the sidebar Display
+menu's same font setter. No parallel preference store. Successful explicit
+provider/threshold saves and immediate appearance updates show Toast feedback.
+Provider and alert save ownership, dirty-close and uncertain-outcome guards stand.
+
+REQ-F5-005: The command palette retains bounded virtual results and existing
+prefix/actions while adding grouped rows, active-descendant semantics and
+ArrowUp/Down/Home/End/Enter selection. Existing Dialog Escape/focus trap remains.
+Compound OptionSelect/Disclosure/MarkupTable and hidden-file/dropzone primitives
+live in the UI library; compatibility disclosures preserve mounted content unless
+the caller explicitly gates a lazy read, matching previous native-details ownership.
+
+### F5 browser review corrections
+
+This supersedes REQ-F5-004's modal entry: use full-page #/settings with a200px
+subnavigation and section parameter per api.md F5 review. Labels and hints are
+left of controls. A sticky content save bar appears only for dirty/busy drafts;
+explicit discard restores baselines, saves retain ownership/uncertain-outcome
+protection and show Toast. Appearance remains immediate and shares shell state.
+Intake uses its own title/description, named provider badges, relative scan times
+with absolute tooltips and direct nullable path evidence for missing-source badges.
+Benchmark has one dropzone empty state and candidate MetricStrips. Steps show20px
+number circles, connectors and state colors; boundary stats auto-fit at180px.
+F5-owned UI copy follows the active language without bilingual parallel labels.

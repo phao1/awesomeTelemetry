@@ -1,3 +1,4 @@
+import { chooseOption, selectedValue } from './ui/test-controls.js';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
@@ -31,8 +32,8 @@ it('distinguishes unknown status and filters hostname/URL/model/IDs locally with
   try {
     act(() => root.render(<CaptureRequestList items={[item(1), item(2, { responseStatus: null, model: 'Unknown-status-model' })]} selected={null} pending={false} error={null} hasMore={false} locale="en"
       onOpen={() => undefined} onRefresh={() => undefined} onLoadMore={() => undefined} onRetry={() => undefined} onCancel={() => undefined} />));
-    const select = container.querySelectorAll('select')[1]!;
-    act(() => { select.value = 'unknown';select.dispatchEvent(new Event('change', { bubbles: true })); });
+    const select = container.querySelectorAll('[role=combobox]')[1]!;
+    act(() => { chooseOption(select,'unknown'); });
     expect(container.querySelectorAll('.proxy-table-row')).toHaveLength(1);expect(container.querySelector('.proxy-table-row')?.textContent).toContain('Unknown-status-model');
     const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
     await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'no match');input.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -50,14 +51,14 @@ it('places reversible clear beside refresh, keeps the new-request filters and di
     expect(actions.map(node => node.textContent)).toEqual(['Refresh list', 'Clear current list']);
     expect(actions[1]!.title).toContain('history, originals and monitoring are unchanged');
     const search = container.querySelector<HTMLInputElement>('input[type="search"]')!;
-    const method = container.querySelector<HTMLSelectElement>('select')!;
-    act(() => { method.value = 'POST';method.dispatchEvent(new Event('change', { bubbles: true })); });
+    const method = container.querySelector<HTMLElement>('[role=combobox]')!;
+    act(() => { chooseOption(method,'POST'); });
     await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'future-only');search.dispatchEvent(new Event('input', { bubbles: true })); });
     act(() => actions[1]!.click());expect(clear).toHaveBeenCalledOnce(); // Clears loaded scope even if filters show no rows.
     expect(document.activeElement).toBe(actions[0]);
     act(() => root.render(<CaptureRequestList {...props} items={[]} cleared locale="zh" />));
     expect(search.value).toBe('future-only');expect(container.querySelector('[role="status"]')?.textContent).toContain('刷新列表可恢复');
-    expect(method.value).toBe('POST');expect(method.selectedOptions[0]?.textContent).toBe('POST');
+    expect(selectedValue(method)).toBe('POST');expect(method.textContent).toBe('POST');
     expect(container.textContent).not.toContain(t('capture.noSavedRequests', 'zh'));
     expect(container.querySelector<HTMLButtonElement>('.capture-toolbar button:nth-of-type(2)')!.disabled).toBe(true);
     expect(fetcher).not.toHaveBeenCalled();

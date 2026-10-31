@@ -1,3 +1,4 @@
+import { selectedValue, optionsText } from './ui/test-controls.js';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -202,12 +203,12 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
       await vi.waitFor(() => expect([...container.ownerDocument.body.querySelectorAll('button')].some(button => button.textContent === '配置 codex')).toBe(true));
       expect(fetcher.mock.calls.filter(([url]) => url === '/api/proxy/capabilities')).toHaveLength(1);
       await act(async () => { [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === '配置 codex')!.click(); await import('./MonitorSetupPanel.js'); });
-      await vi.waitFor(() => expect(container.ownerDocument.body.querySelector('.monitor-setup select')).not.toBeNull());
-      expect(container.ownerDocument.body.querySelectorAll<HTMLSelectElement>('.monitor-setup select')[0]!.value).toBe('');
-      expect(container.ownerDocument.body.querySelectorAll<HTMLSelectElement>('.monitor-setup select')[1]!.value).toBe('codex');
-      expect(container.ownerDocument.body.querySelector<HTMLInputElement>('.monitor-setup input')!.value).toBe('');
+      await vi.waitFor(() => expect(container.ownerDocument.body.querySelector('.monitor-setup [role=combobox]')).not.toBeNull());
+      expect(selectedValue(container.ownerDocument.body.querySelectorAll<HTMLSelectElement>('.monitor-setup [role=combobox]')[0]!)).toBe('');
+      expect(selectedValue(container.ownerDocument.body.querySelectorAll<HTMLSelectElement>('.monitor-setup [role=combobox]')[1]!)).toBe('codex');
+      expect(container.ownerDocument.body.querySelector<HTMLInputElement>('.monitor-setup input:not([type=hidden])')!.value).toBe('');
       expect(container.ownerDocument.body.querySelector<HTMLInputElement>('[placeholder="/absolute/project/path"]')!.value).toBe('');
-      expect(container.ownerDocument.body.textContent).toContain('Existing user recipe');
+      expect(optionsText(container.ownerDocument.body.querySelector('.monitor-setup [role=combobox]')!)).toContain('Existing user recipe');
       expect(fetcher.mock.calls.filter(([url]) => url === '/api/proxy/profiles')).toHaveLength(1);
       expect(fetcher.mock.calls).toHaveLength(4);
       expect(fetcher.mock.calls.every(([, init]) => init?.method === undefined)).toBe(true);
@@ -232,7 +233,7 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
       await act(async () => { [...container.ownerDocument.body.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === 'Call comparison')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await import('./CaptureComparisonPanel.js'); });
       const panel = container.ownerDocument.body.querySelector<HTMLElement>('[aria-label="Selected capture comparison"]')!;
       expect(panel).not.toBeNull(); expect(fetcher).toHaveBeenCalledTimes(initial);
-      const input = panel.querySelector<HTMLInputElement>('input')!;
+      const input = panel.querySelector<HTMLInputElement>('input:not([type=hidden])')!;
       await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '2'); input.dispatchEvent(new Event('input', { bubbles: true })); });
       await act(async () => { panel.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
       expect(fetcher).toHaveBeenCalledTimes(initial + 1);
@@ -440,7 +441,7 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
       const before = fetcher.mock.calls.length;
       act(() => (container.ownerDocument.body.querySelector('[aria-label="' + label + '"]') as HTMLButtonElement).click());
       const item = container.ownerDocument.body.querySelector('[data-analysis-evidence="item-0"]') as HTMLDetailsElement;
-      expect(item.open).toBe(true); expect(document.activeElement).toBe(item);
+      expect(item.querySelector('button')!.getAttribute('aria-expanded')).toBe('true'); await vi.waitFor(()=>expect(document.activeElement).toBe(item));
       expect(item.textContent).toContain('messages[0].content[0].is_error = true');
       expect(item.querySelector('pre')?.textContent).toBe('ENOENT');
       expect(container.ownerDocument.body.textContent).toContain('completed');
@@ -476,14 +477,14 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
       });
       const inspect = async (path: string) => act(async () => { (container.ownerDocument.body.querySelector('[aria-label="Inspect evidence: ' + path + '"]') as HTMLButtonElement).click(); });
       await inspect('analysis.usage.snapshots');
-      expect((container.ownerDocument.body.querySelector('[data-analysis-evidence="usage"]') as HTMLDetailsElement).open).toBe(true);
+      expect(container.ownerDocument.body.querySelector('[data-analysis-evidence="usage"] button')!.getAttribute('aria-expanded')).toBe('true');
       await inspect('tools[0]');
       const declaration = container.ownerDocument.body.querySelector('[data-analysis-evidence="declaration-0"]')!;
-      expect(declaration.closest('details')?.open).toBe(true); expect(document.activeElement).toBe(declaration);
+      expect(declaration.closest('.ui-accordion')?.querySelector('button')?.getAttribute('aria-expanded')==='true').toBe(true); await vi.waitFor(()=>expect(document.activeElement).toBe(declaration));
       expect(container.ownerDocument.body.querySelector('[data-analysis-evidence="item-54"]')).toBeNull();
       await inspect('messages[54]');
       const result = container.ownerDocument.body.querySelector('[data-analysis-evidence="item-54"]') as HTMLDetailsElement;
-      expect(result.open).toBe(true); expect(document.activeElement).toBe(result);
+      expect(result.querySelector('button')!.getAttribute('aria-expanded')).toBe('true'); await vi.waitFor(()=>expect(document.activeElement).toBe(result));
       expect(result.textContent).toContain('reported failure');
       expect(fetcher).toHaveBeenCalledTimes(before);
       expect(fetcher.mock.calls.filter(([url]) => url.endsWith('/analysis'))).toHaveLength(1);
@@ -811,7 +812,7 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     expect(container.ownerDocument.body.textContent).toContain('response:interrupted');
     // Keep the52 protocol disclosures bounded. Workbench maintenance/tools
     // disclosures are separate and cannot satisfy the protocol assertion.
-    expect(container.ownerDocument.body.querySelector('.capture-protocol-analysis')!.querySelectorAll('summary').length).toBe(52);
+    expect(container.ownerDocument.body.querySelector('.capture-protocol-analysis')!.querySelectorAll('.ui-accordion > button').length).toBe(52);
     expect(container.ownerDocument.body.querySelectorAll('.capture-tools, .capture-maintenance')).toHaveLength(2);
     expect(container.ownerDocument.body.querySelector('img')).toBeNull();
     expect(container.ownerDocument.body.textContent).not.toContain('shell-54');
@@ -819,7 +820,7 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
       [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === '下一页')!.click();
     });
     expect(container.ownerDocument.body.textContent).toContain('shell-54');
-    expect(container.ownerDocument.body.querySelector('.capture-protocol-analysis')!.querySelectorAll('summary').length).toBe(7);
+    expect(container.ownerDocument.body.querySelector('.capture-protocol-analysis')!.querySelectorAll('.ui-accordion > button').length).toBe(7);
     expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/analysis'))).toHaveLength(1);
   });
   it.each(['ok', 'decode_error', 'resource_limit'] as const)('shows %s decoded-view provenance separately from unchanged original downloads', async status => {

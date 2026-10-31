@@ -1,3 +1,4 @@
+import { chooseOption } from '../ui/test-controls.js';
 import { act } from 'react';
 import { readFile } from 'node:fs/promises';
 import { createRoot, type Root } from 'react-dom/client';
@@ -29,7 +30,7 @@ function fixture(): FoldingProject {
 
 it('starts with the boundary workflow and performs no implicit reads or executions', () => {
   act(() => root.render(<AgentFoldingWorkbench locale="en"/>));
-  expect(host.querySelector('h1')!.textContent).toBe('Agent boundary evaluation');
+  expect(host.querySelector('h1')!.textContent).toBe('Agent boundary evaluation'); expect(host.querySelectorAll('.ui-steps li')).toHaveLength(5); expect(host.querySelector('.ui-steps [aria-current=step]')!.textContent).toContain('Sources'); expect(host.querySelector('details')).toBeNull();
   expect(host.textContent).toContain('Load official recorded example');
   expect(host.textContent).toContain('six specialists');
   expect(fetch).not.toHaveBeenCalled();
@@ -48,7 +49,7 @@ it('blocks adoption on any regressed task even when aggregate performance improv
 it('drills from a failed case to one repetition, checks, exact action arguments and an ordered trace with unknown clocks', () => {
   act(() => root.render(<AgentFoldingWorkbench locale="en" initialProject={fixture()}/>));
   act(() => button('regressed · rep 2 · Inspect failure').click());
-  expect((host.querySelector('.af-inspection select') as HTMLSelectElement).value).toBe('2');
+  expect(host.querySelector('.af-inspection [role=combobox]')!.textContent).toBe('2');
   const candidate = host.querySelector('[data-trial="candidate-regressed-2"]')!;
   expect(candidate.querySelector('[data-passed=false]')!.textContent).toContain('Task terminal fact');
   expect(candidate.textContent).toContain('update_account'); expect(candidate.textContent).toContain('customer_id');
@@ -61,8 +62,8 @@ it('drills from a failed case to one repetition, checks, exact action arguments 
 
 it('retains human keep notes without overriding measured regressions', () => {
   act(() => root.render(<AgentFoldingWorkbench locale="en" initialProject={fixture()}/>));
-  const select = host.querySelector<HTMLSelectElement>('.af-human select')!;
-  act(() => { select.value = 'keep_change'; select.dispatchEvent(new Event('change', { bubbles: true })); change(host.querySelector<HTMLTextAreaElement>('.af-human textarea')!, 'Owner Alex will investigate the regression before release.'); });
+  const select = host.querySelector<HTMLSelectElement>('.af-human [role=combobox]')!;
+  act(() => { chooseOption(select,'keep_change'); change(host.querySelector<HTMLTextAreaElement>('.af-human textarea')!, 'Owner Alex will investigate the regression before release.'); });
   act(() => button('Record decision').click());
   expect(host.textContent).toContain('Owner Alex');
   expect(host.querySelector('[aria-label="Adoption gate"]')!.textContent).toContain('Adoption blocked');
@@ -180,7 +181,7 @@ it('builds an ungraded multi-turn own-system task and exports a concrete externa
 it('records owner boundary proposals independently of measured regressions', () => {
   act(() => root.render(<AgentFoldingWorkbench locale="en" initialProject={fixture()}/>));
   const proposal = host.querySelector<HTMLSelectElement>('[aria-label="Owner boundary proposal"]')!;
-  act(() => { proposal.value = 'keep'; proposal.dispatchEvent(new Event('change', { bubbles: true })); });
+  act(() => { chooseOption(proposal,'keep'); });
   expect(host.textContent).toContain('Owner proposal recorded');
   expect(host.querySelector('[aria-label="Adoption gate"]')!.textContent).toContain('Adoption blocked');
   expect(host.querySelector('.af-provenance')!.textContent).toContain('User import');
@@ -220,15 +221,15 @@ it('exports returns skill-off as a third controlled variant while leaving accoun
   vi.stubGlobal('URL', class extends URL { static override createObjectURL(blob: Blob) { exported = blob; return 'blob:ablation-plan'; } static override revokeObjectURL = vi.fn(); });
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   act(() => root.render(<AgentFoldingWorkbench locale="en" initialProject={project}/>));
-  const boundary = host.querySelector<HTMLSelectElement>('.af-boundary-picker select')!;
-  act(() => { boundary.value = 'returns'; boundary.dispatchEvent(new Event('change', { bubbles: true })); });
+  const boundary = host.querySelector<HTMLSelectElement>('.af-boundary-picker [role=combobox]')!;
+  act(() => { chooseOption(boundary,'returns'); });
   act(() => change(host.querySelector<HTMLInputElement>('.af-plan .af-toolbar input')!, 'explicit-current-model'));
   act(() => button('Validate and export trial plan').click());
   let raw = '';
   await act(async () => { raw = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(exported!); }); });
   expect(validateFoldingRunPlan(JSON.parse(raw)).skillAblation).toBe(true);
   expect(host.textContent).toContain('Add returns skill-off control');
-  act(() => { boundary.value = 'account'; boundary.dispatchEvent(new Event('change', { bubbles: true })); });
+  act(() => { chooseOption(boundary,'account'); });
   expect(host.textContent).not.toContain('Add returns skill-off control');
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -258,4 +259,13 @@ it('keeps action-argument comparison unknown when one paired trial is missing', 
   expect(route.textContent).toContain('Insufficient action-argument evidence');
   expect(route.textContent).not.toContain('No observed action-argument difference');
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it('opens the own-agent Accordion and searches retained tasks without fetching per-task evidence',async()=>{
+ const fetcher=vi.fn(async(_input:RequestInfo|URL)=>new Response(JSON.stringify({items:[{id:'collected:task-1',title:'Retained task one'}]})));vi.stubGlobal('fetch',fetcher);
+ act(()=>root.render(<AgentFoldingWorkbench locale="en"/>));
+ act(()=>host.querySelector<HTMLButtonElement>('.af-own-system .ui-accordion > button')!.click());expect(fetcher).not.toHaveBeenCalled();
+ await act(async()=>{button('Refresh retained tasks').click();await settle();});expect(fetcher).toHaveBeenCalledTimes(1);expect(String(fetcher.mock.calls[0]?.[0])).toContain('/api/tasks?origin=collected&limit=100');
+ const trigger=host.querySelector('[role=combobox][aria-label="Choose retained task"]')!;chooseOption(trigger,'collected:task-1');
+ expect(button('Load task boundary candidates').disabled).toBe(false);expect(fetcher).toHaveBeenCalledTimes(1);
 });

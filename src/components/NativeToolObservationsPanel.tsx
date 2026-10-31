@@ -1,3 +1,5 @@
+import { Button } from './ui/Button.js';
+import { Disclosure } from './ui/PageControls.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { NativeToolObservationPage } from '../core/native-tool-observations.js';
 import type { TraceEventSlim } from '../core/trace-types.js';
@@ -33,21 +35,21 @@ export function NativeToolObservationsPanel({ sessionKey, identity, locale, onSe
     <h3>{c.title}</h3><p className="hint">{c.hint}</p>
     <p className="mono">{namespace} · {value}<br />scope: {scope}</p>
     <div className="native-tool-actions">
-      <button className="btn" type="button" disabled={busy} onClick={() => void load(cursor)}>{c.refresh}</button>
-      <button className="btn" type="button" disabled={busy || history.length === 0} onClick={() => { const previous = [...history]; const at = previous.pop()!; setHistory(previous); void load(at); }}>{c.previous}</button>
-      <button className="btn" type="button" disabled={busy || page?.hasMore !== true} onClick={() => { if (page?.nextCursor !== null && page?.nextCursor !== undefined) { setHistory(old => [...old, cursor]); void load(page.nextCursor); } }}>{c.next}</button>
-      {busy && <button className="btn" type="button" onClick={() => { cancel(); setBusy(false); setError('CANCELLED'); }}>{c.cancel}</button>}
+      <Button  type="button" disabled={busy} onClick={() => void load(cursor)}>{c.refresh}</Button>
+      <Button  type="button" disabled={busy || history.length === 0} onClick={() => { const previous = [...history]; const at = previous.pop()!; setHistory(previous); void load(at); }}>{c.previous}</Button>
+      <Button  type="button" disabled={busy || page?.hasMore !== true} onClick={() => { if (page?.nextCursor !== null && page?.nextCursor !== undefined) { setHistory(old => [...old, cursor]); void load(page.nextCursor); } }}>{c.next}</Button>
+      {busy && <Button  type="button" onClick={() => { cancel(); setBusy(false); setError('CANCELLED'); }}>{c.cancel}</Button>}
     </div>
     {busy && <p role="status">{c.loading}</p>}
-    {error !== null && <div role="alert"><p>{error === 'TIMEOUT' ? c.timeout : error === 'CANCELLED' ? c.cancelled : c.failed + ' · ' + error}</p><button className="btn" type="button" onClick={() => void load(cursor)}>{c.retry}</button></div>}
+    {error !== null && <div role="alert"><p>{error === 'TIMEOUT' ? c.timeout : error === 'CANCELLED' ? c.cancelled : c.failed + ' · ' + error}</p><Button  type="button" onClick={() => void load(cursor)}>{c.retry}</Button></div>}
     {page !== null && <>
       <p role="status">{c[page.state]} · {c.total}: {page.eventTotal} · {page.events.length === 0 ? '0' : '#' + page.events[0]!.sequence + '–#' + page.events.at(-1)!.sequence}</p>
       {!page.completeness.complete && <p className="tool-notice">{c.incomplete} · {page.completeness.reasons.join(' · ')}</p>}
-      <nav aria-label={c.choose} className="native-tool-members">{page.events.map(event => <button className="btn" type="button" key={event.id} onClick={() => onSelect(event)}>
+      <nav aria-label={c.choose} className="native-tool-members">{page.events.map(event => <Button  type="button" key={event.id} onClick={() => onSelect(event)}>
         {c.selected} #{event.sequence} · {event.tool ?? event.title} · {event.status}<code>{event.id}</code>
-      </button>)}</nav>
+      </Button>)}</nav>
       {page.events.length === 0 && <p>{c.empty}</p>}
-      <details><summary>{c.locators} · {page.identities.length}</summary>{page.identities.map(item => <p className="mono" key={item.id}>{item.eventId} · {item.sourcePath}</p>)}</details>
+      <Disclosure  title={<>{c.locators}· {page.identities.length}</>}>{page.identities.map(item => <p className="mono" key={item.id}>{item.eventId} · {item.sourcePath}</p>)}</Disclosure>
     </>}
   </section>;
 }

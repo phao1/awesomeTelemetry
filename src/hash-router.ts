@@ -1,3 +1,4 @@
+import { isSettingsSection, type SettingsSection } from './settings-route.js';
 import { parseTaskRoute, serializeComparisonRoute } from './task-route.js';
 /**
  * REQ-024：手写 hash 解析/序列化（≤60 行，不引路由库）。
@@ -12,6 +13,7 @@ export const HASH_VIEWS = ['ui-kit', 'settings', 'overview', 'session', 'agent',
 export type RibbonMode = 'time' | 'token';
 
 export interface HashState {
+  section?: SettingsSection;
   view: (typeof HASH_VIEWS)[number];
   channel?: 'native' | 'proxy' | 'cdp' | 'frida' | 'import';
   key?: string;
@@ -72,6 +74,7 @@ export function parseHash(hash: string): HashState | null {
     return {
       ...(['native','proxy','cdp','frida','import'].includes(params.get('channel')??'')?{channel:params.get('channel') as HashState['channel']}:{}),
       view: view as HashState['view'],
+      ...(view==='settings'&&isSettingsSection(params.get('section'))?{section:params.get('section') as SettingsSection}:{}),
       ...(key !== null ? { key } : {}),
       ...(phase !== undefined ? { phase } : {}),
       ...(provider !== undefined ? { provider } : {}),
@@ -91,6 +94,7 @@ export function parseHash(hash: string): HashState | null {
 
 export function serializeHash(state: HashState): string {
   const params = new URLSearchParams();
+  if(state.view==='settings'&&state.section&&state.section!=='general')params.set('section',state.section);
   if(state.channel)params.set('channel',state.channel);
   if (state.key !== undefined) {
     params.set('key', state.key);

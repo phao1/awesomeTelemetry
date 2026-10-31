@@ -1,3 +1,5 @@
+import { Button } from './ui/Button.js';
+import { Checkbox } from './ui/Controls.js';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client.js';
 import type { OriginalDeletionJob } from '../core/trace-types.js';
@@ -66,17 +68,17 @@ export function OriginalDeletionControl({ id, requestId, locale, monitorStopped,
     {!monitorStopped && <p className="hint">{t('proxy.deletion.stopFirst', locale)}</p>}
     {!loading && !supported && job === null && <p className="hint">{t('proxy.deletion.unsupported', locale)}</p>}
     <div className="inspector-actions">
-      <button ref={trigger} className="btn ui-btn-danger" type="button" disabled={disabled} aria-expanded={confirming} aria-controls={confirmationId}
-        onClick={() => { setAcknowledged(false); setConfirming(true); }}>{t(job === null ? 'proxy.deletion.delete' : 'proxy.deletion.retry', locale)}</button>
-      <button ref={refresh} className="btn" type="button" disabled={loading || busy} onClick={() => void load()}>{t('proxy.deletion.refresh', locale)}</button>
+      <Button ref={trigger} variant="danger" type="button" disabled={disabled} aria-expanded={confirming} aria-controls={confirmationId}
+        onClick={() => { setAcknowledged(false); setConfirming(true); }}>{t(job === null ? 'proxy.deletion.delete' : 'proxy.deletion.retry', locale)}</Button>
+      <Button ref={refresh}  type="button" disabled={loading || busy} onClick={() => void load()}>{t('proxy.deletion.refresh', locale)}</Button>
     </div>
     {confirming && <div id={confirmationId} role="group" aria-label={t('proxy.deletion.confirmTitle', locale)} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); cancel(); } }}>
       <p>{t('proxy.deletion.scope', locale)}</p>
       <p className="mono" style={{ overflowWrap: 'anywhere' }}>{requestId}</p>
-      <label><input ref={checkbox} type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} /> {t('proxy.deletion.acknowledge', locale)}</label>
+      <div><Checkbox ref={checkbox}  checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} label={t('proxy.deletion.acknowledge',locale)} /></div>
       <div className="inspector-actions">
-        <button className="btn ui-btn-danger" type="button" disabled={!acknowledged || disabled} onClick={() => void submit()}>{t('proxy.deletion.confirm', locale)}</button>
-        <button className="btn" type="button" onClick={cancel}>{t('common.close', locale)}</button>
+        <Button variant="danger" type="button" disabled={!acknowledged || disabled} onClick={() => void submit()}>{t('proxy.deletion.confirm', locale)}</Button>
+        <Button  type="button" onClick={cancel}>{t('common.close', locale)}</Button>
       </div>
     </div>}
   </section>;

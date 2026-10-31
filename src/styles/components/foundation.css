@@ -99,11 +99,15 @@ input.ui-switch:checked::after { transform: translateX(var(--space-3)); }
 .ui-callout strong { font-weight: var(--weight-semibold); }
 .ui-empty > span:first-child { display: grid; place-content: center; width: var(--space-10); height: var(--space-10); border-radius: var(--radius-lg); background: var(--canvas-subtle); }
 .ui-empty { min-height: var(--chart-height); gap: var(--space-2); }
-.ui-steps { display: flex; list-style: none; padding: 0; gap: var(--space-3); flex-wrap: wrap; }
-.ui-steps li { display: flex; align-items: center; gap: var(--space-2); color: var(--fg-muted); }
-.ui-steps li span { display: grid; place-content: center; width: var(--space-5); height: var(--space-5); border: 1px solid var(--border-default); border-radius: var(--radius-full); }
+.ui-steps { display: flex; list-style: none; padding: 0; margin: 0; gap: var(--space-3); flex-wrap: nowrap; overflow-x: auto; }
+.ui-steps li { display: flex; flex: 1; align-items: center; gap: var(--space-2); color: var(--fg-subtle); white-space: nowrap; min-width: max-content; }
+.ui-steps .ui-step-number { display: grid; place-content: center; flex-shrink: 0; width: var(--space-5); height: var(--space-5); border: 1px solid var(--border-default); border-radius: var(--radius-full); font-size: var(--text-xs); }
+.ui-steps .ui-step-label { font-size: var(--text-base); }
+.ui-steps li:not(:last-child)::after { content: ''; flex: 1; min-width: var(--space-8); border-top: 1px solid var(--border-default); margin-left: var(--space-1); }
 .ui-steps li[aria-current] { color: var(--accent-fg); }
+.ui-steps li[aria-current] .ui-step-number { border-color: var(--accent-fg); background: var(--accent-subtle); }
 .ui-steps li[data-complete=true] { color: var(--success-fg); }
+.ui-steps li[data-complete=true] .ui-step-number { border-color: var(--success-fg); background: var(--success-subtle); }
 .ui-accordion { border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow: hidden; }
 .ui-accordion > button { display: flex; width: 100%; justify-content: space-between; border: none; padding: var(--space-3); font-weight: var(--weight-semibold); }
 .ui-accordion > div { border-top: 1px solid var(--border-muted); padding: var(--space-4); }

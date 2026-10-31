@@ -99,3 +99,12 @@
 .team-exp-file-label input { max-width: 100%; min-width: 0; }
 .team-exp-file-label input::file-selector-button { border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-subtle); color: var(--fg-default); padding: var(--space-1) var(--space-2); margin-right: var(--space-2); font: inherit; cursor: pointer; }
 @media (max-width: 40em) { .team-exp-center { padding: var(--space-3); } .team-exp-heading > div { min-width: 0; flex-basis: 100%; } .team-exp-setup { padding: var(--space-3); } }
+
+/* Phase F5: advanced compatibility inherits the component library. */
+.team-exp-center .ui-accordion { background: var(--canvas-raised); border-radius: var(--radius-lg); box-shadow: var(--shadow-xs); margin-block: var(--space-3); }
+.team-exp-center .ui-table th { background: var(--canvas-subtle); color: var(--fg-muted); }
+.team-exp-center .ui-table td { height: var(--table-row-height); }
+.team-exp-center .ui-card { min-width: 0; }
+.team-exp-center .team-exp-block.ui-btn { min-height: 0; min-width: 0; padding: 0; }
+.team-exp-center .team-exp-record-select.ui-btn { height: auto; white-space: normal; justify-content: flex-start; }
+.team-exp-center .team-exp-file-label { display: inline-flex; padding: 0; border: 0; background: transparent; }

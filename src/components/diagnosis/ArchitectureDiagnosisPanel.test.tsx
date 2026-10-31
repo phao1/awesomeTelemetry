@@ -1,3 +1,4 @@
+import { chooseOption } from '../ui/test-controls.js';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -108,8 +109,8 @@ it('opens one metadata-only real-task selector and reads a verified source only 
   vi.mocked(fetch).mockImplementation(async input => String(input).includes('architecture-diagnosis') ? json(report()) : json({ items: [task], total: 101, offset: 0, limit: 100, hasMore: true }));
   act(() => root.render(<RealTaskDiagnosisEntry locale="en"/>)); expect(fetch).not.toHaveBeenCalled();
   act(() => button('Analyze real task telemetry').click()); await settle(); expect(fetch).toHaveBeenCalledTimes(1); expect(String(vi.mocked(fetch).mock.calls[0]![0])).toBe('/api/tasks?origin=collected&limit=100&offset=0&range=all');
-  const selector = host.querySelector('select')!;
-  act(() => { selector.value = taskId; selector.dispatchEvent(new Event('change', { bubbles: true })); }); expect(fetch).toHaveBeenCalledTimes(1); expect(host.textContent).toContain('do not automatically become verified evidence');
+  const selector = host.querySelector('[role=combobox]')!;
+  act(() => { chooseOption(selector,taskId); }); expect(fetch).toHaveBeenCalledTimes(1); expect(host.textContent).toContain('do not automatically become verified evidence');
   act(() => button('Analyze split and merge').click()); await settle(); expect(fetch).toHaveBeenCalledTimes(2); expect(host.textContent).toContain('Context grew');
   act(() => button('Next tasks').click()); await settle(); expect(fetch).toHaveBeenCalledTimes(3); expect(String(vi.mocked(fetch).mock.calls[2]![0])).toContain('offset=100');
 });

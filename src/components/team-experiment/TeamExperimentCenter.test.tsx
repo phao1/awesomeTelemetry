@@ -1,3 +1,4 @@
+import { chooseOption, toggleDisclosure } from '../ui/test-controls.js';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -36,8 +37,8 @@ it('keeps real telemetry analysis separate from illustrative reports and loads o
   act(() => button('Subagent parallel gains').click()); expect(fetch).not.toHaveBeenCalled();
   await act(async () => { button('Analyze real task telemetry').click(); for (let i = 0; i < 12; i++) await Promise.resolve(); });
   expect(fetch).toHaveBeenCalledTimes(1); expect(String(vi.mocked(fetch).mock.calls[0]![0])).toContain('/api/tasks?origin=collected&limit=100');
-  const selector = host.querySelector<HTMLSelectElement>('.architecture-real-controls select')!;
-  act(() => { selector.value = 'collected:actual'; selector.dispatchEvent(new Event('change', { bubbles: true })); });
+  const selector = host.querySelector<HTMLSelectElement>('.architecture-real-controls [role=combobox]')!;
+  act(() => { chooseOption(selector,'collected:actual'); });
   expect(host.textContent).toContain('do not automatically become verified evidence'); expect(button('Analyze split and merge')).toBeDefined(); expect(fetch).toHaveBeenCalledTimes(1);
   expect(host.textContent).toContain('SYNTHETIC');
 });
@@ -179,17 +180,17 @@ it('mounts at most one selected trial and 100 acceptance rows for a 30-trial by 
   expect(host.querySelector('[role=alert]')).toBeNull();
   expect(host.querySelectorAll('.team-exp-case-detail')).toHaveLength(0);
   const details = host.querySelector<HTMLDetailsElement>('.team-exp-trial-records')!;
-  await act(async () => { details.querySelector('summary')!.click(); await new Promise(resolve => setTimeout(resolve, 5)); });
+  await act(async () => { toggleDisclosure(details); await new Promise(resolve => setTimeout(resolve, 5)); });
   expect(host.querySelectorAll('.team-exp-selected-trial')).toHaveLength(1);
   expect(host.querySelectorAll('.team-exp-case-detail')).toHaveLength(100);
-  const selector = details.querySelector('select')!;
-  act(() => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(selector, 'team-10'); selector.dispatchEvent(new Event('change', { bubbles: true })); });
+  const selector = details.querySelector('[role=combobox]')!;
+  act(() => { chooseOption(selector,'team-10'); });
   expect(host.querySelector('.team-exp-selected-trial h3')!.textContent).toBe('team-10');
   expect(host.querySelectorAll('.team-exp-case-detail')).toHaveLength(100);
   act(() => button('Next acceptance details').click());
   expect(host.querySelector('.team-exp-case-detail')!.textContent).toContain('case-100');
   expect(host.querySelectorAll('.team-exp-case-detail')).toHaveLength(100);
-  await act(async () => { details.querySelector('summary')!.click(); await new Promise(resolve => setTimeout(resolve, 5)); });
+  await act(async () => { toggleDisclosure(details); await new Promise(resolve => setTimeout(resolve, 5)); });
   expect(host.querySelectorAll('.team-exp-case-detail')).toHaveLength(0);
   expect(host.querySelectorAll('.team-exp-selected-trial')).toHaveLength(0);
   expect(fetch).not.toHaveBeenCalled();
@@ -202,7 +203,7 @@ it('makes boundary evaluation primary and keeps mode reports explicitly advanced
   expect(host.textContent).toContain('Load official recorded example');
   expect(host.querySelector('.team-exp-center')).toBeNull();
   const advanced = host.querySelector<HTMLDetailsElement>('.af-advanced')!;
-  await act(async () => { advanced.open = true; advanced.dispatchEvent(new Event('toggle')); await new Promise(resolve => setTimeout(resolve, 5)); });
+  await act(async () => { toggleDisclosure(advanced); await new Promise(resolve => setTimeout(resolve, 5)); });
   expect(host.querySelector('.team-exp-center')).not.toBeNull();
   expect(fetch).not.toHaveBeenCalled();
 });

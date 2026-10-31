@@ -706,6 +706,8 @@ interface ProviderStatusResponse {
     ready: boolean;
     /** reason code when ready=false, e.g. TRAE_KEY_MISSING */
     blockedBy: string | null;
+    /** Direct path access evidence; null means unavailable, not missing. */
+    pathExists: boolean | null;
   }>;
 }
 ```
@@ -1813,3 +1815,20 @@ Zero-task calendar slots have0 counts/Token bars and null ratios; missing counte
 on populated slots remain null. All spans first-to-last activity date, uses UTC
 Monday weeks beyond60dates. Tool ranking/model attribution retain current whole-task
 snapshot scope. No sum over active days may multiply task lifetime counters.
+
+## F5 review amendment: settings route and provider status
+
+The browser settings route is `#/settings`; optional `section` is one of
+`general`, `appearance`, `health`, `alert-thresholds`, `storage`, `about`.
+Missing/invalid sections select general; serializers omit general and ignore
+section on other views. All old settings entry actions navigate to this route;
+LocalSettingsTarget.section=alert-thresholds maps to the same URL parameter.
+Section changes preserve local drafts. Existing provider/threshold PUT contracts
+and uncertain-write recovery remain unchanged. Settings is a full page, not a
+Dialog. Appearance still uses the shell's existing preference setters.
+
+GET /api/providers/status retains §2.2 fields and adds required
+`pathExists:boolean|null` per data-model F5 review. Check the nine configured
+paths concurrently with async filesystem access and a1s response deadline.
+No enabling, scanning, filesystem writes or body reads occur. The existing local
+HTTP/no-store/ApiError protections apply. Older clients may ignore this addition.

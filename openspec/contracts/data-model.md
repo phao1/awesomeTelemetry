@@ -3619,3 +3619,25 @@ buckets). OverviewSnapshot.daily is a continuous date/week sequence. Its tasks
 counts retained event-day or last-activity roots; remaining metrics describe current
 whole-task snapshots assigned once to last activity, as specified in api F4-004.
 Empty slots use0 count/Token bars, null ratios. Populated unknowns remain null.
+
+## F5 review: settings navigation and provider path evidence
+
+```ts
+export type SettingsSection = 'general' | 'appearance' | 'health' | 'alert-thresholds' | 'storage' | 'about';
+export interface ProviderStatusResponse {
+  providers: Array<{
+    key: ProviderKey;
+    enabled: boolean;
+    sessionCount: number;
+    lastScanAt: string | null;
+    ready: boolean;
+    blockedBy: string | null;
+    pathExists: boolean | null;
+  }>;
+}
+```
+
+`pathExists` is direct, bounded asynchronous access evidence for the configured
+scanner path (a directory or database file). False means ENOENT/ENOTDIR only;
+permissions, IO failure and the1s local deadline yield null, never a missing-path
+claim. No session bodies, source file contents or per-session reads are needed.

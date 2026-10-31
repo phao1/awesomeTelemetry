@@ -1,3 +1,5 @@
+import { Button } from '../ui/Button.js';
+import { Checkbox } from '../ui/Controls.js';
 /**
  * add-agent-team-observability §7.5 — TeamRunList.
  *
@@ -246,7 +248,7 @@ export function TeamRunList({
         />
         <div className="team-range-row" role="group" aria-label={t('session.range', locale)}>
           {RANGES.map((r) => (
-            <button
+            <Button
               key={r}
               type="button"
               className={`session-range-btn ${r === range ? 'session-range-btn-on' : ''}`}
@@ -254,7 +256,7 @@ export function TeamRunList({
               onClick={() => onRangeChange(r)}
             >
               {t(RANGE_LABEL[r], locale)}
-            </button>
+            </Button>
           ))}
         </div>
         <div className="team-filter-row">
@@ -262,29 +264,22 @@ export function TeamRunList({
             open={providerOpen}
             onOpenChange={setProviderOpen}
             trigger={(props) => (
-              <button type="button" className="btn ui-btn-sm" {...props}>
+              <Button type="button" size="sm" {...props}>
                 {t('session.provider', locale)}
                 {filterBadge(providerFilter.length)}
-              </button>
+              </Button>
             )}
           >
             <div className="session-filter-list">
               {PROVIDERS.map((provider) => {
                 const checked = providerFilter.includes(provider);
                 return (
-                  <label key={provider} className="session-filter-item">
-                    <input
-                      type="checkbox"
-                      checked={checked}
+                  <div key={provider} className="session-filter-item"><Checkbox checked={checked}
                       onChange={() =>
                         onProviderFilterChange(
                           checked ? providerFilter.filter((p) => p !== provider) : [...providerFilter, provider],
                         )
-                      }
-                    />
-                    <ProviderBadge provider={provider} locale={locale} />
-                    <span>{t(`provider.${provider}`, locale)}</span>
-                  </label>
+                      } label={<><ProviderBadge provider={provider} locale={locale} /><span>{t(`provider.${provider}`, locale)}</span></>}/></div>
                 );
               })}
             </div>
@@ -293,28 +288,22 @@ export function TeamRunList({
             open={statusOpen}
             onOpenChange={setStatusOpen}
             trigger={(props) => (
-              <button type="button" className="btn ui-btn-sm" {...props}>
+              <Button type="button" size="sm" {...props}>
                 {t('session.status', locale)}
                 {filterBadge(statusFilter.length)}
-              </button>
+              </Button>
             )}
           >
             <div className="session-filter-list">
               {RUN_STATUSES.map((status) => {
                 const checked = statusFilter.includes(status);
                 return (
-                  <label key={status} className="session-filter-item">
-                    <input
-                      type="checkbox"
-                      checked={checked}
+                  <div key={status} className="session-filter-item"><Checkbox checked={checked}
                       onChange={() =>
                         onStatusFilterChange(
                           checked ? statusFilter.filter((s) => s !== status) : [...statusFilter, status],
                         )
-                      }
-                    />
-                    <span>{t(`team.status.${status}` as I18nKey, locale)}</span>
-                  </label>
+                      } label={<><span>{t(`team.status.${status}` as I18nKey, locale)}</span></>}/></div>
                 );
               })}
             </div>
@@ -323,28 +312,22 @@ export function TeamRunList({
             open={topologyOpen}
             onOpenChange={setTopologyOpen}
             trigger={(props) => (
-              <button type="button" className="btn ui-btn-sm" {...props}>
+              <Button type="button" size="sm" {...props}>
                 {t('team.topologyFilter', locale)}
                 {filterBadge(topologyFilter.length)}
-              </button>
+              </Button>
             )}
           >
             <div className="session-filter-list">
               {TOPOLOGIES.map((topology) => {
                 const checked = topologyFilter.includes(topology);
                 return (
-                  <label key={topology} className="session-filter-item">
-                    <input
-                      type="checkbox"
-                      checked={checked}
+                  <div key={topology} className="session-filter-item"><Checkbox checked={checked}
                       onChange={() =>
                         onTopologyFilterChange(
                           checked ? topologyFilter.filter((s) => s !== topology) : [...topologyFilter, topology],
                         )
-                      }
-                    />
-                    <span>{t(`team.topology.${topology}` as I18nKey, locale)}</span>
-                  </label>
+                      } label={<><span>{t(`team.topology.${topology}` as I18nKey, locale)}</span></>}/></div>
                 );
               })}
             </div>
@@ -353,28 +336,22 @@ export function TeamRunList({
             open={completenessOpen}
             onOpenChange={setCompletenessOpen}
             trigger={(props) => (
-              <button type="button" className="btn ui-btn-sm" {...props}>
+              <Button type="button" size="sm" {...props}>
                 {t('team.completenessFilter', locale)}
                 {filterBadge(completenessFilter.length)}
-              </button>
+              </Button>
             )}
           >
             <div className="session-filter-list">
               {COMPLETENESS_LEVELS.map((level) => {
                 const checked = completenessFilter.includes(level);
                 return (
-                  <label key={level} className="session-filter-item">
-                    <input
-                      type="checkbox"
-                      checked={checked}
+                  <div key={level} className="session-filter-item"><Checkbox checked={checked}
                       onChange={() =>
                         onCompletenessFilterChange(
                           checked ? completenessFilter.filter((s) => s !== level) : [...completenessFilter, level],
                         )
-                      }
-                    />
-                    <span>{t(`team.completeness.${level}` as I18nKey, locale)}</span>
-                  </label>
+                      } label={<><span>{t(`team.completeness.${level}` as I18nKey, locale)}</span></>}/></div>
                 );
               })}
             </div>
@@ -397,9 +374,9 @@ export function TeamRunList({
           title={t('team.emptyTitle', locale)}
           description={t('team.emptyHint', locale)}
           action={
-            <button type="button" className="btn" onClick={onRetry}>
+            <Button type="button"  onClick={onRetry}>
               {t('common.retry', locale)}
-            </button>
+            </Button>
           }
         />
       )}
@@ -451,14 +428,14 @@ export function TeamRunList({
             </div>
           </div>
           {hasMore && (
-            <button
+            <Button
               type="button"
               className="team-load-more"
               onClick={onLoadMore}
               disabled={loading}
             >
               {loading ? t('state.loading', locale) : t('session.loadMore', locale)}
-            </button>
+            </Button>
           )}
         </div>
       )}

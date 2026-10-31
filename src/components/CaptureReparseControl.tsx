@@ -1,3 +1,5 @@
+import { Button } from './ui/Button.js';
+import { Disclosure } from './ui/PageControls.js';
 import { useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client.js';
 import type { CaptureReparseResponse, CaptureReparseStatus } from '../core/trace-types.js';
@@ -177,17 +179,17 @@ function Reparse({ id, requestId, locale, blocked, invalidateKey, onBegin, onPar
   };
   const snapshot = shown?.snapshot;
   return <section aria-label={copy.title} onKeyDown={event => { if (expanded && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(true); } }}>
-    <button ref={trigger} className="btn" type="button" disabled={blocked} aria-expanded={expanded} aria-controls={panelId}
-      onClick={() => { if (expanded) cancel(true); else { setExpanded(true); void load('status'); } }}>{copy.title}</button>
+    <Button ref={trigger}  type="button" disabled={blocked} aria-expanded={expanded} aria-controls={panelId}
+      onClick={() => { if (expanded) cancel(true); else { setExpanded(true); void load('status'); } }}>{copy.title}</Button>
     <p className="hint">{copy.scope}</p>
     {blocked && <p role="status">{copy.blocked}</p>}
     {uncertain && <p role="status" data-reparse-uncertain>{copy.uncertain}</p>}
     {!uncertain && cancelled && <p role="status">{copy.cancelled}</p>}
     {expanded && !blocked && <div id={panelId} aria-busy={pending !== null}>
       <p className="hint">{copy.metadataHint}</p>
-      <button className="btn" type="button" disabled={pending !== null} onClick={() => void load('status')}>{copy.refresh}</button>
-      <button className="btn" type="button" disabled={pending !== null || shown === null || shown.state === 'unavailable' || stale} onClick={() => void load('post')}>{copy.action}</button>
-      {pending !== null && <><p role="status" aria-live="polite">{copy.waiting}</p><button className="btn" type="button" onClick={() => cancel(false)}>{copy.cancel}</button></>}
+      <Button  type="button" disabled={pending !== null} onClick={() => void load('status')}>{copy.refresh}</Button>
+      <Button  type="button" disabled={pending !== null || shown === null || shown.state === 'unavailable' || stale} onClick={() => void load('post')}>{copy.action}</Button>
+      {pending !== null && <><p role="status" aria-live="polite">{copy.waiting}</p><Button  type="button" onClick={() => cancel(false)}>{copy.cancel}</Button></>}
       {stale && <p role="status">{copy.stale}</p>}
       {error !== null && <p role="alert">{error === 'REPARSE_TIMEOUT' ? copy.timeout : copy.failed} <code>{error}</code></p>}
       {received && <p role="status">{copy.received}</p>}
@@ -198,7 +200,7 @@ function Reparse({ id, requestId, locale, blocked, invalidateKey, onBegin, onPar
             <div><dt>{copy.format}</dt><dd>{snapshot.requestFormat}</dd></div><div><dt>{copy.protocol}</dt><dd>{snapshot.state}</dd></div>
             <div><dt>{copy.completeness}</dt><dd>{snapshot.completeness.complete ? copy.complete : `${copy.partial} · ${snapshot.completeness.omittedCount}`} · {snapshot.completeness.reasons.join(', ')}</dd></div></>}
         </dl>
-        {snapshot != null && <><details><summary>{copy.fingerprint}</summary><code style={{ overflowWrap: 'anywhere' }}>{snapshot.sourceFingerprint}</code></details><h4>{copy.usage}</h4>
+        {snapshot != null && <><Disclosure  title={<>{copy.fingerprint}</>}><code style={{ overflowWrap: 'anywhere' }}>{snapshot.sourceFingerprint}</code></Disclosure><h4>{copy.usage}</h4>
           <dl className="meta">{COUNTERS.map(key => <div key={key} data-reparse-usage={key}><dt>{key}</dt><dd>{snapshot.usage[key] ?? '—'}</dd></div>)}<div><dt>accounting</dt><dd>{snapshot.usage.accounting}</dd></div></dl></>}
       </>}
     </div>}
