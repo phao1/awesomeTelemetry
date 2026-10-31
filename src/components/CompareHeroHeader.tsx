@@ -1,6 +1,6 @@
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
-import type { ProviderKey } from '../core/trace-types.js';
+import type { SessionProviderKey } from '../core/trace-types.js';
 import { PROVIDER_KEYS } from '../core/trace-types.js';
 import type { CompareResult } from './compare-types.js';
 import { ProviderBadge } from './ui/Badge.js';
@@ -57,7 +57,7 @@ export function CompareHeroHeader({
   }
 
   const side = (
-    provider: ProviderKey,
+    provider: SessionProviderKey,
     agentName: string,
     title: string,
     align: 'left' | 'right',

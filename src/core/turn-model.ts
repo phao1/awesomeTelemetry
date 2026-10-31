@@ -18,7 +18,7 @@
 
 import type {
   MessageRole,
-  ProviderKey,
+  SessionProviderKey,
   TraceEvent,
   TraceEventSlim,
   TraceKind,
@@ -365,7 +365,7 @@ export function countRounds(turns: readonly TraceTurn[]): number {
  * `turn_key` 切分的会话几乎总是渲染一条带 provenance 的口径行 —— 这正是
  * 设计意图：读者永远知道回合是怎么切出来的。
  */
-export function turnKeySourceForProvider(provider: ProviderKey): TurnKeySource {
+export function turnKeySourceForProvider(provider: SessionProviderKey): TurnKeySource {
   switch (provider) {
     case 'codex':
       return 'stream_structure';
@@ -377,6 +377,7 @@ export function turnKeySourceForProvider(provider: ProviderKey): TurnKeySource {
     case 'trae':
       return 'message_identity';
     case 'qoder':
+    case 'opentelemetry':
     case 'workbuddy':
       return 'unavailable';
   }

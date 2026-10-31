@@ -1,3 +1,4 @@
+import type { TelemetryMetadata } from './telemetry-types.js';
 export type NativeIdentityKind = 'session' | 'turn' | 'message' | 'request' | 'response' | 'tool_call' | 'trace' | 'span' | 'parent_session' | 'parent_span';
 export interface NativeIdentity {
   namespace: string;
@@ -145,6 +146,9 @@ export const PROVIDER_KEYS: readonly ProviderKey[] = [
   'codeagent', 'codeagent2', 'trae', 'qoder', 'workbuddy',
 ] as const;
 
+/** Stored telemetry sources do not add a tenth native scanner. */
+export type SessionProviderKey = ProviderKey | 'opentelemetry';
+
 /** 数据来源。scan 与 proxy 在 UI 上分开展示（G7.4），不得混合。 */
 export type DataSource = 'scan' | 'proxy';
 
@@ -261,7 +265,7 @@ export type TurnKeySource =
 export interface SessionIndexEntry {
   /** = sessionKey(provider, id, sourcePath)，见 specs/session-scanning REQ-004。 */
   id: string;
-  provider: ProviderKey;
+  provider: SessionProviderKey;
   /** provider 的展示名，可与 provider 不同（如 CodeArts SDD 子 agent）。 */
   sourceAgent: string;
   title: string;
@@ -290,7 +294,7 @@ export interface SessionIndexEntry {
 
 export interface TraceSession {
   id: string;
-  provider: ProviderKey;
+  provider: SessionProviderKey;
   sourceAgent: string;
   title: string;
   startedAt: string;
@@ -404,6 +408,8 @@ export interface SessionAnnotationsUpdate {
 
 /** slim 档：Gantt 树渲染所需的全部字段，不含任何正文。 */
 export interface TraceEventSlim {
+  /** Bounded source-reported metadata; contains no input/output bodies. */
+  telemetry?: TelemetryMetadata;
   id: string;
   sessionId: string;
   /** 1-based，同 session 内唯一且连续。合并后必须重排（G10.3）。 */
@@ -654,7 +660,7 @@ export interface SpeedMetrics {
 
 /** Agent Overview 聚合行，由服务端 SQL 直接产出，见 specs/storage REQ-009。 */
 export interface AgentOverviewRow {
-  provider: ProviderKey;
+  provider: SessionProviderKey;
   sourceAgent: string;
   sessionCount: number;
   eventCount: number;

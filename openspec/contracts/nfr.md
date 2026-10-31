@@ -900,3 +900,14 @@ per-session SSE or repeated retries. Abort removes queued work immediately;
 shutdown awaits actual admitted parsers. Reuse existing parser budgets, no startup
 prewarm. Frontend cancels old scope and ignores late frames, retains metadata
 through own coalesced refreshes, caps reads to one/3s while warming plus final.
+
+## Phase D intake budgets
+
+[telemetry-intake.md](telemetry-intake.md) TD-006 adds bounded worker parsing,
+request/retention quotas and shared serialized WAL admission. Telemetry's own
+20000 spans/32MiB normalized JSON/256 tasks quota excludes native scan/capture data;
+it does not enforce a total DB-size gate. Native DBs exceeding180MB must remain
+eligible. WAL8MB admission/one nonblocking checkpoint reserves20MB WAL headroom.
+This explicit Phase D exception changes no capture gate or existing performance
+measurement requirement; large native stores are not newly certified. Full bounds
+and differentiated refusal codes are in TD-006.

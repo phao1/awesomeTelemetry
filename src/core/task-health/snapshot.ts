@@ -62,6 +62,21 @@ export function buildSnapshot(input: HealthInput): Snapshot {
     const memberUndivided: { memberId: string; intervalMs: Interval }[] = [];
     for (const member of members) {
         const list = records.filter(r => r.memberId === member.id).sort((a, b) => sequence(a) - sequence(b));
+        if (member.provider === 'opentelemetry') {
+            for (const r of list) {
+                const source=r.event?.telemetry;if(!source)continue;
+                const kind=source.kind==='llm'?'model':source.kind==='tool'?'tool':'other';
+                const roundId=kind==='model'?r.recordId+':span':null;
+                const span=baseSpan(r,kind,roundId);
+                span.startMs=relativeTime(input,source.start);span.endMs=relativeTime(input,source.end);
+                span.timing=span.startMs!==null&&span.endMs!==null?'observed':'unavailable';
+                if(span.timing==='unavailable')out.reasons.push('telemetry_endpoints_unavailable');
+                out.spans.push(span);
+                if(kind==='tool'){span.toolClass=classifyTool(r);out.tools.push({span,records:[r],source:r,durationMs:source.durationMs,targets:[],command:commandProjection(null,null)});}
+                if(roundId){out.roundRecords.set(roundId,[r]);out.rounds.push({id:roundId,memberId:member.id,index:out.rounds.filter(x=>x.memberId===member.id).length+1,readyMs:span.startMs,firstOutputMs:null,modelEndMs:span.endMs,endMs:span.endMs,toolSpanIds:[],writeFiles:0,parallelTools:0,reasoning:span.reasoning});}
+            }
+            continue;
+        }
         const semantics = member.timestampSemantics ?? timestampSemantics(member.provider, member.durationSource);
         const turns: UserTurn[] = [{ prompt: null, records: [], boundary: null }];
         const recordTurns = new Map<string, UserTurn>();

@@ -1,5 +1,7 @@
 # AwesomeTelemetry
 
+Open **Data intake → OpenTelemetry** to enable local OTLP/HTTP JSON, or **File import** for OTLP, Langfuse and LangSmith exports; see [custom Agent intake](docs/custom-agent-opentelemetry.md) (collection defaults off).
+
 ## Agent boundary evaluation
 
 Open **Agent boundary evaluation** in the top navigation or command palette to

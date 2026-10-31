@@ -34,3 +34,14 @@ expansion remains explicit. Original downloads and reported values stay intact.
 
 ## Gotchas
 G7.1/G7.2/G7.4; G8.1/G8.3; G11.1/G11.2/G11.4/G11.9.
+
+## Phase D additions
+### REQ-004: Local OTLP receiver
+Implement TD-001..004/006: default off, loopback, one-time optional token, gzip,
+JSON-only, bounded redacted mapping and explicit rejection statistics.
+### REQ-005: Vendor file imports
+Implement TD-005/006 with automatic detection, streamed JSONL, no network/replay.
+### REQ-006: Task integration
+Use bounded native session/event storage and independent telemetry tree metadata;
+retain members, timestamps, usage, source and missing values in task/health/compare/export.
+Document environment variables and SDK support boundaries; test own-export roundtrip.

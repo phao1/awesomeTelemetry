@@ -1,5 +1,7 @@
 # Agent Observability
 
+「数据接入 → OpenTelemetry」可显式启用自研 Agent 的本地 OTLP/HTTP JSON 接收；「文件导入」支持 OTLP、Langfuse / LangSmith 导出，详见[接入自研 Agent](docs/custom-agent-opentelemetry.md)，采集默认关闭。
+
 ## Agent 边界评测：该合并谁、保留谁
 
 「Agent 边界评测」默认进入逐 Agent 决策工作台。已接入 Anthropic

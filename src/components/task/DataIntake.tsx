@@ -1,3 +1,4 @@
+import { TelemetryIntakePanel } from '../TelemetryIntakePanel.js';
 import '../../styles/task-workbench.css';
 import { lazy, Suspense, useCallback, useState, type ReactNode } from 'react';
 import { api, fetchJson } from '../../api/client.js';
@@ -6,7 +7,7 @@ import { copy } from './copy.js';
 import { useTaskRead } from './task-data.js';
 const TraceLogImportPanel = lazy(() => import('../TraceLogImportPanel.js').then(module => ({ default: module.TraceLogImportPanel })));
 const CdpPanel = lazy(() => import('../CdpPanel.js').then(module => ({ default: module.CdpPanel })));
-type Channel = 'native' | 'proxy' | 'cdp' | 'frida' | 'import';
+type Channel = 'native' | 'proxy' | 'cdp' | 'frida' | 'import' | 'otel';
 interface Monitoring { enabled: boolean; state: 'idle' | 'starting' | 'running' | 'stopping' }
 /** Channel choice explains evidence coverage before exposing a channel's actual controls. */
 export function DataIntake({ locale, initialChannel = 'native', onConfigure, proxy, frida, onTasks }: {
@@ -28,6 +29,7 @@ export function DataIntake({ locale, initialChannel = 'native', onConfigure, pro
   const channels = [
     { id: 'native', title: c.localTitle, hint: c.localHint, tag: c.nativeFirst, mark: '⌁' },
     { id: 'proxy', title: c.proxyTitle, hint: c.proxyHint, tag: c.network, mark: '⇄' },
+    { id: 'otel', title: 'OpenTelemetry', hint: locale === 'zh' ? '接收自研 Agent 的 OTLP/HTTP JSON。默认关闭，仅限本机。' : 'Receive custom Agent OTLP/HTTP JSON. Default off, local only.', tag: 'OTLP · JSON', mark: '◇' },
     { id: 'import', title: c.importTitle, hint: c.importHint, tag: c.historicalTag, mark: '↓' },
     { id: 'cdp', title: c.cdpTitle, hint: c.cdpHint, tag: 'Chromium', mark: '◉' },
     { id: 'frida', title: c.fridaTitle, hint: c.fridaHint, tag: 'Process', mark: '⌘' },
@@ -37,8 +39,9 @@ export function DataIntake({ locale, initialChannel = 'native', onConfigure, pro
       <section className="task-channel-content"><div className="task-channel-intro"><span className="task-badge">{channels.find(item => item.id === channel)?.tag}</span><h2>{channels.find(item => item.id === channel)?.title}</h2><p>{channels.find(item => item.id === channel)?.hint}</p></div>
         {channel === 'native' && <><div className="task-monitor-card"><span className={`task-state-dot ${monitoring.value?.enabled ? '' : 'idle'}`} /><div><h3>{monitoring.value ? c[monitoring.value.enabled ? 'monitoringOn' : 'monitoringOff'] : c.loading}</h3><p>{c.monitoringHint}</p></div><button type="button" className="btn ui-btn-primary" disabled={busy || monitoring.value === null} onClick={() => void toggle()}>{busy ? c.transition : c[monitoring.value?.enabled ? 'stop' : 'enable']}</button></div>
           {(error || monitoring.error) && <p role="alert">{error ?? monitoring.error}</p>}<div className="task-channel-actions"><button type="button" className="btn" onClick={onConfigure}>{c.configure} ↗</button><button type="button" className="btn" onClick={monitoring.retry}>{c.checkState}</button><button type="button" className="btn" onClick={() => void api.scan().then(() => monitoring.retry()).catch(cause => setError(String(cause)))}>{c.refresh}</button></div><p className="hint">{c.noPolling}</p></>}
+        {channel === 'otel' && <TelemetryIntakePanel locale={locale} />}
         {channel === 'proxy' && proxy}{channel === 'frida' && frida}
-        <Suspense fallback={<p role="status">{c.loading}</p>}>{channel === 'cdp' && <CdpPanel locale={locale} />}{channel === 'import' && <>{proxyState.loading && <p role="status">{c.loading}</p>}{proxyState.error && <p role="alert">{proxyState.error}</p>}<TraceLogImportPanel locale={locale} stopped={proxyState.value !== null && !proxyState.value.running && !proxyState.value.starting} /></>}</Suspense>
+        <Suspense fallback={<p role="status">{c.loading}</p>}>{channel === 'cdp' && <CdpPanel locale={locale} />}{channel === 'import' && <><TelemetryIntakePanel locale={locale} file />{proxyState.loading && <p role="status">{c.loading}</p>}{proxyState.error && <p role="alert">{proxyState.error}</p>}<TraceLogImportPanel locale={locale} stopped={proxyState.value !== null && !proxyState.value.running && !proxyState.value.starting} /></>}</Suspense>
       </section>
     </div>
   </main>;

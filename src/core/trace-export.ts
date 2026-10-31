@@ -78,7 +78,7 @@ function validId(id: string, length: number): boolean {
 
 /** TX-001..003: flat observation spans; never create causal edges or use bodies. */
 export function buildTraceExport(page: TraceExportPage, ids: { traceId: string; spanId: (eventId: string) => string }, generatedAt: string): OtlpTraceExport {
-  if (!PROVIDER_KEYS.includes(page.session.provider) || !['measured', 'derived', 'unknown'].includes(page.session.durationSource ?? 'unknown')
+  if (!(page.session.provider === 'opentelemetry' || PROVIDER_KEYS.includes(page.session.provider)) || !['measured', 'derived', 'unknown'].includes(page.session.durationSource ?? 'unknown')
     || !validId(ids.traceId, 32) || isoUtcToUnixNano(generatedAt) === null || isoUtcToUnixNano(page.session.updatedAt) === null) throw new TraceExportLimitError();
   if (![page.offset, page.limit, page.eventTotal, page.declaredEventCount].every(value => Number.isSafeInteger(value) && value >= 0)
     || page.offset > TRACE_EXPORT_MAX_OFFSET || page.limit < 1 || page.limit > TRACE_EXPORT_MAX_EVENTS || page.events.length > page.limit

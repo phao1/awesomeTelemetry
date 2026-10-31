@@ -1525,3 +1525,57 @@ This admission gate avoids materializing old graphs then bulk deleting them on
 the HTTP thread. Startup retention of already committed rows stays separate;
 full capacity/manual deletion and sustained WAL admission remain7.3 work.
 When more than1000 rows are deleted, trigger one checkpointWal as before.
+
+## Phase D additive schema v24
+
+v23→24 creates the following tables/indexes and updates version atomically. No
+backfill, source rewrites or scan-state reset. Fresh initialization includes them.
+telemetry_spans stores only normalized redacted bounded previews, never originals;
+metadata lists must not select span_json. Explicit column constants:
+TELEMETRY_SPAN_COLS='id,group_id,trace_key,metadata_json,span_json';
+TELEMETRY_SESSION_COLS='session_id,root_id,parent_id,source,origin,warnings_json'.
+
+```sql
+CREATE TABLE IF NOT EXISTS telemetry_quota (
+  id INTEGER PRIMARY KEY CHECK(id=1),
+  span_count INTEGER NOT NULL,
+  bytes INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO telemetry_quota(id,span_count,bytes) VALUES(1,0,0);
+CREATE TABLE IF NOT EXISTS telemetry_spans (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  trace_key TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  span_json TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_telemetry_spans_group ON telemetry_spans(group_id,id);
+CREATE INDEX IF NOT EXISTS idx_telemetry_spans_trace ON telemetry_spans(trace_key,id);
+CREATE TABLE IF NOT EXISTS telemetry_sessions (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  root_id TEXT NOT NULL,
+  parent_id TEXT,
+  source TEXT NOT NULL,
+  origin TEXT NOT NULL,
+  warnings_json TEXT NOT NULL DEFAULT '[]'
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_telemetry_sessions_root ON telemetry_sessions(root_id,session_id);
+```
+
+telemetry_quota counters update atomically with span differential inserts/updates;
+no all-body SUM on ingestion. metadata_json is TelemetryMetadata with no previews.
+All source/trace/group lookups use the declared indexes. SessionProviderKey changes
+no SQL enum constraint and never creates a tenth scanner.
+
+telemetry_sessions.warnings_json contains static unresolved/cycle/depth reason codes;
+cycles do not create Agent membership edges, and independent Agent roots have no
+fabricated parent member.
+
+Phase D telemetry capacity correction (no DDL/version change): telemetry_quota
+span_count is the count of unique retained telemetry_spans rows; bytes is their
+UTF-8 span_json byte total, excluding native/capture rows and duplicate projections.
+Defaults20000 spans/33554432 bytes, updated differentially in the same transaction.
+The shared serialized WAL-only admission checks fresh stamps and WAL8MB, with at
+most one zero-wait checkpoint and at most three snapshots. It does not inspect
+combined database size; the existing capture-only combined180MB gate is unchanged.
+Failure reasons and the exception to global DB-size admission follow TD-006.

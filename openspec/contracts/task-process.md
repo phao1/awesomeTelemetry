@@ -126,3 +126,17 @@ Explicit ↗/↙ evidence controls and expansion preserve both originals; select
 or locating an exact original reveals it. Existing keyboard/playback, bounded
 virtual rows and shared reading scroll root remain unchanged; no body fan-out.
 Preview transport bounds are in api.md; TaskMetrics is in data-model.md.
+
+## Phase D self-contained tool observations
+
+TP-006 clarification: a standalone tool record with terminal success/error and
+hasOutput, or a retained telemetry end timestamp, can describe its own outcome.
+Render its own finite nonnegative duration (including reported zero) and success/
+failure directly. TelemetryMetadata.durationMs is authoritative for telemetry;
+null must not become the legacy event's zero placeholder. Do not wait for or
+fabricate a separate result record. Unknown/nonterminal status or absent completion
+evidence stays unfinished; missing/invalid duration stays unknown.
+An existing multi-record/native pair or an explicit off-page partner keeps the
+original pairing/log-interval policy. A native input-only record alone is not
+completed solely by a positive duration and success flag. No identity, retry,
+measured timing, lifecycle or source mutation is inferred.

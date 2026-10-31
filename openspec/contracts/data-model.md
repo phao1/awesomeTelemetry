@@ -3549,3 +3549,8 @@ See task-comparison.md TC-002. No persisted schema changes.
 ```ts
 export interface TaskComparisonSnapshot { a: TaskSummary[]; b: TaskSummary[] }
 ```
+
+## Phase D telemetry intake
+
+The additive SessionProviderKey and canonical telemetry DTOs follow
+[telemetry-intake.md](telemetry-intake.md) TD-001..006 and src/core/telemetry-types.ts.

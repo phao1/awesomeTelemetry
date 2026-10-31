@@ -73,7 +73,7 @@ function RecentSessions({ row, recent, locale, onSelectSession, onBrowseSessions
         <span className="mono">{fmtNum(session.eventCount)} {t('agent.events', locale)}</span>
       </button>)}
     {onBrowseSessions !== undefined && <button type="button" className="btn ui-btn-sm"
-      onClick={() => onBrowseSessions(row.provider)}>{t('agent.browseProvider', locale)} · {row.provider}</button>}
+      onClick={() => onBrowseSessions(row.provider === 'opentelemetry' ? undefined : row.provider)}>{t('agent.browseProvider', locale)} · {row.provider}</button>}
   </div>;
 }
 
@@ -219,7 +219,7 @@ export function AgentOverview({ locale, load, sessions = [], onSelectSession, on
       <p className="hint">{t('agent.selectHint', locale)} · {compareSelection.length}/2 · {t('agent.compareBasis', locale)}</p>
       {compareSelection.length === 2 && onCompareProviders !== undefined && <button type="button" className="btn compare-float-btn" onClick={() => {
         const pair = compareSelection.map(key => rows.find(row => overviewGroupKey(row) === key));
-        if (pair[0] !== undefined && pair[1] !== undefined) onCompareProviders(pair[0].provider, pair[1].provider, [pair[0].sourceAgent, pair[1].sourceAgent]);
+        if (pair[0] !== undefined && pair[1] !== undefined && pair[0].provider !== 'opentelemetry' && pair[1].provider !== 'opentelemetry') onCompareProviders(pair[0].provider, pair[1].provider, [pair[0].sourceAgent, pair[1].sourceAgent]);
       }}><IconCompare />{t('agent.compareSelected', locale)}</button>}
     </div>
     {viewMode === 'table' ? <div className="agent-table-region" role="region" tabIndex={0} aria-label={t('agent.tableLabel', locale)}>

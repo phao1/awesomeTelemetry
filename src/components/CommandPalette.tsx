@@ -5,6 +5,7 @@ import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type {
   ProviderKey,
+  SessionProviderKey,
   SessionIndexEntry,
   TraceEventSlim,
 } from '../core/trace-types.js';
@@ -53,7 +54,7 @@ interface Command {
   /** 执行入口。禁用行不带 run。 */
   run?: () => void;
   /** 会话 / provider 行的字母章。 */
-  provider?: ProviderKey;
+  provider?: SessionProviderKey;
   disabled?: boolean;
   checked?: boolean;
 }

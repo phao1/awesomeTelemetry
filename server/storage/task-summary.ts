@@ -3,13 +3,19 @@ import type { TaskContext, TaskMetrics, TaskMetricKey } from '../../src/core/tas
 import { computeCost, lookupModelPrice, lookupContextWindow, modelPricingRevision } from '../../src/core/pricing.js';
 import { correctedUsage } from '../../src/core/benchmark-analysis.js';
 import { cachedStmt } from './stmt-cache.js';
-export type SummarySession = { id: string; provider: string; started_at: string; total_duration_ms: number; duration_source: string; detail_loaded: number; token_input: number; token_output: number; token_cache_read: number; token_cache_write: number; cost_usd: number; cost_source: string; cost_currency: string; primary_model: string | null; tools: number; errors: number; results: number; failures: number; pressure: number | null };
+export type SummarySession = { telemetry_usage?: ReturnType<typeof telemetryUsage>;  id: string; provider: string; started_at: string; total_duration_ms: number; duration_source: string; detail_loaded: number; token_input: number; token_output: number; token_cache_read: number; token_cache_write: number; cost_usd: number; cost_source: string; cost_currency: string; primary_model: string | null; tools: number; errors: number; results: number; failures: number; pressure: number | null };
 const cache = new WeakMap<Database, Map<string, { revision: string; value: TaskMetrics }>>();
 const known = (n: number) => Number.isSafeInteger(n) && n > 0 ? n : null;
 const sum = (values: Array<number | null>): number | null => values.length && values.every(v => v !== null) && Number.isSafeInteger(values.reduce<number>((n, v) => n + (v ?? 0), 0)) ? values.reduce<number>((n, v) => n + v!, 0) : null;
 /** Session counters are normalized by adapters: input excludes cache, Codex output includes reasoning.
  * Legacy zero defaults cannot establish that a counter was reported. */
-export function sessionUsage(row: Pick<SummarySession, 'provider' | 'token_input' | 'token_output' | 'token_cache_read' | 'token_cache_write'>) {
+function telemetryUsage(values: Array<{usage: Record<string,number|null>;kind:string}>) {
+  const models=values.filter(s=>s.kind==='llm');
+  const count=(key:string):number|null=>models.every(s=>s.usage[key]!==null && s.usage[key]!==undefined)?models.reduce((n,s)=>n+s.usage[key]!,0):null;
+  return {input:count('input'),output:count('output'),cacheRead:count('cacheRead'),total:count('total')};
+}
+export function sessionUsage(row: Pick<SummarySession, 'provider' | 'token_input' | 'token_output' | 'token_cache_read' | 'token_cache_write' | 'telemetry_usage'>) {
+  if(row.provider==='opentelemetry')return row.telemetry_usage??{input:null,output:null,cacheRead:null,total:null};
   const input = known(row.token_input), output = known(row.token_output), cacheRead = known(row.token_cache_read);
   const convention = ['codex', 'claude', 'codeagent', 'workbuddy'].includes(row.provider);
   const cacheWriteReported = row.token_cache_write > 0 ? true : row.provider === 'codex' && row.token_cache_write === 0 ? false : null;
@@ -19,17 +25,22 @@ export const SESSION_METRIC_COLS = 's.id,s.provider,s.started_at,s.total_duratio
 /** Correlated counts stay on covering indexes; body columns are never acquired. */
 export function readSummarySessions(db: Database, keys: string[], includePressure = false): SummarySession[] {
   const rows = cachedStmt(db, `SELECT ${SESSION_METRIC_COLS},
-    (SELECT COUNT(1) FROM events e WHERE e.session_id=s.id AND e.kind='tool' AND e.input_len>0) AS tools,
+    (SELECT COUNT(1) FROM events e WHERE e.session_id=s.id AND e.kind='tool' AND (e.input_len>0 OR s.provider='opentelemetry')) AS tools,
     (SELECT COUNT(1) FROM events e WHERE e.session_id=s.id AND e.status='error') AS errors,
-    (SELECT COUNT(1) FROM events e INDEXED BY idx_events_task_results WHERE e.session_id=s.id AND e.kind='tool' AND e.output_len>0 AND e.status IN ('success','error')) AS results,
-    (SELECT COUNT(1) FROM events e INDEXED BY idx_events_task_results WHERE e.session_id=s.id AND e.kind='tool' AND e.output_len>0 AND e.status='error') AS failures
+    (SELECT COUNT(1) FROM events e INDEXED BY idx_events_task_results WHERE e.session_id=s.id AND e.kind='tool' AND (e.output_len>0 OR (s.provider='opentelemetry' AND EXISTS(SELECT 1 FROM telemetry_spans t WHERE t.id=e.id AND json_type(t.metadata_json,'$.end')='text'))) AND e.status IN ('success','error')) AS results,
+    (SELECT COUNT(1) FROM events e INDEXED BY idx_events_task_results WHERE e.session_id=s.id AND e.kind='tool' AND (e.output_len>0 OR (s.provider='opentelemetry' AND EXISTS(SELECT 1 FROM telemetry_spans t WHERE t.id=e.id AND json_type(t.metadata_json,'$.end')='text'))) AND e.status='error') AS failures
     FROM sessions s WHERE s.id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(keys)) as SummarySession[];
+  const telemetryKeys=rows.filter(r=>r.provider==='opentelemetry').map(r=>r.id);
+  if(telemetryKeys.length){
+    const spans=cachedStmt(db, `SELECT e.session_id,json_extract(t.metadata_json,'$.usage') AS usage,json_extract(t.metadata_json,'$.kind') AS kind FROM events e JOIN telemetry_spans t ON t.id=e.id WHERE e.session_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(telemetryKeys)) as {session_id:string;usage:string;kind:string}[];
+    for(const row of rows)if(row.provider==='opentelemetry')row.telemetry_usage=telemetryUsage(spans.filter(s=>s.session_id===row.id).map(s=>({usage:JSON.parse(s.usage) as Record<string,number|null>,kind:s.kind})));
+  }
   if(!includePressure)return rows.map(row=>({...row,pressure:null}));
   const context = cachedStmt(db, `SELECT session_id,model,MAX(COALESCE(json_extract(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.input'),0)+COALESCE(json_extract(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.cacheRead'),0)+COALESCE(json_extract(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.cacheWrite'),0)) AS n
     FROM events INDEXED BY idx_events_task_context WHERE session_id IN (SELECT value FROM json_each(?)) AND kind='llm' AND model IS NOT NULL AND tokens_json IS NOT NULL
     AND (json_type(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.input') IN ('integer','real') OR json_type(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.cacheRead') IN ('integer','real') OR json_type(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.cacheWrite') IN ('integer','real')) GROUP BY session_id,model`).all(JSON.stringify(keys)) as Array<{session_id:string;model:string;n:number}>;
   const pressure = new Map<string, number>();
-  for (const r of context) { const window = lookupContextWindow(r.model); if (window && Number.isFinite(r.n) && r.n >= 0) pressure.set(r.session_id, Math.max(pressure.get(r.session_id) ?? 0, 100*r.n/window)); }
+  for (const r of context) { if(telemetryKeys.includes(r.session_id))continue; const window = lookupContextWindow(r.model); if (window && Number.isFinite(r.n) && r.n >= 0) pressure.set(r.session_id, Math.max(pressure.get(r.session_id) ?? 0, 100*r.n/window)); }
   return rows.map(row => ({ ...row, pressure: pressure.get(row.id) ?? null }));
 }
 export function taskMetrics(db: Database, context: TaskContext, supplied?: SummarySession[]): TaskMetrics {
@@ -83,7 +94,7 @@ export function taskMetrics(db: Database, context: TaskContext, supplied?: Summa
     for (const r of rows) {
       let amount: number | null = null, currency: 'USD' | 'CNY' = r.cost_currency === 'CNY' ? 'CNY' : 'USD', source: 'reported' | 'estimated' = 'reported';
       if (r.cost_source === 'reported' && ['USD','CNY'].includes(r.cost_currency) && Number.isFinite(r.cost_usd) && r.cost_usd >= 0) amount = r.cost_usd;
-      else if (r.detail_loaded === 1 && sessionUsage(r).total !== null) {
+      else if (r.provider !== 'opentelemetry' && r.detail_loaded === 1 && sessionUsage(r).total !== null) {
         const result = computeCost({ input:r.token_input,output:r.token_output,cacheRead:r.token_cache_read,cacheWrite:r.token_cache_write,reasoning:0,netInput:r.token_input,total:sessionUsage(r).total! },r.primary_model);
         if (result.costSource !== 'unknown') { amount=result.cost; currency=result.currency; source='estimated'; }
       }
@@ -91,7 +102,7 @@ export function taskMetrics(db: Database, context: TaskContext, supplied?: Summa
         if(r.detail_loaded!==1)missingReasons.add('detail_not_loaded');
         if(r.detail_loaded===1&&!r.primary_model)missingReasons.add('model_unknown');
         else if(r.detail_loaded===1&&r.primary_model&&!lookupModelPrice(r.primary_model)){missingPrices.add(r.primary_model);missingReasons.add('model_unpriced');}
-        if(r.detail_loaded===1&&sessionUsage(r).total===null)missingReasons.add('usage_unknown');
+        if(r.detail_loaded===1&&(r.provider==='opentelemetry'||sessionUsage(r).total===null))missingReasons.add('usage_unknown');
         continue;
       }
       costKnown++; const entry=amounts.find(a=>a.currency===currency);

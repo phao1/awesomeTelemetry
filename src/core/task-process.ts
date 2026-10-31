@@ -34,6 +34,17 @@ const nativeKey = (value: TaskNativeRef): string => JSON.stringify([value.namesp
 const sequence = (value: TaskRecord) => value.event?.sequence ?? value.importedTurn?.sequence ?? 0;
 const isModel = (value: TaskRecord) => !value.event || ['llm','reasoning','message'].includes(value.event.kind);
 const isTool = (value: TaskRecord) => value.event && ['tool','bash','file_read','file_write','test'].includes(value.event.kind);
+/** TP-006: one retained tool can carry its own completion; no partner is invented. */
+export function singleToolOutcome(record: TaskRecord, group?: Pick<ProcessGroup, 'records' | 'related'> | null): { status: 'success' | 'error'; durationMs: number | null } | null {
+  const event = record.event;
+  if (!event || !isTool(record) || !['success', 'error'].includes(event.status)) return null;
+  if (group && (group.records.length !== 1 || group.related.some(id => id !== record.id))) return null;
+  const ended = event.telemetry?.end;
+  if (!event.hasOutput && !(ended && Number.isFinite(Date.parse(ended)))) return null;
+  // Null telemetry timing must not become the normalized event's zero placeholder.
+  const duration = event.telemetry ? event.telemetry.durationMs : event.durationMs;
+  return { status: event.status as 'success' | 'error', durationMs: duration !== null && Number.isFinite(duration) && duration >= 0 ? duration : null };
+}
 const isInput = (value: TaskRecord) => value.event?.kind==='user_prompt';
 const isContext = (value: TaskRecord) => value.event?.kind==='system' || value.event?.kind==='agent' || value.event?.title==='token_count' || value.event?.kind==='reasoning'&&!value.event.title&&!value.event.hasOutput;
 const error = (value: TaskRecord) => value.event?.status==='error'||value.importedTurn?.isError===true;
@@ -125,7 +136,8 @@ export function deriveTaskProcess(page: TaskRecordPage): ProcessGroup[] {
     }
     group.errorCount=group.records.filter(error).length;
     const outputs=group.records.filter(item=>item.event?.hasOutput||item.importedTurn?.hasOutput);
-    const last=outputs.at(-1);group.result=['attempt','model','tool'].includes(group.kind)?last?.event?.status??(last?.importedTurn?.isError===true?'error':last?.importedTurn?.isError===false?'success':null):null;
+    const own=group.kind==='tool'&&group.records.length===1?singleToolOutcome(group.records[0]!,group):null;
+    const last=outputs.at(-1);group.result=own?.status??(['attempt','model','tool'].includes(group.kind)?last?.event?.status??(last?.importedTurn?.isError===true?'error':last?.importedTurn?.isError===false?'success':null):null);
     for(const child of group.children)if(isProcessGroup(child))settle(child);
     if((group.kind==='attempt'||group.kind==='model')&&!group.title)group.title=group.records.find(item=>!isContext(item))?.event?.title??'';
     if(group.kind==='step')group.title=group.children.filter(isProcessGroup).find(child=>['attempt','model'].includes(child.kind)&&child.title)?.title??group.records.find(item=>!isContext(item))?.event?.title??'';

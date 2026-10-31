@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type {
-  ProviderKey,
+  SessionProviderKey,
   SessionDetailResponse,
   TraceRecord,
 } from '../core/trace-types.js';
@@ -20,7 +20,7 @@ export type TokenClass = 'system' | 'input' | 'output' | 'reasoning';
 
 export interface TokenTextModalProps {
   sessionKey: string;
-  provider: ProviderKey;
+  provider: SessionProviderKey;
   /** 会话标题 / agent 名（Header 展示）。 */
   agentName: string;
   tokenClass: TokenClass;

@@ -1,0 +1,3 @@
+export const attributes = (v: Record<string, unknown>) => Object.entries(v).map(([key,value])=>({key,value:typeof value==='number'?{intValue:String(value)}:{stringValue:value}}));
+export const span = (id='1', a:Record<string,unknown>={}, parent?:string) => ({traceId:'a'.repeat(32),spanId:id.padStart(16,'0'),...(parent?{parentSpanId:parent.padStart(16,'0')}:{}),name:'Synthetic span '+id,startTimeUnixNano:'1793491200000000000',endTimeUnixNano:'1793491201000000000',attributes:attributes(a),status:{code:1}});
+export const batch = (spans: unknown[]) => ({resourceSpans:[{resource:{attributes:[]},scopeSpans:[{spans}]}]});

@@ -1,3 +1,5 @@
+import { TelemetryReceiver } from './telemetry/receiver.js';
+import { TelemetryError } from './telemetry/mapping.js';
 import { taskComparisonSnapshot } from './storage/task-home.js';
 import { constants as fsConstants } from 'node:fs';
 import { TaskHomeHydrator, HomeHydrationBusy } from './watch/task-home-hydrator.js';
@@ -652,6 +654,12 @@ export function createAgentObservabilityServer(
     await localSettings.prices();
     res.setHeader('cache-control', 'no-store'); sendJson(res, 200, getTask(db, params.id!), req);
   });
+  router.register('GET', '/api/tasks/:id/summary', async (req, res, params) => {
+    await localSettings.prices();
+    const context = getTask(db, params.id!);
+    res.setHeader('cache-control', 'no-store');
+    sendJson(res, 200, { ...context.task, metrics: context.metrics, latestHealth: await healthStore.summary(context.task.id) }, req);
+  });
   router.register('GET', '/api/tasks/:id/timeline', (req, res, params) => {
     const query = parseQuery(req);
     res.setHeader('cache-control', 'no-store');
@@ -681,6 +689,7 @@ export function createAgentObservabilityServer(
             if (!pending) {
               pending = (async () => {
                 const meta = cachedStmt(db, 'SELECT provider,source_path FROM sessions WHERE id=?').get(key) as { provider: string; source_path: string } | undefined;
+                if (meta?.source_path.startsWith('telemetry:')) return;
                 if (!meta || meta.provider === 'trae' || !existsSync(meta.source_path)) { warnings.push('native_source_unavailable'); return; }
                 await scanAndStoreDetail(db, key, { config, notify: notifyMerged });
               })();
@@ -698,6 +707,13 @@ export function createAgentObservabilityServer(
       res.setHeader('cache-control', 'no-store'); sendJson(res, 200, page, req);
     } finally { res.removeListener('close', cancel); }
   });
+
+  const telemetry = new TelemetryReceiver(db, opts.userConfigPath, notifyMerged);
+  const telemetryPort = (req: IncomingMessage): number => req.socket.localPort ?? 0;
+  router.register('GET', '/api/telemetry', async (req, res) => sendJson(res, 200, await telemetry.status(telemetryPort(req)), req));
+  router.register('PUT', '/api/telemetry', async (req, res) => sendJson(res, 200, await telemetry.configure(await readJsonBody(req, 1024), telemetryPort(req)), req));
+  router.register('POST', '/v1/traces', async (req, res) => { await telemetry.ingest(req); sendJson(res, 200, {}, req); });
+  router.register('POST', '/api/telemetry/import', async (req, res) => sendJson(res, 200, await telemetry.ingest(req, true), req));
 
   router.register('POST', '/api/trace-imports', async (req, res) => {
     const controller = new AbortController(), cancel = (): void => controller.abort();
@@ -2336,11 +2352,12 @@ export function createAgentObservabilityServer(
     }
     const handler = (async () => {
       try {
-        if (pathname === '/api/task-comparison' || pathname.startsWith('/api/task-home/') || pathname.startsWith('/api/config/model-pricing') || pathname.startsWith('/api/config/alert-thresholds') || pathname === '/api/task-kpis' || pathname.startsWith('/api/agent-folding/') || pathname.startsWith('/api/team-experiments/') || pathname.startsWith('/api/benchmarks/') || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
+        if (pathname === '/v1/traces' || pathname.startsWith('/api/telemetry') || pathname === '/api/task-comparison' || pathname.startsWith('/api/task-home/') || pathname.startsWith('/api/config/model-pricing') || pathname.startsWith('/api/config/alert-thresholds') || pathname === '/api/task-kpis' || pathname.startsWith('/api/agent-folding/') || pathname.startsWith('/api/team-experiments/') || pathname.startsWith('/api/benchmarks/') || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
           if (pathname.startsWith('/api/config/') || pathname === '/api/task-kpis' || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring') res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/hooks/')) res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/frida/')) res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/trace-imports')) res.setHeader('cache-control', 'no-store');
+          if (pathname === '/v1/traces' || pathname.startsWith('/api/telemetry')) res.setHeader('cache-control', 'no-store');
           const localHost = (host: string): boolean => host === 'localhost' || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host);
           const remote = req.socket.remoteAddress ?? '';
           if (!(remote === '::1' || remote.startsWith('127.') || remote.startsWith('::ffff:127.'))) {
@@ -2364,6 +2381,8 @@ export function createAgentObservabilityServer(
         }
         await match.handler(req, res, match.params);
       } catch (err) {
+        if (pathname === '/v1/traces') { telemetry.reject(err instanceof TelemetryError ? err.code : err instanceof HttpError ? 'TELEMETRY_GUARD' : 'TELEMETRY_FAILED'); if (!req.complete) req.resume(); }
+        if (err instanceof TelemetryError) { if (!req.complete) req.resume(); sendApiError(res, err.status, err.code, err.message, undefined, req); return; }
         if (err instanceof HomeHydrationBusy) { sendApiError(res,409,'BUSY',err.message,undefined,req); return; }
         if (err instanceof TaskHomeChangedError) { sendApiError(res,409,err.code,err.message,undefined,req); return; }
         if (err instanceof LocalSettingsError) { sendApiError(res,400,err.code,err.message,undefined,req); return; }
@@ -2457,6 +2476,7 @@ export function createAgentObservabilityServer(
       }
       shutdown = (async () => {
         await homeHydrationStopped;
+        await telemetry.close();
         await hookReceiver.close();
         await captureBundler.close();
         await captureSelfTester.close();

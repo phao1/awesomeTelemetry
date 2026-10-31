@@ -1,3 +1,4 @@
+import { attachTelemetry } from './telemetry.js';
 import type { Database } from 'better-sqlite3';
 import type { TaskContext, TaskListQuery, TaskMember, TaskPage, TaskRecordPage, TaskRecordQuery, TaskSummary, TaskTimeline } from '../../src/core/task-types.js';
 import type { TraceEventSlim, TraceLogTurn } from '../../src/core/trace-types.js';
@@ -53,6 +54,8 @@ export const TASK_BINDINGS_SQL = `WITH RECURSIVE agent_sessions AS (
  SELECT a.session_id,r.root_id,a.run_id FROM agent_sessions a JOIN roots r ON r.run_id=a.run_id AND r.root_count=1
  UNION
  SELECT child,root_id,NULL FROM native_roots
+ UNION
+ SELECT session_id,root_id,NULL FROM telemetry_sessions
 ), bindings AS (
  SELECT s.id AS session_id,CASE WHEN COUNT(DISTINCT m.root_id)=1 THEN MIN(m.root_id) ELSE s.id END AS root_id,
  CASE WHEN COUNT(DISTINCT m.run_id)=1 THEN MIN(m.run_id) ELSE NULL END AS run_id,
@@ -62,7 +65,10 @@ export const TASK_BINDINGS_SQL = `WITH RECURSIVE agent_sessions AS (
 const SUMMARY_COLS = `b.root_id,s.title,s.provider,s.started_at,MAX(m.updated_at) AS updated_at,s.status,
  COUNT(DISTINCT b.session_id) AS member_count,SUM(m.event_count) AS event_count,SUM(m.detail_loaded) AS loaded_count,
  CASE WHEN COUNT(DISTINCT b.run_id)=1 THEN MIN(b.run_id) ELSE NULL END AS run_id,
- EXISTS(SELECT 1 FROM scan_state ss WHERE ss.session_id=s.id) AS provenance_known`;
+ (EXISTS(SELECT 1 FROM scan_state ss WHERE ss.session_id=s.id) OR EXISTS(SELECT 1 FROM telemetry_sessions ts WHERE ts.session_id=s.id)) AS provenance_known,
+ (SELECT origin FROM telemetry_sessions ts WHERE ts.session_id=s.id) AS telemetry_origin,
+ (SELECT source FROM telemetry_sessions ts WHERE ts.session_id=s.id) AS telemetry_source,
+ (SELECT warnings_json FROM telemetry_sessions ts WHERE ts.session_id=s.id) AS telemetry_warnings`;
 const SUMMARY_FROM = `FROM bindings b JOIN sessions s ON s.id=b.root_id JOIN sessions m ON m.id=b.session_id`;
 export class TaskReadError extends Error {
   readonly code: 'BAD_REQUEST' | 'SESSION_NOT_FOUND';
@@ -71,9 +77,9 @@ export class TaskReadError extends Error {
 const invalid = (message: string): never => { throw new TaskReadError('BAD_REQUEST', message); };
 const missing = (): never => { throw new TaskReadError('SESSION_NOT_FOUND', 'Task or record is unavailable'); };
 function summary(row: Row): TaskSummary {
-  return { id: 'collected:' + row.root_id, origin: 'collected', provenanceKnown: row.provenance_known === 1,
+  return { id: 'collected:' + row.root_id, origin: row.telemetry_origin === 'imported' ? 'imported' : 'collected', provenanceKnown: row.provenance_known === 1,
     rootSessionKey: row.root_id as string, runId: row.run_id as string | null, title: row.title as string,
-    provider: row.provider as string, startedAt: row.started_at as string, updatedAt: row.updated_at as string,
+    provider: row.telemetry_source as string ?? row.provider as string, startedAt: row.started_at as string || null, updatedAt: row.updated_at as string,
     recordedStatus: row.status as string, memberCount: Number(row.member_count), eventCount: Number(row.event_count), loadedMemberCount: Number(row.loaded_count) };
 }
 export function importedTask(session: NonNullable<ReturnType<typeof importManifest>>['session']): TaskSummary {
@@ -89,19 +95,25 @@ export function listTasks(db: Database, query: TaskListQuery): TaskPage {
   if (limit < 1 || (query.q?.length ?? 0) > 200) invalid('Invalid task list filter');
   const text = (query.q ?? '').toLocaleLowerCase();
   if (query.origin === 'imported') {
-    const where = `WHERE (?='' OR lower(COALESCE(json_extract(metadata_json,'$.title'),'') || ' ' || json_extract(metadata_json,'$.fileName') || ' ' || id) LIKE ? ESCAPE '\\')`;
     const needle = '%' + text.replace(/[\\%_]/g, '\\$&') + '%';
-    const count = cachedStmt(db, `SELECT COUNT(1) AS n FROM trace_log_imports ${where}`).get(text, needle) as { n: number };
-    const rows = cachedStmt(db, `SELECT id FROM trace_log_imports ${where} ORDER BY imported_at DESC,id LIMIT ? OFFSET ?`).all(text, needle, limit + 1, offset) as { id: string }[];
-    // Metadata is read in one batch; never query each imported task separately.
-    const ids = rows.slice(0, limit).map(row => row.id);
-    const manifests = cachedStmt(db, 'SELECT id,metadata_json FROM trace_log_imports WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids)) as { id: string; metadata_json: string }[];
-    const byId = new Map(manifests.map(row => [row.id, importedTask(JSON.parse(row.metadata_json))]));
-    return { items: ids.map(id => byId.get(id)!), total: count.n, offset, limit, hasMore: rows.length > limit };
+    const from = `FROM (
+      SELECT 'legacy' AS kind,id,imported_at AS updated_at,COALESCE(json_extract(metadata_json,'$.title'),'') || ' ' || json_extract(metadata_json,'$.fileName') AS title FROM trace_log_imports
+      UNION ALL
+      SELECT 'telemetry',s.id,s.updated_at,s.title FROM telemetry_sessions ts JOIN sessions s ON s.id=ts.session_id WHERE ts.origin='imported' AND ts.session_id=ts.root_id
+    ) WHERE (?='' OR lower(title || ' ' || id) LIKE ? ESCAPE '\\')`;
+    const count = cachedStmt(db, `SELECT COUNT(1) AS n ${from}`).get(text,needle) as {n:number};
+    const rows = cachedStmt(db, `SELECT kind,id ${from} ORDER BY updated_at DESC,id LIMIT ? OFFSET ?`).all(text,needle,limit+1,offset) as {kind:string;id:string}[];
+    const ids = rows.filter(r=>r.kind==='legacy').map(r=>r.id);
+    const manifests = cachedStmt(db,'SELECT id,metadata_json FROM trace_log_imports WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids)) as {id:string;metadata_json:string}[];
+    const byId = new Map(manifests.map(row=>[row.id,importedTask(JSON.parse(row.metadata_json))]));
+    const telemetryIds=rows.filter(r=>r.kind==='telemetry').map(r=>r.id);
+    const telemetryRows=cachedStmt(db,`${TASK_BINDINGS_SQL} SELECT ${SUMMARY_COLS} ${SUMMARY_FROM} WHERE b.root_id IN (SELECT value FROM json_each(?)) GROUP BY b.root_id`).all(JSON.stringify(telemetryIds)) as Row[];
+    for(const row of telemetryRows)byId.set(String(row.root_id),summary(row));
+    return {items:rows.slice(0,limit).map(row=>byId.get(row.id)!),total:count.n,offset,limit,hasMore:rows.length>limit};
   }
   const since = query.range === undefined || query.range === 'all' ? '' : new Date(Date.now() - (query.range === 'today' ? 1 : query.range === '7d' ? 7 : 30) * 86400000).toISOString();
   const needle = '%' + text.replace(/[\\%_]/g, '\\$&') + '%';
-  const where = `WHERE (?='' OR lower(s.title || ' ' || s.id) LIKE ? ESCAPE '\\') AND (?='' OR s.provider=?)`;
+  const where = `WHERE NOT EXISTS(SELECT 1 FROM telemetry_sessions ts WHERE ts.session_id=s.id AND ts.origin='imported') AND (?='' OR lower(s.title || ' ' || s.id) LIKE ? ESCAPE '\\') AND (?='' OR s.provider=?)`;
   const aggregate = `SELECT ${SUMMARY_COLS} ${SUMMARY_FROM} ${where} GROUP BY b.root_id HAVING MAX(m.updated_at)>=?`;
   const params = [text, needle, query.provider ?? '', query.provider ?? '', since];
   const count = cachedStmt(db, `${TASK_BINDINGS_SQL} SELECT COUNT(1) AS n FROM (${aggregate})`).get(...params) as { n: number };
@@ -128,12 +140,13 @@ function readTask(db: Database, id: string): TaskContext {
   if (binding === undefined) return missing();
   const row = cachedStmt(db, `${TASK_BINDINGS_SQL} SELECT ${SUMMARY_COLS} ${SUMMARY_FROM} WHERE b.root_id=? GROUP BY b.root_id`).get(binding.root_id) as Row;
   const task = summary(row);
-  const rows = cachedStmt(db, `${TASK_BINDINGS_SQL} SELECT s.id,s.source_agent,s.detail_loaded,s.event_count,(SELECT p.parent FROM declared_parents p WHERE p.child=s.id) AS parent_id FROM bindings b JOIN sessions s ON s.id=b.session_id WHERE b.root_id=? ORDER BY s.id LIMIT 101`).all(binding.root_id) as Row[];
+  const rows = cachedStmt(db, `${TASK_BINDINGS_SQL} SELECT s.id,s.source_agent,s.detail_loaded,s.event_count,(SELECT p.parent FROM declared_parents p WHERE p.child=s.id) AS native_parent_id,(SELECT t.parent_id FROM telemetry_sessions t WHERE t.session_id=s.id) AS telemetry_parent_id FROM bindings b JOIN sessions s ON s.id=b.session_id WHERE b.root_id=? ORDER BY s.id LIMIT 101`).all(binding.root_id) as Row[];
   const agents = task.runId === null ? [] : cachedStmt(db, `SELECT a.id,a.display_name,a.role_class,a.session_keys_json,
     (SELECT e.from_agent_id FROM team_agent_edges e WHERE e.to_agent_id=a.id AND e.valid_to IS NULL ORDER BY e.id LIMIT 1) AS parent_id
     FROM team_agents a WHERE a.run_id=? ORDER BY a.id LIMIT 101`).all(task.runId) as Row[];
   const byKey = new Map<string, Row>();
   for (const agent of agents) for (const sessionKey of JSON.parse(agent.session_keys_json as string) as string[]) if (!byKey.has(sessionKey)) byKey.set(sessionKey, agent);
+  for (const item of rows) item.parent_id = item.telemetry_parent_id ?? item.native_parent_id;
   const members: TaskMember[] = rows.slice(0, 100).map(item => {
     const agent = byKey.get(item.id as string);
     return { id: agent?.id as string ?? item.id as string, name: agent?.display_name as string || item.source_agent as string,
@@ -142,7 +155,7 @@ function readTask(db: Database, id: string): TaskContext {
   });
   const represented = new Set(members.map(member => member.id));
   for (const agent of agents) if (!represented.has(agent.id as string) && members.length < 100) members.push({ id: agent.id as string, name: agent.display_name as string, role: agent.role_class as string, sessionKey: null, parentId: agent.parent_id as string | null, detailLoaded: false, eventCount: 0 });
-  const warnings = [!task.provenanceKnown ? 'origin_unconfirmed' : '', rows.length > 100 || agents.length > 100 ? 'member_limit' : '', binding.root_count > 1 ? 'relationship_conflict' : '', binding.unresolved_parent ? 'relationship_unresolved' : ''].filter(Boolean);
+  const warnings = [...JSON.parse(String(row.telemetry_warnings??'[]')) as string[],!task.provenanceKnown ? 'origin_unconfirmed' : '', rows.length > 100 || agents.length > 100 ? 'member_limit' : '', binding.root_count > 1 ? 'relationship_conflict' : '', binding.unresolved_parent ? 'relationship_unresolved' : ''].filter(Boolean);
   return { task: { ...task, memberCount: Math.max(task.memberCount, members.length) }, members, importSession: null, warnings };
 }
 interface WindowCut { task: string; member: string; q: string; status: string; from: string; to: string; ceilings: [string, number][] }
@@ -227,6 +240,7 @@ export function taskRecords(db: Database, context: TaskContext, query: TaskRecor
   const byKey = new Map(selected.map(item => [item.sessionKey, item]));
   const items = rows.map(row => { const event = mapEvent(row, false) as TraceEventSlim, owner = byKey.get(event.sessionId)!;
     return { id: event.sessionId + ':event:' + event.id, memberId: owner.id, memberName: owner.name, sessionKey: event.sessionId, event, importedTurn: null, ...(event.kind === 'tool' && row.tool_preview ? { toolInputPreview: redactHealthText(String(row.tool_preview)).replace(/\s+/g, ' ').trim().slice(0, 120) } : {}) }; });
+  attachTelemetry(db, items.flatMap(item=>item.event?[item.event]:[]));
   return { context, items, ...(query.structure ? { structure: taskStructure(db,items) } : {}),
     total, offset, limit, hasMore: offset + limit < total, hasPrevious: offset > 0,
     window: Buffer.from(JSON.stringify(cut)).toString('base64url'), warnings: context.warnings };

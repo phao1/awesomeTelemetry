@@ -1761,3 +1761,19 @@ no-hydration rule for the independent, cancellable background page lease.
 POST /api/task-comparison follows [task-comparison.md](task-comparison.md)
 TC-002, reusing Phase B task summary projection. Native session references resolve
 in a batched task-binding query, never a browser per-session lookup.
+
+## Phase D local OTLP and file intake
+
+[telemetry-intake.md](telemetry-intake.md) TD-001/002/005 define POST /v1/traces,
+GET/PUT /api/telemetry and POST /api/telemetry/import. Shared loopback guards,
+foreground tracking, no-store, unified ApiError apply to all four routes.
+
+Phase D capacity correction: telemetry intake distinguishes413 TELEMETRY_QUOTA
+(retained telemetry spans/normalized bytes/tasks/members),413 TELEMETRY_WAL_LIMIT
+(WAL still>=8000000 after one nonblocking checkpoint), and503 TELEMETRY_CAPACITY
+(unavailable stat/write-stamp/queue). Total database size never blocks telemetry;
+capture capacity behavior is unchanged. See telemetry-intake.md TD-006.
+GET /api/tasks/:id/summary returns TaskSummary with metrics and nullable
+latestHealth; same task identity resolution, loopback guard/no-store/ApiError,
+no source hydration/body reads. Existing standard health report route works for
+both telemetry origins (HTTP collected; file imported).

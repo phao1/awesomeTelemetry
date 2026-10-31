@@ -1,3 +1,4 @@
+import { attachTelemetry } from '../storage/telemetry.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -6,7 +7,7 @@ import { setImmediate as yieldLoop } from 'node:timers/promises';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import Sqlite, { type Database } from 'better-sqlite3';
 import type { BenchmarkUsage } from '../../src/core/benchmark-types.js';
-import type { CaptureTransportResult, DurationSource, ProviderKey, TraceEventSlim, TraceLogTurn } from '../../src/core/trace-types.js';
+import type { CaptureTransportResult, DurationSource, SessionProviderKey, TraceEventSlim, TraceLogTurn } from '../../src/core/trace-types.js';
 import type { TaskRecord } from '../../src/core/task-types.js';
 import type { HealthInput, HealthRecord, HealthReport, HealthScope, HealthThresholds } from '../../src/core/task-health/types.js';
 import { analyzeTaskHealth, renderFinding, HEALTH_CALC_VERSION, HEALTH_RULE_VERSION } from '../../src/core/task-health/report.js';
@@ -39,9 +40,10 @@ const obj = (v: unknown): Record<string, unknown> => v !== null && typeof v === 
 const count = (v: unknown): number | null => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
 const date = (v: unknown): string | null => typeof v === 'string' && Number.isFinite(Date.parse(v)) ? new Date(v).toISOString() : null;
 const blankNative = (): HealthRecord['native'] => ({ modelCall: null, toolStartedAt: null, toolCompletedAt: null, modelStartedAt: null, modelCompletedAt: null, firstContentAt: null, command: null, targets: [], cwd: null, delegateMemberId: null, requestsUserInput: null, environmentReset: null, reasoning: 'unknown', usage: null });
-interface SessionRow { id: string; provider: ProviderKey; duration_source: DurationSource; cwd: string | null; source_path: string; detail_loaded: number }
+interface SessionRow { id: string; provider: SessionProviderKey; duration_source: DurationSource; cwd: string | null; source_path: string; detail_loaded: number }
 async function fingerprints(rows: SessionRow[]) {
   return Promise.all(rows.map(async row => [row.id, ...await Promise.all([row.source_path, row.source_path + '-wal'].map(async path => {
+    if (row.provider === 'opentelemetry') return null;
     try { const value = await stat(path); return [value.size, value.mtimeMs, value.ctimeMs]; }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw new HealthError('HEALTH_SOURCE_UNAVAILABLE'); }
   }))]));
@@ -267,11 +269,12 @@ export async function collectTaskHealth(db: Database, taskId: string, scope: Hea
     members: selected.map(m => { const row = m.sessionKey ? byKey.get(m.sessionKey) : null; const provider = row?.provider ?? null, durationSource = row?.duration_source ?? 'unknown'; return { id: m.id, parentId: m.parentId, role: m.role, sessionKey: m.sessionKey, provider, detailLoaded: m.detailLoaded, durationSource,
       tokenSemantics: provider === 'codex' ? { cacheRead: 'incremental', reasoning: 'incremental', reasoningInTotal: false } : provider === 'claude' || provider === 'codeagent' ? { cacheRead: 'incremental', reasoning: 'incremental' } : null,
       // Session measured flags cannot certify every OpenCode part's native endpoints.
-      timestampSemantics: provider && ['opencode', 'codearts', 'codeagent2'].includes(provider) ? 'start' : timestampSemantics(provider, durationSource), cwd: row?.cwd ?? null }; }),
+      timestampSemantics: provider === 'opentelemetry' ? durationSource === 'measured' ? 'interval' : 'unknown' : provider && ['opencode', 'codearts', 'codeagent2'].includes(provider) ? 'start' : timestampSemantics(provider, durationSource), cwd: row?.cwd ?? null }; }),
     records: [], captures: [], limits: context.warnings.includes('member_limit') ? ['members'] : [], reasons: [...context.warnings] };
   if (scope.member === 'all' && context.task.memberCount > selected.length) input.reasons.push('selected_member_total:' + context.task.memberCount);
   if (selected.some(m => !m.detailLoaded)) input.reasons.push('native_detail_not_loaded');
   const addPage = async (items: TaskRecord[], lengths: Map<string, [number | null, number | null]>) => {
+    attachTelemetry(db,items.flatMap(item=>item.event?[item.event]:[]));
     for (const item of items) { const len = lengths.get(item.id); input.records.push({ recordId: item.id, memberId: item.memberId, event: item.event, importedTurn: item.importedTurn, inputLen: len?.[0] ?? null, outputLen: len?.[1] ?? null, round: null, attempt: null, tool: null, pairing: 'unavailable', relatedRecordIds: [], native: blankNative() }); }
     await yieldLoop(); signal?.throwIfAborted();
   };
@@ -312,6 +315,13 @@ export async function collectTaskHealth(db: Database, taskId: string, scope: Hea
   for (const [value, ids] of owners) if (ids.size === 1) { const member = input.members.find(m => ids.has(m.sessionKey ?? '')); if (member) delegates.set(value, member.id); }
   const budget = { bytes: 0 };
   for (const row of rows.filter(r => r.detail_loaded === 1)) { signal?.throwIfAborted(); await enrich(row, input.records.filter(r => r.event?.sessionId === row.id), budget, input.reasons, input.limits, signal, delegates); }
+  for (const record of input.records) {
+    const s=record.event?.telemetry; if(!s)continue;
+    record.native.usage={...s.usage,inputIncludesCache:null,outputIncludesReasoning:null,cacheWriteReported:s.usage.cacheWrite===null?null:true};
+    record.native.reasoning=s.usage.reasoning===0?'zero':(s.usage.reasoning??0)>0?'present':'unknown';
+    if(s.kind==='llm') {record.native.modelStartedAt=s.start;record.native.modelCompletedAt=s.end;record.native.modelCall={namespace:'otel:span',kind:'request',value:s.spanId,scope:s.traceId};}
+    if(s.kind==='tool') {record.native.toolStartedAt=s.start;record.native.toolCompletedAt=s.end;}
+  }
   await captureTimings(db, input, signal);
   input.reasons = [...new Set(input.reasons)]; input.limits = [...new Set(input.limits)];
   if (before !== JSON.stringify(counter(db)) || revision !== await healthRevision(db, taskId)) throw new HealthError('SOURCE_CHANGED', 409);
