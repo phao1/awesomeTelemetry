@@ -172,3 +172,37 @@ with a request to narrow/select the scope. These commands open SQLite readonly;
 they never scan, monitor, start capture or execute a model/evaluator. Only export
 writes files, exclusively inside a new destination. Existing plan.json and
 explicit `--execute` behavior is unchanged. OpenCode verification is deferred.
+
+## 原始日志缺失与大任务时的降级口径
+
+Codex 清理子 Agent rollout、根日志已删除或日志不可读时，架构读取仍使用本地数据库
+索引：工具事件、精确 tool_call 身份和成员 parentId 只能在唯一匹配时确认委派；
+不能确认的关系列为未解析，不从截断摘要猜角色。报告说明受影响的成员数。
+用量取 sessions 的 token_*，工具计数取索引事件并按精确调用身份去重，明确标为
+索引来源且 complete=false。旧计数的零值无法证明“原文报告了零”，保持未知；
+Codex 索引输入是扣除缓存后的新鲜输入，不冒充原始累计 input_tokens。
+
+每次读取作业（包括 A/B 全部任务、架构和指标两次读取）按作业内去重文件字节计，
+累计最多 512 MiB；同一文件按 dev+ino 只计一次，重复解析不重复计费，超限 bytes
+表示已计入的去重文件总字节；逐行做廉价预筛后才解析相关 JSON。服务端仍限 30 秒、响应限 8 MiB。
+无关联抓包时不分页匹配时序；有关联但单会话超过 20000 事件时跳过匹配，保留
+observed 并说明限制。超过 2000 span 时保留完整调用计数与用量，省略整组 span
+明细，相关时延指标未知，绝不用前 2000 条冒充全任务结果。
+
+来源变化提示重试；未索引委派提示打开该任务的执行轨迹加载详情后重试；超过容量显示规模和上限，
+建议减少任务数量或选择较小任务；无匹配时检查根任务、工具、目录和时间范围。
+恢复日志、扫描索引或改选范围后重新读取；不会自动启动采集或模型执行。
+
+会话 `detail_loaded=0` 表示详情尚未按需加载，不等于需要重新扫描。浏览器架构入口
+会先对原始日志仍可读的成员复用执行轨迹使用的 REQ-015 惰性详情加载；加载产生的
+索引写入发生在来源 revision 快照之前，随后重新读取成员、身份与完整性。此步骤受
+同一作业截止时间和取消信号约束，失败或文件缺失时继续返回可得结果。
+仍找不到索引事件的委派保留为未解析，证据 `eventId=null`、`complete=false`，并说明
+未定位次数及补全方法：打开该任务的执行轨迹加载详情后重试。不会因此让整个范围失败。
+
+**明细不完整时仍显示原生用量，并附限制说明**。这包括 `origin_unconfirmed` 或成员
+尚未加载详情的任务；原生日志中明确报告的 Token 仍可用，但不能由此断言事件索引、
+委派定位、调用次数或时延已经完整。混合原生 Codex（输入含缓存）与索引（输入不含
+缓存）时，先将各成员输入统一为不含缓存再求和，扣除已包含的缓存读与缓存写；相关
+缓存字段未知时，该成员输入保持未知。所有成员口径相同时保留原来的求和与标志。
+错误提示中的字节规模换算为 MiB、保留一位小数，其他计数显示千分位。

@@ -487,7 +487,9 @@ export function createAgentObservabilityServer(
   const ensureDetail = async (
     key: string,
     mode: 'slim' | 'full',
+    signal?: AbortSignal,
   ): Promise<SessionDetailResponse | null> => {
+    signal?.throwIfAborted();
     const meta = cachedStmt(
       db,
       'SELECT detail_loaded, provider, source_path FROM sessions WHERE id = ?',
@@ -510,6 +512,7 @@ export function createAgentObservabilityServer(
         return null;
       }
       await scanAndStoreDetail(db, key, { config, notify: notifyMerged });
+      signal?.throwIfAborted();
     }
     let detail = getSessionDetail(db, key, { mode });
     const groups = sessionGroups();
@@ -1309,7 +1312,7 @@ export function createAgentObservabilityServer(
   });
   const stopArchitectureDiagnosis = registerArchitectureDiagnosisRoutes(router, architectureCollector);
   const stopTaskHealth = registerTaskHealthRoutes(router, { db, store: createHealthReportStore(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite'))) });
-  const foldingScopeCollector = createNativeScopeCollector(db);
+  const foldingScopeCollector = createNativeScopeCollector(db, { ensureDetail: (key, signal) => ensureDetail(key, 'slim', signal) });
   const stopAgentFolding = registerAgentFoldingRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'agent-folding-runs'), {
     loadScope: (scope, signal) => foldingScopeCollector.collect(scope, signal),
     loadComparison: async (a, b, signal) => {

@@ -309,3 +309,21 @@ describe('real task architecture analysis', () => {
     expect(calls.filter(path => path.includes('/events/'))).toHaveLength(0); expect(calls.every(path => !path.includes('/start'))).toBe(true);
   });
 });
+
+it.each([
+  ['SOURCE_CHANGED', 'Local records changed', '读取期间本地记录发生变化'],
+  ['UNINDEXED', 'execution trajectory to load details', '执行轨迹加载详情'],
+  ['TOO_LARGE', 'Select fewer', '减少任务数量'],
+  ['NO_MATCH', 'collected root tasks', '已采集根任务'],
+] as const)('localizes architecture tab failure %s without raw server text', async (reason, en, zh) => {
+  const original = fetch;
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith('/agent-folding/scope')
+    ? Promise.resolve({ ok: false, status: 422, text: async () => JSON.stringify({ error: { code: 'BAD_REQUEST', message: 'SECRET_SERVER_ENGLISH', details: { reason } } }) } as Response)
+    : original(input, init)));
+  for (const locale of ['en', 'zh'] as const) {
+    act(() => root.render(<TaskWorkbench locale={locale} route={{ ...DEFAULT_TASK_ROUTE, task: task.id, mode: 'architecture' }} onRoute={() => {}} changes={{ version: 0, keys: [], runIds: [] }} onIntake={() => {}} onOpenRequest={() => {}} />));
+    await settle();
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(locale === 'zh' ? zh : en);
+    expect(host.textContent).not.toContain('SECRET_SERVER_ENGLISH');
+  }
+});

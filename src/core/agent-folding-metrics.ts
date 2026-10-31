@@ -29,7 +29,14 @@ export function foldingRunMetrics(item: FoldingMetricRun): FoldingMetrics {
   }
   // Aggregate imports are not a license to assert a corrected token convention.
   const u = item.run.telemetry?.usage;
-  if (u && item.run.telemetry?.complete) { const corrected = correctedUsage(u); base.tokens = corrected.total; base.cacheHit = corrected.hit; }
+  if (u && (item.run.telemetry?.complete || item.recorded?.input !== undefined)) {
+    if (!item.run.telemetry?.complete) {
+      for (const key of ['input', 'output', 'reasoning', 'cacheRead', 'cacheWrite'] as const) base[key] = u[key];
+      base.cacheWrite = u.cacheWriteReported === false ? 0 : u.cacheWrite;
+      base.cache = u.cacheRead !== null && base.cacheWrite !== null ? u.cacheRead + base.cacheWrite : null;
+    }
+    const corrected = correctedUsage(u); base.tokens = corrected.total; base.cacheHit = corrected.hit;
+  }
   if (!item.run.verdict) base.success = null;
   if (item.labels.ttftSource === 'unknown') { base.ttft = null; base.tpot = null; }
   const rawInput = u && u.input !== null && u.inputIncludesCache !== null

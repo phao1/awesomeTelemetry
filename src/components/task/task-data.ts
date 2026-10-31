@@ -17,17 +17,17 @@ export function useTaskRead<T>(identity: string | null, read: (signal: AbortSign
   const reader = useRef(read); reader.current = read;
   const [revision, setRevision] = useState(0);
   const key = identity === null ? null : identity + ':' + revision;
-  const [state, setState] = useState<{ key: string | null; value: T | null; error: string | null; loading: boolean }>({ key: null, value: null, error: null, loading: false });
+  const [state, setState] = useState<{ key: string | null; value: T | null; error: string | null; errorInfo?: unknown; loading: boolean }>({ key: null, value: null, error: null, loading: false });
   useEffect(() => {
     if (key === null) return;
     let current = true; const controller = new AbortController();
     setState({ key, value: null, error: null, loading: true });
     const timer = setTimeout(() => { current = false; controller.abort(); setState({ key, value: null, error: 'READ_TIMEOUT', loading: false }); }, timeout);
     void reader.current(controller.signal).then(value => { if (current) setState({ key, value, error: null, loading: false }); })
-      .catch((error: unknown) => { if (current) setState({ key, value: null, error: error instanceof Error ? error.message : String(error), loading: false }); })
+      .catch((error: unknown) => { if (current) setState({ key, value: null, error: error instanceof Error ? error.message : String(error), errorInfo: error, loading: false }); })
       .finally(() => clearTimeout(timer));
     return () => { current = false; controller.abort(); clearTimeout(timer); };
   }, [key, timeout]);
   const retry = useCallback(() => setRevision(value => value + 1), []);
-  return { ...(state.key === key ? state : { value: null, error: null, loading: key !== null }), retry };
+  return { errorInfo: state.key === key ? state.errorInfo : undefined, ...(state.key === key ? state : { value: null, error: null, loading: key !== null }), retry };
 }

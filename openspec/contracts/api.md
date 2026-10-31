@@ -1519,10 +1519,22 @@ POST /api/agent-folding/scope accepts FoldingNativeScope (<=64KiB) and returns
 FoldingProject. POST /api/agent-folding/compare accepts exactly {a:string[],b:string[]}
 (<=128KiB), each 1..40 unique collected root task IDs, no overlap, returns
 {a:FoldingMetricRun[],b:FoldingMetricRun[]}. Both read existing local records only,
-no capture/scan/model/evaluator execution. Existing loopback Host/Origin guard,
+no capture/background scan/model/evaluator execution. Browser collection may
+materialize already indexed readable native session details via REQ-015 before
+its consistency snapshot; failure degrades to partial evidence with null event
+locators. Existing loopback Host/Origin guard,
 no-store, ApiError apply. Scope cache is source/database revision keyed.
 Owned request cancellation/deadline=30s, max response8MiB; invalid scope/group
-is400, read failure503. No per-row frontend requests. Imported reports remain
+is400 BAD_REQUEST. Expected source failures use existing BAD_REQUEST with
+static details.reason: SOURCE_CHANGED409 (retry), UNINDEXED422 (open task execution trajectory to load details, then retry),
+TOO_LARGE413 (bytes/events/spans/tasks/agents/boundaries/evidence/traffic and
+limit when applicable), NO_MATCH422 (select collected roots from one provider),
+INVALID_SOURCE422 (check/rescan logs), TIMEOUT408 (narrow scope/retry). Missing
+tasks remain404 SESSION_NOT_FOUND with NO_MATCH reason. Unexpected failures only
+use503 INTERNAL_ERROR with UNEXPECTED reason and a server diagnostic containing
+only error class and reason, never source text. Missing/unreadable originals
+use indexed degradation, not an error. No new top-level error codes.
+No per-row frontend requests. Imported reports remain
 client-local; no source credentials/bodies are transferred in these responses.
 
 ### Architecture P7 review (manual only)
