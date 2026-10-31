@@ -351,3 +351,16 @@ Costs require all-member reported USD provenance; never estimate.
 
 Task-record previews use only bounded substrings on the selected <=200-row page
 under api.md's explicit preview exception; never return body fields or read sources.
+
+## Phase B (2026-10-31)
+
+REQ-PHASE-B: Revision-cached batched task summaries reuse Phase A computations with covering indexed counts. No body/source hydration. Full-scope sort/filter precedes <=50 row pagination. Costs preserve reported amounts; fallback estimation requires trusted supported session usage/model and explicit cache convention, grouped by currency with known/total coverage. No price for unknown models is fabricated. New optional costs supersedes Phase A reported-only restriction; costUsd remains a complete single-USD compatibility projection.
+
+## Phase B review (2026-11-01)
+
+REQ-PHASE-B-REVIEW: Implement api.md's page-owned hydration lease, loaded/unknown
+reasons, price and threshold deep links and responsive label density. List GETs
+remain metadata-only. Reuse native scanners with global concurrency2, shared
+pending jobs and page cancellation; preserve missing-file rows. No per-session
+fetches/SSE or parser replacement. Adjacent tests cover queue/admission/cancel/
+source absence/notifications, retained-page refresh and direct settings focus.

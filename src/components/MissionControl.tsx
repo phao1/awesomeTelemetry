@@ -65,6 +65,7 @@ export interface MissionControlProps {
   /** SSE sessions_changed 外部失效计数（REQ-027：stamp 失效 + 手动刷新，不轮询）。 */
   invalidateKey?: number;
   initialRange?: MissionRange;
+  onRangeChange?: (range: MissionRange) => void;
 }
 
 function entries(
@@ -422,6 +423,7 @@ export function MissionControl({
   load,
   invalidateKey = 0,
   initialRange = '7d',
+  onRangeChange,
 }: MissionControlProps): React.JSX.Element {
   const defaultLoad = useCallback((range: MissionRange) => api.mission({ range }), []);
   const loader = load ?? defaultLoad;
@@ -432,6 +434,7 @@ export function MissionControl({
   const [stale, setStale] = useState(false);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activeRole, setActiveRole] = useState<MissionRole | null>('manager');
+  useEffect(()=>{setRange(initialRange);},[initialRange]);
   const mainRef = useRef<HTMLElement | null>(null);
   const initialScrollDone = useRef(false);
 
@@ -449,17 +452,22 @@ export function MissionControl({
   }, []);
 
   useEffect(() => {
+    let current=true;
     setResponse(null);
     setError(null);
     void loader(range)
       .then((result) => {
+        if(!current)return;
+        if(!result||!result.usage||!result.quality||!result.health||!result.meta)throw new Error('Invalid overview response');
         setResponse(result);
         setStale(false);
       })
       .catch((err: unknown) => {
+        if(!current)return;
         console.error('[mission] 加载失败:', err);
         setError(err instanceof Error ? err.message : String(err));
       });
+    return ()=>{current=false;};
   }, [loader, range, retryKey]);
 
   // REQ-027 / 8.4：SSE sessions_changed → 只标 stamp 失效，不自动重拉（不轮询）；
@@ -572,7 +580,7 @@ export function MissionControl({
               key={r}
               type="button"
               className={`btn ${range === r ? 'btn-active' : ''}`}
-              onClick={() => setRange(r)}
+              onClick={() => {setRange(r);onRangeChange?.(r);}}
             >
               {t(`mission.range.${r}`, locale)}
             </button>

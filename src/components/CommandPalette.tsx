@@ -177,10 +177,10 @@ export function CommandPalette({
 
     const navCommands: Command[] =
       prefix === null || prefix === 'nav'
-        ? (['task', 'intake', 'team-experiment', 'agent', 'compare', 'proxy', 'frida', 'mission'] as const)
+        ? (['overview', 'task', 'benchmark', 'team-experiment', 'intake', 'compare'] as const)
             .map((target) => ({
               id: `view-${target}`,
-              label: target === 'task' ? taskCopy(locale).tasks : target === 'intake' ? taskCopy(locale).intake : t(`view.${target}`, locale),
+              label: target === 'overview' ? (locale==='zh'?'概览':'Overview') : target === 'benchmark' ? (locale==='zh'?'评测中心':'Benchmarks') : target === 'task' ? taskCopy(locale).tasks : target === 'intake' ? taskCopy(locale).intake : t(`view.${target}`, locale),
               hint: 'nav',
               category: 'nav' as const,
               run: () => run({ type: 'view', view: target }),

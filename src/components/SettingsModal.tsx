@@ -1,3 +1,5 @@
+import type { LocalSettingsTarget } from '../core/task-types.js';
+import { LocalSettings } from './task/LocalSettings.js';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {t,type Locale} from '../i18n.js';
 import {PROVIDER_KEYS,type LocalSessionConfig,type ProviderKey} from '../core/trace-types.js';
@@ -7,6 +9,8 @@ import {Modal} from './ui/Modal.js';
 import {isDesensitizationEnabled,setDesensitizationEnabled} from './inspector-text.js';
 
 export interface SettingsModalProps {
+  initialTarget?:LocalSettingsTarget;
+  onSettingsSaved?:()=>void;
   locale:Locale;onClose:()=>void;
   load?:(signal?:AbortSignal)=>Promise<unknown>;
   save?:(config:unknown,signal?:AbortSignal)=>Promise<unknown>;
@@ -29,8 +33,9 @@ function validConfig(value:unknown):value is LocalSessionConfig {
 }
 interface Operation {kind:'load'|'save';controller:AbortController;timer:ReturnType<typeof setTimeout>}
 
-/** Settings edits only the existing local scanner contract; never launches an Agent. */
-export function SettingsModal({locale,onClose,load=defaultLoad,save=defaultSave}:SettingsModalProps):React.JSX.Element {
+/** Settings edits local scanner, sourced prices and local alert limits; never launches an Agent. */
+export function SettingsModal({locale,onClose,onSettingsSaved,initialTarget,load=defaultLoad,save=defaultSave}:SettingsModalProps):React.JSX.Element {
+  const [localDirty,setLocalDirty]=useState(false),[localRevision,setLocalRevision]=useState(0);
   const [draft,setDraft]=useState<LocalSessionConfig|null>(null),[baseline,setBaseline]=useState<LocalSessionConfig|null>(null);
   const [busy,setBusy]=useState<'load'|'save'|null>('load'),[error,setError]=useState<string|null>(null);
   const [errorKind,setErrorKind]=useState<'load'|'save'>('load');
@@ -71,7 +76,7 @@ export function SettingsModal({locale,onClose,load=defaultLoad,save=defaultSave}
     else if(returnRef.current?.isConnected){returnRef.current.focus();returnRef.current=null;}
   },[prompt]);
   const request=(intent:'close'|'reload'):void=>{
-    if(dirty||busy==='save'){
+    if(dirty||localDirty||busy==='save'){
       returnRef.current=document.activeElement instanceof HTMLElement?document.activeElement:null;setPrompt(intent);return;
     }
     if(intent==='close')closeRef.current();else void run('load');
@@ -81,7 +86,7 @@ export function SettingsModal({locale,onClose,load=defaultLoad,save=defaultSave}
   };
   const disabled=busy!==null||prompt!==null;
   return <Modal title={t('settings.title',locale)} onClose={()=>request('close')} size="lg" footer={<div className="settings-actions">
-    <span role="status" className="hint">{t(busy==='save'?'settings.saving':saved?'settings.saved':dirty?'settings.unsaved':'settings.noChanges',locale)}</span>
+    <span role="status" className="hint">{t(busy==='save'?'settings.saving':saved?'settings.saved':dirty||localDirty?'settings.unsaved':'settings.noChanges',locale)}</span>
     <span className="spacer"/>
     <button type="button" className="btn" disabled={busy!==null||prompt!==null} onClick={()=>request('reload')}>{t('settings.reload',locale)}</button>
     <button type="button" className="btn ui-btn-primary" disabled={draft===null||!dirty||disabled||uncertain} onClick={()=>{if(draft!==null)void run('save',draft);}}>{t('settings.save',locale)}</button>
@@ -91,10 +96,11 @@ export function SettingsModal({locale,onClose,load=defaultLoad,save=defaultSave}
       {prompt!==null&&<section className="settings-confirm" role="alert">
         <p>{t(busy==='save'?'settings.closeSaving':'settings.discardHint',locale)}</p>
         <div className="toolbar"><button ref={keepRef} type="button" className="btn" onClick={()=>setPrompt(null)}>{t('settings.keepEditing',locale)}</button>
-          <button type="button" className="btn ui-btn-danger" onClick={()=>{const intent=prompt;setPrompt(null);returnRef.current=null;if(intent==='close')closeRef.current();else void run('load');}}>{t(busy==='save'?'settings.closeWithoutRollback':'settings.discard',locale)}</button></div>
+          <button type="button" className="btn ui-btn-danger" onClick={()=>{const intent=prompt;setPrompt(null);returnRef.current=null;if(intent==='close')closeRef.current();else {setLocalRevision(n=>n+1);setLocalDirty(false);void run('load');}}}>{t(busy==='save'?'settings.closeWithoutRollback':'settings.discard',locale)}</button></div>
       </section>}
       {uncertain&&<p role="alert">{t('settings.uncertain',locale)}</p>}
       {error!==null&&<section className="ui-error" role="alert"><span className="mono">{error}</span><p>{t(error==='CONFIG_RESPONSE_INVALID'?'settings.invalidResponse':errorKind==='load'?'settings.loadFailed':'settings.saveFailed',locale)}</p></section>}
+      <LocalSettings key={localRevision} target={initialTarget} locale={locale} onSaved={onSettingsSaved} onDirty={setLocalDirty} disabled={prompt!==null}/>
       <section aria-labelledby="settings-providers"><h3 id="settings-providers">{t('settings.providers',locale)}</h3>
         <p className="hint">{t('settings.providerHint',locale)}</p>
         {busy==='load'&&<Skeleton variant="row" count={5}/>}

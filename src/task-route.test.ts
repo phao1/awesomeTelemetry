@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTaskRoute, serializeTaskRoute } from './task-route.js';
+import { DEFAULT_TASK_ROUTE, parseTaskRoute, serializeTaskRoute } from './task-route.js';
 describe('task location', () => {
   it('round-trips an imported event without mixing source identities', () => {
     const route = { task: 'imported:abc', origin: 'imported' as const, member: 'main', mode: 'raw' as const, event: 'import:42' };
@@ -34,4 +34,11 @@ it('round-trips a shared health report and its exact evidence record', () => {
     expect(parseTaskRoute(serializeTaskRoute(route))).toEqual(route);
   }
   expect(parseTaskRoute('#/task?health=').health).toBeUndefined();
+});
+
+it('Phase B restores home filters/sorting and retains old session evidence anchors',()=>{
+ const route={...DEFAULT_TASK_ROUTE,homeProvider:'codex' as const,homeSort:'cost' as const,homeRange:'7d' as const,homeFilter:'alerts' as const,homeCurrency:'CNY' as const,homeDirection:'asc' as const};
+ expect(parseTaskRoute(serializeTaskRoute(route))).toEqual(route);
+ expect(parseTaskRoute('#/task?key=native&eventId=e')).toMatchObject({task:'collected:native',event:'native:event:e'});
+ expect(parseTaskRoute('#/task?sort=invalid&filter=bad&direction=wrong')).toEqual(DEFAULT_TASK_ROUTE);
 });

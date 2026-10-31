@@ -173,8 +173,8 @@ describe('REQ-025 命令面板', () => {
     };
     setValue('/nav');
     const navRows = Array.from(container.querySelectorAll('.palette-row'));
-    expect(navRows.length).toBe(8);
-    expect(navRows.map(row => row.textContent).join(' ')).toContain('任务中心');
+    expect(navRows.length).toBe(6);
+    expect(navRows.map(row => row.textContent).join(' ')).toContain('任务');
     expect(navRows.map(row => row.textContent).join(' ')).toContain('数据接入');
     expect(navRows.map(row => row.textContent).join(' ')).toContain('Agent 边界评测');
     const navHints = navRows.map((row) => row.querySelector('.palette-row-hint')?.textContent);

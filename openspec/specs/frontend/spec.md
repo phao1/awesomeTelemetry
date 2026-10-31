@@ -1085,3 +1085,23 @@ Unknown architecture definitions use a known member with role-unknown marking,
 otherwise numbered unknown Agents; IDs, merge logic and field meaning stay intact.
 Navigation and command palette name the entry Agent 边界评测 / Agent boundary
 evaluation. Comparison UI states and source actions respect locale.
+
+## Phase B (2026-10-31)
+
+REQ-PHASE-B: Task home shares the rail page, task selection and A/B selection. Dense health rows show Phase A metrics, partial coverage, saved report conclusion/date and structured alert tooltip. Time/duration/errors/tokens/currency-cost sorting and provider/range/errors/alerts filters. Health entry selects the task and opens its existing drawer. Primary navigation Overview/Tasks/Benchmarks/Agent boundary evaluation/Data intake/Settings; overview retains mission widgets, role anchors and Agent overview group, with clickable last7day KPIs. Old hashes canonicalize preserving evidence locators; compare remains reachable from Tasks. Settings provides explicit model-price and threshold editing with validation, owned cancellation and errors; save refreshes displayed prices.
+
+Phase B task process is lazy in adjacent TaskProcess.tsx; all selected reading
+state remains task-scoped under the same App shell. Overview and legacy evidence
+surfaces load on their entries. Initial/preloaded JS remains<=200000B gzip;
+health-list controls and paging remain available on narrow screens with one
+shared provider/range/query/selection state. Configuration saves explicitly
+reload pricing-dependent overview widgets, ordinary SSE only marks them stale.
+
+## Phase B review (2026-11-01)
+
+REQ-PHASE-B-REVIEW: Implement api.md's page-owned hydration lease, loaded/unknown
+reasons, price and threshold deep links and responsive label density. List GETs
+remain metadata-only. Reuse native scanners with global concurrency2, shared
+pending jobs and page cancellation; preserve missing-file rows. No per-session
+fetches/SSE or parser replacement. Adjacent tests cover queue/admission/cancel/
+source absence/notifications, retained-page refresh and direct settings focus.

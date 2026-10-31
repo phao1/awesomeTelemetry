@@ -79,11 +79,15 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
   'claude-haiku-4-5': anthropic(1, 5, 200_000),
 };
 
+let pricingRevision = 0;
+export const modelPricingRevision = () => pricingRevision;
+
 let overrides: Record<string, ModelPrice> = {};
 
 /** 加载用户定价覆盖层（config/model-pricing.json）。同 key 覆盖内置。 */
 export function setModelPriceOverrides(table: Record<string, ModelPrice>): void {
   overrides = table;
+  pricingRevision++;
 }
 
 /**
@@ -102,7 +106,7 @@ export function lookupModelPrice(model: string | null | undefined): ModelPrice |
     return null;
   }
   const key = normalizeModelId(model);
-  return overrides[key] ?? DEFAULT_MODEL_PRICES[key] ?? null;
+  return Object.hasOwn(overrides,key) ? overrides[key]! : Object.hasOwn(DEFAULT_MODEL_PRICES,key) ? DEFAULT_MODEL_PRICES[key]! : null;
 }
 
 /** B12：上下文窗口大小。未知模型返回 null —— **禁止回落到硬编码 200k**。 */

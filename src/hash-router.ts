@@ -5,13 +5,14 @@
 
 import type { SessionRange } from './core/trace-types.js';
 
-export const HASH_VIEWS = ['session', 'agent', 'compare', 'proxy', 'frida', 'mission', 'task', 'intake', 'benchmark', 'team-experiment'] as const;
+export const HASH_VIEWS = ['overview', 'session', 'agent', 'compare', 'proxy', 'frida', 'mission', 'task', 'intake', 'benchmark', 'team-experiment'] as const;
 
 /** 色带宽度模式（add-trajectory-inspector D10/D18）。 */
 export type RibbonMode = 'time' | 'token';
 
 export interface HashState {
   view: (typeof HASH_VIEWS)[number];
+  channel?: 'native' | 'proxy' | 'cdp' | 'frida' | 'import';
   key?: string;
   phase?: string[];
   provider?: string[];
@@ -68,6 +69,7 @@ export function parseHash(hash: string): HashState | null {
     const range =
       rangeRaw === '7d' || rangeRaw === '30d' || rangeRaw === 'all' ? rangeRaw : undefined;
     return {
+      ...(['native','proxy','cdp','frida','import'].includes(params.get('channel')??'')?{channel:params.get('channel') as HashState['channel']}:{}),
       view: view as HashState['view'],
       ...(key !== null ? { key } : {}),
       ...(phase !== undefined ? { phase } : {}),
@@ -88,6 +90,7 @@ export function parseHash(hash: string): HashState | null {
 
 export function serializeHash(state: HashState): string {
   const params = new URLSearchParams();
+  if(state.channel)params.set('channel',state.channel);
   if (state.key !== undefined) {
     params.set('key', state.key);
   }
@@ -123,4 +126,13 @@ export function serializeHash(state: HashState): string {
   }
   const query = params.toString();
   return `#/${state.view}${query === '' ? '' : `?${query}`}`;
+}
+
+/** Canonicalize only entry paths. All explicit native evidence locators survive. */
+export function canonicalHash(hash: string): string {
+  const [path,search='']=hash.replace(/^#\/?/,'').split('?'),q=new URLSearchParams(search);
+  if(['proxy','frida','cdp'].includes(path??'')){q.set('channel',path!);return '#/intake?'+q.toString();}
+  if(path==='mission'||path==='agent'||path==='agents')return '#/overview'+(search?'?'+search:'');
+  if(path==='session'||path==='sessions')return '#/task'+(search?'?'+search:'');
+  return hash;
 }

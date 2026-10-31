@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import type { TaskHealthSummary } from '../../src/core/task-types.js';
 import type { DeepHealthReport, HealthReport, HealthScope, HealthThresholds } from '../../src/core/task-health/types.js';
 import { HEALTH_CALC_VERSION, HEALTH_RULE_VERSION } from '../../src/core/task-health/report.js';
 import { HealthError } from './collector.js';
@@ -46,6 +47,17 @@ const canonical = (v: unknown) => JSON.stringify(v, (_key, value: unknown) => va
 const same = (a: unknown, b: unknown) => canonical(a) === canonical(b);
 export function createHealthReportStore(dataDirectory: string) {
   const root = join(resolve(dataDirectory), 'task-health-reports');
+  const summaryRoot=join(resolve(dataDirectory),'task-health-summaries');
+  const summaryPath=(taskId:string)=>join(summaryRoot,digest(taskId)+'.json');
+  const summaryStamps=new Map<string,string>();
+  const summaryCache = new Map<string, TaskHealthSummary | null>();
+  async function project(taskId: string, values: SavedHealthReport[]) {
+    const latest=values.filter(standard).sort((a,b)=>b.generatedAt.localeCompare(a.generatedAt)||a.id.localeCompare(b.id))[0];
+    const value: TaskHealthSummary | null = latest ? {id:latest.id,generatedAt:latest.generatedAt,revision:latest.revision,issues:latest.findings.length,scope:latest.scope,conclusion:latest.findings.length?'findings':Object.values(latest.dimensions).includes('insufficient')?'insufficient':'not_observed'} : null;
+    const cached=summaryCache.get(taskId);if(cached&&value&&(cached.generatedAt>value.generatedAt||cached.generatedAt===value.generatedAt&&cached.id.localeCompare(value.id)<0))return;
+    await mkdir(summaryRoot,{recursive:true,mode:0o700});
+    await atomicHealthWrite(summaryPath(taskId),JSON.stringify(value)); summaryCache.set(taskId,value);summaryStamps.delete(taskId);
+  }
   const directory = (taskId: string) => join(root, digest(taskId));
   async function reports(taskId: string): Promise<SavedHealthReport[]> {
     const dir = directory(taskId); let names: string[];
@@ -61,12 +73,44 @@ export function createHealthReportStore(dataDirectory: string) {
     await atomicHealthWrite(join(directory(taskId), 'index.json'), JSON.stringify({ items: values.map(r => ({ ...metadata(r, standard(r) ? r.revision : null, values), expired: false })) }), signal);
   }
   const guarded = async <T>(run: () => Promise<T>): Promise<T> => { try { return await run(); } catch (error) { if (error instanceof HealthError) throw error; throw new HealthError('HEALTH_STORAGE_FAILED'); } };
+  let warming: Promise<void> | undefined;
+  function warmSummaries(): Promise<void> {
+    return warming??=(async()=>{
+      let dirs:string[];try{dirs=await readdir(root);}catch(error){if(missing(error))return;throw error;}
+      for(const hash of dirs){
+        if(!/^[a-f0-9]{64}$/.test(hash))continue;
+        try{const f=await open(join(summaryRoot,hash+'.json'),'r');await f.close();continue;}catch(error){if(!missing(error))throw error;}
+        let indexValue:{items:HealthReportIndexItem[]};
+        try{const f=await open(join(root,hash,'index.json'),'r');try{if((await f.stat()).size>65536)throw new HealthError('HEALTH_STORAGE_FAILED');indexValue=JSON.parse(await f.readFile('utf8')) as typeof indexValue;}finally{await f.close();}}catch(error){if(missing(error))continue;throw error;}
+        const item=indexValue.items.filter(i=>i.mode==='standard').sort((a,b)=>b.generatedAt.localeCompare(a.generatedAt)||a.id.localeCompare(b.id))[0];
+        if(item&&uuid.test(item.id)){const r=await readReport(join(root,hash,item.id+'.json'),hash,item.id);if(standard(r))await serialized(directory(r.taskId),()=>project(r.taskId,[r]));}
+        await new Promise<void>(resolve=>setTimeout(resolve,0));
+      }
+    })();
+  }
   return {
+    warmSummaries,
+    async summary(taskId: string): Promise<TaskHealthSummary | null> {
+      let value:TaskHealthSummary|null;
+      try {
+        const file=await open(summaryPath(taskId),'r');
+        try {
+          const info=await file.stat(),stamp=info.mtimeMs+':'+info.size;
+          if(info.size>4096)throw new HealthError('HEALTH_STORAGE_FAILED');
+          if(summaryStamps.get(taskId)===stamp&&summaryCache.has(taskId))return structuredClone(summaryCache.get(taskId)!);
+          value=JSON.parse(await file.readFile('utf8')) as TaskHealthSummary|null;
+          if(value&&(!uuid.test(value.id)||!Number.isFinite(Date.parse(value.generatedAt))||typeof value.revision!=='string'||!Number.isSafeInteger(value.issues)||value.issues<0||!['findings','not_observed','insufficient'].includes(value.conclusion)))throw new HealthError('HEALTH_STORAGE_FAILED');
+          summaryStamps.set(taskId,stamp);
+        }finally{await file.close();}
+      }catch(error){if(missing(error)){value=null;summaryStamps.delete(taskId);}else throw new HealthError('HEALTH_STORAGE_FAILED');}
+      if(summaryCache.size>=1000){const key=summaryCache.keys().next().value!;summaryCache.delete(key);summaryStamps.delete(key);}
+      summaryCache.set(taskId,value);return structuredClone(value);
+    },
     async list(taskId: string, revision: string | null): Promise<{ items: HealthReportIndexItem[] }> {
       return guarded(() => serialized(directory(taskId), async () => {
         const values = await reports(taskId);
         // Explicit history reconciles validated orphan files after index-save failure.
-        if (values.length) await index(taskId, values);
+        if (values.length) { await index(taskId, values); await project(taskId,values); }
         const items = values.map(r => metadata(r, revision, values));
         if (items.length > 50 || Buffer.byteLength(JSON.stringify({ items })) > 64 * 1024) throw new HealthError('HEALTH_STORAGE_FAILED');
         return { items };
@@ -88,6 +132,7 @@ export function createHealthReportStore(dataDirectory: string) {
         await atomicHealthWrite(join(directory(report.taskId), report.id + '.json'), text, signal);
         // Once report is durable, always finish index, including late cancellation.
         await index(report.taskId, [...values, report].sort((a, b) => b.generatedAt.localeCompare(a.generatedAt) || a.id.localeCompare(b.id)));
+        await project(report.taskId,[...values,report]);
         return report;
       }));
     },

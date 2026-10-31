@@ -86,3 +86,17 @@ describe('REQ-024 hash 路由', () => {
     expect(serializeHash({ view: 'session' })).toBe('#/session');
   });
 });
+
+describe('Phase B canonical entry paths',()=>{
+  it('keeps old evidence and filter locators through canonical redirects',async()=>{
+    const {canonicalHash}=await import('./hash-router.js');
+    expect(canonicalHash('#/proxy?key=s&request=3')).toBe('#/intake?key=s&request=3&channel=proxy');
+    expect(canonicalHash('#/frida')).toBe('#/intake?channel=frida');
+    expect(canonicalHash('#/mission?range=30d')).toBe('#/overview?range=30d');
+    expect(canonicalHash('#/agent')).toBe('#/overview');
+    expect(canonicalHash('#/session?key=native&eventId=e')).toBe('#/task?key=native&eventId=e');
+    expect(canonicalHash('#/compare?left=a&right=b')).toBe('#/compare?left=a&right=b');
+    expect(parseHash(serializeHash({view:'intake',channel:'frida'}))).toEqual({view:'intake',channel:'frida'});
+    expect(parseHash('#/overview?range=7d')).toEqual({view:'overview',range:'7d'});
+  });
+});

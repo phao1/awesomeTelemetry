@@ -259,6 +259,8 @@ falls apart.
 | `--row-sm` | `28px` | event rows, compact table rows |
 | `--row-md` | `32px` | regular table rows |
 | `--row-lg` | `44px` | session list rows (two-line dense) |
+| `--task-health-list-min-width` | `1060px` | desktop task health table; narrow cards override to zero |
+| `--task-health-scroll-min-height` | `240px` | task health list minimum scroll viewport |
 
 > `--row-sm` / `--row-lg` are the `itemHeight` inputs for virtual scrolling
 > and **must be constants** — they must not vary with content, or

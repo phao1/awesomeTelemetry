@@ -1,7 +1,7 @@
 import type { Locale } from '../../i18n.js';
 const zh = {
   returnMain: '返回主会话', segment: '执行片段', indexPending: '尚未解析', parsed: '已解析',
-  tasks: '任务中心', intake: '数据接入', settings: '设置', collected: '采集记录', imported: '导入记录',
+  tasks: '任务', intake: '数据接入', settings: '设置', collected: '采集记录', imported: '导入记录',
   searchTasks: '搜索任务或会话 ID', allTime: '全部时间', recent: '最近 7 天', month: '最近 30 天', today: '最近 24 小时',
   allProviders: '全部工具', refresh: '刷新', loading: '正在读取本地记录…', retry: '重试读取', previous: '更早记录', next: '更新记录',
   empty: '这个范围内还没有任务', emptyHint: '从数据接入选择日志来源，或导入已有记录。', choose: '选择一个任务，查看它的执行过程',

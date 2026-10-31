@@ -364,6 +364,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   const server: Server = createAgentObservabilityServer({
     db,
     config: enriched,
+    configRoot: options.configRoot,
     enableMonitoring: options.enableMonitoring,
     distDir: runtimeResourcePath('dist'),
     dbPath: options.dbPath,

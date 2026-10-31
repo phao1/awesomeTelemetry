@@ -222,6 +222,9 @@
   --dims-card-min: 280px;
   --chart-min: 260px;
   --speed-card-min: 240px;
+  /* Task health table: desktop columns and bounded scroll viewport. */
+  --task-health-list-min-width: 1060px;
+  --task-health-scroll-min-height: 240px;
 }
 
 [data-theme="light"] {
@@ -432,4 +435,7 @@
   --dims-card-min: 280px;
   --chart-min: 260px;
   --speed-card-min: 240px;
+  /* Task health table: desktop columns and bounded scroll viewport. */
+  --task-health-list-min-width: 1060px;
+  --task-health-scroll-min-height: 240px;
 }

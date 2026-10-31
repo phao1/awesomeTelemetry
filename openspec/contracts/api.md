@@ -1654,3 +1654,104 @@ For <=200 tools, added JSON is <=29KiB with ordinary ASCII or <150KiB including
 worst-case JSON escaping. Selected evidence still loads lazily.
 
 See task-process.md Phase A, storage/frontend specs and database.md schema22.
+
+## Phase B task home and local settings (2026-10-31)
+
+GET /api/tasks accepts summary=1, limit1..50, offset0..100000, sort=time|duration|errors|tokens|cost,
+direction=asc|desc(default desc), alerts=1, errors=1, currency=USD|CNY(default USD).
+Existing origin/q/provider/range filters remain. Sort and filter apply before paging;
+unknown sorts last in both directions, ID breaks ties. Cost ordering uses only the
+selected currency, never exchange conversion. TaskPage items include optional
+metrics, latestHealth (null without saved projection), and structured alerts.
+GET /api/task-kpis returns TaskKpis over collected tasks started in the last7days.
+Tokens/costs expose partial coverage. Failed tasks are recordedStatus=error; failure percentage uses success/error task outcomes only, with statusKnownTasks coverage;
+tool failure denominator is retained terminal tool results (output_len>0 and
+status success/error); pending/input-only records are excluded. These are
+result observations, not proof of execution lifecycle or deduplicated billing.
+Context pressure uses max per-LLM (input+cacheRead+cacheWrite)/model window,
+identical to mission, with missing windows/counters unavailable.
+
+GET/PUT /api/config/model-pricing returns/accepts Record<normalized model ID,ModelPrice>.
+GET returns effective built-in/project/user prices; PUT updates only the named normalized user overrides, preserving all other user entries.
+All seven ModelPrice fields required on PUT: input/output/cacheRead/cacheWrite
+finite>=0, contextWindow positive safe integer, source trimmed nonempty<=2048,
+currency USD|CNY; model ID nonempty<=256; <=256entries/256KiB. Unknown keys,
+normalized duplicate IDs and malformed/duplicate JSON reject400 BAD_REQUEST.
+GET/PUT /api/config/alert-thresholds returns/accepts AlertThresholds, every key
+required; null disables (all defaults null); finite>=0, counts/duration/tokens
+safe integers, percentages<=100. Cost thresholds are independent by currency.
+Strict greater-than triggers; partial task counters/tokens/costs and missing
+pressure never trigger. Alerts contain only rule/threshold/actual/currency.
+
+Config IO is bounded asynchronous, serialized and atomic0600 tmp+rename in the
+user config directory. Corrupt existing files are not overwritten. Every route
+uses loopback/Host/Origin guards, no-store, foreground accounting, gzip and
+unified ApiError. Writes increment pricing/config revision and invalidate task
+and mission caches; UI explicitly refreshes after save. No native/source writes,
+exchange rate lookup, external notifications, webhook or report generation.
+Saved standard report summaries are a bounded metadata projection stored at
+report save; list reads only this projection, never report bodies. Legacy report
+metadata can be reconciled when explicit history is read. Summary identifies its
+saved revision/date; never claims a historical conclusion is current.
+
+Phase B list flags also accept failed=1 (root recorded error) and toolFailures=1
+(known nonzero terminal result failures). TaskKpis includes statusKnownTasks and
+toolKnownTasks so incomplete failure denominators remain explicit. Summary lists
+cap missing-member examples at1/metric (name128chars) and model labels at3;
+known/total and all scalar sums remain unchanged, selected context retains full
+Phase A member details. Changing metadata during yielded aggregation returns409
+SOURCE_CHANGED; explicit retry obtains a new revision. Summary report scope/date/
+revision describe the saved historical analysis, not the current list window.
+Legacy report summary projection is prepared once at startup from the newest
+bounded saved standard report, never generated or requested through list work.
+
+Pressure aggregation is requested only while its local threshold is enabled;
+otherwise optional contextPressurePct stays null (not computed). The selected
+context does not acquire this unused diagnostic. Complete result counters and
+all Phase A/price values keep their shared basis. Metadata batches use<=25 session
+keys, or one session when pressure JSON numeric projection is enabled, yielding
+between batches. No body or native-source enrichment is admitted.
+
+## Phase B review: page-owned native hydration (2026-11-01)
+
+GET /api/tasks?summary=1 remains metadata-only, with no native parsing or source IO.
+A visible collected home page MAY own one POST /api/task-home/hydrate with JSON
+{taskIds:string[]} (unique canonical collected task IDs1..50, each<=1024chars,
+body<=64KiB, no other fields/duplicates). It returns an identity-encoded
+application/x-ndjson stream of TaskHydrationFrame, metadata only. Each task emits
+an initial queued/known state and one settled state, coalesced200ms; final done=true.
+Frames<=256KiB, whole stream<=512KiB, lifetime<=120s, <=4 page owners/service and
+<=5000 queued/active members. Capacity409 BUSY; bad requests400 BAD_REQUEST, all
+pre-stream errors use ApiError. Existing loopback/Host/Origin and no-store guards
+apply. Unknown/deleted task metadata stays unavailable; native paths never return.
+
+Metadata resolution is batched, <=100 native members/task. Parsing starts only
+in scheduled background turns, at most2 jobs/service, reusing scanAndStoreDetail
+and its differential/indexed writers and existing coalesced sessions_changed.
+Check readable source asynchronously before parsing, recheck detail_loaded and
+share pending reads. Missing/unreadable sources stay retained, with stable reason;
+never invoke ensureDetail's dead-row deletion from this home workflow. A parser
+failure remains visible; no automatic retry of failed work. Cancel on page/sort/
+filter/selection/unmount or timeout: remove unstarted work; already admitted
+uncancellable parser work may finish and cache its result, but cannot enqueue
+another member for an abandoned page. Server shutdown releases all leases and
+awaits admitted work before SQLite can close. No monitoring/capture/Agent start,
+new parser, source mutation, body transport, per-session SSE or frontend N+1.
+
+The current page owns lightweight progress only; the rail/home share one retained
+metadata page through bounded refreshes. Coalesce hydration/SSE completion hints
+into at most one summary refresh/3s plus a final refresh, no polling. Known cells
+retain their values; unknown pending cells show Loading. Missing source/failed/
+unavailable cells stay Unknown with localized reasons. A refresh may explicitly
+retry; mere rerender/locale/unchanged revision does not restart a lease.
+
+TaskCosts optionally supplies missingPrices (actual missing model IDs) and
+missingReasons. Complete reported cost still wins. Missing price is distinct
+from incomplete members/usage/model. List missing-price examples cap3 models,
+model IDs<=256chars. Price links open LocalSettingsTarget model-pricing and prefill
+the exact model; no price/source is invented or automatically saved. Threshold
+links next to home alert filters and overview alert KPI open alert-thresholds.
+Settings opens, expands, scrolls and focuses the requested section while retaining
+existing unsaved-draft protection. Desktop column labels occur only in headers;
+narrow cards may use row labels. These amendments supersede only the prior blanket
+no-hydration rule for the independent, cancellable background page lease.

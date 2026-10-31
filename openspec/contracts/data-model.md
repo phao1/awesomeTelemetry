@@ -3381,3 +3381,164 @@ protocol identities use child scope. Normal root rows retain existing semantics.
 Conflicting sidechain IDs/parent IDs or missing child ID produce incomplete
 identity evidence; never assign the parent's session identity to the child.
 Parser version advances to 3 for Claude. Scanner storage keys remain path-based.
+
+## Phase B task health home (2026-10-31)
+
+The following supersedes Phase A monetary restrictions. Canonical task types:
+```ts
+import type { PriceCurrency, ProviderKey, TraceEventSlim, TraceLogSession, TraceLogTurn, TraceStatus } from './trace-types.js';
+
+/** Task identity is a read projection; native IDs and evidence remain unchanged. */
+export type TaskOrigin = 'collected' | 'imported';
+export interface TaskSummary {
+  id: string;
+  origin: TaskOrigin;
+  provenanceKnown: boolean;
+  rootSessionKey: string | null;
+  runId: string | null;
+  title: string;
+  provider: string;
+  startedAt: string | null;
+  updatedAt: string;
+  recordedStatus: string;
+  memberCount: number;
+  eventCount: number;
+  loadedMemberCount: number;
+  metrics?: TaskMetrics;
+  latestHealth?: TaskHealthSummary | null;
+  alerts?: TaskAlert[];
+}
+export interface TaskMember {
+  id: string;
+  name: string;
+  role: string;
+  sessionKey: string | null;
+  parentId: string | null;
+  detailLoaded: boolean;
+  eventCount: number;
+}
+export type TaskMetricKey = 'input' | 'output' | 'cacheRead' | 'correctedTotal' | 'models';
+export interface TaskMetricCoverage {
+  known: number;
+  total: number;
+  missing: Array<{ memberId: string; name: string; reason: 'session_unavailable' | 'detail_not_loaded' | 'not_reported' | 'accounting_unknown' }>;
+}
+export interface TaskMetrics {
+  durationMs: number | null;
+  toolCalls: number | null;
+  errors: number | null;
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  correctedTotal: number | null;
+  costUsd: number | null;
+  models: string[];
+  costs?: TaskCosts;
+  toolResults?: number | null;
+  toolFailures?: number | null;
+  contextPressurePct?: number | null;
+  coverage?: Record<TaskMetricKey, TaskMetricCoverage>;
+}
+export interface TaskContext {
+  task: TaskSummary;
+  members: TaskMember[];
+  metrics?: TaskMetrics;
+  importSession: TraceLogSession | null;
+  warnings: string[];
+}
+export interface TaskPage {
+  items: TaskSummary[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+}
+export interface TaskRecord {
+  id: string;
+  memberId: string;
+  memberName: string;
+  sessionKey: string | null;
+  event: TraceEventSlim | null;
+  importedTurn: TraceLogTurn | null;
+  toolInputPreview?: string;
+}
+export interface TaskRecordPage {
+  context: TaskContext;
+  items: TaskRecord[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  hasPrevious: boolean;
+  /** Session sequence ceilings make subsequent pages independent of live appends. */
+  window: string;
+  warnings: string[];
+  /** Optional indexed native facts; semantic grouping remains client-only. */
+  structure?: TaskStructure;
+}
+export type TaskSort = 'time' | 'duration' | 'errors' | 'tokens' | 'cost';
+export interface TaskListQuery { failed?: boolean; toolFailures?: boolean; summary?: boolean; sort?: TaskSort; direction?: 'asc' | 'desc'; alerts?: boolean; errors?: boolean; currency?: PriceCurrency; origin?: TaskOrigin; q?: string; provider?: ProviderKey; range?: 'today' | '7d' | '30d' | 'all'; offset?: number; limit?: number }
+export interface TaskRecordQuery { member?: string; q?: string; status?: TraceStatus; offset?: number; limit?: number; window?: string; anchor?: string; from?: string; to?: string; structure?: boolean }
+
+/** A retained, scoped identity, never an ID inferred from a title or timestamp. */
+export interface TaskNativeRef { namespace: string; kind: 'turn' | 'request' | 'response' | 'tool_call'; value: string; scope: string }
+export interface TaskRecordStructure {
+  recordId: string;
+  round: TaskNativeRef | null;
+  attempt: TaskNativeRef | null;
+  tool: TaskNativeRef | null;
+  pairing: 'exact' | 'unavailable' | 'ambiguous' | 'incomplete';
+  /** Exact same-ID retained observations, including off-page links; max12. */
+  relatedRecordIds: string[];
+}
+export interface TaskRoundSeed { memberId: string; recordId: string; sequence: number; title: string; startedAt: string }
+export interface TaskStructure { records: TaskRecordStructure[]; leading: TaskRoundSeed[]; warnings: string[] }
+/** Histogram counts retained event STARTS, not executions or time shares. */
+export interface TaskTimeBin { index: number; input: number; model: number; tool: number; other: number; errors: number }
+export interface TaskTimeline {
+  taskId: string;
+  member: string;
+  window: string;
+  from: string | null;
+  to: string | null;
+  bins: number;
+  total: number;
+  untimed: number;
+  lanes: Array<{ memberId: string; name: string; total: number; bins: TaskTimeBin[] }>;
+  coverage: { loadedMembers: number; totalMembers: number };
+}
+
+export interface TaskCosts {
+  amounts: Array<{ currency: PriceCurrency; amount: number; source: 'reported' | 'estimated' | 'mixed' }>;
+  known: number; total: number;
+  missingPrices?: string[];
+  missingReasons?: TaskCostReason[];
+}
+export interface TaskHealthSummary {
+  id: string; generatedAt: string; revision: string;
+  conclusion: 'findings' | 'not_observed' | 'insufficient'; issues: number;
+  scope?: { member: string; from: string | null; to: string | null };
+}
+export interface TaskAlert { rule: keyof AlertThresholds; threshold: number; actual: number; currency?: PriceCurrency }
+export interface AlertThresholds {
+  errors: number | null; toolFailurePct: number | null; durationMs: number | null;
+  tokens: number | null; costUSD: number | null; costCNY: number | null; contextPressurePct: number | null;
+}
+export interface TaskKpis {
+  tasks: number; statusKnownTasks: number; toolKnownTasks: number; failedTasks: number; failurePct: number | null;
+  toolFailurePct: number | null; tokens: number | null; tokenKnownTasks: number;
+  costs: TaskCosts; alerts: number;
+}
+
+export type TaskCostReason = 'detail_not_loaded' | 'session_unavailable' | 'usage_unknown' | 'model_unknown' | 'model_unpriced';
+export type TaskHydrationReason = 'source_missing' | 'source_unreadable' | 'parse_failed' | 'member_unavailable' | 'cancelled' | 'request_failed';
+export interface TaskHydrationProgress {
+  taskId: string;
+  pending: number;
+  loaded: number;
+  reasons: TaskHydrationReason[];
+}
+export interface TaskHydrationFrame { items: TaskHydrationProgress[]; done: boolean }
+export interface LocalSettingsTarget { section: 'model-pricing' | 'alert-thresholds'; model?: string }
+
+```

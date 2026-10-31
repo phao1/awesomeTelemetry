@@ -264,3 +264,7 @@ must pass through the desensitization engine before classification.
 - G11.11 (new): after persisting four-dimension metrics, any algorithm change
   must bump `METRICS_CALC_VERSION`, otherwise stale dirty data stays in the DB
   unnoticed
+
+## Phase B (2026-10-31)
+
+REQ-PHASE-B: Phase B costs follow data-model/api Phase B; no built-in price changes. Reported source wins; otherwise estimate only supported normalized complete usage; unknown inclusion/model remains unknown. Context pressure keeps mission numeric convention. Config writes invalidate pricing-dependent caches.

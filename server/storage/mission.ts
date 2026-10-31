@@ -12,7 +12,7 @@ import type {
   MissionWidget,
 } from '../../src/core/trace-types.js';
 import { extractSubagentType } from '../../src/core/subagent-type.js';
-import { computeCost, lookupContextWindow } from '../../src/core/pricing.js';
+import { computeCost, lookupContextWindow, modelPricingRevision } from '../../src/core/pricing.js';
 import { classifyErrorText } from '../../src/core/error-classifier.js';
 import { classifyScene } from '../../src/core/scene-classifier.js';
 import { isGenuineUserPrompt } from '../../src/core/metrics.js';
@@ -55,6 +55,7 @@ export interface MissionHealthContext {
 const EMPTY_STAMP = '1970-01-01T00:00:00.000Z';
 
 interface CachedMission {
+  pricingRevision: number;
   stamp: string;
   response: MissionResponse;
 }
@@ -1022,9 +1023,10 @@ async function computeHealth(db: Database, opts: MissionOptions): Promise<Missio
  */
 export async function getMission(db: Database, opts: MissionOptions): Promise<MissionResponse> {
   const stamp = missionStamp(db, opts);
+  const pricingRevision = modelPricingRevision();
   const key = cacheKey(opts);
   const hit = cacheFor(db).get(key);
-  if (hit !== undefined && hit.stamp === stamp) {
+  if (hit !== undefined && hit.stamp === stamp && hit.pricingRevision === pricingRevision) {
     return {
       ...hit.response,
       meta: { ...hit.response.meta, cached: true, durationMs: 0 },
@@ -1052,7 +1054,7 @@ export async function getMission(db: Database, opts: MissionOptions): Promise<Mi
     health,
   };
   response.meta.widgetCount = widgetCount(response);
-  cacheFor(db).set(key, { stamp, response });
+  cacheFor(db).set(key, { stamp, pricingRevision, response });
   return response;
 }
 

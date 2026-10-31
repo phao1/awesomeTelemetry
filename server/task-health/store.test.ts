@@ -68,3 +68,12 @@ it('reads legacy rejected items and validates new rejection diagnostics and prom
     await expect(store.saveDeep({ ...modern, id: randomUUID(), rejected } as DeepHealthReport)).rejects.toMatchObject({ code: 'HEALTH_STORAGE_FAILED' });
   }
 });
+
+it('projects the latest saved standard conclusion without returning report bodies and reconciles legacy indexes at startup',async()=>{
+ const store=createHealthReportStore(dir),ordinary=await report();await store.save(ordinary);
+ const summary=await store.summary(ordinary.taskId);expect(summary).toMatchObject({id:ordinary.id,revision:ordinary.revision,generatedAt:ordinary.generatedAt,issues:ordinary.findings.length});
+ expect(JSON.stringify(summary)).not.toContain('metrics');expect(JSON.stringify(summary)).not.toContain('evidence');
+ expect(await store.summary('collected:absent')).toBeNull();
+ await rm(join(dir,'task-health-summaries'),{recursive:true,force:true});
+ const reopened=createHealthReportStore(dir);await reopened.warmSummaries();expect(await reopened.summary(ordinary.taskId)).toEqual(summary);expect(await reopened.get(ordinary.id)).toEqual(ordinary);
+});

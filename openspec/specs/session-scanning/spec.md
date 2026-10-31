@@ -314,3 +314,12 @@ from "parse failure", and the correct UI differs completely.
 
 ### Codex team updates during monitoring
 After an automatic or explicit Codex session scan, refresh Codex team metadata from the same enabled provider root through the team scanner fingerprint gate. New child threads and appended activities must update the team run. Emit affected run IDs through the existing coalesced `team_runs_changed` stream; never emit activity bodies. Default-disabled monitoring still registers no watchers.
+
+## Phase B review (2026-11-01)
+
+REQ-PHASE-B-REVIEW: Implement api.md's page-owned hydration lease, loaded/unknown
+reasons, price and threshold deep links and responsive label density. List GETs
+remain metadata-only. Reuse native scanners with global concurrency2, shared
+pending jobs and page cancellation; preserve missing-file rows. No per-session
+fetches/SSE or parser replacement. Adjacent tests cover queue/admission/cancel/
+source absence/notifications, retained-page refresh and direct settings focus.

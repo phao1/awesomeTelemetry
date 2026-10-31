@@ -1,10 +1,11 @@
+import { DEFAULT_ALERT_THRESHOLDS } from './core/task-alerts.js';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionIndexEntry } from './core/trace-types.js';
 import {PROVIDER_KEYS} from './core/trace-types.js';
-import type { SessionDetailResponse, TraceEvent, TraceEventSlim, TraceSession } from './core/trace-types.js';
+import type { SessionDetailResponse, TraceEvent } from './core/trace-types.js';
 import App from './App.js';
 import { recordCache, eventDetailCache } from './cache/caches.js';
 import { LAYOUT_KEYS } from './layout.js';
@@ -40,6 +41,27 @@ const THREE_SESSIONS = [
   session('s-3', 'codex', 'debug login'),
 ];
 
+
+async function navigateHash(hash:string){await act(async()=>{history.replaceState(null,'',hash);window.dispatchEvent(new Event('hashchange'));await new Promise(resolve=>setTimeout(resolve,10));});}
+async function openAgentGroup(container:HTMLElement){await navigateHash('#/overview');await act(async()=>{const group=container.querySelector<HTMLDetailsElement>('.overview-agents')!;expect(group).not.toBeNull();group.open=true;group.dispatchEvent(new Event('toggle'));await import('./components/AgentOverview.js');});}
+const TASK_FIXTURES=THREE_SESSIONS.map(session=>({id:'collected:'+session.id,origin:'collected' as const,provenanceKnown:true,rootSessionKey:session.id,runId:null,title:session.title,provider:session.provider,startedAt:session.startedAt,updatedAt:session.updatedAt,recordedStatus:session.status,memberCount:1,eventCount:2,loadedMemberCount:1}));
+function taskContext(id:string){const task=TASK_FIXTURES.find(t=>t.id===id)??TASK_FIXTURES[0]!;return {task,members:[{id:task.rootSessionKey,name:task.provider,role:'main',sessionKey:task.rootSessionKey,parentId:null,detailLoaded:true,eventCount:2}],importSession:null,warnings:[]};}
+function taskPage(id:string){const context=taskContext(id),key=context.task.rootSessionKey;return {context,items:[1,2].map(sequence=>({id:key+':event:shared-'+sequence,memberId:key,memberName:context.task.provider,sessionKey:key,event:{...makeEvent(makeMessage('shared-'+sequence,sequence,{kind:'llm',role:'assistant',title:'Result '+sequence,hasInput:false,hasOutput:true})),sessionId:key},importedTurn:null})),total:2,offset:0,limit:200,hasMore:false,hasPrevious:false,window:'fixed',warnings:[]};}
+const apiResponse=(value:unknown)=>({ok:true,status:200,text:async()=>JSON.stringify(value)}) as Response;
+function taskResponse(path:string):Response {
+ if(path.startsWith('/api/tasks?'))return apiResponse({items:TASK_FIXTURES,total:3,offset:0,limit:50,hasMore:false});
+ const taskMatch=/\/api\/tasks\/([^/?]+)/.exec(path);const id=taskMatch?decodeURIComponent(taskMatch[1]!):TASK_FIXTURES[0]!.id;
+ if(path.includes('/records?'))return apiResponse(taskPage(id));
+ if(path.includes('/timeline?')){const q=new URL(path,'http://localhost').searchParams;return apiResponse({taskId:id,member:q.get('member'),window:q.get('window'),bins:160,total:2,untimed:0,lanes:[],from:null,to:null,coverage:{loadedMembers:1,totalMembers:1}});}
+ if(taskMatch)return apiResponse(taskContext(id));
+ if(path.includes('/events/'))return apiResponse({...taskPage(id).items[0]!.event,inputSummary:'input',outputSummary:'SELECTED PUBLIC OUTPUT'});
+ if(path.includes('/sessions?'))return apiResponse({items:THREE_SESSIONS,total:3,hasMore:false,nextCursor:null});
+ if(path.includes('/session-groups'))return apiResponse({groups:[]});
+ return apiResponse({});
+}
+function installTaskApi(){vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>taskResponse(String(input))));}
+async function readyTasks(container:HTMLElement){for(let i=0;i<100&&container.querySelectorAll('.task-health-title').length!==3;i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});expect(container.querySelectorAll('.task-health-title')).toHaveLength(3);}
+
 describe('WB-007 lazy Agent overview entry',()=>{
   it('loads capture metadata only on entry and active sources only on explicit live expansion, never row bodies', async () => {
     const previousUrl = window.location.href;
@@ -55,10 +77,11 @@ describe('WB-007 lazy Agent overview entry',()=>{
     const { container, unmount } = renderAppWithUnmount();
     try {
       await act(async () => { await Promise.resolve(); });expect(paths.filter(path => path.includes('/proxy/'))).toHaveLength(0);
-      const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(node => /^(代理|Proxy)$/.test(node.textContent ?? ''))!;
-      expect(tab).toBeDefined();act(() => tab.click());
+      const tab = container.querySelector<HTMLButtonElement>('.task-primary-nav button:nth-child(5)')!;
+      expect(tab).toBeDefined();await navigateHash('#/proxy');
       await act(async () => { await import('./components/ProxyView.js');await Promise.resolve(); });
       expect(paths.filter(path => path.includes('/proxy/')).sort()).toEqual(['/api/proxy/requests?limit=50', '/api/proxy/status']);
+      await vi.waitFor(()=>expect(container.querySelector('.capture-live')).not.toBeNull());
       const live = container.querySelector<HTMLDetailsElement>('.capture-live')!;expect(live.open).toBe(false);
       await act(async () => { live.open = true;live.dispatchEvent(new Event('toggle'));await import('./components/ProxyLivePanel.js'); });
       expect(paths.filter(path => path.endsWith('/proxy/live'))).toHaveLength(1);
@@ -92,8 +115,9 @@ describe('WB-007 lazy Agent overview entry',()=>{
       await act(async () => { await Promise.resolve();history.replaceState(null, '', '#/compare?left=s-3&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/CompareBoard.js'); });
       await act(async () => { for (let i = 0; i < 30 && pairs.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 10)); });
       expect(pairs).toEqual([{ leftKey: 's-3', rightKey: 's-2' }]);
-      act(() => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button => /Agent 概览|Agent Overview/.test(button.textContent ?? ''))!.click());
+      await openAgentGroup(container);
       await act(async () => { for (let i = 0; i < 30 && !container.querySelector('.overview tbody input'); i++) await new Promise(resolve => setTimeout(resolve, 10)); });
+      await act(async()=>{await new Promise(resolve=>setTimeout(resolve,350));});
       const boxes = container.querySelectorAll<HTMLInputElement>('.overview tbody input');
       act(() => boxes[0]!.click());act(() => boxes[1]!.click());
       await act(async () => { container.querySelector<HTMLButtonElement>('.compare-float-btn')!.click();await Promise.resolve(); });
@@ -135,10 +159,10 @@ describe('WB-007 lazy Agent overview entry',()=>{
     }));const {container,unmount}=renderAppWithUnmount();
     try {
       await act(async()=>{await Promise.resolve();});expect(paths.filter(path=>path.includes('/frida/'))).toHaveLength(0);
-      const tab=[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>button.textContent==='Frida')!;act(()=>tab.click());
+      await navigateHash('#/frida');
       await act(async()=>{for(let i=0;i<30&&!paths.some(path=>path.endsWith('/frida/status'));i++)await new Promise(resolve=>setTimeout(resolve,10));});
       expect(paths.filter(path=>path.includes('/frida/')).sort()).toEqual(['/api/frida/captures','/api/frida/status']);
-      expect(container.querySelector('[data-frida-ack]')).not.toBeNull();expect(container.querySelector('[role="tablist"]')).not.toBeNull();
+      expect(container.querySelector('[data-frida-ack]')).not.toBeNull();expect(container.querySelector('.task-channel-list')).not.toBeNull();
     } finally {unmount();}
   });
   it('retains bounded unique Frida save notifications with zero hidden reads and opens only the selected text',async()=>{
@@ -162,7 +186,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
         for(const listener of es.listeners.get('frida_capture')??[])listener({data:'{broken'});
       });
       expect(paths.filter(path=>path.includes('/frida/'))).toHaveLength(0);
-      act(()=>[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>button.textContent==='Frida')!.click());
+      await navigateHash('#/frida');
       await act(async()=>{await import('./components/FridaView.js');for(let i=0;i<30&&!container.querySelector('[aria-label="新保存捕获通知"]');i++)await new Promise(resolve=>setTimeout(resolve,10));});
       const buttons=container.querySelectorAll<HTMLButtonElement>('[aria-label="新保存捕获通知"] button');
       expect([...buttons].map(item=>item.textContent)).toEqual(Array.from({length:20},(_,i)=>'#'+(45+i)));
@@ -186,7 +210,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
       return {ok:true,text:async()=>JSON.stringify(body)};
     }));const {container,unmount}=renderAppWithUnmount();
     try {
-      act(()=>[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>button.textContent==='Frida')!.click());
+      await navigateHash('#/frida');
       await act(async()=>{await import('./components/FridaView.js');for(let i=0;i<30&&!container.querySelector('[data-frida-ack]');i++)await new Promise(resolve=>setTimeout(resolve,10));});
       act(()=>{EventSourceStub.instances[0]!.emit('frida_capture',{id:9});EventSourceStub.instances[0]!.emit('frida_status',{running:true,pid:12});});
       act(()=>container.querySelector<HTMLButtonElement>('[aria-label="打开新保存捕获 #9"]')!.click());
@@ -214,12 +238,11 @@ describe('WB-007 lazy Agent overview entry',()=>{
     try {
       await act(async()=>{await Promise.resolve();});
       expect(paths.filter(path=>path.includes('/agent-overview'))).toHaveLength(0);
-      const tab=[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>/Agent 概览|Agent Overview/.test(button.textContent??''))!;
-      expect(tab).toBeDefined();act(()=>tab.click());
+      await openAgentGroup(container);
       await act(async()=>{for(let i=0;i<30&&!paths.some(path=>path.includes('/agent-overview'));i++)await new Promise(resolve=>setTimeout(resolve,10));});
       expect(paths.filter(path=>path.includes('/agent-overview'))).toHaveLength(1);
       expect(paths.filter(path=>/\/sessions\/[^?]/.test(path))).toHaveLength(0);
-      expect(container.querySelector('[role="tablist"]')).not.toBeNull();
+      expect(container.querySelectorAll('.task-primary-nav button')).toHaveLength(6);
     } finally {unmount();}
   });
 });
@@ -274,6 +297,10 @@ function renderAppWithUnmount(): { container: HTMLDivElement; unmount: () => voi
 }
 
 beforeEach(() => {
+  vi.spyOn(HTMLElement.prototype,'offsetHeight','get').mockReturnValue(600);
+  vi.spyOn(HTMLElement.prototype,'clientHeight','get').mockReturnValue(600);
+  vi.spyOn(HTMLElement.prototype,'offsetWidth','get').mockReturnValue(1200);
+  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockReturnValue({x:0,y:0,top:0,left:0,right:1200,bottom:600,width:1200,height:600,toJSON(){}});
   history.replaceState(null, '', '#/session');
   EventSourceStub.instances.length = 0;
   vi.stubGlobal('fetch', vi.fn(async () => ({
@@ -287,6 +314,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => { for (const root of appRoots) root.unmount(); appRoots.clear(); });
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   document.body.innerHTML = '';
 });
 
@@ -316,6 +344,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       const left=container.querySelector('.cmp-evidence-side')!;
       act(()=>left.querySelector('summary')!.click());
       await act(async()=>{left.querySelector<HTMLButtonElement>('.cmp-evidence-errors button')!.click();for(let i=0;i<10;i++)await Promise.resolve();});
+      for(let i=0;i<100&&!container.querySelector('.task-evidence')?.textContent?.includes('SYNTHETIC_SELECTED_ERROR');i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});
       expect(fetcher.mock.calls.filter(([path])=>String(path).includes('/api/tasks/collected%3As-1/records?')&&String(path).includes('anchor=s-1%3Aevent%3Abeyond-first-page'))).toHaveLength(1);
       expect(fetcher.mock.calls.some(([path])=>String(path).includes('limit=5000'))).toBe(false);
       expect(window.location.hash).toContain('task=collected%3As-1');
@@ -324,113 +353,43 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     } finally {unmount();recordCache.clear();eventDetailCache.clear();history.replaceState(null,'',previousUrl);}
   });
   it('WB-002: switching runs clears the previous Turn and event focus, even when event IDs repeat', async () => {
-    const previousUrl=window.location.href;
-    const detailFor=(id:string):SessionDetailResponse=>({session:makeSession(id,{eventCount:2}),
-      events:[1,2].map(sequence=>({...makeEvent(makeMessage(`shared-${sequence}`,sequence,{role:'assistant',kind:'llm',tool:null,hasInput:false,hasOutput:false,hasRaw:false})),sessionId:id})),
-      mode:'slim',eventTotal:2,eventOffset:0,eventLimit:2000,hasMore:false,pending:false});
-    const original=fetch;
-    vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>{
-      const path=String(input);
-      if(path.includes('/api/session-groups')) return Promise.resolve({ok:true,text:async()=>JSON.stringify({groups:[]})} as Response);
-      if(path.includes('/api/sessions/s-1?')||path.includes('/api/sessions/s-2?')) return Promise.resolve({ok:true,text:async()=>JSON.stringify(detailFor(path.includes('s-1?')?'s-1':'s-2'))} as Response);
-      return original(input,init);
-    }));
-    recordCache.clear(); eventDetailCache.clear();
-    const {container,unmount}=renderAppWithUnmount();
-    try {
-      await act(async()=>{await new Promise(resolve=>setTimeout(resolve,350));});
-      await act(async()=>{(container.querySelectorAll('.session-row')[0] as HTMLElement).click();await Promise.resolve();});
-      await act(async()=>{(container.querySelector('.app-header-search') as HTMLButtonElement).click();await import('./components/CommandPalette.js');});
-      const input=container.querySelector('[role="dialog"] input') as HTMLInputElement;
-      act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'/goto 2');input.dispatchEvent(new Event('input',{bubbles:true}));});
-      await act(async()=>{(container.querySelector('.palette-row') as HTMLButtonElement).click();await Promise.resolve();});
-      expect(container.querySelector('.record-inspector')).not.toBeNull();
-      expect(window.location.hash).toContain('turn=2');
-      act(()=>(container.querySelector('[aria-label="关闭记录证据"]') as HTMLButtonElement).click());
-      await act(async()=>{(container.querySelector('.app-header-search') as HTMLButtonElement).click();await Promise.resolve();});
-      const repeat=container.querySelector('[role="dialog"] input') as HTMLInputElement;
-      act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(repeat,'/goto 2');repeat.dispatchEvent(new Event('input',{bubbles:true}));});
-      await act(async()=>{(container.querySelector('.palette-row') as HTMLButtonElement).click();await Promise.resolve();});
-      expect(container.querySelector('.record-inspector')).not.toBeNull();
-      await act(async()=>{(container.querySelectorAll('.session-row')[1] as HTMLElement).click();await Promise.resolve();});
-      expect(container.querySelector('.session-toolbar-id')?.textContent).toBe('s-2');
-      expect(container.querySelector('.record-inspector')).toBeNull();
-      expect(container.querySelector('.turn-row-on')).toBeNull();
-      expect(window.location.hash).not.toContain('turn=');
-    } finally {unmount();history.replaceState(null,'',previousUrl);}
+    installTaskApi();const {container,unmount}=renderAppWithUnmount();try{
+      await readyTasks(container);act(()=>container.querySelector<HTMLButtonElement>('.task-health-title')!.click());
+      await vi.waitFor(()=>expect(container.querySelectorAll('.process-record-button')).toHaveLength(2));
+      act(()=>container.querySelector<HTMLButtonElement>('.process-record-button')!.click());await vi.waitFor(()=>expect(container.querySelector('.task-evidence')).not.toBeNull());
+      expect(window.location.hash).toContain('event=s-1%3Aevent%3Ashared-1');
+      await navigateHash('#/task?task=collected%3As-2');await vi.waitFor(()=>expect(container.querySelector('.task-context-header')?.textContent).toContain('refactor api'));
+      expect(container.querySelector('.task-evidence')).toBeNull();expect(window.location.hash).not.toContain('event=');expect(container.querySelector('.process-record-on')).toBeNull();
+    }finally{unmount();}
   });
   it('WB-002: first paint is loading, not an empty successful list', () => {
-    const { container, unmount } = renderAppWithUnmount();
-    try {
-      expect(container.querySelector('.rail .ui-empty')).toBeNull();
-      expect(container.querySelector('.rail [role="status"]')).not.toBeNull();
-    } finally { unmount(); }
+    const {container,unmount}=renderAppWithUnmount();try{expect(container.querySelector('.task-sidebar .task-empty')).toBeNull();expect(container.querySelector('[role="status"]')).not.toBeNull();expect(container.querySelector('.task-empty')).toBeNull();}finally{unmount();}
   });
 
-  it('WB-002: slash can reopen a collapsed list and focus its search field', () => {
-    const previous = localStorage.getItem(LAYOUT_KEYS.railCollapsed);
-    localStorage.setItem(LAYOUT_KEYS.railCollapsed, 'true');
-    const { container, unmount } = renderAppWithUnmount();
-    try {
-      expect(container.querySelector('.session-filters input')).toBeNull();
-      act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })));
-      expect(document.activeElement).toBe(container.querySelector('.session-filters input'));
-      expect(container.querySelector('.session-filters input')).not.toBeNull();
-    } finally {
-      unmount();
-      if (previous === null) localStorage.removeItem(LAYOUT_KEYS.railCollapsed);
-      else localStorage.setItem(LAYOUT_KEYS.railCollapsed, previous);
-    }
+  it('WB-002: slash can reopen a collapsed list and focus its search field', async () => {
+    const previous=localStorage.getItem(LAYOUT_KEYS.railCollapsed);localStorage.setItem(LAYOUT_KEYS.railCollapsed,'true');
+    const {container,unmount}=renderAppWithUnmount();try{
+      expect(container.querySelector('.task-workbench')?.classList.contains('task-list-collapsed')).toBe(true);
+      await act(async()=>{document.dispatchEvent(new KeyboardEvent('keydown',{key:'/',bubbles:true,cancelable:true}));await new Promise(r=>setTimeout(r,10));});
+      expect(container.querySelector('.task-workbench')?.classList.contains('task-list-collapsed')).toBe(false);expect(document.activeElement).toBe(container.querySelector('.task-list-filters input'));
+    }finally{unmount();if(previous===null)localStorage.removeItem(LAYOUT_KEYS.railCollapsed);else localStorage.setItem(LAYOUT_KEYS.railCollapsed,previous);}
   });
 
   it('WB-002: a late old search response cannot replace a newer result or its URL scope', async () => {
-    type Result = { ok: boolean; text: () => Promise<string> };
-    const result = (items: SessionIndexEntry[]): Result => ({ ok: true, text: async () => JSON.stringify({ items, total: items.length, hasMore: false, nextCursor: null }) });
-    let finishOld: ((value: Result) => void) | undefined;
-    vi.stubGlobal('fetch', vi.fn((input: unknown) => {
-      const path = String(input);
-      if (path.includes('/api/sessions?') && !path.includes('q=')) return new Promise<Result>(resolve => { finishOld = resolve; });
-      if (path.includes('/api/sessions?') && path.includes('q=LATEST')) return Promise.resolve(result([{ ...THREE_SESSIONS[1]!, title: 'LATEST query result' }]));
-      return Promise.resolve({ ok: true, text: async () => '{}' });
-    }));
-    const { container, unmount } = renderAppWithUnmount();
-    try {
-      await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
-      expect(finishOld).toBeDefined();
-      const search = container.querySelector('.session-filters input') as HTMLInputElement;
-      act(() => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'LATEST');
-        search.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-      await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
-      expect(container.querySelector('.session-row-title')?.textContent).toBe('LATEST query result');
-      await act(async () => { finishOld!(result([{ ...THREE_SESSIONS[0]!, title: 'STALE initial query' }])); });
-      expect(container.textContent).not.toContain('STALE initial query');
-      expect(container.querySelector('.session-row-title')?.textContent).toBe('LATEST query result');
-      expect(window.location.hash).toContain('q=LATEST');
-      expect(container.querySelector('[role="listbox"]')?.getAttribute('aria-busy')).toBe('false');
-    } finally { unmount(); }
+    let finishOld:((response:Response)=>void)|undefined;
+    vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{const path=String(input);if(path.startsWith('/api/tasks?')){if(!path.includes('q='))return new Promise<Response>(r=>{finishOld=r;});return apiResponse({items:[{...TASK_FIXTURES[1],title:'LATEST query result'}],total:1,offset:0,limit:50,hasMore:false});}return taskResponse(path);}));
+    const {container,unmount}=renderAppWithUnmount();try{
+      await act(async()=>{await new Promise(r=>setTimeout(r,10));});expect(finishOld).toBeDefined();
+      act(()=>{const search=container.querySelector<HTMLInputElement>('.task-list-filters input')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'LATEST');search.dispatchEvent(new Event('input',{bubbles:true}));});
+      await vi.waitFor(()=>expect(container.querySelector('.task-health-title')?.textContent).toContain('LATEST query result'));
+      await act(async()=>finishOld!(apiResponse({items:[{...TASK_FIXTURES[0],title:'STALE initial query'}],total:1,offset:0,limit:50,hasMore:false})));
+      expect(container.textContent).not.toContain('STALE initial query');expect(container.querySelector('.task-health-title')?.textContent).toContain('LATEST query result');expect(window.location.hash).toContain('q=LATEST');expect(container.querySelector('.task-sidebar')?.getAttribute('aria-busy')).toBe('false');
+    }finally{unmount();}
   });
 
   it('WB-002: the Tasks-scoped Team link reaches existing runs while global navigation stays at six views', async () => {
-    const previousUrl = window.location.href;
-    const originalFetch = fetch;
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input).includes('/api/team-runs')
-      ? Promise.resolve({ ok: true, text: async () => JSON.stringify({ items: [], total: 0, hasMore: false, nextCursor: null }) } as Response)
-      : originalFetch(input, init)));
-    const { container, unmount } = renderAppWithUnmount();
-    try {
-      const entry = container.querySelector('.rail a[href="#/team"]') as HTMLAnchorElement;
-      expect(entry).not.toBeNull();
-      expect(container.querySelectorAll('.view-tabs [role="tab"]')).toHaveLength(6);
-      expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/api/team-runs'))).toHaveLength(0);
-      await act(async () => { entry.click(); await import('./components/team/TeamShell.js'); });
-      expect(container.querySelector('.team-shell')).not.toBeNull();
-      expect(window.location.hash).toMatch(/^#\/team/);
-      await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
-      expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/api/team-runs'))).toHaveLength(1);
-      expect(vi.mocked(fetch).mock.calls.some(([input]) => /\/api\/team-runs\/[^/?]+/.test(String(input)))).toBe(false);
-    } finally { unmount(); history.replaceState(null, '', previousUrl); }
+    installTaskApi();const original=fetch;vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).includes('/api/team-runs')?Promise.resolve(apiResponse({items:[],total:0,hasMore:false,nextCursor:null})):original(input,init)));
+    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);expect(container.querySelectorAll('.task-primary-nav button')).toHaveLength(6);expect(container.querySelector('.task-primary-nav details')).toBeNull();expect(vi.mocked(fetch).mock.calls.some(([i])=>String(i).includes('/api/team-runs'))).toBe(false);await navigateHash('#/team');await act(async()=>{await import('./components/team/TeamShell.js');});await act(async()=>{await new Promise(r=>setTimeout(r,350));});expect(container.querySelector('.team-shell')).not.toBeNull();expect(window.location.hash).toMatch(/^#\/team/);expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/api/team-runs'))).toHaveLength(1);expect(vi.mocked(fetch).mock.calls.some(([i])=>/\/api\/team-runs\/[^/?]+/.test(String(i)))).toBe(false);}finally{unmount();}
   });
 
   it('WB-001: visible global search opens the real lazy palette without detail fan-out and restores focus', async () => {
@@ -468,7 +427,8 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       });
       expect(recordCache.size).toBe(0); expect(eventDetailCache.size).toBe(0);
       const paths = vi.mocked(fetch).mock.calls.slice(before).map(call => String(call[0]));
-      expect(paths).toHaveLength(1);
+      expect(paths).toHaveLength(2);
+      expect(paths.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(1);
       expect(paths[0]).toContain('/api/sessions?');
       expect(paths[0]).toContain('limit=50');
       expect(paths[0]).not.toContain('/events/');
@@ -493,33 +453,14 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
   });
 
   it('late pre-reset detail and key patches cannot restore old caches or overwrite the new metadata snapshot', async () => {
-    const response = (value: unknown) => ({ ok: true, text: async () => JSON.stringify(value) });
-    type Result = ReturnType<typeof response>;
-    let finishPatch: ((result: Result) => void) | undefined;
-    let finishDetail: ((result: Result) => void) | undefined;
-    recordCache.clear();
-    vi.stubGlobal('fetch', vi.fn((input: unknown) => {
-      const path = String(input);
-      if (path.includes('keys=')) return new Promise<Result>(resolve => { finishPatch = resolve; });
-      if (path.includes('/api/sessions/s-1?')) return new Promise<Result>(resolve => { finishDetail = resolve; });
-      if (path.includes('/api/sessions?')) return Promise.resolve(response({ items: THREE_SESSIONS, total: 3, hasMore: false, nextCursor: null }));
-      return Promise.resolve(response({}));
-    }));
-    const { container, unmount } = renderAppWithUnmount();
-    try {
-      await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
-      act(() => (container.querySelector('.session-row') as HTMLElement).click());
-      act(() => EventSourceStub.instances[0]!.emit('sessions_changed', { keys: ['s-1'], count: 1 }, 'old:1'));
-      expect(finishPatch).toBeDefined(); expect(finishDetail).toBeDefined();
-      await act(async () => EventSourceStub.instances[0]!.emit('connected', { resume: 'reset' }, 'old:1'));
-      await act(async () => {
-        finishPatch!(response({ items: [{ ...THREE_SESSIONS[0], title: 'STALE EPOCH TITLE' }], hasMore: false, nextCursor: null }));
-        finishDetail!(response({ session: { id: 's-1' }, events: [], hasMore: false }));
-      });
-      expect(container.textContent).not.toContain('STALE EPOCH TITLE');
-      expect(recordCache.get('s-1:slim')).toBeUndefined();
-      expect(container.querySelector('.session-toolbar')).toBeNull();
-    } finally { unmount(); }
+    let finishPatch:((response:Response)=>void)|undefined;let finishDetail:((response:Response)=>void)|undefined;
+    vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{const path=String(input);if(path.includes('keys='))return new Promise<Response>(r=>{finishPatch=r;});if(path==='/api/tasks/collected%3As-1')return new Promise<Response>(r=>{finishDetail=r;});return taskResponse(path);}));
+    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);act(()=>container.querySelector<HTMLButtonElement>('.task-health-title')!.click());act(()=>EventSourceStub.instances[0]!.emit('sessions_changed',{keys:['s-1'],count:1},'old:1'));expect(finishPatch).toBeDefined();expect(finishDetail).toBeDefined();
+      await act(async()=>EventSourceStub.instances[0]!.emit('connected',{resume:'reset'},'old:1'));
+      await navigateHash('#/task');await readyTasks(container);
+      await act(async()=>{finishPatch!(apiResponse({items:[{...THREE_SESSIONS[0],title:'STALE EPOCH TITLE'}],hasMore:false,nextCursor:null}));finishDetail!(apiResponse({...taskContext('collected:s-1'),task:{...TASK_FIXTURES[0],title:'STALE EPOCH TITLE'}}));});
+      expect(container.textContent).not.toContain('STALE EPOCH TITLE');expect(recordCache.get('s-1:slim')).toBeUndefined();expect(container.querySelector('.task-context-header')).toBeNull();
+    }finally{unmount();}
   });
   it('1.1 启动后直接切 compare：两个选择器各含全部 3 个会话', async () => {
     const container = renderApp();
@@ -567,176 +508,17 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
   });
 
   it('会话视图 IA：粘性工具条 + findings 折叠 + turn 表面（统计条 + 色带 + 回合列表）', async () => {
-    const sessionDetail: SessionDetailResponse = {
-      session: {
-        id: 's-1',
-        provider: 'codex',
-        sourceAgent: 'Codex',
-        title: 'fix build',
-        startedAt: '2026-08-05T00:00:00.000Z',
-        updatedAt: '2026-08-05T00:01:00.000Z',
-        status: 'success',
-        cwd: '/tmp',
-        messageCount: 2,
-        eventCount: 2,
-        tokenUsage: {
-          input: 10, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 2, netInput: 7, total: 38,
-        },
-        costUsd: 0.01,
-        systemPrompt: null,
-        dataSource: 'scan',
-        sourcePath: '/tmp/s-1.jsonl',
-        totalDurationMs: 1000,
-        isSubagent: false,
-      } satisfies TraceSession,
-      events: [
-        {
-          id: 'e1', sessionId: 's-1', sequence: 1, turnKey: null, kind: 'llm', phase: 'implement',
-          title: 'step one', startedAt: '2026-08-05T00:00:00.000Z', durationMs: 100,
-          status: 'success', actor: 'assistant', tool: null, tokens: null, error: null,
-          hasInput: true, hasOutput: false, hasRaw: false,
-        },
-        {
-          id: 'e2', sessionId: 's-1', sequence: 2, turnKey: null, kind: 'llm', phase: 'debug',
-          title: 'step two', startedAt: '2026-08-05T00:00:05.000Z', durationMs: 50,
-          status: 'error', actor: 'assistant', tool: null, tokens: null, error: 'boom',
-          hasInput: false, hasOutput: true, hasRaw: false,
-        },
-      ] satisfies TraceEventSlim[],
-      mode: 'slim',
-      eventTotal: 2,
-      eventOffset: 0,
-      eventLimit: 2,
-      hasMore: false,
-      pending: false,
-    };
-    const okJson = (body: unknown): Response =>
-      ({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify(body),
-      }) as unknown as Response;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.includes('/api/session-groups')) {
-          return okJson({ groups: [] });
-        }
-        if (url.includes('/api/sessions/s-1/events/')) {
-          return okJson({ ...sessionDetail.events[0], inputSummary: null, outputSummary: 'step one' });
-        }
-        if (url.includes('/api/sessions/s-1/team-run')) {
-          return okJson({ runIds: [] });
-        }
-        if (url.includes('/api/sessions/s-1/capture-links')) {
-          return okJson({ sessionKey: 's-1', items: [], confirmedCount: 0, candidateCount: 0, nextCursor: null, hasMore: false });
-        }
-        if (url.includes('/api/sessions/s-1/parents')) {
-          return okJson({ sessionKey: 's-1', items: [{ identity: { id: 'a'.repeat(64), source: 'scan', sourceKey: 's-1', namespace: 'agent:codex', kind: 'parent_session', value: 'parent-native', scope: 'child-native', eventId: null, sourcePath: 'session_meta.payload.parent_thread_id' },
-            state: 'resolved', matches: [{ id: 's-2', provider: 'claude', sourceAgent: 'Claude', title: 'Synthetic resolved owner', startedAt: '2026-08-02T00:00:00.000Z' }], matchesTruncated: false }],
-            nextCursor: null, hasMore: false, completeness: { complete: true, omittedCount: 0, reasons: [] } });
-        }
-        if (url.includes('/api/sessions/s-1')) {
-          return okJson(sessionDetail);
-        }
-        if (url.includes('/api/sessions?')) {
-          return okJson({ items: THREE_SESSIONS, nextCursor: null, hasMore: false, total: 3 });
-        }
-        if (url.includes('/api/health')) {
-          return okJson({ ok: true, dbSizeBytes: 1, walSizeBytes: 1 });
-        }
-        return okJson({});
-      }),
-    );
-
-    const container = renderApp();
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    });
-    const rows = Array.from(container.querySelectorAll('.session-row'));
-    expect(rows.length).toBe(3);
-    act(() => (rows[0] as HTMLElement).click());
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-
-    expect(container.querySelector('.session-toolbar')).not.toBeNull();
-    expect(container.querySelector('.session-toolbar-title')?.textContent).toContain('fix build');
-    expect(container.querySelector('.session-findings-panel')).not.toBeNull();
-    // 单行等宽回合导航；统计与分析在正文下方按需展开。
-    expect(container.querySelector('.gantt-wrap')).toBeNull();
-    expect(container.querySelector('.timeline-phase-axis')).toBeNull();
-    expect(container.querySelector('.trajectory-pane')).not.toBeNull();
-    expect(container.querySelector('.trajectory-statbar')).not.toBeNull();
-    expect(container.querySelectorAll('.trajectory-overview')).toHaveLength(1);
-    expect(container.querySelector('.trajectory-overview .session-signals')).toBeNull();
-    expect(container.querySelector('.turn-navigation')).toBeNull();
-    expect(container.querySelector('.session-summary')).toBeNull();
-    expect(container.querySelector('.turn-ribbon')).toBeNull();
-    expect(container.querySelector('.turn-navigator')).not.toBeNull();
-    expect(container.querySelector('.turn-list')).not.toBeNull();
-    // llm_boundary：两个 llm 事件 → 两个回合行
-    expect(container.querySelectorAll('.turn-row').length).toBe(2);
-    // 点击第一行展开 → 消息卡出现（assistant 卡）
-    act(() => {
-      (container.querySelector('.turn-row') as HTMLButtonElement).click();
-    });
-    expect(container.querySelectorAll('.message-card').length).toBeGreaterThan(0);
-    expect(container.querySelector('.message-card-role-assistant')).not.toBeNull();
-
-    // D16：detail 打开 = slim；不逐回合/逐消息拉取
-    const fetchMock = vi.mocked(fetch);
-    const detailCalls = fetchMock.mock.calls.filter((call) => {
-      const url = String(call[0]);
-      return url.includes('/api/sessions/s-1') && !url.includes('events/') && !url.includes('team-run');
-    });
-    expect(detailCalls).toHaveLength(1);
-
-    const callsBeforeLinks = fetchMock.mock.calls.length;
-    await act(async () => {
-      EventSourceStub.instances.at(-1)?.emit('trace_links_changed', { sessionKeys: ['s-1'], proxyIds: [1], truncated: false });
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-    expect(fetchMock.mock.calls).toHaveLength(callsBeforeLinks);
-    expect(container.querySelectorAll('.turn-row')).toHaveLength(2);
-
-    // Another native owner can make the open child's exact parent ambiguous.
-    // Invalidate locally before the batched index read; never re-read parents.
-    await act(async () => {
-      const details = [...container.querySelectorAll('details')].find(node => node.querySelector('summary')?.textContent === '关联 Trace')!;
-      details.open = true; details.dispatchEvent(new Event('toggle', { bubbles: true }));
-    });
-    await act(async () => { [...container.querySelectorAll('button')].find(node => node.textContent === '原生父会话引用')!.click(); await import('./components/NativeSessionParentsPanel.js'); });
-    await act(async () => { container.querySelector<HTMLButtonElement>('[data-native-parent-reference]')!.click(); });
-    expect(container.textContent).toContain('Synthetic resolved owner');
-    const parentReads = fetchMock.mock.calls.filter(([input]) => String(input).includes('/parents')).length;
-    expect(parentReads).toBe(1);
-    await act(async () => {
-      EventSourceStub.instances.at(-1)!.emit('sessions_changed', { keys: ['s-2'], count: 1 });
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-    expect(container.textContent).toContain('父级依据已变化');
-    expect(container.textContent).not.toContain('Synthetic resolved owner');
-    expect([...container.querySelectorAll('button')].some(node => node.textContent === '打开已解析父级会话')).toBe(false);
-    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/parents'))).toHaveLength(1);
-
-    sessionDetail.events.push({
-      id: 'e3', sessionId: 's-1', sequence: 3, turnKey: null, kind: 'llm', phase: 'implement',
-      title: 'live update', startedAt: '2026-08-05T00:00:06.000Z', durationMs: 10,
-      status: 'success', actor: 'assistant', tool: null, tokens: null, error: null,
-      hasInput: false, hasOutput: true, hasRaw: false,
-      inputSummary: null, outputSummary: 'live update',
-    });
-    sessionDetail.eventTotal = 3;
-    sessionDetail.session.eventCount = 3;
-    await act(async () => {
-      EventSourceStub.instances.at(-1)?.emit('sessions_changed', { keys: ['s-1'], count: 1 });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    // SSE 后 detail 刷新 → 第三个回合行出现
-    expect(container.querySelectorAll('.turn-row').length).toBe(3);
-    container.remove();
+    installTaskApi();const {container,unmount}=renderAppWithUnmount();try{
+      await readyTasks(container);act(()=>container.querySelector<HTMLButtonElement>('.task-health-title')!.click());await vi.waitFor(()=>expect(container.querySelectorAll('.process-record-button')).toHaveLength(2));
+      expect(container.querySelector('.task-context-header')).not.toBeNull();expect(container.querySelector('.task-summary-bar')).not.toBeNull();expect(container.querySelector('.task-time-sticky')).not.toBeNull();expect(container.querySelector('.task-timeline-track')).not.toBeNull();
+      const before=vi.mocked(fetch).mock.calls.length;await act(async()=>EventSourceStub.instances[0]!.emit('trace_links_changed',{sessionKeys:['s-1'],proxyIds:[1],truncated:false}));
+      expect(vi.mocked(fetch).mock.calls).toHaveLength(before);expect(container.querySelectorAll('.process-record-button')).toHaveLength(2);
+      const recordsBefore=vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/records?')).length;
+      await act(async()=>EventSourceStub.instances[0]!.emit('sessions_changed',{keys:['s-1'],count:1}));
+      expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/records?'))).toHaveLength(recordsBefore);expect(container.textContent).toContain('有新记录');expect(container.querySelectorAll('.process-record-button')).toHaveLength(2);
+      act(()=>container.querySelector<HTMLButtonElement>('.process-record-button')!.click());await vi.waitFor(()=>expect(container.textContent).toContain('SELECTED PUBLIC OUTPUT'));
+      expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/events/'))).toHaveLength(1);
+    }finally{unmount();}
   });
 });
 
@@ -1043,56 +825,46 @@ describe('team 视图入口 + URL restore + SSE（§7.3 / §7.8）', () => {
 
 describe('Trajectory event pagination', () => {
   it('appends slim pages, prevents duplicate requests, and retries without losing loaded turns', async () => {
-    const event = (sequence: number): TraceEventSlim => ({
-      id: `paged-${sequence}`, sessionId: 'page-only', sequence, turnKey: `turn-${sequence}`,
-      kind: 'llm', phase: 'implement', title: `page ${sequence}`,
-      startedAt: '2026-08-05T00:00:00.000Z', durationMs: 10,
-      status: 'success', actor: 'assistant', tool: null, tokens: null, error: null,
-      hasInput: false, hasOutput: true, hasRaw: false,
-    });
-    const first: SessionDetailResponse = {
-      session: {
-        ...THREE_SESSIONS[0]!, id: 'page-only', systemPrompt: null, isSubagent: false,
-        tokenUsage: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 0, total: 0 },
-        totalDurationMs: 30,
-      },
-      events: [event(1)], mode: 'slim', eventTotal: 2, eventOffset: 0,
-      eventLimit: 1, hasMore: true, pending: false,
-    };
-    const json = (body: unknown): Response => ({ ok: true, status: 200, text: async () => JSON.stringify(body) }) as Response;
-    let attempts = 0;
-    let finish: ((response: Response) => void) | undefined;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/api/sessions/page-only?')) {
-        if (!url.includes('offset=')) return json(first);
-        attempts += 1;
-        if (attempts === 1) throw new Error('temporary page failure');
-        return new Promise<Response>((resolve) => { finish = resolve; });
-      }
-      if (url.includes('/api/sessions?')) return json({ items: [{ ...THREE_SESSIONS[0]!, id: 'page-only' }], hasMore: false, total: 1, nextCursor: null });
-      if (url.includes('/api/session-groups')) return json({ groups: [] });
-      if (url.includes('/api/health')) return json({ ok: true, dbSizeBytes: 1, walSizeBytes: 1 });
-      return json({});
-    }));
-    const { container, unmount } = renderAppWithUnmount();
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
-    act(() => (container.querySelector('.session-row') as HTMLElement).click());
-    await act(async () => { await Promise.resolve(); });
-    const more = (): HTMLButtonElement => container.querySelector('.turn-list-banner button')!;
-    expect(container.querySelectorAll('.turn-row')).toHaveLength(1);
-    await act(async () => { more().click(); });
-    expect(container.querySelector('.turn-list-banner')?.textContent).toContain('temporary page failure');
-    expect(container.querySelectorAll('.turn-row')).toHaveLength(1);
-    await act(async () => { more().click(); more().click(); });
-    expect(attempts).toBe(2);
-    expect(more().disabled).toBe(true);
-    await act(async () => { finish!(json({ ...first, events: [event(2)], eventOffset: 1, hasMore: false })); });
-    expect(container.querySelectorAll('.turn-row')).toHaveLength(2);
-    expect(container.querySelector('.turn-list-banner')).toBeNull();
-    const pages = vi.mocked(fetch).mock.calls.map((call) => String(call[0])).filter((url) => url.includes('offset='));
-    expect(pages).toHaveLength(2);
-    expect(pages.every((url) => url.includes('mode=slim') && url.includes('offset=1') && url.includes('limit=2000'))).toBe(true);
-    unmount();
+    let attempts=0,finish:((response:Response)=>void)|undefined;
+    vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{const path=String(input);if(path.includes('/records?')){const q=new URL(path,'http://localhost').searchParams,base=taskPage('collected:s-1');if(q.get('offset')==='1'){attempts++;if(attempts===1)throw new Error('temporary page failure');return new Promise<Response>(r=>{finish=r;});}return apiResponse({...base,items:[base.items[0]],limit:1,hasMore:true});}return taskResponse(path);}));
+    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);act(()=>container.querySelector<HTMLButtonElement>('.task-health-title')!.click());await vi.waitFor(()=>expect(container.querySelectorAll('.process-record-button')).toHaveLength(1));
+      const next=()=>container.querySelector<HTMLButtonElement>('.task-page-controls [aria-label="更新记录"]')!;
+      await act(async()=>{next().click();});expect(container.textContent).toContain('temporary page failure');
+      const retry=[...container.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='重试读取')!;await act(async()=>{retry.click();retry.click();});expect(attempts).toBe(2);
+      await act(async()=>finish!(apiResponse({...taskPage('collected:s-1'),items:[taskPage('collected:s-1').items[1]],offset:1,hasPrevious:true})));
+      expect(container.querySelectorAll('.process-record-button')).toHaveLength(1);expect(container.textContent).toContain('Result 2');expect(container.textContent).not.toContain('temporary page failure');
+      const pages=vi.mocked(fetch).mock.calls.map(([i])=>String(i)).filter(path=>path.includes('/records?')&&path.includes('offset=1'));expect(pages).toHaveLength(2);expect(pages.every(path=>path.includes('limit=200')&&path.includes('window=fixed'))).toBe(true);
+    }finally{unmount();}
   });
+});
+
+it.each(['price','threshold','overview-threshold'])('Phase B review: %s opens and focuses its settings section without saving',async entry=>{
+ const requests:Array<{path:string;method:string}>=[];
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+  const path=String(input);requests.push({path,method:init?.method??'GET'});
+  if(path==='/api/config/providers')return apiResponse({providers:Object.fromEntries(PROVIDER_KEYS.map(key=>[key,{key,enabled:true,path:'/fixture/'+key,label:key,sourceKind:'jsonl',watchStrategy:'chokidar',pollIntervalMs:0}])),traeKeyPath:null,prewarmRecent:0});
+  if(path==='/api/config/model-pricing')return apiResponse({});
+  if(path==='/api/config/alert-thresholds')return apiResponse(DEFAULT_ALERT_THRESHOLDS);
+  if(path==='/api/task-kpis')return apiResponse({tasks:3,statusKnownTasks:3,toolKnownTasks:3,failedTasks:0,failurePct:0,toolFailurePct:0,tokens:null,tokenKnownTasks:0,costs:{known:0,total:3,amounts:[]},alerts:0});
+  if(path.startsWith('/api/mission'))return apiResponse({meta:{range:'7d',generatedAt:'2026-10-31T00:00:00Z',tz:0,widgetCount:0,durationMs:0,stamp:'2026-10-31T00:00:00Z',cached:false},usage:{},quality:{},health:{}});
+  if(path.startsWith('/api/tasks?'))return apiResponse({items:TASK_FIXTURES.map(t=>({...t,metrics:{durationMs:1000,toolCalls:1,errors:0,input:10,output:20,cacheRead:1,correctedTotal:31,costUsd:null,models:['needs-price'],costs:{known:0,total:1,amounts:[],missingPrices:['needs-price'],missingReasons:['model_unpriced']}}})),total:3,offset:0,limit:50,hasMore:false});
+  return taskResponse(path);
+ }));
+ const {container,unmount}=renderAppWithUnmount();
+ try{
+  await readyTasks(container);
+  if(entry==='overview-threshold')await navigateHash('#/overview');
+  const selector=entry==='price'?'.task-price-link':entry==='overview-threshold'?'.overview-threshold-link':'.task-home-toolbar button';
+  let button:HTMLButtonElement|undefined;
+  for(let i=0;i<100&&!button;i++){button=[...container.querySelectorAll<HTMLButtonElement>(selector)].find(b=>entry==='price'||b.textContent==='配置阈值');if(!button)await act(async()=>{await new Promise(r=>setTimeout(r,10));});}
+  expect(button).toBeDefined();act(()=>button!.click());
+  const section=entry==='price'?'model-pricing':'alert-thresholds';
+  for(let i=0;i<100&&!container.querySelector('#settings-'+section+' input');i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});
+  await act(async()=>{await new Promise(r=>setTimeout(r,30));});
+  const input=container.querySelector<HTMLInputElement>('#settings-'+section+' input')!;expect(input).not.toBeNull();expect(document.activeElement).toBe(input);
+  expect(container.querySelector<HTMLDetailsElement>('.settings-workbench details')!.open).toBe(true);
+  if(entry==='price')expect(input.value).toBe('needs-price');
+  expect(requests.some(r=>r.method==='PUT'||r.method==='POST')).toBe(false);
+  expect(requests.filter(r=>r.path==='/api/config/providers')).toHaveLength(1);
+ }finally{unmount();}
 });

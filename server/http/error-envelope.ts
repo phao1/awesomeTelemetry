@@ -4,6 +4,8 @@ import { sendJson } from './send-json.js';
 
 /** contracts/api.md §0.4 错误码全集。 */
 export const ERROR_CODES = {
+  BUSY: 'BUSY',
+  SOURCE_CHANGED: 'SOURCE_CHANGED',
   HOOK_DISABLED: 'HOOK_DISABLED',
   HOOK_AUTH_REQUIRED: 'HOOK_AUTH_REQUIRED',
   HOOK_CONFLICT: 'HOOK_CONFLICT',

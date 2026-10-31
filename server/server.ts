@@ -1,4 +1,9 @@
-import { registerTaskHealthRoutes } from './http/task-health-routes.js';
+import { constants as fsConstants } from 'node:fs';
+import { TaskHomeHydrator, HomeHydrationBusy } from './watch/task-home-hydrator.js';
+import { taskHomeMembers } from './storage/task-home-members.js';
+import { createLocalSettings, readSettingsBody, LocalSettingsError } from './http/local-settings.js';
+import { listTaskHome, taskKpis, TaskHomeChangedError } from './storage/task-home.js';
+import { parseHealthJson, registerTaskHealthRoutes } from './http/task-health-routes.js';
 import { createHealthReportStore } from './task-health/store.js';
 import { createNativeScopeCollector } from './agent-folding/native-scope.js';
 import { collectFoldingMetricRun } from './agent-folding/run-metrics.js';
@@ -186,6 +191,7 @@ export interface AgentObservabilityServerOptions {
   distDir?: string;
   detailCache?: DetailCache;
   projectConfigPath?: string;
+  configRoot?: string;
   userConfigPath?: string;
   rulesPath?: string;
   captureDirectory?: string;
@@ -569,21 +575,68 @@ export function createAgentObservabilityServer(
     sendJson(res, 200, { enabled: monitoringEnabled, state: monitoringState }, req);
   });
 
+  const nativeTaskReads = new Map<string, Promise<void>>();
+  const homeHydrator = new TaskHomeHydrator({
+    load: async (key, signal) => {
+      const metadata = () => cachedStmt(db, 'SELECT detail_loaded,source_path FROM sessions WHERE id=?').get(key) as {detail_loaded:number;source_path:string}|undefined;
+      let row=metadata();
+      if(!row)return 'member_unavailable';
+      if(row.detail_loaded===1)return 'loaded';
+      if(signal.aborted)return 'cancelled';
+      try {await access(row.source_path,fsConstants.R_OK);}catch(error){return (error as NodeJS.ErrnoException).code==='ENOENT'?'source_missing':'source_unreadable';}
+      if(signal.aborted)return 'cancelled';
+      row=metadata();if(!row)return 'member_unavailable';if(row.detail_loaded===1)return 'loaded';
+      let pending=nativeTaskReads.get(key);
+      if(!pending){pending=scanAndStoreDetail(db,key,{config,notify:notifyMerged}).then(()=>{});nativeTaskReads.set(key,pending);}
+      try{await pending;}finally{if(nativeTaskReads.get(key)===pending)nativeTaskReads.delete(key);}
+      return metadata()?.detail_loaded===1?'loaded':'parse_failed';
+    },
+    notify:notifyMerged,
+    onError:error=>console.error('[task-home] Background detail loading failed',error),
+  });
+  router.register('POST','/api/task-home/hydrate',async(req,res)=>{
+    if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']??''))throw new HttpError(400,'BAD_REQUEST','Invalid task hydration content type');
+    let value:unknown;try{value=parseHealthJson(await readBody(req,65536));}catch{throw new HttpError(400,'BAD_REQUEST','Invalid task hydration request');}
+    const body=value as {taskIds?:unknown};
+    if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||!Array.isArray(body.taskIds)||body.taskIds.length<1||body.taskIds.length>50||new Set(body.taskIds).size!==body.taskIds.length||body.taskIds.some(id=>typeof id!=='string'||id.length>1024||!/^collected:[^\s]+$/.test(id)))throw new HttpError(400,'BAD_REQUEST','Invalid task hydration request');
+    if(res.destroyed)return;
+    const taskIds=body.taskIds as string[],members=taskHomeMembers(db,taskIds);
+    let bytes=0;
+    const release=homeHydrator.subscribe(taskIds,members,frame=>{
+      if(res.destroyed||res.writableEnded)return;
+      const line=JSON.stringify(frame)+'\n';bytes+=Buffer.byteLength(line);
+      if(bytes>524288){res.end();return;}
+      if(!res.headersSent){res.statusCode=200;res.setHeader('content-type','application/x-ndjson; charset=utf-8');res.setHeader('cache-control','no-store');res.setHeader('x-content-type-options','nosniff');}
+      res.write(line);if(frame.done)res.end();
+    });
+    res.once('close',release);res.once('finish',()=>{release();res.off('close',release);});
+    if(res.destroyed||res.writableEnded)release();
+  });
+  const localSettings = createLocalSettings(opts.userConfigPath,opts.configRoot??(opts.projectConfigPath?dirname(dirname(opts.projectConfigPath)):process.cwd()));
+  const healthStore = createHealthReportStore(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')));
+  const healthSummaryWarmup=healthStore.warmSummaries();
+  void healthSummaryWarmup.catch(error=>console.error('[task-home] Saved report projection failed',error));
   const taskNumber = (value: string | null): number | undefined => {
     if (value === null) return undefined;
     if (!/^\d+$/.test(value)) throw new HttpError(400, 'BAD_REQUEST', 'Invalid task pagination');
     return Number(value);
   };
-  router.register('GET', '/api/tasks', (req, res) => {
+  router.register('GET', '/api/tasks', async (req, res) => {
     const query = parseQuery(req), origin = query.get('origin') ?? 'collected';
     if (origin !== 'collected' && origin !== 'imported') throw new HttpError(400, 'BAD_REQUEST', 'Invalid task origin');
     const provider = query.get('provider'), range = query.get('range') ?? 'all';
     if (provider !== null && !(PROVIDER_KEYS as readonly string[]).includes(provider) || !['today', '7d', '30d', 'all'].includes(range)) throw new HttpError(400, 'BAD_REQUEST', 'Invalid task filters');
     const options: TaskListQuery = { origin, q: query.get('q') ?? undefined, provider: provider as ProviderKey | undefined ?? undefined,
       range: range as TaskListQuery['range'], offset: taskNumber(query.get('offset')), limit: taskNumber(query.get('limit')) };
-    res.setHeader('cache-control', 'no-store'); sendJson(res, 200, listTasks(db, options), req);
+    for (const key of ['summary','alerts','errors','failed','toolFailures']) if(query.has(key)&&query.get(key)!=='1')throw new HttpError(400,'BAD_REQUEST','Invalid task filters');
+    if(query.has('sort')&&!['time','duration','errors','tokens','cost'].includes(query.get('sort')!)||query.has('direction')&&!['asc','desc'].includes(query.get('direction')!)||query.has('currency')&&!['USD','CNY'].includes(query.get('currency')!))throw new HttpError(400,'BAD_REQUEST','Invalid task sorting');
+    const page=query.get('summary')==='1' ? await listTaskHome(db,{...options,summary:true,sort:query.get('sort') as TaskListQuery['sort']??undefined,direction:query.get('direction') as TaskListQuery['direction']??undefined,failed:query.get('failed')==='1',toolFailures:query.get('toolFailures')==='1',alerts:query.get('alerts')==='1',errors:query.get('errors')==='1',currency:query.get('currency') as TaskListQuery['currency']??undefined},await localSettings.alerts()) : listTasks(db,options);
+    if(query.get('summary')==='1')await healthSummaryWarmup;
+    if(query.get('summary')==='1')await Promise.all(page.items.map(async item=>{item.latestHealth=await healthStore.summary(item.id);}));
+    res.setHeader('cache-control', 'no-store'); sendJson(res, 200, page, req);
   });
-  router.register('GET', '/api/tasks/:id', (req, res, params) => {
+  router.register('GET', '/api/tasks/:id', async (req, res, params) => {
+    await localSettings.prices();
     res.setHeader('cache-control', 'no-store'); sendJson(res, 200, getTask(db, params.id!), req);
   });
   router.register('GET', '/api/tasks/:id/timeline', (req, res, params) => {
@@ -591,7 +644,6 @@ export function createAgentObservabilityServer(
     res.setHeader('cache-control', 'no-store');
     sendJson(res, 200, getTaskTimeline(db, getTask(db, params.id!), query.get('member') ?? 'main', query.get('window') ?? ''), req);
   });
-  const nativeTaskReads = new Map<string, Promise<void>>();
   router.register('GET', '/api/tasks/:id/records', async (req, res, params) => {
     const query = parseQuery(req), status = query.get('status');
     if (status !== null && !(TRACE_STATUSES as readonly string[]).includes(status)) throw new HttpError(400, 'BAD_REQUEST', 'Invalid record status');
@@ -1311,7 +1363,7 @@ export function createAgentObservabilityServer(
     db, loadCapture: readCaptureAnalysisSource, loadCodex: (id, signal) => codexInspector.readDiagnosis({ id }, signal),
   });
   const stopArchitectureDiagnosis = registerArchitectureDiagnosisRoutes(router, architectureCollector);
-  const stopTaskHealth = registerTaskHealthRoutes(router, { db, store: createHealthReportStore(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite'))) });
+  const stopTaskHealth = registerTaskHealthRoutes(router, { db, store: healthStore });
   const foldingScopeCollector = createNativeScopeCollector(db, { ensureDetail: (key, signal) => ensureDetail(key, 'slim', signal) });
   const stopAgentFolding = registerAgentFoldingRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'agent-folding-runs'), {
     loadScope: (scope, signal) => foldingScopeCollector.collect(scope, signal),
@@ -1715,6 +1767,11 @@ export function createAgentObservabilityServer(
     sendJson(res, 200, await fridaRuntime.stop(), _req);
   });
 
+  router.register('GET','/api/task-kpis',async(req,res)=>sendJson(res,200,await taskKpis(db,await localSettings.alerts()),req));
+  router.register('GET','/api/config/model-pricing',async(req,res)=>sendJson(res,200,await localSettings.prices(),req));
+  router.register('PUT','/api/config/model-pricing',async(req,res)=>sendJson(res,200,await localSettings.savePrices(await readSettingsBody(req)),req));
+  router.register('GET','/api/config/alert-thresholds',async(req,res)=>sendJson(res,200,await localSettings.alerts(),req));
+  router.register('PUT','/api/config/alert-thresholds',async(req,res)=>sendJson(res,200,await localSettings.saveAlerts(await readSettingsBody(req)),req));
   router.register('GET', '/api/config/providers', (_req, res) => {
     sendJson(res, 200, config, _req);
   });
@@ -2266,8 +2323,8 @@ export function createAgentObservabilityServer(
     }
     const handler = (async () => {
       try {
-        if (pathname.startsWith('/api/agent-folding/') || pathname.startsWith('/api/team-experiments/') || pathname.startsWith('/api/benchmarks/') || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
-          if (pathname.startsWith('/api/tasks') || pathname === '/api/monitoring') res.setHeader('cache-control', 'no-store');
+        if (pathname.startsWith('/api/task-home/') || pathname.startsWith('/api/config/model-pricing') || pathname.startsWith('/api/config/alert-thresholds') || pathname === '/api/task-kpis' || pathname.startsWith('/api/agent-folding/') || pathname.startsWith('/api/team-experiments/') || pathname.startsWith('/api/benchmarks/') || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
+          if (pathname.startsWith('/api/config/') || pathname === '/api/task-kpis' || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring') res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/hooks/')) res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/frida/')) res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/trace-imports')) res.setHeader('cache-control', 'no-store');
@@ -2294,6 +2351,9 @@ export function createAgentObservabilityServer(
         }
         await match.handler(req, res, match.params);
       } catch (err) {
+        if (err instanceof HomeHydrationBusy) { sendApiError(res,409,'BUSY',err.message,undefined,req); return; }
+        if (err instanceof TaskHomeChangedError) { sendApiError(res,409,err.code,err.message,undefined,req); return; }
+        if (err instanceof LocalSettingsError) { sendApiError(res,400,err.code,err.message,undefined,req); return; }
         if (err instanceof TaskReadError) {
           sendApiError(res, err.code === 'BAD_REQUEST' ? 400 : 404, err.code, err.message, undefined, req); return;
         }
@@ -2371,6 +2431,7 @@ export function createAgentObservabilityServer(
       stopTeamExperiments();
       stopArchitectureDiagnosis();
       stopTaskHealth();
+      const homeHydrationStopped=homeHydrator.close();
       stopAgentFolding(); foldingScopeCollector.close();
       pendingAutomaticScans.clear();
       for (const cleanup of ownSseClients) cleanup();
@@ -2382,6 +2443,7 @@ export function createAgentObservabilityServer(
         void httpClosed.catch(() => {});
       }
       shutdown = (async () => {
+        await homeHydrationStopped;
         await hookReceiver.close();
         await captureBundler.close();
         await captureSelfTester.close();
@@ -2395,6 +2457,7 @@ export function createAgentObservabilityServer(
           // A handler may still be reading its request before starting a scan.
           // Observe all registered scan tasks only after those handlers settle.
           await Promise.all(activeHandlers);
+          await healthSummaryWarmup.catch(()=>{}); // The startup projection error was already logged.
           await startupRecovery?.catch(() => {});
           while (scanInProgress) await new Promise(resolve => setTimeout(resolve, 5));
           await Promise.allSettled(scanTasks);

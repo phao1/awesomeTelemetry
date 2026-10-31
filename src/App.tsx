@@ -1,4 +1,7 @@
-import { TaskWorkbench, type TaskChanges } from './components/task/TaskWorkbench.js';
+import type { LocalSettingsTarget } from './core/task-types.js';
+import { OverviewKpis } from './components/task/OverviewKpis.js';
+import type { TaskChanges } from './components/task/TaskWorkbench.js';
+const TaskWorkbench=lazy(()=>import('./components/task/TaskWorkbench.js').then(m=>({default:m.TaskWorkbench})));
 import { DataIntake } from './components/task/DataIntake.js';
 import { parseTaskRoute, serializeTaskRoute, type TaskRoute } from './task-route.js';
 import { copy as taskCopy } from './components/task/copy.js';
@@ -37,13 +40,13 @@ import { mergeSessionsPatch } from './core/list-utils.js';
 import { localSamples } from './generated/local-samples.js';
 import { LanguageToggle } from './components/LanguageToggle.js';
 import { LiveIndicator } from './components/LiveIndicator.js';
-import { SessionList } from './components/SessionList.js';
-import { SessionStart } from './components/SessionStart.js';
-import { SessionToolbar } from './components/SessionToolbar.js';
-import { SessionFindings } from './components/SessionFindings.js';
-import { SessionVisuals } from './components/SessionVisuals.js';
-import { TrajectoryPane } from './components/trajectory/TrajectoryPane.js';
-import { AgentCollabReplay } from './components/AgentCollabReplay.js';
+const SessionList=lazy(()=>import('./components/SessionList.js').then(m=>({default:m.SessionList})));
+const SessionStart=lazy(()=>import('./components/SessionStart.js').then(m=>({default:m.SessionStart})));
+const SessionToolbar=lazy(()=>import('./components/SessionToolbar.js').then(m=>({default:m.SessionToolbar})));
+const SessionFindings=lazy(()=>import('./components/SessionFindings.js').then(m=>({default:m.SessionFindings})));
+const SessionVisuals=lazy(()=>import('./components/SessionVisuals.js').then(m=>({default:m.SessionVisuals})));
+const TrajectoryPane=lazy(()=>import('./components/trajectory/TrajectoryPane.js').then(m=>({default:m.TrajectoryPane})));
+const AgentCollabReplay=lazy(()=>import('./components/AgentCollabReplay.js').then(m=>({default:m.AgentCollabReplay})));
 const AgentOverview = lazy(() => import('./components/AgentOverview.js').then(module => ({ default: module.AgentOverview })));
 const BenchmarkCenter = lazy(() => import('./components/benchmark/BenchmarkCenter.js').then(module => ({ default: module.BenchmarkCenter })));
 const TeamExperimentCenter = lazy(() => import('./components/team-experiment/TeamExperimentCenter.js').then(module => ({ default: module.TeamExperimentCenter })));
@@ -51,9 +54,10 @@ const CompareBoard = lazy(() => import('./components/CompareBoard.js').then(modu
 const ProxyView = lazy(() => import('./components/ProxyView.js').then(module => ({ default: module.ProxyView })));
 import type { LiveStreamEntry } from './components/ProxyLivePanel.js';
 const ProxyLivePanel = lazy(() => import('./components/ProxyLivePanel.js').then(module => ({ default: module.ProxyLivePanel })));
-import { SessionCaptureLinksPanel } from './components/TraceLinksPanel.js';
+const SessionCaptureLinksPanel=lazy(()=>import('./components/TraceLinksPanel.js').then(m=>({default:m.SessionCaptureLinksPanel})));
 const FridaView = lazy(() => import('./components/FridaView.js').then(module => ({ default: module.FridaView })));
-import { MissionControl, type MissionRange } from './components/MissionControl.js';
+import type { MissionRange } from './components/MissionControl.js';
+const MissionControl=lazy(()=>import('./components/MissionControl.js').then(m=>({default:m.MissionControl})));
 const SettingsModal = lazy(() => import('./components/SettingsModal.js').then(module => ({ default: module.SettingsModal })));
 import { Modal } from './components/ui/Modal.js';
 
@@ -70,7 +74,7 @@ import { ThemeToggle } from './components/ThemeToggle.js';
 import { ErrorState, EmptyState } from './components/ui/States.js';
 import { ErrorBoundary } from './components/ui/ErrorBoundary.js';
 import { useTheme } from './theme.js';
-import { AppHeader, StatusBar, ViewTabs, type AppView } from './components/AppShell.js';
+import { AppHeader, StatusBar, type AppView } from './components/AppShell.js';
 import {
   LAYOUT_KEYS,
   LAYOUT_RANGES,
@@ -85,7 +89,7 @@ import {
   setEscapeFallback,
 } from './keyboard.js';
 import { HelpModal } from './components/HelpModal.js';
-import { parseHash, serializeHash, type HashState } from './hash-router.js';
+import { canonicalHash, parseHash, serializeHash, type HashState } from './hash-router.js';
 import type { CommandPaletteProps } from './components/CommandPalette.js';
 import { computeFindings, type Finding } from './core/session-findings.js';
 // add-agent-team-observability §7.3 — team 视图 shell（App.tsx 是唯一 stateful shell）
@@ -100,7 +104,8 @@ import {
 /** --ui-scale 的基准字号：fontPx 等于它时缩放为 1（同 tokens.css §3.1 的 --text-base）。 */
 const BASE_FONT_PX = 13;
 /** 首帧 hash 在模块加载时解析一次：避免 state→hash 写入 effect 先把它覆盖掉。 */
-const INITIAL_HASH = parseHash(window.location.hash);
+const INITIAL_CANONICAL_HASH = canonicalHash(window.location.hash);
+const INITIAL_HASH = parseHash(INITIAL_CANONICAL_HASH);
 const isTeamHash = (hash: string): boolean => /^#\/team(?:[/?]|$)/.test(hash);
 
 interface PaletteModule {
@@ -112,12 +117,16 @@ export default function App() {
   // §7.3：team 视图与既有五视图平行；AppView 不含 'team'，故本地扩展
   const isInitialTeam = isTeamHash(window.location.hash);
   const [view, setView] = useState<AppView | 'team'>(() =>
-    window.location.hash === '' || window.location.hash === '#' || window.location.hash.startsWith('#/task') || (isInitialTeam && window.location.hash.includes('runId=')) || (window.location.hash.startsWith('#/session?') && parseTaskRoute(window.location.hash).task !== null) ? 'task' : isInitialTeam ? 'team' : (parseHash(window.location.hash)?.view ?? 'task') as AppView | 'team',
+    canonicalHash(window.location.hash) === '' || canonicalHash(window.location.hash) === '#' || canonicalHash(window.location.hash).startsWith('#/task') || (isInitialTeam && window.location.hash.includes('runId=')) || (window.location.hash.startsWith('#/session?') && parseTaskRoute(window.location.hash).task !== null) ? 'task' : isInitialTeam ? 'team' : (parseHash(canonicalHash(window.location.hash))?.view ?? 'task') as AppView | 'team',
   );
 
-  const [taskRoute, setTaskRoute] = useState<TaskRoute>(() => parseTaskRoute(window.location.hash));
+  const [taskRoute, setTaskRoute] = useState<TaskRoute>(() => parseTaskRoute(canonicalHash(window.location.hash)));
   const [taskChanges, setTaskChanges] = useState<TaskChanges>({ version: 0, keys: [], runIds: [] });
-  const [intakeChannel, setIntakeChannel] = useState<'native' | 'proxy' | 'frida' | 'import'>('native');
+  const [settingsTarget,setSettingsTarget]=useState<LocalSettingsTarget>();
+  const openSettingsTarget=useCallback((target:LocalSettingsTarget)=>{setSettingsTarget(target);setSettingsOpen(true);},[]);
+  const [settingsRevision,setSettingsRevision]=useState(0);
+  const [agentsExpanded,setAgentsExpanded]=useState(false);
+  const [intakeChannel, setIntakeChannel] = useState<'native' | 'proxy' | 'cdp' | 'frida' | 'import'>(()=>parseHash(canonicalHash(window.location.hash))?.channel??'native');
 
   const [teamHash, setTeamHash] = useState<TeamHashState>(() =>
     isInitialTeam ? parseTeamHash(window.location.hash.replace(/^#\/team\/?/, '')) : DEFAULT_TEAM_HASH,
@@ -229,6 +238,9 @@ export default function App() {
   }, [locale]);
 
   const switchView = useCallback((next: AppView | 'team') => {
+    if(next==='proxy'||next==='frida'){setIntakeChannel(next);next='intake';}
+    if(next==='mission'||next==='agent')next='overview';
+    if(next==='session')next='task';
     startTransition(() => setView(next)); // REQ-002：视图切换用 startTransition
   }, []);
 
@@ -642,12 +654,12 @@ export default function App() {
     const add = (spec: Parameters<typeof registerShortcut>[0], handler: () => void): void => {
       unsubs.push(registerShortcut(spec, handler));
     };
-    add({ key: '1' }, () => switchView('task'));
-    add({ key: '2' }, () => switchView('intake'));
-    add({ key: '3' }, () => switchView('compare'));
-    add({ key: '4' }, () => switchView('proxy'));
-    add({ key: '5' }, () => switchView('frida'));
-    add({ key: '6' }, () => switchView('mission'));
+    add({ key: '1' }, () => switchView('overview'));
+    add({ key: '2' }, () => switchView('task'));
+    add({ key: '3' }, () => switchView('benchmark'));
+    add({ key: '4' }, () => switchView('team-experiment'));
+    add({ key: '5' }, () => switchView('intake'));
+    add({ key: '6' }, () => setSettingsOpen(true));
     add({ key: '/' }, () => {
       if (view !== 'session') return;
       if (searchInputRef.current !== null) searchInputRef.current.focus();
@@ -682,7 +694,7 @@ export default function App() {
 
   // REQ-024（D3）：状态变 → 写 hash（replaceState 不触发 hashchange，避免循环）
   useEffect(() => {
-    if (view === 'task') { history.replaceState(null, '', serializeTaskRoute(taskRoute)); return; }
+    if (view === 'task') { history.replaceState(null, '', serializeTaskRoute({...taskRoute,homeProvider:providerFilter[0]})); return; }
     // §7.3 team 视图用独立 hash 序列化（与既有 session/agent/compare/... 分开）
     if (view === 'team') {
       history.replaceState(null, '', serializeTeamViewHash(teamHash));
@@ -698,25 +710,28 @@ export default function App() {
       ...(view === 'session' && selectedTurn !== null ? { turn: selectedTurn } : {}),
       ...(compareLeft !== '' ? { left: compareLeft } : {}),
       ...(compareRight !== '' ? { right: compareRight } : {}),
-      ...(view === 'mission' ? { range: missionRange } : {}),
+      ...(view === 'mission'||view==='overview' ? { range: missionRange } : {}),
+      ...(view==='intake'?{channel:intakeChannel}:{}),
     };
     history.replaceState(null, '', serializeHash(state));
-  }, [view, selectedKey, providerFilter, statusFilter, sessionQ, sessionRange, selectedTurn, compareLeft, compareRight, missionRange, teamHash, taskRoute]);
+  }, [view, selectedKey, providerFilter, statusFilter, sessionQ, sessionRange, selectedTurn, compareLeft, compareRight, missionRange, teamHash, taskRoute, intakeChannel]);
 
   // REQ-024：hashchange → 解析并应用（脏 hash 回落默认视图，不抛错）
   useEffect(() => {
     const onHashChange = (): void => {
+      const hash=canonicalHash(window.location.hash);
       if (window.location.hash === '#/team') { switchView('team'); setTeamHash(DEFAULT_TEAM_HASH); return; }
-      if (window.location.hash.startsWith('#/task') || isTeamHash(window.location.hash) || (window.location.hash.startsWith('#/session?') && parseTaskRoute(window.location.hash).task !== null)) {
-        setTaskRoute(parseTaskRoute(window.location.hash)); switchView('task'); return;
+      if (hash.startsWith('#/task') || isTeamHash(window.location.hash) || (window.location.hash.startsWith('#/session?') && parseTaskRoute(window.location.hash).task !== null)) {
+        const route=parseTaskRoute(hash);setTaskRoute(route);setProviderFilter(route.homeProvider?[route.homeProvider]:[]);switchView('task');return;
       }
-      const state = parseHash(window.location.hash);
+      const state = parseHash(hash);
       if (state === null) {
-        switchView('session');
+        switchView('task');
         return;
       }
+      if(state.channel)setIntakeChannel(state.channel);
       switchView(state.view);
-      if (state.key !== undefined) {
+      if (state.key !== undefined && state.view==='session') {
         selectSession(state.key);
       }
       if (state.provider !== undefined) {
@@ -740,7 +755,7 @@ export default function App() {
       if (state.right !== undefined) {
         setCompareRight(state.right);
       }
-      if (state.range !== undefined && state.view === 'mission') {
+      if (state.range !== undefined && (state.view === 'mission'||state.view==='overview')) {
         setMissionRange(state.range);
       }
     };
@@ -750,7 +765,7 @@ export default function App() {
 
   // 首帧详情加载（其余状态已由 useState 初始化自 INITIAL_HASH）
   useEffect(() => {
-    if (INITIAL_HASH?.key !== undefined) {
+    if (INITIAL_HASH?.key !== undefined && INITIAL_HASH.view==='session') {
       selectSession(INITIAL_HASH.key);
     }
   }, [switchView, selectSession]);
@@ -778,14 +793,10 @@ export default function App() {
         />
         <LiveIndicator connected={live} locale={locale} />
       </AppHeader>
-      <nav className="task-primary-nav" aria-label={taskCopy(locale).tasks}>
-        <div><button type="button" aria-current={view === 'task' || view === 'session' || view === 'team' ? 'page' : undefined} onClick={() => switchView('task')}>{taskCopy(locale).tasks}</button>
-        <button type="button" aria-current={view === 'intake' || view === 'proxy' || view === 'frida' ? 'page' : undefined} onClick={() => { setIntakeChannel('native'); switchView('intake'); }}>{taskCopy(locale).intake}</button>
-        <button type="button" aria-current={view === 'benchmark' ? 'page' : undefined} onClick={() => switchView('benchmark')}>{locale === 'zh' ? '评测中心' : 'Benchmarks'}</button>
-        <button type="button" aria-current={view === 'team-experiment' ? 'page' : undefined} onClick={() => switchView('team-experiment')}>{t('view.team-experiment', locale)}</button>
-        <button type="button" onClick={() => setSettingsOpen(true)}>{taskCopy(locale).settings}</button></div>
-        <details><summary>{taskCopy(locale).compat}</summary><div className="task-secondary-menu"><ViewTabs active={view === 'task' || view === 'intake' || view === 'team' || view === 'benchmark' || view === 'team-experiment' ? 'session' : view} onChange={switchView} locale={locale} /></div></details>
-      </nav>
+      <nav className="task-primary-nav" aria-label={locale==='zh'?'主导航':'Primary navigation'}><div>
+        {([['overview',locale==='zh'?'概览':'Overview'],['task',taskCopy(locale).tasks],['benchmark',locale==='zh'?'评测中心':'Benchmarks'],['team-experiment',t('view.team-experiment',locale)],['intake',taskCopy(locale).intake]] as const).map(([id,label])=><button type="button" key={id} aria-current={view===id?'page':undefined} onClick={()=>{if(id==='task')setTaskRoute({...taskRoute,task:null,health:undefined,event:null});switchView(id);}}>{label}</button>)}
+        <button type="button" onClick={()=>setSettingsOpen(true)}>{taskCopy(locale).settings}</button>
+      </div></nav>
       {paletteLoadError && <div className="workbench-error" role="alert">
         <span>{t('workbench.searchUnavailable', locale)}</span>
         <button type="button" className="btn" onClick={openPalette}>{t('common.retry', locale)}</button>
@@ -795,19 +806,20 @@ export default function App() {
           team 视图保留用于团队任务详情：点击团队任务 → switchView('team')。
           D15：Sessions(任务) | Agents | ...，AppShell 不含 team */}
 
-      {view === 'task' && <ErrorBoundary label={taskCopy(locale).tasks}><TaskWorkbench locale={locale} route={taskRoute} onRoute={setTaskRoute} changes={taskChanges} diagnosisInvalidateKey={traceLinksVersion} providerPreset={providerFilter[0] ?? ''} onProviderPresetChange={value => setProviderFilter(value ? [value] : [])}
+      {view === 'task' && <ErrorBoundary label={taskCopy(locale).tasks}><Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}><TaskWorkbench onSettings={openSettingsTarget} settingsRevision={settingsRevision} onLegacyCompare={()=>switchView('compare')} locale={locale} route={taskRoute} onRoute={setTaskRoute} changes={taskChanges} diagnosisInvalidateKey={traceLinksVersion} providerPreset={providerFilter[0] ?? ''} onProviderPresetChange={value => setProviderFilter(value ? [value] : [])}
         onIntake={() => { setIntakeChannel(taskRoute.origin === 'imported' ? 'import' : 'native'); switchView('intake'); }}
-        onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} /></ErrorBoundary>}
+        onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} /></Suspense></ErrorBoundary>}
       {view === 'benchmark' && <ErrorBoundary label={locale === 'zh' ? '评测中心' : 'Benchmarks'}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><BenchmarkCenter locale={locale}/></Suspense></ErrorBoundary>}
       {view === 'team-experiment' && <ErrorBoundary label={t('view.team-experiment', locale)}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><TeamExperimentCenter locale={locale} diagnosisInvalidateKey={traceLinksVersion}/></Suspense></ErrorBoundary>}
       {view === 'intake' && <ErrorBoundary label={taskCopy(locale).intake}><DataIntake key={intakeChannel} locale={locale} initialChannel={intakeChannel}
         onConfigure={() => setSettingsOpen(true)} onTasks={() => switchView('task')}
         proxy={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates} latestHookId={latestHookId}
           sessions={sessions} focusedRequestId={proxyFocusedId} onFocusedRequestHandled={clearProxyFocus} traceInvalidateKey={traceLinksVersion}
+          livePreview={<Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}><ProxyLivePanel streams={proxyStreams} locale={locale} invalidateKey={traceLinksVersion} onOpenSession={key=>{setTaskRoute({...taskRoute,task:'collected:'+key,origin:'collected',member:'main',event:null});switchView('task');}}/></Suspense>}
           onOpenSession={key => { setTaskRoute({ ...taskRoute, task: 'collected:' + key, origin: 'collected', member: 'main', event: null }); switchView('task'); }} /></Suspense>}
         frida={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><FridaView key={liveReset} locale={locale} liveStatus={fridaLiveStatus} savedNotifications={fridaSaved} connected={live} /></Suspense>} /></ErrorBoundary>}
       {view === 'session' && (
-        <div className="view-body session-view-body">
+        <div className="view-body session-view-body"><Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}>
           <SessionList
             items={sessions}
             selectedId={selectedKey}
@@ -1008,6 +1020,7 @@ export default function App() {
               </div>
             )}
           </main>
+        </Suspense>
         </div>
       )}
       {view === 'agent' && (
@@ -1082,13 +1095,19 @@ export default function App() {
           </main>
         </div>
       )}
-      {view === 'mission' && (
+      {(view === 'mission'||view==='overview') && (
         <div className="view-body">
-          <MissionControl
+          <div className="overview-workspace">
+          <OverviewKpis onConfigureThresholds={()=>openSettingsTarget({section:'alert-thresholds'})} locale={locale} invalidateKey={missionInvalidateKey+taskChanges.version} onNavigate={patch=>{setTaskRoute({...parseTaskRoute('#/task'),...patch,task:null,homeRange:'7d'});setProviderFilter([]);switchView('task');}}/>
+          <details className="overview-agents" onToggle={e=>setAgentsExpanded(e.currentTarget.open)}><summary>{locale==='zh'?'Agent 概览':'Agent overview'}</summary>{agentsExpanded&&<AgentOverview locale={locale} sessions={sessions} onCompareProviders={startCompare} onBrowseSessions={provider=>{setProviderFilter(provider?[provider]:[]);setTaskRoute({...taskRoute,task:null});switchView('task');}} onSelectSession={key=>{setTaskRoute({...taskRoute,task:'collected:'+key,origin:'collected',member:'main',event:null});switchView('task');}}/>}</details>
+<Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}>
+          <MissionControl key={settingsRevision}
             locale={locale}
             initialRange={missionRange}
+            onRangeChange={setMissionRange}
             invalidateKey={missionInvalidateKey}
-          />
+          /></Suspense>
+          </div>
         </div>
       )}
       {view === 'team' && (
@@ -1108,11 +1127,11 @@ export default function App() {
 
       {settingsOpen && (
         <ErrorBoundary label={t('settings.title',locale)} fallback={()=>
-          <Modal title={t('settings.title',locale)} onClose={()=>setSettingsOpen(false)}>
+          <Modal title={t('settings.title',locale)} onClose={()=>{setSettingsOpen(false);setSettingsTarget(undefined);}}>
             <p role="alert">{t('state.error',locale)} · {t('settings.codeFailed',locale)}</p>
           </Modal>}>
-          <Suspense fallback={<Modal title={t('settings.title',locale)} onClose={()=>setSettingsOpen(false)}><p role="status">{t('common.loading',locale)}</p></Modal>}>
-            <SettingsModal locale={locale} onClose={() => setSettingsOpen(false)} />
+          <Suspense fallback={<Modal title={t('settings.title',locale)} onClose={()=>{setSettingsOpen(false);setSettingsTarget(undefined);}}><p role="status">{t('common.loading',locale)}</p></Modal>}>
+            <SettingsModal initialTarget={settingsTarget} onSettingsSaved={()=>{setSettingsRevision(n=>n+1);setMissionInvalidateKey(n=>n+1);}} locale={locale} onClose={() => {setSettingsOpen(false);setSettingsTarget(undefined);}} />
           </Suspense>
         </ErrorBoundary>
       )}
@@ -1135,7 +1154,7 @@ export default function App() {
             setPaletteHintSeen(true);
             storeBool(LAYOUT_KEYS.paletteHintSeen, true);
             if (action.type === 'session') {
-              selectSession(action.key);
+              setTaskRoute({...parseTaskRoute('#/task'),task:'collected:'+action.key});switchView('task');
             } else if (action.type === 'compare') {
               // REQ-111：直接进对比视图，会话 key 来自共享 store（不发额外请求）。
               setCompareLeft(action.left);

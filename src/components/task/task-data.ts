@@ -3,13 +3,13 @@ import { fetchJson } from '../../api/client.js';
 import type { TaskContext, TaskListQuery, TaskPage, TaskRecordPage, TaskRecordQuery, TaskTimeline } from '../../core/task-types.js';
 export function params(values: object): string {
   const q = new URLSearchParams();
-  for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== null && value !== '') q.set(key, String(value));
+  for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== null && value !== '' && value !== false) q.set(key, value === true ? '1' : String(value));
   return q.toString();
 }
 export const taskApi = {
   list: async (query: TaskListQuery, signal?: AbortSignal) => { const result = await fetchJson<TaskPage>('/tasks?' + params(query), { signal }); if (!result || !Array.isArray(result.items) || !Number.isSafeInteger(result.total) || result.items.some(item => typeof item.id !== 'string' || !['collected', 'imported'].includes(item.origin))) throw new Error('Invalid task list response'); return result; },
   context: async (id: string, signal?: AbortSignal) => { const result = await fetchJson<TaskContext>('/tasks/' + encodeURIComponent(id), { signal }); if (!result?.task || !Array.isArray(result.members) || !Array.isArray(result.warnings)) throw new Error('Invalid task context response'); return result; },
-  records: async (id: string, query: TaskRecordQuery, signal?: AbortSignal) => { const result = await fetchJson<TaskRecordPage>('/tasks/' + encodeURIComponent(id) + '/records?' + params(query), { signal }); if (!result || result.context?.task.id !== id || !Array.isArray(result.items) || result.items.length > (query.limit ?? 200) || !Number.isSafeInteger(result.offset) || !Number.isSafeInteger(result.total) || typeof result.window !== 'string') throw new Error('Invalid task record response'); return result; },
+  records: async (id: string, query: TaskRecordQuery, signal?: AbortSignal) => { const result = await fetchJson<TaskRecordPage>('/tasks/' + encodeURIComponent(id) + '/records?' + params({...query,structure:query.structure===undefined?undefined:String(query.structure)}), { signal }); if (!result || result.context?.task.id !== id || !Array.isArray(result.items) || result.items.length > (query.limit ?? 200) || !Number.isSafeInteger(result.offset) || !Number.isSafeInteger(result.total) || typeof result.window !== 'string') throw new Error('Invalid task record response'); return result; },
   timeline: async (id: string, member: string, window: string, signal?: AbortSignal) => { const result = await fetchJson<TaskTimeline>('/tasks/' + encodeURIComponent(id) + '/timeline?' + params({ member,window }), { signal }); if (!result || result.taskId!==id || result.member!==member || result.window!==window || !Array.isArray(result.lanes) || result.lanes.length>100 || result.bins!==160) throw new Error('Invalid task timeline response'); return result; },
 };
 /** Scope changes hide old content immediately and retire late requests even if abort is ignored. */

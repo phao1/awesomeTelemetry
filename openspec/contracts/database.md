@@ -1,3 +1,10 @@
+# Phase B additive schema23 (2026-10-31)
+Covering result-count and LLM numeric-context indexes; no body acquisition.
+```sql
+CREATE INDEX IF NOT EXISTS idx_events_task_results ON events(session_id,kind,status,output_len);
+CREATE INDEX IF NOT EXISTS idx_events_task_context ON events(session_id,kind,model,tokens_json);
+```
+
 # Phase A additive schema22 (2026-10-31)
 
 Current SCHEMA_VERSION=22. Add only the following covering indexes. Upgrade21→22

@@ -327,3 +327,47 @@ it.each([
     expect(host.textContent).not.toContain('SECRET_SERVER_ENGLISH');
   }
 });
+
+it('Phase B home shares one page, A/B checks and server sorting/filtering with the sidebar',async()=>{
+  function Home(){const [route,onRoute]=useState<TaskRoute>(DEFAULT_TASK_ROUTE);return <TaskWorkbench locale="en" route={route} onRoute={onRoute} changes={{version:0,keys:[],runIds:[]}} onIntake={()=>{}} onOpenRequest={()=>{}}/>;}
+  act(()=>root.render(<Home/>));
+  await vi.waitFor(async()=>{await settle();expect(host.querySelector('.task-health-list')).not.toBeNull();});
+  expect(calls.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(1);
+  expect(calls.find(path=>path.startsWith('/api/tasks?'))).toContain('summary=1');
+  act(()=>host.querySelector<HTMLInputElement>('.task-health-row input')!.click());
+  expect(host.querySelector<HTMLInputElement>('.architecture-select')!.checked).toBe(true);
+  expect(host.querySelector<HTMLInputElement>('.task-health-row input')!.checked).toBe(true);
+  act(()=>[...host.querySelectorAll<HTMLButtonElement>('.task-home-toolbar button')].find(b=>b.textContent==='Set as A')!.click());
+  expect(host.querySelector<HTMLInputElement>('.architecture-select')!.checked).toBe(false);
+  expect(host.querySelector('.task-home-toolbar small')?.textContent).toBe('A 1 / B 0');
+  act(()=>{const sort=host.querySelector<HTMLSelectElement>('[aria-label="Health list sort"]')!;sort.value='tokens';sort.dispatchEvent(new Event('change',{bubbles:true}));});await settle();
+  expect(calls.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(2);expect(calls.at(-1)).toContain('sort=tokens');
+  act(()=>{const filter=host.querySelector<HTMLSelectElement>('[aria-label="Health list filter"]')!;filter.value='alerts';filter.dispatchEvent(new Event('change',{bubbles:true}));});await settle();
+  expect(calls.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(3);expect(calls.at(-1)).toContain('alerts=1');
+  expect(calls.some(path=>path.includes('/events/')||path.includes('/health-reports'))).toBe(false);
+});
+it('Phase B health entry selects the same task and opens its drawer without generating a report',async()=>{
+ let selected:TaskRoute|undefined;
+ function Home(){const [route,onRoute]=useState<TaskRoute>(DEFAULT_TASK_ROUTE);selected=route;return <TaskWorkbench locale="en" route={route} onRoute={onRoute} changes={{version:0,keys:[],runIds:[]}} onIntake={()=>{}} onOpenRequest={()=>{}}/>;}
+ act(()=>root.render(<Home/>));await vi.waitFor(async()=>{await settle();expect(host.querySelector('.task-health-list')).not.toBeNull();});
+ act(()=>[...host.querySelectorAll<HTMLButtonElement>('.task-health-row button')].find(b=>b.textContent==='Health monitoring')!.click());
+ await readyTimeline();expect(selected).toMatchObject({task:task.id,member:'all',health:'new'});expect(host.querySelector('#task-health-drawer')).not.toBeNull();
+ expect(vi.mocked(fetch).mock.calls.some(([,init])=>init?.method==='POST')).toBe(false);
+});
+
+it('Phase B review refreshes the shared retained page after background hydration and SSE without restarting the lease or losing checks',async()=>{
+ const original=fetch;let controller!:ReadableStreamDefaultController<Uint8Array>,reads=0;
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+  const path=String(input);
+  if(path==='/api/task-home/hydrate')return new Response(new ReadableStream<Uint8Array>({start(value){controller=value;}}));
+  if(path.startsWith('/api/tasks?')){reads++;return json({items:[{...task,loadedMemberCount:reads>1?2:0,metrics:reads>1?{durationMs:2000,toolCalls:8,errors:1,input:60,output:20,cacheRead:30,correctedTotal:110,costUsd:null,models:[]}:undefined}],total:1,offset:0,limit:50,hasMore:false});}
+  return original(input,init);
+ }));
+ let notify!:(changes:TaskChanges)=>void;
+ function Home(){const [route,onRoute]=useState<TaskRoute>(DEFAULT_TASK_ROUTE),[changes,setChanges]=useState<TaskChanges>({version:0,keys:[],runIds:[]});notify=setChanges;return <TaskWorkbench locale="en" route={route} onRoute={onRoute} changes={changes} onIntake={()=>{}} onOpenRequest={()=>{}}/>;}
+ act(()=>root.render(<Home/>));await vi.waitFor(async()=>{await settle();expect(host.querySelector('.task-health-row')?.textContent).toContain('Loading');});
+ const scroll=host.querySelector('.task-health-scroll');act(()=>host.querySelector<HTMLInputElement>('.task-health-row input')!.click());
+ await act(async()=>{controller.enqueue(new TextEncoder().encode(JSON.stringify({items:[{taskId:task.id,pending:0,loaded:2,reasons:[]}],done:true})+'\n'));notify({version:1,keys:['main','child'],runIds:[]});await new Promise(r=>setTimeout(r,230));});
+ expect(reads).toBe(2);expect(host.querySelector('.task-health-scroll')).toBe(scroll);expect(host.querySelector('.task-health-row')?.textContent).not.toContain('Loading');expect(host.querySelector('.task-health-row')?.textContent).toContain('110');
+ expect(host.querySelector<HTMLInputElement>('.architecture-select')!.checked).toBe(true);expect(vi.mocked(fetch).mock.calls.filter(([path])=>String(path)==='/api/task-home/hydrate')).toHaveLength(1);
+});

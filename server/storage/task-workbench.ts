@@ -76,7 +76,7 @@ function summary(row: Row): TaskSummary {
     provider: row.provider as string, startedAt: row.started_at as string, updatedAt: row.updated_at as string,
     recordedStatus: row.status as string, memberCount: Number(row.member_count), eventCount: Number(row.event_count), loadedMemberCount: Number(row.loaded_count) };
 }
-function importedTask(session: NonNullable<ReturnType<typeof importManifest>>['session']): TaskSummary {
+export function importedTask(session: NonNullable<ReturnType<typeof importManifest>>['session']): TaskSummary {
   return { id: 'imported:' + session.id, origin: 'imported', provenanceKnown: true, rootSessionKey: null, runId: null,
     title: session.title ?? session.fileName, provider: session.ideType ?? 'TraceLog', startedAt: session.startedAt,
     updatedAt: session.importedAt, recordedStatus: 'historical', memberCount: 1, eventCount: session.turnCount, loadedMemberCount: 1 };

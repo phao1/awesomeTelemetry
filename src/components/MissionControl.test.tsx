@@ -337,3 +337,12 @@ describe('REQ-117 导航去冗余', () => {
     }
   });
 });
+
+it('Phase B overview range restores controlled hash state and reports range changes to the App shell',async()=>{
+ const load=vi.fn(async(_range:MissionRange)=>makeResponse()),onRangeChange=vi.fn(),host=document.createElement('div'),root=createRoot(host);
+ try{
+  await act(async()=>{root.render(<MissionControl locale="en" load={load} initialRange="7d" onRangeChange={onRangeChange}/>);await Promise.resolve();});
+  await act(async()=>{host.querySelectorAll<HTMLButtonElement>('.mission-range button')[1]!.click();await Promise.resolve();});expect(onRangeChange).toHaveBeenCalledWith('30d');expect(load).toHaveBeenLastCalledWith('30d');
+  await act(async()=>{root.render(<MissionControl locale="en" load={load} initialRange="all" onRangeChange={onRangeChange}/>);await Promise.resolve();});expect(load).toHaveBeenLastCalledWith('all');
+ }finally{act(()=>root.unmount());}
+});
