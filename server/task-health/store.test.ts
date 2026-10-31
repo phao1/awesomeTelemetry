@@ -13,7 +13,7 @@ async function report(): Promise<HealthReport> { const i = JSON.parse(await read
 const taskDir = (r: HealthReport) => join(dir, 'task-health-reports', createHash('sha256').update(r.taskId).digest('hex'));
 it('atomically saves report and metadata-only index and reuses exact versions/scope/thresholds', async () => {
   const store = createHealthReportStore(dir), r = await report(); await store.save(r);
-  expect(JSON.parse(await readFile(join(taskDir(r), 'index.json'), 'utf8'))).toEqual({ items: [{ id: r.id, generatedAt: r.generatedAt, mode: 'standard', revision: r.revision, expired: false, reportId: null }] });
+  expect(JSON.parse(await readFile(join(taskDir(r), 'index.json'), 'utf8'))).toEqual({ items: [{ id: r.id, generatedAt: r.generatedAt, mode: 'standard', revision: r.revision, expired: false, reportId: null,scope:r.scope,severity:{warning:r.findings.filter(f=>f.severity==='warning').length,notice:r.findings.filter(f=>f.severity==='notice').length,info:r.findings.filter(f=>f.severity==='info').length} }] });
   expect(await store.get(r.id)).toEqual(r); expect(await store.bytes(r.id)).toBe(JSON.stringify(r));
   expect(await store.reusable(r.taskId, r.revision, r.scope, r.thresholds)).toEqual(r);
   expect(await store.reusable(r.taskId, r.revision, { ...r.scope, member: 'main' }, r.thresholds)).toBeNull();
@@ -62,6 +62,7 @@ it('reads legacy rejected items and validates new rejection diagnostics and prom
   const store = createHealthReportStore(dir), parent = await report(); await store.save(parent);
   const deep: DeepHealthReport = { version: 1, id: randomUUID(), reportId: parent.id, taskId: parent.taskId, generatedAt: parent.generatedAt, digest: 'a'.repeat(64), provider: 'openai-compatible', model: 'fixture', promptVersion: 1, timing: 'model_judged', status: 'rejected', valueMoments: [], necessity: [], causes: [], experiments: [], rejected: [{ section: 'causes', index: 0, reason: 'Numeric claim outside fact table; not adopted.' }], analysis: { inputTokens: null, outputTokens: null, durationMs: 10 }, limitations: [] };
   await store.saveDeep(deep); expect(await store.get(deep.id)).toEqual(deep);
+  const history=(await store.list(parent.taskId,parent.revision)).items.find(item=>item.id===deep.id)!;expect(history.scope).toEqual(parent.scope);expect(history.severity).toEqual({warning:parent.findings.filter(f=>f.severity==='warning').length,notice:parent.findings.filter(f=>f.severity==='notice').length,info:parent.findings.filter(f=>f.severity==='info').length});
   const modern: DeepHealthReport = { ...deep, id: randomUUID(), promptVersion: 2, rejected: [{ ...deep.rejected[0]!, token: '两次', excerpt: '出现两次长等待' }] };
   await store.saveDeep(modern); expect(await store.get(modern.id)).toEqual(modern);
   for (const rejected of [[{ ...modern.rejected[0]!, excerpt: 'x'.repeat(161) }], [{ ...modern.rejected[0]!, token: 123 }]]) {

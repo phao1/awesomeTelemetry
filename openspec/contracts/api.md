@@ -1570,9 +1570,10 @@ routes are unchanged. Viewing/history/export never starts analysis/model work.
 | POST `/api/health-reports/:reportId/deep` | JSON `{digest:string}` | saved DeepHealthReport, including rejected/partial schema-validation outcomes |
 
 HealthReportIndexItem is `{id:string,generatedAt:string,mode:'standard'|'deep',
-revision:string,expired:boolean,reportId:string|null}`; reportId is the parent
+revision:string,expired:boolean,reportId:string|null,
+scope?:HealthScope|null,severity?:{warning:number,notice:number,info:number}|null}`; reportId is the parent
 ordinary ID for deep, null for ordinary. Sort generatedAt descending, id tie-break;
-no metrics/bodies/paths. Expired compares current revision to saved revision;
+no metrics/bodies/paths. Phase F3 review adds scope and severity metadata from the saved standard report; deep rows inherit their parent standard report scope and severity, explicitly labelled as standard findings. Legacy missing metadata remains unavailable, never zero. No additional browser report reads. Expired compares current revision to saved revision;
 missing current source also expires it, with no historical report mutation.
 
 Task ID is an opaque existing getTask ID; decode once and validate using existing
@@ -1657,7 +1658,7 @@ See task-process.md Phase A, storage/frontend specs and database.md schema22.
 
 ## Phase B task home and local settings (2026-10-31)
 
-GET /api/tasks accepts summary=1, limit1..50, offset0..100000, sort=time|duration|errors|tokens|cacheHitRate,
+GET /api/tasks accepts summary=1, limit1..50, offset0..100000, sort=activity|time|duration|errors|tokens|cacheHitRate,
 direction=asc|desc(default desc), alerts=1, errors=1. Legacy sort=cost and any currency parameter are ignored.
 Existing origin/q/provider/range filters remain. Sort and filter apply before paging;
 unknown sorts last in both directions, ID breaks ties. TaskPage items include optional
@@ -1784,3 +1785,9 @@ MissionModelRow removes monetary fields. No additional frontend read or schema.
 
 Daily MissionDayPoint cacheKnownMembers/cacheTotalMembers carry the same
 known-session coverage; partial daily/cache-card values show n/m members.
+
+### Phase F3 task navigation and activity ordering
+`summary=1` defaults to `sort=activity&direction=desc`. Activity is TaskSummary.updatedAt (latest retained member update, or importedAt for imports); legacy `sort=time` continues to mean startedAt. Sort globally before paging; unknown values last and ID breaks ties. The table and optional task panel display the same activity timestamp with startedAt in a tooltip.
+Task URLs add `filters=alerts,errors,failed,toolFailures` (intersection; legacy single `filter` remains readable). `page` is zero-based, `size` is 10,25,50 (default 50). Provider, origin, q, range, sort and direction remain shareable. No new payload or body reads.
+
+F3 summary pages include optional `requestCount: number | null`: count genuine, timestamp-valid, monotonic root user-prompt boundaries under TR-001; null for unloaded roots and imports. Count from one batched metadata query per snapshot, without bodies or per-row browser reads.

@@ -1,7 +1,7 @@
 import { fetchJson } from '../../../api/client.js';
 import type { BudgetDeepHealthPack } from '../../../core/task-health/deep-pack.js';
 import type { DeepHealthReport, HealthReport, HealthScope } from '../../../core/task-health/types.js';
-export interface HealthReportIndexItem { id: string; generatedAt: string; mode: 'standard' | 'deep'; revision: string; expired: boolean; reportId: string | null }
+export interface HealthReportIndexItem { id: string; generatedAt: string; mode: 'standard' | 'deep'; revision: string; expired: boolean; reportId: string | null; scope?: HealthScope | null; severity?: { warning: number; notice: number; info: number } | null }
 const taskPath = (id: string) => `/tasks/${encodeURIComponent(id)}/health-reports`;
 const reportPath = (id: string) => `/health-reports/${encodeURIComponent(id)}`;
 function checked(report: HealthReport, taskId: string): HealthReport {

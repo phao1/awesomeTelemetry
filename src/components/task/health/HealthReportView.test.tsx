@@ -11,7 +11,8 @@ it('shows eight sections, reconciled raw/active E2E and five cards with inert ev
   const host = document.createElement('div'), root = createRoot(host);
   try {
     act(() => root.render(<HealthReportView report={report} locale="zh" onLocate={vi.fn()}/>));
-    expect(host.querySelectorAll('article > section')).toHaveLength(8); expect(host.querySelectorAll('.health-card')).toHaveLength(5);
+    for(let n=0;n<4;n++)act(()=>host.querySelectorAll<HTMLButtonElement>('.ui-accordion>button[aria-expanded=false]').forEach(b=>b.click()));
+    expect(host.querySelectorAll('.health-card')).toHaveLength(5); expect(host.querySelectorAll('.health-card')).toHaveLength(5);
     const table = host.querySelector('table')!; expect(table.textContent).toContain('原值'); expect(table.textContent).toContain('活跃'); expect(table.textContent).toContain('24.0 秒'); expect(table.textContent).toContain('等用户');
     expect(host.textContent).toContain('— (原生日志单行超过读取上限。)'); expect(host.querySelector('.health-metric-key')).not.toBeNull();
     expect(host.querySelectorAll('.health-log-label').length).toBeGreaterThan(0); expect(host.querySelector('script')).toBeNull();
@@ -32,10 +33,11 @@ it('merges empty timing layers, folds null metrics with reasons and displays eac
   const before = JSON.stringify(report), host = document.createElement('div'), root = createRoot(host);
   try {
     act(() => root.render(<HealthReportView report={report} locale="zh" onLocate={vi.fn()}/>));
+    for(let n=0;n<4;n++)act(()=>host.querySelectorAll<HTMLButtonElement>('.ui-accordion>button[aria-expanded=false]').forEach(b=>b.click()));
     const model = host.querySelectorAll('.health-card')[3]!;
-    expect(model.querySelectorAll(':scope > p > .health-metric-key')).toHaveLength(1);
-    const missing = model.querySelector<HTMLDetailsElement>('.health-missing-metrics')!;
-    expect(missing.open).toBe(false); expect(missing.querySelector('summary')!.textContent).toBe('暂无数据的指标（8）');
+    expect(model.querySelector('.ui-data-table')!.querySelectorAll('.health-metric-key')).toHaveLength(1);
+    const missing = model.querySelector<HTMLElement>('.ui-accordion')!;
+    expect(missing.querySelector('button')!.getAttribute('aria-expanded')).toBe('true'); expect(missing.querySelector('button')!.textContent).toBe('暂无数据的指标（8）');
     expect(missing.textContent).toContain('首 Token 延迟：网络代理、导入上报 暂无样本');
     expect(missing.textContent).toContain('每 Token 延迟：网络代理、导入上报 暂无样本');
     expect(missing.textContent).toContain('思考分组延迟：网络代理、导入上报 暂无样本');
@@ -43,7 +45,7 @@ it('merges empty timing layers, folds null metrics with reasons and displays eac
     const keys = [...host.querySelectorAll('.health-metric-key')].map(node => node.textContent);
     expect(keys.filter(key => key === '(ux.volume_log)')).toHaveLength(1);
     expect(host.textContent).toContain('42 字符'); expect(host.textContent).toContain('读取次数'); expect(host.textContent).not.toContain('reads');
-    expect(host.querySelectorAll('article > section')).toHaveLength(8); expect(JSON.stringify(report)).toBe(before);
+    expect(host.querySelectorAll('.health-card')).toHaveLength(5); expect(JSON.stringify(report)).toBe(before);
   } finally { act(() => root.unmount()); }
 });
 
@@ -53,10 +55,12 @@ it('excludes user wait from the largest Agent partition and omits a zero-only hi
   const host = document.createElement('div'), root = createRoot(host);
   try {
     act(() => root.render(<HealthReportView report={report} locale="zh" onLocate={vi.fn()}/>));
+    for(let n=0;n<4;n++)act(()=>host.querySelectorAll<HTMLButtonElement>('.ui-accordion>button[aria-expanded=false]').forEach(b=>b.click()));
     const equation = host.querySelectorAll('article > section')[1]!;
     expect(equation.querySelector('p')!.textContent).toContain('仅工具 · 2.0 秒');
     report.partition.modelOnly = 0; report.partition.toolOnly = 0;
     act(() => root.render(<HealthReportView report={report} locale="zh" onLocate={vi.fn()}/>));
+    for(let n=0;n<4;n++)act(()=>host.querySelectorAll<HTMLButtonElement>('.ui-accordion>button[aria-expanded=false]').forEach(b=>b.click()));
     expect(equation.textContent).not.toContain('最大分区优先核对证据'); expect(equation.textContent).toContain('等用户');
   } finally { act(() => root.unmount()); }
 });
@@ -68,11 +72,18 @@ it('displays gap endpoints as local clocks and labels legacy offsets without gue
   const host = document.createElement('div'), root = createRoot(host);
   try {
     act(() => root.render(<HealthReportView report={report} locale="zh" onLocate={vi.fn()}/>));
+    for(let n=0;n<4;n++)act(()=>host.querySelectorAll<HTMLButtonElement>('.ui-accordion>button[aria-expanded=false]').forEach(b=>b.click()));
     expect(host.textContent).toContain('开始 01-22 12:34:01 / 结束 01-22 12:34:02'); expect(host.textContent).not.toContain('相对任务起点');
     delete report.t0;
     act(() => root.render(<HealthReportView report={report} locale="zh" onLocate={vi.fn()}/>));
+    for(let n=0;n<4;n++)act(()=>host.querySelectorAll<HTMLButtonElement>('.ui-accordion>button[aria-expanded=false]').forEach(b=>b.click()));
     expect(host.textContent).toContain('开始 21.0 天（相对任务起点）');
     act(() => root.render(<HealthReportView report={report} locale="en" onLocate={vi.fn()}/>));
+    for(let n=0;n<4;n++)act(()=>host.querySelectorAll<HTMLButtonElement>('.ui-accordion>button[aria-expanded=false]').forEach(b=>b.click()));
     expect(host.textContent).toContain('relative to task origin');
   } finally { act(() => root.unmount()); }
+});
+it('uses semantic severity cards and a conclusion callout, without local font controls or separate export links',()=>{
+ const report=analyzeTaskHealth(input as HealthInput,undefined,{id:'presentation',generatedAt:input.snapshotAt}),host=document.createElement('div'),root=createRoot(host);
+ try{act(()=>root.render(<HealthReportView report={report} locale="zh" onLocate={()=>{}}/>));for(const severity of ['warning','notice','info'])expect(host.querySelector(`.health-severity-${severity} .ui-stat-value`)).not.toBeNull();expect(host.querySelector('.ui-callout strong')!.textContent).toBe('结论');expect(host.querySelector('.ui-callout ul')).not.toBeNull();expect([...host.querySelectorAll('button')].some(b=>['A−','A+','重置字号'].includes(b.textContent??''))).toBe(false);expect(host.querySelectorAll('a')).toHaveLength(0);expect([...host.querySelectorAll('button')].filter(b=>b.textContent==='导出')).toHaveLength(1);expect(host.querySelector('.health-report')!.getAttribute('style')).toBeNull();}finally{act(()=>root.unmount());}
 });

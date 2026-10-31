@@ -1,3 +1,12 @@
+import { Badge } from '../../ui/Badge.js';
+import { Tooltip } from '../../ui/Overlay.js';
+import { IconFileText } from '../../icons/index.js';
+import { Sheet } from '../../ui/Modal.js';
+import { Button } from '../../ui/Button.js';
+import { Select, Combobox } from '../../ui/Select.js';
+import { Accordion, Callout, Meter } from '../../ui/Display.js';
+import { Tabs } from '../../ui/Tabs.js';
+import { EmptyState, Skeleton } from '../../ui/States.js';
 import { RequestListNotice } from '../TaskRequests.js';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Locale } from '../../../i18n.js';
@@ -70,7 +79,7 @@ export function HealthDrawer({ context, locale, reportId, request, from, to, onR
     const value = await healthApi.generate(taskId, scope, signal);
     if (signal.aborted || currentIdentity.current !== identity) return;
     activeReport.current = value; setReport(value); setDeepReport(null); setPreview(null); setTab('standard'); callbacks.current.onReport(value.id);
-    setHistory(old => [{ id: value.id, generatedAt: value.generatedAt, mode: 'standard' as const, revision: value.revision, expired: false, reportId: null }, ...old.filter(item => item.id !== value.id)].slice(0, 50));
+    setHistory(old => [{ ...summary(value), id: value.id, generatedAt: value.generatedAt, mode: 'standard' as const, revision: value.revision, expired: false, reportId: null }, ...old.filter(item => item.id !== value.id)].slice(0, 50));
   });
   };
   const showPreview = () => { if (!report) return; void run(async signal => {
@@ -84,7 +93,7 @@ export function HealthDrawer({ context, locale, reportId, request, from, to, onR
     const value = await healthApi.deep(parent.id, confirmed.digest, signal);
     if (signal.aborted || currentIdentity.current !== identity) return;
     setDeepReport(value); setTab('deep');
-    setHistory(old => [{ id: value.id, generatedAt: value.generatedAt, mode: 'deep' as const, revision: parent.revision, expired: false, reportId: parent.id }, ...old.filter(item => item.id !== value.id)].slice(0, 50));
+    setHistory(old => [{ ...summary(parent), id: value.id, generatedAt: value.generatedAt, mode: 'deep' as const, revision: parent.revision, expired: false, reportId: parent.id }, ...old.filter(item => item.id !== value.id)].slice(0, 50));
   }, 125000, true); };
   const readDeep = (id: string) => void run(async signal => {
     const value = await healthApi.readDeep(id, taskId, signal);
@@ -100,24 +109,33 @@ export function HealthDrawer({ context, locale, reportId, request, from, to, onR
     setPrepared(page.context); setMessage('preparing');
   });
   const data = prepared ?? context;
-  const focusStart = useRef<HTMLButtonElement>(null), drawer = useRef<HTMLElement>(null);
-  useEffect(() => { const previous = document.activeElement; focusStart.current?.focus(); return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); }; }, []);
-  return <aside id="task-health-drawer" className="health-drawer" aria-label={c.title} ref={drawer} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } }}>
-    <header><h2>{c.title} · {context.task.title}</h2><button type="button" className="btn" ref={focusStart} onClick={onClose}>{c.close}</button></header>
-    {context.task.eventCount>20000&&<p>{locale==='zh'?'任务超过 20,000 事件，建议按请求分析；整任务报告仍受原有限制。':'Task exceeds 20,000 events. Analyze a request; whole-task limits still apply.'}</p>}
+  const summary=(value:HealthReport)=>({scope:value.scope,severity:{warning:value.findings.filter(f=>f.severity==='warning').length,notice:value.findings.filter(f=>f.severity==='notice').length,info:value.findings.filter(f=>f.severity==='info').length}});
+  const scopeLabel=(value:HealthReportIndexItem)=>!value.scope?'—':value.scope.request?`${locale==='zh'?'请求':'Request'} ${requestItems.find(r=>r.id===value.scope?.request)?.ordinal??value.scope.request}`:value.scope.from?`${value.scope.from} → ${value.scope.to}`:value.scope.member==='all'?c.all:value.scope.member==='main'?c.main:value.scope.member;
+  const generationDisabled=busy||selection==='request'&&!requestId||selection==='window'&&(!from||!to);
+  const deepReason=busy?(locale==='zh'?'请等待当前分析完成':'Wait for the current operation'):!report?(locale==='zh'?'请先生成标准报告':'Generate a standard report first'):model?.configured===false?c.noModel:'';
+  const generateLabel=locale==='zh'?'生成标准报告':'Generate standard report',deepLabel=locale==='zh'?'深度分析':'Deep analysis';
+
+  return <Sheet open title={c.title} onClose={onClose} className="health-drawer">
+    <div id="task-health-drawer"><div className="health-sheet-controls"><Select aria-label={c.scope} prefix={c.scope} value={selection} onChange={event=>{setSelection(event.target.value);onReport('new');}} options={[{value:"all",label:c.all},{value:"request",label:requestId?`${locale==='zh'?'请求':'Request'} ${requestItems.find(r=>r.id===requestId)?.ordinal??'—'}`:locale==='zh'?'按请求分析':'Analyze a request'},{value:"main",label:c.main},{value:"window",label:c.window,disabled:!from||!to}]}/><Button type="button" variant="primary" disabled={generationDisabled} onClick={generate}>{generateLabel}</Button><Tooltip label={deepReason||(locale==='zh'?'预览证据后确认调用模型':'Preview evidence before confirming a model call')}><span tabIndex={deepReason?0:undefined}><Button variant="secondary" disabled={Boolean(deepReason)} onClick={showPreview}>{deepLabel}</Button></span></Tooltip></div>
+    {context.task.eventCount>20000&&<Callout tone="attention" title={locale==='zh'?'任务超过 20,000 事件':'Task exceeds 20,000 events'}>{locale==='zh'?'建议按请求分析；选择下方请求可直接生成报告。':'Analyze a request below within the report limits.'}</Callout>}
     {selection==='request'&&<div><RequestListNotice loading={requests.loading} error={requests.error} empty={Boolean(requests.value&&!requestItems.length)} locale={locale} retry={requests.retry}/>
-      {requestItems.length>0&&<label>{locale==='zh'?'请求':'Request'}<select aria-label={locale==='zh'?'健康请求':'Health request'} value={requestId??''} onChange={e=>{setChosenRequest(e.target.value);onReport('new');}}><option value="" disabled>{locale==='zh'?'选择请求':'Choose request'}</option>{requestItems.map(r=><option key={r.id} value={r.id}>{r.ordinal}. {r.title}</option>)}</select></label>}
+      {context.task.eventCount>20000&&<div className="health-request-list">{requestItems.slice(0,20).map(r=><Button key={r.id} variant={requestId===r.id?'secondary':'ghost'} onClick={()=>{setChosenRequest(r.id);onReport('new');}}>{r.ordinal}. {r.title}</Button>)}</div>}{requestItems.length>0&&<Combobox label={locale==='zh'?'健康请求':'Health request'} value={requestId??''} onChange={id=>{setChosenRequest(id);onReport('new');}} options={requestItems.map(r=>({value:r.id,label:`${r.ordinal}. ${r.title}`}))}/>}
     </div>}
-    <div className="health-toolbar"><label>{c.scope}<select value={selection} onChange={event => { setSelection(event.target.value); onReport('new'); }}><option value="request">{locale==='zh'?'按请求分析':'Analyze a request'}</option><option value="all">{c.all}</option><option value="main">{c.main}</option><option value="window" disabled={!from || !to}>{c.window}</option></select></label><button type="button" className="btn" disabled={busy} onClick={prepare}>{c.prepare}</button></div>
-    <p>{data.task.loadedMemberCount}/{data.task.memberCount} {c.coverage} · {report ? Object.entries(report.coverage.timing).filter(([, n]) => n > 0).map(([key, n]) => `${healthLabel(key, locale)} ${n}`).join(' / ') : c.unknownTiming}</p>
-    {data.task.loadedMemberCount < data.task.memberCount && <p role="status">{c.insufficient}</p>}
-    <div className="health-toolbar"><button type="button" className="btn" disabled={busy || selection==='request'&&!requestId || selection === 'window' && (!from || !to)} onClick={generate}>{c.generate}</button><button type="button" className="btn" disabled={busy || !report} onClick={showPreview}>{c.deep}</button>{busy && <button type="button" className="btn" onClick={cancel}>{c.cancel}</button>}</div>
-    {busy && <p role="status">{c.loading}</p>}{error && <p role="alert">{error}</p>}{message && <p role="status">{c[message]}</p>}{evidenceUnavailable && <p role="alert">{c.inaccessible}</p>}
-    <section><div className="health-toolbar"><h3>{c.history}</h3><button type="button" className="btn" disabled={historyBusy} onClick={() => void loadHistory()}>{c.refresh}</button></div>{historyBusy && <p role="status">{c.loading}</p>}{historyError && <p role="alert">{c.error}</p>}{!historyBusy && !history.length && <p>{c.empty}</p>}<ul>{history.filter(item => item.mode === 'standard').map(item => <li key={item.id}><button type="button" className="btn" aria-current={reportId === item.id ? 'true' : undefined} onClick={() => { if (item.id === reportId) { if (!report && !busy) void run(async signal => { const value = await healthApi.read(item.id, taskId, signal); if (!signal.aborted && currentIdentity.current === identity) setReport(value); }); return; } sequence.current++; owner.current?.abort(); setReport(null); setPreview(null); setDeepReport(null); setTab('standard'); onReport(item.id); }}>{formatHealthDate(item.generatedAt, locale)} · {c.standardTab}{item.expired ? ` · ${c.updated}` : ''}</button></li>)}</ul></section>
-    {preview && <section aria-label={c.preview}><h3>{c.preview}</h3><p>{c.redacted} · {preview.estimate.bytes} bytes · {c.estimatedTokens}: {preview.estimate.inputTokens} / {preview.estimate.outputTokens}</p><p>{c.model}: {model?.provider} / {model?.model}</p><details><summary>{c.evidence}</summary><pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: '20rem', overflow: 'auto' }}>{JSON.stringify(preview.pack, null, 2)}</pre></details><button type="button" className="btn" disabled={busy||(selection==='request'&&!requestId)} onClick={confirmDeep}>{c.confirm}</button><button type="button" className="btn" onClick={() => setPreview(null)}>{c.cancel}</button></section>}
-    {history.some(item => item.mode === 'deep') && <ul>{history.filter(item => item.mode === 'deep').map(item => <li key={item.id}><button className="btn" type="button" disabled={busy||(selection==='request'&&!requestId)} onClick={() => readDeep(item.id)}>{formatHealthDate(item.generatedAt, locale)} · {c.deepTab}{item.expired ? ` · ${c.updated}` : ''}</button></li>)}</ul>}
-    {report && <div role="tablist" aria-label={c.title}><button type="button" role="tab" aria-selected={tab === 'standard'} onClick={() => setTab('standard')}>{c.standardTab}</button><button type="button" role="tab" disabled={!deepReport} aria-selected={tab === 'deep'} onClick={() => setTab('deep')}>{c.deepTab}</button></div>}
+    <div className="health-preparation"><span>{locale==='zh'?'数据准备':'Data preparation'}</span><Meter label={c.coverage} value={data.task.loadedMemberCount} max={data.task.memberCount}/><span className="num">{data.task.loadedMemberCount}/{data.task.memberCount} {c.coverage} · {report?Object.entries(report.coverage.timing).filter(([,n])=>n>0).map(([key,n])=>`${healthLabel(key,locale)} ${n}`).join(' / '):c.unknownTiming}</span><Button size="sm" variant="ghost" disabled={busy} onClick={prepare}>{c.prepare}</Button>{busy&&<Button size="sm" variant="ghost" onClick={cancel}>{c.cancel}</Button>}</div>
+    {data.task.loadedMemberCount<data.task.memberCount&&<Callout title={c.insufficient} tone="attention"/>}
+    {!report&&!deepReport&&!busy&&!error&&<EmptyState icon={<IconFileText/>} title={locale==='zh'?'尚未生成报告':'No report generated yet'} action={<Button variant="primary" disabled={generationDisabled} onClick={generate}>{generateLabel}</Button>}/>}
+    {model?.configured===false&&<Button variant="ghost" onClick={()=>void run(async signal=>{const status=await healthApi.modelStatus(signal);if(!signal.aborted&&currentIdentity.current===identity)setModel(status);})}>{locale==='zh'?'检查模型配置':'Check model configuration'}</Button>}
+    {busy && <Skeleton variant="row"/>}{error && <p role="alert">{error}</p>}{message && <p role="status">{c[message]}</p>}{evidenceUnavailable && <p role="alert">{c.inaccessible}</p>}
+    <Accordion title={c.history}><div className="health-toolbar"><Button variant="ghost" disabled={historyBusy} onClick={()=>void loadHistory()}>{c.refresh}</Button></div>{historyBusy&&<Skeleton/>}{historyError&&<Callout title={c.error} tone="danger"/>}{!historyBusy&&!history.length&&<p>{c.empty}</p>}
+      <ul className="health-history-list">{history.map(item=><li key={item.id}><Button variant="ghost" disabled={busy} aria-current={(item.mode==='standard'?report?.id:deepReport?.id)===item.id?'true':undefined} onClick={()=>{
+        if(item.mode==='deep'){readDeep(item.id);return;}
+        if(item.id===reportId){if(!report&&!busy)void run(async signal=>{const value=await healthApi.read(item.id,taskId,signal);if(!signal.aborted&&currentIdentity.current===identity)setReport(value);});return;}
+        sequence.current++;owner.current?.abort();setReport(null);setPreview(null);setDeepReport(null);setTab('standard');onReport(item.id);
+      }}><span className="health-history-title">{formatHealthDate(item.generatedAt,locale)} · {item.mode==='standard'?c.standardTab:c.deepTab}{item.expired?` · ${c.updated}`:''}</span><span className="health-history-meta"><span>{scopeLabel(item)}</span><Tooltip label={item.mode==='deep'?(locale==='zh'?'父级标准报告的问题数':'Findings in the parent standard report'):(locale==='zh'?'标准报告的问题数':'Standard report findings')}><span className="health-history-severity">{item.severity?<><Badge tone="danger">{locale==='zh'?'警告':'Warning'} {item.severity.warning}</Badge><Badge tone="attention">{locale==='zh'?'注意':'Notice'} {item.severity.notice}</Badge><Badge>{locale==='zh'?'信息':'Info'} {item.severity.info}</Badge></>:<Badge>—</Badge>}</span></Tooltip></span></Button></li>)}</ul>
+    </Accordion>
+    {preview && <section aria-label={c.preview}><h3>{c.preview}</h3><p>{c.redacted} · {preview.estimate.bytes} bytes · {c.estimatedTokens}: {preview.estimate.inputTokens} / {preview.estimate.outputTokens}</p><p>{c.model}: {model?.provider} / {model?.model}</p><Accordion title={c.evidence}><pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: '20rem', overflow: 'auto' }}>{JSON.stringify(preview.pack, null, 2)}</pre></Accordion><Button type="button" variant="secondary" disabled={busy||(selection==='request'&&!requestId)} onClick={confirmDeep}>{c.confirm}</Button><Button type="button" variant="secondary" onClick={() => setPreview(null)}>{c.cancel}</Button></section>}
+    {report&&<Tabs activeId={tab} onChange={id=>setTab(id as 'standard'|'deep')} items={[{id:'standard',label:c.standardTab},{id:'deep',label:c.deepTab,disabled:!deepReport}]}/>}
     {report && tab === 'standard' && <div role="tabpanel"><HealthReportView report={report} locale={locale} onLocate={(e,id)=>report.scope.request?onLocate(e,id,report.scope.request):onLocate(e,id)}/></div>}
     {deepReport && tab === 'deep' && <div role="tabpanel"><DeepHealthReportView report={deepReport} parent={report ?? undefined} locale={locale}/></div>}
-  </aside>;
+  </div></Sheet>;
 }

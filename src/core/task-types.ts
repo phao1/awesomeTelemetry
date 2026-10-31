@@ -3,6 +3,8 @@ import type { ProviderKey, TraceEventSlim, TraceLogSession, TraceLogTurn, TraceS
 /** Task identity is a read projection; native IDs and evidence remain unchanged. */
 export type TaskOrigin = 'collected' | 'imported';
 export interface TaskSummary {
+  /** Genuine root request boundaries; null when details are unavailable. */
+  requestCount?: number | null;
   requestId?: string;
   id: string;
   origin: TaskOrigin;
@@ -89,7 +91,7 @@ export interface TaskRecordPage {
   /** Optional indexed native facts; semantic grouping remains client-only. */
   structure?: TaskStructure;
 }
-export type TaskSort = 'time' | 'duration' | 'errors' | 'tokens' | 'cacheHitRate';
+export type TaskSort = 'activity' | 'time' | 'duration' | 'errors' | 'tokens' | 'cacheHitRate';
 export interface TaskListQuery { failed?: boolean; toolFailures?: boolean; summary?: boolean; sort?: TaskSort; direction?: 'asc' | 'desc'; alerts?: boolean; errors?: boolean; origin?: TaskOrigin; q?: string; provider?: ProviderKey; range?: 'today' | '7d' | '30d' | 'all'; offset?: number; limit?: number }
 export interface TaskRecordQuery { request?: string; member?: string; q?: string; status?: TraceStatus; offset?: number; limit?: number; window?: string; anchor?: string; from?: string; to?: string; structure?: boolean }
 

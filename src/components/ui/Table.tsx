@@ -75,10 +75,11 @@ function Pagination({ value, locale, disabled }: { value: TablePagination; local
   </>;
 }
 export function Table<T>({ columns, rows, density = 'default', rowKey, sort, onSort, className, expandedKey, expandedKeys, onToggleExpand, renderExpand, renderSubrow, expandLabel, selectedKeys = [], onSelectionChange, onRowClick, rowTone, rowActions, bulkActions, pagination, stickyFirst = false, loading = false, skeletonRows = 6, emptyState, locale = 'zh', label, maxHeight = '65vh' }: TableProps<T>): React.JSX.Element {
-  const expandable = (renderExpand !== undefined || renderSubrow !== undefined) && onToggleExpand !== undefined;
-  const columnCount = columns.length + Number(!!onSelectionChange) + Number(expandable) + Number(!!rowActions);
+  const expandable = (renderExpand !== undefined || renderSubrow !== undefined) && (onToggleExpand !== undefined || expandedKey !== undefined || expandedKeys !== undefined);
+  const expandControl = expandable && onToggleExpand !== undefined;
+  const columnCount = columns.length + Number(!!onSelectionChange) + Number(expandControl) + Number(!!rowActions);
   const pageKeys = rows.map(rowKey), all = pageKeys.length > 0 && pageKeys.every(key => selectedKeys.includes(key));
-  const firstOffset = `calc(var(--table-control-width) * ${Number(!!onSelectionChange) + Number(expandable)})`;
+  const firstOffset = `calc(var(--table-control-width) * ${Number(!!onSelectionChange) + Number(expandControl)})`;
   const utilityStyle = (index: number) => stickyFirst ? { left: `calc(var(--table-control-width) * ${index})` } : undefined;
   const stickyClass = (extra = '') => `${extra} ${stickyFirst ? 'ui-sticky-cell' : ''}`;
   return <div className="ui-data-table">
@@ -87,7 +88,7 @@ export function Table<T>({ columns, rows, density = 'default', rowKey, sort, onS
       <table className={`ui-table ui-table-${density} ${className ?? ''}`} aria-busy={loading || undefined} aria-label={label}>
         <thead><tr>
           {onSelectionChange && <th className={stickyClass('ui-table-control')} style={utilityStyle(0)}><Checkbox aria-label={locale === 'zh' ? '全选本页' : 'Select current page'} checked={all} disabled={loading || !rows.length} indeterminate={!all && pageKeys.some(key => selectedKeys.includes(key))} onChange={e => onSelectionChange(e.target.checked ? [...new Set([...selectedKeys, ...pageKeys])] : selectedKeys.filter(key => !pageKeys.includes(key)))} /></th>}
-          {expandable && <th className={stickyClass('ui-table-control')} style={utilityStyle(Number(!!onSelectionChange))} aria-label={ta('a11y.expandRow')} />}
+          {expandControl && <th className={stickyClass('ui-table-control')} style={utilityStyle(Number(!!onSelectionChange))} aria-label={ta('a11y.expandRow')} />}
           {columns.map((column, index) => <th key={column.key} className={index === 0 && stickyFirst ? 'ui-sticky-cell' : undefined} aria-sort={column.sortable ? sort?.key === column.key ? sort.direction === 'asc' ? 'ascending' : 'descending' : 'none' : undefined} style={{ textAlign: column.align ?? 'left', width: column.width, left: index === 0 && stickyFirst ? firstOffset : undefined }}>
             {column.sortable && onSort ? <button type="button" className="ui-table-sort" disabled={loading} onClick={() => onSort(column.key)}>{column.label}{sort?.key === column.key ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}</button> : column.label}
           </th>)}
@@ -101,7 +102,7 @@ export function Table<T>({ columns, rows, density = 'default', rowKey, sort, onS
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const items = [...event.currentTarget.closest('table')!.querySelectorAll<HTMLTableRowElement>('tr[data-table-row][tabindex]')]; items[items.indexOf(event.currentTarget) + (event.key === 'ArrowDown' ? 1 : -1)]?.focus(); }
           }}>
             {onSelectionChange && <td className={stickyClass('ui-table-control')} style={utilityStyle(0)}><Checkbox aria-label={`${locale === 'zh' ? '选择' : 'Select'} ${key}`} checked={selectedKeys.includes(key)} onChange={e => onSelectionChange(e.target.checked ? [...new Set([...selectedKeys, key])] : selectedKeys.filter(k => k !== key))} /></td>}
-            {expandable && <td className={stickyClass('ui-table-control')} style={utilityStyle(Number(!!onSelectionChange))}><button type="button" className="ui-icon-btn ui-btn-ghost ui-btn-sm" aria-label={expandLabel?.(row) ?? ta('a11y.expandRow')} aria-expanded={expanded} onClick={event => { event.stopPropagation(); onToggleExpand?.(key); }}>{expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}</button></td>}
+            {expandControl && <td className={stickyClass('ui-table-control')} style={utilityStyle(Number(!!onSelectionChange))}><button type="button" className="ui-icon-btn ui-btn-ghost ui-btn-sm" aria-label={expandLabel?.(row) ?? ta('a11y.expandRow')} aria-expanded={expanded} onClick={event => { event.stopPropagation(); onToggleExpand?.(key); }}>{expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}</button></td>}
             {columns.map((column, index) => { const content = column.render(row); return <td key={column.key} className={index === 0 && stickyFirst ? 'ui-sticky-cell' : undefined} style={{ textAlign: column.align ?? 'left', left: index === 0 && stickyFirst ? firstOffset : undefined }}>{typeof content === 'string' || typeof content === 'number' ? <Tooltip label={String(content)}><span className="ui-cell-text">{content}</span></Tooltip> : content}</td>; })}
             {rowActions && <td onClick={e => e.stopPropagation()}><div className="ui-row-actions">{rowActions(row)}</div></td>}
           </tr>{expandable && expanded && (renderSubrow ? <tr className="ui-subrow"><td colSpan={columnCount}><span aria-hidden="true">↳ </span>{renderSubrow(row)}</td></tr> : renderExpand?.(row))}</tbody>;

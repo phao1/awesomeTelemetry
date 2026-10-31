@@ -651,7 +651,7 @@ export function createAgentObservabilityServer(
     const options: TaskListQuery = { origin, q: query.get('q') ?? undefined, provider: provider as ProviderKey | undefined ?? undefined,
       range: range as TaskListQuery['range'], offset: taskNumber(query.get('offset')), limit: taskNumber(query.get('limit')) };
     for (const key of ['summary','alerts','errors','failed','toolFailures']) if(query.has(key)&&query.get(key)!=='1')throw new HttpError(400,'BAD_REQUEST','Invalid task filters');
-    if(query.has('sort')&&!['time','duration','errors','tokens','cacheHitRate','cost'].includes(query.get('sort')!)||query.has('direction')&&!['asc','desc'].includes(query.get('direction')!))throw new HttpError(400,'BAD_REQUEST','Invalid task sorting');
+    if(query.has('sort')&&!['activity','time','duration','errors','tokens','cacheHitRate','cost'].includes(query.get('sort')!)||query.has('direction')&&!['asc','desc'].includes(query.get('direction')!))throw new HttpError(400,'BAD_REQUEST','Invalid task sorting');
     const page=query.get('summary')==='1' ? await listTaskHome(db,{...options,summary:true,sort:query.get('sort')==='cost'?undefined:query.get('sort') as TaskListQuery['sort']??undefined,direction:query.get('direction') as TaskListQuery['direction']??undefined,failed:query.get('failed')==='1',toolFailures:query.get('toolFailures')==='1',alerts:query.get('alerts')==='1',errors:query.get('errors')==='1'},await localSettings.alerts()) : listTasks(db,options);
     if(query.get('summary')==='1')await healthSummaryWarmup;
     if(query.get('summary')==='1')await Promise.all(page.items.map(async item=>{item.latestHealth=await healthStore.summary(item.id);}));

@@ -1,15 +1,18 @@
-import { formatCacheHitRate } from '../../core/task-alerts.js';
+import { MetricStrip, Meter } from '../ui/Display.js';
+import { Badge } from '../ui/Badge.js';
+import { Tooltip } from '../ui/Overlay.js';
+import { IconInfo } from '../icons/index.js';
+import { formatTokens, formatPercent, formatDuration } from '../../core/format.js';
 import type { TaskContext, TaskMetricKey } from '../../core/task-types.js';
 import type { Locale } from '../../i18n.js';
-import { formatDuration } from '../../core/task-health/format.js';
 export function TaskSummaryBar({ context, locale }: { context: TaskContext; locale: Locale }) {
-  const zh = locale === 'zh', t = (cn: string, en: string) => zh ? cn : en, unknown = t('未知', 'Unknown');
+  const zh = locale === 'zh', t = (cn: string, en: string) => zh ? cn : en, unknown = '—';
   const m = context.metrics, task = context.task;
   const partial = (key: TaskMetricKey) => {
     const c = m?.coverage?.[key];
     return c && c.known > 0 && c.known < c.total ? t(` · 部分（${c.known}/${c.total} 成员）`, ` · Partial (${c.known}/${c.total} members)`) : '';
   };
-  const number = (v: number | null | undefined, key?: TaskMetricKey) => v == null ? unknown : v.toLocaleString(zh ? 'zh-CN' : 'en-US') + (key ? partial(key) : '');
+  const number = (v: number | null | undefined, _key?: TaskMetricKey) => v == null ? unknown : formatTokens(v);
   const coverageTitle = (basis: string, key?: TaskMetricKey) => {
     const c = key && m?.coverage?.[key];
     if (!c) return basis;
@@ -35,8 +38,8 @@ export function TaskSummaryBar({ context, locale }: { context: TaskContext; loca
     [t('输出 Token', 'Output tokens'), number(m?.output, 'output'), t('归一化输出之和；不额外加可能已包含的 reasoning。缺失时未知。', 'Normalized output sum; reasoning is not added again. Unknown if missing.'), 'output'],
     [t('缓存读', 'Cache read'), number(m?.cacheRead, 'cacheRead'), t('各成员增量缓存读 Token 之和；默认零不能证明实测零。', 'Sum of incremental cache-read tokens. Default zero does not prove a reported zero.'), 'cacheRead'],
     [t('修正总量', 'Corrected total'), number(m?.correctedTotal, 'correctedTotal'), t('逐会话使用 correctedUsage 再求和，缓存不重复计入；Codex 确认不报告缓存写入时按 0 计，其余包含关系或缓存写入未知时排除该成员。', 'Sum of per-session correctedUsage, without double-counted cache. Confirmed unreported Codex cache writes count as zero; otherwise unproven conventions or counters exclude that member.'), 'correctedTotal'],
-    [t('缓存命中率', 'Cache hit rate'), formatCacheHitRate(m,zh), t('逐成员归一化完整提示输入，缓存读之和 / 完整提示输入之和；未知计数或零分母时未知。', 'Sum cache reads / sum normalized complete prompt input; unknown counters or zero denominator stay unknown.'), 'cacheHitRate'],
-    [t('模型', 'Model'), !m?.models.filter(Boolean).length ? unknown : partial('models') ? m.models.filter(Boolean).join(', ') + partial('models') : m.models.length === 1 ? m.models[0]! : t('多个', 'Multiple'), m?.models.filter(Boolean).join(', ') || t('会话 primary_model；缺少模型时未知。', 'Session primary_model; unknown if missing.'), 'models'],
+    [t('缓存命中率', 'Cache hit rate'), formatPercent(m?.cacheHitRate), t('逐成员归一化完整提示输入，缓存读之和 / 完整提示输入之和；未知计数或零分母时未知。', 'Sum cache reads / sum normalized complete prompt input; unknown counters or zero denominator stay unknown.'), 'cacheHitRate'],
+    [t('模型', 'Model'), !m?.models.filter(Boolean).length ? unknown : partial('models') ? m.models.filter(Boolean).join(', ') : m.models.length === 1 ? m.models[0]! : t('多个', 'Multiple'), m?.models.filter(Boolean).join(', ') || t('会话 primary_model；缺少模型时未知。', 'Session primary_model; unknown if missing.'), 'models'],
   ];
-  return <dl className="task-summary-bar" aria-label={t('任务摘要', 'Task summary')}>{rows.map(([label, value, basis, key]) => <div key={label} title={coverageTitle(basis, key)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
+  return <div className="task-f3-metrics" aria-label={t('任务摘要','Task summary')}><MetricStrip items={rows.filter(([label])=>![t('状态','Status'),t('开始','Started'),t('成员','Members'),t('事件','Events')].includes(label)).map(([label,value,basis,key])=>({label:label===t('墙钟','Wall clock')?t('时长','Duration'):label,value:<Tooltip label={coverageTitle(basis,key)}><span tabIndex={0} title={coverageTitle(basis,key)}>{value}{value===unknown&&<IconInfo size={12}/ >}{key&&partial(key)&&value!==unknown&&<Badge>{partial(key).replace(/^ · /,'')}</Badge>}{key==='cacheHitRate'&&m?.cacheHitRate!=null&&<Meter label={label} value={m.cacheHitRate} max={1}/>}</span></Tooltip>}))}/></div>;
 }

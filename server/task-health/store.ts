@@ -6,7 +6,7 @@ import type { DeepHealthReport, HealthReport, HealthScope, HealthThresholds } fr
 import { HEALTH_CALC_VERSION, HEALTH_RULE_VERSION } from '../../src/core/task-health/report.js';
 import { HealthError } from './collector.js';
 
-export interface HealthReportIndexItem { id: string; generatedAt: string; mode: 'standard' | 'deep'; revision: string; expired: boolean; reportId: string | null }
+export interface HealthReportIndexItem { id: string; generatedAt: string; mode: 'standard' | 'deep'; revision: string; expired: boolean; reportId: string | null; scope?: HealthScope | null; severity?: { warning: number; notice: number; info: number } | null }
 type SavedHealthReport = HealthReport | DeepHealthReport;
 const standard = (r: SavedHealthReport): r is HealthReport => 'mode' in r && r.mode === 'standard';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -41,7 +41,10 @@ async function readReport(path: string, taskHash: string, id: string): Promise<S
 const metadata = (r: SavedHealthReport, revision: string | null, values: SavedHealthReport[]): HealthReportIndexItem => {
   const savedRevision = standard(r) ? r.revision : values.find((p): p is HealthReport => standard(p) && p.id === r.reportId)?.revision;
   if (!savedRevision) throw new HealthError('HEALTH_STORAGE_FAILED');
-  return { id: r.id, generatedAt: r.generatedAt, mode: standard(r) ? 'standard' : 'deep', revision: savedRevision, expired: savedRevision !== revision, reportId: standard(r) ? null : r.reportId };
+  const parent=standard(r)?r:values.find((p):p is HealthReport=>standard(p)&&p.id===r.reportId);
+  const scope=parent?.scope??null;
+  const severity=parent?{warning:parent.findings.filter(f=>f.severity==='warning').length,notice:parent.findings.filter(f=>f.severity==='notice').length,info:parent.findings.filter(f=>f.severity==='info').length}:null;
+  return { scope, severity, id: r.id, generatedAt: r.generatedAt, mode: standard(r) ? 'standard' : 'deep', revision: savedRevision, expired: savedRevision !== revision, reportId: standard(r) ? null : r.reportId };
 };
 const canonical = (v: unknown) => JSON.stringify(v, (_key, value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value);
 const same = (a: unknown, b: unknown) => canonical(a) === canonical(b);

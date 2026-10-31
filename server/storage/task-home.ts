@@ -1,3 +1,4 @@
+import { isGenuineUserRecord } from '../../src/core/system-records.js';
 import type { Database } from 'better-sqlite3';
 import type { AlertThresholds, TaskContext, TaskKpis, TaskListQuery, TaskPage, TaskSummary } from '../../src/core/task-types.js';
 import { taskAlerts } from '../../src/core/task-alerts.js';
@@ -13,6 +14,14 @@ async function snapshot(db:Database,includePressure=false):Promise<TaskSummary[]
     const bindings=cachedStmt(db,`${TASK_BINDINGS_SQL} SELECT b.root_id,b.run_id,s.id,s.source_agent,s.title,s.provider,s.started_at,s.updated_at,s.status,s.event_count,s.detail_loaded,(EXISTS(SELECT 1 FROM scan_state ss WHERE ss.session_id=s.id) OR EXISTS(SELECT 1 FROM telemetry_sessions t WHERE t.session_id=s.id)) AS provenance,(SELECT origin FROM telemetry_sessions t WHERE t.session_id=s.id) AS telemetry_origin,(SELECT source FROM telemetry_sessions t WHERE t.session_id=s.id) AS telemetry_source FROM bindings b JOIN sessions s ON s.id=b.session_id ORDER BY b.root_id,s.id`).all() as Array<{root_id:string;run_id:string|null;id:string;source_agent:string;title:string;provider:string;started_at:string;updated_at:string;status:string;event_count:number;detail_loaded:number;provenance:number;telemetry_origin:string|null;telemetry_source:string|null}>;
     const groups=new Map<string,typeof bindings>();for(const b of bindings){const g=groups.get(b.root_id)??[];g.push(b);groups.set(b.root_id,g);}
     const result:TaskSummary[]=[];
+    const prompts=cachedStmt(db,"SELECT session_id,sequence,title,started_at FROM events WHERE session_id IN (SELECT value FROM json_each(?)) AND kind='user_prompt' ORDER BY session_id,sequence").all(JSON.stringify([...groups.keys()])) as Array<{session_id:string;sequence:number;title:string;started_at:string}>;
+    const requestCounts=new Map<string,{count:number;last:string;valid:boolean}>();
+    for(const prompt of prompts){
+      if(!Number.isFinite(Date.parse(prompt.started_at))||!isGenuineUserRecord({kind:'user_prompt',title:prompt.title,hasInput:true,hasOutput:false}))continue;
+      const previous=requestCounts.get(prompt.session_id)??{count:0,last:'',valid:true};
+      requestCounts.set(prompt.session_id,{count:previous.count+1,last:prompt.started_at,valid:previous.valid&&prompt.started_at>=previous.last});
+    }
+
     const allGroups=[...groups];
     const agents=cachedStmt(db,'SELECT run_id,id,display_name,session_keys_json FROM team_agents ORDER BY id').all() as Array<{run_id:string;id:string;display_name:string;session_keys_json:string}>;
     for(let offset=0;offset<allGroups.length;offset+=25){
@@ -25,6 +34,7 @@ async function snapshot(db:Database,includePressure=false):Promise<TaskSummary[]
     for(const [rootId,group] of batch){
       const root=group.find(r=>r.id===rootId);if(!root)continue;
       const task:TaskSummary={id:'collected:'+rootId,origin:root.telemetry_origin==='imported'?'imported':'collected',provenanceKnown:root.provenance===1,rootSessionKey:rootId,runId:new Set(group.flatMap(r=>r.run_id?[r.run_id]:[])).size===1?group.find(r=>r.run_id)?.run_id??null:null,title:root.title,provider:root.telemetry_source??root.provider,startedAt:root.started_at||null,updatedAt:group.reduce((a,b)=>a>b.updated_at?a:b.updated_at,''),recordedStatus:root.status,memberCount:group.length,eventCount:group.reduce((n,r)=>n+r.event_count,0),loadedMemberCount:group.filter(r=>r.detail_loaded===1).length};
+      const requests=requestCounts.get(rootId);task.requestCount=root.detail_loaded===1?(requests?.valid===false?0:requests?.count??0):null;
       const selected=group.slice(0,100);
       const context:TaskContext={task,members:selected.map(r=>({id:r.id,name:r.source_agent,role:r.id===rootId?'main':'unknown',sessionKey:r.id,parentId:null,detailLoaded:r.detail_loaded===1,eventCount:r.event_count})),importSession:null,warnings:[]};
       // Preserve unlinked declared members in the completeness denominator,
@@ -56,7 +66,7 @@ export async function listTaskHome(db:Database,query:TaskListQuery,thresholds:Al
   if(query.errors)items=items.filter(t=>t.metrics!.errors!==null&&t.metrics!.errors!>0);
   if(query.alerts)items=items.filter(t=>t.alerts.length>0);
   const value=(t:TaskSummary):number|null=>{
-    const m=t.metrics!;switch(query.sort){case'duration':return m.durationMs;case'errors':return m.errors;case'tokens':return m.correctedTotal;case'cacheHitRate':return m.cacheHitRate;default:return t.startedAt?Date.parse(t.startedAt):null;}
+    const m=t.metrics!;switch(query.sort??'activity'){case'activity':return t.updatedAt?Date.parse(t.updatedAt):null;case'duration':return m.durationMs;case'errors':return m.errors;case'tokens':return m.correctedTotal;case'cacheHitRate':return m.cacheHitRate;default:return t.startedAt?Date.parse(t.startedAt):null;}
   };
   items.sort((a,b)=>{const x=value(a),y=value(b);return (x==null||!Number.isFinite(x)?y==null?0:1:y==null||!Number.isFinite(y)?-1:(x-y)*(query.direction==='asc'?1:-1))||a.id.localeCompare(b.id);});
   const page=items.slice(offset,offset+limit);

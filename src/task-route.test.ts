@@ -91,3 +91,12 @@ it('ignores retired currency and monetary sort parameters during canonicalizatio
  expect(serializeTaskRoute(parsed)).not.toMatch(/currency|cost/);
  expect(parseTaskRoute('#/task?currency=invalid&sort=cacheHitRate').homeSort).toBe('cacheHitRate');
 });
+
+it('F3 round-trips combined task filters, pagination and activity while retaining legacy start sorting',()=>{
+ const route={...DEFAULT_TASK_ROUTE,homeSort:'activity' as const,homeDirection:'asc' as const,homeFilters:['alerts','errors','failed','toolFailures'] as const,homePage:3,homeSize:25};
+ expect(parseTaskRoute(serializeTaskRoute({...route,homeFilters:[...route.homeFilters]}))).toEqual({...route,homeFilters:[...route.homeFilters]});
+ expect(parseTaskRoute('#/task?sort=time&filter=errors')).toMatchObject({homeSort:'time',homeFilter:'errors'});
+ expect(parseTaskRoute('#/task?page=-1&size=999&filters=alerts,bogus')).toMatchObject({homeFilters:['alerts']});
+ expect(parseTaskRoute('#/task?page=-1&size=999').homePage).toBeUndefined();
+ expect(parseTaskRoute('#/task?page=-1&size=999').homeSize).toBeUndefined();
+});

@@ -62,3 +62,7 @@ it('offers zero-based controlled pagination with bounds and page-size selection'
   act(()=>root.render(<Table {...props} pagination={{page:2,pageSize:5,total:12,onPageChange:page}}/>));expect(host.querySelector<HTMLButtonElement>('[aria-label="Next page"]')!.disabled).toBe(true);expect(host.textContent).toContain('11–12 / 12');
  }finally{act(()=>root.unmount());host.remove();}
 });
+it('renders externally expanded subrows without inserting an unused disclosure column',()=>{
+ const host=document.createElement('div'),root=createRoot(host);
+ try{act(()=>root.render(<Table rows={[{id:'a'}]} rowKey={r=>r.id} columns={[{key:'title',label:'Task',render:r=>r.id}]} expandedKeys={['a']} renderSubrow={()=> 'Request evidence'}/>));expect(host.querySelectorAll('thead th')).toHaveLength(1);expect(host.querySelector('.ui-subrow td')!.getAttribute('colspan')).toBe('1');expect(host.textContent).toContain('Request evidence');}finally{act(()=>root.unmount());}
+});

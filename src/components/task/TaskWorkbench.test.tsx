@@ -115,8 +115,8 @@ describe('task process reading', () => {
     mount(); await readyTimeline();
     expect(calls.filter(path => path.includes('/records?')).map(path => new URL(path, 'http://localhost').searchParams.get('member'))).toEqual(['main']);
     expect(calls.filter(path => path.includes('/events/'))).toHaveLength(0);
-    const scope = host.querySelector<HTMLSelectElement>('select[aria-label=Scope]')!;
-    act(() => { scope.value = 'all'; scope.dispatchEvent(new Event('change', { bubbles: true })); }); await readyTimeline();
+    act(()=>host.querySelector<HTMLButtonElement>('[role=combobox][aria-label=Scope]')!.click());
+    act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=option]')].find(b=>b.textContent?.startsWith('Whole task'))!.click()); await readyTimeline();
     expect(calls.filter(path => path.includes('/events/'))).toHaveLength(0);
     expect(mark(main.id)).toBeTruthy(); expect(mark(child.id)).toBeTruthy();
     const before = metadataReads();
@@ -214,8 +214,8 @@ describe('task process reading', () => {
   });
   it('loads the selected member at the server and can return to the original main record', async () => {
     mount(); await settle(); act(() => button('Main result').click()); await readyEvidence('MAIN_OUTPUT');
-    const select = host.querySelector<HTMLSelectElement>('select[aria-label=Scope]')!;
-    act(() => { select.value = 'child-agent'; select.dispatchEvent(new Event('change', { bubbles: true })); }); await settle();
+    act(()=>host.querySelector<HTMLButtonElement>('[role=combobox][aria-label=Scope]')!.click());
+    act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=option]')].find(b=>b.textContent==='Researcher')!.click()); await settle();
     expect(calls.some(path => path.includes('member=child-agent'))).toBe(true);
     expect(host.querySelector('.task-record-scroll')?.textContent).toContain('Child failure');
     expect(host.querySelector('.task-evidence')).toBeNull();
@@ -255,7 +255,7 @@ describe('task context restoration', () => {
     act(() => button('Back to latest').click()); await settle();
     expect(current?.from).toBeUndefined(); expect(current?.to).toBeUndefined();
     expect(current?.q).toBe('Main'); expect(current?.errors).toBe(true);
-    act(() => button('Imported').click()); await settle();
+    act(() => button('Tasks').click()); await settle(); act(() => button('Imported').click()); await settle();
     expect(current?.task).toBeNull(); expect(current?.q).toBeUndefined(); expect(current?.errors).toBeUndefined();
   });
   it('opens a legacy child session directly in its member scope instead of loading the root history', async () => {
@@ -334,15 +334,15 @@ it('Phase B home shares one page, A/B checks and server sorting/filtering with t
   await vi.waitFor(async()=>{await settle();expect(host.querySelector('.task-health-list')).not.toBeNull();});
   expect(calls.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(1);
   expect(calls.find(path=>path.startsWith('/api/tasks?'))).toContain('summary=1');
-  act(()=>host.querySelector<HTMLInputElement>('.task-health-row input')!.click());
-  expect(host.querySelector<HTMLInputElement>('.architecture-select')!.checked).toBe(true);
-  expect(host.querySelector<HTMLInputElement>('.task-health-row input')!.checked).toBe(true);
-  act(()=>[...host.querySelectorAll<HTMLButtonElement>('.task-home-toolbar button')].find(b=>b.textContent==='Set as Baseline')!.click());
-  expect(host.querySelector<HTMLInputElement>('.architecture-select')!.checked).toBe(false);
-  expect(host.querySelector('.task-home-toolbar small')?.textContent).toBe('Baseline 1 / Improvement 0');
-  act(()=>{const sort=host.querySelector<HTMLSelectElement>('[aria-label="Health list sort"]')!;sort.value='tokens';sort.dispatchEvent(new Event('change',{bubbles:true}));});await settle();
+  act(()=>host.querySelector<HTMLInputElement>('tbody input')!.click());
+  expect(host.querySelector('.task-sidebar')).toBeNull();
+  expect(host.querySelector<HTMLInputElement>('tbody input')!.checked).toBe(true);
+  act(()=>button('Set as Baseline').click());
+  expect(host.querySelector<HTMLInputElement>('tbody input')!.checked).toBe(false);
+  act(()=>host.querySelector<HTMLButtonElement>('[role=combobox][aria-label=Sort]')!.click());
+  act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=option]')].find(b=>b.textContent==='Token')!.click());await settle();
   expect(calls.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(2);expect(calls.at(-1)).toContain('sort=tokens');
-  act(()=>{const filter=host.querySelector<HTMLSelectElement>('[aria-label="Health list filter"]')!;filter.value='alerts';filter.dispatchEvent(new Event('change',{bubbles:true}));});await settle();
+  act(()=>button('Filter').click());act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='With alerts')!.click());await settle();
   expect(calls.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(3);expect(calls.at(-1)).toContain('alerts=1');
   expect(calls.some(path=>path.includes('/events/')||path.includes('/health-reports'))).toBe(false);
 });
@@ -350,8 +350,8 @@ it('Phase B health entry selects the same task and opens its drawer without gene
  let selected:TaskRoute|undefined;
  function Home(){const [route,onRoute]=useState<TaskRoute>(DEFAULT_TASK_ROUTE);selected=route;return <TaskWorkbench locale="en" route={route} onRoute={onRoute} changes={{version:0,keys:[],runIds:[]}} onIntake={()=>{}} onOpenRequest={()=>{}}/>;}
  act(()=>root.render(<Home/>));await vi.waitFor(async()=>{await settle();expect(host.querySelector('.task-health-list')).not.toBeNull();});
- act(()=>[...host.querySelectorAll<HTMLButtonElement>('.task-health-row button')].find(b=>b.textContent==='Health monitoring')!.click());
- await readyTimeline();expect(selected).toMatchObject({task:task.id,member:'all',health:'new'});expect(host.querySelector('#task-health-drawer')).not.toBeNull();
+ act(()=>[...host.querySelectorAll<HTMLButtonElement>('tbody button')].find(b=>b.getAttribute('aria-label')==='Health monitoring')!.click());
+ await readyTimeline();expect(selected).toMatchObject({task:task.id,member:'all',health:'new'});expect(document.querySelector('#task-health-drawer')).not.toBeNull();
  expect(vi.mocked(fetch).mock.calls.some(([,init])=>init?.method==='POST')).toBe(false);
 });
 
@@ -365,9 +365,9 @@ it('Phase B review refreshes the shared retained page after background hydration
  }));
  let notify!:(changes:TaskChanges)=>void;
  function Home(){const [route,onRoute]=useState<TaskRoute>(DEFAULT_TASK_ROUTE),[changes,setChanges]=useState<TaskChanges>({version:0,keys:[],runIds:[]});notify=setChanges;return <TaskWorkbench locale="en" route={route} onRoute={onRoute} changes={changes} onIntake={()=>{}} onOpenRequest={()=>{}}/>;}
- act(()=>root.render(<Home/>));await vi.waitFor(async()=>{await settle();expect(host.querySelector('.task-health-row')?.textContent).toContain('Loading');});
- const scroll=host.querySelector('.task-health-scroll');act(()=>host.querySelector<HTMLInputElement>('.task-health-row input')!.click());
+ act(()=>root.render(<Home/>));await vi.waitFor(async()=>{await settle();expect(host.querySelector('tbody [role=status]')).not.toBeNull();});
+ const scroll=host.querySelector('.ui-table-wrap');act(()=>host.querySelector<HTMLInputElement>('tbody input')!.click());
  await act(async()=>{controller.enqueue(new TextEncoder().encode(JSON.stringify({items:[{taskId:task.id,pending:0,loaded:2,reasons:[]}],done:true})+'\n'));notify({version:1,keys:['main','child'],runIds:[]});await new Promise(r=>setTimeout(r,230));});
- expect(reads).toBe(2);expect(host.querySelector('.task-health-scroll')).toBe(scroll);expect(host.querySelector('.task-health-row')?.textContent).not.toContain('Loading');expect(host.querySelector('.task-health-row')?.textContent).toContain('110');
- expect(host.querySelector<HTMLInputElement>('.architecture-select')!.checked).toBe(true);expect(vi.mocked(fetch).mock.calls.filter(([path])=>String(path)==='/api/task-home/hydrate')).toHaveLength(1);
+ expect(reads).toBe(2);expect(host.querySelector('.ui-table-wrap')).toBe(scroll);expect(host.querySelector('tbody [role=status]')).toBeNull();expect(host.querySelector('tr[data-table-row]')?.textContent).toContain('110');
+ expect(host.querySelector<HTMLInputElement>('tbody input')!.checked).toBe(true);expect(vi.mocked(fetch).mock.calls.filter(([path])=>String(path)==='/api/task-home/hydrate')).toHaveLength(1);
 });

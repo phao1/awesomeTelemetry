@@ -776,3 +776,5 @@ injection classifier; rule version remains3, saved older reports remain readable
 
 Phase F1: monetary UI/report fields and alert rules are removed; raw evidence
 remains stored faithfully. Token/cacheHitRate follows data-model F1-001/002.
+
+F3 review presentation: history index metadata may include nullable scope and per-severity counts under api.md. Deep history uses its standard parent's findings, not invented model issue severities; missing legacy metadata is unavailable. This projection does not alter saved report schemas or calculations.

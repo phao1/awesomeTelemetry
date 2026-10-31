@@ -29,9 +29,9 @@ it('reads only on explicit analysis and shows partial coverage, measured values 
   expect(String(path)).toContain('/api/tasks/collected%3Asession-main/architecture-diagnosis?');
   expect(new URL(String(path), 'http://localhost').searchParams.get('member')).toBe('all'); expect(init!.method).toBeUndefined();
   expect(host.textContent).toContain('Insufficient evidence'); expect(host.textContent).toContain('Partial'); expect(host.textContent).toContain('17 / 200');
-  expect(host.textContent).toContain('Heuristic'); expect(host.textContent).toContain('2.5 x'); expect(host.textContent).toContain('—');
+  expect(host.textContent).toContain('Heuristic'); expect(host.querySelector('.architecture-finding-disclosure>button')!.getAttribute('aria-expanded')).toBe('false'); act(()=>host.querySelector<HTMLButtonElement>('.architecture-finding-disclosure>button')!.click());act(()=>host.querySelector<HTMLButtonElement>('.architecture-evidence>button')!.click()); expect(host.textContent).toContain('2.5 x'); expect(host.textContent).toContain('—');
   expect(host.textContent).toContain('Only if the branch is independent.'); expect(host.textContent).toContain('Rerun fixed acceptance checks.');
-  expect(host.querySelector<HTMLDetailsElement>('.architecture-finding-disclosure')!.open).toBe(false);
+  expect(host.querySelector('.architecture-finding-disclosure>button')!.getAttribute('aria-expanded')).toBe('true');
   expect(host.querySelector('script')).toBeNull(); expect(host.textContent).toContain('<script>unsafe()</script>');
   expect([...host.querySelectorAll('a')].map(a => a.getAttribute('href'))).toContain('#/task?origin=collected&task=collected%3Asession-main&member=all&event=session-main%3Aevent%3Aevent%3Aexact');
   expect([...host.querySelectorAll('a')].map(a => a.getAttribute('href'))).toContain('/api/proxy/requests/8/codex-calls/3');
@@ -78,13 +78,13 @@ it('bounds findings to twenty per page and each finding to eight evidence rows',
   const result = report(); result.findings = Array.from({ length: 45 }, (_, i) => ({ ...result.findings[0]!, id: `finding-${i}`, evidenceIds: Array.from({ length: 12 }, (_, n) => `ref-${n}`) }));
   result.evidence = Array.from({ length: 12 }, (_, i) => ({ ...result.evidence[0]!, id: `ref-${i}` }));
   vi.mocked(fetch).mockResolvedValue(json(result)); mount(); act(() => button('Analyze split and merge').click()); await settle();
-  expect(host.querySelectorAll('.architecture-finding')).toHaveLength(20); expect(host.querySelector('.architecture-evidence ul')!.children).toHaveLength(8);
+  expect(host.querySelectorAll('.architecture-finding')).toHaveLength(20);act(()=>host.querySelector<HTMLButtonElement>('.architecture-finding-disclosure>button')!.click());act(()=>host.querySelector<HTMLButtonElement>('.architecture-evidence>button')!.click()); expect(host.querySelector('.architecture-evidence ul')!.children).toHaveLength(8);
   act(() => button('Next findings').click()); expect(host.querySelectorAll('.architecture-finding')).toHaveLength(20);
   act(() => button('Next findings').click()); expect(host.querySelectorAll('.architecture-finding')).toHaveLength(5); expect(fetch).toHaveBeenCalledTimes(1);
 });
 
 it('rejects invalid thresholds before reading and never accepts a response for another member', async () => {
-  mount(); const input = host.querySelector<HTMLInputElement>('input[type=number]')!;
+  mount(); act(()=>button('Analysis thresholds (product heuristics)').click()); const input = host.querySelector<HTMLInputElement>('input[type=number]')!;
   act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '0'); input.dispatchEvent(new Event('input', { bubbles: true })); });
   act(() => button('Analyze split and merge').click()); expect(fetch).not.toHaveBeenCalled(); expect(host.textContent).toContain('outside the allowed range');
   act(() => button('Reset thresholds').click()); vi.mocked(fetch).mockResolvedValue(json({ ...report(), member: 'other' }));

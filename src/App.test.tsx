@@ -368,12 +368,12 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     const {container,unmount}=renderAppWithUnmount();try{expect(container.querySelector('.task-sidebar .task-empty')).toBeNull();expect(container.querySelector('[role="status"]')).not.toBeNull();expect(container.querySelector('.task-empty')).toBeNull();}finally{unmount();}
   });
 
-  it('WB-002: slash can reopen a collapsed list and focus its search field', async () => {
+  it('WB-002: legacy rail collapse cannot hide the task table and slash focuses its search', async () => {
     const previous=localStorage.getItem(LAYOUT_KEYS.railCollapsed);localStorage.setItem(LAYOUT_KEYS.railCollapsed,'true');
     const {container,unmount}=renderAppWithUnmount();try{
-      expect(container.querySelector('.task-workbench')?.classList.contains('task-list-collapsed')).toBe(true);
+      expect(container.querySelector('.task-sidebar')).toBeNull();expect(container.querySelector('.task-f3-toolbar input[type=search]')).not.toBeNull();
       await act(async()=>{document.dispatchEvent(new KeyboardEvent('keydown',{key:'/',bubbles:true,cancelable:true}));await new Promise(r=>setTimeout(r,10));});
-      expect(container.querySelector('.task-workbench')?.classList.contains('task-list-collapsed')).toBe(false);expect(document.activeElement).toBe(container.querySelector('.task-list-filters input'));
+      expect(container.querySelector('.task-sidebar')).toBeNull();expect(document.activeElement).toBe(container.querySelector('.task-f3-toolbar input[type=search]'));
     }finally{unmount();if(previous===null)localStorage.removeItem(LAYOUT_KEYS.railCollapsed);else localStorage.setItem(LAYOUT_KEYS.railCollapsed,previous);}
   });
 
@@ -382,10 +382,10 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{const path=String(input);if(path.startsWith('/api/tasks?')){if(!path.includes('q='))return new Promise<Response>(r=>{finishOld=r;});return apiResponse({items:[{...TASK_FIXTURES[1],title:'LATEST query result'}],total:1,offset:0,limit:50,hasMore:false});}return taskResponse(path);}));
     const {container,unmount}=renderAppWithUnmount();try{
       await act(async()=>{await new Promise(r=>setTimeout(r,10));});expect(finishOld).toBeDefined();
-      act(()=>{const search=container.querySelector<HTMLInputElement>('.task-list-filters input')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'LATEST');search.dispatchEvent(new Event('input',{bubbles:true}));});
+      act(()=>{const search=container.querySelector<HTMLInputElement>('.task-f3-toolbar input[type=search]')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'LATEST');search.dispatchEvent(new Event('input',{bubbles:true}));});
       await vi.waitFor(()=>expect(container.querySelector('.task-health-title')?.textContent).toContain('LATEST query result'));
       await act(async()=>finishOld!(apiResponse({items:[{...TASK_FIXTURES[0],title:'STALE initial query'}],total:1,offset:0,limit:50,hasMore:false})));
-      expect(container.textContent).not.toContain('STALE initial query');expect(container.querySelector('.task-health-title')?.textContent).toContain('LATEST query result');expect(window.location.hash).toContain('q=LATEST');expect(container.querySelector('.task-sidebar')?.getAttribute('aria-busy')).toBe('false');
+      expect(container.textContent).not.toContain('STALE initial query');expect(container.querySelector('.task-health-title')?.textContent).toContain('LATEST query result');expect(window.location.hash).toContain('q=LATEST');expect(container.querySelector('table')!.getAttribute('aria-busy')).toBeNull();
     }finally{unmount();}
   });
 
@@ -498,7 +498,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
   it('会话视图 IA：粘性工具条 + findings 折叠 + turn 表面（统计条 + 色带 + 回合列表）', async () => {
     installTaskApi();const {container,unmount}=renderAppWithUnmount();try{
       await readyTasks(container);act(()=>container.querySelector<HTMLButtonElement>('.task-health-title')!.click());await vi.waitFor(()=>expect(container.querySelectorAll('.process-record-button')).toHaveLength(2));
-      expect(container.querySelector('.task-context-header')).not.toBeNull();expect(container.querySelector('.task-summary-bar')).not.toBeNull();expect(container.querySelector('.task-time-sticky')).not.toBeNull();expect(container.querySelector('.task-timeline-track')).not.toBeNull();
+      expect(container.querySelector('.task-context-header')).not.toBeNull();expect(container.querySelector('.task-f3-metrics')).not.toBeNull();expect(container.querySelector('.task-time-sticky')).not.toBeNull();expect(container.querySelector('.task-timeline-track')).not.toBeNull();
       const before=vi.mocked(fetch).mock.calls.length;await act(async()=>EventSourceStub.instances[0]!.emit('trace_links_changed',{sessionKeys:['s-1'],proxyIds:[1],truncated:false}));
       expect(vi.mocked(fetch).mock.calls).toHaveLength(before);expect(container.querySelectorAll('.process-record-button')).toHaveLength(2);
       const recordsBefore=vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/records?')).length;
@@ -818,9 +818,9 @@ it.each(['threshold','overview-threshold'])('Phase B review: %s opens and focuse
  try{
   await readyTasks(container);
   if(entry==='overview-threshold')await navigateHash('#/overview');
-  const selector=entry==='overview-threshold'?'.overview-threshold-link':'.task-home-toolbar button';
+  const selector=entry==='overview-threshold'?'.overview-threshold-link':'.page-actions button';
   let button:HTMLButtonElement|undefined;
-  for(let i=0;i<100&&!button;i++){button=[...container.querySelectorAll<HTMLButtonElement>(selector)].find(b=>b.textContent==='配置阈值');if(!button)await act(async()=>{await new Promise(r=>setTimeout(r,10));});}
+  for(let i=0;i<100&&!button;i++){button=[...container.querySelectorAll<HTMLButtonElement>(selector)].find(b=>b.textContent===(entry==='overview-threshold'?'配置阈值':'健康阈值'));if(!button)await act(async()=>{await new Promise(r=>setTimeout(r,10));});}
   expect(button).toBeDefined();act(()=>button!.click());
   const section='alert-thresholds';
   for(let i=0;i<100&&!container.querySelector('#settings-'+section+' input');i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});

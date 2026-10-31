@@ -72,3 +72,27 @@ it('Phase C resolves child sessions to root tasks in one batch and reuses the Ph
  await expect(taskComparisonSnapshot(db,['collected:s0'],['collected:s1'],DEFAULT_ALERT_THRESHOLDS)).rejects.toThrow('distinct root tasks');
  await expect(taskComparisonSnapshot(db,['collected:missing'],['collected:s2'],DEFAULT_ALERT_THRESHOLDS)).rejects.toThrow('Task not found');
 });
+
+it('F3 sorts activity globally before pagination and preserves legacy startedAt ordering',async()=>{
+ seed(3);
+ db.prepare("UPDATE sessions SET started_at=?,updated_at=? WHERE id=?").run('2026-10-01T00:00:00.000Z','2026-10-31T00:00:00.000Z','s2');
+ db.prepare("UPDATE sessions SET started_at=?,updated_at=? WHERE id=?").run('2026-10-30T00:00:00.000Z','2026-10-30T00:00:00.000Z','s0');
+ db.prepare("UPDATE sessions SET started_at=?,updated_at=? WHERE id=?").run('2026-10-29T00:00:00.000Z','2026-10-29T00:00:00.000Z','s1');
+ const recent=await listTaskHome(db,{limit:1},DEFAULT_ALERT_THRESHOLDS);
+ expect(recent.items[0]).toMatchObject({id:'collected:s2',updatedAt:'2026-10-31T00:00:00.000Z'});
+ expect((await listTaskHome(db,{sort:'activity',offset:1,limit:1},DEFAULT_ALERT_THRESHOLDS)).items[0]!.id).toBe('collected:s0');
+ expect((await listTaskHome(db,{sort:'activity',direction:'asc',limit:1},DEFAULT_ALERT_THRESHOLDS)).items[0]!.id).toBe('collected:s1');
+ expect((await listTaskHome(db,{sort:'time',limit:1},DEFAULT_ALERT_THRESHOLDS)).items[0]!.id).toBe('collected:s0');
+});
+it('F3 counts genuine root requests in batched metadata without reading bodies or inventing unloaded counts',async()=>{
+ seed(2);
+ const insert=db.prepare("INSERT INTO events(session_id,id,sequence,kind,phase,title,started_at,status) VALUES('s0',?,?,'user_prompt','understand',?,?,'success')");
+ insert.run('prompt',2,'Real request','2026-10-31T00:00:00.000Z');
+ insert.run('system',3,'<system-reminder>Injected</system-reminder>','2026-10-31T00:00:01.000Z');
+ db.prepare("UPDATE sessions SET detail_loaded=0 WHERE id='s1'").run();queries.length=0;
+ const result=await listTaskHome(db,{},DEFAULT_ALERT_THRESHOLDS);
+ expect(result.items.find(t=>t.id==='collected:s0')!.requestCount).toBe(1);
+ expect(result.items.find(t=>t.id==='collected:s1')!.requestCount).toBeNull();
+ expect(queries.filter(q=>q.includes("AND kind='user_prompt'"))).toHaveLength(1);
+ expect(queries.some(q=>/input_summary|output_summary|event_raw/.test(q))).toBe(false);
+});

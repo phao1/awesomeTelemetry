@@ -1,11 +1,17 @@
-import { RequestExpansion } from './TaskRequests.js';
-import { useEffect, useRef, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useState, type ReactNode } from 'react';
 import type { LocalSettingsTarget, TaskHydrationProgress, TaskHydrationReason, TaskSummary } from '../../core/task-types.js';
 import type { Locale } from '../../i18n.js';
-import { ALERT_LABELS, formatCacheHitRate } from '../../core/task-alerts.js';
-import { formatDuration } from '../../core/task-health/format.js';
-
+import { ALERT_LABELS } from '../../core/task-alerts.js';
+import { formatDuration, formatTokens, formatRelativeTime, formatAbsoluteTime, formatPercent } from '../../core/format.js';
+import { ProviderBadge, Badge, StatusBadge } from '../ui/Badge.js';
+import type { ProviderKey, TraceStatus } from '../../core/trace-types.js';
+import { DataTable, type TablePagination } from '../ui/DataTable.js';
+import { Button, IconButton } from '../ui/Button.js';
+import { Card, Meter } from '../ui/Display.js';
+import { EmptyState, Skeleton } from '../ui/States.js';
+import { Tooltip, DropdownMenu } from '../ui/Overlay.js';
+import { IconList, IconMoreHorizontal } from '../icons/index.js';
+import { RequestExpansion } from './TaskRequests.js';
 const REASONS: Record<TaskHydrationReason, [string,string]> = {
   source_missing:['原生文件已不存在，保留任务记录。','The native file is missing; the task record is retained.'],
   source_unreadable:['原生文件不可读取。','The native file is not readable.'],
@@ -14,38 +20,25 @@ const REASONS: Record<TaskHydrationReason, [string,string]> = {
   cancelled:['后台加载已取消，可刷新后重试。','Background loading was cancelled; refresh to retry.'],
   request_failed:['后台加载连接不可用，可刷新后重试。','Background loading is unavailable; refresh to retry.'],
 };
-export function TaskHealthList({items,locale,checked,onCheck,onSelect,onHealth,onIntake,onRequest,progress={},refreshError=false}:{items:TaskSummary[];locale:Locale;checked:string[];onCheck:(id:string,shift:boolean)=>void;onSelect:(task:TaskSummary)=>void;onHealth:(task:TaskSummary)=>void;onIntake:()=>void;onRequest?:(task:TaskSummary,request:string)=>void;onSettings?:(target:LocalSettingsTarget)=>void;progress?:Record<string,TaskHydrationProgress>;refreshError?:boolean}) {
-  const zh=locale==='zh',parent=useRef<HTMLDivElement>(null);
-  const [expanded,setExpanded]=useState<TaskSummary|null>(null);
-  useEffect(()=>setExpanded(old=>old?items.find(task=>task.id===old.id)??null:null),[items]);
-  const [narrow,setNarrow]=useState(()=>window.innerWidth<=640);
-  useEffect(()=>{if(typeof window.matchMedia!=='function')return;const media=window.matchMedia('(max-width: 640px)'),change=()=>setNarrow(media.matches);change();media.addEventListener('change',change);return()=>media.removeEventListener('change',change);},[]);
-  const list=useVirtualizer({count:items.length,getScrollElement:()=>parent.current,estimateSize:()=>narrow?280:96,overscan:3,initialRect:{width:1200,height:600}});
-  useEffect(()=>list.measure(),[narrow,list]);
-  const unknown=zh?'未知':'Unknown',loading=zh?'加载中':'Loading';
-  if(!items.length)return <div className="task-empty"><h2>{zh?'当前范围没有任务':'No tasks in this range'}</h2><p>{zh?'调整筛选，或从数据接入选择日志来源。':'Adjust filters or choose a log source in Data intake.'}</p><button className="btn" onClick={onIntake}>{zh?'数据接入':'Data intake'}</button></div>;
-  return <section className="task-health-list" aria-label={zh?'任务健康列表':'Task health list'}>
-    {expanded&&<RequestExpansion task={expanded} locale={locale} onSelect={request=>onRequest?.(expanded,request)} open />}
-    <div className="task-health-columns">{(zh?['选择','标题 / 工具','开始 / 时长','成员 / 工具输入 / 错误记录','修正 Token / 缓存命中','最近标准报告 / 告警','健康监测']:['Select','Title / Tool','Start / Duration','Members / Tool inputs / Error records','Corrected tokens / Cache hit','Latest saved report / Alerts','Health']).map(label=><span key={label}>{label}</span>)}</div>
-    <div className="task-health-scroll" ref={parent}><div style={{height:list.getTotalSize(),position:'relative'}}>{list.getVirtualItems().map(row=>{
-      const task=items[row.index]!,m=task.metrics,report=task.latestHealth,p=progress[task.id];
-      const pending=Boolean(p&&(p.pending>0||p.loaded>task.loadedMemberCount&&!refreshError));
-      const reason=refreshError?(zh?'摘要刷新失败，可重试读取。':'Summary refresh failed; retry the read.'):p?.reasons.length?p.reasons.map(code=>REASONS[code]?.[zh?0:1]??code).join('\n'):task.loadedMemberCount<task.memberCount?(zh?'成员详情覆盖不足，尚无法完整汇总。':'Member details are incomplete; full totals are unavailable.'):(zh?'来源未提供可信用量、时长或计数。':'The source did not provide trusted usage, duration or counts.');
-      const value=(n:number|null|undefined)=>n==null?(pending?loading:unknown):n.toLocaleString();
-      const tooltip=task.alerts?.map(a=>`${ALERT_LABELS[a.rule][zh?0:1]}: ${a.actual.toLocaleString()} > ${a.threshold.toLocaleString()}`).join('\n');
-      const coverage=m?.coverage?.correctedTotal;
-      const tokens=value(m?.correctedTotal)+(m?.correctedTotal!=null&&coverage&&coverage.known<coverage.total?(zh?` · 部分（${coverage.known}/${coverage.total} 成员）`:` · Partial (${coverage.known}/${coverage.total} members)`):'');
-      return <div className="task-health-row" onClick={e=>{if(!(e.target as HTMLElement).closest('button,input,select,a'))onSelect(task);}} key={task.id} style={{position:'absolute',width:'100%',height:row.size,transform:`translateY(${row.start}px)`}}>
-        <input type="checkbox" aria-label={(zh?'选择 ':'Select ')+(task.title||task.id)} checked={checked.includes(task.id)} onChange={e=>onCheck(task.id,(e.nativeEvent as MouseEvent).shiftKey)}/>
-        <span><button type="button" className="task-health-title" onClick={()=>onSelect(task)}><strong>{task.title||task.id}</strong><small>{task.provider}</small></button><button type="button" className="btn" onClick={()=>setExpanded(expanded?.id===task.id?null:task)}>{zh?'请求':'Requests'} ▾</button></span>
-        <span title={m?.durationMs==null?reason:undefined}>{narrow&&<small className="task-row-label">{zh?'开始 / 时长':'Start / Duration'}</small>}{task.startedAt?new Date(task.startedAt).toLocaleString(zh?'zh-CN':'en-NZ'):unknown}<small>{m?.durationMs==null?value(null):formatDuration(m.durationMs,locale)}</small></span>
-        <span title={m?.toolCalls==null||m?.errors==null?reason:undefined}>{narrow&&<small className="task-row-label">{zh?'成员 / 工具输入 / 错误记录':'Members / Tool inputs / Error records'}</small>}{task.memberCount} / {value(m?.toolCalls)} / {value(m?.errors)}</span>
-        <span title={[m?.correctedTotal==null||coverage&&coverage.known<coverage.total?reason:undefined,coverage?.missing.map(member=>`${member.name}: ${member.reason}`).join('\n')].filter(Boolean).join('\n')}>{narrow&&<small className="task-row-label">{zh?'修正 Token / 缓存命中':'Corrected tokens / Cache hit'}</small>}{tokens}
-          <small className="task-cache-cell" title={m?.cacheHitRate==null?reason:undefined}>{pending&&m?.cacheHitRate==null?loading:formatCacheHitRate(m,zh)}</small>
-        </span>
-        <span>{report?<><button type="button" className="btn" onClick={()=>onHealth(task)}>{(zh?{findings:'发现问题',not_observed:'未观察到问题',insufficient:'证据不足'}:{findings:'Findings',not_observed:'Not observed',insufficient:'Insufficient evidence'})[report.conclusion]} · {report.issues}</button><small title={[report.revision,report.scope?.member,report.scope?.from,report.scope?.to].filter(Boolean).join(' · ')}>{new Date(report.generatedAt).toLocaleString()} · {zh?'历史报告':'Saved report'}</small></>:<small>{zh?'暂无已存标准报告':'No saved standard report'}</small>}{Boolean(task.alerts?.length)&&<span className="task-alert-badge" title={tooltip}>⚠ {task.alerts!.length} {zh?'告警':'alerts'}</span>}</span>
-        <button type="button" className="btn" onClick={()=>onHealth(task)}>{zh?'健康监测':'Health monitoring'}</button>
-      </div>;
-    })}</div></div>
-  </section>;
+
+export function TaskHealthList({items,locale,checked,onCheck,onSelectionChange,onSelect,onHealth,onIntake,onRequest,progress={},refreshError=false,loading=false,bulkActions,pagination,onAssign,onShare,timeBasis='activity'}:{items:TaskSummary[];locale:Locale;checked:string[];onCheck:(id:string,shift:boolean)=>void;onSelectionChange?:(keys:string[])=>void;onSelect:(task:TaskSummary)=>void;onHealth:(task:TaskSummary)=>void;onIntake:()=>void;onRequest?:(task:TaskSummary,request:string)=>void;onSettings?:(target:LocalSettingsTarget)=>void;progress?:Record<string,TaskHydrationProgress>;refreshError?:boolean;loading?:boolean;bulkActions?:ReactNode;pagination?:TablePagination;onAssign?:(group:'A'|'B',ids:string[])=>void;onShare?:(task:TaskSummary)=>void;timeBasis?:'activity'|'time'}) {
+ const zh=locale==='zh',t=(cn:string,en:string)=>zh?cn:en,[expanded,setExpanded]=useState<string[]>([]),[menu,setMenu]=useState<string|null>(null);
+ const reason=(task:TaskSummary)=>refreshError?t('摘要刷新失败，可重试读取。','Summary refresh failed; retry the read.'):progress[task.id]?.reasons.length?progress[task.id]!.reasons.map(code=>REASONS[code][zh?0:1]).join('\n'):t('来源未提供可信计数，或成员详情覆盖不足。','Trusted counters or member details are unavailable.');
+ const reportTitle=(task:TaskSummary)=>task.latestHealth?[formatAbsoluteTime(task.latestHealth.generatedAt,locale),task.latestHealth.revision,task.latestHealth.scope?.member,task.latestHealth.scope?.from,task.latestHealth.scope?.to].filter(Boolean).join(' · '):t('暂无已存标准报告','No saved standard report');
+ const relative=(value:string)=>{const days=Math.floor((Date.now()-Date.parse(value))/86400000);return days>=2&&days<7?t(`${days} 天前`,`${days}d ago`):formatRelativeTime(value,locale);};
+ const number=(task:TaskSummary,n:number|null|undefined)=>n==null&&progress[task.id]?.pending?<Skeleton/>:<Tooltip label={n==null?reason(task):n.toLocaleString()}><span className="num">{formatTokens(n)}</span></Tooltip>;
+ const select=(keys:string[])=>{if(onSelectionChange)onSelectionChange(keys.slice(0,40));else for(const id of new Set([...keys,...checked]))if(keys.includes(id)!==checked.includes(id))onCheck(id,false);};
+ return <Card className="task-health-list"><DataTable locale={locale} label={t('任务列表','Task list')} className="task-f3-table" rows={items} rowKey={task=>task.id} loading={loading} stickyFirst density="default" selectedKeys={checked} onSelectionChange={select} onRowClick={onSelect} rowTone={task=>task.recordedStatus==='error'?'danger':task.alerts?.length?'attention':undefined} bulkActions={bulkActions} pagination={pagination} expandedKeys={expanded} expandLabel={task=>t('展开请求 ','Expand requests ')+task.title} renderSubrow={task=><RequestExpansion task={task} locale={locale} onSelect={request=>onRequest?.(task,request)} open/>} emptyState={<EmptyState icon={<IconList/>} title={t('当前范围没有任务','No tasks in this range')} description={t('调整筛选，或从数据接入选择日志来源。','Adjust filters or choose a log source in Data intake.')} action={<Button onClick={onIntake}>{t('数据接入','Data intake')}</Button>}/>}
+ columns={[
+  {key:'title',label:t('任务','Task'),render:task=><div className="task-f3-title-cell"><Tooltip label={task.title||task.id}><Button variant="link" className="task-health-title task-f3-single-line" onClick={()=>onSelect(task)}>{task.title||task.id}</Button></Tooltip><Tooltip label={`${task.provider} · ${task.requestCount??'—'} ${t('个请求','requests')}`}><span className="task-f3-title-meta task-f3-single-line"><ProviderBadge locale={locale} provider={task.provider as ProviderKey}/><Button variant="ghost" size="sm" aria-expanded={expanded.includes(task.id)} onClick={()=>setExpanded(old=>old.includes(task.id)?old.filter(x=>x!==task.id):[...old,task.id])}>{task.requestCount!=null?t(`${task.requestCount} 个请求`,`${task.requestCount} requests`):t('请求','Requests')}</Button></span></Tooltip></div>},
+  {key:'status',width:'calc(var(--space-1) * 26)',label:<span className="task-f3-col-status">{t('状态','Status')}</span>,render:task=><StatusBadge status={(['success','error','running','cancelled'].includes(task.recordedStatus)?task.recordedStatus:'unknown') as TraceStatus} locale={locale}/>},
+  {key:'activity',width:'calc(var(--space-1) * 26)',label:timeBasis==='time'?t('开始时间','Start time'):t('最近活动','Recent activity'),render:task=><Tooltip label={`${formatAbsoluteTime(task.updatedAt,locale)} · ${t('开始','Started')}: ${task.startedAt?formatAbsoluteTime(task.startedAt,locale):'—'}`}><time title={(timeBasis==='time'?task.startedAt:task.updatedAt)??undefined}>{(timeBasis==='time'?task.startedAt:task.updatedAt)?relative((timeBasis==='time'?task.startedAt:task.updatedAt)!):'—'}</time></Tooltip>},
+  {key:'duration',width:'calc(var(--space-1) * 24)',label:<span className="task-f3-col-duration">{t('时长','Duration')}</span>,align:'right',render:task=><Tooltip label={task.metrics?.durationMs==null?reason(task):`${task.metrics.durationMs.toLocaleString()} ms`}><span className="num">{formatDuration(task.metrics?.durationMs,locale)}</span></Tooltip>},
+  {key:'members',width:'calc(var(--space-1) * 14)',label:<span className="task-f3-col-members">{t('成员','Members')}</span>,align:'right',render:task=>number(task,task.memberCount)},
+  {key:'tools',width:'calc(var(--space-1) * 20)',label:<span className="task-f3-col-tools">{t('工具调用','Tool calls')}</span>,align:'right',render:task=>number(task,task.metrics?.toolCalls)},
+  {key:'errors',width:'calc(var(--space-1) * 16)',label:<span className="task-f3-col-errors">{t('错误','Errors')}</span>,align:'right',render:task=><span className={task.metrics?.errors?'ui-text-danger':undefined}>{number(task,task.metrics?.errors)}</span>},
+  {key:'tokens',width:'calc(var(--space-1) * 26)',label:<span className="task-f3-col-tokens">Token</span>,align:'right',render:task=>{const c=task.metrics?.coverage?.correctedTotal;return <div className="task-f3-token-cell">{number(task,task.metrics?.correctedTotal)}{c&&c.known<c.total&&<Tooltip label={[t(`已知 ${c.known}/${c.total} 成员`,`Known ${c.known}/${c.total} members`),...c.missing.map(m=>`${m.name}: ${m.reason}`)].join('\n')}><span tabIndex={0}><Badge>{t('部分','Partial')} {c.known}/{c.total}</Badge></span></Tooltip>}</div>;}},
+  {key:'cache',width:'calc(var(--space-1) * 30)',label:<span className="task-f3-col-cache">{t('缓存命中','Cache hit')}</span>,align:'right',render:task=><div className="task-cache-cell" title={reason(task)}>{<Tooltip label={task.metrics?.cacheHitRate==null?reason(task):String(task.metrics.cacheHitRate)}><span className="num">{formatPercent(task.metrics?.cacheHitRate)}</span></Tooltip>}{task.metrics?.cacheHitRate!=null&&<Meter label={t('缓存命中率','Cache hit rate')} max={1} value={task.metrics.cacheHitRate}/>}</div>},
+  {key:'health',width:'calc(var(--space-1) * 28)',label:<span className="task-f3-col-health">{t('健康','Health')}</span>,render:task=><div><Tooltip label={reportTitle(task)}><Button size="sm" variant="ghost" aria-label={t('健康监测','Health monitoring')} onClick={()=>onHealth(task)}><Badge tone={task.latestHealth?.conclusion==='findings'?'attention':task.latestHealth?.conclusion==='not_observed'?'success':'neutral'}>{task.latestHealth?`${({findings:t('发现问题','Findings'),not_observed:t('未观察到问题','Not observed'),insufficient:t('证据不足','Insufficient evidence')})[task.latestHealth.conclusion]} · ${task.latestHealth.issues}`:t('未分析','Not analyzed')}</Badge></Button></Tooltip>{Boolean(task.alerts?.length)&&<Tooltip label={task.alerts!.map(a=>`${ALERT_LABELS[a.rule][zh?0:1]}: ${a.actual.toLocaleString()} > ${a.threshold.toLocaleString()}`).join('\n')}><span tabIndex={0}><Badge tone="attention">{task.alerts!.length} {t('告警','alerts')}</Badge></span></Tooltip>}</div>}
+ ]} rowActions={task=><DropdownMenu open={menu===task.id} onOpenChange={open=>setMenu(open?task.id:null)} trigger={props=><IconButton {...props} label={t('任务操作 ','Task actions ')+task.title} icon={<IconMoreHorizontal/>}/>} items={[{id:'open',label:t('打开任务','Open task'),onSelect:()=>onSelect(task)},{id:'health',label:t('健康监测','Health monitoring'),onSelect:()=>onHealth(task)},{id:'a',label:t('设为基线','Set as Baseline'),onSelect:()=>onAssign?.('A',[task.id]),disabled:!onAssign},{id:'b',label:t('设为改进','Set as Improvement'),onSelect:()=>onAssign?.('B',[task.id]),disabled:!onAssign},{id:'share',label:t('复制链接','Copy link'),onSelect:()=>onShare?.(task),disabled:!onShare}]}/>}/></Card>;
 }

@@ -12,19 +12,19 @@ afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
 it('navigates requests and returns to whole-task with the selected request summary',async()=>{
   function Harness(){const [request,setRequest]=useState<string|undefined>(items[0]!.id);return <RequestNavigator context={context} request={request} locale="en" onSelect={setRequest}/>;}
   act(()=>root.render(<Harness/>));await settle();
-  expect(host.querySelector('select')!.value).toBe(items[0]!.id);expect(host.querySelector('.task-summary-bar')!.textContent).toContain('60');
-  act(()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Next')!.click());await settle();expect(host.querySelector('select')!.value).toBe(items[1]!.id);expect(host.querySelector('.task-summary-bar')!.textContent).toContain('120');
-  act(()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Whole task')!.click());await settle();expect(host.querySelector('select')!.value).toBe('');expect(host.querySelector('.task-summary-bar')).toBeNull();expect(fetch).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('[role=combobox]')!.textContent).toContain('Question 1');expect(host.querySelector('.task-f3-metrics')!.textContent).toContain('60');
+  act(()=>[...host.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')==='Next')!.click());await settle();expect(host.querySelector('[role=combobox]')!.textContent).toContain('Question 2');expect(host.querySelector('.task-f3-metrics')!.textContent).toContain('120');
+  act(()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Whole task')!.click());await settle();expect(host.querySelector('[role=combobox]')).toBeNull();expect(host.querySelector('.task-f3-metrics')).toBeNull();expect(fetch).toHaveBeenCalledTimes(1);
 });
 it('expands only on demand and exposes request metrics and alerts',async()=>{
   const onSelect=vi.fn();act(()=>root.render(<RequestExpansion task={context.task} locale="en" onSelect={onSelect}/>));await settle();expect(fetch).not.toHaveBeenCalled();
-  act(()=>{const details=host.querySelector('details')!;details.open=true;details.dispatchEvent(new Event('toggle'));});await settle();expect(fetch).toHaveBeenCalledTimes(1);expect(host.textContent).toContain('Token 60');
-  act(()=>host.querySelector('li button')!.dispatchEvent(new MouseEvent('click',{bubbles:true})));expect(onSelect).toHaveBeenCalledWith(items[0]!.id);
+  act(()=>host.querySelector<HTMLButtonElement>('.ui-accordion > button')!.click());await settle();expect(fetch).toHaveBeenCalledTimes(1);expect(host.querySelector('tbody')!.textContent).toContain('60');
+  act(()=>host.querySelector('tbody button')!.dispatchEvent(new MouseEvent('click',{bubbles:true})));expect(onSelect).toHaveBeenCalledWith(items[0]!.id);
 });
 it('offers distinct same-task request choices for comparison',async()=>{
   const onSelect=vi.fn();act(()=>root.render(<RequestPicker taskId={context.task.id} exclude={items[0]!.id} label="B" locale="en" onSelect={onSelect}/>));await settle();
-  expect([...host.querySelectorAll('option')].map(o=>o.value)).toEqual(['',items[1]!.id]);
-  act(()=>{const select=host.querySelector('select')!;select.value=items[1]!.id;select.dispatchEvent(new Event('change',{bubbles:true}));});expect(onSelect).toHaveBeenCalledWith(items[1]!.id);
+  act(()=>host.querySelector<HTMLButtonElement>('[role=combobox]')!.click());expect(document.querySelectorAll('[role=option]')).toHaveLength(2);expect(document.querySelector('[role=listbox]')!.textContent).not.toContain('Question 1');expect(document.querySelector('[role=listbox]')!.textContent).toContain('Question 2');
+  act(()=>document.querySelectorAll<HTMLButtonElement>('[role=option]')[1]!.click());expect(onSelect).toHaveBeenCalledWith(items[1]!.id);
 });
 
 const validList={taskId:context.task.id,revision:'rev',items};
@@ -44,15 +44,15 @@ for(const consumer of ['picker','navigator','expansion'] as const){
     expect(host.textContent).toContain('Task page still works');expect(host.textContent).toContain('Requests unavailable');expect(host.querySelector('select')).toBeNull();expect(host.querySelector('li')).toBeNull();expect(onSelect).not.toHaveBeenCalled();
   });
   it(`${consumer}: request failure offers explicit retry and recovers without an automatic retry`,async()=>{
-    vi.mocked(fetch).mockRejectedValueOnce(new Error('Network failed'));render();await settle();
+    const onSelect=vi.fn();vi.mocked(fetch).mockRejectedValueOnce(new Error('Network failed'));render(onSelect);await settle();
     expect(host.textContent).toContain('Requests unavailable');expect(fetch).toHaveBeenCalledTimes(1);
     act(()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Retry')!.click());await settle();
-    expect(fetch).toHaveBeenCalledTimes(2);expect(host.textContent).not.toContain('Requests unavailable');expect(host.textContent).toContain('Question 1');
+    expect(fetch).toHaveBeenCalledTimes(2);expect(host.textContent).not.toContain('Requests unavailable');if(consumer==='navigator'){const choose=[...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='By request')!;expect(choose.disabled).toBe(false);act(()=>choose.click());expect(onSelect).toHaveBeenCalledWith(items[0]!.id);}else if(consumer==='picker'){act(()=>host.querySelector<HTMLButtonElement>('[role=combobox]')!.click());expect(document.querySelector('[role=listbox]')!.textContent).toContain('Question 1');}else expect(host.textContent).toContain('Question 1');
   });
   it(`${consumer}: loading and timeout hide the selector and suppress late success`,async()=>{
     vi.useFakeTimers();let finish!:(response:Response)=>void;vi.mocked(fetch).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
     try{
-      render();await settle();expect(host.textContent).toContain('Reading requests');expect(host.querySelector('select')).toBeNull();
+      render();await settle();expect(host.querySelector('[role=status]')).not.toBeNull();expect(host.querySelector('select')).toBeNull();
       act(()=>vi.advanceTimersByTime(10000));await settle();expect(host.textContent).toContain('Requests unavailable');
       finish(new Response(JSON.stringify(validList),{status:200}));await settle();expect(host.querySelector('select')).toBeNull();expect(host.textContent).not.toContain('Question 1');
     }finally{vi.useRealTimers();}

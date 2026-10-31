@@ -673,6 +673,7 @@ export default function App() {
     add({ key: '5' }, () => switchView('intake'));
     add({ key: '6' }, () => setSettingsOpen(true));
     add({ key: '/' }, () => {
+      if (view === 'task') { document.querySelector<HTMLInputElement>('.task-f3-toolbar input[type=search]')?.focus(); return; }
       if (view !== 'session') return;
       if (searchInputRef.current !== null) searchInputRef.current.focus();
       else { focusSearchOnExpand.current = true; setRailCollapsed(false); }
@@ -804,7 +805,7 @@ export default function App() {
         <LanguageToggle locale={locale} onChange={setLocale}/>
       </AppSidebar>
       <div className="app-workspace">
-      <PageHeader title={view==='ui-kit'?'UI Kit':view==='settings'?taskCopy(locale).settings:view==='task'?taskCopy(locale).tasks:view==='overview'?(locale==='zh'?'概览':'Overview'):view==='compare'?(locale==='zh'?'对比':'Compare'):view==='intake'?taskCopy(locale).intake:view==='benchmark'?(locale==='zh'?'评测中心':'Benchmarks'):t(`view.${view}` as Parameters<typeof t>[0],locale)} locale={locale} onSearch={openPalette} onMenu={()=>setMobileNav(true)}/>
+      {view !== 'task' && <PageHeader title={view==='ui-kit'?'UI Kit':view==='settings'?taskCopy(locale).settings:view==='overview'?(locale==='zh'?'概览':'Overview'):view==='compare'?(locale==='zh'?'对比':'Compare'):view==='intake'?taskCopy(locale).intake:view==='benchmark'?(locale==='zh'?'评测中心':'Benchmarks'):t(`view.${view}` as Parameters<typeof t>[0],locale)} locale={locale} onSearch={openPalette} onMenu={()=>setMobileNav(true)}/>}
       {view==='ui-kit'&&<Suspense fallback={<PageSkeleton locale={locale} />}><UiKit locale={locale} theme={theme}/></Suspense>}
       {paletteLoadError && <div className="workbench-error" role="alert">
         <span>{t('workbench.searchUnavailable', locale)}</span>
@@ -815,7 +816,7 @@ export default function App() {
           team 视图保留用于团队任务详情：点击团队任务 → switchView('team')。
           D15：Sessions(任务) | Agents | ...，AppShell 不含 team */}
 
-      {view === 'task' && <ErrorBoundary label={taskCopy(locale).tasks}><Suspense fallback={<PageSkeleton locale={locale} />}><TaskWorkbench onSettings={openSettingsTarget} settingsRevision={settingsRevision} onLegacyCompare={()=>switchView('compare')} locale={locale} route={taskRoute} onRoute={setTaskRoute} changes={taskChanges} diagnosisInvalidateKey={traceLinksVersion} providerPreset={providerFilter[0] ?? ''} onProviderPresetChange={value => setProviderFilter(value ? [value] : [])}
+      {view === 'task' && <ErrorBoundary label={taskCopy(locale).tasks}><Suspense fallback={<PageSkeleton locale={locale} />}><TaskWorkbench onSearch={openPalette} onMenu={()=>setMobileNav(true)} onSettings={openSettingsTarget} settingsRevision={settingsRevision} onLegacyCompare={()=>switchView('compare')} locale={locale} route={taskRoute} onRoute={setTaskRoute} changes={taskChanges} diagnosisInvalidateKey={traceLinksVersion} providerPreset={providerFilter[0] ?? ''} onProviderPresetChange={value => setProviderFilter(value ? [value] : [])}
         onIntake={() => { setIntakeChannel(taskRoute.origin === 'imported' ? 'import' : 'native'); switchView('intake'); }}
         onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} /></Suspense></ErrorBoundary>}
       {view === 'benchmark' && <ErrorBoundary label={locale === 'zh' ? '评测中心' : 'Benchmarks'}><Suspense fallback={<PageSkeleton locale={locale} />}><BenchmarkCenter locale={locale}/></Suspense></ErrorBoundary>}

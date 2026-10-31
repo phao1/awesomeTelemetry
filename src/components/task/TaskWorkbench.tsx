@@ -1,138 +1,102 @@
-import { PageSkeleton } from '../ui/PageSkeleton.js';
-import { RequestExpansion } from './TaskRequests.js';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import type { LocalSettingsTarget, TaskSummary, TaskPage } from '../../core/task-types.js';
+import type { Locale } from '../../i18n.js';
+import { PROVIDER_KEYS, type ProviderKey } from '../../core/trace-types.js';
+import { serializeTaskRoute, type TaskRoute } from '../../task-route.js';
+import { taskApi, useTaskRead } from './task-data.js';
 import { useTaskHydration } from './task-hydration.js';
-import { loadBool, storeBool, LAYOUT_KEYS } from '../../layout.js';
 import { TaskHealthList } from './TaskHealthList.js';
-import { ArchitectureReadError } from '../agent-folding/ArchitectureReadError.js';
+import { PageHeader } from '../PageHeader.js';
+import { PageSkeleton } from '../ui/PageSkeleton.js';
+import { Button, IconButton } from '../ui/Button.js';
+import { Badge, ProviderBadge } from '../ui/Badge.js';
+import { Callout } from '../ui/Display.js';
+import { SearchInput } from '../ui/Input.js';
+import { Select } from '../ui/Select.js';
+import { SegmentedControl } from '../ui/Controls.js';
+import { DropdownMenu, Tooltip } from '../ui/Overlay.js';
+import { Toast } from '../ui/States.js';
+import { IconRefresh, IconArrowUp, IconArrowDown, IconFilter, IconPanelLeft, IconChevronLeft, IconChevronRight, IconCopy, IconMoreHorizontal } from '../icons/index.js';
+import { formatRelativeTime, formatTokens } from '../../core/format.js';
+import { copy } from './copy.js';
 import '../../styles/task-health.css';
 import '../../styles/task-workbench.css';
 import '../../styles/task-process.css';
 import '../../styles/task-reader.css';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import type { LocalSettingsTarget, TaskSummary, TaskPage } from '../../core/task-types.js';
-import type { Locale } from '../../i18n.js';
-import type { ProviderKey } from '../../core/trace-types.js';
-import { PROVIDER_KEYS } from '../../core/trace-types.js';
-import { type TaskRoute } from '../../task-route.js';
-import { copy } from './copy.js';
-import { taskApi, useTaskRead } from './task-data.js';
-const TaskArchitecture=lazy(()=>import('../agent-folding/TaskArchitecture.js').then(m=>({default:m.TaskArchitecture})));
-const ImportedArchitectureCompare=lazy(()=>import('../agent-folding/ArchitectureCompare.js').then(m=>({default:m.ImportedArchitectureCompare})));
+import '../../styles/task-f3.css';
 const TaskProcess=lazy(()=>import('./TaskProcess.js').then(m=>({default:m.TaskProcess})));
-
 export interface TaskChanges { version: number; keys: string[]; runIds: string[]; reset?: boolean }
 export interface TaskWorkbenchProps {
-  onSettings?: (target: LocalSettingsTarget) => void;
-  settingsRevision?: number;
-  onLegacyCompare?: () => void;
-  providerPreset?: ProviderKey | ''; onProviderPresetChange?: (provider: ProviderKey | '') => void;
-  locale: Locale; route: TaskRoute; onRoute: (route: TaskRoute) => void; changes: TaskChanges;
-  onIntake: () => void; onOpenRequest: (id: number) => void;
-  diagnosisInvalidateKey?: number;
+ onSettings?: (target: LocalSettingsTarget) => void; settingsRevision?: number; onLegacyCompare?: () => void;
+ providerPreset?: ProviderKey | ''; onProviderPresetChange?: (provider: ProviderKey | '') => void;
+ locale: Locale; route: TaskRoute; onRoute: (route: TaskRoute) => void; changes: TaskChanges;
+ onIntake: () => void; onOpenRequest: (id: number) => void; diagnosisInvalidateKey?: number;
+ onSearch?:()=>void; onMenu?:()=>void;
 }
-const stamp = (value: string | null, locale: Locale) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
-
-function TaskList({ items, selected, locale, onSelect, checked, onCheck,onRequest }: { onRequest:(task:TaskSummary,request:string)=>void;items: TaskSummary[]; selected: string | null; locale: Locale; onSelect: (task: TaskSummary) => void; checked: string[]; onCheck: (id: string, shift: boolean) => void }) {
-  const [expanded,setExpanded]=useState<TaskSummary|null>(null);
-  useEffect(()=>setExpanded(old=>old?items.find(task=>task.id===old.id)??null:null),[items]);
-  const parent = useRef<HTMLDivElement>(null), c = copy(locale);
-  const list = useVirtualizer({ count: items.length, getScrollElement: () => parent.current, estimateSize: () => 112, overscan: 3 });
-  return <><div className="task-list-scroll" ref={parent} role="list" aria-label={c.tasks}>
-    <div style={{ height: list.getTotalSize(), position: 'relative' }}>{list.getVirtualItems().map(row => {
-      const task = items[row.index]!;
-      return <div key={task.id} role="listitem" style={{ position: 'absolute', width: '100%', height: row.size, transform: `translateY(${row.start}px)` }}>
-        <button type="button" className={`task-list-item ${selected === task.id ? 'is-selected' : ''}`} onClick={() => onSelect(task)} aria-current={selected === task.id ? 'true' : undefined}>
-          <span className="task-list-meta"><span className="task-provider">{task.provider}</span><span>{stamp(task.updatedAt, locale)}</span></span>
-          <strong title={task.title}>{task.title || task.provider}</strong>
-          <span className="task-list-meta"><span>{task.memberCount > 1 ? `${task.memberCount} ${c.members}` : c.single}</span><span>{task.eventCount.toLocaleString()} {c.records}</span></span>
-        </button><button type="button" className="ui-icon-btn" style={{position:'absolute',bottom:'var(--space-1)',right:'var(--space-2)'}} aria-label={(locale==='zh'?'展开请求 ':'Expand requests ')+task.title} onClick={()=>setExpanded(expanded?.id===task.id?null:task)}>▾</button><input className="architecture-select" type="checkbox" aria-label={`选择 ${task.title || task.id}`} checked={checked.includes(task.id)} onChange={event => onCheck(task.id, (event.nativeEvent as MouseEvent).shiftKey)} />
-      </div>;
-    })}</div>
-  </div>{expanded&&<RequestExpansion key={expanded.id} task={expanded} locale={locale} onSelect={request=>onRequest(expanded,request)} open/>}</>;
-}
-
-/** Task-scoped reading state. App retains global navigation, locale, runtime and SSE ownership. */
-export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpenRequest, providerPreset, onProviderPresetChange, diagnosisInvalidateKey = 0, onLegacyCompare, settingsRevision=0, onSettings }: TaskWorkbenchProps): React.JSX.Element {
-  const c = copy(locale), [q, setQ] = useState(route.task?'':route.q??''), [localProvider, setLocalProvider] = useState(''), [localRange, setLocalRange] = useState<'all' | '7d' | '30d' | 'today'>('all');
-  const range=route.homeRange??localRange, setRange=(value:typeof localRange)=>{setLocalRange(value);onRoute({...route,homeRange:value});};
-  const [checked, setChecked] = useState<string[]>([]), lastCheck = useRef<string | null>(null);
-  const comparing = route.compareImport;
-  const provider = providerPreset ?? localProvider;
-  const setProvider = (value: string) => { if (onProviderPresetChange) onProviderPresetChange(value as ProviderKey | ''); else setLocalProvider(value); };
-  const [offset, setOffset] = useState(0), [listQuery, setListQuery] = useState(''), [collapsed, setCollapsed] = useState(()=>loadBool(LAYOUT_KEYS.railCollapsed,false));
-  const [listStale, setListStale] = useState(false), [notice, setNotice] = useState('');
-  const homeRoute=useRef(route);homeRoute.current=route;
-  const routeWriter=useRef(onRoute);routeWriter.current=onRoute;
-  useEffect(() => { const timer = setTimeout(() => { setListQuery(q); setOffset(0); if(!homeRoute.current.task)routeWriter.current({...homeRoute.current,q:q||undefined}); }, 250); return () => clearTimeout(timer); }, [q]);
-  const readList = useCallback((signal: AbortSignal) => taskApi.list({ origin: route.origin, q: listQuery, provider: provider === '' ? undefined : provider as ProviderKey, range, offset, limit: 50, summary:true, sort:route.homeSort, direction:route.homeDirection, alerts:route.homeFilter==='alerts',errors:route.homeFilter==='errors',failed:route.homeFilter==='failed',toolFailures:route.homeFilter==='toolFailures' }, signal), [route.origin, listQuery, provider, range, offset, route.homeSort, route.homeDirection, route.homeFilter]);
-  const tasks = useTaskRead(JSON.stringify([route.origin, listQuery, provider, range, offset, route.homeSort, route.homeDirection, route.homeFilter,settingsRevision]), readList, 10000);
-  const pageScope=JSON.stringify([route.origin,listQuery,provider,range,offset,route.homeSort,route.homeDirection,route.homeFilter]);
-  const retainedPage=useRef<{scope:string;value:TaskPage}|null>(null);
-  if(tasks.value)retainedPage.current={scope:pageScope,value:tasks.value};
-  const listPage=tasks.value??(retainedPage.current?.scope===pageScope?retainedPage.current.value:null);
-  const hydration=useTaskHydration(listPage?.items,!route.task&&!comparing?pageScope:null,changes.version,tasks.retry);
-  const onCheck = (id: string, shift: boolean) => { const ids = listPage?.items.map(t => t.id) ?? []; const start = ids.indexOf(lastCheck.current ?? ''), end = ids.indexOf(id); const range = shift && start >= 0 ? ids.slice(Math.min(start, end), Math.max(start, end) + 1) : [id]; setChecked(old => old.includes(id) ? old.filter(x => !range.includes(x)) : [...new Set([...old, ...range])].slice(0, 40)); lastCheck.current = id; };
-  useEffect(()=>{storeBool(LAYOUT_KEYS.railCollapsed,collapsed);},[collapsed]);
-  useEffect(()=>{const search=(event:KeyboardEvent)=>{if(event.key!=='/'||event.metaKey||event.ctrlKey||event.target instanceof HTMLInputElement||event.target instanceof HTMLTextAreaElement||event.target instanceof HTMLSelectElement)return;event.preventDefault();setCollapsed(false);setTimeout(()=>document.querySelector<HTMLInputElement>('.task-list-filters input')?.focus(),0);};document.addEventListener('keydown',search);return()=>document.removeEventListener('keydown',search);},[]);
-  useEffect(()=>{if(changes.reset){tasks.retry();setListStale(false);}},[changes.reset,changes.version,tasks.retry]);
-  const wasSelected=useRef(Boolean(route.task));
-  useEffect(()=>{if(wasSelected.current&&!route.task)tasks.retry();wasSelected.current=Boolean(route.task);},[route.task,tasks.retry]);
-  const assignGroup=(group:'A'|'B')=>{onRoute({...route,overview:undefined,[group==='A'?'compareA':'compareB']:checked,[group==='A'?'compareB':'compareA']:(group==='A'?route.compareB:route.compareA)?.filter(id=>!checked.includes(id))});setChecked([]);};
-  const [auditCwd, setAuditCwd] = useState('');
-  const overviewRead = useCallback(async(signal: AbortSignal) => (await import('../agent-folding/architecture-client.js')).architectureApi.scope({ provider: provider === 'codex' ? 'codex' : 'claude', ...(checked.length ? { taskIds: checked } : {}), ...(auditCwd ? { cwd: auditCwd } : {}), ...(range !== 'all' ? { from: new Date(Date.now() - (range === 'today' ? 1 : range === '7d' ? 7 : 30) * 86400000).toISOString() } : {}) }, signal), [provider, checked, range, auditCwd]);
-  const overview = useTaskRead(route.overview ? JSON.stringify([provider, checked, range, auditCwd]) : null, overviewRead, 35000);
-  const locateArchitecture = (task: string, sessionKey: string | null = null, eventId: string | null = null) => onRoute({ ...route, overview: undefined, compareImport: undefined, compareA: undefined, compareB: undefined, task, member: sessionKey ? 'all' : 'main', mode: 'trajectory', event: sessionKey && eventId ? `${sessionKey}:event:${eventId}` : null });
-  const readContext = useCallback((signal: AbortSignal) => taskApi.context(route.task!, signal), [route.task]);
-  const context = useTaskRead(route.task ? route.task+':'+settingsRevision : null, readContext, 10000);
-  useEffect(() => { if (changes.version > 0) setListStale(true); }, [changes.version]);
-  const nativeMember = context.value && route.member === 'main' && route.task?.startsWith('collected:') && route.task !== context.value.task.id ? context.value.members.find(member => member.sessionKey === route.task!.slice(10)) : null;
-  const resolvedRoute = nativeMember ? { ...route, member: nativeMember.id } : route;
-  const changeOrigin = (origin: TaskRoute['origin']) => { setOffset(0); onRoute({ ...route, origin, task: null, health: undefined, event: null, member: 'main', q: undefined, errors: undefined, from: undefined, to: undefined }); };
-  const selectTask = (task: TaskSummary) => { setNotice(''); onRoute({ ...route, overview: undefined, compareImport: undefined, compareA: undefined, compareB: undefined, task: task.id, request:undefined, health: undefined, origin: task.origin, member: 'main', event: null, q: undefined, errors: undefined, from: undefined, to: undefined }); };
-  const refresh = () => { tasks.retry(); hydration.restart(); context.retry(); setListStale(false); };
-  return <div className={`task-workbench ${collapsed ? 'task-list-collapsed' : ''}`}>
-    <aside className="task-sidebar" aria-busy={tasks.loading}>
-      <header><div><span className="task-eyebrow">WORKSPACE</span><h2>{c.tasks}</h2></div><button type="button" className="ui-icon-btn" onClick={() => setCollapsed(true)} aria-label={c.foldList}>‹</button></header>
-      <div className="task-origin-tabs" role="tablist" aria-label={c.source}>{(['collected', 'imported'] as const).map(origin => <button type="button" role="tab" aria-selected={route.origin === origin} key={origin} onClick={() => changeOrigin(origin)}>{c[origin]}</button>)}</div>
-      <div className="task-list-filters"><input maxLength={200} aria-label={c.searchTasks} placeholder={c.searchTasks} value={q} onChange={event => setQ(event.target.value)} />
-        <div><select aria-label={c.provider} value={provider} onChange={event => { setProvider(event.target.value); setOffset(0); }} disabled={route.origin === 'imported'}><option value="">{c.allProviders}</option>{PROVIDER_KEYS.map(key => <option key={key} value={key}>{key}</option>)}</select><select aria-label={c.time} value={range} onChange={event => { setRange(event.target.value as typeof range); setOffset(0); }} disabled={route.origin === 'imported'}><option value="all">{c.allTime}</option><option value="today">{c.today}</option><option value="7d">{c.recent}</option><option value="30d">{c.month}</option></select></div>
-      </div>
-      <div className="task-list-count"><span>{listPage?.total ?? '—'} {c.taskCount}</span><button type="button" onClick={refresh}>{listStale ? `${c.newer} ↻` : c.refresh}</button></div>
-      <div className="architecture-toolbar"><button className="btn" onClick={() => onRoute({ ...route, overview: true })}>架构概况</button><span>{checked.length} 已选</span>{(['A', 'B'] as const).map(group => <button className="btn" key={group} disabled={!checked.length} onClick={()=>assignGroup(group)}>{locale==='zh'?'设为':'Set as'} {group==='A'?(locale==='zh'?'基线':'Baseline'):(locale==='zh'?'改进':'Improvement')}</button>)}<small>{locale==='zh'?'基线':'Baseline'} {route.compareA?.length ?? 0} / {locale==='zh'?'改进':'Improvement'} {route.compareB?.length ?? 0}</small><button className="btn" onClick={onLegacyCompare}>{locale==='zh'?'进入对比':'Open comparison'}</button></div>
-      {tasks.loading && <PageSkeleton compact variant="table" />}
-      {tasks.error && <div className="task-inline-state" role="alert"><p>{tasks.error}</p><button type="button" className="btn" onClick={tasks.retry}>{c.retry}</button></div>}
-      {listPage && <TaskList items={listPage.items} selected={context.value?.task.id ?? route.task} locale={locale} onSelect={selectTask} checked={checked} onCheck={onCheck} onRequest={(task,request)=>onRoute({...route,task:task.id,origin:task.origin,request,member:'all',event:null,health:undefined})} />}
-      {listPage?.items.length === 0 && <div className="task-inline-state"><p>{c.empty}</p><button type="button" className="btn" onClick={() => { setQ(''); setProvider(''); setRange('all'); }}>{c.clear}</button></div>}
-      <footer><button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>←</button><span>{offset + (listPage?.items.length ? 1 : 0)}–{offset + (listPage?.items.length ?? 0)}</span><button type="button" disabled={!listPage?.hasMore} onClick={() => setOffset(offset + 50)}>→</button><button type="button" className="btn" onClick={onIntake}>＋ {c.intake}</button></footer>
-    </aside>
-    <main className="task-main"><Suspense fallback={<PageSkeleton compact />}>
-      {route.task && <button type="button" className="btn task-mobile-back" onClick={() => onRoute({ ...route, task: null, event: null, member: 'main' })}>← {c.showList}</button>}
-      {collapsed && <button type="button" className="task-restore-list btn" onClick={() => setCollapsed(false)}>☰ {c.showList}</button>}
-      {context.loading && <PageSkeleton />}
-      {context.error && <div className="task-empty" role="alert"><h2>{context.error}</h2><button type="button" className="btn" onClick={context.retry}>{c.retry}</button></div>}
-      {!route.task && !comparing && <>
-        <div className="task-home-toolbar"><h1>{locale==='zh'?'任务健康':'Task health'}</h1>
-          <input aria-label={locale==='zh'?'健康列表搜索':'Search health list'} placeholder={c.searchTasks} maxLength={200} value={q} onChange={e=>setQ(e.target.value)}/>
-          <select aria-label={locale==='zh'?'健康列表工具':'Health list tool'} value={provider} disabled={route.origin==='imported'} onChange={e=>{setProvider(e.target.value);setOffset(0);}}><option value="">{c.allProviders}</option>{PROVIDER_KEYS.map(key=><option key={key}>{key}</option>)}</select>
-          <select aria-label={locale==='zh'?'健康列表时间':'Health list time'} value={range} onChange={e=>{setRange(e.target.value as typeof range);setOffset(0);}}>{(['all','today','7d','30d'] as const).map((value,i)=><option key={value} value={value}>{[c.allTime,c.today,c.recent,c.month][i]}</option>)}</select>
-
-          <label>{locale==='zh'?'排序':'Sort'} <select aria-label={locale==='zh'?'健康列表排序':'Health list sort'} value={route.homeSort??'time'} onChange={e=>{setOffset(0);onRoute({...route,homeSort:e.target.value as TaskRoute['homeSort']});}}>{(['time','duration','errors','tokens','cacheHitRate'] as const).map((sort,i)=><option key={sort} value={sort}>{(locale==='zh'?['时间','时长','错误数','Token','缓存命中']:['Time','Duration','Errors','Tokens','Cache hit'])[i]}</option>)}</select></label>
-          <button className="btn" onClick={()=>{setOffset(0);onRoute({...route,homeDirection:route.homeDirection==='asc'?'desc':'asc'});}}>{route.homeDirection==='asc'?'↑':'↓'}</button>
-          <label>{locale==='zh'?'筛选':'Filter'} <select aria-label={locale==='zh'?'健康列表筛选':'Health list filter'} value={route.homeFilter??'all'} onChange={e=>{setOffset(0);onRoute({...route,homeFilter:e.target.value as TaskRoute['homeFilter']});}}>{(['all','alerts','errors','failed','toolFailures'] as const).map((filter,i)=><option key={filter} value={filter}>{(locale==='zh'?['全部','仅看有告警','仅看有错误','主会话记录失败','有工具失败结果']:['All','With alerts','With errors','Recorded failure','Tool failure results'])[i]}</option>)}</select></label>
-          {onSettings&&<button type="button" className="btn" onClick={()=>onSettings({section:'alert-thresholds'})}>{locale==='zh'?'配置阈值':'Configure thresholds'}</button>}
-          <button className="btn" onClick={onLegacyCompare}>{locale==='zh'?'进入对比':'Open comparison'}</button>
-        </div>
-        <div className="task-home-toolbar"><span>{listPage?.total??'—'} {c.taskCount} · {checked.length} {locale==='zh'?'已选':'selected'}</span>{(['A','B'] as const).map(group=><button className="btn" key={group} disabled={!checked.length} onClick={()=>assignGroup(group)}>{locale==='zh'?'设为':'Set as'} {group==='A'?(locale==='zh'?'基线':'Baseline'):(locale==='zh'?'改进':'Improvement')}</button>)}<small>{locale==='zh'?'基线':'Baseline'} {route.compareA?.length??0} / {locale==='zh'?'改进':'Improvement'} {route.compareB?.length??0}</small><button className="btn" disabled={offset===0} onClick={()=>setOffset(Math.max(0,offset-50))}>←</button><span>{offset+(listPage?.items.length?1:0)}–{offset+(listPage?.items.length??0)}</span><button className="btn" disabled={!listPage?.hasMore} onClick={()=>setOffset(offset+50)}>→</button><button className="btn" onClick={refresh}>{listStale?c.newer:c.refresh}</button></div>
-        {listPage&&<TaskHealthList onRequest={(task,request)=>onRoute({...route,task:task.id,origin:task.origin,request,member:'all',event:null,health:undefined})} refreshError={Boolean(tasks.error)} progress={hydration.progress} onSettings={onSettings} items={listPage.items} locale={locale} checked={checked} onCheck={onCheck} onSelect={selectTask} onIntake={onIntake} onHealth={task=>{selectTask(task);onRoute({...route,task:task.id,origin:task.origin,member:'all',event:null,health:task.latestHealth?.id??'new'});}}/>}
-        {tasks.loading&&<PageSkeleton variant="table" />}
-        {tasks.error&&<p role="alert">{tasks.error}<button className="btn" onClick={tasks.retry}>{c.retry}</button></p>}
-      </>}
-      {route.compareImport && <ImportedArchitectureCompare locale={locale} onLocate={locateArchitecture} onClose={() => onRoute({ ...route, compareImport: undefined })} />}
-      {context.value && !comparing && <TaskProcess key={context.value.task.id+':'+(route.request??'')} context={context.value} route={resolvedRoute} onRoute={onRoute} locale={locale} changes={changes}
-        diagnosisInvalidateKey={diagnosisInvalidateKey} onRefreshContext={context.retry} onOpenRequest={onOpenRequest} onNotice={setNotice} />}
-      {route.overview && <aside className="architecture-drawer" aria-label="架构概况"><header><strong>架构概况 · {provider === 'codex' ? 'Codex' : 'Claude'}</strong><button className="btn" onClick={() => onRoute({ ...route, overview: undefined })}>{locale === 'zh' ? '关闭' : 'Close'}</button></header><p>使用左侧工具、时间和已选任务限定审计范围。</p><label>项目目录<input aria-label="审计项目目录" value={auditCwd} maxLength={4096} onChange={e => setAuditCwd(e.target.value)} /></label>{overview.loading && <p role="status">{locale === 'zh' ? '读取本地记录…' : 'Reading local records…'}</p>}{overview.error && <ArchitectureReadError error={overview.errorInfo ?? overview.error} locale={locale} retry={overview.retry} />}{overview.value && <TaskArchitecture key={overview.value.sources[0]?.revision} project={overview.value} locale={locale} onLocate={locateArchitecture} />}</aside>}
-      {notice && <div className="task-toast" role="status">{notice}</div>}
-    </Suspense></main>
-  </div>;
+const PANEL_KEY='agent-observability.task-panel';
+function readPanel(){try{return localStorage.getItem(PANEL_KEY)==='true';}catch(error){console.error('[task-panel] read failed',error);return false;}}
+export function TaskWorkbench({locale,route,onRoute,changes,onIntake,onOpenRequest,providerPreset,onProviderPresetChange,diagnosisInvalidateKey=0,onLegacyCompare,settingsRevision=0,onSettings,onSearch,onMenu}:TaskWorkbenchProps){
+ const zh=locale==='zh',c=copy(locale),text=(cn:string,en:string)=>zh?cn:en;
+ const [q,setQ]=useState(route.task?'':route.q??''),[listQuery,setListQuery]=useState(route.task?'':route.q??'');
+ const [neighbor,setNeighbor]=useState<{offset:number;edge:'first'|'last'}|null>(null);
+ const [checked,setChecked]=useState<string[]>([]),[panel,setPanel]=useState(readPanel),[notice,setNotice]=useState(''),[filterOpen,setFilterOpen]=useState(false),[menu,setMenu]=useState(false);
+ const provider=route.homeProvider??providerPreset??'',range=route.homeRange??'all',size=route.homeSize??50,offset=(route.homePage??0)*size;
+ const filters=route.homeFilters??(route.homeFilter&&route.homeFilter!=='all'?[route.homeFilter]:[]);
+ const searchInput=useRef<HTMLInputElement>(null);
+ const latest=useRef({route,onRoute});latest.current={route,onRoute};
+ useEffect(()=>{const focus=(event:KeyboardEvent)=>{if(event.defaultPrevented||latest.current.route.task||event.key!=='/'||event.metaKey||event.ctrlKey||event.altKey||document.querySelector('[aria-modal=true]')||(event.target instanceof Element&&event.target.closest('input,textarea,select,[contenteditable=true]')))return;event.preventDefault();searchInput.current?.focus();};document.addEventListener('keydown',focus);return()=>document.removeEventListener('keydown',focus);},[]);
+ useEffect(()=>{if(!route.task){setQ(route.q??'');setListQuery(route.q??'');}},[route.q,route.task]);
+ useEffect(()=>{if(q===listQuery)return;const timer=setTimeout(()=>{setListQuery(q);const {route:r,onRoute:write}=latest.current;if(!r.task)write({...r,q:q||undefined,homePage:0});},250);return()=>clearTimeout(timer);},[q,listQuery]);
+ useEffect(()=>{try{localStorage.setItem(PANEL_KEY,String(panel));}catch(error){console.error('[task-panel] write failed',error);}},[panel]);
+ const patch=(value:Partial<TaskRoute>)=>{const next={...latest.current.route,...value,homePage:0};latest.current.route=next;onRoute(next);};
+ const setProvider=(value:string)=>{onProviderPresetChange?.(value as ProviderKey|'');patch({homeProvider:value as ProviderKey||undefined});};
+ const filterKey=filters.join(',');
+ const readList=useCallback((signal:AbortSignal)=>taskApi.list({origin:route.origin,q:listQuery,provider:provider as ProviderKey||undefined,range,offset,limit:size,summary:true,sort:route.homeSort??'activity',direction:route.homeDirection??'desc',alerts:filters.includes('alerts'),errors:filters.includes('errors'),failed:filters.includes('failed'),toolFailures:filters.includes('toolFailures')},signal),[route.origin,listQuery,provider,range,offset,size,route.homeSort,route.homeDirection,filterKey]);
+ const scope=JSON.stringify([route.origin,listQuery,provider,range,offset,size,route.homeSort,route.homeDirection,filterKey]);
+ const tasks=useTaskRead(scope+settingsRevision,readList,10000),retained=useRef<{scope:string;value:TaskPage}|null>(null);
+ if(tasks.value)retained.current={scope,value:tasks.value};
+ const page=tasks.value??(retained.current?.scope===scope?retained.current.value:null);
+ const hydration=useTaskHydration(page?.items,!route.task?scope:null,changes.version,tasks.retry);
+ const readContext=useCallback((signal:AbortSignal)=>taskApi.context(route.task!,signal),[route.task]);
+ const context=useTaskRead(route.task?route.task+settingsRevision:null,readContext,10000);
+ useEffect(()=>{if(changes.reset)tasks.retry();},[changes.reset,changes.version,tasks.retry]);
+ const wasSelected=useRef(Boolean(route.task));useEffect(()=>{if(wasSelected.current&&!route.task)tasks.retry();wasSelected.current=Boolean(route.task);},[route.task,tasks.retry]);
+ const nativeMember=context.value&&route.member==='main'&&route.task?.startsWith('collected:')&&route.task!==context.value.task.id?context.value.members.find(m=>m.sessionKey===route.task!.slice(10)):null;
+ const selectTask=(task:TaskSummary)=>onRoute({...route,task:task.id,origin:task.origin,request:undefined,health:undefined,member:'main',event:null,q:undefined,errors:undefined,from:undefined,to:undefined,mode:'trajectory'});
+ useEffect(()=>{if(!neighbor||!tasks.value||tasks.value.offset!==neighbor.offset)return;const target=neighbor.edge==='last'?tasks.value.items.at(-1):tasks.value.items[0];setNeighbor(null);if(target)onRoute({...latest.current.route,task:target.id,origin:target.origin,request:undefined,health:undefined,member:'main',event:null,q:undefined,errors:undefined,from:undefined,to:undefined,mode:'trajectory'});},[neighbor,tasks.value,onRoute]);
+ const back=()=>onRoute({...route,task:null,request:undefined,health:undefined,event:null,member:'main',q:undefined,errors:undefined,from:undefined,to:undefined});
+ const assign=(group:'A'|'B',ids=checked)=>{onRoute({...route,requestA:undefined,requestB:undefined,processA:undefined,processB:undefined,[group==='A'?'compareA':'compareB']:ids,[group==='A'?'compareB':'compareA']:(group==='A'?route.compareB:route.compareA)?.filter(id=>!ids.includes(id))});setChecked([]);setNotice(text('已设为','Set as ')+(group==='A'?text('基线','baseline'):text('改进','improvement')));};
+ const compare=(ids=checked)=>{const a=ids.length?ids.slice(0,1):route.compareA,b=ids.length>1?ids.slice(1):route.compareB;onRoute({...route,requestA:undefined,requestB:undefined,processA:undefined,processB:undefined,compareA:a,compareB:b?.filter(id=>!a?.includes(id))});onLegacyCompare?.();};
+ const share=async(href:string)=>{try{await navigator.clipboard.writeText(href);setNotice(c.copied);}catch(error){console.error('[task-share] Copy failed',error);setNotice(c.copyFailed);}};
+ const refresh=()=>{tasks.retry();hydration.restart();context.retry();};
+ const items=page?.items??[],active=items.findIndex(t=>t.id===(context.value?.task.id??route.task));
+ const moveTask=(delta:-1|1)=>{if(active<0)return;const target=items[active+delta];if(target){selectTask(target);return;}const next=offset+delta*size;setNeighbor({offset:next,edge:delta<0?'last':'first'});onRoute({...route,homePage:next/size});};
+ const origin=(value:string)=>{setQ('');setListQuery('');onRoute({...route,origin:value as TaskRoute['origin'],task:null,request:undefined,health:undefined,member:'main',event:null,q:undefined,errors:undefined,from:undefined,to:undefined,homePage:0});};
+ const options=[['activity',text('最近活动','Recent activity')],['time',text('开始时间','Start time')],['duration',text('时长','Duration')],['errors',text('错误数','Errors')],['tokens','Token'],['cacheHitRate',text('缓存命中','Cache hit')]];
+ const filterOptions=[['alerts',text('有告警','With alerts')],['errors',text('有错误','With errors')],['failed',text('主会话记录失败','Recorded failure')],['toolFailures',text('有工具失败结果','Tool failure results')]] as const;
+ return <div className="task-workbench task-f3"><main className="task-main">
+  <PageHeader breadcrumbOnly={Boolean(route.task)} title={route.task?context.value?.task.title??c.tasks:c.tasks} locale={locale} onSearch={onSearch} onMenu={onMenu} titleBadge={!route.task?<Badge>{page?.total??'—'}</Badge>:undefined} breadcrumb={route.task?<><Button variant="link" onClick={back}>{c.tasks}</Button><span>/</span><Tooltip label={context.value?.task.title??'—'}><span className="task-f3-breadcrumb-title" tabIndex={0}>{context.value?.task.title??'—'}</span></Tooltip></>:undefined} actions={route.task?<>
+   <IconButton label={text('上一个任务','Previous task')} icon={<IconChevronLeft/>} disabled={tasks.loading||active<0||active===0&&offset===0} onClick={()=>moveTask(-1)}/><IconButton label={text('下一个任务','Next task')} icon={<IconChevronRight/>} disabled={tasks.loading||active<0||active>=items.length-1&&!page?.hasMore} onClick={()=>moveTask(1)}/>
+   <IconButton label={c.showList} icon={<IconPanelLeft/>} aria-pressed={panel} onClick={()=>setPanel(!panel)}/><IconButton label={c.share} icon={<IconCopy/>} onClick={()=>void share(window.location.href)}/>
+   <Button variant="primary" aria-expanded={Boolean(route.health)} aria-controls="task-health-drawer" onClick={()=>onRoute({...route,health:route.health?undefined:'new'})}>{text('健康监测','Health monitoring')}</Button>
+   <DropdownMenu open={menu} onOpenChange={setMenu} trigger={props=><IconButton {...props} label={text('任务操作','Task actions')} icon={<IconMoreHorizontal/>}/>} items={[{id:'a',label:text('设为基线','Set as Baseline'),onSelect:()=>assign('A',[route.task!])},{id:'b',label:text('设为改进','Set as Improvement'),onSelect:()=>assign('B',[route.task!])},{id:'compare',label:text('在对比中打开','Open in comparison'),onSelect:()=>compare([route.task!])},{id:'export',label:text('导出','Export'),onSelect:()=>{const blob=new Blob([JSON.stringify(context.value,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='task-summary.json';a.click();URL.revokeObjectURL(url);}}]}/>
+  </>:<><Button variant="ghost" onClick={()=>onSettings?.({section:'alert-thresholds'})}>{text('健康阈值','Health thresholds')}</Button><IconButton label={c.refresh} icon={<IconRefresh/>} onClick={refresh}/></>}/>
+  {!route.task?<div className="task-f3-content">
+   <div className="task-f3-toolbar"><SearchInput inputRef={searchInput} aria-label={c.searchTasks} placeholder={c.searchTasks} maxLength={200} value={q} onChange={e=>setQ(e.target.value)}/>
+    <SegmentedControl activeId={route.origin} onChange={origin} items={['collected','imported'].map(id=>({id,label:id==='collected'?c.collected:c.imported}))}/>
+    <Select aria-label={c.provider} prefix={text('工具','Tool')} value={provider} onChange={e=>setProvider(e.target.value)} options={[{value:'',label:c.allProviders},...PROVIDER_KEYS.map(value=>({value,label:value,color:`var(--provider-${value})`}))]}/>
+    <SegmentedControl activeId={range} onChange={value=>patch({homeRange:value as TaskRoute['homeRange']})} items={['today','7d','30d','all'].map((id,i)=>({id,label:[text('24 小时','24 hours'),text('7 天','7 days'),text('30 天','30 days'),c.allTime][i]}))}/>
+    <DropdownMenu open={filterOpen} onOpenChange={setFilterOpen} trigger={props=><Button {...props} icon={<IconFilter/>}>{text('筛选','Filter')}{filters.length>0&&<Badge>{filters.length}</Badge>}</Button>} items={filterOptions.map(([id,label])=>({id,label:`${filters.includes(id)?'✓ ':''}${label}`,onSelect:()=>patch({homeFilter:undefined,homeFilters:filters.includes(id)?filters.filter(f=>f!==id):[...filters,id]})}))}/>
+    <Select aria-label={text('排序','Sort')} value={route.homeSort??'activity'} options={options.map(([value,label])=>({value:value!,label:label!}))} onChange={e=>patch({homeSort:e.target.value as TaskRoute['homeSort']})}/>
+    <IconButton label={text('切换排序方向','Toggle sort direction')} icon={route.homeDirection==='asc'?<IconArrowUp/>:<IconArrowDown/>} onClick={()=>patch({homeDirection:route.homeDirection==='asc'?'desc':'asc'})}/>
+   </div>
+   {tasks.error&&<Callout title={tasks.error} tone="danger"><Button onClick={tasks.retry}>{c.retry}</Button></Callout>}
+   {(!tasks.error||page)&&<TaskHealthList timeBasis={route.homeSort==='time'?'time':'activity'} items={items} locale={locale} checked={checked} onSelectionChange={setChecked} onCheck={id=>setChecked(old=>old.includes(id)?old.filter(x=>x!==id):[...old,id])} onSelect={selectTask} onIntake={onIntake} loading={tasks.loading&&!page} progress={hydration.progress} refreshError={Boolean(tasks.error)} onHealth={task=>onRoute({...route,task:task.id,origin:task.origin,member:'all',event:null,health:task.latestHealth?.id??'new'})} onRequest={(task,request)=>onRoute({...route,task:task.id,origin:task.origin,request,member:'all',event:null,health:undefined})} onAssign={assign} onShare={task=>{const link=new URL(window.location.href);link.hash=serializeTaskRoute({...route,task:task.id,event:null,request:undefined,health:undefined,member:'main',mode:'trajectory',q:undefined,errors:undefined,from:undefined,to:undefined});void share(link.href);}} bulkActions={<><Button variant="ghost" onClick={()=>assign('A')}>{text('设为基线','Set as Baseline')}</Button><Button variant="ghost" onClick={()=>assign('B')}>{text('设为改进','Set as Improvement')}</Button><Button variant="ghost" onClick={()=>compare()}>{text('对比','Compare')}</Button></>} pagination={{page:route.homePage??0,pageSize:size,total:page?.total??0,onPageChange:homePage=>onRoute({...latest.current.route,homePage}),onPageSizeChange:homeSize=>patch({homeSize}),pageSizes:[10,25,50],label:text(`共 ${page?.total??0} 个任务`,`${page?.total??0} tasks`)}}/>}
+  </div>:<div className="task-f3-detail">
+   {panel&&<aside className="task-f3-panel" aria-label={c.tasks}><SegmentedControl activeId={route.origin} onChange={origin} items={['collected','imported'].map(id=>({id,label:id==='collected'?c.collected:c.imported}))}/>{items.map(task=><Button key={task.id} className="task-f3-panel-item" variant={task.id===context.value?.task.id?'secondary':'ghost'} aria-current={task.id===context.value?.task.id?'true':undefined} onClick={()=>selectTask(task)}><strong title={task.title}>{task.title}</strong><span><ProviderBadge locale={locale} provider={task.provider as ProviderKey}/><time>{formatRelativeTime((route.homeSort==='time'?task.startedAt:task.updatedAt)??task.updatedAt,locale)}</time><span className="num">{formatTokens(task.metrics?.correctedTotal)}</span></span></Button>)}</aside>}
+   {neighbor&&tasks.error&&<Callout title={tasks.error} tone="danger"><Button onClick={tasks.retry}>{c.retry}</Button></Callout>}{context.loading&&<PageSkeleton/>}{context.error&&<Callout title={context.error} tone="danger"><Button onClick={context.retry}>{c.retry}</Button></Callout>}
+   {context.value&&<Suspense fallback={<PageSkeleton/>}><TaskProcess key={context.value.task.id+':'+(route.request??'')} context={context.value} route={nativeMember?{...route,member:nativeMember.id}:route} onRoute={onRoute} locale={locale} changes={changes} diagnosisInvalidateKey={diagnosisInvalidateKey} onRefreshContext={context.retry} onOpenRequest={onOpenRequest} onNotice={setNotice}/></Suspense>}
+  </div>}
+  {notice&&<Toast title={notice} onDismiss={()=>setNotice('')}/>}
+ </main></div>;
 }
