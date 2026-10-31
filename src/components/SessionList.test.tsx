@@ -378,7 +378,8 @@ describe('REQ-016 会话列表', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
-    const members = container.querySelectorAll('.session-merge-member');
+    expect(badge.getAttribute('aria-expanded')).toBe('true');
+    const members = document.body.querySelector('[role="dialog"]')!.querySelectorAll('.session-merge-member');
     expect(members.length).toBe(2);
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(
       expect.stringContaining('merged=0'),

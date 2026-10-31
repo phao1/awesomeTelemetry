@@ -44,8 +44,8 @@ it('persists a real isolated recipe, generates pinned inert commands, starts onl
       for (let pass = 0; pass < 10; pass += 1) { await act(async () => { await Promise.all([...pending]); });if (pending.size === 0) return; }
       throw new Error('Repeated recipe IO without an explicit user action');
     };
-    const button = (key: I18nKey): HTMLButtonElement => {
-      const label = t(key, 'en'), found = [...container.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === label);expect(found, label).toBeDefined();return found!;
+    const button = (key: I18nKey, scope: Element = container): HTMLButtonElement => {
+      const label = t(key, 'en'), found = [...scope.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === label);expect(found, label).toBeDefined();return found!;
     };
     const edit = (input: HTMLInputElement, value: string): void => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);input.dispatchEvent(new Event('input', { bubbles: true })); };
     await act(async () => root.render(<MonitorSetupPanel locale="en" initialAgent="codex" onStatus={value => statuses.push(value)} onOpenCapture={id => opened.push(id)} />));await settle();
@@ -80,7 +80,8 @@ it('persists a real isolated recipe, generates pinned inert commands, starts onl
     // delete the separately retained synthetic capture/original evidence.
     expect((await nativeFetch(origin + '/api/proxy/stop', { method: 'POST' })).status).toBe(200);
     await act(async () => button('monitor.delete').click());expect(calls.some(call => call.method === 'DELETE')).toBe(false);
-    await act(async () => button('common.confirm').click());await settle();
+    const confirmation = document.body.querySelector('[role="dialog"]');expect(confirmation).not.toBeNull();
+    await act(async () => button('common.confirm', confirmation!).click());await settle();
     expect((JSON.parse(await readFile(join(directory, 'monitor-profiles.json'), 'utf8')) as { profiles: unknown[] }).profiles).toHaveLength(0);
     expect((await nativeFetch(origin + `/api/proxy/requests/${opened[0]}/body/request`)).status).toBe(200);
     expect(calls.filter(call => call.method === 'POST').map(call => call.path)).toEqual(['/api/proxy/profiles', `/api/proxy/profiles/${id}/start`, `/api/proxy/profiles/${id}/self-test`]);

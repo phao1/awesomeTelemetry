@@ -70,7 +70,7 @@ export function DonutRing({
         fill="none"
         stroke={slice.tone ? `var(--${slice.tone}-emphasis)` : `var(--chart-${index % 8 + 1})`}
         strokeWidth={thickness}
-        strokeDasharray={`${Math.max(0,length - 2)} ${circ - Math.max(0,length - 2)}`}
+        strokeDasharray={`${length} ${circ - length}`}
         strokeDashoffset={-offset}
         className={interactive ? segmentClassName : undefined}
         role={interactive ? 'button' : undefined}
