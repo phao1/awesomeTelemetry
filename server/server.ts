@@ -1,3 +1,4 @@
+import { providerPathExists } from './http/provider-path-status.js';
 import { taskRequests, TaskRequestChangedError } from './storage/task-requests.js';
 import { TelemetryReceiver } from './telemetry/receiver.js';
 import { TelemetryError } from './telemetry/mapping.js';
@@ -1163,8 +1164,9 @@ export function createAgentObservabilityServer(
     sendJson(res, 200, result, req);
   });
 
-  router.register('GET', '/api/providers/status', (_req, res) => {
-    sendJson(res, 200, { providers: providerStatus() }, _req);
+  router.register('GET', '/api/providers/status', async (_req, res) => {
+    const providers=await Promise.all(providerStatus().map(async provider=>({...provider,pathExists:await providerPathExists(expandLocalSessionPath(config.providers[provider.key].path))})));
+    sendJson(res, 200, { providers }, _req);
   });
 
   router.register('GET', '/api/proxy/requests', (req, res) => {

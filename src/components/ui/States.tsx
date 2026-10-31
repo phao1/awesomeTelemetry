@@ -59,7 +59,7 @@ export function ErrorState({ code, message, onRetry }: ErrorStateProps): React.J
       <div className="ui-error-message">{message}</div>
       {onRetry !== undefined && (
         <Button variant="default" size="sm" onClick={onRetry}>
-          retry
+          {ta('state.retry')}
         </Button>
       )}
     </div>

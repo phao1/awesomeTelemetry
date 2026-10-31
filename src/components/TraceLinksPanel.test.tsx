@@ -91,7 +91,7 @@ describe('linked trace metadata UI', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { root, container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} onOpenSession={open} />);
     expect(fetchMock).not.toHaveBeenCalled();
-    await act(async () => { const details = container.ownerDocument.body.querySelector('details')!; details.open = true; details.dispatchEvent(new Event('toggle', { bubbles: true })); }); await flush();
+    await act(async () => { container.ownerDocument.body.querySelector<HTMLButtonElement>('.ui-accordion > button')!.click(); }); await flush();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/native-session/capture-links']);
     await act(async () => { button(container, '原生父会话引用').click(); await import('./NativeSessionParentsPanel.js'); }); await flush();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/native-session/capture-links', '/api/sessions/native-session/parents']);
@@ -112,7 +112,7 @@ describe('linked trace metadata UI', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} />);
     expect(fetchMock).not.toHaveBeenCalled();
-    await act(async () => { const details = container.ownerDocument.body.querySelector('details')!; details.open = true; details.dispatchEvent(new Event('toggle', { bubbles: true })); }); await flush();
+    await act(async () => { container.ownerDocument.body.querySelector<HTMLButtonElement>('.ui-accordion > button')!.click(); }); await flush();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/native-session/capture-links']);
     await act(async () => { button(container, '关联执行证据').click(); });
     await vi.waitFor(async () => {
@@ -149,7 +149,7 @@ describe('linked trace metadata UI', () => {
     vi.stubGlobal('fetch', fetchMock); const open = vi.fn();
     const { root, container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={open} />);
     await flush(); expect(fetchMock).not.toHaveBeenCalled();
-    await act(async () => { const details = container.ownerDocument.body.querySelector('details')!; details.open = true; details.dispatchEvent(new Event('toggle', { bubbles: true })); });
+    await act(async () => { container.ownerDocument.body.querySelector<HTMLButtonElement>('.ui-accordion > button')!.click(); });
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/sessions/native-session/capture-links');

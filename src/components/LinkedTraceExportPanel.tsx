@@ -1,3 +1,6 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Disclosure } from './ui/PageControls.js';
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import { fetchLinkedTraceExport, LinkedTraceExportReadError } from '../api/linked-trace-export.js';
@@ -91,18 +94,18 @@ function ExportPage({ sessionKey, locale }: LinkedTraceExportPanelProps) {
       if (owned === generation.current) { operation.current = null; setPending(false); }
     }
   };
-  return <details className="linked-trace-export-panel">
-    <summary>{copy.title}</summary>
+  return <Disclosure className="linked-trace-export-panel" title={<>{copy.title}</>}>
+
     <p>{copy.scope}</p><p>{copy.timing}</p><p>{copy.page}</p>
     <div className="linked-trace-export-range">
-      <label>{copy.offset}<input type="text" inputMode="numeric" value={offsetText} onChange={event => changeRange('offset', event.target.value)} /></label>
-      <label>{copy.limit}<input type="text" inputMode="numeric" value={limitText} onChange={event => changeRange('limit', event.target.value)} /></label>
-      <label>{copy.cursor}<input type="text" inputMode="numeric" value={cursorText} onChange={event => changeRange('cursor', event.target.value)} /></label>
+      <label>{copy.offset}<Input type="text" inputMode="numeric" value={offsetText} onChange={event => changeRange('offset', event.target.value)} /></label>
+      <label>{copy.limit}<Input type="text" inputMode="numeric" value={limitText} onChange={event => changeRange('limit', event.target.value)} /></label>
+      <label>{copy.cursor}<Input type="text" inputMode="numeric" value={cursorText} onChange={event => changeRange('cursor', event.target.value)} /></label>
     </div>
     {!validRange && <p role="alert">{copy.range}</p>}
     <div className="linked-trace-export-actions">
-      <button type="button" className="btn" disabled={!validRange || pending} onClick={() => void download()}>{error ? copy.retry : copy.action}</button>
-      {pending && <button type="button" className="btn" onClick={() => { invalidate(); setPending(false); setCancelled(true); }}>{copy.cancel}</button>}
+      <Button type="button"  disabled={!validRange || pending} onClick={() => void download()}>{error ? copy.retry : copy.action}</Button>
+      {pending && <Button type="button"  onClick={() => { invalidate(); setPending(false); setCancelled(true); }}>{copy.cancel}</Button>}
     </div>
     {pending && <p role="status">{copy.pending}</p>}
     {cancelled && <p role="status">{copy.cancelled}</p>}
@@ -114,13 +117,13 @@ function ExportPage({ sessionKey, locale }: LinkedTraceExportPanelProps) {
       <p>{copy.identity}: {coverage.identity.returned} · {copy.missing}: {coverage.identity.omittedCount}</p>
       <p>{coverage.identity.complete ? copy.identityComplete : copy.identityIncomplete}</p>
       {coverage.identity.reasons.length > 0 && <p>{copy.reasons}: {coverage.identity.reasons.join(', ')}</p>}
-      {coverage.capture.nextCursor !== null && <button type="button" className="btn" onClick={() => changeRange('cursor', String(coverage.capture.nextCursor))}>{copy.nextCapture}</button>}
+      {coverage.capture.nextCursor !== null && <Button type="button"  onClick={() => changeRange('cursor', String(coverage.capture.nextCursor))}>{copy.nextCapture}</Button>}
       {coverage.native.returned === coverage.native.omittedInvalidTime && coverage.capture.returned === coverage.capture.omittedInvalidTime && <p>{copy.empty}</p>}
       {!coverage.native.detailLoaded && <p>{copy.unloaded}</p>}
       {coverage.native.countMismatch && <p>{copy.mismatch}</p>}
-      {coverage.native.nextOffset !== null && coverage.native.nextOffset <= TRACE_EXPORT_MAX_OFFSET && <button type="button" className="btn" onClick={() => changeRange('offset', String(coverage.native.nextOffset))}>{copy.next}</button>}
+      {coverage.native.nextOffset !== null && coverage.native.nextOffset <= TRACE_EXPORT_MAX_OFFSET && <Button type="button"  onClick={() => changeRange('offset', String(coverage.native.nextOffset))}>{copy.next}</Button>}
     </div>}
-  </details>;
+  </Disclosure>;
 }
 
 /** Parent invalidation/remount cancels ownership without reading or restoring stale downloads. */

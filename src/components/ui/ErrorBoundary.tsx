@@ -1,3 +1,4 @@
+import { Callout } from './Display.js';
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
 interface ErrorBoundaryProps {
@@ -35,8 +36,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     }
     return (
       <div className="ui-error-boundary" role="alert">
-        <span className="ui-error-boundary-title">{this.props.label}</span>
-        <span className="mono ui-error-boundary-detail">{this.state.error.message}</span>
+        <Callout tone="danger" title={this.props.label}><span className="mono ui-error-boundary-detail">{this.state.error.message}</span></Callout>
       </div>
     );
   }

@@ -1,3 +1,5 @@
+import { Button } from './ui/Button.js';
+import { Disclosure } from './ui/PageControls.js';
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import { CAPTURE_BUNDLE_MAX_FILE_BYTES, CAPTURE_BUNDLE_MAX_PLAN_BYTES } from '../core/capture-bundle.js';
@@ -73,19 +75,19 @@ function BundleAction({ id, locale, blocked, metadataOnly }: { id: number; local
     catch (cause) { if (owned === generation.current) setError(cause instanceof PlanReadError ? cause.message : 'CAPTURE_BUNDLE_UNAVAILABLE'); }
     finally { clearTimeout(timer); if (owned === generation.current) { operation.current = null; setPending(false); } }
   };
-  return <details className="capture-run"><summary>{c.title}</summary><section aria-label={c.title}>
+  return <Disclosure className="capture-run" title={<>{c.title}</>}><section aria-label={c.title}>
     <p className="hint">{c.scope}</p><p className="hint">{c.prefix}</p><p>{c.mode}: {metadataOnly ? c.metadataMode : c.originals}</p>
     {blocked && <p role="status">{c.blocked}</p>}
-    <button type="button" className="btn" disabled={blocked || pending} onClick={() => void prepare()}>{metadataOnly ? c.metadata : c.prepare}</button>
-    {pending && <><p role="status">{c.waiting}</p><button type="button" className="btn" onClick={() => { invalidate(); setPending(false); setCancelled(true); }}>{c.cancel}</button></>}
+    <Button type="button"  disabled={blocked || pending} onClick={() => void prepare()}>{metadataOnly ? c.metadata : c.prepare}</Button>
+    {pending && <><p role="status">{c.waiting}</p><Button type="button"  onClick={() => { invalidate(); setPending(false); setCancelled(true); }}>{c.cancel}</Button></>}
     {cancelled && <p role="status">{c.cancelled}</p>}
     {error && <p role="alert">{error === 'BUNDLE_TIMEOUT' ? c.timeout : c.failed} <code>{error}</code></p>}
     {!blocked && plan && <><p>{c.bytes}: {plan.originalBytes.toLocaleString()}</p>
       <ul>{plan.files.map(file => <li key={file.path}><code>{file.path}</code> · {file.bytes.toLocaleString()} B · <code>{file.sha256}</code></li>)}</ul>
-      <details><summary>{c.omitted}</summary><ul>{plan.omissions.map(reason => <li key={reason}><code>{reason}</code></li>)}</ul></details>
-      <p className="hint">{c.ready}</p><a className="btn" download={`capture-${id}.tar`} href={`/api/proxy/requests/${id}/bundle?${new URLSearchParams({ mode: plan.mode, at: plan.generatedAt, revision: plan.revision })}`} onClick={() => setRequested(true)}>{c.download}</a>
+      <Disclosure  title={<>{c.omitted}</>}><ul>{plan.omissions.map(reason => <li key={reason}><code>{reason}</code></li>)}</ul></Disclosure>
+      <p className="hint">{c.ready}</p><a  download={`capture-${id}.tar`} href={`/api/proxy/requests/${id}/bundle?${new URLSearchParams({ mode: plan.mode, at: plan.generatedAt, revision: plan.revision })}`} onClick={() => setRequested(true)}>{c.download}</a>
     </>}{requested && <p role="status">{c.requested}</p>}
-  </section></details>;
+  </section></Disclosure>;
 }
 export function CaptureBundleControl(props: { id: number; locale: Locale; blocked: boolean; metadataOnly?: boolean; invalidateKey?: number }) {
   return <BundleAction key={props.id + ':' + Boolean(props.metadataOnly) + ':' + (props.invalidateKey ?? 0)} {...props} metadataOnly={props.metadataOnly ?? false} />;

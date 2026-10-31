@@ -1,3 +1,6 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Disclosure } from './ui/PageControls.js';
 import { useId, useMemo, useState } from 'react';
 import { deriveCaptureDiagnostics } from '../core/capture-diagnostics.js';
 import type { CaptureDiagnosticFinding } from '../core/capture-diagnostics.js';
@@ -58,7 +61,7 @@ export function CaptureDiagnosticsPanel({ data, locale, onOpenRequest }: Props):
   const advice = (finding: CaptureDiagnosticFinding): string => finding.code === 'slow_network' ? copy.networkAdvice : finding.code === 'slow_first_content' ? copy.contentAdvice : copy.repeatAdvice;
   return <section aria-label={copy.title}>
     <h3>{copy.title}</h3>
-    <label>{copy.threshold} <input type="text" inputMode="numeric" value={input} aria-invalid={threshold === null} aria-describedby={threshold === null ? errorId : undefined} onChange={event => setInput(event.target.value)} /></label>
+    <label>{copy.threshold} <Input type="text" inputMode="numeric" value={input} aria-invalid={threshold === null} aria-describedby={threshold === null ? errorId : undefined} onChange={event => setInput(event.target.value)} /></label>
     <p className="hint">{copy.validRange}</p>
     <p role="status" data-effective-threshold>{copy.effective}: {model === null ? copy.none : `${model.thresholdMs} ms`}</p>
     {threshold === null && <p id={errorId} role="alert">{copy.invalid}</p>}
@@ -68,11 +71,11 @@ export function CaptureDiagnosticsPanel({ data, locale, onOpenRequest }: Props):
       <h4>{copy.findings}</h4>
       {model.findings.length === 0 ? <p role="status">{copy.empty}</p> : <ol>{model.findings.slice(0, 5).map((finding, index) => <li key={`${finding.code}:${index}`} data-diagnostic-finding={finding.code}>
         <p>{copy.derived}: {copy[finding.code]}</p>
-        <details><summary>{copy.sources}</summary><ul>{finding.evidence.map((evidence, evidenceIndex) => <li key={`${evidence.side}:${evidence.path}:${evidenceIndex}`} style={{ overflowWrap: 'anywhere' }}>
+        <Disclosure  title={<>{copy.sources}</>}><ul>{finding.evidence.map((evidence, evidenceIndex) => <li key={`${evidence.side}:${evidence.path}:${evidenceIndex}`} style={{ overflowWrap: 'anywhere' }}>
           <code>{evidence.path}</code> = <code>{evidence.value}</code>
           <p className="mono">{data[evidence.side].request.requestId}</p>
-          <button className="btn" type="button" onClick={() => onOpenRequest(evidence.requestId)}>{evidence.side === 'base' ? copy.baseOpen : copy.targetOpen} #{evidence.requestId}</button>
-        </li>)}</ul></details>
+          <Button  type="button" onClick={() => onOpenRequest(evidence.requestId)}>{evidence.side === 'base' ? copy.baseOpen : copy.targetOpen} #{evidence.requestId}</Button>
+        </li>)}</ul></Disclosure>
         <p className="hint">{copy.suggestion}: {advice(finding)}</p>
       </li>)}</ol>}
     </>}

@@ -82,8 +82,8 @@ describe('WB-007 lazy Agent overview entry',()=>{
       await act(async () => { await import('./components/ProxyView.js');await Promise.resolve(); });
       expect(paths.filter(path => path.includes('/proxy/')).sort()).toEqual(['/api/proxy/requests?limit=50', '/api/proxy/status']);
       await vi.waitFor(()=>expect(container.querySelector('.capture-live')).not.toBeNull());
-      const live = container.querySelector<HTMLDetailsElement>('.capture-live')!;expect(live.open).toBe(false);
-      await act(async () => { live.open = true;live.dispatchEvent(new Event('toggle'));await import('./components/ProxyLivePanel.js'); });
+      const live = container.querySelector('.capture-live')!;expect(live.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
+      await act(async () => { live.querySelector<HTMLButtonElement>('button')!.click();await import('./components/ProxyLivePanel.js'); });
       expect(paths.filter(path => path.endsWith('/proxy/live'))).toHaveLength(1);
       expect(paths.some(path => /\/requests\/\d+/.test(path))).toBe(false);
       expect(EventSourceStub.instances).toHaveLength(1); // The shared shell SSE only; no selected-body subscription.
@@ -134,7 +134,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
       if (previousMode === null) localStorage.removeItem('awesome-telemetry.agentViewMode');else localStorage.setItem('awesome-telemetry.agentViewMode', previousMode);
     }
   });
-  it('lazy settings remains a closable dialog, reads config once on opening and never saves on close',async()=>{
+  it('legacy settings entry navigates to a full page, reads config once and never saves when leaving',async()=>{
     const paths:Array<{path:string;method:string}>=[];vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
       const path=String(input);paths.push({path,method:init?.method??'GET'});
       const body=path.endsWith('/config/providers')?{providers:Object.fromEntries(PROVIDER_KEYS.map(key=>[key,{key,enabled:true,path:'/synthetic/'+key,label:key,sourceKind:'jsonl',watchStrategy:'chokidar',pollIntervalMs:0}])),traeKeyPath:null,prewarmRecent:0}
@@ -144,9 +144,8 @@ describe('WB-007 lazy Agent overview entry',()=>{
     try {
       await act(async()=>{await Promise.resolve();});expect(paths.some(item=>item.path.endsWith('/config/providers'))).toBe(false);
       const trigger=[...container.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='设置')!;act(()=>{trigger.focus();trigger.click();});
-      await act(async()=>{for(let i=0;i<30&&!container.querySelector('[data-provider-path]');i++)await new Promise(resolve=>setTimeout(resolve,10));});
-      expect(container.querySelector('[role="dialog"]')).not.toBeNull();expect(container.querySelector('[data-provider-path="codex"]')).not.toBeNull();
-      act(()=>container.querySelector<HTMLButtonElement>('[role="dialog"] [aria-label="关闭"]')!.click());expect(container.querySelector('[role="dialog"]')).toBeNull();expect(document.activeElement).toBe(trigger);
+      await act(async()=>{for(let i=0;i<30&&!container.querySelector('.settings-page');i++)await new Promise(resolve=>setTimeout(resolve,10));});
+      expect(window.location.hash).toBe('#/settings');expect(container.querySelector('.settings-page')).not.toBeNull();expect(container.querySelector('[role="dialog"]')).toBeNull();act(()=>[...container.querySelectorAll<HTMLButtonElement>('.settings-nav button')].find(button=>button.textContent==='数据与存储')!.click());expect(window.location.hash).toBe('#/settings?section=storage');expect(container.querySelector('[data-provider-path="codex"]')).not.toBeNull();await navigateHash('#/task');expect(container.querySelector('.settings-page')).toBeNull();
       expect(paths.filter(item=>item.path.endsWith('/config/providers'))).toEqual([{path:'/api/config/providers',method:'GET'}]);
     } finally {unmount();}
   });
@@ -163,7 +162,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
       await navigateHash('#/frida');
       await act(async()=>{for(let i=0;i<30&&!paths.some(path=>path.endsWith('/frida/status'));i++)await new Promise(resolve=>setTimeout(resolve,10));});
       expect(paths.filter(path=>path.includes('/frida/')).sort()).toEqual(['/api/frida/captures','/api/frida/status']);
-      expect(container.querySelector('[data-frida-ack]')).not.toBeNull();expect(container.querySelector('.task-channel-list')).not.toBeNull();
+      expect(container.querySelector('[data-frida-ack]')).not.toBeNull();expect(container.querySelector('.intake-grid')).not.toBeNull();
     } finally {unmount();}
   });
   it('retains bounded unique Frida save notifications with zero hidden reads and opens only the selected text',async()=>{
@@ -826,7 +825,7 @@ it.each(['threshold','overview-threshold'])('Phase B review: %s opens and focuse
   for(let i=0;i<100&&!container.querySelector('#settings-'+section+' input');i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});
   await act(async()=>{await new Promise(r=>setTimeout(r,30));});
   const input=container.querySelector<HTMLInputElement>('#settings-'+section+' input')!;expect(input).not.toBeNull();expect(document.activeElement).toBe(input);
-  expect(container.querySelector<HTMLDetailsElement>('.settings-workbench details')!.open).toBe(true);
+  expect(window.location.hash).toBe('#/settings?section=alert-thresholds');expect(container.querySelector('.settings-nav [aria-current=page]')!.textContent).toBe('告警阈值');
   expect(requests.some(r=>r.path.includes('model-pricing'))).toBe(false);
   expect(container.querySelector('.task-price-link')).toBeNull();
   expect(requests.some(r=>r.method==='PUT'||r.method==='POST')).toBe(false);
@@ -875,4 +874,33 @@ describe('Phase C first-paint deep links',()=>{
    if(pa){expect(q.get('pa')).toBe(pa);expect(q.get('pb')).toBe(pb);}if(imported)expect(q.get('compareImport')).toBe('1');
   }
  });
+});
+
+it('Phase F5: settings and sidebar display share one persisted font size',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{
+  const path=String(input);
+  if(path==='/api/config/providers')return apiResponse({providers:Object.fromEntries(PROVIDER_KEYS.map(key=>[key,{key,enabled:true,path:'/fixture/'+key,label:key,sourceKind:'jsonl',watchStrategy:'chokidar',pollIntervalMs:0}])),traeKeyPath:null,prewarmRecent:0});
+  return taskResponse(path);
+ }));
+ const {container,unmount}=renderAppWithUnmount();
+ const find=(text:string)=>[...container.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent===text)!;
+ try{
+  await readyTasks(container);
+  act(()=>container.querySelector<HTMLButtonElement>('.app-sidebar nav [aria-label="设置"]')!.click());
+  await vi.waitFor(()=>expect(find('外观')).toBeDefined());act(()=>find('外观').click());
+  act(()=>find('大').click());expect(localStorage.getItem(LAYOUT_KEYS.fontSize)).toBe('14');expect(document.documentElement.style.getPropertyValue('--ui-scale')).toBe(String(14/13));
+  await navigateHash('#/task');
+  act(()=>container.querySelector<HTMLButtonElement>('.sidebar-controls [aria-label="显示"]')!.click());
+  act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(button=>button.textContent==='小')!.click());
+  expect(localStorage.getItem(LAYOUT_KEYS.fontSize)).toBe('12');
+  act(()=>container.querySelector<HTMLButtonElement>('.app-sidebar nav [aria-label="设置"]')!.click());
+  await vi.waitFor(()=>expect(find('外观')).toBeDefined());act(()=>find('外观').click());
+  expect(find('小').getAttribute('aria-selected')).toBe('true');
+ }finally{unmount();localStorage.removeItem(LAYOUT_KEYS.fontSize);}
+});
+
+it('Phase F5 review: direct settings links and section navigation preserve draft state without opening a dialog',async()=>{
+ let reads=0;vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{const path=String(input);if(path==='/api/config/providers'){reads++;return apiResponse({providers:Object.fromEntries(PROVIDER_KEYS.map(key=>[key,{key,enabled:true,path:'/fixture/'+key,label:key,sourceKind:'jsonl',watchStrategy:'chokidar',pollIntervalMs:0}])),traeKeyPath:null,prewarmRecent:0});}return taskResponse(path);}));
+ history.replaceState(null,'','#/settings?section=storage');const {container,unmount}=renderAppWithUnmount();
+ try{await vi.waitFor(()=>expect(container.querySelector('[data-provider-path=codex]')).not.toBeNull());expect(container.querySelector('[role=dialog]')).toBeNull();const input=container.querySelector<HTMLInputElement>('[data-provider-path=codex]')!;act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'/changed');input.dispatchEvent(new Event('input',{bubbles:true}));});await navigateHash('#/settings?section=about');expect(container.querySelector('.settings-savebar')).not.toBeNull();await navigateHash('#/settings?section=storage');expect(container.querySelector<HTMLInputElement>('[data-provider-path=codex]')!.value).toBe('/changed');await navigateHash('#/settings?section=invalid');expect(window.location.hash).toBe('#/settings');expect(container.querySelector('.settings-nav [aria-current=page]')!.textContent).toBe('常规');expect(reads).toBe(1);}finally{unmount();}
 });

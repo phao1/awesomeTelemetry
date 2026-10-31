@@ -4,6 +4,7 @@ import { useState, useRef, type InputHTMLAttributes, type RefObject } from 'reac
 import { IconClose, IconSearch } from '../icons/index.js';
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
+  ref?: React.Ref<HTMLInputElement>;
   size?: 'sm' | 'md';
   icon?: React.JSX.Element;
 }

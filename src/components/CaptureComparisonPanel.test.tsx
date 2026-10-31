@@ -1,3 +1,4 @@
+import { chooseOption, optionValues } from './ui/test-controls.js';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,7 +39,7 @@ const button = (label: string): HTMLButtonElement => {
   if (found === undefined) throw new Error('Missing button: ' + label);
   return found;
 };
-const selectBase = async (id = '1') => act(async () => setInput(container.querySelector('input')!, id));
+const selectBase = async (id = '1') => act(async () => setInput(container.querySelector<HTMLInputElement>('input:not([type=hidden])')!, id));
 const compare = async () => act(async () => button('Compare selected captures').click());
 beforeEach(() => { container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); open.mockClear(); });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); vi.useRealTimers(); });
@@ -55,8 +56,8 @@ describe('explicit selected capture comparison', () => {
     expect(fetcher.mock.calls[0]).toEqual(['/api/proxy/requests/2/comparison?base=1', { headers: { accept: 'application/json' }, signal: expect.any(AbortSignal), cache: 'no-store' }]);
     const contentRow = container.querySelector('[data-comparison-metric="firstContentMs"]')!;
     expect([...contentRow.querySelectorAll('td')].slice(0, 3).map(node => node.textContent)).toEqual(['800 ms', '900 ms', '+100 ms']);
-    expect(contentRow.querySelector('details')?.open).toBe(false);
-    expect(contentRow.querySelector('details')?.textContent).toContain('base.evidence.transport.timing.firstContentMs');
+    expect(contentRow.querySelector('.ui-accordion > button')?.getAttribute('aria-expanded')==='true').toBe(false);
+    expect(contentRow.querySelector('.ui-accordion')?.textContent).toContain('base.evidence.transport.timing.firstContentMs');
     expect(container.textContent).toContain('not a controlled experiment');
     expect(container.textContent).not.toContain('Cost is unknown');
     expect(container.textContent).not.toContain('Cost unknown');
@@ -70,9 +71,9 @@ describe('explicit selected capture comparison', () => {
   it('selects an already loaded base without scanning the request list', async () => {
     const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => response(comparison(3))); vi.stubGlobal('fetch', fetcher);
     await render();
-    const select = container.querySelector('select')!;
-    expect([...select.options].map(option => option.value)).toEqual(['', '1', '3']);
-    await act(async () => { select.value = '3'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+    const select = container.querySelector('[role=combobox]')!;
+    expect(optionValues(select)).toEqual(['','1','3']);
+    await act(async () => { chooseOption(select,'3'); });
     expect(fetcher).not.toHaveBeenCalled(); await compare(); expect(fetcher).toHaveBeenCalledTimes(1);
     expect(String(fetcher.mock.calls[0]?.[0])).toContain('comparison?base=3');
   });
@@ -82,9 +83,9 @@ describe('explicit selected capture comparison', () => {
     await selectBase(); await compare();
     const diagnostics = container.querySelector('[aria-label="Selected-pair evidence diagnostics"]')!;
     expect(diagnostics).not.toBeNull(); expect(fetcher).toHaveBeenCalledTimes(1);
-    await act(async () => setInput(diagnostics.querySelector('input')!, '1'));
+    await act(async () => setInput(diagnostics.querySelector<HTMLInputElement>('input:not([type=hidden])')!, '1'));
     expect(diagnostics.querySelectorAll('[data-diagnostic-finding="slow_network"]')).toHaveLength(2);
-    const source = diagnostics.querySelector('[data-diagnostic-finding="slow_network"] button') as HTMLButtonElement;
+    const finding=diagnostics.querySelector('[data-diagnostic-finding="slow_network"]')!;act(()=>finding.querySelector<HTMLButtonElement>('.ui-accordion > button')!.click());const source=[...finding.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='Open base capture #1')!;
     act(() => source.click()); expect(open).toHaveBeenLastCalledWith(1); expect(fetcher).toHaveBeenCalledTimes(1);
     await render({ locale: 'zh' });
     expect(container.querySelector('[aria-label="选定组合的证据诊断"] input')?.getAttribute('value')).toBe('1');
@@ -141,7 +142,7 @@ describe('explicit selected capture comparison', () => {
     const fetcher = vi.fn(async () => response(comparison())); vi.stubGlobal('fetch', fetcher);
     await render(); await selectBase(); await compare(); await render({ invalidateKey: 1 });
     expect(container.querySelector('[data-comparison-result]')).toBeNull(); expect(container.textContent).toContain('Evidence changed'); expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('input')?.value).toBe('1');
+    expect(container.querySelector<HTMLInputElement>('input:not([type=hidden])')?.value).toBe('1');
     await act(async () => button('Refresh comparison').click()); expect(fetcher).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[data-comparison-result]')).not.toBeNull();
   });

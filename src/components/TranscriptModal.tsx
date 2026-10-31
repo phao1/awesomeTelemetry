@@ -1,3 +1,4 @@
+import { Button } from './ui/Button.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -70,9 +71,9 @@ export function TranscriptModal({
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <header className="modal-header">
           <h3>{title}</h3>
-          <button type="button" className="btn" onClick={onClose}>
+          <Button type="button"  onClick={onClose}>
             {t('common.close', locale)}
-          </button>
+          </Button>
         </header>
         <div className="modal-body">
           {error !== null && (

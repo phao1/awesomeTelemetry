@@ -1,3 +1,4 @@
+import { chooseOption, selectedValue, optionsText } from './ui/test-controls.js';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +18,7 @@ async function render(onStatus = vi.fn(), initialAgent?: MonitorAgent) {
 }
 function button(container: HTMLElement, text: string): HTMLButtonElement { return [...container.querySelectorAll('button')].find(item => item.textContent === text)!; }
 async function selectProfile(container: HTMLElement) {
-  await act(async () => { const select = container.querySelector('select')!; select.value = profile.id; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  await act(async () => { const select = container.querySelector('[role=combobox]')!; chooseOption(select,profile.id); });
 }
 afterEach(async () => { for (const root of mounted.splice(0)) await act(async () => root.unmount()); document.body.replaceChildren(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
@@ -35,7 +36,7 @@ describe('explicit process-scoped connection setup', () => {
     expect(JSON.parse(String(fetcher.mock.calls[1]![1]?.body))).toEqual({ expectedRevision: 1 });
     expect(container.textContent).toContain('本地 HTTP 抓包链路通过'); expect(container.textContent).toContain('真实 Agent 接入、工具及子 Agent 覆盖仍未验证');
     await act(async () => [...container.querySelectorAll('button')].find(item => item.textContent?.includes('查看自检抓包'))!.click()); expect(open).toHaveBeenCalledWith(42);
-    await act(async () => { const input = container.querySelector('input')!; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Edited'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+    await act(async () => { const input = container.querySelector('input:not([type=hidden])')!; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Edited'); input.dispatchEvent(new Event('input', { bubbles: true })); });
     expect(container.textContent).not.toContain('本地 HTTP 抓包链路通过'); expect(button(container, '本地抓包链路自检').disabled).toBe(true);
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
@@ -59,21 +60,21 @@ describe('explicit process-scoped connection setup', () => {
   it.each(['codex', 'opencode'] as const)('preselects a new blank %s form without saving, starting or changing an existing profile', async agent => {
     const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => response({ items: [profile] })); vi.stubGlobal('fetch', fetcher);
     const container = await render(vi.fn(), agent);
-    expect(container.querySelectorAll('select')[0]!.value).toBe('');
-    expect(container.querySelectorAll('select')[1]!.value).toBe(agent);
-    expect(container.querySelector<HTMLInputElement>('input')!.value).toBe('');
+    expect(selectedValue(container.querySelectorAll('[role=combobox]')[0]!)).toBe('');
+    expect(selectedValue(container.querySelectorAll('[role=combobox]')[1]!)).toBe(agent);
+    expect(container.querySelector<HTMLInputElement>('input:not([type=hidden])')!.value).toBe('');
     expect(container.querySelector<HTMLInputElement>('[placeholder="/absolute/project/path"]')!.value).toBe('');
     expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(agent !== 'opencode');
     if (agent === 'opencode') expect([...container.querySelectorAll('input')].some(input => input.value === 'localhost,127.0.0.1,::1')).toBe(true);
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual(['/api/proxy/profiles']);
     expect(container.querySelector('textarea')).toBeNull();
     await selectProfile(container);
-    expect(container.querySelectorAll('select')[1]!.value).toBe('claude');
-    await act(async () => { const input = container.querySelector('input')!; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Unsent user draft'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+    expect(selectedValue(container.querySelectorAll('[role=combobox]')[1]!)).toBe('claude');
+    await act(async () => { const input = container.querySelector('input:not([type=hidden])')!; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Unsent user draft'); input.dispatchEvent(new Event('input', { bubbles: true })); });
     await act(async () => mounted.at(-1)!.render(<MonitorSetupPanel locale="zh" initialAgent={agent === 'codex' ? 'opencode' : 'codex'} />));
-    expect(container.querySelector('input')!.value).toBe('Unsent user draft');
-    expect(container.querySelectorAll('select')[0]!.value).toBe(profile.id);
-    expect(container.querySelectorAll('select')[1]!.value).toBe('claude');
+    expect(container.querySelector<HTMLInputElement>('input:not([type=hidden])')!.value).toBe('Unsent user draft');
+    expect(selectedValue(container.querySelectorAll('[role=combobox]')[0]!)).toBe(profile.id);
+    expect(selectedValue(container.querySelectorAll('[role=combobox]')[1]!)).toBe('claude');
     expect(fetcher).toHaveBeenCalledTimes(1); expect(button(container, '生成启动命令').disabled).toBe(true);
   });
   it('checks only on demand, keeps trust unknown and invalidates snapshots locally without polling on SSE status changes', async () => {
@@ -163,7 +164,7 @@ describe('explicit process-scoped connection setup', () => {
     }));
     const container = await render(); await selectProfile(container);
     await act(async () => {
-      const input = container.querySelector('input')!;
+      const input = container.querySelector('input:not([type=hidden])')!;
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Changed');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
@@ -195,7 +196,7 @@ describe('explicit process-scoped connection setup', () => {
     expect(container.querySelector('script,img')).toBeNull();
     failing = false;
     await act(async () => button(container, '重新载入配置').click());
-    expect(container.textContent).toContain('<img src=x onerror=unsafe()>');
+    expect(optionsText(container.ownerDocument.body.querySelector('[role=combobox]')!)).toContain('<img src=x onerror=unsafe()>');
     expect(container.querySelector('script,img')).toBeNull();
   });
 });

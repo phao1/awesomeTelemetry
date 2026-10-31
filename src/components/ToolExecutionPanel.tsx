@@ -1,3 +1,7 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Disclosure } from './ui/PageControls.js';
+import { OptionSelect } from './ui/PageControls.js';
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import { buildToolInvestigation } from '../core/tool-investigation.js';
@@ -33,9 +37,9 @@ function Process({ events, selected, onSelect, label }: { events: TraceEventSlim
   const { containerRef, range, onScroll } = useVirtualList(events.length, 44, 5, 308);
   return <nav className="tool-process" aria-label={label} ref={containerRef} onScroll={onScroll} style={{ height: 308, overflow: 'auto' }}>
     <div style={{ height: range.totalHeight }}><div style={{ transform: 'translateY(' + range.offsetY + 'px)' }}>
-      {events.slice(range.startIndex, range.endIndex).map(event => <button type="button" className={'tool-process-row' + (event.id === selected ? ' is-selected' : '')} key={event.id} onClick={() => onSelect(event)} title={event.id}>
+      {events.slice(range.startIndex, range.endIndex).map(event => <Button type="button" className={'tool-process-row' + (event.id === selected ? ' is-selected' : '')} key={event.id} onClick={() => onSelect(event)} title={event.id}>
         <span className="mono">#{event.sequence}</span><span>{event.kind}</span><strong>{event.tool ?? event.title}</strong><span>{event.status === 'error' ? '!' : '·'}</span>
-      </button>)}
+      </Button>)}
     </div></div>
   </nav>;
 }
@@ -82,42 +86,42 @@ function Investigation({ sessionKey, locale, invalidateKey = 0, onClose, onOpenR
   const hasMoreText = value !== null && [value.inputSummary, value.outputSummary, 'raw' in value ? value.raw : null].some(content => content !== null && new TextEncoder().encode(content).byteLength > 65536);
   return <Drawer open title={c.title} onClose={onClose} className="tool-investigation" width={1220}>
     <header className="tool-intro"><span className="family-eyebrow">NATIVE TOOL EVIDENCE</span><h2>{c.intro}</h2><p>{c.hint}</p></header>
-    <div className="tool-toolbar"><button className="btn" type="button" disabled={page.busy} onClick={() => void load(offset)}>{c.refresh}</button>
-      <button className="btn" type="button" disabled={page.busy || history.length === 0} onClick={() => { const next = [...history]; const at = next.pop()!; setHistory(next); void load(at); }}>{c.previous}</button>
-      <button className="btn" type="button" disabled={page.busy || snapshot === null || !snapshot.eventsHasMore || snapshot.events.length === 0} onClick={() => { if (snapshot !== null) { setHistory(old => [...old, offset]); void load(offset + snapshot.events.length); } }}>{c.next}</button>
+    <div className="tool-toolbar"><Button  type="button" disabled={page.busy} onClick={() => void load(offset)}>{c.refresh}</Button>
+      <Button  type="button" disabled={page.busy || history.length === 0} onClick={() => { const next = [...history]; const at = next.pop()!; setHistory(next); void load(at); }}>{c.previous}</Button>
+      <Button  type="button" disabled={page.busy || snapshot === null || !snapshot.eventsHasMore || snapshot.events.length === 0} onClick={() => { if (snapshot !== null) { setHistory(old => [...old, offset]); void load(offset + snapshot.events.length); } }}>{c.next}</Button>
       <span className="mono">{c.scope} · {snapshot === null ? '—' : (snapshot.events.length === 0 ? 0 : offset + 1) + '–' + (offset + snapshot.events.length) + ' / ' + snapshot.eventTotal}</span>
     </div>
     {stale && <p role="status" className="tool-notice">{c.stale}</p>}
     {page.busy && <p role="status">{c.loading}</p>}
-    {page.error !== null && <div role="alert" className="tool-notice">{c.error} · {page.error === 'TIMEOUT' ? c.timeout : page.error}<button className="btn" type="button" onClick={() => void load(offset)}>{c.retry}</button></div>}
+    {page.error !== null && <div role="alert" className="tool-notice">{c.error} · {page.error === 'TIMEOUT' ? c.timeout : page.error}<Button  type="button" onClick={() => void load(offset)}>{c.retry}</Button></div>}
     {snapshot !== null && <div className="tool-layout"><aside className="tool-sidebar">
       <h3>{c.process}</h3><p className="hint">{c.partial}</p>
-      <div className="tool-filters"><label><span className="sr-only">{c.search}</span><input value={query} placeholder={c.search} onChange={event => setQuery(event.target.value)} /></label>
-        <select aria-label={c.tools} value={mode} onChange={event => setMode(event.target.value)}><option value="all">{c.all}</option><option value="tools">{c.onlyTools}</option><option value="errors">{c.errors}</option></select></div>
+      <div className="tool-filters"><label><span className="sr-only">{c.search}</span><Input value={query} placeholder={c.search} onChange={event => setQuery(event.target.value)} /></label>
+        <OptionSelect aria-label={c.tools} value={mode} onChange={event => setMode(event.target.value)}><option value="all">{c.all}</option><option value="tools">{c.onlyTools}</option><option value="errors">{c.errors}</option></OptionSelect></div>
       <p className="hint">{c.local}</p>
       <Process events={mode === 'all' && search === '' ? snapshot.events : snapshot.events.filter(event => shown.some(item => item.events.some(member => member.id === event.id)))} selected={selected?.id ?? null} label={c.process} onSelect={event => { setObservationsOpen(false); setGroupKey(groups.find(item => item.events.some(member => member.id === event.id))?.key ?? null); inspect(event); }} />
-      <h3>{c.tools} · {shown.length}</h3><div className="tool-groups">{shown.map(item => <button type="button" className={'tool-group' + (groupKey === item.key ? ' is-selected' : '')} key={item.key} onClick={() => selectGroup(item)}>
+      <h3>{c.tools} · {shown.length}</h3><div className="tool-groups">{shown.map(item => <Button type="button" className={'tool-group' + (groupKey === item.key ? ' is-selected' : '')} key={item.key} onClick={() => selectGroup(item)}>
         <strong>{item.events[0]!.tool ?? item.events[0]!.title}</strong><span>{item.events.map(event => '#' + event.sequence).join(' · ')}{item.events.some(event => event.status === 'error') ? ' · !' : ''}</span><code>{item.reason === 'native_id' ? item.identities[0]!.value : c[item.reason]}</code>
-      </button>)}</div>{shown.length === 0 && <p className="tool-notice">{snapshot.events.length === 0 ? c.noEvents : c.empty}</p>}
+      </Button>)}</div>{shown.length === 0 && <p className="tool-notice">{snapshot.events.length === 0 ? c.noEvents : c.empty}</p>}
     </aside><main className="tool-detail">
       {selected === null ? <p className="tool-notice">{c.choose}</p> : <>
         <span className="family-eyebrow">{selected.kind === 'tool' ? c.tools : c.context}</span><h2>{selected.tool ?? selected.title}</h2>
         {group !== undefined && <><p className="tool-notice">{c[group.reason]}{!group.events.some(event => event.hasOutput) && <><br />{c.missing}</>}</p>
-          <div className="tool-members" aria-label={c.records}>{group.events.map(event => <button className={'btn' + (selected.id === event.id ? ' is-selected' : '')} key={event.id} type="button" onClick={() => inspect(event)}>#{event.sequence} · {event.hasInput ? c.inputs : ''}{event.hasInput && event.hasOutput ? ' / ' : ''}{event.hasOutput ? c.outputs : ''} · {status(event)}</button>)}</div>
-          <details className="tool-source"><summary>{c.source}</summary>{group.identities.map(identity => <p className="mono" key={identity.id}>{identity.namespace} · {identity.value}<br />scope: {identity.scope ?? '—'}<br />{identity.eventId} · {identity.sourcePath}</p>)}{group.identities.length === 0 && <p>{c.noIdentity}</p>}</details>
+          <div className="tool-members" aria-label={c.records}>{group.events.map(event => <Button className={'btn' + (selected.id === event.id ? ' is-selected' : '')} key={event.id} type="button" onClick={() => inspect(event)}>#{event.sequence} · {event.hasInput ? c.inputs : ''}{event.hasInput && event.hasOutput ? ' / ' : ''}{event.hasOutput ? c.outputs : ''} · {status(event)}</Button>)}</div>
+          <Disclosure className="tool-source" title={<>{c.source}</>}>{group.identities.map(identity => <p className="mono" key={identity.id}>{identity.namespace} · {identity.value}<br />scope: {identity.scope ?? '—'}<br />{identity.eventId} · {identity.sourcePath}</p>)}{group.identities.length === 0 && <p>{c.noIdentity}</p>}</Disclosure>
         </>}
         {group?.reason === 'native_id' && group.identities[0]?.scope != null && <>
-          <button className="btn" type="button" aria-expanded={observationsOpen} onClick={() => setObservationsOpen(open => !open)}>{locale === 'zh' ? '查看同一原生 ID 的跨页证据' : 'Inspect cross-page evidence for this native ID'}</button>
+          <Button  type="button" aria-expanded={observationsOpen} onClick={() => setObservationsOpen(open => !open)}>{locale === 'zh' ? '查看同一原生 ID 的跨页证据' : 'Inspect cross-page evidence for this native ID'}</Button>
           {observationsOpen && <NativeToolObservationsPanel key={group.key} sessionKey={sessionKey} locale={locale} identity={{ namespace: group.identities[0].namespace, value: group.identities[0].value, scope: group.identities[0].scope }} onSelect={inspect} />}
         </>}
         <dl className="tool-facts"><dt>{c.original}</dt><dd className="mono">{selected.id}</dd><dt>{c.status}</dt><dd>{status(selected)}</dd><dt>{c.time}</dt><dd className="mono">{selected.durationMs} ms · {selected.startedAt}</dd></dl>
         <p className="hint">{c.timeHint}</p>{selected.error !== null && <p role="note" className="tool-record-error">{selected.error}</p>}
-        <div className="tool-actions"><button className="btn ui-btn-primary" type="button" disabled={body.busy} onClick={() => readBody(false)}>{c.read}</button><button className="btn" type="button" disabled={!selected.hasRaw || body.busy} onClick={() => readBody(true)}>{c.raw}</button></div>
-        {snapshot.attempts.filter(attempt => attempt.matches.some(match => match.eventId === selected.id)).map(attempt => <button className="btn" type="button" key={attempt.request.id} onClick={() => { onClose(); onOpenRequest(attempt.request.id); }}>{c.capture} #{attempt.request.id}</button>)}
-        {body.busy && <p role="status">{c.loading}</p>}{body.error !== null && <div role="alert">{c.error} · {body.error === 'TIMEOUT' ? c.timeout : body.error}<button className="btn" type="button" onClick={() => readBody(raw)}>{c.retry}</button></div>}
-        {value !== null && <section className="tool-body" aria-label={c.selected}><div className="tool-actions"><button className="btn" type="button" onClick={() => setFont(size => Math.max(8, size - 1))}>A−</button><button className="btn" type="button" onClick={() => setFont(size => Math.min(28, size + 1))}>A+</button><button className="btn" type="button" onClick={() => setFont(14)}>R</button></div><p className="hint">{c.bounded}</p>
+        <div className="tool-actions"><Button variant="primary" type="button" disabled={body.busy} onClick={() => readBody(false)}>{c.read}</Button><Button  type="button" disabled={!selected.hasRaw || body.busy} onClick={() => readBody(true)}>{c.raw}</Button></div>
+        {snapshot.attempts.filter(attempt => attempt.matches.some(match => match.eventId === selected.id)).map(attempt => <Button  type="button" key={attempt.request.id} onClick={() => { onClose(); onOpenRequest(attempt.request.id); }}>{c.capture} #{attempt.request.id}</Button>)}
+        {body.busy && <p role="status">{c.loading}</p>}{body.error !== null && <div role="alert">{c.error} · {body.error === 'TIMEOUT' ? c.timeout : body.error}<Button  type="button" onClick={() => readBody(raw)}>{c.retry}</Button></div>}
+        {value !== null && <section className="tool-body" aria-label={c.selected}><div className="tool-actions"><Button  type="button" onClick={() => setFont(size => Math.max(8, size - 1))}>A−</Button><Button  type="button" onClick={() => setFont(size => Math.min(28, size + 1))}>A+</Button><Button  type="button" onClick={() => setFont(14)}>R</Button></div><p className="hint">{c.bounded}</p>
           {raw ? <><h3>Raw</h3><pre style={{ fontSize: font }}>{'raw' in value ? text(value.raw) : c.rawAbsent}</pre></> : <div className="tool-body-columns"><section><h3>{c.input}</h3><pre style={{ fontSize: font }}>{text(value.inputSummary)}</pre></section><section><h3>{c.output}</h3><pre style={{ fontSize: font }}>{text(value.outputSummary)}</pre></section></div>}
-          {hasMoreText && !expandedText && <button className="btn" type="button" onClick={() => setExpandedText(true)}>{c.more}</button>}
+          {hasMoreText && !expandedText && <Button  type="button" onClick={() => setExpandedText(true)}>{c.more}</Button>}
         </section>}
       </>}
     </main></div>}

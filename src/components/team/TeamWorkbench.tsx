@@ -1,3 +1,7 @@
+import { Button } from '../ui/Button.js';
+import { Input } from '../ui/Input.js';
+import { Disclosure } from '../ui/PageControls.js';
+import { OptionSelect } from '../ui/PageControls.js';
 import '../../styles/components/team-workbench.css';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { TeamActivitySlim, TeamRunSnapshot, TeamTaskStatus } from '../../core/trace-types.js';
@@ -101,10 +105,10 @@ export function TeamWorkbench({ snapshot, activities = [], activityCoverage = 'u
   const count = (value: TeamTaskStatus): number => snapshot.tasks.filter(task => task.status === value).length;
   const pager = (total: number, slice: { start: number; index: number; rows: unknown[] }, set: (value: number) => void, label: string): React.JSX.Element => <nav className="tw-pager" aria-label={label}>
     <span>{w('range')} {total === 0 ? 0 : slice.start + 1}–{slice.start + slice.rows.length} / {total}</span>
-    <button type="button" disabled={slice.index === 0} onClick={() => set(slice.index - 1)} aria-label={`${label} · ${w('prev')}`}>←</button>
-    <button type="button" disabled={slice.start + PAGE_SIZE >= total} onClick={() => set(slice.index + 1)} aria-label={`${label} · ${w('next')}`}>→</button>
+    <Button type="button" disabled={slice.index === 0} onClick={() => set(slice.index - 1)} aria-label={`${label} · ${w('prev')}`}>←</Button>
+    <Button type="button" disabled={slice.start + PAGE_SIZE >= total} onClick={() => set(slice.index + 1)} aria-label={`${label} · ${w('next')}`}>→</Button>
   </nav>;
-  const evidence = (ids: readonly string[]): React.JSX.Element => <details className="tw-evidence"><summary>{w('evidence')} · {ids.length}</summary>{ids.length === 0 ? <p>{w('none')}</p> : <><p>{w('range')} 1–{Math.min(20, ids.length)} / {ids.length}</p><ul>{ids.slice(0, 20).map(id => <li key={id}><code>{id}</code></li>)}</ul></>}</details>;
+  const evidence = (ids: readonly string[]): React.JSX.Element => <Disclosure className="tw-evidence" title={<>{w('evidence')}· {ids.length}</>}>{ids.length === 0 ? <p>{w('none')}</p> : <><p>{w('range')} 1–{Math.min(20, ids.length)} / {ids.length}</p><ul>{ids.slice(0, 20).map(id => <li key={id}><code>{id}</code></li>)}</ul></>}</Disclosure>;
   const relatedEvents = activities.filter(event => selectedAgent ? event.agentId === selectedAgent.id : selectedTask ? event.taskId === selectedTask.id : false)
     .sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? '') || a.id.localeCompare(b.id));
 
@@ -116,23 +120,23 @@ export function TeamWorkbench({ snapshot, activities = [], activityCoverage = 'u
       {selectedAgent && <>
         <dl className="tw-meta"><div><dt>{w('role')}</dt><dd>{selectedAgent.role}</dd></div><div><dt>{w('model')}</dt><dd>{selectedAgent.model ?? '—'}</dd></div></dl>
         <h4>{w('assigned')}</h4>
-        <ul className="tw-links">{[...model.taskIds.get(selectedAgent.id) ?? []].map(id => <li key={id}><button type="button" onClick={() => onSelect({ kind: 'task', id })}>{taskLabel(id)}</button></li>)}</ul>
+        <ul className="tw-links">{[...model.taskIds.get(selectedAgent.id) ?? []].map(id => <li key={id}><Button type="button" onClick={() => onSelect({ kind: 'task', id })}>{taskLabel(id)}</Button></li>)}</ul>
         {(model.taskIds.get(selectedAgent.id)?.size ?? 0) === 0 && <p>{w('noAssigned')}</p>}
         <h4>{w('relations')}</h4><p>{w('relationHint')}</p>
         <ul className="tw-relations">{snapshot.agentEdges.filter(edge => edge.fromAgentId === selectedAgent.id || edge.toAgentId === selectedAgent.id).map(edge => <li key={edge.id}>
-          <button type="button" onClick={() => onSelect({ kind: 'agent', id: edge.fromAgentId === selectedAgent.id ? edge.toAgentId : edge.fromAgentId })}>
+          <Button type="button" onClick={() => onSelect({ kind: 'agent', id: edge.fromAgentId === selectedAgent.id ? edge.toAgentId : edge.fromAgentId })}>
             {agentLabel(edge.fromAgentId)} <span>→ {t(`session.teamReplay.edgeKind.${edge.kind}` as I18nKey, locale)} →</span> {agentLabel(edge.toAgentId)}
-          </button><small>{edge.confidence}{edge.validTo !== null ? ` · ${w('historical')}` : ''}</small>{evidence(edge.evidenceIds)}
+          </Button><small>{edge.confidence}{edge.validTo !== null ? ` · ${w('historical')}` : ''}</small>{evidence(edge.evidenceIds)}
         </li>)}</ul>
         {!snapshot.agentEdges.some(edge => edge.fromAgentId === selectedAgent.id || edge.toAgentId === selectedAgent.id) && <p>{w('noRelations')}</p>}
         {selectedAgent.sessionKeys.map(key => <a className="tw-source" key={key} href={serializeHash({ view: 'session', key, time: 'all' })}>{w('source')} · {key}</a>)}
         {evidence(selectedAgent.evidenceIds)}
       </>}
       {selectedTask && <>
-        <h4>{w('owners')}</h4><ul className="tw-links">{[...model.ownerIds.get(selectedTask.id) ?? []].map(id => <li key={id}><button type="button" onClick={() => onSelect({ kind: 'agent', id })}>{agentLabel(id)}</button></li>)}</ul>
+        <h4>{w('owners')}</h4><ul className="tw-links">{[...model.ownerIds.get(selectedTask.id) ?? []].map(id => <li key={id}><Button type="button" onClick={() => onSelect({ kind: 'agent', id })}>{agentLabel(id)}</Button></li>)}</ul>
         {(model.ownerIds.get(selectedTask.id)?.size ?? 0) === 0 && <p>{w('noOwner')}</p>}
         <h4>{w('dependencies')}</h4><p>{w('dependencyHint')}</p>
-        <ul className="tw-links">{snapshot.taskDependencies.filter(dep => dep.downstreamTaskId === selectedTask.id && dep.validTo === null).map(dep => <li key={dep.id}><button type="button" onClick={() => onSelect({ kind: 'task', id: dep.upstreamTaskId })}>{taskLabel(dep.upstreamTaskId)}</button><small>{dep.confidence}</small>{evidence(dep.evidenceIds)}</li>)}</ul>
+        <ul className="tw-links">{snapshot.taskDependencies.filter(dep => dep.downstreamTaskId === selectedTask.id && dep.validTo === null).map(dep => <li key={dep.id}><Button type="button" onClick={() => onSelect({ kind: 'task', id: dep.upstreamTaskId })}>{taskLabel(dep.upstreamTaskId)}</Button><small>{dep.confidence}</small>{evidence(dep.evidenceIds)}</li>)}</ul>
         {evidence(selectedTask.evidenceIds)}
       </>}
       <h4>{w('events')}{activityCoverage !== 'unavailable' ? ` · ${relatedEvents.length}` : ''}</h4>
@@ -158,9 +162,9 @@ export function TeamWorkbench({ snapshot, activities = [], activityCoverage = 'u
     </div>
     <p className="tw-scope">{w('scope')} {w('snapshotPartial')}: {t(`team.completeness.${snapshot.completeness.tasks}` as I18nKey, locale)}</p>
     <div className="tw-communication" role="note">{snapshot.completeness.communication === 'unavailable' ? w('communicationMissing') : <>{w('communicationAvailable')}: {t(`team.completeness.${snapshot.completeness.communication}` as I18nKey, locale)}. {w('communicationHint')}</>}</div>
-    <div className="tw-toolbar"><input type="search" aria-label={w('search')} placeholder={w('search')} value={query} onChange={event => { setQuery(event.target.value); setAgentPage(0); setTaskPage(0); }} />
-      <select aria-label={w('status')} value={status} onChange={event => { setStatus(event.target.value); setTaskPage(0); }}><option value="all">{w('all')}</option>{(['pending', 'ready', 'claimed', 'running', 'blocked', 'completed', 'failed', 'cancelled', 'unknown'] as const).map(value => <option key={value} value={value}>{taskState(value)}</option>)}</select>
-      {(query !== '' || status !== 'all') && <button type="button" onClick={() => { setQuery(''); setStatus('all'); setAgentPage(0); setTaskPage(0); }}>{w('clear')}</button>}
+    <div className="tw-toolbar"><Input type="search" aria-label={w('search')} placeholder={w('search')} value={query} onChange={event => { setQuery(event.target.value); setAgentPage(0); setTaskPage(0); }} />
+      <OptionSelect aria-label={w('status')} value={status} onChange={event => { setStatus(event.target.value); setTaskPage(0); }}><option value="all">{w('all')}</option>{(['pending', 'ready', 'claimed', 'running', 'blocked', 'completed', 'failed', 'cancelled', 'unknown'] as const).map(value => <option key={value} value={value}>{taskState(value)}</option>)}</OptionSelect>
+      {(query !== '' || status !== 'all') && <Button type="button" onClick={() => { setQuery(''); setStatus('all'); setAgentPage(0); setTaskPage(0); }}>{w('clear')}</Button>}
     </div>
     <div className={`tw-grid ${compact ? 'tw-compact' : ''}`}>
       <div className="tw-lists">
@@ -168,10 +172,10 @@ export function TeamWorkbench({ snapshot, activities = [], activityCoverage = 'u
           <div className="tw-rows">{agentSlice.rows.map(agent => {
             const assigned = [...model.taskIds.get(agent.id) ?? []];
             const linked = selectedTask !== undefined && (model.ownerIds.get(selectedTask.id)?.has(agent.id) ?? false);
-            return <button type="button" className={`tw-row tw-member ${linked ? 'tw-linked' : ''}`} key={agent.id} title={agent.displayName} aria-pressed={selectedAgent?.id === agent.id} onClick={() => select('agent', agent.id)}>
+            return <Button type="button" className={`tw-row tw-member ${linked ? 'tw-linked' : ''}`} key={agent.id} title={agent.displayName} aria-pressed={selectedAgent?.id === agent.id} onClick={() => select('agent', agent.id)}>
               <span className="tw-identity"><strong>{agent.displayName}</strong><small>{agent.role} · {t(`session.teamReplay.agentState.${agent.state}` as I18nKey, locale)}</small></span>
               <span className="tw-responsibility">{assigned.length === 0 ? w('noAssigned') : <>{taskLabel(assigned[0]!)}{assigned.length > 1 ? ` · +${assigned.length - 1}` : ''}</>}{linked && <small>{w('linked')}</small>}</span>
-            </button>;
+            </Button>;
           })}</div>
           {filteredAgents.length === 0 && <p>{snapshot.agents.length === 0 ? w('noAgents') : w('noMatch')}</p>}
           {pager(filteredAgents.length, agentSlice, setAgentPage, w('members'))}
@@ -180,16 +184,16 @@ export function TeamWorkbench({ snapshot, activities = [], activityCoverage = 'u
           <div className="tw-rows">{taskSlice.rows.map(task => {
             const owners = [...model.ownerIds.get(task.id) ?? []];
             const linked = selectedAgent !== undefined && (model.taskIds.get(selectedAgent.id)?.has(task.id) ?? false);
-            return <button type="button" className={`tw-row tw-task ${linked ? 'tw-linked' : ''}`} key={task.id} title={task.title} aria-pressed={selectedTask?.id === task.id} onClick={() => select('task', task.id)}>
+            return <Button type="button" className={`tw-row tw-task ${linked ? 'tw-linked' : ''}`} key={task.id} title={task.title} aria-pressed={selectedTask?.id === task.id} onClick={() => select('task', task.id)}>
               <span className="tw-identity"><strong>{task.title}</strong><small>{owners.length > 0 ? owners.map(agentLabel).join(' · ') : w('noOwner')}{linked ? ` · ${w('linked')}` : ''}</small></span>
               <span className={`tw-state tw-state-${task.status}`}>{taskState(task.status)}</span>
-            </button>;
+            </Button>;
           })}</div>
           {filteredTasks.length === 0 && <p>{snapshot.tasks.length === 0 ? w('noTasks') : w('noMatch')}</p>}
           {pager(filteredTasks.length, taskSlice, setTaskPage, w('tasks'))}
         </section>
       </div>
-      {!compact && <aside className="tw-detail" aria-label={w('selected')}><div className="tw-detail-head"><strong>{w('selected')}</strong>{hasSelection && <button type="button" onClick={close} aria-label={w('close')}>×</button>}</div>{detail}</aside>}
+      {!compact && <aside className="tw-detail" aria-label={w('selected')}><div className="tw-detail-head"><strong>{w('selected')}</strong>{hasSelection && <Button type="button" onClick={close} aria-label={w('close')}>×</Button>}</div>{detail}</aside>}
     </div>
     {compact && <Drawer title={w('selected')} open={hasSelection} onClose={close} className="tw-drawer">{detail}</Drawer>}
   </section>;

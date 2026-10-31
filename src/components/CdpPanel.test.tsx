@@ -15,7 +15,7 @@ function render() {
   return { container, root };
 }
 async function toggle(container: Element, open: boolean) {
-  await act(async () => { const details = container.ownerDocument.body.querySelector('details')!; details.open = open; details.dispatchEvent(new Event('toggle')); });
+  await act(async () => { const trigger=container.ownerDocument.body.querySelector<HTMLButtonElement>('.capture-run .ui-accordion > button')!;if((trigger.getAttribute('aria-expanded')==='true')!==open)trigger.click(); });
 }
 async function click(container: Element, text: string) {
   await act(async () => { const button = [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === text); expect(button).toBeDefined(); button!.click(); });

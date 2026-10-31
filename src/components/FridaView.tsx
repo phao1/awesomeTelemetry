@@ -1,3 +1,7 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Switch } from './ui/Controls.js';
+import { Disclosure } from './ui/PageControls.js';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {t,type Locale} from '../i18n.js';
 import {api,ApiError} from '../api/client.js';
@@ -90,7 +94,7 @@ export function FridaView({locale,liveStatus=null,savedNotifications=[],connecte
   const label=status===null?'frida.status.unknown':status.starting?'frida.status.starting':status.running?'frida.status.running':'frida.status.stopped';
   return <section className="view admin-workbench frida-workbench" aria-label={t('view.frida',locale)}>
     <header className="admin-heading"><div><span className="workbench-source">{t('frida.experimental',locale)}</span><h1>{t('frida.title',locale)}</h1><p className="hint">{t('frida.scope',locale)}</p></div>
-      <button type="button" className="btn" disabled={busy||loading.status||loading.history} onClick={()=>{void read('status');void read('history');}}>{t('common.refresh',locale)}</button>
+      <Button type="button"  disabled={busy||loading.status||loading.history} onClick={()=>{void read('status');void read('history');}}>{t('common.refresh',locale)}</Button>
     </header>
     <section className="admin-surface" aria-labelledby="frida-runtime">
       <div className="admin-section-heading"><h2 id="frida-runtime">{t('frida.runtime',locale)}</h2><span role="status">{t(label,locale)}{status?.pid!==null&&status?.pid!==undefined?' · PID '+status.pid:''}</span></div>
@@ -105,37 +109,37 @@ export function FridaView({locale,liveStatus=null,savedNotifications=[],connecte
       {actionError!==null&&<div className="ui-error" role="alert"><code>{actionError}</code><p>{t('frida.actionFailed',locale)}</p></div>}
       {received&&<p role="status">{t('frida.received',locale)}</p>}
       <div className="admin-toolbar">
-        <button type="button" className="btn" disabled={busy||loading.status} onClick={()=>void read('status')}>{t('frida.refreshStatus',locale)}</button>
-        {active&&<button type="button" className="btn ui-btn-danger" disabled={busy||loading.status} onClick={()=>setConfirmStop(true)}>{t('frida.stop',locale)}</button>}
-        {busy&&<><span role="status">{t(action==='start'?'frida.startPending':'frida.stopPending',locale)}</span><button type="button" className="btn" onClick={()=>abandon('FRIDA_WAIT_CANCELLED')}>{t('frida.cancelWait',locale)}</button></>}
+        <Button type="button"  disabled={busy||loading.status} onClick={()=>void read('status')}>{t('frida.refreshStatus',locale)}</Button>
+        {active&&<Button type="button" variant="danger" disabled={busy||loading.status} onClick={()=>setConfirmStop(true)}>{t('frida.stop',locale)}</Button>}
+        {busy&&<><span role="status">{t(action==='start'?'frida.startPending':'frida.stopPending',locale)}</span><Button type="button"  onClick={()=>abandon('FRIDA_WAIT_CANCELLED')}>{t('frida.cancelWait',locale)}</Button></>}
       </div>
     </section>
     <section className="admin-surface" aria-labelledby="frida-prerequisites">
       <h2 id="frida-prerequisites">{t('frida.prereq',locale)}</h2>
       <p>{t('frida.prereqHint',locale)}</p>
-      <details><summary>{t('frida.limitations',locale)}</summary><p className="hint">{locale==='zh'?'完整且有效的帧可保存并按需查看。当前随包脚本仍是骨架，启动会明确失败；Windows / Trae 真机尚未验证。':'Complete valid frames can be saved and inspected on demand. The packaged script is still a skeleton and start fails explicitly; Windows / Trae device capture remains unverified.'}</p></details>
-      <label className="settings-provider-toggle"><input type="checkbox" data-frida-ack checked={acknowledged} disabled={busy||active} onChange={event=>setAcknowledged(event.currentTarget.checked)}/><span>{t('frida.acknowledge',locale)}</span></label>
-      <div className="admin-toolbar"><label className="frida-pid"><span>{t('frida.pid',locale)}</span><input type="text" className="ui-input mono" inputMode="numeric" data-frida-pid value={pid} disabled={busy||active} aria-invalid={!validPid} aria-describedby={!validPid?'frida-pid-error':'frida-pid-hint'} onChange={event=>setPid(event.currentTarget.value)}/></label>
-        <button type="button" className="btn ui-btn-primary" disabled={busy||active||loading.status||status===null||uncertain||!acknowledged||!validPid} onClick={()=>void run('start')}>{t('frida.start',locale)}</button></div>
+      <Disclosure  title={<>{t('frida.limitations',locale)}</>}><p className="hint">{locale==='zh'?'完整且有效的帧可保存并按需查看。当前随包脚本仍是骨架，启动会明确失败；Windows / Trae 真机尚未验证。':'Complete valid frames can be saved and inspected on demand. The packaged script is still a skeleton and start fails explicitly; Windows / Trae device capture remains unverified.'}</p></Disclosure>
+      <div className="settings-provider-toggle"><Switch data-frida-ack checked={acknowledged} disabled={busy||active} onChange={event=>setAcknowledged(event.currentTarget.checked)} label={<><span>{t('frida.acknowledge',locale)}</span></>}/></div>
+      <div className="admin-toolbar"><label className="frida-pid"><span>{t('frida.pid',locale)}</span><Input type="text" className="ui-input mono" inputMode="numeric" data-frida-pid value={pid} disabled={busy||active} aria-invalid={!validPid} aria-describedby={!validPid?'frida-pid-error':'frida-pid-hint'} onChange={event=>setPid(event.currentTarget.value)}/></label>
+        <Button type="button" variant="primary" disabled={busy||active||loading.status||status===null||uncertain||!acknowledged||!validPid} onClick={()=>void run('start')}>{t('frida.start',locale)}</Button></div>
       <p id="frida-pid-hint" className="hint">{t('frida.pidHint',locale)}</p>
       {!validPid&&<p id="frida-pid-error" role="alert">{t('frida.pidInvalid',locale)}</p>}
     </section>
     <section className="admin-surface" aria-labelledby="frida-history">
       <div className="admin-section-heading"><h2 id="frida-history">{t('frida.history',locale)}{history!==null?' · '+history.items.length:''}</h2>
-        <button type="button" className="btn" disabled={busy||loading.history} onClick={()=>void read('history')}>{t('frida.refreshHistory',locale)}</button></div>
+        <Button type="button"  disabled={busy||loading.history} onClick={()=>void read('history')}>{t('frida.refreshHistory',locale)}</Button></div>
       <p className="hint">{t('frida.historyHint',locale)}</p>
       {(liveStatus!==null||savedNotifications.length>0)&&!connected&&<p role="status">{locale==='zh'?'实时连接已断开；通知可能缺失，当前状态未知。':'Live connection is disconnected; notifications may be missing and current state is unknown.'}</p>}
       {savedNotifications.length>0&&<section aria-label={locale==='zh'?'新保存捕获通知':'New saved capture notifications'}>
         <p className="hint">{locale==='zh'?'最近最多 20 条保存通知；与历史快照独立，不代表全部捕获或完整时间顺序。点击后才读取原文。':'At most 20 recent save notifications, separate from the history snapshot; not all captures or a complete time order. Text loads only on selection.'}</p>
-        <div className="admin-toolbar">{savedNotifications.slice(-20).map(item=><button key={item.id} type="button" className="btn" aria-label={(locale==='zh'?'打开新保存捕获 #':'Open newly saved capture #')+item.id} onClick={()=>setSelected(item.id)}>#{item.id}</button>)}</div>
+        <div className="admin-toolbar">{savedNotifications.slice(-20).map(item=><Button key={item.id} type="button"  aria-label={(locale==='zh'?'打开新保存捕获 #':'Open newly saved capture #')+item.id} onClick={()=>setSelected(item.id)}>#{item.id}</Button>)}</div>
       </section>}
       {loading.history&&<Skeleton variant="row" count={3}/>}
       {errors.history!==null&&<div className="ui-error" role="alert"><code>{errors.history}</code><p>{t('frida.readFailed',locale)}</p></div>}
       {history!==null&&history.items.length===0&&<EmptyState icon={<IconFrida/>} title={t('frida.empty',locale)} description={t('frida.emptyHint',locale)}/>}
-      {history!==null&&history.items.length>0&&<div className="admin-table frida-history-scroll" onScroll={event=>setScrollTop(event.currentTarget.scrollTop)}><table className="ui-table ui-table-compact"><thead><tr><th>ID</th><th>{t('frida.type',locale)}</th><th>{t('frida.model',locale)}</th><th>{t('proxy.time',locale)}</th></tr></thead><tbody>{windowStart>0&&<tr aria-hidden="true" style={{height:windowStart*28}}><td colSpan={4}/></tr>}{history.items.slice(windowStart,windowEnd).map(item=><tr key={item.id}><td className="mono"><button type="button" className="btn" aria-label={(locale==='zh'?'打开捕获 #':'Open capture #')+item.id} onClick={()=>setSelected(item.id)}>{item.id}</button></td><td>{item.captureType}</td><td className="mono">{item.model??'—'}</td><td className="mono"><time dateTime={item.capturedAt} title={item.capturedAt}>{Number.isFinite(Date.parse(item.capturedAt))?new Date(item.capturedAt).toLocaleString(locale==='zh'?'zh-CN':'en-US'):item.capturedAt}</time></td></tr>)}{history.items.length>windowEnd&&<tr aria-hidden="true" style={{height:(history.items.length-windowEnd)*28}}><td colSpan={4}/></tr>}</tbody></table></div>}
-      {history?.hasMore&&<><p role="status">{t('frida.partialHistory',locale)}</p><button type="button" className="btn" disabled={loading.history||history.nextCursor===null} onClick={()=>{if(history.nextCursor!==null)void read('history',history.nextCursor);}}>{locale==='zh'?'加载下一页':'Load next page'}</button></>}
+      {history!==null&&history.items.length>0&&<div className="admin-table frida-history-scroll" onScroll={event=>setScrollTop(event.currentTarget.scrollTop)}><table className="ui-table ui-table-compact"><thead><tr><th>ID</th><th>{t('frida.type',locale)}</th><th>{t('frida.model',locale)}</th><th>{t('proxy.time',locale)}</th></tr></thead><tbody>{windowStart>0&&<tr aria-hidden="true" style={{height:windowStart*28}}><td colSpan={4}/></tr>}{history.items.slice(windowStart,windowEnd).map(item=><tr key={item.id}><td className="mono"><Button type="button"  aria-label={(locale==='zh'?'打开捕获 #':'Open capture #')+item.id} onClick={()=>setSelected(item.id)}>{item.id}</Button></td><td>{item.captureType}</td><td className="mono">{item.model??'—'}</td><td className="mono"><time dateTime={item.capturedAt} title={item.capturedAt}>{Number.isFinite(Date.parse(item.capturedAt))?new Date(item.capturedAt).toLocaleString(locale==='zh'?'zh-CN':'en-US'):item.capturedAt}</time></td></tr>)}{history.items.length>windowEnd&&<tr aria-hidden="true" style={{height:(history.items.length-windowEnd)*28}}><td colSpan={4}/></tr>}</tbody></table></div>}
+      {history?.hasMore&&<><p role="status">{t('frida.partialHistory',locale)}</p><Button type="button"  disabled={loading.history||history.nextCursor===null} onClick={()=>{if(history.nextCursor!==null)void read('history',history.nextCursor);}}>{locale==='zh'?'加载下一页':'Load next page'}</Button></>}
     </section>
     {selected!==null&&<FridaCaptureInspector key={selected} id={selected} locale={locale} onClose={()=>setSelected(null)}/>}
-    {confirmStop&&<Modal title={t('frida.confirmStop',locale)} onClose={()=>setConfirmStop(false)} size="sm" footer={<div className="admin-toolbar"><button type="button" className="btn" onClick={()=>setConfirmStop(false)}>{t('common.cancel',locale)}</button><button type="button" className="btn ui-btn-danger" onClick={()=>{setConfirmStop(false);void run('stop');}}>{t('frida.confirmStop',locale)}</button></div>}><p>{t('frida.stopHint',locale)}</p></Modal>}
+    {confirmStop&&<Modal title={t('frida.confirmStop',locale)} onClose={()=>setConfirmStop(false)} size="sm" footer={<div className="admin-toolbar"><Button type="button"  onClick={()=>setConfirmStop(false)}>{t('common.cancel',locale)}</Button><Button type="button" variant="danger" onClick={()=>{setConfirmStop(false);void run('stop');}}>{t('frida.confirmStop',locale)}</Button></div>}><p>{t('frida.stopHint',locale)}</p></Modal>}
   </section>;
 }

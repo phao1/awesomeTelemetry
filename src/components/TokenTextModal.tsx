@@ -1,3 +1,5 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -191,7 +193,7 @@ export function TokenTextModal({
           </span>
           <span className="spacer" />
           {searchable && (
-            <button
+            <Button
               type="button"
               className="ui-icon-btn ui-btn-sm"
               aria-label={t('inspector.find', locale)}
@@ -203,16 +205,16 @@ export function TokenTextModal({
               }}
             >
               <IconSearch size={16} />
-            </button>
+            </Button>
           )}
-          <button type="button" className="btn ui-btn-sm" onClick={copy} disabled={text === null}>
+          <Button type="button" size="sm" onClick={copy} disabled={text === null}>
             {copied ? <IconSuccess size={16} /> : null}
             {copied ? t('token.modal.copied', locale) : t('token.modal.copy', locale)}
-          </button>
+          </Button>
         </header>
         {searchable && findOpen && (
           <div className="inspector-find token-modal-find">
-            <input
+            <Input
               ref={findInputRef}
               type="search"
               className={`inspector-find-input ${noMatches ? 'inspector-find-input-empty' : ''}`}
@@ -265,7 +267,7 @@ export function TokenTextModal({
               {hasQuery ? highlightMatches(shown, findQuery, activeMatch) : shown}
             </pre>
             {truncated && (
-              <button
+              <Button
                 type="button"
                 className="token-modal-showall"
                 onClick={() => setShowAll((prev) => !prev)}
@@ -276,7 +278,7 @@ export function TokenTextModal({
                       '{n}',
                       (charCount - TOKEN_TEXT_LIMIT).toLocaleString(),
                     )}
-              </button>
+              </Button>
             )}
           </div>
         )}

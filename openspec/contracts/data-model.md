@@ -3580,3 +3580,25 @@ discard them, while new PUT bodies reject them. No monetary rule can trigger.
 
 F1-005 CaptureComparisonViewModel removes its legacy always-null cost object
 and cost_unknown warning; no monetary inference/presentation is emitted.
+
+## F5 review: settings navigation and provider path evidence
+
+```ts
+export type SettingsSection = 'general' | 'appearance' | 'health' | 'alert-thresholds' | 'storage' | 'about';
+export interface ProviderStatusResponse {
+  providers: Array<{
+    key: ProviderKey;
+    enabled: boolean;
+    sessionCount: number;
+    lastScanAt: string | null;
+    ready: boolean;
+    blockedBy: string | null;
+    pathExists: boolean | null;
+  }>;
+}
+```
+
+`pathExists` is direct, bounded asynchronous access evidence for the configured
+scanner path (a directory or database file). False means ENOENT/ENOTDIR only;
+permissions, IO failure and the1s local deadline yield null, never a missing-path
+claim. No session bodies, source file contents or per-session reads are needed.

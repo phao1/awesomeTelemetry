@@ -1,3 +1,8 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Switch } from './ui/Controls.js';
+import { Disclosure } from './ui/PageControls.js';
+import { OptionSelect } from './ui/PageControls.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import type { ClaudeHookConfigureResult, ClaudeHookDetail, ClaudeHookPage, ClaudeHookSummary } from '../core/claude-hooks.js';
@@ -107,46 +112,46 @@ function Workspace({ locale, latestId, onOpenSession }: { locale: Locale; latest
   return <section aria-label={c.title}>
     <p className="hint">{c.scope}</p><p className="hint">{c.meaning}</p>
     <p role="status">{page ? page.status.enabled ? c.enabled : c.disabled : c.unknown}{page && <> · {c.observations}: {page.status.receivedCount} · {page.status.lastReceivedAt ?? '—'}</>}</p>
-    <label><input type="checkbox" checked={ack} onChange={event => setAck(event.target.checked)} disabled={pending} />{c.ack}</label>
+    <div ><Switch checked={ack} onChange={event => setAck(event.target.checked)} disabled={pending} label={<>{c.ack}</>}/></div>
     <div className="capture-toolbar">
-      <button type="button" className="btn" disabled={pending || !page || uncertain || !ack} onClick={() => configure(true)}>{page?.status.enabled ? c.rotate : c.enable}</button>
-      <button type="button" className="btn" disabled={pending || !page?.status.enabled || uncertain} onClick={() => configure(false)}>{c.disable}</button>
-      <button type="button" className="btn" disabled={pending} onClick={() => refresh(query)}>{c.refresh}</button>
-      {pending && <button type="button" className="btn" onClick={cancel}>{c.cancel}</button>}
+      <Button type="button"  disabled={pending || !page || uncertain || !ack} onClick={() => configure(true)}>{page?.status.enabled ? c.rotate : c.enable}</Button>
+      <Button type="button"  disabled={pending || !page?.status.enabled || uncertain} onClick={() => configure(false)}>{c.disable}</Button>
+      <Button type="button"  disabled={pending} onClick={() => refresh(query)}>{c.refresh}</Button>
+      {pending && <Button type="button"  onClick={cancel}>{c.cancel}</Button>}
     </div>
     {settings && <><p className="hint">{c.merge}</p><textarea className="ui-input" aria-label={c.settings} readOnly value={settings} rows={12} spellCheck={false} /></>}
     {uncertain && <p role="status">{c.uncertain}</p>}{pending && <p role="status">{c.pending}</p>}
     {error && <p role="alert">{c.error} <code>{error}</code></p>}
     <form className="capture-toolbar" onSubmit={event => { event.preventDefault(); if (valid) refresh(filters()); }}>
-      <label>{c.session}<input className="ui-input" value={session} onChange={event => setSession(event.target.value)} disabled={pending} /></label>
-      <label>{c.tool}<input className="ui-input" value={tool} onChange={event => setTool(event.target.value)} disabled={pending} /></label>
-      <label>{c.scopeLabel}<select className="ui-input" value={scope} onChange={event => setScope(event.target.value)} disabled={pending}><option value="all">{c.all}</option><option value="root">{c.root}</option><option value="id">{c.exact}</option></select></label>
-      <label>{c.agent}<input className="ui-input" value={agent} onChange={event => setAgent(event.target.value)} disabled={pending || scope !== 'id'} /></label>
-      <button className="btn" type="submit" disabled={!valid || pending}>{c.apply}</button>
+      <label>{c.session}<Input className="ui-input" value={session} onChange={event => setSession(event.target.value)} disabled={pending} /></label>
+      <label>{c.tool}<Input className="ui-input" value={tool} onChange={event => setTool(event.target.value)} disabled={pending} /></label>
+      <label>{c.scopeLabel}<OptionSelect className="ui-input" value={scope} onChange={event => setScope(event.target.value)} disabled={pending}><option value="all">{c.all}</option><option value="root">{c.root}</option><option value="id">{c.exact}</option></OptionSelect></label>
+      <label>{c.agent}<Input className="ui-input" value={agent} onChange={event => setAgent(event.target.value)} disabled={pending || scope !== 'id'} /></label>
+      <Button  type="submit" disabled={!valid || pending}>{c.apply}</Button>
     </form>
     {!valid && <p role="alert">{c.invalid}</p>}
-    <label><input type="checkbox" checked={paused} onChange={event => setPaused(event.target.checked)} />{c.pause}</label>
+    <div ><Switch checked={paused} onChange={event => setPaused(event.target.checked)} label={<>{c.pause}</>}/></div>
     {stale && <p role="status">{c.stale}</p>}
     {page?.items.length === 0 && <p>{c.empty}</p>}
     {page?.items.map(item => <article key={item.id} className="capture-run">
       <p className="mono">#{item.id} · {item.eventName} · {item.nativeSessionId} · {item.agentId ?? c.root} · {item.toolName ?? '—'} · {item.toolUseId ?? '—'}</p>
       <p>{c.received}: {item.receivedAt} · {c.bytes}: {item.payloadBytes} · {c.duration}: {item.nativeDurationMs ?? '—'}</p>
       <div className="capture-toolbar"><span className="hint">{c[item.nativeSessionState]}</span>
-        {item.nativeSessionKey && onOpenSession && <button type="button" className="btn" onClick={() => onOpenSession(item.nativeSessionKey!)}>{c.open}</button>}
-        <button type="button" className="btn" disabled={pending} onClick={() => select(item.id)}>{c.raw} #{item.id}</button>
-        {item.toolUseId && <button type="button" className="btn" disabled={pending} onClick={() => exactTool(item)}>{c.scopeTool} #{item.id}</button>}
+        {item.nativeSessionKey && onOpenSession && <Button type="button"  onClick={() => onOpenSession(item.nativeSessionKey!)}>{c.open}</Button>}
+        <Button type="button"  disabled={pending} onClick={() => select(item.id)}>{c.raw} #{item.id}</Button>
+        {item.toolUseId && <Button type="button"  disabled={pending} onClick={() => exactTool(item)}>{c.scopeTool} #{item.id}</Button>}
       </div>
     </article>)}
-    {page && <div className="capture-toolbar"><button type="button" className="btn" disabled={pending} onClick={() => refresh(query)}>{c.first}</button><button type="button" className="btn" disabled={pending || !page.hasMore} onClick={() => refresh(query, page.nextCursor)}>{c.next}</button></div>}
+    {page && <div className="capture-toolbar"><Button type="button"  disabled={pending} onClick={() => refresh(query)}>{c.first}</Button><Button type="button"  disabled={pending || !page.hasMore} onClick={() => refresh(query, page.nextCursor)}>{c.next}</Button></div>}
     <Drawer open={selected !== null} title={c.raw + ' #' + selected} onClose={close} width={760}>
-      <button type="button" className="btn" onClick={close}>{c.close}</button>
+      <Button type="button"  onClick={close}>{c.close}</Button>
       {pending && <p role="status">{c.pending}</p>}
-      {error && <p role="alert">{c.error} <code>{error}</code><button type="button" className="btn" disabled={pending} onClick={() => selected !== null && select(selected)}>{c.retry}</button></p>}
+      {error && <p role="alert">{c.error} <code>{error}</code><Button type="button"  disabled={pending} onClick={() => selected !== null && select(selected)}>{c.retry}</Button></p>}
       {detail && <><p className="mono">SHA256 {detail.sha256}</p><CaptureBodyText key={detail.id} value={detail.rawJson} locale={locale} /></>}
     </Drawer>
   </section>;
 }
 export function OfficialHooksPanel({ locale, latestId = 0, onOpenSession }: { locale: Locale; latestId?: number; onOpenSession?: (key: string) => void }) {
   const [open, setOpen] = useState(false);
-  return <details className="capture-run" onToggle={event => setOpen(event.currentTarget.open)}><summary>{COPY[locale].title}</summary>{open && <Workspace locale={locale} latestId={latestId} onOpenSession={onOpenSession} />}</details>;
+  return <Disclosure className="capture-run" onOpenChange={open => setOpen(open)} title={<>{COPY[locale].title}</>}>{open && <Workspace locale={locale} latestId={latestId} onOpenSession={onOpenSession} />}</Disclosure>;
 }

@@ -1,3 +1,4 @@
+import { chooseOption } from '../ui/test-controls.js';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -31,7 +32,7 @@ it('reads only on explicit analysis and shows partial coverage, measured values 
   expect(host.textContent).toContain('Insufficient evidence'); expect(host.textContent).toContain('Partial'); expect(host.textContent).toContain('17 / 200');
   expect(host.textContent).toContain('Heuristic'); expect(host.textContent).toContain('2.5 x'); expect(host.textContent).toContain('—');
   expect(host.textContent).toContain('Only if the branch is independent.'); expect(host.textContent).toContain('Rerun fixed acceptance checks.');
-  expect(host.querySelector<HTMLDetailsElement>('.architecture-finding-disclosure')!.open).toBe(false);
+  expect(host.querySelector('.architecture-finding-disclosure .ui-accordion > button')!.getAttribute('aria-expanded')==='true').toBe(false);
   expect(host.querySelector('script')).toBeNull(); expect(host.textContent).toContain('<script>unsafe()</script>');
   expect([...host.querySelectorAll('a')].map(a => a.getAttribute('href'))).toContain('#/task?origin=collected&task=collected%3Asession-main&member=all&event=session-main%3Aevent%3Aevent%3Aexact');
   expect([...host.querySelectorAll('a')].map(a => a.getAttribute('href'))).toContain('/api/proxy/requests/8/codex-calls/3');
@@ -108,8 +109,8 @@ it('opens one metadata-only real-task selector and reads a verified source only 
   vi.mocked(fetch).mockImplementation(async input => String(input).includes('architecture-diagnosis') ? json(report()) : json({ items: [task], total: 101, offset: 0, limit: 100, hasMore: true }));
   act(() => root.render(<RealTaskDiagnosisEntry locale="en"/>)); expect(fetch).not.toHaveBeenCalled();
   act(() => button('Analyze real task telemetry').click()); await settle(); expect(fetch).toHaveBeenCalledTimes(1); expect(String(vi.mocked(fetch).mock.calls[0]![0])).toBe('/api/tasks?origin=collected&limit=100&offset=0&range=all');
-  const selector = host.querySelector('select')!;
-  act(() => { selector.value = taskId; selector.dispatchEvent(new Event('change', { bubbles: true })); }); expect(fetch).toHaveBeenCalledTimes(1); expect(host.textContent).toContain('do not automatically become verified evidence');
+  const selector = host.querySelector('[role=combobox]')!;
+  act(() => { chooseOption(selector,taskId); }); expect(fetch).toHaveBeenCalledTimes(1); expect(host.textContent).toContain('do not automatically become verified evidence');
   act(() => button('Analyze split and merge').click()); await settle(); expect(fetch).toHaveBeenCalledTimes(2); expect(host.textContent).toContain('Context grew');
   act(() => button('Next tasks').click()); await settle(); expect(fetch).toHaveBeenCalledTimes(3); expect(String(vi.mocked(fetch).mock.calls[2]![0])).toContain('offset=100');
 });

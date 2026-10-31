@@ -1,3 +1,4 @@
+import { chooseOption, selectedValue } from '../ui/test-controls.js';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -10,6 +11,7 @@ beforeEach(() => { host = document.createElement('div'); document.body.append(ho
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 const button = (label: string): HTMLButtonElement => [...host.querySelectorAll('button')].find(b => b.textContent === label)!;
 const change = (input: HTMLInputElement | HTMLSelectElement, value: string): void => {
+  if(input.getAttribute('role')==='combobox'){chooseOption(input,value);return;}
   const prototype = input instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLSelectElement.prototype;
   Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(input, value);
   input.dispatchEvent(new Event(input instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
@@ -63,14 +65,14 @@ it('plays, pauses and clears its owned timer on unmount', () => {
 
 it('filters by member, kind and repetition while preserving scope and no network', () => {
   act(() => root.render(<TeamExperimentReplay report={createTeamExperimentDemo('team_quality')} locale="en"/>));
-  const member = host.querySelector<HTMLSelectElement>('.team-exp-record-filters select')!;
+  const member = host.querySelector<HTMLSelectElement>('.team-exp-record-filters [role=combobox]')!;
   act(() => change(member, 'team/verify'));
   expect(host.querySelectorAll('.team-exp-lane')).toHaveLength(1);
-  const type = host.querySelectorAll<HTMLSelectElement>('.team-exp-record-filters select')[1]!;
+  const type = host.querySelectorAll<HTMLSelectElement>('.team-exp-record-filters [role=combobox]')[1]!;
   act(() => change(type, 'message'));
   expect(host.querySelectorAll('.team-exp-record')).toHaveLength(1);
   expect(host.querySelector('.team-exp-records')!.textContent).toContain('向接口成员质疑并发假设');
-  act(() => change(host.querySelector<HTMLSelectElement>('select[aria-label="Repetition"]')!, '2'));
+  act(() => change(host.querySelector<HTMLSelectElement>('[role=combobox][aria-label="Repetition"]')!, '2'));
   expect(host.querySelector('.team-exp-lane-heading small')!.textContent).toContain('single');
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -81,7 +83,7 @@ it('bounds record and chart DOM to the same explicit 100-event page', () => {
   const sample = trial.evidence!.events[0]!;
   trial.evidence!.events = Array.from({ length: 250 }, (_, i) => ({ ...sample, id: `event-${i}`, name: `record-${i}`, startMs: i, durationMs: 1, dependsOn: [] }));
   act(() => root.render(<TeamExperimentReplay report={report} locale="en"/>));
-  act(() => change(host.querySelector<HTMLSelectElement>('select[aria-label="Filter variant"]')!, 'single'));
+  act(() => change(host.querySelector<HTMLSelectElement>('[role=combobox][aria-label="Filter variant"]')!, 'single'));
   expect(host.querySelectorAll('.team-exp-record')).toHaveLength(100);
   expect(host.querySelectorAll('.team-exp-block')).toHaveLength(100);
   act(() => button('Next').click());
@@ -91,14 +93,14 @@ it('bounds record and chart DOM to the same explicit 100-event page', () => {
 
 it('locates a dependency exactly across member and type filters', () => {
   act(() => root.render(<TeamExperimentReplay report={createTeamExperimentDemo('team_quality')} locale="en"/>));
-  const filters = host.querySelectorAll<HTMLSelectElement>('.team-exp-record-filters select');
+  const filters = host.querySelectorAll<HTMLSelectElement>('.team-exp-record-filters [role=combobox]');
   act(() => change(filters[0]!, 'team/verify'));
   act(() => change(filters[1]!, 'message'));
   act(() => host.querySelector<HTMLButtonElement>('.team-exp-record-select')!.click());
   expect(host.querySelector('aside')!.textContent).toContain('peer-question');
   act(() => button('verify-work').click());
   expect(host.querySelector('aside h4')!.textContent).toBe('检视权限与并发边界');
-  expect(filters[0]!.value).toBe('all'); expect(filters[1]!.value).toBe('all');
+  expect(selectedValue(filters[0]!)).toBe('all'); expect(selectedValue(filters[1]!)).toBe('all');
   expect(host.querySelector<HTMLButtonElement>('.team-exp-record[data-selected=true] button')!.textContent).toContain('检视权限与并发边界');
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -119,7 +121,7 @@ it('collapses long rosters by default and can explicitly expand members', () => 
 it('steps only through events matching the current member and type', () => {
   const report = createTeamExperimentDemo('team_quality');
   act(() => root.render(<TeamExperimentReplay report={report} locale="en"/>));
-  const filters = host.querySelectorAll<HTMLSelectElement>('.team-exp-record-filters select');
+  const filters = host.querySelectorAll<HTMLSelectElement>('.team-exp-record-filters [role=combobox]');
   act(() => change(filters[0]!, 'team/verify'));
   act(() => change(filters[1]!, 'message'));
   act(() => change(host.querySelector<HTMLInputElement>('input[aria-label="Replay time"]')!, '0'));
@@ -165,12 +167,12 @@ it('retains per-trial host, coverage, capture and execution errors for a validat
   const report = validateTeamExperimentReport(partial);
   act(() => root.render(<TeamExperimentReplay report={report} locale="en"/>));
   expect(host.querySelector('.team-exp-diagnostics')!.textContent).not.toContain('Driver stopped after workspace update');
-  act(() => change(host.querySelector<HTMLSelectElement>('select[aria-label="Repetition"]')!, '2'));
+  act(() => change(host.querySelector<HTMLSelectElement>('[role=combobox][aria-label="Repetition"]')!, '2'));
   const diagnostics = host.querySelector('.team-exp-diagnostics')!;
   const row = [...diagnostics.querySelectorAll('tbody tr')].find(tr => tr.textContent?.includes('subagents-2'))!;
   expect(row.textContent).toContain('partial-capture-host');
   expect([...row.querySelectorAll('td')].filter(td => td.textContent === 'Completeness unconfirmed')).toHaveLength(4);
-  const detail = [...diagnostics.querySelectorAll('.team-exp-trial-evidence')].find(el => el.querySelector('summary')!.textContent?.includes('subagents-2'))!;
+  const detail = [...diagnostics.querySelectorAll('.team-exp-trial-evidence')].find(el => el.querySelector('.ui-accordion > button')!.textContent?.includes('subagents-2'))!;
   expect(detail.textContent).toContain('Driver stopped after workspace update');
   expect(detail.textContent).toContain('Missing message segment <unsafe-marker>');
   expect(detail.querySelector('unsafe-marker')).toBeNull();

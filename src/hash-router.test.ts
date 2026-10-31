@@ -105,3 +105,8 @@ it('Phase C redirects legacy architecture groups while retaining source evidence
  expect(canonicalHash('#/task?a=collected%3Aa&b=collected%3Ab')).toBe('#/compare?a=collected%3Aa&b=collected%3Ab');
  expect(canonicalHash('#/task?task=collected%3Aa&event=a%3Aevent%3Ae&a=collected%3Aa&b=collected%3Ab')).toBe('#/task?task=collected%3Aa&event=a%3Aevent%3Ae&a=collected%3Aa&b=collected%3Ab');
 });
+
+it('round-trips all settings sections, omits general and rejects unrelated or invalid section values',()=>{
+ for(const section of ['appearance','health','alert-thresholds','storage','about'] as const){expect(serializeHash({view:'settings',section})).toBe('#/settings?section='+section);expect(parseHash('#/settings?section='+section)).toEqual({view:'settings',section});}
+ expect(serializeHash({view:'settings',section:'general'})).toBe('#/settings');expect(parseHash('#/settings?section=invalid')).toEqual({view:'settings'});expect(parseHash('#/task?section=storage')).toEqual({view:'task'});expect(serializeHash({view:'task',section:'storage'})).toBe('#/task');
+});

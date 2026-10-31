@@ -1,3 +1,8 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Switch } from './ui/Controls.js';
+import { Disclosure } from './ui/PageControls.js';
+import { OptionSelect } from './ui/PageControls.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MonitorAgent, MonitorCaptureSelfTest, MonitorConnectionDiagnostics, MonitorConnectionPlan, MonitorConnectionProfile, MonitorConnectionSettings, ProxyRuntimeStatus } from '../core/trace-types.js';
 import { api, ApiError } from '../api/client.js';
@@ -189,63 +194,63 @@ export function MonitorSetupPanel({ locale, onStatus, runtimeStatus, initialAgen
   return (
     <section className="monitor-setup" aria-label={t('monitor.title', locale)}>
       <p className="hint">{t('monitor.flow.scope', locale)}</p>
-      <details className="monitor-boundaries"><summary>{t('monitor.flow.boundaries', locale)}</summary>
+      <Disclosure className="monitor-boundaries" title={<>{t('monitor.flow.boundaries', locale)}</>}>
         <p className="hint">{t('monitor.scope', locale)}</p><p className="hint">{t('monitor.stopWarning', locale)}</p><p className="hint">{t('monitor.trustScope', locale)}</p>
-      </details>
+      </Disclosure>
       {error !== null && <div className="ui-error" role="alert"><strong>{error.code}</strong> — {t(error.code === 'MONITOR_WAIT_CANCELLED' ? 'monitor.flow.cancelled'
         : error.code.endsWith('_TIMEOUT') && error.code !== 'MONITOR_DIAGNOSTICS_TIMEOUT' ? 'monitor.flow.timeout' : errorKeys[error.code as keyof typeof errorKeys] ?? 'monitor.error.generic', locale)}<p>{error.message}</p></div>}
       {unknown.profile && <p role="alert">{t('monitor.flow.profileUncertain', locale)}</p>}
       {unknown.runtime && <p role="alert">{t('monitor.flow.runtimeUncertain', locale)}</p>}
       {unknown.selfTest && <p role="alert">{t('monitor.flow.testUncertain', locale)}</p>}
       {busy !== null && <div className="capture-toolbar" role="status"><span>{t('monitor.working', locale)} · {t('monitor.flow.' + busy as Parameters<typeof t>[0], locale)}</span>
-        <button type="button" className="btn" onClick={() => owner.current?.cancel()}>{t('capture.cancelWaiting', locale)}</button></div>}
+        <Button type="button"  onClick={() => owner.current?.cancel()}>{t('capture.cancelWaiting', locale)}</Button></div>}
       <section className="monitor-recipe"><div className="capture-toolbar"><h3>{t('monitor.flow.recipe', locale)}</h3>
-        <button type="button" className="btn ui-btn-sm" disabled={pending} onClick={readProfiles}>{t('monitor.reload', locale)}</button></div>
+        <Button type="button" size="sm" disabled={pending} onClick={readProfiles}>{t('monitor.reload', locale)}</Button></div>
       <p className="hint">{t('monitor.flow.reloadHint', locale)}</p>
       {busy === 'profiles' && <Skeleton count={2} />}
       {profiles?.length === 0 && <p className="hint">{t('monitor.flow.empty', locale)}</p>}
-      <label>{t('monitor.savedProfiles', locale)}<select aria-label={t('monitor.savedProfiles', locale)} className="ui-select" value={selectedId} disabled={disabled} onChange={event => requestChoose(event.target.value)}><option value="">{t('monitor.newProfile', locale)}</option>{profiles?.map(profile => <option key={profile.id} value={profile.id}>{profile.label} · {profile.agent} · r{profile.revision}</option>)}</select></label>
+      <label>{t('monitor.savedProfiles', locale)}<OptionSelect aria-label={t('monitor.savedProfiles', locale)} className="ui-select" value={selectedId} disabled={disabled} onChange={event => requestChoose(event.target.value)}><option value="">{t('monitor.newProfile', locale)}</option>{profiles?.map(profile => <option key={profile.id} value={profile.id}>{profile.label} · {profile.agent} · r{profile.revision}</option>)}</OptionSelect></label>
       {selected !== undefined && <p className="hint mono">{selected.id} · r{selected.revision} · <time dateTime={selected.updatedAt}>{selected.updatedAt}</time></p>}
-      {changedRevision && <div role="alert"><p>{t('monitor.flow.changedRevision', locale)}</p><button type="button" className="btn" disabled={pending} onClick={() => requestChoose(selectedId)}>{t('monitor.flow.review', locale)}</button></div>}
+      {changedRevision && <div role="alert"><p>{t('monitor.flow.changedRevision', locale)}</p><Button type="button"  disabled={pending} onClick={() => requestChoose(selectedId)}>{t('monitor.flow.review', locale)}</Button></div>}
       {listIssue && profiles !== null && <p role="alert">{t('monitor.flow.listStale', locale)}</p>}
       <form onSubmit={event => { event.preventDefault();save(); }}>
         <fieldset className="monitor-fields" aria-label={t('monitor.flow.recipe', locale)} disabled={disabled}>
-          <label>{t('monitor.label', locale)}<input className="ui-input" value={settings.label} maxLength={80} required onChange={event => change({ label: event.target.value })} /></label>
-          <label>{t('monitor.agent', locale)}<select aria-label={t('monitor.agent', locale)} className="ui-select" value={settings.agent} onChange={event => { const agent = event.target.value as MonitorAgent; change({ agent, ...(agent === 'opencode' && settings.noProxy === null ? { noProxy: 'localhost,127.0.0.1,::1' } : {}) }); }}>{agents.map(agent => <option key={agent} value={agent}>{agent}</option>)}</select></label>
-          <label className="monitor-project">{t('monitor.project', locale)}<input className="ui-input" value={settings.projectDirectory} maxLength={4096} required placeholder="/absolute/project/path" onChange={event => change({ projectDirectory: event.target.value })} /></label>
-          <label>{t('monitor.port', locale)}<input className="ui-input" type="number" min={1} max={65535} step={1} required value={portDraft} onChange={event => { if (owner.current !== null) return;setPortDraft(event.target.value);change({ proxyPort: Number(event.target.value) }); }} /></label>
-          <details className="monitor-optional"><summary>{t('monitor.flow.optional', locale)}</summary>
-          <label>{t('monitor.executable', locale)}<input className="ui-input" value={settings.executable ?? ''} maxLength={4096} placeholder={settings.agent} onChange={event => change({ executable: event.target.value === '' ? null : event.target.value })} /></label>
-          <label className="monitor-bypass"><input type="checkbox" checked={settings.noProxy === null} onChange={event => change({ noProxy: event.target.checked ? null : '' })} />{t('monitor.inheritBypass', locale)}</label>
-          {settings.noProxy !== null && <label>{t('monitor.noProxy', locale)}<input className="ui-input" value={settings.noProxy} maxLength={2048} onChange={event => change({ noProxy: event.target.value })} /></label>}
+          <label>{t('monitor.label', locale)}<Input className="ui-input" value={settings.label} maxLength={80} required onChange={event => change({ label: event.target.value })} /></label>
+          <label>{t('monitor.agent', locale)}<OptionSelect aria-label={t('monitor.agent', locale)} className="ui-select" value={settings.agent} onChange={event => { const agent = event.target.value as MonitorAgent; change({ agent, ...(agent === 'opencode' && settings.noProxy === null ? { noProxy: 'localhost,127.0.0.1,::1' } : {}) }); }}>{agents.map(agent => <option key={agent} value={agent}>{agent}</option>)}</OptionSelect></label>
+          <label className="monitor-project">{t('monitor.project', locale)}<Input className="ui-input" value={settings.projectDirectory} maxLength={4096} required placeholder="/absolute/project/path" onChange={event => change({ projectDirectory: event.target.value })} /></label>
+          <label>{t('monitor.port', locale)}<Input className="ui-input" type="number" min={1} max={65535} step={1} required value={portDraft} onChange={event => { if (owner.current !== null) return;setPortDraft(event.target.value);change({ proxyPort: Number(event.target.value) }); }} /></label>
+          <Disclosure className="monitor-optional" title={<>{t('monitor.flow.optional', locale)}</>}>
+          <label>{t('monitor.executable', locale)}<Input className="ui-input" value={settings.executable ?? ''} maxLength={4096} placeholder={settings.agent} onChange={event => change({ executable: event.target.value === '' ? null : event.target.value })} /></label>
+          <div className="monitor-bypass"><Switch checked={settings.noProxy === null} onChange={event => change({ noProxy: event.target.checked ? null : '' })} label={<>{t('monitor.inheritBypass', locale)}</>}/></div>
+          {settings.noProxy !== null && <label>{t('monitor.noProxy', locale)}<Input className="ui-input" value={settings.noProxy} maxLength={2048} onChange={event => change({ noProxy: event.target.value })} /></label>}
           <p className="hint">{t('monitor.bypassWarning', locale)}</p>
-          </details>
-          <div className="capture-toolbar"><button type="submit" className="btn ui-btn-primary" disabled={profileBlocked}>{t('monitor.save', locale)}</button>
+          </Disclosure>
+          <div className="capture-toolbar"><Button type="submit" variant="primary" disabled={profileBlocked}>{t('monitor.save', locale)}</Button>
             <span className="hint" role="status">{t(saved ? 'monitor.flow.saved' : dirty ? 'monitor.flow.unsaved' : selected === undefined ? 'monitor.newProfile' : 'monitor.flow.reviewed', locale)}</span></div>
         </fieldset>
       </form>
       {settings.agent !== 'claude' && <p className="hint">{t(settings.agent === 'opencode' ? 'monitor.openCodeBypass' : 'monitor.codexStandalone', locale)}</p>}
       </section>
       <section className="monitor-actions"><h3>{t('monitor.flow.actions', locale)}</h3><p className="hint">{t('monitor.flow.nextStep', locale)}</p>
-      <div className="capture-toolbar"><button type="button" className="btn ui-btn-sm" disabled={pending} onClick={refreshStatus}>{t('monitor.flow.status', locale)}</button>
+      <div className="capture-toolbar"><Button type="button" size="sm" disabled={pending} onClick={refreshStatus}>{t('monitor.flow.status', locale)}</Button>
         {listenerBlocked && <span className="hint">{t('monitor.flow.listenerBlocked', locale)}</span>}</div>
       {selected !== undefined && <><div className="capture-toolbar">
-        <button type="button" className="btn ui-btn-primary" disabled={profileBlocked || dirty} onClick={() => getPlan(false)}>{t('monitor.command', locale)}</button>
-        <button type="button" className="btn" disabled={profileBlocked || dirty || listenerBlocked || unknown.runtime} onClick={() => getPlan(true)}>{t('monitor.startListener', locale)}</button>
-        <button type="button" className="btn" disabled={profileBlocked || dirty} onClick={diagnose}>{t('monitor.diagnose', locale)}</button>
-        <button type="button" className="btn" disabled={profileBlocked || dirty || listenerBlocked || unknown.runtime || unknown.selfTest} onClick={testCapture}>{t('monitor.selfTest', locale)}</button>
+        <Button type="button" variant="primary" disabled={profileBlocked || dirty} onClick={() => getPlan(false)}>{t('monitor.command', locale)}</Button>
+        <Button type="button"  disabled={profileBlocked || dirty || listenerBlocked || unknown.runtime} onClick={() => getPlan(true)}>{t('monitor.startListener', locale)}</Button>
+        <Button type="button"  disabled={profileBlocked || dirty} onClick={diagnose}>{t('monitor.diagnose', locale)}</Button>
+        <Button type="button"  disabled={profileBlocked || dirty || listenerBlocked || unknown.runtime || unknown.selfTest} onClick={testCapture}>{t('monitor.selfTest', locale)}</Button>
       </div><p className="hint">{t('monitor.selfTestScope', locale)}</p>
       {dirty && <p className="hint">{t('monitor.saveFirst', locale)}</p>}
-      <details><summary>{t('monitor.flow.maintenance', locale)}</summary><button type="button" className="btn ui-btn-danger" disabled={profileBlocked} onClick={() => setConfirmDelete(true)}>{t('monitor.delete', locale)}</button></details></>}
+      <Disclosure  title={<>{t('monitor.flow.maintenance', locale)}</>}><Button type="button" variant="danger" disabled={profileBlocked} onClick={() => setConfirmDelete(true)}>{t('monitor.delete', locale)}</Button></Disclosure></>}
       </section>
       {switchTo !== null && <Modal size="sm" title={t('monitor.flow.discardTitle', locale)} onClose={() => setSwitchTo(null)}>
-        <p>{t('monitor.flow.discardHint', locale)}</p><div className="capture-toolbar"><button type="button" className="btn" onClick={() => setSwitchTo(null)}>{t('settings.keepEditing', locale)}</button>
-        <button type="button" className="btn ui-btn-danger" onClick={() => { choose(switchTo);setSwitchTo(null); }}>{t('monitor.flow.discard', locale)}</button></div>
+        <p>{t('monitor.flow.discardHint', locale)}</p><div className="capture-toolbar"><Button type="button"  onClick={() => setSwitchTo(null)}>{t('settings.keepEditing', locale)}</Button>
+        <Button type="button" variant="danger" onClick={() => { choose(switchTo);setSwitchTo(null); }}>{t('monitor.flow.discard', locale)}</Button></div>
       </Modal>}
       {confirmDelete && <Modal size="sm" title={t('monitor.confirmDelete', locale)} onClose={() => setConfirmDelete(false)}>
         <p>{selected?.label} · <code>{selected?.id}</code></p><p>{t('monitor.flow.deleteScope', locale)}</p><div className="capture-toolbar">
-        <button type="button" className="btn" onClick={() => setConfirmDelete(false)}>{t('common.cancel', locale)}</button>
-        <button type="button" className="btn ui-btn-danger" disabled={profileBlocked} onClick={remove}>{t('common.confirm', locale)}</button></div>
+        <Button type="button"  onClick={() => setConfirmDelete(false)}>{t('common.cancel', locale)}</Button>
+        <Button type="button" variant="danger" disabled={profileBlocked} onClick={remove}>{t('common.confirm', locale)}</Button></div>
       </Modal>}
       {selfTest !== null && <section aria-label={t('monitor.selfTestTitle', locale)}>
         <h3>{t('monitor.selfTestTitle', locale)}</h3>
@@ -254,7 +259,7 @@ export function MonitorSetupPanel({ locale, onStatus, runtimeStatus, initialAgen
         {runtimeStatus != null && (!runtimeStatus.running || runtimeStatus.port !== selected?.proxyPort || runtimeStatus.diagnostics?.runId !== selfTest.runId) && <p role="status">{t('monitor.snapshotStale', locale)}</p>}
         <ul>{(['forwarding', 'persistence', 'originals', 'parsing'] as const).map(check => <li key={check}>{t(`monitor.selfTest.${check}`, locale)}: {t(selfTest.checks[check] ? 'monitor.selfTest.ok' : 'monitor.selfTest.notOk', locale)}</li>)}</ul>
         <p>{t('monitor.selfTestUnverified', locale)}</p>
-        {onOpenCapture !== undefined && <button type="button" className="btn" onClick={() => onOpenCapture(selfTest.proxyId)}>{t('monitor.selfTestOpen', locale)} #{selfTest.proxyId}</button>}
+        {onOpenCapture !== undefined && <Button type="button"  onClick={() => onOpenCapture(selfTest.proxyId)}>{t('monitor.selfTestOpen', locale)} #{selfTest.proxyId}</Button>}
       </section>}
       {diagnostics !== null && <section aria-label={t('monitor.diagnosticTitle', locale)}>
         <h3>{t('monitor.diagnosticTitle', locale)}</h3>
@@ -270,9 +275,9 @@ export function MonitorSetupPanel({ locale, onStatus, runtimeStatus, initialAgen
       </section>}
       {plan !== null && <div className="monitor-command">
         <p>{t('monitor.runExplicitly', locale)}</p>
-        <label>{t('monitor.shell', locale)}<select aria-label={t('monitor.shell', locale)} className="ui-select" disabled={pending} value={shell} onChange={event => { setShell(event.target.value as typeof shell); setCopied(false); }}><option value="posix">POSIX (macOS / Linux)</option><option value="powershell">PowerShell</option></select></label>
+        <label>{t('monitor.shell', locale)}<OptionSelect aria-label={t('monitor.shell', locale)} className="ui-select" disabled={pending} value={shell} onChange={event => { setShell(event.target.value as typeof shell); setCopied(false); }}><option value="posix">POSIX (macOS / Linux)</option><option value="powershell">PowerShell</option></OptionSelect></label>
         <textarea aria-label={t('monitor.launchCommand', locale)} className="ui-input mono" readOnly rows={5} value={plan.commands[shell]} />
-        <button type="button" className="btn" disabled={pending} onClick={() => run('copy', async () => navigator.clipboard.writeText(plan.commands[shell]), () => setCopied(true))}>{t(copied ? 'monitor.copied' : 'monitor.copy', locale)}</button>
+        <Button type="button"  disabled={pending} onClick={() => run('copy', async () => navigator.clipboard.writeText(plan.commands[shell]), () => setCopied(true))}>{t(copied ? 'monitor.copied' : 'monitor.copy', locale)}</Button>
         <p className="hint">{t('monitor.unverified', locale)}</p><p className="mono" style={{ overflowWrap: 'anywhere' }}>CA SHA-256: {plan.caSha256}</p>
       </div>}
     </section>

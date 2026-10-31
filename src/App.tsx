@@ -1,3 +1,5 @@
+import { UiLocaleProvider } from './components/ui/Locale.js';
+import type { SettingsSection } from './settings-route.js';
 import { PageSkeleton } from './components/ui/PageSkeleton.js';
 import { AppSidebar } from './components/AppSidebar.js';
 import { PageHeader } from './components/PageHeader.js';
@@ -62,8 +64,7 @@ const SessionCaptureLinksPanel=lazy(()=>import('./components/TraceLinksPanel.js'
 const FridaView = lazy(() => import('./components/FridaView.js').then(module => ({ default: module.FridaView })));
 import type { MissionRange } from './components/MissionControl.js';
 const MissionControl=lazy(()=>import('./components/MissionControl.js').then(m=>({default:m.MissionControl})));
-const SettingsModal = lazy(() => import('./components/SettingsModal.js').then(module => ({ default: module.SettingsModal })));
-import { Modal } from './components/ui/Modal.js';
+const SettingsPage = lazy(() => import('./components/SettingsModal.js').then(module => ({ default: module.SettingsPage })));
 
 /** 错误展示本地化：已知错误码按当前语言翻译，未知码回退原始 message。 */
 function formatError(err: unknown, locale: Locale): string {
@@ -131,8 +132,9 @@ export default function App() {
   );
   const [taskRoute, setTaskRoute] = useState<TaskRoute>(() => initialLocation.task);
   const [taskChanges, setTaskChanges] = useState<TaskChanges>({ version: 0, keys: [], runIds: [] });
-  const [settingsTarget,setSettingsTarget]=useState<LocalSettingsTarget>();
-  const openSettingsTarget=useCallback((target:LocalSettingsTarget)=>{setSettingsTarget(target);setSettingsOpen(true);},[]);
+  const [settingsSection,setSettingsSection]=useState<SettingsSection>(INITIAL_HASH?.section??'general');
+  const openSettings=useCallback((section:SettingsSection='general')=>{setSettingsSection(section);startTransition(()=>setView('settings'));},[]);
+  const openSettingsTarget=useCallback((target:LocalSettingsTarget)=>openSettings(target.section),[openSettings]);
   const [settingsRevision,setSettingsRevision]=useState(0);
   const [agentsExpanded,setAgentsExpanded]=useState(false);
   const [intakeChannel, setIntakeChannel] = useState<'native' | 'proxy' | 'cdp' | 'frida' | 'import'>(()=>INITIAL_HASH?.channel??'native');
@@ -190,12 +192,10 @@ export default function App() {
   const [fontPx, setFontPx] = useState(() =>
     loadNumber(LAYOUT_KEYS.fontSize, BASE_FONT_PX, LAYOUT_RANGES.fontSize),
   ); // REQ-012：8–28px
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>{try {const saved=localStorage.getItem('awesome-telemetry.sidebarCollapsed');return saved===null?window.innerWidth<1280:saved==='true';}catch(error){console.error('[sidebar] preference read failed',error);return window.innerWidth<1280;}});
   const [mobileNav,setMobileNav]=useState(false);
   useEffect(()=>{const media=window.matchMedia('(max-width: 1279px)');const resize=(event:MediaQueryListEvent)=>setSidebarCollapsed(event.matches);media.addEventListener('change',resize);return ()=>media.removeEventListener('change',resize);},[]);
   useEffect(()=>{try{localStorage.setItem('awesome-telemetry.sidebarCollapsed',String(sidebarCollapsed));}catch(error){console.error('[sidebar] preference write failed',error);}},[sidebarCollapsed]);
-  useEffect(()=>{if(view==='settings')setSettingsOpen(true);},[view]);
   const [promptContextKey, setPromptContextKey] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteLoadError, setPaletteLoadError] = useState(false);
@@ -671,7 +671,7 @@ export default function App() {
     add({ key: '3' }, () => switchView('benchmark'));
     add({ key: '4' }, () => switchView('team-experiment'));
     add({ key: '5' }, () => switchView('intake'));
-    add({ key: '6' }, () => setSettingsOpen(true));
+    add({ key: '6' }, () => openSettings());
     add({ key: '/' }, () => {
       if (view !== 'session') return;
       if (searchInputRef.current !== null) searchInputRef.current.focus();
@@ -702,10 +702,11 @@ export default function App() {
         unsubscribe();
       }
     };
-  }, [sessions, cursorIndex, selectSession, switchView, theme, setRailCollapsed, paletteOpen, openPalette, view]);
+  }, [sessions, cursorIndex, selectSession, switchView, theme, setRailCollapsed, paletteOpen, openPalette, openSettings, view]);
 
   // REQ-024（D3）：状态变 → 写 hash（replaceState 不触发 hashchange，避免循环）
   useEffect(() => {
+    if (view === 'settings') { history.replaceState(null,'',serializeHash({view:'settings',section:settingsSection})); return; }
     if (view === 'compare') { history.replaceState(null,'',serializeComparisonRoute(taskRoute)); return; }
     if (view === 'task') { history.replaceState(null, '', serializeTaskRoute({...taskRoute,homeProvider:providerFilter[0]})); return; }
     // §7.3 team 视图用独立 hash 序列化（与既有 session/agent/compare/... 分开）
@@ -727,7 +728,7 @@ export default function App() {
       ...(view==='intake'?{channel:intakeChannel}:{}),
     };
     history.replaceState(null, '', serializeHash(state));
-  }, [view, selectedKey, providerFilter, statusFilter, sessionQ, sessionRange, selectedTurn, compareLeft, compareRight, missionRange, teamHash, taskRoute, intakeChannel]);
+  }, [view, selectedKey, providerFilter, statusFilter, sessionQ, sessionRange, selectedTurn, compareLeft, compareRight, missionRange, teamHash, taskRoute, intakeChannel, settingsSection]);
 
   // REQ-024：hashchange → 解析并应用（脏 hash 回落默认视图，不抛错）
   useEffect(() => {
@@ -743,6 +744,7 @@ export default function App() {
         switchView('task');
         return;
       }
+      if(state.view==='settings')setSettingsSection(state.section??'general');
       if(state.channel)setIntakeChannel(state.channel);
       switchView(state.view);
       if (state.key !== undefined && state.view==='session') {
@@ -785,8 +787,8 @@ export default function App() {
   }, [switchView, selectSession]);
 
   return (
-    <div className={`app ${trajectoryFocus && view === 'session' ? 'app-trajectory-focus' : ''}`}>
-      <AppSidebar view={settingsOpen?'settings':view} locale={locale} collapsed={sidebarCollapsed} mobileOpen={mobileNav} onClose={()=>setMobileNav(false)} onCollapse={()=>setSidebarCollapsed(v=>!v)} onFont={setFontPx} onNavigate={id=>{if(id==='settings'){setSettingsOpen(true);return;}if(id==='task')setTaskRoute({...taskRoute,task:null,health:undefined,event:null,compareImport:undefined,overview:undefined});switchView(id as AppView);}} status={<StatusBar
+    <UiLocaleProvider locale={locale}><div className={`app ${trajectoryFocus && view === 'session' ? 'app-trajectory-focus' : ''}`}>
+      <AppSidebar view={view} locale={locale} collapsed={sidebarCollapsed} mobileOpen={mobileNav} onClose={()=>setMobileNav(false)} onCollapse={()=>setSidebarCollapsed(v=>!v)} onFont={setFontPx} onNavigate={id=>{if(id==='settings'){openSettings();return;}if(id==='task')setTaskRoute({...taskRoute,task:null,health:undefined,event:null,compareImport:undefined,overview:undefined});switchView(id as AppView);}} status={<StatusBar
         live={live}
         locale={locale}
         /* 状态栏是系统级读数：显示全库总量，不是当前筛选/已加载的那一页。
@@ -804,7 +806,8 @@ export default function App() {
         <LanguageToggle locale={locale} onChange={setLocale}/>
       </AppSidebar>
       <div className="app-workspace">
-      <PageHeader title={view==='ui-kit'?'UI Kit':view==='settings'?taskCopy(locale).settings:view==='task'?taskCopy(locale).tasks:view==='overview'?(locale==='zh'?'概览':'Overview'):view==='compare'?(locale==='zh'?'对比':'Compare'):view==='intake'?taskCopy(locale).intake:view==='benchmark'?(locale==='zh'?'评测中心':'Benchmarks'):t(`view.${view}` as Parameters<typeof t>[0],locale)} locale={locale} onSearch={openPalette} onMenu={()=>setMobileNav(true)}/>
+      {!['benchmark','team-experiment','intake','settings'].includes(view)&&<PageHeader title={view==='ui-kit'?'UI Kit':view==='settings'?taskCopy(locale).settings:view==='task'?taskCopy(locale).tasks:view==='overview'?(locale==='zh'?'概览':'Overview'):view==='compare'?(locale==='zh'?'对比':'Compare'):view==='intake'?taskCopy(locale).intake:view==='benchmark'?(locale==='zh'?'评测中心':'Benchmarks'):t(`view.${view}` as Parameters<typeof t>[0],locale)} locale={locale} onSearch={openPalette} onMenu={()=>setMobileNav(true)}/>}
+      {view==='settings'&&<ErrorBoundary label={t('settings.title',locale)}><Suspense fallback={<PageSkeleton locale={locale}/>}><SettingsPage locale={locale} section={settingsSection} onSectionChange={setSettingsSection} onSearch={openPalette} onMenu={()=>setMobileNav(true)} appearance={{theme:theme.theme,onTheme:theme.setTheme,fontPx,onFont:setFontPx,onLocale:setLocale}} onSettingsSaved={()=>{setSettingsRevision(n=>n+1);setMissionInvalidateKey(n=>n+1);}}/></Suspense></ErrorBoundary>}
       {view==='ui-kit'&&<Suspense fallback={<PageSkeleton locale={locale} />}><UiKit locale={locale} theme={theme}/></Suspense>}
       {paletteLoadError && <div className="workbench-error" role="alert">
         <span>{t('workbench.searchUnavailable', locale)}</span>
@@ -818,10 +821,10 @@ export default function App() {
       {view === 'task' && <ErrorBoundary label={taskCopy(locale).tasks}><Suspense fallback={<PageSkeleton locale={locale} />}><TaskWorkbench onSettings={openSettingsTarget} settingsRevision={settingsRevision} onLegacyCompare={()=>switchView('compare')} locale={locale} route={taskRoute} onRoute={setTaskRoute} changes={taskChanges} diagnosisInvalidateKey={traceLinksVersion} providerPreset={providerFilter[0] ?? ''} onProviderPresetChange={value => setProviderFilter(value ? [value] : [])}
         onIntake={() => { setIntakeChannel(taskRoute.origin === 'imported' ? 'import' : 'native'); switchView('intake'); }}
         onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} /></Suspense></ErrorBoundary>}
-      {view === 'benchmark' && <ErrorBoundary label={locale === 'zh' ? '评测中心' : 'Benchmarks'}><Suspense fallback={<PageSkeleton locale={locale} />}><BenchmarkCenter locale={locale}/></Suspense></ErrorBoundary>}
-      {view === 'team-experiment' && <ErrorBoundary label={t('view.team-experiment', locale)}><Suspense fallback={<PageSkeleton locale={locale} />}><TeamExperimentCenter locale={locale} diagnosisInvalidateKey={traceLinksVersion}/></Suspense></ErrorBoundary>}
-      {view === 'intake' && <ErrorBoundary label={taskCopy(locale).intake}><DataIntake key={intakeChannel} locale={locale} initialChannel={intakeChannel}
-        onConfigure={() => setSettingsOpen(true)} onTasks={() => switchView('task')}
+      {view === 'benchmark' && <ErrorBoundary label={locale === 'zh' ? '评测中心' : 'Benchmarks'}><Suspense fallback={<PageSkeleton locale={locale} />}><BenchmarkCenter locale={locale} onSearch={openPalette} onMenu={()=>setMobileNav(true)}/></Suspense></ErrorBoundary>}
+      {view === 'team-experiment' && <ErrorBoundary label={t('view.team-experiment', locale)}><Suspense fallback={<PageSkeleton locale={locale} />}><TeamExperimentCenter onSearch={openPalette} onMenu={()=>setMobileNav(true)} locale={locale} diagnosisInvalidateKey={traceLinksVersion}/></Suspense></ErrorBoundary>}
+      {view === 'intake' && <ErrorBoundary label={taskCopy(locale).intake}><DataIntake onSearch={openPalette} onMenu={()=>setMobileNav(true)} key={intakeChannel} locale={locale} initialChannel={intakeChannel}
+        onConfigure={() => openSettings('storage')} onTasks={() => switchView('task')}
         proxy={<Suspense fallback={<PageSkeleton locale={locale} />}><ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates} latestHookId={latestHookId}
           sessions={sessions} focusedRequestId={proxyFocusedId} onFocusedRequestHandled={clearProxyFocus} traceInvalidateKey={traceLinksVersion}
           livePreview={<Suspense fallback={<PageSkeleton locale={locale} />}><ProxyLivePanel streams={proxyStreams} locale={locale} invalidateKey={traceLinksVersion} onOpenSession={key=>{setTaskRoute({...taskRoute,task:'collected:'+key,origin:'collected',member:'main',event:null});switchView('task');}}/></Suspense>}
@@ -901,7 +904,7 @@ export default function App() {
                   offlineSamples={offlineSamples}
                   onClearFilters={() => { setSessionQ(''); setSessionRange('all'); setProviderFilter([]); setStatusFilter([]); }}
                   onSelect={selectSession} onSearch={openPalette} onCapture={() => switchView('proxy')}
-                  onTeams={() => switchView('team')} onSettings={() => setSettingsOpen(true)} />
+                  onTeams={() => switchView('team')} onSettings={() => openSettings()} />
               )}
             {detail !== null && detail.events.length > 0 && (
               <div className="session-inspector">
@@ -1122,16 +1125,6 @@ export default function App() {
       )}
 
       </div>
-      {settingsOpen && (
-        <ErrorBoundary label={t('settings.title',locale)} fallback={()=>
-          <Modal title={t('settings.title',locale)} onClose={()=>{setSettingsOpen(false);setSettingsTarget(undefined);if(view==='settings')switchView('task');}}>
-            <p role="alert">{t('state.error',locale)} · {t('settings.codeFailed',locale)}</p>
-          </Modal>}>
-          <Suspense fallback={<Modal title={t('settings.title',locale)} onClose={()=>{setSettingsOpen(false);setSettingsTarget(undefined);if(view==='settings')switchView('task');}}><PageSkeleton locale={locale} compact /></Modal>}>
-            <SettingsModal initialTarget={settingsTarget} onSettingsSaved={()=>{setSettingsRevision(n=>n+1);setMissionInvalidateKey(n=>n+1);}} locale={locale} onClose={() => {setSettingsOpen(false);setSettingsTarget(undefined);if(view==='settings')switchView('task');}} />
-          </Suspense>
-        </ErrorBoundary>
-      )}
       {promptContextKey !== null && (
         <PromptContextModal
           sessionKey={promptContextKey}
@@ -1178,7 +1171,7 @@ export default function App() {
             } else if (action.type === 'scan') {
               triggerScan();
             } else if (action.type === 'settings') {
-              setSettingsOpen(true);
+              openSettings();
             } else if (action.type === 'export' && selectedKey !== null) {
               window.open(`/api/sessions/${encodeURIComponent(selectedKey)}/report`, '_blank');
             }
@@ -1190,6 +1183,6 @@ export default function App() {
         <div className="palette-hint mono">{t('palette.hint', locale)}</div>
       )}
 
-    </div>
+    </div></UiLocaleProvider>
   );
 }

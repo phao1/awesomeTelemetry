@@ -273,7 +273,7 @@ describe('TeamRunList 过滤交互', () => {
     ) as HTMLButtonElement;
     expect(trigger).toBeDefined();
     act(() => trigger.click());
-    const items = container.querySelectorAll('.session-filter-item');
+    const items = container.ownerDocument.body.querySelectorAll('.session-filter-item');
     expect(items.length).toBe(9);
     // 点第一个 provider
     const firstCheckbox = items[0]!.querySelector('input[type="checkbox"]') as HTMLInputElement;
@@ -293,7 +293,7 @@ describe('TeamRunList 过滤交互', () => {
     ) as HTMLButtonElement;
     expect(trigger).toBeDefined();
     act(() => trigger.click());
-    const items = container.querySelectorAll('.session-filter-item');
+    const items = container.ownerDocument.body.querySelectorAll('.session-filter-item');
     expect(items.length).toBe(7);
     const firstCheckbox = items[0]!.querySelector('input[type="checkbox"]') as HTMLInputElement;
     act(() => firstCheckbox.click());
@@ -310,7 +310,7 @@ describe('TeamRunList 过滤交互', () => {
     ) as HTMLButtonElement;
     expect(trigger).toBeDefined();
     act(() => trigger.click());
-    const items = container.querySelectorAll('.session-filter-item');
+    const items = container.ownerDocument.body.querySelectorAll('.session-filter-item');
     expect(items.length).toBe(6);
     const firstCheckbox = items[0]!.querySelector('input[type="checkbox"]') as HTMLInputElement;
     act(() => firstCheckbox.click());
@@ -327,7 +327,7 @@ describe('TeamRunList 过滤交互', () => {
     ) as HTMLButtonElement;
     expect(trigger).toBeDefined();
     act(() => trigger.click());
-    const items = container.querySelectorAll('.session-filter-item');
+    const items = container.ownerDocument.body.querySelectorAll('.session-filter-item');
     expect(items.length).toBe(4);
     const firstCheckbox = items[0]!.querySelector('input[type="checkbox"]') as HTMLInputElement;
     act(() => firstCheckbox.click());

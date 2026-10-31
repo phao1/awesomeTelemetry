@@ -1,3 +1,8 @@
+import { Accordion, Callout } from '../ui/Display.js';
+import { Button } from '../ui/Button.js';
+import { Input } from '../ui/Input.js';
+import { Field } from '../ui/Field.js';
+import { Skeleton, Toast } from '../ui/States.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AlertThresholds, LocalSettingsTarget } from '../../core/task-types.js';
 import { ALERT_LABELS } from '../../core/task-alerts.js';
@@ -13,7 +18,7 @@ export function LocalSettings({locale,onSaved,onDirty,disabled=false,target}:{lo
   const read=useCallback((signal:AbortSignal)=>fetchJson<AlertThresholds>('/config/alert-thresholds',{signal}),[]);
   const data=useTaskRead(open?'local-settings':null,read,5000);
   useEffect(()=>{if(data.value){setAlerts(data.value);setDirty(false);setUncertain(false);}},[data.value]);
-  const appliedTarget=useRef(''),sectionRef=useRef<HTMLDetailsElement>(null);
+  const appliedTarget=useRef(''),sectionRef=useRef<HTMLDivElement>(null);
   const targetKey=target?JSON.stringify(target):'';
   useEffect(()=>{if(targetKey)setOpen(true);},[targetKey]);
   useEffect(()=>{
@@ -35,16 +40,16 @@ export function LocalSettings({locale,onSaved,onDirty,disabled=false,target}:{lo
     }catch(e){setError(e instanceof Error?e.message:String(e));setUncertain(!(e instanceof ApiError)||e.status!==400);}
     finally{clearTimeout(timer);if(owner.current===controller){owner.current=null;setBusy(false);}}
   };
-  return <details ref={sectionRef} open={open} onToggle={e=>setOpen(e.currentTarget.open)}><summary>{zh?'告警阈值':'Alert thresholds'}</summary>
+  return <div ref={sectionRef}><Accordion title={zh?'告警阈值':'Alert thresholds'} open={open} onOpenChange={setOpen}>
     <p>{zh?'告警默认全部关闭，只在本地标记。':'Alerts default to off and only mark local records.'}</p>
-    {(data.loading||busy)&&<p role="status">{zh?'正在读取或保存…':'Reading or saving…'}</p>}
-    {(data.error||error)&&<p role="alert">{data.error||error}</p>}
+    {(data.loading||busy)&&<Skeleton variant="row" count={2}/>}
+    {(data.error||error)&&<Callout tone="danger" title={data.error||error}/>}
     {uncertain&&<p role="alert">{zh?'保存结果未确认，请重新读取配置后再编辑。':'Save outcome is uncertain. Reload before editing.'}</p>}
-    {saved&&<p role="status">{zh?'已保存并刷新显示':'Saved; displays refreshed'}</p>}
-    <button className="btn" disabled={busy||dirty&&!uncertain||disabled} onClick={data.retry}>{zh?'重新读取阈值':'Reload thresholds'}</button>
+    {saved&&<Toast title={zh?'已保存并刷新显示':'Saved; displays refreshed'} tone="success" onDismiss={()=>setSaved(false)}/>}
+    <Button disabled={busy||dirty&&!uncertain||disabled} onClick={data.retry}>{zh?'重新读取阈值':'Reload thresholds'}</Button>
     {alerts&&<fieldset id="settings-alert-thresholds" className="local-alert-editor" disabled={busy||disabled||uncertain}><legend>{zh?'告警阈值':'Alert thresholds'}</legend><p>{zh?'留空关闭；超过阈值才标记。上下文压力可设 80；未知或任务总量覆盖不全时不触发。':'Blank disables; triggers strictly above threshold. Context pressure may be set to 80. Unknown or incomplete task totals do not trigger.'}</p>
-      {(Object.keys(ALERT_LABELS) as Array<keyof AlertThresholds>).map(key=><label key={key}>{ALERT_LABELS[key][zh?0:1]}<input aria-label={'Alert '+key} type="number" min="0" max={key.endsWith('Pct')?100:undefined} step={['errors','durationMs','tokens'].includes(key)?1:'any'} value={alerts[key]??''} placeholder={zh?'关闭':'Off'} onChange={e=>{setAlerts({...alerts,[key]:e.target.value===''?null:Number(e.target.value)});change();}}/></label>)}
-      <button className="btn" onClick={()=>void save()}>{zh?'保存告警阈值':'Save alert thresholds'}</button>
+      {(Object.keys(ALERT_LABELS) as Array<keyof AlertThresholds>).map(key=><Field key={key} label={ALERT_LABELS[key][zh?0:1]}><Input aria-label={'Alert '+key} type="number" min="0" max={key.endsWith('Pct')?100:undefined} step={['errors','durationMs','tokens'].includes(key)?1:'any'} value={alerts[key]??''} placeholder={zh?'关闭':'Off'} onChange={e=>{setAlerts({...alerts,[key]:e.target.value===''?null:Number(e.target.value)});change();}}/></Field>)}
+      <Button onClick={()=>void save()}>{zh?'保存告警阈值':'Save alert thresholds'}</Button>
     </fieldset>}
-  </details>;
+  </Accordion></div>;
 }

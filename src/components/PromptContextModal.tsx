@@ -1,3 +1,4 @@
+import { Disclosure } from './ui/PageControls.js';
 import { useCallback, useEffect, useState } from 'react';
 
 import type { SessionPromptContext } from '../core/trace-types.js';
@@ -113,10 +114,10 @@ export function PromptContextModal({
               <dt>locale</dt><dd className="mono">{state.value.modelConfig.locale ?? '—'}</dd>
             </dl>
             {state.value.modelConfig.enabledFeatures.length > 0 && (
-              <details className="prompt-context-features">
-                <summary>{t('prompt.enabledFeatures', locale)} · {state.value.modelConfig.enabledFeatures.length}</summary>
+              <Disclosure className="prompt-context-features" title={<>{t('prompt.enabledFeatures', locale)}· {state.value.modelConfig.enabledFeatures.length}</>}>
+
                 <code>{state.value.modelConfig.enabledFeatures.join('\n')}</code>
-              </details>
+              </Disclosure>
             )}
           </section>
 
@@ -124,16 +125,13 @@ export function PromptContextModal({
             <h3>{t('prompt.dynamicSections', locale)}</h3>
             <div className="prompt-context-sections">
               {state.value.dynamicSections.map((section, index) => (
-                <details key={section.id} open={index === 0}>
-                  <summary>
-                    <span>{index + 1}. {section.title}</span>
-                    <span className="prompt-context-section-meta mono">
+                <Disclosure key={section.id} open={index === 0} title={<><span>{index + 1}. {section.title}</span><span className="prompt-context-section-meta mono">
                       {section.estimatedTokens} tok
                       {section.duplicateOf !== null ? ` · ${t('prompt.duplicateOf', locale)} ${section.duplicateOf}` : ''}
-                    </span>
-                  </summary>
+                    </span></>}>
+
                   <pre>{section.content}</pre>
-                </details>
+                </Disclosure>
               ))}
             </div>
           </section>

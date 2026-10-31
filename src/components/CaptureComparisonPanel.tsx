@@ -1,3 +1,7 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Disclosure } from './ui/PageControls.js';
+import { OptionSelect } from './ui/PageControls.js';
 import { PageSkeleton } from './ui/PageSkeleton.js';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client.js';
@@ -135,26 +139,26 @@ function Comparison({ targetId, locale, loadedItems, onOpenRequest, invalidateKe
     <h3>{copy.title}</h3><p className="hint">{copy.hint}</p>
     {metadataOnly && <p role="status">{copy.metadata}</p>}
     <form onSubmit={event => { event.preventDefault(); void load(); }}>
-      <label>{copy.loaded} <select value={loadedItems.some(item => item.id === baseId) ? baseInput : ''} onChange={event => changeBase(event.target.value)}>
+      <label>{copy.loaded} <OptionSelect value={loadedItems.some(item => item.id === baseId) ? baseInput : ''} onChange={event => changeBase(event.target.value)}>
         <option value="">{copy.choose}</option>
         {loadedItems.filter(item => item.id !== targetId).map(item => <option key={item.id} value={item.id}>#{item.id} · {item.hostname} · {item.model ?? '—'}</option>)}
-      </select></label>
-      <label>{copy.manual} <input type="text" inputMode="numeric" value={baseInput} onChange={event => changeBase(event.target.value)} /></label>
-      <button className="btn" type="submit" disabled={baseId === null || busy}>{requested?.pair === pair ? copy.refresh : copy.compare}</button>
-      {busy && <button className="btn" type="button" onClick={() => { stop(); setBusy(false); setCancelled(true); }}>{copy.cancel}</button>}
+      </OptionSelect></label>
+      <label>{copy.manual} <Input type="text" inputMode="numeric" value={baseInput} onChange={event => changeBase(event.target.value)} /></label>
+      <Button  type="submit" disabled={baseId === null || busy}>{requested?.pair === pair ? copy.refresh : copy.compare}</Button>
+      {busy && <Button  type="button" onClick={() => { stop(); setBusy(false); setCancelled(true); }}>{copy.cancel}</Button>}
     </form>
     {busy && <div role="status" aria-live="polite">{copy.loading}<Skeleton count={2} /></div>}
     {cancelled && <p role="status">{copy.cancelled}</p>}
     {stale && <p role="status">{copy.stale}</p>}
     {shownError !== null && <div role="alert"><p>{shownError === 'COMPARISON_TIMEOUT' ? copy.timeout : copy.failure} <code>{shownError}</code></p>
-      <button className="btn" type="button" disabled={baseId === null || busy} onClick={() => void load()}>{copy.retry}</button></div>}
+      <Button  type="button" disabled={baseId === null || busy} onClick={() => void load()}>{copy.retry}</Button></div>}
     {shown !== null && <div data-comparison-result>
       <p className="hint">{copy.generated}: <time>{shown.generatedAt}</time></p>
       <Side side={shown.base} locale={locale} label={copy.base} openLabel={copy.baseOpen} onOpen={onOpenRequest} />
       <Side side={shown.target} locale={locale} label={copy.target} openLabel={copy.targetOpen} onOpen={onOpenRequest} />
       <ComparisonMetrics data={shown} locale={locale} />
       <CaptureDiagnosticsPanel data={shown} locale={locale} onOpenRequest={onOpenRequest} />
-      <button className="btn" type="button" disabled={diffBlocked} onClick={() => setShowDiff(value => !value)}>{showDiff && !diffBlocked ? copy.hideDiff : copy.diff}</button>
+      <Button  type="button" disabled={diffBlocked} onClick={() => setShowDiff(value => !value)}>{showDiff && !diffBlocked ? copy.hideDiff : copy.diff}</Button>
       {diffBlocked && <p className="hint">{copy.diffBlocked}</p>}
       {showDiff && !diffBlocked && <Suspense fallback={<PageSkeleton compact />}><RequestContextDiffPanel key={pair}
         targetId={targetId} initialBaseId={shown.base.request.id} targetFormat={shown.target.request.requestFormat} locale={locale} loadedItems={loadedItems}
@@ -178,7 +182,7 @@ function Side({ side, locale, label, openLabel, onOpen }: { side: CaptureCompari
     [copy.errors, side.analysis === null ? null : `${side.analysis.errorCount} · ${side.analysis.errorCodes.map(code => code ?? '—').join(', ')}`],
   ];
   return <section aria-label={label}><h4>{label} #{side.request.id}</h4>
-    <button className="btn" type="button" onClick={() => onOpen(side.request.id)}>{openLabel} #{side.request.id}</button>
+    <Button  type="button" onClick={() => onOpen(side.request.id)}>{openLabel} #{side.request.id}</Button>
     <p className="mono" style={{ overflowWrap: 'anywhere' }}>{side.request.requestId} · {side.request.startedAt} · {side.request.url}</p>
     <dl className="meta">{rows.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value ?? '—'}</dd></div>)}</dl>
     {side.analysis?.errorCodesTruncated && <p role="status">{copy.errorTruncated}</p>}
@@ -193,7 +197,7 @@ function ComparisonMetrics({ data, locale }: { data: CaptureComparisonResponse; 
     <colgroup><col style={{ width: '24%' }} /><col style={{ width: '16%' }} /><col style={{ width: '16%' }} /><col style={{ width: '16%' }} /><col style={{ width: '28%' }} /></colgroup>
     <thead><tr><th scope="col">{copy.metric}</th><th scope="col">{copy.base}</th><th scope="col">{copy.target}</th><th scope="col">{copy.delta}</th><th scope="col">{copy.basis}</th></tr></thead>
     <tbody>{rows.map(row => <tr key={row.id} data-comparison-metric={row.id}><th scope="row">{labels[row.id] ?? row.id}</th><td>{value(row.base, row.unit)}</td><td>{value(row.target, row.unit)}</td><td>{value(row.delta, row.unit, true)}</td>
-      <td style={{ overflowWrap: 'anywhere' }}>{!row.comparable && <p>{copy.notComparable}: {row.reasons.map(reason => REASONS[locale][reason]).join(' · ')}</p>}<details><summary>{copy.basis}</summary><code>{row.baseSource}</code><br /><code>{row.targetSource}</code></details></td></tr>)}</tbody>
+      <td style={{ overflowWrap: 'anywhere' }}>{!row.comparable && <p>{copy.notComparable}: {row.reasons.map(reason => REASONS[locale][reason]).join(' · ')}</p>}<Disclosure  title={<>{copy.basis}</>}><code>{row.baseSource}</code><br /><code>{row.targetSource}</code></Disclosure></td></tr>)}</tbody>
   </table></div></section>;
   return <>{table(copy.timing, view.timings)}{table(copy.usage, view.usage)}
     <h4>{copy.warnings}</h4><ul>{view.warnings.map((warning, index) => <li key={`${warning.code}:${index}`}>{WARNINGS[locale][warning.code]}

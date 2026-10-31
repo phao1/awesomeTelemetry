@@ -28,7 +28,7 @@ function render(latestId = 0) {
   const container = document.createElement('div'); document.body.append(container); const root = createRoot(container); roots.push(root); const openSession = vi.fn();
   act(() => root.render(<OfficialHooksPanel locale="en" latestId={latestId} onOpenSession={openSession} />)); return { root, container, openSession };
 }
-async function toggle(container: Element, open: boolean) { await act(async () => { const details = container.ownerDocument.body.querySelector('details')!; details.open = open; details.dispatchEvent(new Event('toggle')); }); }
+async function toggle(container: Element, open: boolean) { await act(async () => { const trigger=container.ownerDocument.body.querySelector<HTMLButtonElement>('.ui-accordion > button')!;if((trigger.getAttribute('aria-expanded')==='true')!==open)trigger.click(); }); }
 async function click(container: Element, label: string) { await act(async () => { const button = [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === label); expect(button, label).toBeDefined(); button!.click(); }); }
 async function ack(container: Element) { await act(async () => (container.ownerDocument.body.querySelector('input[type=checkbox]') as HTMLInputElement).click()); }
 afterEach(() => { act(() => roots.splice(0).forEach(root => root.unmount())); document.body.innerHTML = ''; vi.unstubAllGlobals(); vi.useRealTimers(); });

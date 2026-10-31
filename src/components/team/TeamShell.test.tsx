@@ -567,8 +567,8 @@ describe('TeamShell 七视图切换', () => {
     await wait(50);
     expect(container.querySelector('.team-summary-meta')!.textContent).toContain('通信: 不可用');
     expect(container.querySelector('.team-summary-meta')!.textContent).not.toContain('0 通信');
-    const source = container.querySelector('.team-summary-header details') as HTMLDetailsElement;
-    expect(source.open).toBe(false);
+    const source=container.querySelector('.team-summary-header .ui-accordion')!;
+    expect(source.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
     expect(source.textContent).toContain(summary.nativeRunId);
     expect(source.textContent).toContain('运行身份置信度');
   });
