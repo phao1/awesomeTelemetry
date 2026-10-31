@@ -68,14 +68,13 @@
 - **Rebuild**: cli.ts default host is `127.0.0.1`; README examples use it too
 
 ### G3.2 MITM requires the user to trust the CA certificate
-- CA generated on first run (OpenSSL preferred, node-forge fallback)
-- User must import `proxy-ca-cert.pem` into the system/browser trust store
-- Provide a `GET /api/ca-cert` download endpoint
+- The effective proxy engine CA is generated on first use; download its actual public certificate via `GET /api/ca-cert`.
+- Trust scope is runtime-specific. The approved launcher appends child-only custom CA trust; it does not require or install global OS trust. Other browsers/runtimes need explicit trust configuration and independent verification.
+- Listening/recipe generation is not evidence that an existing Agent process trusts that CA. Equal-issuer/different-key roots can fail verification; preserve prior CA files and report a conflict rather than bypassing TLS.
 
 ### G3.3 OpenSSL dependency
-- CA generation shells out to the `openssl` CLI, which Windows may lack
-- The code "suggests installing node-forge" but **does not actually use the
-  node-forge fallback** (known gap; can be completed when rebuilding)
+- Historical v4 had an unimplemented fallback. Current monitoring uses the actual http-mitm-proxy1.1.0 CA generator (node-forge), not a second independent root or an OpenSSL-only command.
+- The canonical public certificate and private key stay under the controlled caDirectory; private material is never a capture/export/API payload. Actual CONNECT trust/SAN/restart tests establish the effective root, not a filename alone.
 
 ---
 
@@ -226,7 +225,7 @@
 - Groups collapsed by default; expand for details
 
 ### G7.4 scan/proxy shown separately
-- Scan sessions and proxy captures are two independent views; do not mix them
+- Scan sessions and proxy captures keep independent original views. Explicitly labelled association exploration is allowed by fuse-agent-monitoring; candidates are never authoritative membership and original rows are not merged.
 
 ### G7.5 Performance: useDeferredValue + startTransition
 - phase/kind filtering uses `useDeferredValue`
@@ -254,10 +253,10 @@
 - 40-char base64 regex has too many false positives
 - Disabled by default; the other 9 rules are enabled by default
 
-### G8.3 Raw bodies kept after desensitization
-- proxy_requests keeps `rawRequestBody`/`rawResponseBody` columns with the
-  un-desensitized originals
-- Filled only when desensitization is enabled, for debugging
+### G8.3 Original capture policy (2026-10-15, user-approved)
+- Fusion monitoring preserves original headers/bodies/prompts/tool data without redaction.
+- Originals stream to an independent file store; default10GB total/100MiB per direction, configurable.
+- No automatic original expiry or eviction. Analysis limits do not limit capture or download.
 
 ---
 
@@ -415,15 +414,11 @@ prewarm** ⚠️
 - After persisting four-dimension metrics, an algorithm change that does not
   bump `METRICS_CALC_VERSION` leaves stale dirty data in the DB unnoticed
 
-### G11.12 `proxy_requests` is the fastest-growing table
-- Under long-term MITM capture it grows one to two orders of magnitude faster
-  than sessions
-- Must have a retention policy (default 30 days), or it becomes the next 320MB
+### G11.12 Original bodies must not grow SQLite
+- Keep body files separate from metadata/previews. Defaults:10GB files,100MiB per direction; full quota explicitly stops new body collection, never deletes old evidence.
 
-### G11.13 Desensitization regexes run on the request sync path
-- Backtracking explosions directly stall proxy forwarding. Every rule must
-  avoid nested quantifiers
-- Per-call budget < 5ms @ 100KB; on timeout, skip and record
+### G11.13 Monitoring bypasses regex redaction
+- Preserve original payload. Legacy redaction utilities are optional and are not used in the monitoring forwarding path.
 
 ### G11.14 Merge-group SSE notifications must emit the primaryKey
 - Emitting the group members' own keys makes the frontend invalidate entries
@@ -457,3 +452,120 @@ prewarm** ⚠️
   wastes all time in the wrong place
 - A/B experiments (disable a suspect component and compare) give the most
   information per unit cost
+
+---
+
+## 12. Team observability (add-agent-team-observability, backed by fixtures)
+
+> Source: `openspec/research/agent-team-evidence.md` — field-mapping matrices
+> derived from `codearts-team-minimal.json` and `codex-team-minimal.jsonl`. Every
+> entry is a real shape discovered in the fixtures, not a theoretical risk. Do
+> not "fix" these away by assuming a cleaner model.
+
+### G12.1 Topology is measured, not assumed from the provider name ⚠️
+- **Wrong assumption**: "CodeArts = two_level, Codex = three_level"
+- **Measured**: both CodeArts (`contact.json` leader → teammate) and Codex
+  (`root` → depth-1 subagent) resolve to **two_level** from real records
+- **Fix**: `TeamTopologyKind` is derived from actual parent/child links; never
+  hardcode a topology per provider. Codex may show three levels only if a
+  depth-2 spawn is actually observed in a fixture (design D16)
+
+### G12.2 communication is unavailable for both providers, do not fabricate ⚠️
+- **Symptom**: neither provider's message records carry `sender`/`recipient`
+- **CodeArts**: single member + no direct-send fields; coordination only via
+  `background-task`/`output` and `get-my-task` tool-param sessionIDs (correlated)
+- **Codex**: `send_message` exists only as a schema declaration, **0 real calls**;
+  `agent_message` has no recipient field
+- **Fix**: communication dimension is declared `unavailable`, never upgraded to
+  direct messages from tool-param inference (adapters REQ-015/016)
+
+### G12.3 Codex cost unavailable must not render as $0.0000 ⚠️
+- **Symptom**: Codex carries no monetary amount; `rate_limits.credits.balance`
+  is literally `"0"` and `has_credits=false`
+- **Fix**: cost is `unavailable` (nullable), not zero. Never display `$0.0000`
+  for a Codex run — that fabricates a cost signal (design D7/D9 keep a separate
+  unavailable channel)
+
+### G12.4 Mixed timestamp formats force an `ambiguous` order marker ⚠️
+- **Measured**: CodeArts has **three** timestamp formats (contact.json ISO UTC;
+  `team-task.json.startedAt` local string `"8/17/2026, 11:31:52 PM"`,
+  `createdAt` ms; `opencode.db.time_created` ms). Codex has **two**
+  (session_meta/event top-level ISO; `task_*` unix s; `sub_agent_activity.
+  occurred_at_ms` ms)
+- **Fix**: normalize everything to ISO 8601 UTC **before** persisting;
+  `team-task.json.startedAt` local string parses as UTC+8 (`15:31:52Z ==
+  23:31:52 +08:00`, same instant, different representation). Cross-source
+  ordering records `orderConfidence = 'ambiguous'` (design D8)
+
+### G12.5 Codex has three generational sub-thread shapes ⚠️
+- **Measured** (fixtures): `08-01` has `thread_source=subagent` +
+  `parent_thread_id` + `source.subagent.other="guardian"`; `08-07/08` has
+  `thread_source=subagent` **only, no parent link**; `08-16` has
+  `thread_source=subagent` + `forked_from_id` + `parent_thread_id` +
+  `source.subagent.thread_spawn{depth,agent_path,agent_nickname,agent_role}`
+- **Fix**: the Codex adapter must tolerate both with/without parent links; a
+  missing `parent_thread_id` does not mean "root" — it means the link is absent
+  in that generation, so the parent/child edge is `unavailable`, not assumed
+  (design D16)
+
+### G12.6 Template intent ≠ runtime membership ⚠️
+- **Symptom**: `get-team-setup` output contains a full Role Table listing 7
+  sub-agent types (team-spec-requirement-agent, …)
+- **Fix**: that is recorded as "template intent" (documented/inferred boundary),
+  **not** runtime members. Runtime membership comes only from `contact.json` /
+  `background-task` actual creation records (design D16, adapters REQ-015)
+
+### G12.7 To-Do ≠ Task List ⚠️
+- **Symptom**: `opencode.db.todo` has 62 rows overall but **0 rows for the team
+  session**; the real team Task List lives in `team-task.json` + the
+  `publish-task` tool
+- **Fix**: To-Do is agent-local metadata/activity, never a team DAG task unless
+  the source explicitly promotes it (design D16)
+
+---
+
+## 13. Task health (P0 contract and source inspection, 2026-10-30)
+
+### G13.1 Timestamp is not automatically event start
+- Codex/Claude source records are completion observations under the health
+  declaration; next-record duration cannot be attributed to the preceding item.
+- OpenCode-family db parts currently share message.time.created; treat as start,
+  not model/tool interval. OTel/native part endpoints require path-specific checks.
+- Unknown semantics disables partition/think. Source declarations are not a claim
+  of calibration: current observe.sqlite has zero accepted associations/transports.
+
+### G13.2 Pair exact native call/result identities before timing
+- Codex call and output are two records, one call; result's derived duration is
+  not tool work. taskStructure exact must be scoped to member+namespace+scope+ID.
+- Claude adapter collapses matched tool_result into tool_use and loses its result
+  timestamp from slim rows. Retain native endpoints via bounded source metadata;
+  do not promote the call's adjacent duration to observed.
+- Unpaired/ambiguous/incomplete durations stay derived or unavailable.
+
+### G13.3 Derived 300s cap is a lower bound
+- DERIVED_DURATION_CAP_MS=300000. Mark capped=true and display
+  “≥300s（推导值封顶）”; never feed derived/capped tools into act P50/P95.
+- Exact/measured durations have no300s cap. P50 needs>=1 eligible sample;
+  P95 needs>=5; both use raw samples and benchmarkStats algorithms.
+
+### G13.4 TTFT layer and reasoning zero need explicit evidence
+- Log ready→first completed model record is log_upper_bound, not first token.
+- Proxy/exporter/MaaS/InferHub/Kernel layers never mix; missing platform source
+  stays unavailable. Kernel duration may include tools (G4.1).
+- Adapter default reasoning=0 is not a reported zero. Preserve present/zero/unknown;
+  unknown prevents thinking percentage, missing usage never means cache hit0%.
+
+### G13.5 Full task statistics are not the opened page or diagnosis sample
+- taskRecords defaults to last page; health explicitly starts offset0 and keeps
+  fixed window through200-row pages, includes all selected members up to budgets.
+- Existing forward-duration time filters are not completion-semantic pairing;
+  collect needed prefix/partners before clipping reconstructed intervals.
+- Σ and ∪ are different; child Σ remains included when partition labels main
+  delegation wait. Never call unattributed gaps queue or E2E−Σ idle.
+
+### G13.6 Deep evidence remains untrusted and ordinary facts immutable
+- Preview digest binds redacted bounded pack; explicit confirmation makes one
+  cancellable model call without retries. Reject foreign refs and unfounded numbers.
+- Include adjacent normal evidence and precise finding record IDs, not first400.
+- Save report/index atomically, retain history at revision change;50-report cap
+  never auto-deletes. Model secrets and complete bodies never enter exports.

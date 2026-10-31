@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runtimeResourcePath } from '../server/runtime-paths.js';
 
 import { fingerprintSqliteWithWal } from '../server/watch/fingerprint.js';
 
@@ -45,7 +46,7 @@ export async function decryptTraeDb(
     }
   }
 
-  const scriptPath = opts.scriptPath ?? join(process.cwd(), 'scripts', 'trae-extract-key.py');
+  const scriptPath = opts.scriptPath ?? runtimeResourcePath('scripts/trae-extract-key.py');
   // Windows 惯例是 python / py，macOS/Linux 是 python3；可被配置覆盖
   const pythonBin = opts.pythonBin ?? (process.platform === 'win32' ? 'python' : 'python3');
   const timeoutMs = opts.timeoutMs ?? 30_000;

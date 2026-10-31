@@ -4,6 +4,8 @@ import { computeMetrics } from '../core/metrics.js';
 import { normalizeClaudeSample, type ClaudeRawRow } from './claude-code.js';
 import { claudeFixture } from './__fixtures__/claude.js';
 
+import sidechainRows from './__fixtures__/claude-sidechain.json';
+
 const SRC = '/tmp/claude.jsonl';
 
 // fix-adapter-turn-semantics A3 rule 3（§6 验证修复，2026-08-08）：claude 的
@@ -18,6 +20,36 @@ function sample(events: ClaudeRawRow[]) {
 }
 
 describe('Claude Code adapter（REQ-004）', () => {
+  it('binds explicit native identities at source event creation through sorted duplicate event ids', () => {
+    const rows: ClaudeRawRow[] = [
+      { type: 'assistant', sessionId: 's', requestId: 'r-late', timestamp: '2026-10-16T00:00:02.000Z', message: { id: 'same', content: [{ type: 'text', text: 'late' }] } },
+      { type: 'assistant', sessionId: 's', requestId: 'r-early', timestamp: '2026-10-16T00:00:01.000Z', message: { id: 'same', content: [{ type: 'text', text: 'early' }] } },
+    ];
+    const result = normalizeClaudeSample(sample(rows), SRC);
+    expect(result.nativeIdentities?.items.find(item => item.value === 'r-early')?.eventId).toBe('same-1');
+    expect(result.nativeIdentities?.items.find(item => item.value === 'r-late')?.eventId).toBe('same-1:2');
+    expect(result.nativeIdentities?.items.find(item => item.kind === 'session')?.eventId).toBeNull();
+    expect(result.events.every(event => Object.getOwnPropertySymbols(event).length === 0)).toBe(true);
+  });
+  it('REQ-014 preserves native request/message/tool identifiers independently of derived event ids and turns', () => {
+    const rows: ClaudeRawRow[] = [
+      { type: 'assistant', sessionId: 'native-session', uuid: 'native-row', requestId: 'native-request', message: { id: 'native-message', content: [{ type: 'text', text: 'hello' }, { type: 'tool_use', id: 'native-tool', name: 'Read', input: {} }] } },
+      { type: 'user', sessionId: 'native-session', message: { content: [{ type: 'tool_result', tool_use_id: 'native-tool', content: 'ok' }] } },
+    ];
+    const before = JSON.stringify(rows);
+    const r = normalizeClaudeSample(sample(rows), '/tmp/not-a-native-session.jsonl');
+    expect(r.nativeIdentities?.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'session', value: 'native-session', namespace: 'agent:claude' }),
+      expect.objectContaining({ kind: 'message', value: 'native-row', namespace: 'agent:claude' }),
+      expect.objectContaining({ kind: 'request', value: 'native-request', namespace: 'protocol:anthropic' }),
+      expect.objectContaining({ kind: 'response', value: 'native-message', namespace: 'protocol:anthropic' }),
+      expect.objectContaining({ kind: 'tool_call', value: 'native-tool', scope: 'native-session' }),
+    ]));
+    expect(r.nativeIdentities?.items.some(item => item.kind === 'turn')).toBe(false);
+    expect(r.nativeIdentities?.items.some(item => item.value === 'native-message-1')).toBe(false);
+    expect(JSON.stringify(rows)).toBe(before);
+    expect(r.events.find(item => item.tool === 'Read')?.outputSummary).toBe('ok');
+  });
   it('fixture 完整 TraceRecord 快照', () => {
     const r = normalizeClaudeSample(sample(claudeFixture.events), SRC);
     expect(r.session.provider).toBe('claude');
@@ -359,5 +391,24 @@ describe('Claude Code adapter（REQ-004）', () => {
       expect(a.events[0]?.turnKey).toBe(`${a.session.id}:msg-shared`);
       expect(b.events[0]?.turnKey).toBe(`${b.session.id}:msg-shared`);
     });
+  });
+});
+
+
+describe('architecture r4 Claude sidechains', () => {
+  it('uses the observed child agent identity and scopes its parent without aliasing the root', () => {
+    const r = normalizeClaudeSample(sample(sidechainRows), '/redacted/subagents/agent-child-a.jsonl');
+    expect(r.session.id).toBe('child-a');
+    expect(r.session.isSubagent).toBe(true);
+    expect(r.nativeIdentities?.completeness.complete).toBe(true);
+    expect(r.nativeIdentities?.items.filter(x => x.kind === 'session').map(x => x.value)).toEqual(['child-a']);
+    expect(r.nativeIdentities?.items).toContainEqual(expect.objectContaining({ kind: 'parent_session', value: 'parent-a', scope: 'child-a', sourcePath: 'events[0].sessionId' }));
+    expect(r.events.every(x => x.sessionId === 'child-a')).toBe(true);
+  });
+  it.each([undefined, 'other-child'])('does not resolve missing or conflicting child identifiers: %s', agentId => {
+    const rows = sidechainRows.map((r, i) => ({ ...r, agentId: i === 0 ? agentId : r.agentId }));
+    const r = normalizeClaudeSample(sample(rows), '/redacted/child.jsonl');
+    expect(r.nativeIdentities?.completeness.complete).toBe(false);
+    expect(r.nativeIdentities?.items.some(x => x.kind === 'session' || x.kind === 'parent_session')).toBe(false);
   });
 });

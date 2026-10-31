@@ -32,19 +32,20 @@ export function CompareHeroHeader({
 
   const summaryParts: string[] = [];
   const fastDim = verdict.dims.find((d) => d.key === 'fast');
-  if (fastDim !== undefined && fastDim.winner !== 'tie') {
+  if (fastDim?.winner === 'unavailable') summaryParts.push(t('scan.timing.notComparable', locale));
+  else if (fastDim !== undefined && fastDim.winner !== 'tie' && verdict.summary.fastRatio !== null) {
     summaryParts.push(
-      t('compare.hero.summary.fast', locale).replace('{ratio}', verdict.summary.fastRatio.toFixed(1)),
+      t('scan.timing.wallClockRatio', locale).replace('{ratio}', verdict.summary.fastRatio.toFixed(1)),
     );
   }
   const frugalDim = verdict.dims.find((d) => d.key === 'frugal');
   if (frugalDim !== undefined && frugalDim.winner !== 'tie') {
     summaryParts.push(
-      t('compare.hero.summary.frugal', locale).replace('{pct}', verdict.summary.tokenDiffPct.toFixed(0)),
+      t('compare.hero.summary.tokenValues', locale).replace('{left}',left.tokenUsage.total.toLocaleString()).replace('{right}',right.tokenUsage.total.toLocaleString()),
     );
   }
   const qualityDim = verdict.dims.find((d) => d.key === 'quality');
-  if (qualityDim !== undefined && qualityDim.winner !== 'tie') {
+  if (qualityDim !== undefined && verdict.summary.leftCoveragePct !== null && verdict.summary.rightCoveragePct !== null && verdict.summary.leftCoveragePct!==verdict.summary.rightCoveragePct) {
     summaryParts.push(
       t('compare.hero.summary.quality', locale)
         .replace('{left}', `${verdict.summary.leftCoveragePct.toFixed(0)}%`)
@@ -52,7 +53,7 @@ export function CompareHeroHeader({
     );
   }
   if (summaryParts.length === 0) {
-    summaryParts.push(t('compare.tie', locale));
+    summaryParts.push(t('compare.observed.noWinner', locale));
   }
 
   const side = (
@@ -82,6 +83,7 @@ export function CompareHeroHeader({
       {side(left.provider, left.sourceAgent, left.title || left.id, 'left')}
       <div className="compare-hero-summary" aria-label={t('compare.hero.summary', locale)}>
         {summaryParts.join(' · ')}
+        <p className="hint">{t('scan.timing.nonCausal', locale)}</p>
       </div>
       {side(right.provider, right.sourceAgent, right.title || right.id, 'right')}
     </section>

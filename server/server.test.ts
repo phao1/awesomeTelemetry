@@ -1,4 +1,6 @@
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import http, { type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -9,7 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import Database from 'better-sqlite3';
 
-import type { LocalSessionConfig, ProviderKey } from '../src/core/trace-types.js';
+import type { LocalSessionConfig, ProviderKey, ProxyProtocolAnalysis, MonitorConnectionProfile, MonitorConnectionPlan, MonitorConnectionDiagnostics } from '../src/core/trace-types.js';
 import { isForegroundBusy } from './realtime/frontline.js';
 import { initSchema } from './storage/schema.js';
 import { upsertPromptContext } from './storage/prompt-context.js';
@@ -20,6 +22,9 @@ import {
 } from './storage/writers.js';
 import { createAgentObservabilityServer } from './server.js';
 import { deriveSessionKey } from '../local-sessions/session-key.js';
+import { normalizeClaudeSample } from '../src/adapters/claude-code.js';
+import { storeTraceRecord } from '../local-sessions/scanner-utils.js';
+import { decideTraceAssociation } from './storage/trace-links.js';
 
 type Db = InstanceType<typeof Database>;
 
@@ -59,7 +64,7 @@ function request(
         port,
         method,
         path,
-        headers: { accept: 'application/json', ...opts.headers },
+        headers: { accept: 'application/json', ...(opts.body === undefined ? {} : { 'content-length': String(Buffer.byteLength(opts.body)) }), ...opts.headers },
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -70,7 +75,8 @@ function request(
         });
       },
     );
-    req.on('error', reject);
+    req.on('error', error => reject(Object.assign(new Error(`${method} ${path} failed`, { cause: error }), { code: (error as NodeJS.ErrnoException).code })));
+    req.on('response', res => res.on('error', error => reject(new Error(`${method} ${path} response failed`, { cause: error }))));
     if (opts.body !== undefined) {
       req.write(opts.body);
     }
@@ -79,6 +85,7 @@ function request(
 }
 
 interface BootResult {
+  server: http.Server;
   port: number;
   db: Db;
   close: () => Promise<void>;
@@ -211,6 +218,7 @@ function proxyRequest(
   path: string,
   host: string,
   body: string,
+  headers: Record<string, string> = {},
 ): Promise<RequestResult> {
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -219,7 +227,7 @@ function proxyRequest(
         port: proxyPort,
         method: 'POST',
         path: `http://127.0.0.1:${originPort}${path}`,
-        headers: { host, 'content-type': 'application/json', accept: 'application/json' },
+        headers: { host, 'content-type': 'application/json', accept: 'application/json', ...headers },
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -230,7 +238,8 @@ function proxyRequest(
         });
       },
     );
-    req.on('error', reject);
+    req.on('error', error => reject(Object.assign(new Error(`Proxy POST ${path} failed`, { cause: error }), { code: (error as NodeJS.ErrnoException).code })));
+    req.on('response', res => res.on('error', error => reject(new Error(`Proxy POST ${path} response failed`, { cause: error }))));
     req.write(body);
     req.end();
   });
@@ -249,6 +258,7 @@ async function boot(
   const server = createAgentObservabilityServer({
     db,
     config,
+    launcherCliPath: join(process.cwd(), 'bin', 'agent-observe.js'),
     detailCache: new (await import('./storage/detail-cache.js')).DetailCache(),
     userConfigPath,
     distDir,
@@ -256,12 +266,15 @@ async function boot(
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
   const result: BootResult = {
+    server,
     port,
     db,
     close: () =>
       new Promise<void>((resolve) => {
-        server.close(() => resolve());
-        rmSync(userDir, { recursive: true, force: true });
+        server.close(() => {
+          rmSync(userDir, { recursive: true, force: true });
+          resolve();
+        });
       }),
     userConfigPath,
   };
@@ -279,6 +292,509 @@ afterEach(async () => {
 });
 
 describe('API 契约（contracts/api.md §8）', () => {
+  it('shares read-only diagnostics with the built CLI and distinguishes actual traffic from historical/other-port/stopped evidence', async () => {
+    const app = await boot(seedProxy);
+    const project = mkdtempSync(join(tmpdir(), 'diagnostic-project-')); staticDirs.push(project);
+    const settings = { label: 'Diagnostic recipe', agent: 'claude', projectDirectory: project, executable: null, proxyPort: await freePort(), noProxy: '' };
+    const profile = JSON.parse((await request(app.port, 'POST', '/api/proxy/profiles', { body: JSON.stringify(settings) })).text) as MonitorConnectionProfile;
+    const prefix = `/api/proxy/profiles/${profile.id}`;
+    const check = async () => {
+      const result = await request(app.port, 'GET', `${prefix}/diagnostics`);
+      expect(result.status, result.text).toBe(200); expect(result.raw.length).toBeLessThan(16 * 1024);
+      return JSON.parse(result.text) as MonitorConnectionDiagnostics;
+    };
+    const before = await check();
+    expect(before).toMatchObject({ listener: 'idle', ca: { state: 'missing' }, traffic: { state: 'unavailable' }, status: { requestCount: 1 } });
+    const fs = await import('node:fs/promises');
+    expect(await fs.readdir(join(app.userConfigPath, '..'))).toEqual(['monitor-profiles.json']);
+    const denied = await request(app.port, 'GET', `${prefix}/diagnostics`, { headers: { origin: 'https://untrusted.invalid' } });
+    expect(denied.status).toBe(400); expect(JSON.parse(denied.text).error.code).toBe('BAD_REQUEST');
+    const started = await request(app.port, 'POST', `${prefix}/start`, { body: '{"expectedRevision":1}' });
+    expect(started.status, started.text).toBe(200);
+    const waiting = await check();
+    expect(waiting).toMatchObject({ listener: 'listening', ca: { state: 'available' }, traffic: { state: 'waiting' }, trust: { runtimeVerified: false, osTrust: 'not_checked' } });
+    let originRequests = 0;
+    const origin = http.createServer((req, res) => { originRequests += 1; req.resume(); req.once('end', () => { res.setHeader('content-type', 'application/json'); res.end('{"choices":[{"message":{"content":"diagnostic synthetic"}}]}'); }); });
+    await new Promise<void>(resolve => origin.listen(0, '127.0.0.1', resolve));
+    try {
+      await proxyRequest(settings.proxyPort, (origin.address() as AddressInfo).port, '/v1/chat/completions', '127.0.0.1', '{"model":"synthetic","messages":[]}');
+      await waitFor(async () => (await check()).status.diagnostics?.persistedRequests === 1);
+      const observed = await check();
+      expect(observed).toMatchObject({ listener: 'listening', traffic: { state: 'observed', scope: 'shared_listener' }, status: { diagnostics: { observedRequests: 1 } } });
+      expect(observed.trust.runtimeVerified).toBe(false);
+      const other = JSON.parse((await request(app.port, 'POST', '/api/proxy/profiles', { body: JSON.stringify({ ...settings, proxyPort: await freePort() }) })).text) as MonitorConnectionProfile;
+      const different = JSON.parse((await request(app.port, 'GET', `/api/proxy/profiles/${other.id}/diagnostics`)).text) as MonitorConnectionDiagnostics;
+      expect(different).toMatchObject({ listener: 'port_conflict', traffic: { state: 'unavailable' } });
+      const runCli = (revision: string, json: boolean) => new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+        const child = spawn(process.execPath, [join(process.cwd(), 'bin', 'agent-observe.js'), 'diagnose', '--server', `http://127.0.0.1:${app.port}`, '--profile', profile.id, '--revision', revision, ...(json ? ['--json'] : [])], { cwd: project, stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '', stderr = '';
+        child.stdout.on('data', chunk => { stdout += String(chunk); }); child.stderr.on('data', chunk => { stderr += String(chunk); });
+        child.once('error', reject); child.once('close', code => resolve({ code, stdout, stderr }));
+      });
+      const json = await runCli('1', true);
+      expect(json.code, json.stderr).toBe(0); expect(json.stderr).toBe('');
+      const cliReport = JSON.parse(json.stdout) as MonitorConnectionDiagnostics;
+      expect(cliReport.issues).toEqual(observed.issues); expect(cliReport.traffic).toEqual(observed.traffic);
+      const human = await runCli('1', false);
+      expect(human.code, human.stderr).toBe(0); expect(human.stdout).toContain('Retrieval is not proof of Agent readiness'); expect(human.stdout).toContain('Next: Inspect each request');
+      const stale = await runCli('2', true);
+      expect(stale.code).toBe(1); expect(stale.stdout).toBe(''); expect(stale.stderr).toContain('revision changed');
+      expect(await fs.readdir(project)).toEqual([]);
+      expect(originRequests).toBe(1);
+      expect((await request(app.port, 'POST', '/api/proxy/stop')).status).toBe(200);
+      const stopped = await check(); expect(stopped.listener).toBe('idle'); expect(stopped.traffic.state).toBe('unavailable');
+      const caPath = join(app.userConfigPath, '..', 'proxy-ca', 'certs', 'ca.pem');
+      await fs.writeFile(caPath, 'synthetic corrupt public CA');
+      const invalid = await check(); expect(invalid.ca.state).toBe('invalid');
+      const error = await runCli('1', true);
+      expect(error.code).toBe(2); expect(JSON.parse(error.stdout).issues.some((issue: { code: string }) => issue.code === 'ca_invalid')).toBe(true);
+      expect(await fs.readFile(caPath, 'utf8')).toBe('synthetic corrupt public CA');
+      expect(originRequests).toBe(1);
+    } finally { await new Promise<void>(resolve => origin.close(() => resolve())); }
+  });
+
+  it('reports a real occupied-port startup failure with actionable guidance, without diagnosing it as Agent traffic', async () => {
+    const app = await boot();
+    const blocker = createNetServer(); await new Promise<void>(resolve => blocker.listen(0, '127.0.0.1', resolve));
+    try {
+      const proxyPort = (blocker.address() as AddressInfo).port;
+      const profile = JSON.parse((await request(app.port, 'POST', '/api/proxy/profiles', { body: JSON.stringify({ label: 'Occupied', agent: 'codex', projectDirectory: '/synthetic', executable: null, proxyPort, noProxy: null }) })).text) as MonitorConnectionProfile;
+      await request(app.port, 'POST', '/api/proxy/start', { body: JSON.stringify({ port: proxyPort }) });
+      await waitFor(async () => JSON.parse((await request(app.port, 'GET', '/api/proxy/status')).text).diagnostics?.phase === 'failed');
+      const report = JSON.parse((await request(app.port, 'GET', `/api/proxy/profiles/${profile.id}/diagnostics`)).text) as MonitorConnectionDiagnostics;
+      expect(report).toMatchObject({ listener: 'failed', traffic: { state: 'unavailable' }, status: { diagnostics: { lastError: 'EADDRINUSE' } } });
+      expect(report.issues.find(issue => issue.code === 'listener_failed')?.nextStep).toContain('EADDRINUSE');
+      expect(report.trust.variable).toBe('CODEX_CA_CERTIFICATE');
+    } finally { await new Promise<void>(resolve => blocker.close(() => resolve())); }
+  });
+
+  it('rejects malformed profile path encoding in the unified envelope and remains available', async () => {
+    const app = await boot();
+    const rejected = await request(app.port, 'GET', '/api/proxy/profiles/%E0/plan');
+    expect(rejected.status).toBe(400);
+    expect(JSON.parse(rejected.text)).toEqual({ error: { code: 'BAD_REQUEST', message: 'Malformed URL path encoding' } });
+    expect((await request(app.port, 'GET', '/api/proxy/profiles')).status).toBe(200);
+    expect((await request(app.port, 'GET', '/api/health')).status).toBe(200);
+  });
+  it('persists explicit connection recipes, protects revisions, and starts the same real capture control', async () => {
+    const app = await boot(seedProxy);
+    const projectDirectory = mkdtempSync(join(tmpdir(), 'profile-api-project-')); staticDirs.push(projectDirectory);
+    const nativeConfig = join(projectDirectory, 'native-settings.json');
+    const sentinel = '{"model":"user-model","permissions":"unchanged"}';
+    writeFileSync(nativeConfig, sentinel);
+    const settings = { label: 'Synthetic recipe', agent: 'claude', projectDirectory, executable: null, proxyPort: await freePort(), noProxy: '' };
+    expect(JSON.parse((await request(app.port, 'GET', '/api/proxy/profiles')).text)).toEqual({ items: [] });
+    const rejected = await request(app.port, 'POST', '/api/proxy/profiles', { headers: { origin: 'https://untrusted.invalid' }, body: JSON.stringify(settings) });
+    expect(rejected.status).toBe(400);
+    const created = await request(app.port, 'POST', '/api/proxy/profiles', { body: JSON.stringify(settings) });
+    expect(created.status).toBe(201);
+    const profile = JSON.parse(created.text) as MonitorConnectionProfile;
+    expect(profile).toMatchObject({ ...settings, revision: 1 });
+    const prefix = `/api/proxy/profiles/${profile.id}`;
+    const previewResponse = await request(app.port, 'GET', `${prefix}/plan`);
+    expect(previewResponse.status, previewResponse.text).toBe(200);
+    const preview = JSON.parse(previewResponse.text) as MonitorConnectionPlan;
+    expect(preview.status.running).toBe(false);
+    expect(preview.warnings).toContain('transport_unverified');
+    expect(preview.commands.posix).toContain("'launch'");
+    const ca = await request(app.port, 'GET', '/api/ca-cert');
+    expect(createHash('sha256').update(ca.raw).digest('hex')).toBe(preview.caSha256);
+    const stale = await request(app.port, 'POST', `${prefix}/start`, { body: '{"expectedRevision":2}' });
+    expect(stale.status).toBe(409);
+    expect(JSON.parse(stale.text).error.code).toBe('MONITOR_PROFILE_CONFLICT');
+    const started = await request(app.port, 'POST', `${prefix}/start`, { body: '{"expectedRevision":1}' });
+    expect(started.status).toBe(200);
+    const plan = JSON.parse(started.text) as MonitorConnectionPlan;
+    expect(plan.status).toMatchObject({ running: true, port: profile.proxyPort, diagnostics: { phase: 'waiting_for_traffic', observedRequests: 0 } });
+    const reused = JSON.parse((await request(app.port, 'POST', `${prefix}/start`, { body: '{"expectedRevision":1}' })).text) as MonitorConnectionPlan;
+    expect(reused.status.diagnostics?.runId).toBe(plan.status.diagnostics?.runId);
+    const updated = await request(app.port, 'PUT', prefix, { body: JSON.stringify({ expectedRevision: 1, settings: { ...settings, label: 'Changed recipe' } }) });
+    expect(JSON.parse(updated.text).revision).toBe(2);
+    expect((await request(app.port, 'DELETE', prefix, { body: '{"expectedRevision":1}' })).status).toBe(409);
+    expect((await request(app.port, 'DELETE', prefix, { body: '{"expectedRevision":2}' })).status).toBe(200);
+    expect(JSON.parse((await request(app.port, 'GET', '/api/proxy/profiles')).text)).toEqual({ items: [] });
+    expect(app.db.prepare('SELECT COUNT(*) AS count FROM proxy_requests').get()).toEqual({ count: 1 });
+    const fs = await import('node:fs/promises');
+    expect(await fs.readFile(nativeConfig, 'utf8')).toBe(sentinel);
+    expect((await request(app.port, 'POST', '/api/proxy/stop')).status).toBe(200);
+  });
+
+  it('refuses oversized profile requests and does not switch a live listener to another recipe port', async () => {
+    const app = await boot();
+    const projectDirectory = mkdtempSync(join(tmpdir(), 'profile-api-limit-')); staticDirs.push(projectDirectory);
+    const invalid = await request(app.port, 'POST', '/api/proxy/profiles', { body: JSON.stringify({ label: 'x'.repeat(40 * 1024) }) });
+    expect(invalid.status).toBe(400);
+    const firstPort = await freePort();
+    await request(app.port, 'POST', '/api/proxy/start', { body: JSON.stringify({ port: firstPort }) });
+    await waitFor(async () => JSON.parse((await request(app.port, 'GET', '/api/proxy/status')).text).running);
+    const settings = { label: 'Other port', agent: 'codex', projectDirectory, executable: null, proxyPort: await freePort(), noProxy: null };
+    const profile = JSON.parse((await request(app.port, 'POST', '/api/proxy/profiles', { body: JSON.stringify(settings) })).text) as MonitorConnectionProfile;
+    const result = await request(app.port, 'POST', `/api/proxy/profiles/${profile.id}/start`, { body: '{"expectedRevision":1}' });
+    expect(result.status).toBe(409);
+    expect(JSON.parse(result.text).error.code).toBe('PROXY_ALREADY_RUNNING');
+    expect(JSON.parse((await request(app.port, 'GET', '/api/proxy/status')).text).port).toBe(firstPort);
+    await request(app.port, 'POST', '/api/proxy/stop');
+  });
+  it('HTTP close ends only owned SSE and drains real proxy writes before its callback', async () => {
+    const first = await boot();
+    const second = await boot();
+    const proxyPort = await freePort();
+    await request(first.port, 'POST', '/api/proxy/start', { body: JSON.stringify({ port: proxyPort }) });
+    await waitFor(async () => JSON.parse((await request(first.port, 'GET', '/api/proxy/status')).text).running === true);
+    let originResponse!: ServerResponse;
+    const origin = http.createServer((req, res) => {
+      req.resume(); req.once('end', () => {
+        originResponse = res;
+        res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('data: prefix\n\n');
+      });
+    });
+    await new Promise<void>(resolve => origin.listen(0, '127.0.0.1', resolve));
+    const originPort = (origin.address() as AddressInfo).port;
+    const openEvents = (port: number) => new Promise<IncomingMessage>(resolve => {
+      http.get({ host: '127.0.0.1', port, path: '/api/events' }, response => { response.resume(); resolve(response); });
+    });
+    const firstEvents = await openEvents(first.port);
+    const secondEvents = await openEvents(second.port);
+    const client = http.request({ host: '127.0.0.1', port: proxyPort, method: 'POST', path: `http://127.0.0.1:${originPort}/v1/chat/completions` });
+    const flowing = new Promise<void>(resolve => client.once('response', response => {
+      response.on('data', () => resolve());
+    }));
+    client.end('{"model":"synthetic","messages":[]}');
+    await flowing;
+    let closed = false;
+    const stopping = new Promise<void>((resolve, reject) => first.server.close(error => {
+      closed = true;
+      if (error !== undefined) reject(error); else resolve();
+    }));
+    try {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(closed).toBe(false);
+      expect(secondEvents.destroyed).toBe(false);
+      originResponse.end('data: final\n\n');
+      await stopping;
+      expect(first.db.prepare('SELECT response_body FROM proxy_requests').get()).toEqual({ response_body: 'data: prefix\n\ndata: final\n\n' });
+      const refs = first.db.prepare('SELECT request_ref, response_ref FROM proxy_capture_bodies').get() as { request_ref: string; response_ref: string };
+      expect(JSON.parse(refs.request_ref).status).toBe('complete');
+      expect(JSON.parse(refs.response_ref).status).toBe('complete');
+      await waitFor(async () => firstEvents.destroyed);
+      expect((await request(second.port, 'GET', '/api/proxy/status')).status).toBe(200);
+      await expect(request(proxyPort, 'GET', '/')).rejects.toMatchObject({ code: 'ECONNREFUSED' });
+    } finally {
+      originResponse.end(); client.destroy(); firstEvents.destroy(); secondEvents.destroy();
+      origin.closeAllConnections();
+      await new Promise<void>(resolve => origin.close(() => resolve()));
+    }
+  });
+  it('links real captured requests to native session/tool evidence without mixing concurrent sessions', async () => {
+    const { port, db } = await boot(db => {
+      for (const nativeId of ['native-a', 'native-b']) {
+        const source = '/synthetic/' + nativeId + '.jsonl';
+        const record = normalizeClaudeSample({ sourceAgent: 'Claude', session: {}, events: [
+          { type: 'user', sessionId: nativeId, timestamp: '2026-10-16T00:00:00.000Z', message: { id: 'user-' + nativeId, content: 'inspect project' } },
+          { type: 'assistant', sessionId: nativeId, requestId: 'req-' + nativeId, timestamp: '2026-10-16T00:00:01.000Z', message: { id: 'msg-shared', content: [{ type: 'tool_use', id: 'tool-' + nativeId, name: 'Read', input: { path: '/synthetic' } }] } },
+          { type: 'user', sessionId: nativeId, timestamp: '2026-10-16T00:00:02.000Z', message: { content: [{ type: 'tool_result', tool_use_id: 'tool-' + nativeId, content: 'native result' }] } },
+          { type: 'assistant', sessionId: nativeId, timestamp: '2026-10-16T00:00:03.000Z', message: { id: 'answer-' + nativeId, content: 'done' } },
+        ] }, source);
+        storeTraceRecord(db, record, source, 'scan-' + nativeId);
+      }
+    });
+    const proxyPort = await freePort();
+    let number = 0;
+    const origin = await startProxyOrigin((req, res) => {
+      number += 1;
+      req.resume(); req.once('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ type: 'message', id: 'msg-shared', stop_reason: 'end_turn', content: [{ type: 'text', text: 'response-' + number }], usage: { input_tokens: 12, output_tokens: 7 } }));
+      });
+    });
+    try {
+      await request(port, 'POST', '/api/proxy/start', { body: JSON.stringify({ port: proxyPort }) });
+      await waitFor(async () => Boolean(JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).running));
+      for (const [index, nativeId] of ['native-a', 'native-b', 'native-a'].entries()) {
+        await proxyRequest(proxyPort, origin.port, '/v1/messages', 'same.gateway.test', '{"model":"same-model","system":"original","messages":[]}', { 'x-agent-provider': 'claude', 'x-agent-session-id': nativeId, 'x-client-request-id': 'synthetic-' + index });
+      }
+      await proxyRequest(proxyPort, origin.port, '/v1/messages', 'same.gateway.test', '{"model":"same-model","messages":[]}', { 'x-client-request-id': 'synthetic-unlinked' });
+      await waitFor(async () => JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).requestCount === 4);
+      // File finalization is asynchronous: SQLite insertion order is not request arrival order.
+      const rows = db.prepare('SELECT id, request_headers FROM proxy_requests').all() as Array<{ id: number; request_headers: string }>;
+      const byClientId = new Map(rows.map(row => [JSON.parse(row.request_headers)['x-client-request-id'] as string, row.id]));
+      expect([...byClientId.keys()].sort()).toEqual(['synthetic-0', 'synthetic-1', 'synthetic-2', 'synthetic-unlinked']);
+      const firstId = byClientId.get('synthetic-0')!;
+      const unlinkedId = byClientId.get('synthetic-unlinked')!;
+      const unlinkedPath = '/api/proxy/requests/' + unlinkedId;
+      const a = JSON.parse((await request(port, 'GET', '/api/sessions/scan-native-a/capture-links')).text);
+      const b = JSON.parse((await request(port, 'GET', '/api/sessions/scan-native-b/capture-links')).text);
+      expect(a.confirmedCount).toBe(2); expect(b.confirmedCount).toBe(1);
+      expect(a.items.map((item: { request: { id: number } }) => item.request.id)).toEqual([firstId, byClientId.get('synthetic-2')!].sort((left, right) => right - left));
+      expect(b.items.map((item: { request: { id: number } }) => item.request.id)).toEqual([byClientId.get('synthetic-1')]);
+      expect(a.items.every((item: { association: { state: string } }) => item.association.state === 'direct')).toBe(true);
+      const identities = JSON.parse((await request(port, 'GET', '/api/sessions/scan-native-a/identities')).text);
+      expect(identities.items).toContainEqual(expect.objectContaining({ kind: 'tool_call', value: 'tool-native-a', scope: 'native-a' }));
+      expect(JSON.parse((await request(port, 'GET', unlinkedPath + '/trace-links')).text).items).toEqual([]);
+      const confirmed = await request(port, 'PUT', unlinkedPath + '/trace-links/scan-native-b', { body: '{"state":"confirmed","note":"用户确认 <script>literal</script>"}' });
+      expect(confirmed.status).toBe(200);
+      expect(JSON.parse(confirmed.text).state).toBe('confirmed');
+      expect(JSON.parse((await request(port, 'GET', '/api/sessions/scan-native-b/capture-links')).text).confirmedCount).toBe(2);
+      for (const item of a.items) {
+        for (const field of ['requestBody', 'responseBody', 'rawRequestBody', 'rawResponseBody', 'systemPrompt', 'inputSummary', 'outputSummary']) {
+          expect(item.request).not.toHaveProperty(field);
+        }
+      }
+      const identityResponse = await request(port, 'GET', '/api/proxy/requests/' + firstId + '/identities');
+      expect(JSON.parse(identityResponse.text).items).toContainEqual(expect.objectContaining({ namespace: 'agent:claude', kind: 'session', value: 'native-a' }));
+      const denied = await request(port, 'PUT', unlinkedPath + '/trace-links/scan-native-b', { headers: { origin: 'https://untrusted.invalid' }, body: '{"state":"revoked","note":null}' });
+      expect(denied.status).toBe(400);
+      const decisions = JSON.parse((await request(port, 'GET', unlinkedPath + '/trace-links/scan-native-b/decisions')).text);
+      expect(decisions.items).toHaveLength(1);
+      expect(decisions.items[0].note).toBe('用户确认 <script>literal</script>');
+      expect((await request(port, 'GET', '/api/sessions/scan-native-a/capture-links', { headers: { host: 'untrusted.invalid' } })).status).toBe(400);
+      expect((await request(port, 'GET', '/api/sessions/scan-native-a/identities?limit=101')).status).toBe(400);
+      expect((await request(port, 'GET', '/api/sessions/scan-native-a/capture-links?cursor=bad')).status).toBe(400);
+      expect((await request(port, 'GET', '/api/sessions/missing/identities')).status).toBe(404);
+      const invalid = await request(port, 'PUT', unlinkedPath + '/trace-links/scan-native-b', { body: '{"state":"direct","note":null}' });
+      expect(invalid.status).toBe(400);
+      const oversized = await request(port, 'PUT', unlinkedPath + '/trace-links/scan-native-b', { body: JSON.stringify({ state: 'confirmed', note: 'x'.repeat(20_000) }) });
+      expect(oversized.status).toBe(400);
+      expect(JSON.parse(oversized.text).error.code).toBe('BAD_REQUEST');
+    } finally {
+      await request(port, 'POST', '/api/proxy/stop');
+      await origin.close();
+    }
+  });
+  it('projects original-backed gzip SSE evidence on demand without replaying upstream', async () => {
+    const { port } = await boot();
+    const proxyPort = await freePort();
+    const responseBody = [
+      { id: 'chat-demo', choices: [{ index: 0, delta: { reasoning_content: '公开推理', tool_calls: [{ index: 0, id: 'call-1', function: { name: 'shell', arguments: '{"cmd":' } }] } }] },
+      { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '"pwd"}' } }] }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 40 }, completion_tokens_details: { reasoning_tokens: 5 } } },
+    ].map(frame => 'data: ' + JSON.stringify(frame) + '\n\n').join('') + 'data: [DONE]\n\n';
+    const compressed = gzipSync(Buffer.from(responseBody));
+    let upstreamRequests = 0;
+    const origin = await startProxyOrigin((req, res) => {
+      upstreamRequests += 1;
+      req.resume();
+      req.once('end', () => {
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'content-encoding': 'gzip' });
+        res.end(compressed);
+      });
+    });
+    try {
+      await request(port, 'POST', '/api/proxy/start', { body: JSON.stringify({ port: proxyPort }) });
+      await waitFor(async () => Boolean(JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).running));
+      const forwarded = await proxyRequest(proxyPort, origin.port, '/v1/chat/completions', 'custom.gateway.test', JSON.stringify({ model: 'demo', messages: [{ role: 'system', content: '原样系统' }, { role: 'user', content: 'x'.repeat(100_000) }] }));
+      expect(forwarded.raw).toEqual(compressed);
+      await waitFor(async () => JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).requestCount === 1);
+      const id = JSON.parse((await request(port, 'GET', '/api/proxy/requests')).text).items[0].id as number;
+      const response = await request(port, 'GET', '/api/proxy/requests/' + id + '/analysis');
+      expect(response.status).toBe(200);
+      const analysis = JSON.parse(response.text) as ProxyProtocolAnalysis;
+      expect(analysis.state).toBe('completed');
+      expect(analysis.system).toBe('原样系统');
+      expect(analysis.items.find(item => item.kind === 'tool_call')).toMatchObject({ id: 'call-1', content: '{"cmd":"pwd"}', complete: true });
+      expect(analysis.items.find(item => item.kind === 'reasoning')?.content).toBe('公开推理');
+      expect(analysis.usage).toMatchObject({ totalTokens: 120, cacheReadTokens: 40, reasoningTokens: 5 });
+      expect(analysis.completeness.complete).toBe(true);
+      expect((await request(port, 'GET', '/api/proxy/requests/' + id + '/body/response')).raw).toEqual(compressed);
+      expect((await request(port, 'GET', '/api/proxy/requests/' + id + '/analysis')).status).toBe(200);
+      expect(upstreamRequests).toBe(1);
+      const unknown = await request(port, 'GET', '/api/proxy/requests/999999/analysis');
+      expect(unknown.status).toBe(404);
+      expect(JSON.parse(unknown.text).error.code).toBe('PROXY_REQUEST_NOT_FOUND');
+      expect((await request(port, 'GET', '/api/proxy/requests/nope/analysis')).status).toBe(400);
+    } finally {
+      await request(port, 'POST', '/api/proxy/stop');
+      await origin.close();
+    }
+  });
+  it('rejects cross-site capture access and returns only the actual public CA certificate', async () => {
+    const { port } = await boot();
+    const hostile = await request(port, 'POST', '/api/proxy/start', { headers: { origin: 'https://outside.example' }, body: '{}' });
+    expect(hostile.status).toBe(400);
+    expect(JSON.parse(hostile.text).error.code).toBe('BAD_REQUEST');
+    expect((await request(port, 'GET', '/api/proxy/storage', { headers: { host: 'rebinding.example' } })).status).toBe(400);
+    expect(JSON.parse((await request(port, 'GET', '/api/proxy/status')).text)).toMatchObject({ running: false, starting: false });
+    const ca = await request(port, 'GET', '/api/ca-cert', { headers: { origin: 'http://127.0.0.1:5173' } });
+    expect(ca.status).toBe(200);
+    expect(ca.headers['content-type']).toBe('application/x-pem-file');
+    expect(ca.text).toContain('BEGIN CERTIFICATE');
+    expect(ca.text).not.toContain('PRIVATE KEY');
+    expect((await request(port, 'GET', '/api/ca-cert')).text).toBe(ca.text);
+    const privateKey = await request(port, 'GET', '/api/ca-cert/private-key');
+    expect(privateKey.status).toBe(404);
+    expect(JSON.parse(privateKey.text).error.code).toBe('ROUTE_NOT_FOUND');
+  });
+  it('streams 100MiB from upstream through capture and original download with matching digests', async () => {
+    const { port } = await boot();
+    const proxyPort = await freePort();
+    const chunk = Buffer.alloc(1024 * 1024, 0x61);
+    const expectedHash = createHash('sha256');
+    for (let i = 0; i < 100; i += 1) expectedHash.update(chunk);
+    const expectedDigest = expectedHash.digest('hex');
+    const origin = await startProxyOrigin((req, res) => {
+      req.resume();
+      res.writeHead(200, { 'content-type': 'application/octet-stream' });
+      void (async () => {
+        for (let i = 0; i < 100 && !res.destroyed; i += 1) {
+          res.write(chunk);
+          // Controlled local traffic exercises capture, not deliberate queue overload.
+          await new Promise<void>(resolve => setTimeout(resolve, 25));
+        }
+        res.end();
+      })();
+    });
+    const hashResponse = (options: http.RequestOptions, body?: string): Promise<{ bytes: number; digest: string; status: number }> => new Promise((resolve, reject) => {
+      const outgoing = http.request(options, response => {
+        const hash = createHash('sha256'); let bytes = 0;
+        response.on('data', (data: Buffer) => { hash.update(data); bytes += data.length; });
+        response.on('error', reject);
+        response.on('end', () => resolve({ bytes, digest: hash.digest('hex'), status: response.statusCode ?? 0 }));
+      });
+      outgoing.on('error', reject);
+      outgoing.end(body);
+    });
+    try {
+      await request(port, 'POST', '/api/proxy/start', { body: JSON.stringify({ port: proxyPort }) });
+      await waitFor(async () => Boolean(JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).running));
+      const forwarded = await hashResponse({ host: '127.0.0.1', port: proxyPort, method: 'POST', path: `http://127.0.0.1:${origin.port}/large`, headers: { 'content-type': 'application/json' } }, '{"model":"test"}');
+      expect(forwarded).toEqual({ status: 200, bytes: 104_857_600, digest: expectedDigest });
+      await waitFor(async () => JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).requestCount === 1);
+      const list = JSON.parse((await request(port, 'GET', '/api/proxy/requests')).text);
+      const id = list.items[0].id as number;
+      const capture = JSON.parse((await request(port, 'GET', `/api/proxy/requests/${id}/capture`)).text);
+      expect(capture.response).toMatchObject({ bytes: 104_857_600, sha256: expectedDigest, status: 'complete' });
+      expect(capture.responsePreviewTruncated).toBe(true);
+      const downloaded = await hashResponse({ host: '127.0.0.1', port, path: `/api/proxy/requests/${id}/body/response` });
+      expect(downloaded).toEqual(forwarded);
+    } finally {
+      await request(port, 'POST', '/api/proxy/stop');
+      await origin.close();
+    }
+  }, 30_000);
+
+  it.each(['chat', 'responses', 'messages'] as const)('closes unredacted %s original→stored detail→protocol inspection without replay', async protocol => {
+    const system = 'synthetic-system 原样🙂 api_key=fixture-only';
+    const toolArguments = '{"token":"synthetic-tool-secret","text":"中文🙂"}';
+    const toolResult = 'synthetic-tool-result password=fixture-only';
+    const reasoning = 'synthetic-public-reasoning 原样🙂';
+    const tool = { name: 'lookup', parameters: { type: 'object', properties: { token: { type: 'string', description: 'synthetic-schema-secret' } } } };
+    const requestBody = JSON.stringify(protocol === 'chat' ? {
+      model: 'synthetic-model', messages: [{ role: 'system', content: system }, { role: 'developer', content: 'synthetic-developer-secret' }, { role: 'assistant', tool_calls: [{ id: 'call-fixture', type: 'function', function: { name: 'lookup', arguments: toolArguments } }] }, { role: 'tool', tool_call_id: 'call-fixture', content: toolResult }], tools: [{ type: 'function', function: tool }],
+    } : protocol === 'responses' ? {
+      model: 'synthetic-model', instructions: system, input: [{ type: 'function_call_output', call_id: 'call-fixture', output: toolResult }], tools: [{ type: 'function', ...tool }],
+    } : {
+      model: 'synthetic-model', system: [{ type: 'text', text: system }], messages: [{ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call-fixture', content: toolResult }] }], tools: [{ name: tool.name, input_schema: tool.parameters }],
+    });
+    const openaiUsage = { input_tokens: 100, output_tokens: 20, total_tokens: 120, input_tokens_details: { cached_tokens: 40 }, output_tokens_details: { reasoning_tokens: 5 } };
+    const responseBody = JSON.stringify(protocol === 'chat' ? {
+      id: 'response-fixture', model: 'synthetic-model', choices: [{ index: 0, message: { role: 'assistant', content: 'synthetic-answer 原样🙂', reasoning_content: reasoning, tool_calls: [{ id: 'call-next', type: 'function', function: { name: 'lookup', arguments: toolArguments } }] }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, prompt_tokens_details: { cached_tokens: 40 }, completion_tokens_details: { reasoning_tokens: 5 } },
+    } : protocol === 'responses' ? {
+      id: 'response-fixture', model: 'synthetic-model', status: 'completed', output: [{ type: 'reasoning', id: 'reason-fixture', summary: [{ type: 'summary_text', text: reasoning }] }, { type: 'function_call', id: 'item-next', call_id: 'call-next', name: 'lookup', arguments: toolArguments, status: 'completed' }], usage: openaiUsage,
+    } : {
+      type: 'message', id: 'response-fixture', model: 'synthetic-model', stop_reason: 'tool_use', content: [{ type: 'thinking', thinking: reasoning }, { type: 'tool_use', id: 'call-next', name: 'lookup', input: JSON.parse(toolArguments) }], usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 40, cache_creation_input_tokens: 0 },
+    });
+    const { port } = await boot(); const proxyPort = await freePort();
+    let calls = 0; let observed = '';
+    const origin = await startProxyOrigin((req, res) => {
+      calls += 1; req.setEncoding('utf8'); req.on('data', (chunk: string) => { observed += chunk; });
+      req.on('end', () => { res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': ['fixture-a=unmasked', 'fixture-b=unmasked'] }); res.end(responseBody); });
+    });
+    try {
+      await request(port, 'POST', '/api/proxy/start', { body: JSON.stringify({ port: proxyPort }) });
+      await waitFor(async () => Boolean(JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).running));
+      const path = (protocol === 'chat' ? '/v1/chat/completions' : protocol === 'responses' ? '/v1/responses' : '/v1/messages') + '?api_key=synthetic-query-secret';
+      const forwarded = await proxyRequest(proxyPort, origin.port, path, 'synthetic.gateway.test', requestBody, { authorization: 'Bearer synthetic-header-secret' });
+      expect(observed).toBe(requestBody); expect(forwarded.raw).toEqual(Buffer.from(responseBody));
+      await waitFor(async () => JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).requestCount === 1);
+      const listing = JSON.parse((await request(port, 'GET', '/api/proxy/requests')).text);
+      const id = listing.items[0].id as number;
+      for (const field of ['requestBody', 'responseBody', 'rawRequestBody', 'rawResponseBody', 'systemPrompt']) expect(listing.items[0]).not.toHaveProperty(field);
+      const detail = JSON.parse((await request(port, 'GET', `/api/proxy/requests/${id}`)).text);
+      expect(detail.url).toContain('?api_key=synthetic-query-secret'); expect(detail.requestHeaders.authorization).toBe('Bearer synthetic-header-secret');
+      expect(detail.requestBody).toBe(requestBody); expect(detail.responseBody).toBe(responseBody); expect(detail.systemPrompt).toContain(system);
+      const capture = JSON.parse((await request(port, 'GET', `/api/proxy/requests/${id}/capture`)).text);
+      expect(capture.responseHeaders['set-cookie']).toEqual(['fixture-a=unmasked', 'fixture-b=unmasked']);
+      for (const [direction, original] of [['request', requestBody], ['response', responseBody]] as const) {
+        const download = await request(port, 'GET', `/api/proxy/requests/${id}/body/${direction}`);
+        expect(download.raw).toEqual(Buffer.from(original)); expect(download.headers['x-capture-sha256']).toBe(createHash('sha256').update(original).digest('hex'));
+      }
+      const analysis = JSON.parse((await request(port, 'GET', `/api/proxy/requests/${id}/analysis`)).text) as ProxyProtocolAnalysis;
+      expect(analysis.system).toContain(system); expect(analysis.declarations[0]?.definition).toContain('synthetic-schema-secret');
+      expect(analysis.items.find(item => item.kind === 'reasoning')?.content).toBe(reasoning);
+      expect(analysis.items.find(item => item.kind === 'tool_call' && item.phase === 'response')?.content).toBe(toolArguments);
+      expect(analysis.items.find(item => item.kind === 'tool_result')?.content).toBe(toolResult);
+      expect(analysis.usage.totalTokens).toBe(protocol === 'messages' ? 160 : 120);
+      if (protocol !== 'messages') expect(analysis.usage).toMatchObject({ inputTokens: 100, outputTokens: 20, cacheReadTokens: 40, reasoningTokens: 5, nativeTotalTokens: 120, accounting: 'openai_subsets' });
+      expect(calls).toBe(1);
+    } finally { await request(port, 'POST', '/api/proxy/stop'); await origin.close(); }
+  });
+
+  it('captures and downloads originals larger than the analysis limit through a real proxy', async () => {
+    const { port } = await boot();
+    const proxyPort = await freePort();
+    const originalRequest = JSON.stringify({ model: 'original-model', messages: [{ role: 'user', content: 'synthetic-original-' + 'x'.repeat(3 * 1024 * 1024) }] });
+    const originalResponse = JSON.stringify({ output: '原文🙂', usage: { input_tokens: 12, output_tokens: 7 } });
+    const receivedRequestHash = createHash('sha256');
+    const origin = await startProxyOrigin((req, res) => {
+      req.on('data', (data: Buffer) => receivedRequestHash.update(data));
+      req.once('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': ['one=original', 'two=original'] });
+        res.end(originalResponse);
+      });
+    });
+    try {
+      await request(port, 'POST', '/api/proxy/start', { body: JSON.stringify({ port: proxyPort }) });
+      await waitFor(async () => Boolean(JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).running));
+      expect((await proxyRequest(proxyPort, origin.port, '/v1/responses', 'custom.example.test', originalRequest, { authorization: 'Bearer original-synthetic' })).text).toBe(originalResponse);
+      expect(receivedRequestHash.digest('hex')).toBe(createHash('sha256').update(originalRequest).digest('hex'));
+      await waitFor(async () => JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).requestCount === 1);
+      const list = JSON.parse((await request(port, 'GET', '/api/proxy/requests')).text) as { items: Array<{ id: number }> };
+      const id = list.items[0]!.id;
+      const captured = JSON.parse((await request(port, 'GET', `/api/proxy/requests/${id}/capture`)).text);
+      expect(captured).toMatchObject({ request: { bytes: Buffer.byteLength(originalRequest), status: 'complete' }, response: { bytes: Buffer.byteLength(originalResponse), status: 'complete' }, requestPreviewTruncated: true, responsePreviewTruncated: false });
+      expect(captured.responseHeaders['set-cookie']).toEqual(['one=original', 'two=original']);
+      const detail = JSON.parse((await request(port, 'GET', `/api/proxy/requests/${id}`)).text);
+      expect(Buffer.byteLength(detail.requestBody)).toBeLessThanOrEqual(64 * 1024);
+      expect(detail.requestHeaders.authorization).toBe('Bearer original-synthetic');
+      const downloaded = await request(port, 'GET', `/api/proxy/requests/${id}/body/request`);
+      expect(downloaded.status).toBe(200);
+      // Exact full-length byte equality without multi-megabyte object traversal.
+      expect(downloaded.raw.equals(Buffer.from(originalRequest))).toBe(true);
+      expect(downloaded.headers['x-capture-status']).toBe('complete');
+      expect(downloaded.headers['x-capture-sha256']).toBe(createHash('sha256').update(originalRequest).digest('hex'));
+      const segment = await request(port, 'GET', `/api/proxy/requests/${id}/body/request`, { headers: { range: 'bytes=2097152-2097183' } });
+      expect(segment.status).toBe(206);
+      expect(segment.raw).toEqual(Buffer.from(originalRequest).subarray(2097152, 2097184));
+      expect(segment.headers['content-range']).toBe(`bytes 2097152-2097183/${Buffer.byteLength(originalRequest)}`);
+      expect(segment.headers['content-length']).toBe('32');
+      expect(segment.headers['x-capture-sha256']).toBe(downloaded.headers['x-capture-sha256']);
+      const etag = '"' + downloaded.headers['x-capture-sha256'] + '"';
+      expect(downloaded.headers.etag).toBe(etag);
+      expect(downloaded.headers['accept-ranges']).toBe('bytes');
+      for (const [range, expected] of [['bytes=0-6', Buffer.from(originalResponse).subarray(0, 7)], ['bytes=7-', Buffer.from(originalResponse).subarray(7)], ['bytes=-9', Buffer.from(originalResponse).subarray(-9)]] as const) {
+        const part = await request(port, 'GET', `/api/proxy/requests/${id}/body/response`, { headers: { range } });
+        expect(part.status).toBe(206); expect(part.raw).toEqual(expected);
+      }
+      const resume = await request(port, 'GET', `/api/proxy/requests/${id}/body/request`, { headers: { range: 'bytes=0-3', 'if-range': etag } });
+      expect(resume.status).toBe(206); expect(resume.raw).toEqual(Buffer.from(originalRequest).subarray(0, 4));
+      const restart = await request(port, 'GET', `/api/proxy/requests/${id}/body/request`, { headers: { range: 'bytes=0-3', 'if-range': '"other-capture"' } });
+      expect(restart.status).toBe(200); expect(restart.raw.equals(downloaded.raw)).toBe(true);
+      const outside = await request(port, 'GET', `/api/proxy/requests/${id}/body/response`, { headers: { range: 'bytes=99999-' } });
+      expect(outside.status).toBe(416); expect(outside.headers['content-range']).toBe(`bytes */${Buffer.byteLength(originalResponse)}`);
+      expect(JSON.parse(outside.text)).toEqual({ error: { code: 'RANGE_NOT_SATISFIABLE', message: 'Requested byte range does not overlap retained original bytes' } });
+      const malformed = await request(port, 'GET', `/api/proxy/requests/${id}/body/response`, { headers: { range: 'bytes=0-2,4-6' } });
+      expect(malformed.status).toBe(400); expect(JSON.parse(malformed.text).error.code).toBe('BAD_REQUEST');
+      expect((await request(port, 'GET', `/api/proxy/requests/${id}/body/response`)).raw).toEqual(Buffer.from(originalResponse));
+      const analysis = JSON.parse((await request(port, 'GET', `/api/proxy/requests/${id}/analysis`)).text) as ProxyProtocolAnalysis;
+      expect(analysis.completeness.complete).toBe(false);
+      expect(analysis.completeness.reasons).toContain('request:source_too_large');
+      expect(JSON.parse((await request(port, 'GET', '/api/proxy/storage')).text)).toMatchObject({ quotaBytes: 10_000_000_000, maxBodyBytes: 104_857_600, pendingBytes: 0, usedBytes: Buffer.byteLength(originalRequest) + Buffer.byteLength(originalResponse) });
+      expect((await request(port, 'GET', `/api/proxy/requests/${id}/body/other`)).status).toBe(400);
+      expect((await request(port, 'GET', '/api/proxy/requests/999/body/request')).status).toBe(404);
+    } finally {
+      await request(port, 'POST', '/api/proxy/stop');
+      await origin.close();
+    }
+  });
   it('会话列表不泄漏 systemPrompt 正文', async () => {
     const { port } = await boot((db) => {
       seedSession(db, 'codex-s1', 'codex', { systemPrompt: 'SECRET PROMPT' });
@@ -365,6 +881,39 @@ describe('API 契约（contracts/api.md §8）', () => {
       expect(e).not.toHaveProperty('outputSummary');
       expect(e).not.toHaveProperty('raw');
     }
+  });
+
+  it('session page offset and limit remain correct after the first page is cached', async () => {
+    const { port } = await boot((db) => {
+      seedSession(db, 'paged-cache', 'codex');
+      upsertEvents(db, 'paged-cache', Array.from({ length: 2005 }, (_, i) => ({
+        id: `page-event-${i}`, sessionId: 'paged-cache', sequence: i + 1,
+        turnKey: null, kind: 'llm', phase: 'implement', title: 'page event',
+        startedAt: '2026-08-01T00:00:00.000Z', durationMs: 10, status: 'success',
+        actor: 'assistant', tool: null, tokens: null, error: null,
+        hasInput: false, hasOutput: true, hasRaw: false,
+        inputSummary: null, outputSummary: 'body excluded from slim',
+      })));
+    });
+    const fetchPage = async (query: string) => {
+      const response = await request(port, 'GET', `/api/sessions/paged-cache${query}`);
+      expect(response.status).toBe(200);
+      return JSON.parse(response.text) as {
+        events: Array<{ id: string }>; eventOffset: number; eventLimit: number; hasMore: boolean;
+      };
+    };
+    expect((await fetchPage('')).events).toHaveLength(2000);
+    const page = await fetchPage('?mode=slim&offset=2000&limit=2');
+    expect(page.eventOffset).toBe(2000);
+    expect(page.eventLimit).toBe(2);
+    expect(page.events.map((event) => event.id)).toEqual(['page-event-2000', 'page-event-2001']);
+    expect(page.hasMore).toBe(true);
+    expect(page.events[0]).not.toHaveProperty('outputSummary');
+    const final = await fetchPage('?mode=slim&offset=2004&limit=2');
+    expect(final.events.map((event) => event.id)).toEqual(['page-event-2004']);
+    expect(final.hasMore).toBe(false);
+    expect((await fetchPage('?mode=slim&limit=1')).events).toHaveLength(1);
+    expect((await fetchPage('')).events).toHaveLength(2000);
   });
 
   it('Prompt Context 按需返回；普通详情不泄漏；缺失使用统一 404', async () => {
@@ -561,8 +1110,8 @@ describe('API 契约（contracts/api.md §8）', () => {
     expect(stopped.status).toBe(200);
   });
 
-  it('T08 E2E：真实代理捕获两个 Anthropic 请求 → context-diff HTTP capture_group 配对与差异', async () => {
-    const { port, close } = await boot();
+  it('T08 E2E：同 capture group 的 Anthropic 请求不能自动配对，显式手动比较仍可用', async () => {
+    const { port, db, close } = await boot();
     const proxyPort = await freePort();
     const origin = await startProxyOrigin((_req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -592,6 +1141,7 @@ describe('API 契约（contracts/api.md §8）', () => {
         '/v1/messages',
         'api.anthropic.com',
         JSON.stringify({ model, system: 'be brief', messages: [{ role: 'user', content: 'hello' }], max_tokens: 64 }),
+        { 'x-client-request-id': 'anthropic-base' },
       );
       await proxyRequest(
         proxyPort,
@@ -608,6 +1158,7 @@ describe('API 契约（contracts/api.md §8）', () => {
           ],
           max_tokens: 64,
         }),
+        { 'x-client-request-id': 'anthropic-target' },
       );
 
       await waitFor(async () => {
@@ -624,10 +1175,15 @@ describe('API 契约（contracts/api.md §8）', () => {
       expect(anthropic).toHaveLength(2);
       expect(anthropic[0]!.captureGroupId).not.toBeNull();
       expect(anthropic[0]!.captureGroupId).toBe(anthropic[1]!.captureGroupId);
-      // 列表按 started_at DESC（最新在前）；target 取较晚行（id 较大）
-      const [baseId, targetId] = [Math.min(...anthropic.map((i) => i.id)), Math.max(...anthropic.map((i) => i.id))];
+      const captured = db.prepare('SELECT id, request_headers FROM proxy_requests').all() as Array<{ id: number; request_headers: string }>;
+      const byClientId = new Map(captured.map(row => [JSON.parse(row.request_headers)['x-client-request-id'] as string, row.id]));
+      const baseId = byClientId.get('anthropic-base')!; const targetId = byClientId.get('anthropic-target')!;
+      expect(baseId).toBeTypeOf('number'); expect(targetId).toBeTypeOf('number');
 
-      const diff = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff`);
+      const automatic = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff`);
+      expect(automatic.status).toBe(409);
+      expect(JSON.parse(automatic.text).error).toMatchObject({ code: 'CONTEXT_DIFF_UNAVAILABLE', details: { reason: 'pairing_unavailable' } });
+      const diff = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff?base=${baseId}`);
       expect(diff.status).toBe(200);
       const body = JSON.parse(diff.text) as {
         base: { id: number; requestId: string };
@@ -636,7 +1192,7 @@ describe('API 契约（contracts/api.md §8）', () => {
         noChange: boolean;
         categories: Array<{ category: string; entries: unknown[] }>;
       };
-      expect(body.pairing.confidence).toBe('capture_group');
+      expect(body.pairing.confidence).toBe('manual');
       expect(body.base.id).toBe(baseId);
       expect(body.target.id).toBe(targetId);
       expect(body.noChange).toBe(false);
@@ -652,8 +1208,14 @@ describe('API 契约（contracts/api.md §8）', () => {
     }
   });
 
-  it('T08 E2E：真实代理捕获两个 OpenAI Responses 请求 → context-diff HTTP capture_group 配对', async () => {
-    const { port, close } = await boot();
+  it('T08 E2E：Responses 显式原生会话证据 → linked_session 自动比较而非运行分组猜测', async () => {
+    const { port, db, close } = await boot(db => {
+      const source = '/synthetic/context-responses.jsonl';
+      const record = normalizeClaudeSample({ sourceAgent: 'Synthetic client', session: {}, events: [
+        { type: 'user', sessionId: 'responses-native-session', timestamp: '2026-08-01T00:00:00.000Z', message: { content: 'synthetic context request' } },
+      ] }, source);
+      storeTraceRecord(db, record, source, 'scan-responses-native-session');
+    });
     const proxyPort = await freePort();
     const origin = await startProxyOrigin((_req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -679,6 +1241,7 @@ describe('API 契约（contracts/api.md §8）', () => {
         '/v1/responses',
         'api.openai.com',
         JSON.stringify({ model: 'gpt-4o', instructions: 'be brief', input: [message('hello')] }),
+        { 'x-agent-provider': 'claude', 'x-agent-session-id': 'responses-native-session', 'x-client-request-id': 'responses-base' },
       );
       await proxyRequest(
         proxyPort,
@@ -686,6 +1249,7 @@ describe('API 契约（contracts/api.md §8）', () => {
         '/v1/responses',
         'api.openai.com',
         JSON.stringify({ model: 'gpt-4o', instructions: 'be brief', input: [message('hello'), message('follow-up')] }),
+        { 'x-agent-provider': 'claude', 'x-agent-session-id': 'responses-native-session', 'x-client-request-id': 'responses-target' },
       );
 
       await waitFor(async () => {
@@ -700,8 +1264,10 @@ describe('API 契约（contracts/api.md §8）', () => {
       };
       const responses = list.items.filter((i) => i.captureGroupId !== null && i.requestFormat === 'openai_responses');
       expect(responses).toHaveLength(2);
-      // 列表按 started_at DESC（最新在前）；target 取较晚行（id 较大）
-      const [baseId, targetId] = [Math.min(...responses.map((i) => i.id)), Math.max(...responses.map((i) => i.id))];
+      const captured = db.prepare('SELECT id, request_headers FROM proxy_requests').all() as Array<{ id: number; request_headers: string }>;
+      const byClientId = new Map(captured.map(row => [JSON.parse(row.request_headers)['x-client-request-id'] as string, row.id]));
+      const baseId = byClientId.get('responses-base')!; const targetId = byClientId.get('responses-target')!;
+      expect(baseId).toBeTypeOf('number'); expect(targetId).toBeTypeOf('number');
 
       const diff = await request(port, 'GET', `/api/proxy/requests/${targetId}/context-diff`);
       expect(diff.status).toBe(200);
@@ -711,7 +1277,7 @@ describe('API 契约（contracts/api.md §8）', () => {
         pairing: { confidence: string };
         noChange: boolean;
       };
-      expect(body.pairing.confidence).toBe('capture_group');
+      expect(body.pairing.confidence).toBe('linked_session');
       expect(body.base.id).toBe(baseId);
       expect(body.target.id).toBe(targetId);
       expect(body.noChange).toBe(false);
@@ -739,7 +1305,7 @@ describe('API 契约（contracts/api.md §8）', () => {
       });
 
       const model = 'claude-3-5-sonnet-20241022';
-      // 两行可自动配对 + 一行 unknown 格式（走 unsupported 错误路径）
+      // Two explicitly selectable requests, not automatically associated, plus unsupported format.
       await proxyRequest(proxyPort, origin.port, '/v1/messages', 'api.anthropic.com', JSON.stringify({ model, messages: [{ role: 'user', content: 'a' }] }));
       await proxyRequest(proxyPort, origin.port, '/v1/messages', 'api.anthropic.com', JSON.stringify({ model, messages: [{ role: 'user', content: 'b' }] }));
       await proxyRequest(proxyPort, origin.port, '/elsewhere', 'example.com', JSON.stringify({ foo: 1 }));
@@ -770,7 +1336,7 @@ describe('API 契约（contracts/api.md §8）', () => {
       expect(target).toBeDefined();
       expect(unknown).toBeDefined();
 
-      const diff = await request(port, 'GET', `/api/proxy/requests/${target!.id}/context-diff`);
+      const diff = await request(port, 'GET', `/api/proxy/requests/${target!.id}/context-diff?base=${base!.id}`);
       expect(diff.status).toBe(200);
       expect(diff.text).not.toContain(sentinel);
       expect((JSON.parse(diff.text) as { base: { id: number } }).base.id).toBe(base!.id);
@@ -847,6 +1413,36 @@ describe('API 契约（contracts/api.md §8）', () => {
     expect(Array.isArray(body.rows)).toBe(true);
     expect(body.rows.length).toBeGreaterThan(0);
     expect(typeof body.stamp).toBe('string');
+  });
+
+  it('合并主会话可下钻成员正文和 Raw，成员与无关会话仍保持隔离', async () => {
+    const { port, db } = await boot((db) => {
+      seedSession(db, 'parent-1', 'codex');
+      seedSession(db, 'sub-1', 'codex');
+      seedSession(db, 'unrelated', 'claude');
+      db.prepare("UPDATE sessions SET is_subagent = 1, started_at = '2026-08-01T00:00:30.000Z' WHERE id = 'sub-1'").run();
+      seedEvent(db, 'parent-1', 'parent-event', 1);
+      seedEvent(db, 'sub-1', 'child-event', 1);
+      seedEvent(db, 'unrelated', 'unrelated-event', 1);
+    });
+    db.prepare('INSERT INTO event_raw (session_id, event_id, raw) VALUES (?, ?, ?)')
+      .run('sub-1', 'child-event', '{"child":true}');
+    const body = await request(port, 'GET', '/api/sessions/parent-1/events/child-event');
+    expect(body.status).toBe(200);
+    expect(JSON.parse(body.text)).toMatchObject({ id: 'child-event', sessionId: 'sub-1', outputSummary: 'output body' });
+    expect(JSON.parse(body.text)).not.toHaveProperty('raw');
+    const raw = await request(port, 'GET', '/api/sessions/parent-1/events/child-event?include=raw');
+    expect(raw.status).toBe(200);
+    expect(JSON.parse(raw.text).raw).toBe('{"child":true}');
+    for (const path of [
+      '/api/sessions/sub-1/events/parent-event',
+      '/api/sessions/parent-1/events/unrelated-event',
+      '/api/sessions/unrelated/events/child-event',
+    ]) {
+      const missing = await request(port, 'GET', path);
+      expect(missing.status).toBe(404);
+      expect(JSON.parse(missing.text).error.code).toBe('EVENT_NOT_FOUND');
+    }
   });
 
   it('GET /api/session-groups 返回自动 subagent 合并组（成员 keys 可查）', async () => {
@@ -949,10 +1545,15 @@ describe('API 契约（contracts/api.md §8）', () => {
 
   it('生产实例不暴露 dev-only 路由', async () => {
     const { port } = await boot();
-    const r = await request(port, 'GET', '/api/cdp/status');
-    expect(r.status).toBe(404);
-    const body = JSON.parse(r.text) as { error: { code: string } };
-    expect(body.error.code).toBe('ROUTE_NOT_FOUND');
+    for (const [method, path] of [['GET', '/api/cdp/status'], ['GET', '/api/cdp/targets'], ['GET', '/api/cdp/captures'], ['GET', '/api/cdp/captures/1'], ['POST', '/api/cdp/start'], ['POST', '/api/cdp/stop']]) {
+      const r = await request(port, method!, path!);
+      expect(r.status, path).toBe(404);
+      const body = JSON.parse(r.text) as { error: { code: string } };
+      expect(body.error.code).toBe('ROUTE_NOT_FOUND');
+    }
+    const health = JSON.parse((await request(port, 'GET', '/api/health')).text) as { devOnly: string[] };
+    expect(health.devOnly).toContain('/api/cdp/captures');
+    expect(health.devOnly).toContain('/api/cdp/captures/:id');
   });
 });
 
@@ -1234,7 +1835,7 @@ describe('Session annotations API（api.md §1.7 / design D13-D14）', () => {
         'id', 'provider', 'sourceAgent', 'title', 'startedAt', 'updatedAt',
         'status', 'cwd', 'messageCount', 'eventCount', 'tokenUsage', 'costUsd',
         'systemPrompt', 'dataSource', 'sourcePath', 'totalDurationMs',
-        'isSubagent', 'primaryModel', 'costSource', 'durationSource',
+        'isSubagent', 'primaryModel', 'costSource', 'costCurrency', 'durationSource',
       ].sort(),
     );
     expect(session).not.toHaveProperty('tags');
@@ -1426,6 +2027,7 @@ interface DiffSeed {
   captureGroupId?: string | null;
   parsedSessionId?: string | null;
   model?: string | null;
+  linkedSessionKey?: string;
   /** 在 raw 列 / headers 里埋 sentinel（NFR-S1）。 */
   privacyLeak?: boolean;
 }
@@ -1454,7 +2056,12 @@ function seedDiffProxy(db: Db, s: DiffSeed): number {
       s.privacyLeak === true ? RAW_SENTINEL : null,
       s.privacyLeak === true ? RAW_SENTINEL : null,
     );
-  return Number(r.lastInsertRowid);
+  const id = Number(r.lastInsertRowid);
+  if (s.linkedSessionKey !== undefined) {
+    if (db.prepare('SELECT id FROM sessions WHERE id=?').get(s.linkedSessionKey) === undefined) seedSession(db, s.linkedSessionKey, 'claude');
+    decideTraceAssociation(db, id, s.linkedSessionKey, 'confirmed', 'synthetic explicit membership');
+  }
+  return id;
 }
 
 function anthropicBody(messages: Array<{ role: string; content: string }>): string {
@@ -1475,11 +2082,13 @@ describe('context-diff API（design D10 / §6.1-§6.5）', () => {
         requestId: 'r1', startedAt: '2026-08-01T00:00:00.000Z',
         format: 'anthropic_messages', body: anthropicBody(messages(1, 8, 'm')),
         captureGroupId: 'grp-1', parsedSessionId: 'sess-1', model: 'claude-3-5-sonnet',
+        linkedSessionKey: 'native-context-session',
       });
       seedDiffProxy(d, {
         requestId: 'r2', startedAt: '2026-08-01T00:00:01.000Z',
         format: 'anthropic_messages', body: anthropicBody(messages(2, 8, 'm')),
         captureGroupId: 'grp-1', parsedSessionId: 'sess-1', model: 'claude-3-5-sonnet',
+        linkedSessionKey: 'native-context-session',
       });
     });
     const { items } = JSON.parse(
@@ -1500,7 +2109,7 @@ describe('context-diff API（design D10 / §6.1-§6.5）', () => {
       };
       expect(body.base.id).toBe(targetId - 1);
       expect(body.target.id).toBe(targetId);
-      expect(['exact', 'capture_group']).toContain(body.pairing.confidence);
+      expect(body.pairing.confidence).toBe('linked_session');
       expect(Array.isArray(body.categories)).toBe(true);
       expect(typeof body.completeness.complete).toBe('boolean');
     }
@@ -1695,11 +2304,13 @@ describe('context-diff API（design D10 / §6.1-§6.5）', () => {
         requestId: 'g1', startedAt: '2026-08-01T00:00:00.000Z',
         format: 'anthropic_messages', body: anthropicBody(messages(50, 600, 'b')),
         captureGroupId: 'gg', parsedSessionId: 'sg', model: 'claude-3-5-sonnet',
+        linkedSessionKey: 'gzip-context-session',
       });
       seedDiffProxy(d, {
         requestId: 'g2', startedAt: '2026-08-01T00:00:01.000Z',
         format: 'anthropic_messages', body: anthropicBody(messages(60, 600, 't')),
         captureGroupId: 'gg', parsedSessionId: 'sg', model: 'claude-3-5-sonnet',
+        linkedSessionKey: 'gzip-context-session',
       });
     });
     const { items } = JSON.parse(
@@ -1725,11 +2336,13 @@ describe('context-diff API（design D10 / §6.1-§6.5）', () => {
         requestId: 'p1', startedAt: '2026-08-01T00:00:00.000Z',
         format: 'anthropic_messages', body: anthropicBody(messages(1, 8, 'b')),
         captureGroupId: 'pp', parsedSessionId: 'sp', model: 'claude-3-5-sonnet', privacyLeak: true,
+        linkedSessionKey: 'sentinel-context-session',
       });
       seedDiffProxy(d, {
         requestId: 'p2', startedAt: '2026-08-01T00:00:01.000Z',
         format: 'anthropic_messages', body: anthropicBody(messages(2, 8, 't')),
         captureGroupId: 'pp', parsedSessionId: 'sp', model: 'claude-3-5-sonnet', privacyLeak: true,
+        linkedSessionKey: 'sentinel-context-session',
       });
       // 手动 base 不存在（404）
       seedDiffProxy(d, {
@@ -1762,5 +2375,74 @@ describe('context-diff API（design D10 / §6.1-§6.5）', () => {
       expect(r.text).not.toContain('Error:');
       expect(r.text).not.toContain('{ not json');
     }
+  });
+});
+
+
+describe('Codex team monitoring', () => {
+  it('automatically discovers a child thread and updates team activities after file changes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-team-live-'));
+    staticDirs.push(dir);
+    const rootId = '00000000-0000-4000-8000-000000000001';
+    const childId = '00000000-0000-4000-8000-000000000002';
+    const jsonl = (row: unknown) => JSON.stringify(row) + '\n';
+    const meta = (id: string, parent?: string) => ({ type: 'session_meta', timestamp: '2026-10-25T00:00:00Z', payload: { id, timestamp: '2026-10-25T00:00:00Z', ...(parent ? { thread_source: 'subagent', forked_from_id: parent, parent_thread_id: parent, source: { subagent: { thread_spawn: { parent_thread_id: parent, depth: 1 } } } } : { source: 'cli', thread_source: 'user' }) } });
+    const prompt = (text: string) => ({ type: 'response_item', timestamp: '2026-10-25T00:00:01Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } });
+    writeFileSync(join(dir, 'root.jsonl'), jsonl(meta(rootId)) + jsonl(prompt('test live team')));
+    const config: LocalSessionConfig = { ...TEST_CONFIG, providers: { ...TEST_CONFIG.providers, claude: { ...TEST_CONFIG.providers.claude, enabled: false }, codex: { ...TEST_CONFIG.providers.codex, enabled: true, path: dir, watchStrategy: 'poll', pollIntervalMs: 100 } } };
+    const { port } = await boot(undefined, undefined, config);
+    const runs = async () => JSON.parse((await request(port, 'GET', '/api/team-runs?provider=codex')).text).items;
+    await waitFor(async () => (await runs()).length > 0);
+    writeFileSync(join(dir, 'child.jsonl'), jsonl(meta(childId, rootId)) + jsonl(prompt('child review')));
+    await waitFor(async () => (await runs()).some((run: { counts: { agents: number } }) => run.counts.agents === 2));
+    const run = (await runs()).find((item: { counts: { agents: number } }) => item.counts.agents === 2);
+    const snapshot = JSON.parse((await request(port, 'GET', '/api/team-runs/' + encodeURIComponent(run.id))).text).snapshot;
+    expect(snapshot.agents).toHaveLength(2);
+    expect(snapshot.agentEdges).toHaveLength(1);
+    const activitiesBefore = run.counts.activities;
+    appendFileSync(join(dir, 'child.jsonl'), jsonl({ type: 'event_msg', timestamp: '2026-10-25T00:00:02Z', payload: { type: 'task_started', turn_id: 'live-child-turn', started_at: 1792886402 } }));
+    await waitFor(async () => (await runs()).some((item: { id: string; counts: { activities: number } }) => item.id === run.id && item.counts.activities > activitiesBefore));
+  });
+});
+
+describe('task workbench API', () => {
+  it('resolves grouped tasks, loads an exact bounded anchor and keeps metadata free of bodies', async () => {
+    const app = await boot(db => { seedSession(db, 'task-main', 'codex'); seedEvent(db, 'task-main', 'target-event', 1); });
+    const list = await request(app.port, 'GET', '/api/tasks?origin=collected');
+    expect(list.status).toBe(200); expect(list.headers['cache-control']).toBe('no-store');
+    expect(JSON.parse(list.text).items[0].id).toBe('collected:task-main');
+    const context = await request(app.port, 'GET', '/api/tasks/collected%3Atask-main'); expect(context.status).toBe(200);
+    const page = await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?anchor=task-main%3Aevent%3Atarget-event&limit=100');
+    expect(page.status).toBe(200); expect(JSON.parse(page.text).items[0].event.id).toBe('target-event');
+    expect(page.text).not.toContain('inputSummary'); expect(page.text).not.toContain('outputSummary');
+    const semantic = await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?structure=true');
+    expect(semantic.status).toBe(200); expect(JSON.parse(semantic.text).structure.records).toHaveLength(1);
+    const timeline = await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/timeline?member=main&window=' + encodeURIComponent(JSON.parse(page.text).window));
+    expect(timeline.status).toBe(200); expect(timeline.headers['cache-control']).toBe('no-store');
+    expect(JSON.parse(timeline.text)).toMatchObject({ total: 1, bins: 160 });
+    expect((await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?from=2026-10-26T00:00:00Z')).status).toBe(400);
+    expect((await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?structure=invalid')).status).toBe(400);
+    expect((await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/timeline?member=all&window=' + encodeURIComponent(JSON.parse(page.text).window))).status).toBe(400);
+
+    const missing = await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?anchor=foreign');
+    expect(missing.status).toBe(404); expect(JSON.parse(missing.text).error.code).toBe('SESSION_NOT_FOUND');
+    expect((await request(app.port, 'GET', '/api/tasks?origin=unknown')).status).toBe(400);
+    expect((await request(app.port, 'GET', '/api/tasks?limit=1000')).status).toBe(400);
+    expect((await request(app.port, 'GET', '/api/tasks/collected%3Atask-main/records?member=foreign')).status).toBe(400);
+  });
+  it('stops and restarts the actual native listener without enabling network capture', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'task-monitor-toggle-')); staticDirs.push(dir);
+    const config: LocalSessionConfig = { ...TEST_CONFIG, providers: { ...TEST_CONFIG.providers, claude: { ...TEST_CONFIG.providers.claude, enabled: false }, codex: { ...TEST_CONFIG.providers.codex, path: dir, watchStrategy: 'poll', pollIntervalMs: 100 } } };
+    const { port } = await boot(undefined, undefined, config);
+    const update = (enabled: boolean) => request(port, 'PUT', '/api/monitoring', { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled }) });
+    expect(JSON.parse((await update(false)).text)).toEqual({ enabled: false, state: 'idle' });
+    writeFileSync(join(dir, 'task.jsonl'), JSON.stringify({ type: 'session_meta', timestamp: '2026-10-25T00:00:00Z', payload: { id: 'task-toggle', timestamp: '2026-10-25T00:00:00Z', source: 'cli', thread_source: 'user' } }) + '\n' + JSON.stringify({ type: 'response_item', timestamp: '2026-10-25T00:00:01Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Test listener toggle' }] } }) + '\n');
+    await new Promise(resolve => setTimeout(resolve, 350));
+    expect(JSON.parse((await request(port, 'GET', '/api/tasks')).text).total).toBe(0);
+    expect(JSON.parse((await update(true)).text)).toEqual({ enabled: true, state: 'running' });
+    await waitFor(async () => JSON.parse((await request(port, 'GET', '/api/tasks')).text).total === 1);
+    expect(JSON.parse((await request(port, 'GET', '/api/health')).text).monitoringEnabled).toBe(true);
+    expect(JSON.parse((await request(port, 'GET', '/api/proxy/status')).text).running).toBe(false);
+    expect((await request(port, 'PUT', '/api/monitoring', { headers: { 'content-type': 'application/json' }, body: '{"enabled":"yes"}' })).status).toBe(400);
   });
 });

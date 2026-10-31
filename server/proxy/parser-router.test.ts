@@ -52,6 +52,43 @@ describe('REQ-008 hostname 路由', () => {
 });
 
 describe('REQ-009 解析', () => {
+  it('Messages custom gateway preserves array system and split streaming usage', () => {
+    const parsed = parseProxyRequest({
+      hostname: 'gateway.example.test', url: '/v1/messages',
+      requestBody: JSON.stringify({ model: 'model-a', system: [{ type: 'text', text: 'sys A' }, { type: 'text', text: 'sys B' }], messages: [] }),
+      isStreaming: true,
+      sseEvents: [
+        { event: 'message_start', data: '{"message":{"usage":{"input_tokens":12,"output_tokens":0}}}' },
+        { event: 'message_delta', data: '{"usage":{"output_tokens":7}}' },
+        { event: 'message_delta', data: '{"usage":{"output_tokens":7}}' },
+      ],
+    });
+    expect(parsed).toMatchObject({ parserRoute: 'anthropic', systemPrompt: 'sys A\nsys B', inputTokens: 12, outputTokens: 7 });
+  });
+
+  it('Responses custom gateway preserves instructions and nested final usage', () => {
+    const parsed = parseProxyRequest({
+      hostname: 'gateway.example.test', url: '/v1/responses',
+      requestBody: JSON.stringify({ model: 'model-r', instructions: 'original instructions', input: 'hi' }),
+      isStreaming: true,
+      sseEvents: [{ event: 'response.completed', data: '{"response":{"usage":{"input_tokens":12,"output_tokens":7}}}' }],
+    });
+    expect(parsed).toMatchObject({ requestFormat: 'openai_responses', parserRoute: 'openai', systemPrompt: 'original instructions', inputTokens: 12, outputTokens: 7 });
+  });
+
+  it('an explicit Chat path wins over an Anthropic-looking gateway hostname', () => {
+    const parsed = parseProxyRequest({
+      hostname: 'claude.internal', url: '/v1/chat/completions',
+      requestBody: JSON.stringify({ model: 'x', messages: [{ role: 'developer', content: [{ type: 'text', text: 'developer original' }] }, { role: 'system', content: 'system original' }] }),
+      responseBody: '{"usage":{"prompt_tokens":0,"completion_tokens":2}}',
+    });
+    expect(parsed).toMatchObject({ parserRoute: 'openai', systemPrompt: 'developer original\nsystem original', inputTokens: 0, outputTokens: 2 });
+  });
+
+  it.each(['null', '[]', 'true', '42', '{"messages":{}}'])('invalid shapes stay non-throwing: %s', requestBody => {
+    expect(() => parseProxyRequest({ hostname: 'gateway.example.test', requestBody })).not.toThrow();
+  });
+
   it('OpenAI：model + system prompt + response usage', () => {
     const parsed = parseProxyRequest({
       hostname: 'api.openai.com',

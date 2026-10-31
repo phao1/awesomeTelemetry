@@ -1,0 +1,6026 @@
+{
+  "revision": "c43796287b83bec847db923f07131d1cc8de750d",
+  "hashes": {
+    "coupling_map": "bf5c9af20ef3f3d12f547e0005987d60eb7308600ba68ad68539af28a08526bb",
+    "chain_coverage": "64cae7904cc8a2088e06afeb512544d52ac288f06a3c7f8d6e6abdbb58dc2826",
+    "compare": "05019a71002db4791c7448a5627d4f8cf05b22fbdd626ad56c115e3df4137af7",
+    "estimate": "843152549906f72c386742197aa0a0c59f76a30e2d907213f5f5bee01a815dde"
+  },
+  "traces": [
+    {
+      "trace_id": "t-0001",
+      "ts": "2026-09-01T09:03:04Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1936,
+      "input_tokens": 1061
+    },
+    {
+      "trace_id": "t-0001",
+      "ts": "2026-09-01T09:03:06.262000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1573,
+      "input_tokens": 706
+    },
+    {
+      "trace_id": "t-0002",
+      "ts": "2026-09-01T09:06:06Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2059,
+      "input_tokens": 1063
+    },
+    {
+      "trace_id": "t-0002",
+      "ts": "2026-09-01T09:06:08.731000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2167,
+      "input_tokens": 676
+    },
+    {
+      "trace_id": "t-0003",
+      "ts": "2026-09-01T09:14:33Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1865,
+      "input_tokens": 832
+    },
+    {
+      "trace_id": "t-0003",
+      "ts": "2026-09-01T09:14:35.312000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1620,
+      "input_tokens": 749
+    },
+    {
+      "trace_id": "t-0004",
+      "ts": "2026-09-01T09:23:13Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2304,
+      "input_tokens": 778
+    },
+    {
+      "trace_id": "t-0004",
+      "ts": "2026-09-01T09:23:15.627000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1771,
+      "input_tokens": 944
+    },
+    {
+      "trace_id": "t-0004",
+      "ts": "2026-09-01T09:23:18.068000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3611,
+      "input_tokens": 2644
+    },
+    {
+      "trace_id": "t-0005",
+      "ts": "2026-09-01T09:32:43Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4088,
+      "input_tokens": 2748
+    },
+    {
+      "trace_id": "t-0006",
+      "ts": "2026-09-01T09:37:40Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4782,
+      "input_tokens": 3024
+    },
+    {
+      "trace_id": "t-0007",
+      "ts": "2026-09-01T09:41:58Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2145,
+      "input_tokens": 1222
+    },
+    {
+      "trace_id": "t-0008",
+      "ts": "2026-09-01T09:46:16Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 15809,
+      "input_tokens": 34576
+    },
+    {
+      "trace_id": "t-0009",
+      "ts": "2026-09-01T09:50:51Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2291,
+      "input_tokens": 986
+    },
+    {
+      "trace_id": "t-0009",
+      "ts": "2026-09-01T09:50:53.823000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1763,
+      "input_tokens": 797
+    },
+    {
+      "trace_id": "t-0010",
+      "ts": "2026-09-01T09:51:49Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2255,
+      "input_tokens": 890
+    },
+    {
+      "trace_id": "t-0010",
+      "ts": "2026-09-01T09:51:51.753000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2488,
+      "input_tokens": 946
+    },
+    {
+      "trace_id": "t-0011",
+      "ts": "2026-09-01T09:58:16Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2737,
+      "input_tokens": 1040
+    },
+    {
+      "trace_id": "t-0012",
+      "ts": "2026-09-01T10:00:30Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3864,
+      "input_tokens": 2284
+    },
+    {
+      "trace_id": "t-0013",
+      "ts": "2026-09-01T10:09:14Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2046,
+      "input_tokens": 1044
+    },
+    {
+      "trace_id": "t-0013",
+      "ts": "2026-09-01T10:09:16.347000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2174,
+      "input_tokens": 848
+    },
+    {
+      "trace_id": "t-0014",
+      "ts": "2026-09-01T10:11:46Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2406,
+      "input_tokens": 1001
+    },
+    {
+      "trace_id": "t-0014",
+      "ts": "2026-09-01T10:11:48.910000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2172,
+      "input_tokens": 697
+    },
+    {
+      "trace_id": "t-0015",
+      "ts": "2026-09-01T10:13:44Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2269,
+      "input_tokens": 1069
+    },
+    {
+      "trace_id": "t-0015",
+      "ts": "2026-09-01T10:13:46.974000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2150,
+      "input_tokens": 877
+    },
+    {
+      "trace_id": "t-0016",
+      "ts": "2026-09-01T10:16:56Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1474,
+      "input_tokens": 765
+    },
+    {
+      "trace_id": "t-0016",
+      "ts": "2026-09-01T10:16:57.928000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2338,
+      "input_tokens": 788
+    },
+    {
+      "trace_id": "t-0017",
+      "ts": "2026-09-01T10:25:31Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5220,
+      "input_tokens": 2444
+    },
+    {
+      "trace_id": "t-0018",
+      "ts": "2026-09-01T10:35:22Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3562,
+      "input_tokens": 2094
+    },
+    {
+      "trace_id": "t-0019",
+      "ts": "2026-09-01T10:44:51Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2204,
+      "input_tokens": 770
+    },
+    {
+      "trace_id": "t-0019",
+      "ts": "2026-09-01T10:44:53.703000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2684,
+      "input_tokens": 707
+    },
+    {
+      "trace_id": "t-0020",
+      "ts": "2026-09-01T10:48:58Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 1810,
+      "input_tokens": 985
+    },
+    {
+      "trace_id": "t-0020",
+      "ts": "2026-09-01T10:49:00.710000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4176,
+      "input_tokens": 2646
+    },
+    {
+      "trace_id": "t-0021",
+      "ts": "2026-09-01T10:50:30Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2674,
+      "input_tokens": 1035
+    },
+    {
+      "trace_id": "t-0022",
+      "ts": "2026-09-01T10:59:49Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1789,
+      "input_tokens": 1050
+    },
+    {
+      "trace_id": "t-0022",
+      "ts": "2026-09-01T10:59:51.602000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1662,
+      "input_tokens": 688
+    },
+    {
+      "trace_id": "t-0023",
+      "ts": "2026-09-01T11:00:38Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2621,
+      "input_tokens": 1221
+    },
+    {
+      "trace_id": "t-0024",
+      "ts": "2026-09-01T11:03:41Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1477,
+      "input_tokens": 890
+    },
+    {
+      "trace_id": "t-0024",
+      "ts": "2026-09-01T11:03:42.900000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2288,
+      "input_tokens": 744
+    },
+    {
+      "trace_id": "t-0025",
+      "ts": "2026-09-01T11:13:14Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1959,
+      "input_tokens": 1002
+    },
+    {
+      "trace_id": "t-0025",
+      "ts": "2026-09-01T11:13:16.367000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2768,
+      "input_tokens": 658
+    },
+    {
+      "trace_id": "t-0026",
+      "ts": "2026-09-01T11:18:27Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1313,
+      "input_tokens": 755
+    },
+    {
+      "trace_id": "t-0026",
+      "ts": "2026-09-01T11:18:29.076000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2295,
+      "input_tokens": 883
+    },
+    {
+      "trace_id": "t-0027",
+      "ts": "2026-09-01T11:26:30Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1670,
+      "input_tokens": 1070
+    },
+    {
+      "trace_id": "t-0027",
+      "ts": "2026-09-01T11:26:32.494000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1763,
+      "input_tokens": 728
+    },
+    {
+      "trace_id": "t-0028",
+      "ts": "2026-09-01T11:36:06Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2530,
+      "input_tokens": 1103
+    },
+    {
+      "trace_id": "t-0029",
+      "ts": "2026-09-01T11:45:31Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2627,
+      "input_tokens": 1294
+    },
+    {
+      "trace_id": "t-0029",
+      "ts": "2026-09-01T11:45:34.192000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 6056,
+      "input_tokens": 3008
+    },
+    {
+      "trace_id": "t-0030",
+      "ts": "2026-09-01T11:53:39Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 11143,
+      "input_tokens": 26308
+    },
+    {
+      "trace_id": "t-0031",
+      "ts": "2026-09-01T11:59:32Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 1501,
+      "input_tokens": 985
+    },
+    {
+      "trace_id": "t-0032",
+      "ts": "2026-09-01T12:03:39Z",
+      "agent": "claims",
+      "caller": "router",
+      "duration_ms": 10517,
+      "input_tokens": 3786
+    },
+    {
+      "trace_id": "t-0033",
+      "ts": "2026-09-01T12:10:23Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 1600,
+      "input_tokens": 1268
+    },
+    {
+      "trace_id": "t-0034",
+      "ts": "2026-09-01T12:14:37Z",
+      "agent": "claims",
+      "caller": "router",
+      "duration_ms": 11004,
+      "input_tokens": 2848
+    },
+    {
+      "trace_id": "t-0035",
+      "ts": "2026-09-01T12:17:53Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 19500,
+      "input_tokens": 35122
+    },
+    {
+      "trace_id": "t-0035",
+      "ts": "2026-09-01T12:18:12.965000Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2149,
+      "input_tokens": 1077
+    },
+    {
+      "trace_id": "t-0035",
+      "ts": "2026-09-01T12:18:15.827000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1968,
+      "input_tokens": 702
+    },
+    {
+      "trace_id": "t-0036",
+      "ts": "2026-09-01T12:19:57Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2169,
+      "input_tokens": 727
+    },
+    {
+      "trace_id": "t-0037",
+      "ts": "2026-09-01T12:28:16Z",
+      "agent": "claims",
+      "caller": "router",
+      "duration_ms": 9074,
+      "input_tokens": 2744
+    },
+    {
+      "trace_id": "t-0038",
+      "ts": "2026-09-01T12:37:35Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2273,
+      "input_tokens": 1105
+    },
+    {
+      "trace_id": "t-0038",
+      "ts": "2026-09-01T12:37:37.638000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3505,
+      "input_tokens": 3035
+    },
+    {
+      "trace_id": "t-0039",
+      "ts": "2026-09-01T12:39:52Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1365,
+      "input_tokens": 817
+    },
+    {
+      "trace_id": "t-0039",
+      "ts": "2026-09-01T12:39:53.850000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1867,
+      "input_tokens": 681
+    },
+    {
+      "trace_id": "t-0040",
+      "ts": "2026-09-01T12:44:46Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1771,
+      "input_tokens": 913
+    },
+    {
+      "trace_id": "t-0040",
+      "ts": "2026-09-01T12:44:48.598000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2308,
+      "input_tokens": 864
+    },
+    {
+      "trace_id": "t-0041",
+      "ts": "2026-09-01T12:50:01Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1332,
+      "input_tokens": 967
+    },
+    {
+      "trace_id": "t-0041",
+      "ts": "2026-09-01T12:50:03.067000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2786,
+      "input_tokens": 726
+    },
+    {
+      "trace_id": "t-0042",
+      "ts": "2026-09-01T12:52:01Z",
+      "agent": "claims",
+      "caller": "router",
+      "duration_ms": 11350,
+      "input_tokens": 2833
+    },
+    {
+      "trace_id": "t-0043",
+      "ts": "2026-09-01T12:53:39Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1593,
+      "input_tokens": 763
+    },
+    {
+      "trace_id": "t-0043",
+      "ts": "2026-09-01T12:53:40.904000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1968,
+      "input_tokens": 816
+    },
+    {
+      "trace_id": "t-0044",
+      "ts": "2026-09-01T12:56:21Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1314,
+      "input_tokens": 975
+    },
+    {
+      "trace_id": "t-0045",
+      "ts": "2026-09-01T12:59:36Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1589,
+      "input_tokens": 785
+    },
+    {
+      "trace_id": "t-0045",
+      "ts": "2026-09-01T12:59:38.208000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2394,
+      "input_tokens": 809
+    },
+    {
+      "trace_id": "t-0046",
+      "ts": "2026-09-01T13:05:02Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1821,
+      "input_tokens": 961
+    },
+    {
+      "trace_id": "t-0046",
+      "ts": "2026-09-01T13:05:04.398000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1980,
+      "input_tokens": 645
+    },
+    {
+      "trace_id": "t-0047",
+      "ts": "2026-09-01T13:06:09Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3198,
+      "input_tokens": 2842
+    },
+    {
+      "trace_id": "t-0048",
+      "ts": "2026-09-01T13:09:53Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 14839,
+      "input_tokens": 27846
+    },
+    {
+      "trace_id": "t-0049",
+      "ts": "2026-09-01T13:12:11Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2321,
+      "input_tokens": 1166
+    },
+    {
+      "trace_id": "t-0050",
+      "ts": "2026-09-01T13:22:00Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2568,
+      "input_tokens": 1052
+    },
+    {
+      "trace_id": "t-0051",
+      "ts": "2026-09-01T13:27:45Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2362,
+      "input_tokens": 1312
+    },
+    {
+      "trace_id": "t-0052",
+      "ts": "2026-09-01T13:31:38Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2308,
+      "input_tokens": 974
+    },
+    {
+      "trace_id": "t-0052",
+      "ts": "2026-09-01T13:31:40.751000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2064,
+      "input_tokens": 751
+    },
+    {
+      "trace_id": "t-0052",
+      "ts": "2026-09-01T13:31:43.170000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5786,
+      "input_tokens": 2094
+    },
+    {
+      "trace_id": "t-0053",
+      "ts": "2026-09-01T13:39:29Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3664,
+      "input_tokens": 2167
+    },
+    {
+      "trace_id": "t-0054",
+      "ts": "2026-09-01T13:48:37Z",
+      "agent": "claims",
+      "caller": "router",
+      "duration_ms": 10524,
+      "input_tokens": 3103
+    },
+    {
+      "trace_id": "t-0055",
+      "ts": "2026-09-01T13:54:07Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 10243,
+      "input_tokens": 27098
+    },
+    {
+      "trace_id": "t-0056",
+      "ts": "2026-09-01T14:02:13Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3161,
+      "input_tokens": 2458
+    },
+    {
+      "trace_id": "t-0057",
+      "ts": "2026-09-01T14:12:03Z",
+      "agent": "claims",
+      "caller": "router",
+      "duration_ms": 8338,
+      "input_tokens": 2766
+    },
+    {
+      "trace_id": "t-0058",
+      "ts": "2026-09-01T14:16:16Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1709,
+      "input_tokens": 720
+    },
+    {
+      "trace_id": "t-0058",
+      "ts": "2026-09-01T14:16:18.399000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1593,
+      "input_tokens": 729
+    },
+    {
+      "trace_id": "t-0059",
+      "ts": "2026-09-01T14:21:00Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1895,
+      "input_tokens": 721
+    },
+    {
+      "trace_id": "t-0059",
+      "ts": "2026-09-01T14:21:02.465000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2671,
+      "input_tokens": 686
+    },
+    {
+      "trace_id": "t-0060",
+      "ts": "2026-09-01T14:22:12Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4391,
+      "input_tokens": 2391
+    },
+    {
+      "trace_id": "t-0061",
+      "ts": "2026-09-01T14:24:08Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 15538,
+      "input_tokens": 31361
+    },
+    {
+      "trace_id": "t-0062",
+      "ts": "2026-09-01T14:31:16Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5557,
+      "input_tokens": 2829
+    },
+    {
+      "trace_id": "t-0063",
+      "ts": "2026-09-01T14:34:19Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1618,
+      "input_tokens": 942
+    },
+    {
+      "trace_id": "t-0063",
+      "ts": "2026-09-01T14:34:21.066000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1534,
+      "input_tokens": 907
+    },
+    {
+      "trace_id": "t-0063",
+      "ts": "2026-09-01T14:34:23.425000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5126,
+      "input_tokens": 2843
+    },
+    {
+      "trace_id": "t-0064",
+      "ts": "2026-09-01T14:37:11Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2406,
+      "input_tokens": 991
+    },
+    {
+      "trace_id": "t-0064",
+      "ts": "2026-09-01T14:37:14.288000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2697,
+      "input_tokens": 897
+    },
+    {
+      "trace_id": "t-0065",
+      "ts": "2026-09-01T14:41:36Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1367,
+      "input_tokens": 735
+    },
+    {
+      "trace_id": "t-0065",
+      "ts": "2026-09-01T14:41:38.036000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2880,
+      "input_tokens": 760
+    },
+    {
+      "trace_id": "t-0066",
+      "ts": "2026-09-01T14:42:57Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5127,
+      "input_tokens": 2731
+    },
+    {
+      "trace_id": "t-0067",
+      "ts": "2026-09-01T14:51:48Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 12385,
+      "input_tokens": 30466
+    },
+    {
+      "trace_id": "t-0068",
+      "ts": "2026-09-01T15:00:53Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2391,
+      "input_tokens": 753
+    },
+    {
+      "trace_id": "t-0068",
+      "ts": "2026-09-01T15:00:56.229000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1567,
+      "input_tokens": 875
+    },
+    {
+      "trace_id": "t-0069",
+      "ts": "2026-09-01T15:02:39Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5815,
+      "input_tokens": 2324
+    },
+    {
+      "trace_id": "t-0070",
+      "ts": "2026-09-01T15:07:05Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2192,
+      "input_tokens": 1071
+    },
+    {
+      "trace_id": "t-0070",
+      "ts": "2026-09-01T15:07:07.997000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2712,
+      "input_tokens": 664
+    },
+    {
+      "trace_id": "t-0071",
+      "ts": "2026-09-01T15:08:22Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2037,
+      "input_tokens": 951
+    },
+    {
+      "trace_id": "t-0071",
+      "ts": "2026-09-01T15:08:24.416000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2351,
+      "input_tokens": 746
+    },
+    {
+      "trace_id": "t-0072",
+      "ts": "2026-09-01T15:11:08Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1275,
+      "input_tokens": 741
+    },
+    {
+      "trace_id": "t-0072",
+      "ts": "2026-09-01T15:11:09.850000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2899,
+      "input_tokens": 671
+    },
+    {
+      "trace_id": "t-0072",
+      "ts": "2026-09-01T15:11:13.271000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5278,
+      "input_tokens": 2382
+    },
+    {
+      "trace_id": "t-0073",
+      "ts": "2026-09-01T15:16:30Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1845,
+      "input_tokens": 887
+    },
+    {
+      "trace_id": "t-0074",
+      "ts": "2026-09-01T15:26:22Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3777,
+      "input_tokens": 3097
+    },
+    {
+      "trace_id": "t-0075",
+      "ts": "2026-09-01T15:27:09Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1624,
+      "input_tokens": 747
+    },
+    {
+      "trace_id": "t-0075",
+      "ts": "2026-09-01T15:27:11.442000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2893,
+      "input_tokens": 783
+    },
+    {
+      "trace_id": "t-0076",
+      "ts": "2026-09-01T15:34:15Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1524,
+      "input_tokens": 1060
+    },
+    {
+      "trace_id": "t-0077",
+      "ts": "2026-09-01T15:36:01Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4981,
+      "input_tokens": 2227
+    },
+    {
+      "trace_id": "t-0078",
+      "ts": "2026-09-01T15:40:59Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 19136,
+      "input_tokens": 26444
+    },
+    {
+      "trace_id": "t-0078",
+      "ts": "2026-09-01T15:41:18.956000Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1612,
+      "input_tokens": 760
+    },
+    {
+      "trace_id": "t-0078",
+      "ts": "2026-09-01T15:41:21.241000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1810,
+      "input_tokens": 927
+    },
+    {
+      "trace_id": "t-0079",
+      "ts": "2026-09-01T15:48:12Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 1434,
+      "input_tokens": 881
+    },
+    {
+      "trace_id": "t-0080",
+      "ts": "2026-09-01T15:56:23Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1770,
+      "input_tokens": 981
+    },
+    {
+      "trace_id": "t-0080",
+      "ts": "2026-09-01T15:56:25.496000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1975,
+      "input_tokens": 741
+    },
+    {
+      "trace_id": "t-0081",
+      "ts": "2026-09-01T15:56:54Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1668,
+      "input_tokens": 841
+    },
+    {
+      "trace_id": "t-0081",
+      "ts": "2026-09-01T15:56:56.375000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1646,
+      "input_tokens": 936
+    },
+    {
+      "trace_id": "t-0082",
+      "ts": "2026-09-01T16:02:20Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1579,
+      "input_tokens": 743
+    },
+    {
+      "trace_id": "t-0082",
+      "ts": "2026-09-01T16:02:22.278000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2938,
+      "input_tokens": 828
+    },
+    {
+      "trace_id": "t-0083",
+      "ts": "2026-09-01T16:10:08Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5530,
+      "input_tokens": 2968
+    },
+    {
+      "trace_id": "t-0084",
+      "ts": "2026-09-01T16:12:22Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1325,
+      "input_tokens": 958
+    },
+    {
+      "trace_id": "t-0084",
+      "ts": "2026-09-01T16:12:23.777000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1836,
+      "input_tokens": 725
+    },
+    {
+      "trace_id": "t-0085",
+      "ts": "2026-09-01T16:18:15Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 1665,
+      "input_tokens": 1044
+    },
+    {
+      "trace_id": "t-0086",
+      "ts": "2026-09-01T16:19:14Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2536,
+      "input_tokens": 1157
+    },
+    {
+      "trace_id": "t-0087",
+      "ts": "2026-09-01T16:29:06Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1516,
+      "input_tokens": 749
+    },
+    {
+      "trace_id": "t-0087",
+      "ts": "2026-09-01T16:29:08.236000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2132,
+      "input_tokens": 880
+    },
+    {
+      "trace_id": "t-0087",
+      "ts": "2026-09-01T16:29:10.961000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4679,
+      "input_tokens": 3028
+    },
+    {
+      "trace_id": "t-0088",
+      "ts": "2026-09-01T16:31:46Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 1639,
+      "input_tokens": 1062
+    },
+    {
+      "trace_id": "t-0088",
+      "ts": "2026-09-01T16:31:48.227000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4087,
+      "input_tokens": 2848
+    },
+    {
+      "trace_id": "t-0089",
+      "ts": "2026-09-01T16:39:11Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2086,
+      "input_tokens": 828
+    },
+    {
+      "trace_id": "t-0089",
+      "ts": "2026-09-01T16:39:13.956000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2453,
+      "input_tokens": 678
+    },
+    {
+      "trace_id": "t-0090",
+      "ts": "2026-09-01T16:40:57Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1521,
+      "input_tokens": 1046
+    },
+    {
+      "trace_id": "t-0090",
+      "ts": "2026-09-01T16:40:59.330000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2279,
+      "input_tokens": 784
+    },
+    {
+      "trace_id": "t-0091",
+      "ts": "2026-09-01T16:49:07Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 1998,
+      "input_tokens": 1121
+    },
+    {
+      "trace_id": "t-0092",
+      "ts": "2026-09-01T16:51:09Z",
+      "agent": "claims",
+      "caller": "router",
+      "duration_ms": 7400,
+      "input_tokens": 3475
+    },
+    {
+      "trace_id": "t-0093",
+      "ts": "2026-09-01T16:55:43Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4310,
+      "input_tokens": 2921
+    },
+    {
+      "trace_id": "t-0094",
+      "ts": "2026-09-01T16:56:33Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2204,
+      "input_tokens": 868
+    },
+    {
+      "trace_id": "t-0094",
+      "ts": "2026-09-01T16:56:35.927000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2566,
+      "input_tokens": 707
+    },
+    {
+      "trace_id": "t-0095",
+      "ts": "2026-09-01T17:02:49Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 17170,
+      "input_tokens": 30977
+    },
+    {
+      "trace_id": "t-0096",
+      "ts": "2026-09-01T17:09:27Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1418,
+      "input_tokens": 901
+    },
+    {
+      "trace_id": "t-0096",
+      "ts": "2026-09-01T17:09:28.939000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1606,
+      "input_tokens": 926
+    },
+    {
+      "trace_id": "t-0096",
+      "ts": "2026-09-01T17:09:31.238000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4409,
+      "input_tokens": 2543
+    },
+    {
+      "trace_id": "t-0097",
+      "ts": "2026-09-01T17:10:19Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1420,
+      "input_tokens": 873
+    },
+    {
+      "trace_id": "t-0097",
+      "ts": "2026-09-01T17:10:21.204000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2893,
+      "input_tokens": 796
+    },
+    {
+      "trace_id": "t-0098",
+      "ts": "2026-09-01T17:17:29Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2432,
+      "input_tokens": 1054
+    },
+    {
+      "trace_id": "t-0098",
+      "ts": "2026-09-01T17:17:32.272000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2727,
+      "input_tokens": 951
+    },
+    {
+      "trace_id": "t-0099",
+      "ts": "2026-09-01T17:19:50Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1541,
+      "input_tokens": 774
+    },
+    {
+      "trace_id": "t-0099",
+      "ts": "2026-09-01T17:19:51.952000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2853,
+      "input_tokens": 870
+    },
+    {
+      "trace_id": "t-0099",
+      "ts": "2026-09-01T17:19:55.573000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3417,
+      "input_tokens": 2887
+    },
+    {
+      "trace_id": "t-0100",
+      "ts": "2026-09-01T17:22:28Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1553,
+      "input_tokens": 1051
+    },
+    {
+      "trace_id": "t-0101",
+      "ts": "2026-09-01T17:25:09Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 15939,
+      "input_tokens": 31350
+    },
+    {
+      "trace_id": "t-0101",
+      "ts": "2026-09-01T17:25:25.686000Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2140,
+      "input_tokens": 760
+    },
+    {
+      "trace_id": "t-0101",
+      "ts": "2026-09-01T17:25:28.198000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1911,
+      "input_tokens": 941
+    },
+    {
+      "trace_id": "t-0102",
+      "ts": "2026-09-01T17:32:16Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1588,
+      "input_tokens": 1004
+    },
+    {
+      "trace_id": "t-0102",
+      "ts": "2026-09-01T17:32:17.889000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1485,
+      "input_tokens": 736
+    },
+    {
+      "trace_id": "t-0103",
+      "ts": "2026-09-01T17:37:31Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 6170,
+      "input_tokens": 2750
+    },
+    {
+      "trace_id": "t-0104",
+      "ts": "2026-09-01T17:46:07Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 14957,
+      "input_tokens": 31582
+    },
+    {
+      "trace_id": "t-0105",
+      "ts": "2026-09-01T17:53:38Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2147,
+      "input_tokens": 830
+    },
+    {
+      "trace_id": "t-0105",
+      "ts": "2026-09-01T17:53:40.469000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1755,
+      "input_tokens": 923
+    },
+    {
+      "trace_id": "t-0106",
+      "ts": "2026-09-01T17:55:31Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3960,
+      "input_tokens": 2774
+    },
+    {
+      "trace_id": "t-0107",
+      "ts": "2026-09-01T17:59:53Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1881,
+      "input_tokens": 970
+    },
+    {
+      "trace_id": "t-0107",
+      "ts": "2026-09-01T17:59:55.611000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2002,
+      "input_tokens": 766
+    },
+    {
+      "trace_id": "t-0107",
+      "ts": "2026-09-01T17:59:57.919000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5660,
+      "input_tokens": 2848
+    },
+    {
+      "trace_id": "t-0108",
+      "ts": "2026-09-01T18:01:32Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1518,
+      "input_tokens": 1069
+    },
+    {
+      "trace_id": "t-0108",
+      "ts": "2026-09-01T18:01:34.137000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2595,
+      "input_tokens": 702
+    },
+    {
+      "trace_id": "t-0109",
+      "ts": "2026-09-01T18:05:48Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1593,
+      "input_tokens": 1040
+    },
+    {
+      "trace_id": "t-0109",
+      "ts": "2026-09-01T18:05:50.004000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2869,
+      "input_tokens": 798
+    },
+    {
+      "trace_id": "t-0110",
+      "ts": "2026-09-01T18:10:06Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4677,
+      "input_tokens": 3026
+    },
+    {
+      "trace_id": "t-0111",
+      "ts": "2026-09-01T18:13:05Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2690,
+      "input_tokens": 903
+    },
+    {
+      "trace_id": "t-0112",
+      "ts": "2026-09-01T18:16:00Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4458,
+      "input_tokens": 2818
+    },
+    {
+      "trace_id": "t-0113",
+      "ts": "2026-09-01T18:23:12Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1826,
+      "input_tokens": 976
+    },
+    {
+      "trace_id": "t-0113",
+      "ts": "2026-09-01T18:23:14.447000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2547,
+      "input_tokens": 959
+    },
+    {
+      "trace_id": "t-0114",
+      "ts": "2026-09-01T18:29:19Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 11668,
+      "input_tokens": 32890
+    },
+    {
+      "trace_id": "t-0114",
+      "ts": "2026-09-01T18:29:31.505000Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2200,
+      "input_tokens": 731
+    },
+    {
+      "trace_id": "t-0114",
+      "ts": "2026-09-01T18:29:34.392000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2703,
+      "input_tokens": 955
+    },
+    {
+      "trace_id": "t-0115",
+      "ts": "2026-09-01T18:32:42Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 1552,
+      "input_tokens": 914
+    },
+    {
+      "trace_id": "t-0116",
+      "ts": "2026-09-01T18:39:11Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1789,
+      "input_tokens": 1038
+    },
+    {
+      "trace_id": "t-0116",
+      "ts": "2026-09-01T18:39:13.663000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2887,
+      "input_tokens": 706
+    },
+    {
+      "trace_id": "t-0117",
+      "ts": "2026-09-01T18:44:57Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2295,
+      "input_tokens": 875
+    },
+    {
+      "trace_id": "t-0117",
+      "ts": "2026-09-01T18:44:59.645000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2506,
+      "input_tokens": 702
+    },
+    {
+      "trace_id": "t-0118",
+      "ts": "2026-09-01T18:53:04Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3758,
+      "input_tokens": 2458
+    },
+    {
+      "trace_id": "t-0119",
+      "ts": "2026-09-01T18:54:05Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2055,
+      "input_tokens": 809
+    },
+    {
+      "trace_id": "t-0119",
+      "ts": "2026-09-01T18:54:07.769000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1529,
+      "input_tokens": 651
+    },
+    {
+      "trace_id": "t-0120",
+      "ts": "2026-09-01T18:55:38Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1583,
+      "input_tokens": 989
+    },
+    {
+      "trace_id": "t-0120",
+      "ts": "2026-09-01T18:55:40.230000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2003,
+      "input_tokens": 747
+    },
+    {
+      "trace_id": "t-0121",
+      "ts": "2026-09-01T19:00:36Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2200,
+      "input_tokens": 968
+    },
+    {
+      "trace_id": "t-0121",
+      "ts": "2026-09-01T19:00:38.782000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1907,
+      "input_tokens": 870
+    },
+    {
+      "trace_id": "t-0122",
+      "ts": "2026-09-01T19:01:30Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 17894,
+      "input_tokens": 26130
+    },
+    {
+      "trace_id": "t-0123",
+      "ts": "2026-09-01T19:08:35Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 17540,
+      "input_tokens": 36127
+    },
+    {
+      "trace_id": "t-0123",
+      "ts": "2026-09-01T19:08:53.345000Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1427,
+      "input_tokens": 898
+    },
+    {
+      "trace_id": "t-0123",
+      "ts": "2026-09-01T19:08:55.080000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2649,
+      "input_tokens": 876
+    },
+    {
+      "trace_id": "t-0124",
+      "ts": "2026-09-01T19:13:06Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4182,
+      "input_tokens": 2412
+    },
+    {
+      "trace_id": "t-0125",
+      "ts": "2026-09-01T19:14:56Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 14816,
+      "input_tokens": 29656
+    },
+    {
+      "trace_id": "t-0126",
+      "ts": "2026-09-01T19:19:39Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1773,
+      "input_tokens": 953
+    },
+    {
+      "trace_id": "t-0126",
+      "ts": "2026-09-01T19:19:41.566000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2282,
+      "input_tokens": 744
+    },
+    {
+      "trace_id": "t-0126",
+      "ts": "2026-09-01T19:19:44.584000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5932,
+      "input_tokens": 3107
+    },
+    {
+      "trace_id": "t-0127",
+      "ts": "2026-09-01T19:21:35Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 11841,
+      "input_tokens": 30021
+    },
+    {
+      "trace_id": "t-0127",
+      "ts": "2026-09-01T19:21:47.598000Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1478,
+      "input_tokens": 767
+    },
+    {
+      "trace_id": "t-0127",
+      "ts": "2026-09-01T19:21:49.847000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2381,
+      "input_tokens": 855
+    },
+    {
+      "trace_id": "t-0128",
+      "ts": "2026-09-01T19:24:09Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5606,
+      "input_tokens": 2385
+    },
+    {
+      "trace_id": "t-0129",
+      "ts": "2026-09-01T19:29:13Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 1922,
+      "input_tokens": 1204
+    },
+    {
+      "trace_id": "t-0130",
+      "ts": "2026-09-01T19:37:12Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1571,
+      "input_tokens": 808
+    },
+    {
+      "trace_id": "t-0131",
+      "ts": "2026-09-01T19:42:30Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2374,
+      "input_tokens": 928
+    },
+    {
+      "trace_id": "t-0131",
+      "ts": "2026-09-01T19:42:33.008000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1565,
+      "input_tokens": 720
+    },
+    {
+      "trace_id": "t-0132",
+      "ts": "2026-09-01T19:51:39Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1923,
+      "input_tokens": 953
+    },
+    {
+      "trace_id": "t-0132",
+      "ts": "2026-09-01T19:51:41.325000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2430,
+      "input_tokens": 957
+    },
+    {
+      "trace_id": "t-0133",
+      "ts": "2026-09-01T19:52:13Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 14452,
+      "input_tokens": 34956
+    },
+    {
+      "trace_id": "t-0134",
+      "ts": "2026-09-01T19:59:05Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1310,
+      "input_tokens": 825
+    },
+    {
+      "trace_id": "t-0134",
+      "ts": "2026-09-01T19:59:06.732000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1544,
+      "input_tokens": 832
+    },
+    {
+      "trace_id": "t-0135",
+      "ts": "2026-09-01T20:02:53Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 6080,
+      "input_tokens": 2467
+    },
+    {
+      "trace_id": "t-0136",
+      "ts": "2026-09-01T20:11:02Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5049,
+      "input_tokens": 2885
+    },
+    {
+      "trace_id": "t-0137",
+      "ts": "2026-09-01T20:13:20Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2292,
+      "input_tokens": 1192
+    },
+    {
+      "trace_id": "t-0138",
+      "ts": "2026-09-01T20:17:32Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 1452,
+      "input_tokens": 1029
+    },
+    {
+      "trace_id": "t-0139",
+      "ts": "2026-09-01T20:21:30Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 6299,
+      "input_tokens": 2119
+    },
+    {
+      "trace_id": "t-0140",
+      "ts": "2026-09-01T20:22:11Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2546,
+      "input_tokens": 1059
+    },
+    {
+      "trace_id": "t-0141",
+      "ts": "2026-09-01T20:25:50Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2042,
+      "input_tokens": 748
+    },
+    {
+      "trace_id": "t-0142",
+      "ts": "2026-09-01T20:34:47Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2167,
+      "input_tokens": 907
+    },
+    {
+      "trace_id": "t-0143",
+      "ts": "2026-09-01T20:42:01Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2096,
+      "input_tokens": 775
+    },
+    {
+      "trace_id": "t-0143",
+      "ts": "2026-09-01T20:42:03.942000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1603,
+      "input_tokens": 692
+    },
+    {
+      "trace_id": "t-0144",
+      "ts": "2026-09-01T20:49:30Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2505,
+      "input_tokens": 960
+    },
+    {
+      "trace_id": "t-0144",
+      "ts": "2026-09-01T20:49:33.232000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2871,
+      "input_tokens": 739
+    },
+    {
+      "trace_id": "t-0144",
+      "ts": "2026-09-01T20:49:36.983000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5933,
+      "input_tokens": 2510
+    },
+    {
+      "trace_id": "t-0145",
+      "ts": "2026-09-01T20:56:12Z",
+      "agent": "claims",
+      "caller": "router",
+      "duration_ms": 10360,
+      "input_tokens": 3251
+    },
+    {
+      "trace_id": "t-0146",
+      "ts": "2026-09-01T21:00:10Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2446,
+      "input_tokens": 876
+    },
+    {
+      "trace_id": "t-0146",
+      "ts": "2026-09-01T21:00:12.906000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2092,
+      "input_tokens": 902
+    },
+    {
+      "trace_id": "t-0147",
+      "ts": "2026-09-01T21:06:53Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1840,
+      "input_tokens": 778
+    },
+    {
+      "trace_id": "t-0148",
+      "ts": "2026-09-01T21:08:15Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 15205,
+      "input_tokens": 32744
+    },
+    {
+      "trace_id": "t-0148",
+      "ts": "2026-09-01T21:08:30.911000Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1372,
+      "input_tokens": 943
+    },
+    {
+      "trace_id": "t-0148",
+      "ts": "2026-09-01T21:08:32.962000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2553,
+      "input_tokens": 694
+    },
+    {
+      "trace_id": "t-0149",
+      "ts": "2026-09-01T21:13:35Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3659,
+      "input_tokens": 2258
+    },
+    {
+      "trace_id": "t-0150",
+      "ts": "2026-09-01T21:15:56Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1743,
+      "input_tokens": 991
+    },
+    {
+      "trace_id": "t-0150",
+      "ts": "2026-09-01T21:15:58.245000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1913,
+      "input_tokens": 907
+    },
+    {
+      "trace_id": "t-0151",
+      "ts": "2026-09-01T21:24:40Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 12882,
+      "input_tokens": 32334
+    },
+    {
+      "trace_id": "t-0152",
+      "ts": "2026-09-01T21:26:38Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 18661,
+      "input_tokens": 32492
+    },
+    {
+      "trace_id": "t-0153",
+      "ts": "2026-09-01T21:30:55Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2042,
+      "input_tokens": 941
+    },
+    {
+      "trace_id": "t-0153",
+      "ts": "2026-09-01T21:30:57.542000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2688,
+      "input_tokens": 698
+    },
+    {
+      "trace_id": "t-0154",
+      "ts": "2026-09-01T21:32:07Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1763,
+      "input_tokens": 906
+    },
+    {
+      "trace_id": "t-0154",
+      "ts": "2026-09-01T21:32:09.455000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1998,
+      "input_tokens": 687
+    },
+    {
+      "trace_id": "t-0155",
+      "ts": "2026-09-01T21:33:19Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2373,
+      "input_tokens": 1023
+    },
+    {
+      "trace_id": "t-0156",
+      "ts": "2026-09-01T21:39:20Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3520,
+      "input_tokens": 2703
+    },
+    {
+      "trace_id": "t-0157",
+      "ts": "2026-09-01T21:45:03Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2077,
+      "input_tokens": 830
+    },
+    {
+      "trace_id": "t-0158",
+      "ts": "2026-09-01T21:52:48Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1750,
+      "input_tokens": 852
+    },
+    {
+      "trace_id": "t-0158",
+      "ts": "2026-09-01T21:52:50.565000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2114,
+      "input_tokens": 647
+    },
+    {
+      "trace_id": "t-0159",
+      "ts": "2026-09-01T22:01:14Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1556,
+      "input_tokens": 994
+    },
+    {
+      "trace_id": "t-0160",
+      "ts": "2026-09-01T22:04:47Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2281,
+      "input_tokens": 864
+    },
+    {
+      "trace_id": "t-0160",
+      "ts": "2026-09-01T22:04:49.649000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1658,
+      "input_tokens": 777
+    },
+    {
+      "trace_id": "t-0161",
+      "ts": "2026-09-01T22:12:49Z",
+      "agent": "claims",
+      "caller": "router",
+      "duration_ms": 9477,
+      "input_tokens": 3613
+    },
+    {
+      "trace_id": "t-0162",
+      "ts": "2026-09-01T22:15:32Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1363,
+      "input_tokens": 984
+    },
+    {
+      "trace_id": "t-0162",
+      "ts": "2026-09-01T22:15:34.186000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1587,
+      "input_tokens": 880
+    },
+    {
+      "trace_id": "t-0163",
+      "ts": "2026-09-01T22:18:21Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1292,
+      "input_tokens": 743
+    },
+    {
+      "trace_id": "t-0163",
+      "ts": "2026-09-01T22:18:22.704000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1754,
+      "input_tokens": 954
+    },
+    {
+      "trace_id": "t-0164",
+      "ts": "2026-09-01T22:23:45Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2465,
+      "input_tokens": 1049
+    },
+    {
+      "trace_id": "t-0165",
+      "ts": "2026-09-01T22:28:01Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1342,
+      "input_tokens": 846
+    },
+    {
+      "trace_id": "t-0165",
+      "ts": "2026-09-01T22:28:02.900000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1703,
+      "input_tokens": 926
+    },
+    {
+      "trace_id": "t-0166",
+      "ts": "2026-09-01T22:36:18Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1440,
+      "input_tokens": 900
+    },
+    {
+      "trace_id": "t-0166",
+      "ts": "2026-09-01T22:36:20.231000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1776,
+      "input_tokens": 724
+    },
+    {
+      "trace_id": "t-0167",
+      "ts": "2026-09-01T22:40:51Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 1846,
+      "input_tokens": 896
+    },
+    {
+      "trace_id": "t-0167",
+      "ts": "2026-09-01T22:40:53.332000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4420,
+      "input_tokens": 2742
+    },
+    {
+      "trace_id": "t-0168",
+      "ts": "2026-09-01T22:46:56Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2653,
+      "input_tokens": 954
+    },
+    {
+      "trace_id": "t-0168",
+      "ts": "2026-09-01T22:46:59.223000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3512,
+      "input_tokens": 2631
+    },
+    {
+      "trace_id": "t-0169",
+      "ts": "2026-09-01T22:55:09Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1959,
+      "input_tokens": 928
+    },
+    {
+      "trace_id": "t-0169",
+      "ts": "2026-09-01T22:55:11.366000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1840,
+      "input_tokens": 811
+    },
+    {
+      "trace_id": "t-0169",
+      "ts": "2026-09-01T22:55:13.909000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 5474,
+      "input_tokens": 2466
+    },
+    {
+      "trace_id": "t-0170",
+      "ts": "2026-09-01T23:01:56Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1987,
+      "input_tokens": 849
+    },
+    {
+      "trace_id": "t-0171",
+      "ts": "2026-09-01T23:09:58Z",
+      "agent": "claims",
+      "caller": "router",
+      "duration_ms": 7749,
+      "input_tokens": 3556
+    },
+    {
+      "trace_id": "t-0172",
+      "ts": "2026-09-01T23:15:31Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 17834,
+      "input_tokens": 27945
+    },
+    {
+      "trace_id": "t-0172",
+      "ts": "2026-09-01T23:15:49.733000Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2429,
+      "input_tokens": 1042
+    },
+    {
+      "trace_id": "t-0172",
+      "ts": "2026-09-01T23:15:52.463000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2568,
+      "input_tokens": 710
+    },
+    {
+      "trace_id": "t-0173",
+      "ts": "2026-09-01T23:23:23Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 13893,
+      "input_tokens": 29314
+    },
+    {
+      "trace_id": "t-0174",
+      "ts": "2026-09-01T23:26:08Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 14586,
+      "input_tokens": 32395
+    },
+    {
+      "trace_id": "t-0175",
+      "ts": "2026-09-01T23:27:00Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1328,
+      "input_tokens": 924
+    },
+    {
+      "trace_id": "t-0175",
+      "ts": "2026-09-01T23:27:01.939000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1626,
+      "input_tokens": 754
+    },
+    {
+      "trace_id": "t-0176",
+      "ts": "2026-09-01T23:34:33Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1995,
+      "input_tokens": 932
+    },
+    {
+      "trace_id": "t-0176",
+      "ts": "2026-09-01T23:34:35.504000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2008,
+      "input_tokens": 905
+    },
+    {
+      "trace_id": "t-0177",
+      "ts": "2026-09-01T23:37:20Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1277,
+      "input_tokens": 1008
+    },
+    {
+      "trace_id": "t-0178",
+      "ts": "2026-09-01T23:45:31Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1380,
+      "input_tokens": 949
+    },
+    {
+      "trace_id": "t-0178",
+      "ts": "2026-09-01T23:45:32.956000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2060,
+      "input_tokens": 724
+    },
+    {
+      "trace_id": "t-0179",
+      "ts": "2026-09-01T23:46:58Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2302,
+      "input_tokens": 1127
+    },
+    {
+      "trace_id": "t-0180",
+      "ts": "2026-09-01T23:55:02Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2018,
+      "input_tokens": 906
+    },
+    {
+      "trace_id": "t-0181",
+      "ts": "2026-09-01T23:59:46Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1468,
+      "input_tokens": 720
+    },
+    {
+      "trace_id": "t-0181",
+      "ts": "2026-09-01T23:59:47.831000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2251,
+      "input_tokens": 769
+    },
+    {
+      "trace_id": "t-0182",
+      "ts": "2026-09-02T00:02:59Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1333,
+      "input_tokens": 1000
+    },
+    {
+      "trace_id": "t-0182",
+      "ts": "2026-09-02T00:03:00.645000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2370,
+      "input_tokens": 850
+    },
+    {
+      "trace_id": "t-0183",
+      "ts": "2026-09-02T00:05:54Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1780,
+      "input_tokens": 906
+    },
+    {
+      "trace_id": "t-0183",
+      "ts": "2026-09-02T00:05:56.599000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2421,
+      "input_tokens": 772
+    },
+    {
+      "trace_id": "t-0184",
+      "ts": "2026-09-02T00:15:04Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4124,
+      "input_tokens": 2392
+    },
+    {
+      "trace_id": "t-0185",
+      "ts": "2026-09-02T00:23:43Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2401,
+      "input_tokens": 882
+    },
+    {
+      "trace_id": "t-0186",
+      "ts": "2026-09-02T00:32:09Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1361,
+      "input_tokens": 955
+    },
+    {
+      "trace_id": "t-0186",
+      "ts": "2026-09-02T00:32:10.840000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1802,
+      "input_tokens": 673
+    },
+    {
+      "trace_id": "t-0187",
+      "ts": "2026-09-02T00:33:18Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1415,
+      "input_tokens": 1040
+    },
+    {
+      "trace_id": "t-0187",
+      "ts": "2026-09-02T00:33:19.984000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2516,
+      "input_tokens": 725
+    },
+    {
+      "trace_id": "t-0188",
+      "ts": "2026-09-02T00:41:14Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2124,
+      "input_tokens": 1050
+    },
+    {
+      "trace_id": "t-0188",
+      "ts": "2026-09-02T00:41:16.695000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1904,
+      "input_tokens": 937
+    },
+    {
+      "trace_id": "t-0189",
+      "ts": "2026-09-02T00:43:11Z",
+      "agent": "account",
+      "caller": "router",
+      "duration_ms": 2632,
+      "input_tokens": 886
+    },
+    {
+      "trace_id": "t-0190",
+      "ts": "2026-09-02T00:47:42Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 2320,
+      "input_tokens": 792
+    },
+    {
+      "trace_id": "t-0190",
+      "ts": "2026-09-02T00:47:44.783000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2566,
+      "input_tokens": 744
+    },
+    {
+      "trace_id": "t-0191",
+      "ts": "2026-09-02T00:53:48Z",
+      "agent": "diagnostics",
+      "caller": "router",
+      "duration_ms": 15692,
+      "input_tokens": 29505
+    },
+    {
+      "trace_id": "t-0192",
+      "ts": "2026-09-02T01:02:18Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4637,
+      "input_tokens": 2631
+    },
+    {
+      "trace_id": "t-0193",
+      "ts": "2026-09-02T01:03:15Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1810,
+      "input_tokens": 980
+    },
+    {
+      "trace_id": "t-0193",
+      "ts": "2026-09-02T01:03:17.694000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2770,
+      "input_tokens": 892
+    },
+    {
+      "trace_id": "t-0194",
+      "ts": "2026-09-02T01:05:04Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1972,
+      "input_tokens": 781
+    },
+    {
+      "trace_id": "t-0195",
+      "ts": "2026-09-02T01:06:01Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1400,
+      "input_tokens": 943
+    },
+    {
+      "trace_id": "t-0195",
+      "ts": "2026-09-02T01:06:02.865000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1976,
+      "input_tokens": 685
+    },
+    {
+      "trace_id": "t-0196",
+      "ts": "2026-09-02T01:07:02Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1312,
+      "input_tokens": 969
+    },
+    {
+      "trace_id": "t-0196",
+      "ts": "2026-09-02T01:07:03.655000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2494,
+      "input_tokens": 875
+    },
+    {
+      "trace_id": "t-0197",
+      "ts": "2026-09-02T01:13:44Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1511,
+      "input_tokens": 1063
+    },
+    {
+      "trace_id": "t-0197",
+      "ts": "2026-09-02T01:13:46.357000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 2780,
+      "input_tokens": 661
+    },
+    {
+      "trace_id": "t-0197",
+      "ts": "2026-09-02T01:13:49.830000Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3487,
+      "input_tokens": 2293
+    },
+    {
+      "trace_id": "t-0198",
+      "ts": "2026-09-02T01:14:48Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 3258,
+      "input_tokens": 2961
+    },
+    {
+      "trace_id": "t-0199",
+      "ts": "2026-09-02T01:20:12Z",
+      "agent": "orders",
+      "caller": "router",
+      "duration_ms": 1861,
+      "input_tokens": 767
+    },
+    {
+      "trace_id": "t-0199",
+      "ts": "2026-09-02T01:20:14.370000Z",
+      "agent": "shipping",
+      "caller": "router",
+      "duration_ms": 1902,
+      "input_tokens": 747
+    },
+    {
+      "trace_id": "t-0200",
+      "ts": "2026-09-02T01:21:03Z",
+      "agent": "returns",
+      "caller": "router",
+      "duration_ms": 4255,
+      "input_tokens": 3047
+    }
+  ],
+  "coupling": {
+    "traces": 200,
+    "calls": 322,
+    "first_ts": "2026-09-01T09:03:04Z",
+    "last_ts": "2026-09-02T01:21:03Z",
+    "volume": [
+      {
+        "agent": "orders",
+        "calls": 112,
+        "trace_share": 0.56,
+        "median_ms": 1784.5,
+        "time_share": 0.17371505436226084,
+        "median_input_tokens": 926
+      },
+      {
+        "agent": "shipping",
+        "calls": 96,
+        "trace_share": 0.48,
+        "median_ms": 2158.5,
+        "time_share": 0.18012457482628924,
+        "median_input_tokens": 763
+      },
+      {
+        "agent": "returns",
+        "calls": 50,
+        "trace_share": 0.25,
+        "median_ms": 4414.5,
+        "time_share": 0.19642982598935887,
+        "median_input_tokens": 2674.5
+      },
+      {
+        "agent": "account",
+        "calls": 30,
+        "trace_share": 0.15,
+        "median_ms": 2297,
+        "time_share": 0.056115218862719224,
+        "median_input_tokens": 1055.5
+      },
+      {
+        "agent": "diagnostics",
+        "calls": 24,
+        "trace_share": 0.12,
+        "median_ms": 15081,
+        "time_share": 0.3115424488292194,
+        "median_input_tokens": 31163.5
+      },
+      {
+        "agent": "claims",
+        "calls": 10,
+        "trace_share": 0.05,
+        "median_ms": 9918.5,
+        "time_share": 0.08207287713015242,
+        "median_input_tokens": 3177
+      }
+    ],
+    "sequences": [
+      [
+        "orders -> shipping",
+        76
+      ],
+      [
+        "returns",
+        32
+      ],
+      [
+        "account",
+        24
+      ],
+      [
+        "diagnostics",
+        16
+      ],
+      [
+        "orders",
+        16
+      ],
+      [
+        "orders -> shipping -> returns",
+        12
+      ],
+      [
+        "claims",
+        10
+      ],
+      [
+        "diagnostics -> orders -> shipping",
+        8
+      ]
+    ],
+    "pairs": [
+      {
+        "first": "orders",
+        "then": "shipping",
+        "traces": 96,
+        "rarer": "shipping",
+        "rarer_traces": 96,
+        "coupling": 1,
+        "share": 0.48
+      },
+      {
+        "first": "shipping",
+        "then": "returns",
+        "traces": 12,
+        "rarer": "returns",
+        "rarer_traces": 50,
+        "coupling": 0.24,
+        "share": 0.06
+      },
+      {
+        "first": "diagnostics",
+        "then": "orders",
+        "traces": 8,
+        "rarer": "diagnostics",
+        "rarer_traces": 24,
+        "coupling": 0.3333333333333333,
+        "share": 0.04
+      },
+      {
+        "first": "account",
+        "then": "returns",
+        "traces": 6,
+        "rarer": "account",
+        "rarer_traces": 30,
+        "coupling": 0.2,
+        "share": 0.03
+      }
+    ],
+    "candidates": [
+      {
+        "first": "orders",
+        "then": "shipping",
+        "traces": 96,
+        "rarer": "shipping",
+        "rarer_traces": 96,
+        "coupling": 1,
+        "share": 0.48
+      }
+    ]
+  },
+  "runs": [
+    {
+      "path": "example-run/results",
+      "before": [
+        {
+          "prompt_id": "t01",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 17.27,
+          "in_tokens": 6800,
+          "out_tokens": 985,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 3976,
+              "output_tokens": 637
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1471,
+              "output_tokens": 121
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1353,
+              "output_tokens": 227
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t01",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 19.53,
+          "in_tokens": 6708,
+          "out_tokens": 940,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 3908,
+              "output_tokens": 588
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1441,
+              "output_tokens": 136
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1359,
+              "output_tokens": 216
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t02",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 23.93,
+          "in_tokens": 6963,
+          "out_tokens": 1056,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 4089,
+              "output_tokens": 679
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1523,
+              "output_tokens": 135
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1351,
+              "output_tokens": 242
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t02",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 23.71,
+          "in_tokens": 7005,
+          "out_tokens": 1101,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 4105,
+              "output_tokens": 741
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1471,
+              "output_tokens": 131
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1429,
+              "output_tokens": 229
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t03",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 10.6,
+          "in_tokens": 3728,
+          "out_tokens": 572,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2245,
+              "output_tokens": 445
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1483,
+              "output_tokens": 127
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t03",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 15.99,
+          "in_tokens": 4904,
+          "out_tokens": 842,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2339,
+              "output_tokens": 526
+            },
+            "orders": {
+              "calls": 3,
+              "input_tokens": 2565,
+              "output_tokens": 316
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t04",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 30.39,
+          "in_tokens": 8702,
+          "out_tokens": 1993,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3248,
+              "output_tokens": 961
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 3988,
+              "output_tokens": 884
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1466,
+              "output_tokens": 148
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t04",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 34.72,
+          "in_tokens": 8563,
+          "out_tokens": 1973,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3203,
+              "output_tokens": 928
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 3895,
+              "output_tokens": 853
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1465,
+              "output_tokens": 192
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t05",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 26.77,
+          "in_tokens": 6769,
+          "out_tokens": 1581,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3055,
+              "output_tokens": 847
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2286,
+              "output_tokens": 580
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1428,
+              "output_tokens": 154
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t05",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 24.82,
+          "in_tokens": 5437,
+          "out_tokens": 1496,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3014,
+              "output_tokens": 734
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2423,
+              "output_tokens": 762
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t06",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 32.55,
+          "in_tokens": 7233,
+          "out_tokens": 1921,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3387,
+              "output_tokens": 867
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1449,
+              "output_tokens": 173
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2397,
+              "output_tokens": 881
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t06",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 31.04,
+          "in_tokens": 6771,
+          "out_tokens": 1540,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3031,
+              "output_tokens": 772
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1441,
+              "output_tokens": 161
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2299,
+              "output_tokens": 607
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t07",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 15.39,
+          "in_tokens": 4636,
+          "out_tokens": 922,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2418,
+              "output_tokens": 469
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 2218,
+              "output_tokens": 453
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t07",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 14.65,
+          "in_tokens": 4518,
+          "out_tokens": 800,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2430,
+              "output_tokens": 468
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 2088,
+              "output_tokens": 332
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t08",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 10.46,
+          "in_tokens": 3872,
+          "out_tokens": 439,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2203,
+              "output_tokens": 267
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1669,
+              "output_tokens": 172
+            }
+          },
+          "actions": [
+            {
+              "name": "set_marketing_opt_in"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t08",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 11.59,
+          "in_tokens": 4157,
+          "out_tokens": 527,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2227,
+              "output_tokens": 336
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1930,
+              "output_tokens": 191
+            }
+          },
+          "actions": [
+            {
+              "name": "set_marketing_opt_in"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t09",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 27.6,
+          "in_tokens": 70647,
+          "out_tokens": 1458,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2726,
+              "output_tokens": 785
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 67921,
+              "output_tokens": 673
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t09",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 26.53,
+          "in_tokens": 70440,
+          "out_tokens": 1259,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2596,
+              "output_tokens": 676
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 67844,
+              "output_tokens": 583
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t10",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 40.27,
+          "in_tokens": 12027,
+          "out_tokens": 2352,
+          "model_calls": 9,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2690,
+              "output_tokens": 861
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1523,
+              "output_tokens": 157
+            },
+            "claims": {
+              "calls": 5,
+              "input_tokens": 7814,
+              "output_tokens": 1334
+            }
+          },
+          "actions": [
+            {
+              "name": "open_claim"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t10",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 24.25,
+          "in_tokens": 7634,
+          "out_tokens": 1411,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 1,
+              "input_tokens": 972,
+              "output_tokens": 323
+            },
+            "claims": {
+              "calls": 5,
+              "input_tokens": 6662,
+              "output_tokens": 1088
+            }
+          },
+          "actions": [
+            {
+              "name": "open_claim"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t11",
+          "status": "ok",
+          "grade": {
+            "task_complete": 0
+          },
+          "latency_s": 53.99,
+          "in_tokens": 13366,
+          "out_tokens": 3718,
+          "model_calls": 9,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 7252,
+              "output_tokens": 1673
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1803,
+              "output_tokens": 229
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2759,
+              "output_tokens": 1200
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1552,
+              "output_tokens": 616
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t11",
+          "status": "ok",
+          "grade": {
+            "task_complete": 0
+          },
+          "latency_s": 50.69,
+          "in_tokens": 12659,
+          "out_tokens": 3315,
+          "model_calls": 9,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 6988,
+              "output_tokens": 1321
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1722,
+              "output_tokens": 242
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2527,
+              "output_tokens": 1281
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1422,
+              "output_tokens": 471
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t12",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 38.68,
+          "in_tokens": 75959,
+          "out_tokens": 2194,
+          "model_calls": 10,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5291,
+              "output_tokens": 1197
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 67623,
+              "output_tokens": 495
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1692,
+              "output_tokens": 239
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1353,
+              "output_tokens": 263
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t12",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 50.04,
+          "in_tokens": 76209,
+          "out_tokens": 2546,
+          "model_calls": 10,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5497,
+              "output_tokens": 1391
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 67707,
+              "output_tokens": 648
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1680,
+              "output_tokens": 214
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1325,
+              "output_tokens": 293
+            }
+          },
+          "actions": []
+        }
+      ],
+      "after": [
+        {
+          "prompt_id": "t01",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 15.16,
+          "in_tokens": 6539,
+          "out_tokens": 796,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5204,
+              "output_tokens": 611
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1335,
+              "output_tokens": 185
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t01",
+          "status": "ok",
+          "grade": {
+            "task_complete": 0
+          },
+          "latency_s": 6.84,
+          "in_tokens": 3081,
+          "out_tokens": 259,
+          "model_calls": 2,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3081,
+              "output_tokens": 259
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t02",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 21.16,
+          "in_tokens": 7226,
+          "out_tokens": 1163,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5879,
+              "output_tokens": 883
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1347,
+              "output_tokens": 280
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t02",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 25.4,
+          "in_tokens": 8508,
+          "out_tokens": 1083,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5728,
+              "output_tokens": 693
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1419,
+              "output_tokens": 118
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1361,
+              "output_tokens": 272
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t03",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 7.6,
+          "in_tokens": 3094,
+          "out_tokens": 388,
+          "model_calls": 2,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3094,
+              "output_tokens": 388
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t03",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 9.23,
+          "in_tokens": 3174,
+          "out_tokens": 528,
+          "model_calls": 2,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3174,
+              "output_tokens": 528
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t04",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 9.27,
+          "in_tokens": 7861,
+          "out_tokens": 451,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 4,
+              "input_tokens": 7861,
+              "output_tokens": 451
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t04",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 9.22,
+          "in_tokens": 7914,
+          "out_tokens": 507,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 4,
+              "input_tokens": 7914,
+              "output_tokens": 507
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t05",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 9,
+          "in_tokens": 5541,
+          "out_tokens": 469,
+          "model_calls": 3,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5541,
+              "output_tokens": 469
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t05",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 8.13,
+          "in_tokens": 5524,
+          "out_tokens": 422,
+          "model_calls": 3,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5524,
+              "output_tokens": 422
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t06",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 9.83,
+          "in_tokens": 5610,
+          "out_tokens": 530,
+          "model_calls": 3,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5610,
+              "output_tokens": 530
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t06",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 8.74,
+          "in_tokens": 5541,
+          "out_tokens": 464,
+          "model_calls": 3,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5541,
+              "output_tokens": 464
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t07",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 13.47,
+          "in_tokens": 5158,
+          "out_tokens": 591,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3193,
+              "output_tokens": 391
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1965,
+              "output_tokens": 200
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t07",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 33.58,
+          "in_tokens": 11028,
+          "out_tokens": 1938,
+          "model_calls": 8,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 6056,
+              "output_tokens": 1203
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 2110,
+              "output_tokens": 426
+            },
+            "orders": {
+              "calls": 3,
+              "input_tokens": 2862,
+              "output_tokens": 309
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t08",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 13.17,
+          "in_tokens": 4757,
+          "out_tokens": 414,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3077,
+              "output_tokens": 287
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1680,
+              "output_tokens": 127
+            }
+          },
+          "actions": [
+            {
+              "name": "set_marketing_opt_in"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t08",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 14.98,
+          "in_tokens": 4868,
+          "out_tokens": 506,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3138,
+              "output_tokens": 338
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1730,
+              "output_tokens": 168
+            }
+          },
+          "actions": [
+            {
+              "name": "set_marketing_opt_in"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t09",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 23.18,
+          "in_tokens": 71349,
+          "out_tokens": 1286,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3506,
+              "output_tokens": 702
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 67843,
+              "output_tokens": 584
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t09",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 28.99,
+          "in_tokens": 71438,
+          "out_tokens": 1449,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3626,
+              "output_tokens": 803
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 67812,
+              "output_tokens": 646
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t10",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 28.05,
+          "in_tokens": 10252,
+          "out_tokens": 1488,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3133,
+              "output_tokens": 421
+            },
+            "claims": {
+              "calls": 5,
+              "input_tokens": 7119,
+              "output_tokens": 1067
+            }
+          },
+          "actions": [
+            {
+              "name": "open_claim"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t10",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 27.8,
+          "in_tokens": 8684,
+          "out_tokens": 1567,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3093,
+              "output_tokens": 337
+            },
+            "claims": {
+              "calls": 4,
+              "input_tokens": 5591,
+              "output_tokens": 1230
+            }
+          },
+          "actions": [
+            {
+              "name": "open_claim"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t11",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 30.03,
+          "in_tokens": 12322,
+          "out_tokens": 2006,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 4,
+              "input_tokens": 10934,
+              "output_tokens": 1748
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1388,
+              "output_tokens": 258
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t11",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 37.43,
+          "in_tokens": 15262,
+          "out_tokens": 2475,
+          "model_calls": 8,
+          "by_agent": {
+            "router": {
+              "calls": 4,
+              "input_tokens": 12208,
+              "output_tokens": 2064
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1721,
+              "output_tokens": 196
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1333,
+              "output_tokens": 215
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t12",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 38.47,
+          "in_tokens": 76282,
+          "out_tokens": 2355,
+          "model_calls": 8,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 7022,
+              "output_tokens": 1406
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 67911,
+              "output_tokens": 664
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1349,
+              "output_tokens": 285
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t12",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 35.98,
+          "in_tokens": 75867,
+          "out_tokens": 2100,
+          "model_calls": 8,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 6717,
+              "output_tokens": 1205
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 67789,
+              "output_tokens": 651
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1361,
+              "output_tokens": 244
+            }
+          },
+          "actions": []
+        }
+      ],
+      "coverage": {
+        "code": 1,
+        "stdout": "# Chain coverage: production traces against `baseline`\n\n200 traces, 12 eval tasks.\n\n| chain | agents | traces | % of traces | tasks that run it | passing today |\n| --- | ---: | ---: | ---: | --- | --- |\n| orders -> shipping | 2 | 76 | 38% | t01, t02, t11, t12 | t01 2/2, t02 2/2, t11 0/2, t12 2/2 |\n| returns | 1 | 32 | 16% | t04, t05, t06, t11 | t04 2/2, t05 2/2, t06 2/2, t11 0/2 |\n| account | 1 | 24 | 12% | t07, t08 | t07 2/2, t08 2/2 |\n| diagnostics | 1 | 16 | 8% | t09, t12 | t09 2/2, t12 2/2 |\n| orders | 1 | 16 | 8% | t01, t02, t03, t04, t05, t06, t10, t11, t12 | t01 2/2, t02 2/2, t03 2/2, t04 2/2, t05 2/2, t06 2/2, t10 2/2, t11 0/2, t12 2/2 |\n| orders -> shipping -> returns | 3 | 12 | 6% | t11 | t11 0/2 |\n| claims | 1 | 10 | 5% | t10 | t10 2/2 |\n| diagnostics -> orders -> shipping | 3 | 8 | 4% | t12 | t12 2/2 |\n| account -> returns | 2 | 6 | 3% | **none** | - |\n\n**No task runs: account -> returns.** A change to any agent in those chains could drop a handoff and the eval would not show it. Add a task for each before making the change.\n\nNo covering task passes today for: orders -> shipping -> returns. A task that already fails cannot show a change made things worse. Note what it fails on, so a later pass or fail can be read.\n\nFor each chain of two or more agents, open its tasks and check what they grade: what changed in the systems at the end of the chain, and each fact that had to survive the handoff. A task that only checks wording, or only the first agent's part, does not cover the chain.\n"
+      },
+      "compare": {
+        "code": 0,
+        "stdout": "# baseline vs v1\n\n12 tasks in both runs. Metric: task_complete.\n\n| | baseline | v1 | change |\n| --- | ---: | ---: | ---: |\n| tasks complete | 11.0/12 (92%) | 11.5/12 (96%) | +0.5 |\n| latency per task (s) | 27.3 | 19.4 | -29% |\n| model calls per task | 6.3 | 4.8 | -24% |\n| input tokens per task | 18,154 | 18,203 | +0% |\n| output tokens per task | 1,539 | 1,051 | -32% |\n\n## Tasks that changed\n\n| task | baseline | v1 | tags |\n| --- | ---: | ---: | --- |\n| t01 | 2/2 | 1/2 | orders+shipping |\n| t11 | 0/2 | 2/2 | cross-domain, orders+shipping, returns |\n\n## Writes that changed\n\nWhat each task changed in the systems, per rep. A slash separates reps that differ.\n\n| task | baseline | v1 |\n| --- | --- | --- |\n| t11 | none | create_return |\n\n## Paths that changed\n\nReps of a task in which an agent was called. A task can keep its score and still take a different route.\n\n| task | agent | baseline | v1 |\n| --- | --- | ---: | ---: |\n| t01 | orders | 2/2 | 0/2 |\n| t03 | orders | 2/2 | 0/2 |\n| t04 | orders | 2/2 | 0/2 |\n| t04 | returns | 2/2 | 0/2 |\n| t05 | returns | 2/2 | 0/2 |\n| t06 | orders | 2/2 | 0/2 |\n| t06 | returns | 2/2 | 0/2 |\n| t11 | returns | 2/2 | 0/2 |\n| t12 | orders | 2/2 | 0/2 |\n\nOne rep apart, which the unchanged system often does by itself: t01 (shipping), t02 (orders), t05 (orders), t07 (orders), t10 (orders), t11 (orders).\n\n## By tag\n\n| tag | baseline | v1 |\n| --- | ---: | ---: |\n| account | 4/4 | 4/4 |\n| claims | 2/2 | 2/2 |\n| cross-domain | 2/4 | 4/4 |\n| diagnostics | 4/4 | 4/4 |\n| multi-turn | 2/2 | 2/2 |\n| orders+shipping | 8/10 | 9/10 |\n| returns | 6/8 | 8/8 |\n\n## By agent, per task\n\n| agent | calls, baseline | calls, v1 | input tokens, baseline | input tokens, v1 |\n| --- | ---: | ---: | ---: | ---: |\n| account | 0.3 | 0.3 | 329 | 312 |\n| claims | 0.4 | 0.4 | 603 | 530 |\n| diagnostics | 0.5 | 0.5 | 11,296 | 11,306 |\n| orders | 1.4 | 0.3 | 1,068 | 250 |\n| returns | 0.8 | 0.0 | 941 | 0 |\n| router | 2.3 | 2.8 | 3,454 | 5,411 |\n| shipping | 0.7 | 0.6 | 464 | 395 |\n\n## Verdict\n\n**v1 scores the same or better overall, but got worse on t01.** Read those traces before keeping the change.\n\nNotes:\n\n- Writes differ on t11. Check each one is a write the task wanted. A task can pass its checks and still change something it should not.\n- The route changed on t01, t03, t04, t05, t06, t11, t12. Where the change was not meant to touch a task, read its trace even if the score held, and say what the new route costs.\n- Model for both runs: claude-opus-5.\n- Changed in a single rep: t01. That can be noise. Treat it as real only if the trace shows a cause.\n"
+      },
+      "estimate": {
+        "code": 0,
+        "stdout": "# Estimate: 12 tasks x 2 reps = 24 conversations\n\nBased on `baseline`: 24 measured conversations covering 12 of 12 tasks.\n\n- input tokens: about 440,000\n- output tokens: about 37,000\n- t12 and t09 carry 67% of the input tokens. Dropping reps there changes the total most.\n\nNot counted: what a coding assistant uses while it reads and edits around the run. No prices are applied.\n"
+      }
+    },
+    {
+      "path": "example-run/as-tool/results",
+      "before": [
+        {
+          "prompt_id": "t01",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 23.42,
+          "in_tokens": 6798,
+          "out_tokens": 953,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 3963,
+              "output_tokens": 608
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1475,
+              "output_tokens": 121
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1360,
+              "output_tokens": 224
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t01",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 19,
+          "in_tokens": 6669,
+          "out_tokens": 911,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 3915,
+              "output_tokens": 607
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1431,
+              "output_tokens": 113
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1323,
+              "output_tokens": 191
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t02",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 22.38,
+          "in_tokens": 7105,
+          "out_tokens": 1227,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 4183,
+              "output_tokens": 788
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1507,
+              "output_tokens": 152
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1415,
+              "output_tokens": 287
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t02",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 22.09,
+          "in_tokens": 7090,
+          "out_tokens": 1161,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 4210,
+              "output_tokens": 822
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1503,
+              "output_tokens": 142
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1377,
+              "output_tokens": 197
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t03",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 13.77,
+          "in_tokens": 3730,
+          "out_tokens": 712,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2261,
+              "output_tokens": 599
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1469,
+              "output_tokens": 113
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t03",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 13.79,
+          "in_tokens": 3787,
+          "out_tokens": 626,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2262,
+              "output_tokens": 506
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1525,
+              "output_tokens": 120
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t04",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 34.85,
+          "in_tokens": 8471,
+          "out_tokens": 1706,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3072,
+              "output_tokens": 823
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 3937,
+              "output_tokens": 739
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1462,
+              "output_tokens": 144
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t04",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 29.18,
+          "in_tokens": 8550,
+          "out_tokens": 1896,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3228,
+              "output_tokens": 899
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 3848,
+              "output_tokens": 839
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1474,
+              "output_tokens": 158
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t05",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 24.62,
+          "in_tokens": 6844,
+          "out_tokens": 1530,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3059,
+              "output_tokens": 783
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2328,
+              "output_tokens": 610
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1457,
+              "output_tokens": 137
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t05",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 20.63,
+          "in_tokens": 5137,
+          "out_tokens": 1354,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2771,
+              "output_tokens": 712
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2366,
+              "output_tokens": 642
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t06",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 36.69,
+          "in_tokens": 7395,
+          "out_tokens": 2110,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3406,
+              "output_tokens": 792
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1517,
+              "output_tokens": 157
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2472,
+              "output_tokens": 1161
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t06",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 30.85,
+          "in_tokens": 7098,
+          "out_tokens": 1755,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3283,
+              "output_tokens": 818
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2306,
+              "output_tokens": 757
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1509,
+              "output_tokens": 180
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t07",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 51.48,
+          "in_tokens": 13351,
+          "out_tokens": 2856,
+          "model_calls": 11,
+          "by_agent": {
+            "router": {
+              "calls": 4,
+              "input_tokens": 6813,
+              "output_tokens": 1618
+            },
+            "account": {
+              "calls": 4,
+              "input_tokens": 3921,
+              "output_tokens": 974
+            },
+            "orders": {
+              "calls": 3,
+              "input_tokens": 2617,
+              "output_tokens": 264
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t07",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 14.94,
+          "in_tokens": 4519,
+          "out_tokens": 721,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2420,
+              "output_tokens": 451
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 2099,
+              "output_tokens": 270
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t08",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 11.63,
+          "in_tokens": 4228,
+          "out_tokens": 594,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2287,
+              "output_tokens": 364
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1941,
+              "output_tokens": 230
+            }
+          },
+          "actions": [
+            {
+              "name": "set_marketing_opt_in"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t08",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 12.38,
+          "in_tokens": 4236,
+          "out_tokens": 574,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2277,
+              "output_tokens": 357
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1959,
+              "output_tokens": 217
+            }
+          },
+          "actions": [
+            {
+              "name": "set_marketing_opt_in"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t09",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 27.88,
+          "in_tokens": 70329,
+          "out_tokens": 1266,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2592,
+              "output_tokens": 662
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 67737,
+              "output_tokens": 604
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t09",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 27.13,
+          "in_tokens": 70758,
+          "out_tokens": 1515,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2751,
+              "output_tokens": 837
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 68007,
+              "output_tokens": 678
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t10",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 25.56,
+          "in_tokens": 7884,
+          "out_tokens": 1543,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 1,
+              "input_tokens": 973,
+              "output_tokens": 402
+            },
+            "claims": {
+              "calls": 5,
+              "input_tokens": 6911,
+              "output_tokens": 1141
+            }
+          },
+          "actions": [
+            {
+              "name": "open_claim"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t10",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 21.54,
+          "in_tokens": 7477,
+          "out_tokens": 1228,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 1,
+              "input_tokens": 973,
+              "output_tokens": 278
+            },
+            "claims": {
+              "calls": 5,
+              "input_tokens": 6504,
+              "output_tokens": 950
+            }
+          },
+          "actions": [
+            {
+              "name": "open_claim"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t11",
+          "status": "ok",
+          "grade": {
+            "task_complete": 0
+          },
+          "latency_s": 55.77,
+          "in_tokens": 12823,
+          "out_tokens": 3481,
+          "model_calls": 9,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 6770,
+              "output_tokens": 1435
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1809,
+              "output_tokens": 221
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2712,
+              "output_tokens": 1387
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1532,
+              "output_tokens": 438
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t11",
+          "status": "ok",
+          "grade": {
+            "task_complete": 0
+          },
+          "latency_s": 52.39,
+          "in_tokens": 12909,
+          "out_tokens": 3533,
+          "model_calls": 9,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 7009,
+              "output_tokens": 1436
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1779,
+              "output_tokens": 234
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2641,
+              "output_tokens": 1336
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1480,
+              "output_tokens": 527
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t12",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 36.67,
+          "in_tokens": 75474,
+          "out_tokens": 1931,
+          "model_calls": 10,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5169,
+              "output_tokens": 1050
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 67589,
+              "output_tokens": 566
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1421,
+              "output_tokens": 113
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1295,
+              "output_tokens": 202
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t12",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 42.26,
+          "in_tokens": 76049,
+          "out_tokens": 2189,
+          "model_calls": 10,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5346,
+              "output_tokens": 1191
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 67641,
+              "output_tokens": 527
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1704,
+              "output_tokens": 226
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1358,
+              "output_tokens": 245
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t13",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 36.38,
+          "in_tokens": 9195,
+          "out_tokens": 2188,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3422,
+              "output_tokens": 1023
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1754,
+              "output_tokens": 157
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 4019,
+              "output_tokens": 1008
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            },
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t13",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 39.94,
+          "in_tokens": 9354,
+          "out_tokens": 2264,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3590,
+              "output_tokens": 942
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1749,
+              "output_tokens": 132
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 4015,
+              "output_tokens": 1190
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            },
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t14",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 16.59,
+          "in_tokens": 4454,
+          "out_tokens": 963,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2588,
+              "output_tokens": 647
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1866,
+              "output_tokens": 316
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t14",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 18.65,
+          "in_tokens": 4452,
+          "out_tokens": 974,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2611,
+              "output_tokens": 556
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1841,
+              "output_tokens": 418
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t15",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 41.99,
+          "in_tokens": 11115,
+          "out_tokens": 2455,
+          "model_calls": 8,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5395,
+              "output_tokens": 1253
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1545,
+              "output_tokens": 166
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 4175,
+              "output_tokens": 1036
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t15",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 47.52,
+          "in_tokens": 9421,
+          "out_tokens": 2389,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3753,
+              "output_tokens": 1021
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1542,
+              "output_tokens": 154
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 4126,
+              "output_tokens": 1214
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t16",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 44.72,
+          "in_tokens": 4394,
+          "out_tokens": 2974,
+          "model_calls": 3,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3519,
+              "output_tokens": 1029
+            },
+            "diagnostics": {
+              "calls": 1,
+              "input_tokens": 875,
+              "output_tokens": 1945
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t16",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 39.21,
+          "in_tokens": 4254,
+          "out_tokens": 2617,
+          "model_calls": 3,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3479,
+              "output_tokens": 1064
+            },
+            "diagnostics": {
+              "calls": 1,
+              "input_tokens": 775,
+              "output_tokens": 1553
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t17",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 46.63,
+          "in_tokens": 13597,
+          "out_tokens": 3194,
+          "model_calls": 8,
+          "by_agent": {
+            "router": {
+              "calls": 4,
+              "input_tokens": 8227,
+              "output_tokens": 1434
+            },
+            "returns": {
+              "calls": 4,
+              "input_tokens": 5370,
+              "output_tokens": 1760
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t17",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 45.6,
+          "in_tokens": 13870,
+          "out_tokens": 2925,
+          "model_calls": 8,
+          "by_agent": {
+            "router": {
+              "calls": 4,
+              "input_tokens": 8453,
+              "output_tokens": 1398
+            },
+            "returns": {
+              "calls": 4,
+              "input_tokens": 5417,
+              "output_tokens": 1527
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        }
+      ],
+      "after": [
+        {
+          "prompt_id": "t01",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 19.2,
+          "in_tokens": 7789,
+          "out_tokens": 985,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 4953,
+              "output_tokens": 642
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1451,
+              "output_tokens": 125
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1385,
+              "output_tokens": 218
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t01",
+          "status": "ok",
+          "grade": {
+            "task_complete": 0
+          },
+          "latency_s": 10.33,
+          "in_tokens": 4236,
+          "out_tokens": 375,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2799,
+              "output_tokens": 263
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1437,
+              "output_tokens": 112
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t02",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 20.81,
+          "in_tokens": 7906,
+          "out_tokens": 1060,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 5030,
+              "output_tokens": 695
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1491,
+              "output_tokens": 132
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1385,
+              "output_tokens": 233
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t02",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 18.55,
+          "in_tokens": 7708,
+          "out_tokens": 972,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 4911,
+              "output_tokens": 639
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1455,
+              "output_tokens": 117
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1342,
+              "output_tokens": 216
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t03",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 13.05,
+          "in_tokens": 4318,
+          "out_tokens": 593,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2873,
+              "output_tokens": 476
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1445,
+              "output_tokens": 117
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t03",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 20.92,
+          "in_tokens": 4493,
+          "out_tokens": 776,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2998,
+              "output_tokens": 644
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1495,
+              "output_tokens": 132
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t04",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 32.88,
+          "in_tokens": 9209,
+          "out_tokens": 1944,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3803,
+              "output_tokens": 950
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1452,
+              "output_tokens": 156
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 3954,
+              "output_tokens": 838
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t04",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 32.69,
+          "in_tokens": 9362,
+          "out_tokens": 1979,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3902,
+              "output_tokens": 999
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 3920,
+              "output_tokens": 817
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1540,
+              "output_tokens": 163
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t05",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 27.9,
+          "in_tokens": 7467,
+          "out_tokens": 1575,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3636,
+              "output_tokens": 840
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2358,
+              "output_tokens": 588
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1473,
+              "output_tokens": 147
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t05",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 27.91,
+          "in_tokens": 7641,
+          "out_tokens": 1718,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3789,
+              "output_tokens": 928
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2373,
+              "output_tokens": 632
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1479,
+              "output_tokens": 158
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t06",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 24.73,
+          "in_tokens": 7426,
+          "out_tokens": 1427,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3588,
+              "output_tokens": 695
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1449,
+              "output_tokens": 147
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2389,
+              "output_tokens": 585
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t06",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 28.79,
+          "in_tokens": 7732,
+          "out_tokens": 1744,
+          "model_calls": 6,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3924,
+              "output_tokens": 756
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2333,
+              "output_tokens": 816
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1475,
+              "output_tokens": 172
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t07",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 13.98,
+          "in_tokens": 4898,
+          "out_tokens": 550,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2937,
+              "output_tokens": 332
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1961,
+              "output_tokens": 218
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t07",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 10.87,
+          "in_tokens": 4945,
+          "out_tokens": 557,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2933,
+              "output_tokens": 320
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 2012,
+              "output_tokens": 237
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t08",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 13.35,
+          "in_tokens": 4768,
+          "out_tokens": 579,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2838,
+              "output_tokens": 304
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1930,
+              "output_tokens": 275
+            }
+          },
+          "actions": [
+            {
+              "name": "set_marketing_opt_in"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t08",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 11.36,
+          "in_tokens": 4485,
+          "out_tokens": 417,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 2819,
+              "output_tokens": 278
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1666,
+              "output_tokens": 139
+            }
+          },
+          "actions": [
+            {
+              "name": "set_marketing_opt_in"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t09",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 30.44,
+          "in_tokens": 72159,
+          "out_tokens": 1903,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3648,
+              "output_tokens": 730
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 68511,
+              "output_tokens": 1173
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t09",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 32.17,
+          "in_tokens": 72007,
+          "out_tokens": 1679,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3562,
+              "output_tokens": 659
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 68445,
+              "output_tokens": 1020
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t10",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 30.12,
+          "in_tokens": 9994,
+          "out_tokens": 1721,
+          "model_calls": 8,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3109,
+              "output_tokens": 643
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1533,
+              "output_tokens": 149
+            },
+            "claims": {
+              "calls": 4,
+              "input_tokens": 5352,
+              "output_tokens": 929
+            }
+          },
+          "actions": [
+            {
+              "name": "open_claim"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t10",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 39.93,
+          "in_tokens": 12802,
+          "out_tokens": 2214,
+          "model_calls": 9,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3166,
+              "output_tokens": 707
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1547,
+              "output_tokens": 227
+            },
+            "claims": {
+              "calls": 5,
+              "input_tokens": 8089,
+              "output_tokens": 1280
+            }
+          },
+          "actions": [
+            {
+              "name": "open_claim"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t11",
+          "status": "ok",
+          "grade": {
+            "task_complete": 0
+          },
+          "latency_s": 50.66,
+          "in_tokens": 13212,
+          "out_tokens": 3132,
+          "model_calls": 9,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 7512,
+              "output_tokens": 1392
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1727,
+              "output_tokens": 221
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2550,
+              "output_tokens": 942
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1423,
+              "output_tokens": 577
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t11",
+          "status": "ok",
+          "grade": {
+            "task_complete": 0
+          },
+          "latency_s": 55.05,
+          "in_tokens": 13754,
+          "out_tokens": 3490,
+          "model_calls": 9,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 7814,
+              "output_tokens": 1526
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1822,
+              "output_tokens": 222
+            },
+            "returns": {
+              "calls": 2,
+              "input_tokens": 2696,
+              "output_tokens": 1324
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1422,
+              "output_tokens": 418
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t12",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 39.11,
+          "in_tokens": 78053,
+          "out_tokens": 2394,
+          "model_calls": 10,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 6879,
+              "output_tokens": 1024
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 68447,
+              "output_tokens": 1004
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1425,
+              "output_tokens": 106
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1302,
+              "output_tokens": 260
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t12",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 46.58,
+          "in_tokens": 78536,
+          "out_tokens": 2890,
+          "model_calls": 10,
+          "by_agent": {
+            "router": {
+              "calls": 3,
+              "input_tokens": 6887,
+              "output_tokens": 1042
+            },
+            "diagnostics": {
+              "calls": 3,
+              "input_tokens": 68909,
+              "output_tokens": 1472
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1445,
+              "output_tokens": 111
+            },
+            "shipping": {
+              "calls": 2,
+              "input_tokens": 1295,
+              "output_tokens": 265
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t13",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 55.7,
+          "in_tokens": 10928,
+          "out_tokens": 3146,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 4484,
+              "output_tokens": 1405
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 2154,
+              "output_tokens": 595
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 4290,
+              "output_tokens": 1146
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            },
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t13",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 33.25,
+          "in_tokens": 9680,
+          "out_tokens": 1987,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3948,
+              "output_tokens": 839
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1747,
+              "output_tokens": 130
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 3985,
+              "output_tokens": 1018
+            }
+          },
+          "actions": [
+            {
+              "name": "update_shipping_address"
+            },
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t14",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 21.62,
+          "in_tokens": 5162,
+          "out_tokens": 1073,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3350,
+              "output_tokens": 593
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1812,
+              "output_tokens": 480
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t14",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 17.26,
+          "in_tokens": 4843,
+          "out_tokens": 611,
+          "model_calls": 4,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3009,
+              "output_tokens": 443
+            },
+            "account": {
+              "calls": 2,
+              "input_tokens": 1834,
+              "output_tokens": 168
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t15",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 35.72,
+          "in_tokens": 7956,
+          "out_tokens": 1931,
+          "model_calls": 5,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3839,
+              "output_tokens": 953
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 4117,
+              "output_tokens": 978
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t15",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 31.88,
+          "in_tokens": 9324,
+          "out_tokens": 1975,
+          "model_calls": 7,
+          "by_agent": {
+            "router": {
+              "calls": 2,
+              "input_tokens": 3965,
+              "output_tokens": 1044
+            },
+            "orders": {
+              "calls": 2,
+              "input_tokens": 1490,
+              "output_tokens": 141
+            },
+            "returns": {
+              "calls": 3,
+              "input_tokens": 3869,
+              "output_tokens": 790
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t16",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 4.11,
+          "in_tokens": 1295,
+          "out_tokens": 148,
+          "model_calls": 1,
+          "by_agent": {
+            "router": {
+              "calls": 1,
+              "input_tokens": 1295,
+              "output_tokens": 148
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t16",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 3.33,
+          "in_tokens": 1295,
+          "out_tokens": 184,
+          "model_calls": 1,
+          "by_agent": {
+            "router": {
+              "calls": 1,
+              "input_tokens": 1295,
+              "output_tokens": 184
+            }
+          },
+          "actions": []
+        },
+        {
+          "prompt_id": "t17",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 48.33,
+          "in_tokens": 15777,
+          "out_tokens": 3114,
+          "model_calls": 8,
+          "by_agent": {
+            "router": {
+              "calls": 4,
+              "input_tokens": 10172,
+              "output_tokens": 1613
+            },
+            "returns": {
+              "calls": 4,
+              "input_tokens": 5605,
+              "output_tokens": 1501
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        },
+        {
+          "prompt_id": "t17",
+          "status": "ok",
+          "grade": {
+            "task_complete": 1
+          },
+          "latency_s": 60.3,
+          "in_tokens": 17133,
+          "out_tokens": 3934,
+          "model_calls": 8,
+          "by_agent": {
+            "router": {
+              "calls": 4,
+              "input_tokens": 11579,
+              "output_tokens": 1839
+            },
+            "returns": {
+              "calls": 4,
+              "input_tokens": 5554,
+              "output_tokens": 2095
+            }
+          },
+          "actions": [
+            {
+              "name": "create_return"
+            }
+          ]
+        }
+      ],
+      "coverage": {
+        "code": 0,
+        "stdout": "# Chain coverage: production traces against `baseline`\n\n200 traces, 17 eval tasks.\n\n| chain | agents | traces | % of traces | tasks that run it | passing today |\n| --- | ---: | ---: | ---: | --- | --- |\n| orders -> shipping | 2 | 76 | 38% | t01, t02, t11, t12 | t01 2/2, t02 2/2, t11 0/2, t12 2/2 |\n| returns | 1 | 32 | 16% | t04, t05, t06, t11, t13, t15, t17 | t04 2/2, t05 2/2, t06 2/2, t11 0/2, t13 2/2, t15 2/2, t17 2/2 |\n| account | 1 | 24 | 12% | t07, t08, t13, t14 | t07 2/2, t08 2/2, t13 2/2, t14 2/2 |\n| diagnostics | 1 | 16 | 8% | t09, t12, t16 | t09 2/2, t12 2/2, t16 2/2 |\n| orders | 1 | 16 | 8% | t01, t02, t03, t04, t05, t06, t07, t11, t12, t15 | t01 2/2, t02 2/2, t03 2/2, t04 2/2, t05 2/2, t06 2/2, t07 2/2, t11 0/2, t12 2/2, t15 2/2 |\n| orders -> shipping -> returns | 3 | 12 | 6% | t11 | t11 0/2 |\n| claims | 1 | 10 | 5% | t10 | t10 2/2 |\n| diagnostics -> orders -> shipping | 3 | 8 | 4% | t12 | t12 2/2 |\n| account -> returns | 2 | 6 | 3% | t13 | t13 2/2 |\n\nEvery chain listed has at least one task.\n\nNo covering task passes today for: orders -> shipping -> returns. A task that already fails cannot show a change made things worse. Note what it fails on, so a later pass or fail can be read.\n\nFor each chain of two or more agents, open its tasks and check what they grade: what changed in the systems at the end of the chain, and each fact that had to survive the handoff. A task that only checks wording, or only the first agent's part, does not cover the chain.\n"
+      },
+      "compare": {
+        "code": 1,
+        "stdout": "# baseline vs v1\n\n17 tasks in both runs. Metric: task_complete.\n\n| | baseline | v1 | change |\n| --- | ---: | ---: | ---: |\n| tasks complete | 16.0/17 (94%) | 15.5/17 (91%) | -0.5 |\n| latency per task (s) | 30.8 | 28.3 | -8% |\n| model calls per task | 6.3 | 6.0 | -5% |\n| input tokens per task | 15,377 | 15,832 | +3% |\n| output tokens per task | 1,774 | 1,611 | -9% |\n\n## Tasks that changed\n\n| task | baseline | v1 | tags |\n| --- | ---: | ---: | --- |\n| t01 | 2/2 | 1/2 | orders+shipping |\n\n## Paths that changed\n\nReps of a task in which an agent was called. A task can keep its score and still take a different route.\n\n| task | agent | baseline | v1 |\n| --- | --- | ---: | ---: |\n| t10 | orders | 0/2 | 2/2 |\n| t16 | diagnostics | 2/2 | 0/2 |\n\nOne rep apart, which the unchanged system often does by itself: t01 (shipping), t05 (orders), t07 (orders), t15 (orders).\n\n## By tag\n\n| tag | baseline | v1 |\n| --- | ---: | ---: |\n| account | 8/8 | 8/8 |\n| break-check | 10/10 | 10/10 |\n| chain | 2/2 | 2/2 |\n| claims | 2/2 | 2/2 |\n| cross-domain | 2/4 | 2/4 |\n| diagnostics | 6/6 | 6/6 |\n| lost-rule | 2/2 | 2/2 |\n| multi-turn | 4/4 | 4/4 |\n| orders+shipping | 8/10 | 7/10 |\n| returns | 12/14 | 12/14 |\n| unhappy-path | 2/2 | 2/2 |\n| wrong-pick | 2/2 | 2/2 |\n\n## By agent, per task\n\n| agent | calls, baseline | calls, v1 | input tokens, baseline | input tokens, v1 |\n| --- | ---: | ---: | ---: | ---: |\n| account | 0.5 | 0.5 | 504 | 445 |\n| claims | 0.3 | 0.3 | 395 | 395 |\n| diagnostics | 0.4 | 0.4 | 8,018 | 8,068 |\n| orders | 1.1 | 1.1 | 845 | 842 |\n| returns | 1.1 | 1.1 | 1,463 | 1,470 |\n| router | 2.4 | 2.3 | 3,824 | 4,331 |\n| shipping | 0.5 | 0.4 | 328 | 281 |\n\n## Verdict\n\n**v1 scores worse than baseline.** The change does not hold yet. Read the traces for t01, then fix and rerun, or revert and keep the subagent.\n\nNotes:\n\n- The route changed on t10, t16. Where the change was not meant to touch a task, read its trace even if the score held, and say what the new route costs.\n- Model for both runs: claude-opus-5.\n- Changed in a single rep: t01. That can be noise. Treat it as real only if the trace shows a cause.\n"
+      },
+      "estimate": {
+        "code": 0,
+        "stdout": "# Estimate: 17 tasks x 2 reps = 34 conversations\n\nBased on `baseline`: 34 measured conversations covering 17 of 17 tasks.\n\n- input tokens: about 520,000\n- output tokens: about 60,000\n- t12 and t09 carry 56% of the input tokens. Dropping reps there changes the total most.\n\nNot counted: what a coding assistant uses while it reads and edits around the run. No prices are applied.\n"
+      }
+    }
+  ]
+}

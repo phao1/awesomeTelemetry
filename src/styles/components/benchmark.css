@@ -1,0 +1,62 @@
+.benchmark-center { flex: 1; min-height: 0; overflow: auto; padding: var(--space-4); color: var(--fg-default); }
+.benchmark-center h1, .benchmark-center h2, .benchmark-center h3 { margin: var(--space-2) 0; }
+.benchmark-center p { color: var(--fg-muted); overflow-wrap: anywhere; }
+.benchmark-heading { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.benchmark-heading > div { flex: 1; min-width: 16rem; }
+.benchmark-heading input[type=file] { max-width: 13rem; }
+.benchmark-plan, .benchmark-context, .benchmark-matrix { border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: var(--space-3); margin-block: var(--space-3); }
+.benchmark-plan textarea { width: 100%; min-height: 22rem; font-family: var(--font-mono); background: var(--canvas-inset); color: var(--fg-default); }
+.benchmark-center pre { overflow: auto; padding: var(--space-3); background: var(--canvas-inset); }
+.benchmark-center .benchmark-warning { color: var(--attention-fg); background: var(--attention-subtle); padding: var(--space-2); }
+.benchmark-empty { padding-block: var(--space-6); }
+.benchmark-setup { border: 1px solid var(--border-default); border-radius: var(--radius-md); margin-block: var(--space-3); padding: var(--space-3); background: var(--canvas-raised); }
+.benchmark-steps { display: flex; flex-wrap: wrap; gap: var(--space-6); padding-left: var(--space-5); color: var(--accent-fg); }
+.benchmark-setup fieldset { border: 0; padding: 0; min-width: 0; }
+.benchmark-setup legend { font-weight: 600; margin-block: var(--space-2); }
+.benchmark-form-grid, .benchmark-variant-form { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); margin-bottom: var(--space-3); }
+.benchmark-setup label { display: flex; flex-direction: column; gap: var(--space-1); flex: 1; min-width: 10rem; }
+.benchmark-setup input, .benchmark-setup select { padding: var(--space-2); background: var(--canvas-default); color: var(--fg-default); border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
+.benchmark-run-action { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+.benchmark-run-action > span { color: var(--fg-muted); }
+.benchmark-scorecards { display: grid; grid-template-columns: repeat(auto-fit,minmax(18rem,1fr)); gap: var(--space-3); }
+.benchmark-scorecards section { border: 1px solid var(--border-default); padding: var(--space-3); border-radius: var(--radius-md); background: var(--canvas-raised); }
+.benchmark-scorecards strong { display: inline-block; min-width: 4rem; color: var(--accent-fg); }
+.benchmark-table-scroll { overflow: auto; }
+.benchmark-center table { border-collapse: collapse; width: 100%; }
+.benchmark-center th, .benchmark-center td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-muted); text-align: left; white-space: nowrap; }
+.benchmark-center td { font-variant-numeric: tabular-nums; }
+.benchmark-center tr[aria-selected=true] { background: var(--accent-subtle); }
+.benchmark-center summary { cursor: pointer; font-weight: 600; }
+.benchmark-findings { display: grid; grid-template-columns: repeat(auto-fit,minmax(18rem,1fr)); gap: var(--space-3); list-style: none; padding: 0; }
+.benchmark-findings li { border-left: 1px solid var(--attention-fg); padding: var(--space-3); background: var(--canvas-raised); }
+.benchmark-lane-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(16rem,28%); gap: var(--space-4); }
+.benchmark-lane-layout aside { padding: var(--space-3); background: var(--canvas-inset); overflow-wrap: anywhere; }
+.benchmark-lane-layout dd { margin: 0; color: var(--fg-muted); }
+.benchmark-lane-layout dt { font-weight: 600; }
+.benchmark-lane { display: grid; grid-template-columns: 5rem minmax(0,1fr); align-items: center; margin-block: var(--space-2); }
+.benchmark-track { position: relative; height: var(--row-lg); background: var(--canvas-inset); }
+.benchmark-span { position: absolute; top: 20%; height: 60%; min-width: .25rem; border: 1px solid var(--border-default); cursor: pointer; }
+.benchmark-model { background: var(--accent-emphasis); }
+.benchmark-tool { background: var(--success-emphasis); }
+.benchmark-runner { background: var(--fg-muted); }
+.benchmark-span[data-error=true] { background: var(--danger-emphasis); }
+.benchmark-span[aria-pressed=true] { box-shadow: var(--focus-ring); z-index: 1; }
+.benchmark-span-list { max-height: 30rem; overflow: auto; margin-block: var(--space-3); }
+.benchmark-span-row { display: flex; justify-content: space-between; gap: var(--space-3); width: 100%; min-height: var(--row-md); padding: var(--space-2); border: 0; border-bottom: 1px solid var(--border-muted); background: var(--canvas-default); color: var(--fg-default); text-align: left; cursor: pointer; }
+.benchmark-span-row[aria-pressed=true] { background: var(--accent-subtle); }
+@media (max-width: 55rem) { .benchmark-lane-layout { grid-template-columns: 1fr; } .benchmark-heading { align-items: flex-start; } }
+
+/* Match the task/intake title scale and separate setup from evidence. */
+.benchmark-center { padding: var(--space-6); }
+.benchmark-heading { margin-bottom: var(--space-5); align-items: flex-start; }
+.benchmark-heading h1 { font-size: var(--text-xl); line-height: var(--leading-xl); }
+.benchmark-center h2 { font-size: var(--text-lg); line-height: var(--leading-lg); }
+.benchmark-center h3 { font-size: var(--text-md); }
+.benchmark-setup { padding: var(--space-5); background: var(--canvas-subtle); }
+.benchmark-variant-form { padding: var(--space-3); border: 1px solid var(--border-muted); border-radius: var(--radius-md); background: var(--canvas-default); }
+.benchmark-heading > label { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.benchmark-heading input[type=file] { max-width: 100%; min-width: 0; }
+.benchmark-heading input::file-selector-button { border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-subtle); color: var(--fg-default); padding: var(--space-1) var(--space-2); margin-right: var(--space-2); font: inherit; cursor: pointer; }
+.benchmark-run-action > button { background: var(--accent-emphasis); color: var(--fg-on-emphasis); border-color: var(--accent-emphasis); }
+.benchmark-scorecards, .benchmark-findings { grid-template-columns: repeat(auto-fit,minmax(min(100%,var(--dims-card-min)),1fr)); }
+@media (max-width: 40em) { .benchmark-center { padding: var(--space-3); } .benchmark-heading > div { min-width: 0; flex-basis: 100%; } .benchmark-setup { padding: var(--space-3); } }

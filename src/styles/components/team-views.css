@@ -1,0 +1,881 @@
+/* ==========================================================================
+   §8.1–8.14 新增 class（add-agent-team-observability task 8）
+   仅追加，不修改上方既有 class。所有颜色/间距用 tokens.css var(--*)。
+   ========================================================================== */
+
+/* ===== §8.1 TopologyView ===== */
+
+.team-topology-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-topology-view-flat {
+  gap: var(--space-1);
+}
+
+.team-topology-degrade {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--attention-subtle);
+  border: 1px solid var(--attention-emphasis);
+  color: var(--attention-fg);
+  font-size: var(--text-xs);
+  flex-wrap: wrap;
+}
+
+.team-topology-degrade-icon {
+  flex: 0 0 auto;
+  font-size: var(--text-md);
+}
+
+.team-topology-degrade-text {
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+.team-topology-degrade-hint {
+  color: var(--fg-muted);
+  flex: 1 1 100%;
+}
+
+.team-topology-flat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-topology-levels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-topology-level {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-topology-level-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+  padding-left: var(--space-2);
+}
+
+.team-topology-level-nodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-left: var(--space-2);
+  border-left: calc(var(--space-1) / 2) solid var(--border-muted);
+}
+
+.team-topology-level-0 .team-topology-level-nodes {
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-topology-level-1 .team-topology-level-nodes {
+  border-left-color: var(--phase-plan);
+}
+
+.team-topology-level-2 .team-topology-level-nodes {
+  border-left-color: var(--phase-implement);
+}
+
+/* 节点 state dot + label（无 color-only meaning） */
+.team-topo-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-topo-state-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  display: inline-block;
+}
+
+.team-topo-state-created { background: var(--neutral-fg); }
+.team-topo-state-ready { background: var(--attention-fg); }
+.team-topo-state-busy { background: var(--accent-fg); }
+.team-topo-state-blocked { background: var(--danger-fg); }
+.team-topo-state-idle { background: var(--neutral-fg); }
+.team-topo-state-failed { background: var(--danger-fg); }
+.team-topo-state-replaced { background: var(--done-fg); }
+.team-topo-state-cancelled { background: var(--neutral-fg); }
+.team-topo-state-completed { background: var(--success-fg); }
+.team-topo-state-unknown { background: var(--neutral-fg); }
+
+/* 节点 focus-visible 轮廓（§8.14） */
+.team-topo-node:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--space-1);
+}
+
+/* 边 chip */
+.team-topo-edges {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+}
+
+.team-topo-edges-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-topo-edges-structural {
+  background: var(--canvas-subtle);
+}
+
+.team-topo-edges-overlay {
+  background: var(--neutral-subtle);
+}
+
+.team-topo-edge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  background: var(--canvas-default);
+}
+
+.team-topo-edge-kind {
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+.team-topo-edge-arrow {
+  color: var(--fg-subtle);
+  flex: 0 0 auto;
+}
+
+.team-topo-edge-from,
+.team-topo-edge-to {
+  color: var(--fg-default);
+  flex: 0 0 auto;
+}
+
+.team-topo-edge-conf {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  flex: 0 0 auto;
+}
+
+/* 边 kind 色（token，无 color-only meaning——有文字 label 辅助） */
+.team-topo-edge-created .team-topo-edge-kind { color: var(--success-fg); }
+.team-topo-edge-supervises .team-topo-edge-kind { color: var(--accent-fg); }
+.team-topo-edge-coordinates .team-topo-edge-kind { color: var(--phase-plan); }
+.team-topo-edge-reviews .team-topo-edge-kind { color: var(--attention-fg); }
+.team-topo-edge-replaces .team-topo-edge-kind { color: var(--danger-fg); }
+.team-topo-edge-peer .team-topo-edge-kind { color: var(--neutral-fg); }
+
+/* ===== §8.2 TaskDagView ===== */
+
+.team-taskdag-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-taskdag-degrade {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--danger-subtle);
+  border: 1px solid var(--danger-emphasis);
+  color: var(--danger-fg);
+  font-size: var(--text-xs);
+  flex-wrap: wrap;
+}
+
+.team-taskdag-degrade-icon {
+  flex: 0 0 auto;
+  font-size: var(--text-md);
+}
+
+.team-taskdag-degrade-text {
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+.team-taskdag-degrade-detail {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 1 1 100%;
+}
+
+.team-taskdag-flat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-taskdag-levels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-taskdag-level {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-taskdag-level-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+  padding-left: var(--space-2);
+}
+
+.team-taskdag-level-nodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-left: var(--space-2);
+  border-left: calc(var(--space-1) / 2) solid var(--border-muted);
+}
+
+.team-taskdag-level-0 .team-taskdag-level-nodes {
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-taskdag-level-1 .team-taskdag-level-nodes {
+  border-left-color: var(--phase-plan);
+}
+
+.team-taskdag-level-2 .team-taskdag-level-nodes {
+  border-left-color: var(--phase-implement);
+}
+
+/* task 节点 */
+.team-task-node {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+  background: var(--canvas-default);
+  border: 1px solid var(--border-muted);
+  font-size: var(--text-xs);
+  max-width: 100%;
+}
+
+.team-task-node:hover {
+  background: var(--canvas-raised);
+}
+
+.team-task-node-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+  border-color: var(--accent-emphasis);
+}
+
+.team-task-node-critical {
+  border-color: var(--attention-emphasis);
+  background: var(--attention-subtle);
+}
+
+.team-task-node:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--space-1);
+}
+
+.team-task-node-title {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-task-node-status {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-task-node-owner {
+  font-size: var(--text-xs);
+  color: var(--fg-secondary);
+  flex: 0 0 auto;
+}
+
+.team-task-node-deps {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.team-task-node-critical-badge {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+/* 依赖列表 */
+.team-taskdag-deps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--canvas-subtle);
+}
+
+.team-taskdag-deps-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-taskdag-dep {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  background: var(--canvas-default);
+}
+
+.team-taskdag-dep-upstream,
+.team-taskdag-dep-downstream {
+  color: var(--fg-default);
+  flex: 0 0 auto;
+  max-width: calc(var(--rail-width) * 2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-taskdag-dep-arrow {
+  color: var(--accent-fg);
+  flex: 0 0 auto;
+}
+
+/* ===== §8.3 TeamTimeline ===== */
+
+.team-timeline-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+  min-height: 0;
+}
+
+.team-timeline-axis {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.team-timeline-lanes {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 覆盖既有 .team-timeline-lane（不修改，仅追加新 class） */
+.team-timeline-view .team-timeline-lane {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.team-timeline-lane-on {
+  background: var(--accent-subtle);
+}
+
+.team-timeline-lane-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+  min-width: calc(var(--rail-width) / 2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-timeline-lane-label:hover {
+  border-color: var(--border-strong);
+}
+
+.team-timeline-lane-label-on {
+  border-color: var(--accent-emphasis);
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
+}
+
+.team-timeline-lane-name {
+  font-weight: var(--weight-semibold);
+}
+
+.team-timeline-lane-state {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.team-timeline-lane-state-created,
+.team-timeline-lane-state-idle,
+.team-timeline-lane-state-cancelled,
+.team-timeline-lane-state-unknown { color: var(--neutral-fg); }
+
+.team-timeline-lane-state-ready,
+.team-timeline-lane-state-busy { color: var(--accent-fg); }
+
+.team-timeline-lane-state-blocked,
+.team-timeline-lane-state-failed { color: var(--danger-fg); }
+
+.team-timeline-lane-state-completed { color: var(--success-fg); }
+
+.team-timeline-lane-state-replaced { color: var(--done-fg); }
+
+.team-timeline-lane-conc {
+  color: var(--fg-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.team-timeline-lane-track {
+  flex: 1;
+  min-width: 0;
+  height: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  position: relative;
+  overflow: hidden;
+}
+
+.team-timeline-lane-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: var(--text-xs);
+  color: var(--fg-secondary);
+}
+
+/* 活动条 */
+.team-timeline-activity {
+  position: absolute;
+  top: var(--space-1);
+  height: calc(var(--space-4) - var(--space-2));
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  border: 1px solid var(--accent-emphasis);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  min-width: var(--space-2);
+}
+
+.team-timeline-activity:hover {
+  background: var(--accent-emphasis);
+}
+
+.team-timeline-activity-on {
+  background: var(--accent-emphasis);
+  border-color: var(--accent-fg);
+  box-shadow: 0 0 0 calc(var(--space-1) / 2) var(--accent-fg);
+}
+
+.team-timeline-activity:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--space-1);
+}
+
+.team-timeline-activity-open {
+  border-right-style: dashed;
+}
+
+.team-timeline-activity-ambiguous {
+  border-left-style: dashed;
+  border-left-color: var(--attention-emphasis);
+}
+
+.team-timeline-activity-kind {
+  font-size: var(--text-xs);
+  color: var(--fg-on-emphasis);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 var(--space-1);
+}
+
+.team-timeline-activity-ambiguous-marker {
+  color: var(--attention-fg);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-xs);
+}
+
+/* 活动 kind 色（token，有文字 label 辅助） */
+.team-timeline-activity-agent_lifecycle { background: var(--neutral-subtle); border-color: var(--neutral-emphasis); }
+.team-timeline-activity-task_created,
+.team-timeline-activity-task_dependency,
+.team-timeline-activity-task_assignment,
+.team-timeline-activity-task_status { background: var(--phase-plan-subtle); border-color: var(--phase-plan); }
+.team-timeline-activity-round { background: var(--phase-understand-subtle); border-color: var(--phase-understand); }
+.team-timeline-activity-message_sent,
+.team-timeline-activity-message_received { background: var(--phase-implement-subtle); border-color: var(--phase-implement); }
+.team-timeline-activity-tool_call,
+.team-timeline-activity-tool_result { background: var(--phase-debug-subtle); border-color: var(--phase-debug); }
+.team-timeline-activity-artifact { background: var(--phase-report-subtle); border-color: var(--phase-report); }
+.team-timeline-activity-verification { background: var(--phase-verify-subtle); border-color: var(--phase-verify); }
+.team-timeline-activity-handoff { background: var(--done-subtle); border-color: var(--done-emphasis); }
+.team-timeline-activity-error { background: var(--danger-subtle); border-color: var(--danger-emphasis); }
+.team-timeline-activity-recovery { background: var(--success-subtle); border-color: var(--success-emphasis); }
+.team-timeline-activity-integration { background: var(--attention-subtle); border-color: var(--attention-emphasis); }
+.team-timeline-activity-unknown { background: var(--neutral-subtle); border-color: var(--neutral-emphasis); }
+
+.team-timeline-omitted {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  background: var(--neutral-subtle);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+/* ===== §8.6 CommunicationView ===== */
+
+.team-comm-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+  min-height: 0;
+}
+
+.team-comm-graph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--canvas-subtle);
+  flex: 0 0 auto;
+}
+
+.team-comm-graph-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-comm-edge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  background: var(--canvas-default);
+}
+
+.team-comm-edge-from,
+.team-comm-edge-to {
+  color: var(--fg-default);
+  flex: 0 0 auto;
+}
+
+.team-comm-edge-arrow {
+  color: var(--accent-fg);
+  flex: 0 0 auto;
+}
+
+.team-comm-edge-count {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.team-comm-edge-modes,
+.team-comm-edge-categories {
+  color: var(--fg-secondary);
+  font-size: var(--text-xs);
+  flex: 0 0 auto;
+}
+
+.team-comm-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  min-height: 0;
+}
+
+.team-comm-table-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-comm-table-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.team-comm-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+  font-size: var(--text-xs);
+  background: var(--canvas-default);
+}
+
+.team-comm-row:hover {
+  background: var(--canvas-raised);
+}
+
+.team-comm-row-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-comm-row:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--space-1);
+}
+
+.team-comm-mode-badge {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  flex: 0 0 auto;
+}
+
+.team-comm-mode-direct { background: var(--success-subtle); color: var(--success-fg); }
+.team-comm-mode-leader_mediated { background: var(--accent-subtle); color: var(--accent-fg); }
+.team-comm-mode-broadcast { background: var(--phase-plan-subtle); color: var(--phase-plan); }
+.team-comm-mode-unknown { background: var(--neutral-subtle); color: var(--neutral-fg); }
+
+.team-comm-category-badge {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-comm-sender,
+.team-comm-recipients {
+  color: var(--fg-default);
+  flex: 0 0 auto;
+  max-width: calc(var(--rail-width) * 2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-comm-arrow {
+  color: var(--fg-subtle);
+  flex: 0 0 auto;
+}
+
+.team-comm-latency {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.team-comm-reply {
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+}
+
+.team-comm-time {
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* ===== §8.7 EntityInspector ===== */
+
+.team-inspector-entity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-inspector-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.team-inspector-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.team-inspector-field-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.team-inspector-field-value {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  margin: 0;
+  word-break: break-all;
+}
+
+.team-inspector-provenance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-subtle);
+}
+
+.team-inspector-provenance-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-inspector-provenance-empty {
+  font-size: var(--text-xs);
+  color: var(--fg-secondary);
+  padding: var(--space-1) 0;
+}
+
+.team-inspector-evidence-list {
+  margin: 0;
+  padding-left: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-inspector-evidence-id {
+  font-size: var(--text-xs);
+}
+
+.team-inspector-body-loading {
+  padding: var(--space-2);
+}
+
+.team-inspector-body-dl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.team-inspector-body-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-inspector-body-row dt {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-inspector-body-row dd {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+}
+
+.team-inspector-body-row pre {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  overflow: auto;
+  max-height: calc(var(--row-lg) * 4);
+}
+
+.team-inspector-body-raw {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  overflow: auto;
+  font-size: var(--text-xs);
+  max-height: calc(var(--row-lg) * 8);
+}
+
+/* ===== §8.14 reduced motion ===== */
+
+@media (prefers-reduced-motion: reduce) {
+  .team-task-status-running {
+    animation: none;
+  }
+  .team-timeline-activity {
+    transition: none;
+  }
+}

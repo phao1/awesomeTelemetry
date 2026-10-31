@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>架构概况抽屉</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#1f4fb8}a:hover{color:#163a87}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; font-family: system-ui, -apple-system, 'PingFang SC', sans-serif; color: #222; background: #fff; display: flex; flex-direction: column">
+<div style="height: 48px; border-bottom: 1px solid #bbb; display: flex; align-items: center; gap: 24px; padding: 0 20px; font-size: 14px; color: #555">
+<strong style="color: #222">AwesomeTelemetry</strong>
+<span style="color: #222; border-bottom: 2px solid #222; padding: 13px 0">任务中心</span><span>数据接入</span><span>评测中心</span><span>任务模式实验</span><span>设置</span><span style="margin-left: auto">兼容统计 ▸</span>
+</div>
+<div style="flex: 1; display: flex; min-height: 0">
+<div style="width: 340px; border-right: 1px solid #bbb; padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; background: #f6f6f6">
+<div style="display: flex; gap: 8px"><div style="flex: 1; border: 1px solid #999; padding: 6px 8px; font-size: 13px; color: #777">搜索任务…</div></div>
+<div style="display: flex; gap: 8px; font-size: 12px"><span style="border: 1px solid #999; padding: 4px 8px">Claude Code ▾</span><span style="border: 1px solid #999; padding: 4px 8px">telemetry ▾</span><span style="border: 1px solid #999; padding: 4px 8px">近 30 天 ▾</span></div>
+<button type="button" style="border: 2px solid #1f4fb8; background: #fff; color: #1f4fb8; padding: 8px; font-size: 13px; font-weight: 600">架构概况 · 64 个任务</button>
+<div style="font-size: 12px; color: #666">任务列表（被抽屉遮住一部分）</div>
+<div style="border: 1px solid #ccc; background: #fff; height: 52px"></div>
+<div style="border: 1px solid #ccc; background: #fff; height: 52px"></div>
+<div style="border: 1px solid #ccc; background: #fff; height: 52px"></div>
+<div style="border: 1px solid #ccc; background: #fff; height: 52px"></div>
+</div>
+<div style="flex: 1; padding: 20px 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; border-left: 3px solid #222; min-width: 0">
+<div style="display: flex; align-items: center; gap: 12px">
+<h1 style="margin: 0; font-size: 20px">架构概况</h1>
+<span style="font-size: 12px; color: #555">范围：Claude Code · telemetry · 近 30 天 · 64 个任务 · 示意数据</span>
+<span style="margin-left: auto; font-size: 12px; border: 1px solid #999; padding: 4px 8px">导出 inventory.tsv / PLAN.md</span>
+<span style="font-size: 12px; border: 1px solid #999; padding: 4px 8px">✕</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+<div style="border: 1px solid #999; padding: 10px 12px"><div style="font-size: 12px; color: #555">关联完整度（父子关系能确认）</div><div style="font-size: 22px; font-weight: 700">91%</div><div style="font-size: 11px; color: #8a4b00">⚠ 修复前的 23 次委派找不到子会话</div></div>
+<div style="border: 1px solid #999; padding: 10px 12px"><div style="font-size: 12px; color: #555">调用链覆盖（评测有题覆盖的生产链）</div><div style="font-size: 22px; font-weight: 700">5 / 7</div><div style="font-size: 11px; color: #8a4b00">⚠ 2 条链没有题，见 ⑥</div></div>
+<div style="border: 1px solid #999; padding: 10px 12px"><div style="font-size: 12px; color: #555">索引</div><div style="font-size: 22px; font-weight: 700">64 / 64</div><div style="font-size: 11px; color: #555">只读本地记录，未调用模型</div></div>
+</div>
+<div style="font-size: 13px; font-weight: 700">Agent 清单与判定（列对齐 kit 的 inventory.tsv）</div>
+<table style="border-collapse: collapse; font-size: 12px; width: 100%">
+<thead><tr style="background: #eee; text-align: left">
+<th style="border: 1px solid #bbb; padding: 6px">Agent</th><th style="border: 1px solid #bbb; padding: 6px">调用方式</th><th style="border: 1px solid #bbb; padding: 6px">流量</th><th style="border: 1px solid #bbb; padding: 6px">读入/次</th><th style="border: 1px solid #bbb; padding: 6px">常一起出现</th><th style="border: 1px solid #bbb; padding: 6px">满足哪条独立理由</th><th style="border: 1px solid #bbb; padding: 6px">判定</th><th style="border: 1px solid #bbb; padding: 6px">置信度</th><th style="border: 1px solid #bbb; padding: 6px">负责人</th>
+</tr></thead>
+<tbody>
+<tr><td style="border: 1px solid #bbb; padding: 6px">主循环</td><td style="border: 1px solid #bbb; padding: 6px">entry</td><td style="border: 1px solid #bbb; padding: 6px">100%</td><td style="border: 1px solid #bbb; padding: 6px">—</td><td style="border: 1px solid #bbb; padding: 6px">全部</td><td style="border: 1px solid #bbb; padding: 6px">—</td><td style="border: 1px solid #bbb; padding: 6px"><strong>main</strong></td><td style="border: 1px solid #bbb; padding: 6px">high</td><td style="border: 1px solid #bbb; padding: 6px; color: #888">[待填]</td></tr>
+<tr style="background: #eef3fc"><td style="border: 1px solid #bbb; padding: 6px">code-reviewer</td><td style="border: 1px solid #bbb; padding: 6px">tool_call</td><td style="border: 1px solid #bbb; padding: 6px">48%</td><td style="border: 1px solid #bbb; padding: 6px">14k</td><td style="border: 1px solid #bbb; padding: 6px">—</td><td style="border: 1px solid #bbb; padding: 6px">无（重复读 72%）</td><td style="border: 1px solid #bbb; padding: 6px"><strong>fold</strong></td><td style="border: 1px solid #bbb; padding: 6px">high</td><td style="border: 1px solid #bbb; padding: 6px; color: #888">[待填]</td></tr>
+<tr><td style="border: 1px solid #bbb; padding: 6px">researcher</td><td style="border: 1px solid #bbb; padding: 6px">tool_call</td><td style="border: 1px solid #bbb; padding: 6px">91%</td><td style="border: 1px solid #bbb; padding: 6px">62k</td><td style="border: 1px solid #bbb; padding: 6px">—</td><td style="border: 1px solid #bbb; padding: 6px">①读得多 14:1；②并行</td><td style="border: 1px solid #bbb; padding: 6px"><strong>as-tool</strong></td><td style="border: 1px solid #bbb; padding: 6px">high</td><td style="border: 1px solid #bbb; padding: 6px; color: #888">[待填]</td></tr>
+<tr><td style="border: 1px solid #bbb; padding: 6px">planner</td><td style="border: 1px solid #bbb; padding: 6px">tool_call</td><td style="border: 1px solid #bbb; padding: 6px">33%</td><td style="border: 1px solid #bbb; padding: 6px">5k</td><td style="border: 1px solid #bbb; padding: 6px">implementer 90%</td><td style="border: 1px solid #bbb; padding: 6px">无</td><td style="border: 1px solid #bbb; padding: 6px"><strong>merge:implementer</strong></td><td style="border: 1px solid #bbb; padding: 6px">medium</td><td style="border: 1px solid #bbb; padding: 6px; color: #888">[待填]</td></tr>
+<tr><td style="border: 1px solid #bbb; padding: 6px">implementer</td><td style="border: 1px solid #bbb; padding: 6px">tool_call</td><td style="border: 1px solid #bbb; padding: 6px">35%</td><td style="border: 1px solid #bbb; padding: 6px">21k</td><td style="border: 1px solid #bbb; padding: 6px">planner 90%</td><td style="border: 1px solid #bbb; padding: 6px">无</td><td style="border: 1px solid #bbb; padding: 6px"><strong>merge:planner</strong></td><td style="border: 1px solid #bbb; padding: 6px">medium</td><td style="border: 1px solid #bbb; padding: 6px; color: #888">[待填]</td></tr>
+<tr><td style="border: 1px solid #bbb; padding: 6px">test-runner</td><td style="border: 1px solid #bbb; padding: 6px">tool_call</td><td style="border: 1px solid #bbb; padding: 6px">34%</td><td style="border: 1px solid #bbb; padding: 6px">2k</td><td style="border: 1px solid #bbb; padding: 6px">—</td><td style="border: 1px solid #bbb; padding: 6px">无（2 步薄包装）</td><td style="border: 1px solid #bbb; padding: 6px"><strong>fold</strong></td><td style="border: 1px solid #bbb; padding: 6px">high</td><td style="border: 1px solid #bbb; padding: 6px; color: #888">[待填]</td></tr>
+</tbody>
+</table>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; flex: 1; min-height: 0">
+<div style="border: 1px dashed #999; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-size: 13px; font-weight: 700">耦合图（= kit coupling_map）</div>
+<div style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 18px; font-size: 12px">
+<div style="border: 1px solid #555; padding: 8px 10px">planner</div><div style="color: #555">— 90% —▶</div><div style="border: 1px solid #555; padding: 8px 10px">implementer</div><div style="color: #555">— 41% —▶</div><div style="border: 1px solid #555; padding: 8px 10px">test-runner</div>
+</div>
+<div style="font-size: 11px; color: #555">线上数字 = 紧跟出现的比例。默认 ≥ 50% 且占全部任务 ≥ 5% 才列为合并候选（与 kit coupling_map 默认值一致）</div>
+</div>
+<div style="border: 1px dashed #999; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 12px">
+<div style="font-size: 13px; font-weight: 700">合并候选</div>
+<div style="border: 1px solid #bbb; padding: 8px">planner → implementer · 21 个任务中 90% 紧跟 · 读取重叠 64% <span style="float: right; color: #1f4fb8">看证据 ›</span></div>
+<div style="font-size: 13px; font-weight: 700; margin-top: 6px">主循环摘要</div>
+<div style="border: 1px solid #bbb; padding: 8px">上下文压缩 9 次 · 主提示 ~4.1k token · 加载过的 skill 6 个</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

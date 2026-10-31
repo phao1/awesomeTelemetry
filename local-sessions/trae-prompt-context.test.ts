@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTraePromptContextDraft, parseTraeModelConfig } from './trae-prompt-context.js';
+import { buildTraePromptContextDraft, extractTraeCwd, parseTraeModelConfig } from './trae-prompt-context.js';
 
 function envelope(...sections: string[]): string {
   return JSON.stringify({
@@ -86,5 +86,29 @@ describe('Trae Prompt Context 提取', () => {
       agentName: null,
       enabledFeatures: [],
     });
+  });
+});
+
+describe('2026-08-11 校准审计：从终端 reminder 里取 cwd', () => {
+  const wrap = (body: string): string =>
+    JSON.stringify({
+      raw_messages: [{ role: 'user', content: `<system-reminder>\n${body}\n</system-reminder>` }],
+    });
+
+  it('取出 `cwd is <path>` 的路径', () => {
+    expect(
+      extractTraeCwd(
+        wrap(
+          'The maximum number of terminals is 5, and 0 have been created:\n' +
+            '- If you want to create a new terminal, its shell type is zsh, cwd is /Users/me/work/RuoYi',
+        ),
+      ),
+    ).toBe('/Users/me/work/RuoYi');
+  });
+
+  it('没有终端 reminder 时返回 null，不瞎猜目录', () => {
+    expect(extractTraeCwd(wrap('# Response Language Settings\nAlways use the same language.'))).toBeNull();
+    expect(extractTraeCwd(null)).toBeNull();
+    expect(extractTraeCwd('')).toBeNull();
   });
 });

@@ -1,10 +1,10 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionIndexEntry } from '../core/trace-types.js';
 import { CompareKPI, MIN_TREND_SESSIONS } from './CompareKPI.js';
-import { makeEvent, makeResult } from './compare-test-fixtures.js';
+import { makeDetail, makeEvent, makeResult } from './compare-test-fixtures.js';
 
 const containers: HTMLDivElement[] = [];
 
@@ -45,9 +45,111 @@ function clickByLabel(html: () => string, label: string): void {
 }
 
 describe('CompareKPI（建议 7 drill-down）', () => {
+  it('WB-003: scopes loaded counts, withholds incomplete ratios and has no Agent-winning arrows', () => {
+    const result = makeResult();
+    result.right.hasMore = true; result.right.eventTotal = 100;
+    const view = mount(<CompareKPI result={result} locale="en" />);
+    const cells = [...document.querySelectorAll('.compare-kpi-cell')];
+    const verification = cells.find(cell => cell.querySelector('.compare-kpi-label')?.textContent === 'Verification activity / steps')!;
+    expect(verification).toBeDefined();
+    expect(verification.querySelector('.compare-kpi-values')?.textContent).toContain('R—');
+    expect(document.querySelector('.compare-kpi-scope')?.textContent).toContain('1 / 100');
+    expect(document.querySelector('.compare-delta-win, .compare-delta-lose')).toBeNull();
+    expect(view.html()).not.toMatch(/← L|→ R/);
+    view.unmount();
+  });
+
+  it('WB-003: verification uses steps, unknown step status does not become zero errors', () => {
+    const result = makeResult({ left: makeDetail('left', [
+      makeEvent({id:'prompt',kind:'user_prompt'}),
+      makeEvent({id:'step1',phase:'verify',status:'unknown'}),
+      makeEvent({id:'step2'}),
+    ]) });
+    const view = mount(<CompareKPI result={result} locale="en" />);
+    const find = (key:string):Element => [...document.querySelectorAll('.compare-kpi-cell')].find(cell=>cell.querySelector('.compare-kpi-label')?.textContent===key)!;
+    expect(find('Verification activity / steps').querySelector('.compare-kpi-values')?.textContent).toContain('L50.0%');
+    expect(find('Error steps / steps').querySelector('.compare-kpi-values')?.textContent).toContain('L—');
+    expect(view.html()).toContain('unknown step statuses');
+    view.unmount();
+  });
+
+  it('WB-002: error and top-token records navigate by exact side/session/event, with no body reads on expansion', () => {
+    const fetch = vi.spyOn(globalThis,'fetch');
+    const onOpenRun = vi.fn();
+    const event = makeEvent({id:'same-opaque-id',title:'Inspect retained record',status:'error',tokens:{input:1,output:1,reasoning:0,cacheRead:0,cacheWrite:0,netInput:1,total:2}});
+    const result = makeResult({left:makeDetail('left-run',[event]),right:makeDetail('right-run',[event])});
+    const view = mount(<CompareKPI result={result} locale="en" onOpenRun={onOpenRun}/>);
+    try {
+      clickByLabel(view.html,'Failures click to expand breakdown');
+      const rightError = document.querySelector<HTMLButtonElement>('[data-evidence-session="right-run"][data-evidence-event="same-opaque-id"]')!;
+      expect(rightError).not.toBeNull(); act(()=>rightError.click());
+      expect(onOpenRun).toHaveBeenLastCalledWith('right-run','same-opaque-id');
+      clickByLabel(view.html,'Tokens click to expand breakdown');
+      const leftToken = document.querySelector<HTMLButtonElement>('[data-evidence-session="left-run"][data-evidence-event="same-opaque-id"]')!;
+      expect(leftToken).not.toBeNull(); act(()=>leftToken.click());
+      expect(onOpenRun).toHaveBeenLastCalledWith('left-run','same-opaque-id');
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {view.unmount();fetch.mockRestore();}
+  });
+
+  it('WB-006: exposes six primary summaries and keeps additional activity metrics in a labelled closed disclosure', () => {
+    const view=mount(<CompareKPI result={makeResult()} locale="en"/>);
+    expect(document.querySelectorAll('.compare-kpi-primary > .compare-kpi-cell')).toHaveLength(6);
+    const details=document.querySelector<HTMLDetailsElement>('.compare-kpi-more')!;
+    expect(details).not.toBeNull();expect(details.open).toBe(false);
+    expect(details.querySelector('summary')?.textContent).toContain('More recorded activity');
+    expect(details.querySelectorAll('.compare-kpi-cell').length).toBeGreaterThan(0);
+    view.unmount();
+  });
+
+  it('WB-003: reports signed R-minus-L observed differences, not minimum-based percent saved', () => {
+    const result=makeResult();result.left.session.tokenUsage.total=100;result.right.session.tokenUsage.total=200;
+    const view=mount(<CompareKPI result={result} locale="en"/>);
+    const token=[...document.querySelectorAll('.compare-kpi-cell')].find(cell=>cell.querySelector('.compare-kpi-label')?.textContent==='Tokens')!;
+    expect(token.querySelector('.compare-delta')?.textContent).toBe('R − L: +100');
+    view.unmount();
+  });
+
+  it('WB-006: expanded evidence occupies a shared full-width row and Escape returns to its trigger',()=>{
+    const view=mount(<CompareKPI result={makeResult()} locale="en"/>);
+    const trigger=[...document.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.getAttribute('aria-label')==='Failures click to expand breakdown')!;
+    act(()=>trigger.click());
+    const panel=document.querySelector<HTMLElement>('.compare-kpi-expanded')!;
+    expect(panel).not.toBeNull();expect(panel.closest('.compare-kpi-cell')).toBeNull();
+    expect(trigger.getAttribute('aria-controls')).toBe(panel.id);
+    act(()=>panel.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
+    expect(document.querySelector('.compare-kpi-expanded')).toBeNull();expect(document.activeElement).toBe(trigger);
+    view.unmount();
+  });
+  it('does not print an infinite percentage for individually finite wall-clock values', () => {
+    const result = makeResult(); result.speed.left.e2eMs = Number.MAX_VALUE; result.speed.right.e2eMs = 1;
+    const { html, unmount } = mount(<CompareKPI result={result} locale="en" />);
+    expect(html()).not.toContain('Infinity%'); unmount();
+  });
+  it('keeps event-duration values but gives no winner or equality when the declaration is unknown or mixed', () => {
+    const result = makeResult(); result.speed.left.avgLlmDurationMs = null;
+    const { html, unmount } = mount(<CompareKPI result={result} locale="en" />);
+    const cell = [...document.querySelectorAll('[data-scan-timing-reason]')];
+    expect(cell.length).toBeGreaterThanOrEqual(2);
+    expect(cell.every(node => !node.textContent!.includes('% ←') && !node.textContent!.includes('% →'))).toBe(true);
+    expect(html()).toContain('Not comparable'); expect(html()).toContain('—'); unmount();
+  });
+  it('retains finite declared event durations and descriptive wall-clock comparisons but hides invalid drill-down rates', () => {
+    const result = makeResult(); result.left.session.durationSource = 'measured'; result.right.session.durationSource = 'measured';
+    result.speed.left.avgLlmDurationMs = 100; result.speed.right.avgLlmDurationMs = 200;
+    result.speed.left.tps = NaN; result.speed.left.tpotMs = -1;
+    const { html, unmount } = mount(<CompareKPI result={result} locale="en" />);
+    expect(document.querySelectorAll('[data-scan-timing-reason]')).toHaveLength(0);
+    const delta = [...document.querySelectorAll('.compare-kpi-cell')].find(node => node.querySelector('.compare-kpi-label')?.textContent?.includes('Avg LLM'))!;
+    expect(delta.querySelector('.compare-delta')?.textContent).toBe('R − L: +0.1s');
+    expect(delta.querySelector('.compare-delta-win, .compare-delta-lose')).toBeNull();
+    const actualE2e = [...document.querySelectorAll<HTMLButtonElement>('.compare-kpi-cell button')].find(button => button.getAttribute('aria-label')?.startsWith('Wall-clock interval '))!;
+    expect(actualE2e).toBeDefined();
+    act(() => actualE2e.click()); expect(html()).not.toContain('NaN'); expect(html()).not.toContain('-1.0ms'); unmount();
+  });
   it('e2e 卡片点击展开速度构成明细', () => {
     const { html, unmount } = mount(<CompareKPI result={makeResult()} locale="zh" />);
-    clickByLabel(html, '快 点击展开构成明细');
+    clickByLabel(html, '墙钟间隔 点击展开构成明细');
     expect(html()).toContain('TTFT');
     expect(html()).toContain('纯推理时间');
     unmount();
@@ -174,7 +276,7 @@ describe('CompareKPI（建议 7 drill-down）', () => {
       },
     });
     const { html, unmount } = mount(<CompareKPI result={result} locale="zh" />);
-    clickByLabel(html, '错误率 点击展开构成明细');
+    clickByLabel(html, '错误步骤 / 步骤 点击展开构成明细');
     expect(html()).toContain('Bash');
     expect(html()).toContain('Read');
     unmount();
@@ -191,7 +293,7 @@ describe('CompareKPI（建议 7 drill-down）', () => {
       },
     });
     const { html, unmount } = mount(<CompareKPI result={result} locale="zh" />);
-    clickByLabel(html, '验证覆盖率 点击展开构成明细');
+    clickByLabel(html, '验证活动 / 步骤 点击展开构成明细');
     expect(html()).toContain('vitest run');
     unmount();
   });
@@ -224,7 +326,7 @@ function historySessions(
 }
 
 describe('REQ-122 KPI 跨会话趋势 sparkline', () => {
-  it('两侧各 >= 3 个历史会话时，events/tokens/cost/userRounds 卡显示双线 sparkline', () => {
+  it('两侧各 >= 3 个历史会话时，保留 events/tokens/userRounds 趋势，不再显示金额趋势', () => {
     const result = makeResult();
     const sessions = [
       ...historySessions('codex', result.left.session.sourceAgent, 3),
@@ -233,7 +335,8 @@ describe('REQ-122 KPI 跨会话趋势 sparkline', () => {
     // 右侧 fixture 也是 codex/Codex，历史会话与左侧共用
     const { unmount } = mount(<CompareKPI result={result} locale="en" sessions={sessions} />);
     const trends = document.querySelectorAll('.compare-kpi-trend:not(.compare-kpi-trend-empty)');
-    expect(trends.length).toBe(4); // events / tokens / cost / userRounds
+    expect(trends.length).toBe(3); // events / tokens / userRounds; money intentionally removed
+    expect([...document.querySelectorAll('.compare-kpi-label')].map(el=>el.textContent)).not.toContain('Cost');
     // 每张卡两条线（L + R）
     expect(trends[0]!.querySelectorAll('path').length).toBe(2);
     expect(document.querySelector('.compare-kpi-trend path')?.getAttribute('stroke')).toBe(
@@ -247,7 +350,7 @@ describe('REQ-122 KPI 跨会话趋势 sparkline', () => {
     const sessions = historySessions('codex', result.left.session.sourceAgent, 2);
     const { unmount } = mount(<CompareKPI result={result} locale="en" sessions={sessions} />);
     const empties = document.querySelectorAll('.compare-kpi-trend-empty');
-    expect(empties.length).toBe(4);
+    expect(empties.length).toBe(3);
     expect(empties[0]!.textContent).toBe(`Need ${MIN_TREND_SESSIONS}+ sessions for trend`);
     expect(document.querySelector('.compare-kpi-trend path')).toBeNull();
     unmount();
@@ -265,8 +368,8 @@ describe('REQ-122 KPI 跨会话趋势 sparkline', () => {
 
   it('不传 sessions 时完全不渲染趋势（向后兼容）', () => {
     const { unmount } = mount(<CompareKPI result={makeResult()} locale="zh" />);
-    expect(document.querySelectorAll('.compare-kpi-trend').length).toBe(4);
-    expect(document.querySelectorAll('.compare-kpi-trend-empty').length).toBe(4);
+    expect(document.querySelectorAll('.compare-kpi-trend').length).toBe(3);
+    expect(document.querySelectorAll('.compare-kpi-trend-empty').length).toBe(3);
     unmount();
   });
 });

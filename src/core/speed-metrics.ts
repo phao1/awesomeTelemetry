@@ -103,13 +103,14 @@ export function computeSpeedMetrics(record: TraceRecord): SpeedMetrics {
   );
   const userEvents = events.filter((e) => e.kind === 'user_prompt');
 
-  // #1：TTFT 是「用户输入 → 首 token」的时间差，与 LLM 调用自身耗时无关。
+  // Legacy scan TTFT: first user prompt → first LLM log start, NOT a wire token.
   const ttftMs =
     userEvents.length > 0 && allLlmEvents.length > 0
       ? Math.max(0, Date.parse(allLlmEvents[0]!.startedAt) - Date.parse(userEvents[0]!.startedAt))
       : null;
 
-  // G4.1：纯推理时长累计全部 llm 事件（含零输出事件，它们仍是推理过程的一部分）。
+  // Legacy pureInferenceMs sums normalized LLM durations (including zero-output).
+  // Duration provenance can be derived/unknown; this sum alone is NOT measured inference.
   const totalLlmMs = allLlmEvents.reduce((sum, e) => sum + e.durationMs, 0);
 
   // #11：TPS = 每事件 TPS 的算术平均；#13：只算有效事件。

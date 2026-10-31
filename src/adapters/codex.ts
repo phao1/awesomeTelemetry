@@ -18,8 +18,9 @@ import {
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
-import { computeCostUsd } from '../core/pricing.js';
+import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
+import { collectCodexIdentities, collectNativeEventBindings, trackNativeEvent } from './native-identities.js';
 
 /**
  * Codex `event_msg` / `token_count` 的用量结构。
@@ -185,6 +186,7 @@ function agentMessageText(payload: CodexRawPayload): string {
 
 /** 工具结果文本的错误探测：沿用现状（输出头 200 字符内命中 error/failed）。 */
 function isErrorOutput(output: string): boolean {
+  // An explicit successful exit is stronger evidence than words in command output.
   const exits = [...output.matchAll(/(?:"?exit_code"?\s*[:=]\s*|Process exited with code\s+)(-?\d+)/gi)];
   if (exits.length > 0) return exits.some((match) => Number(match[1]) !== 0);
   return /error|failed/i.test(output.slice(0, 200));
@@ -235,6 +237,8 @@ function emitCycleEvents(
   syntheticId: { next: number },
 ): EventWithRaw[] {
   const events: EventWithRaw[] = [];
+  let sourceRow: CodexRawRow | null = null;
+  const pushEvent = (event: EventWithRaw): void => { events.push(sourceRow === null ? event : trackNativeEvent(event, sourceRow)); };
   const toolResults = new Map<string, string>();
   for (const row of cycle.rows) {
     const type = row.payload?.type;
@@ -274,6 +278,7 @@ function emitCycleEvents(
 
   for (let i = 0; i < cycle.rows.length; i += 1) {
     const row = cycle.rows[i]!;
+    sourceRow = row;
     const payload = row.payload ?? {};
     const timestamp = row.timestamp ?? '1970-01-01T00:00:00.000Z';
     const rowType = row.type ?? '';
@@ -320,7 +325,7 @@ function emitCycleEvents(
       const text = contentText(payload);
       // A6：developer / system 角色是系统提示词（A1 结论 4），不是模型回复。
       if (role === 'developer' || role === 'system') {
-        events.push({
+        pushEvent({
           ...base,
           kind: 'system',
           title: titleFromText(text),
@@ -333,7 +338,7 @@ function emitCycleEvents(
         continue;
       }
       if (role === 'user') {
-        events.push({
+        pushEvent({
           ...base,
           kind: 'user_prompt',
           title: titleFromText(text),
@@ -355,7 +360,7 @@ function emitCycleEvents(
         outputSummary: text.length > 0 ? text : null,
         raw: JSON.stringify(row),
       } as EventWithRaw;
-      events.push(event);
+      pushEvent(event);
       assistantEvent = event;
       continue;
     }
@@ -363,7 +368,7 @@ function emitCycleEvents(
     // ── response_item / reasoning ──
     if (rowType === 'response_item' && type === 'reasoning') {
       const text = contentText(payload) || (payload.summary ?? []).map((part) => part.text ?? '').join('\n');
-      events.push({
+      pushEvent({
         ...base,
         kind: 'reasoning',
         title: titleFromText(text),
@@ -381,11 +386,13 @@ function emitCycleEvents(
       const input = type === 'custom_tool_call' ? payload.input : payload.arguments;
       const resultAt = payload.call_id ? toolResults.get(payload.call_id.replace(/:\d+$/, '')) : undefined;
       const pairedMs = resultAt ? Date.parse(resultAt) - Date.parse(timestamp) : 0;
-      events.push({
+      pushEvent({
         ...base,
         kind: 'tool',
         title: titleFromText(name),
         tool: name,
+        // A matched result gives the tool's call-to-result log interval.
+        // Unmatched calls keep the ordinary adjacent-event fallback.
         durationMs: Number.isFinite(pairedMs) && pairedMs > 0 ? pairedMs : 0,
         hasInput: input !== undefined && input !== '',
         hasRaw: true,
@@ -399,7 +406,7 @@ function emitCycleEvents(
     if (type === 'function_call_output' || type === 'custom_tool_call_output') {
       const output = codexOutputText(payload.output);
       const name = cycleToolName(cycle.rows, payload.call_id) ?? (type === 'custom_tool_call_output' ? 'custom_tool_call_output' : 'function_call_output');
-      events.push({
+      pushEvent({
         ...base,
         kind: 'tool',
         title: titleFromText(name),
@@ -417,7 +424,7 @@ function emitCycleEvents(
     // ── web_search / tool_search（response_item 侧）──
     if (type === 'web_search_call') {
       const url = typeof payload.action?.url === 'string' ? payload.action.url : '';
-      events.push({
+      pushEvent({
         ...base,
         kind: 'tool',
         title: 'web_search',
@@ -431,7 +438,7 @@ function emitCycleEvents(
     }
     if (type === 'tool_search_call') {
       const args = payload.arguments ?? '';
-      events.push({
+      pushEvent({
         ...base,
         kind: 'tool',
         title: 'tool_search',
@@ -446,7 +453,7 @@ function emitCycleEvents(
     if (type === 'tool_search_output') {
       const toolsJson = JSON.stringify(payload.tools ?? null);
       const name = cycleToolName(cycle.rows, payload.call_id) ?? 'tool_search';
-      events.push({
+      pushEvent({
         ...base,
         kind: 'tool',
         title: name,
@@ -464,7 +471,7 @@ function emitCycleEvents(
       // A6：agent_reasoning 是推理记录。
       if (type === 'agent_reasoning') {
         const text = payload.text ?? '';
-        events.push({
+        pushEvent({
           ...base,
           kind: 'reasoning',
           title: titleFromText(text),
@@ -491,7 +498,7 @@ function emitCycleEvents(
           outputSummary: text.length > 0 ? text : null,
           raw: JSON.stringify(row),
         } as EventWithRaw;
-        events.push(event);
+        pushEvent(event);
         assistantEvent = event;
         continue;
       }
@@ -499,7 +506,7 @@ function emitCycleEvents(
       if (type === 'patch_apply_end') {
         const stdout = payload.stdout ?? '';
         const failed = payload.success === false || isErrorOutput(stdout);
-        events.push({
+        pushEvent({
           ...base,
           kind: 'file_write',
           title: 'patch_apply_end',
@@ -519,7 +526,7 @@ function emitCycleEvents(
         const result = payload.result;
         const argsJson = args === undefined ? null : JSON.stringify(args);
         const resultJson = result === undefined ? null : JSON.stringify(result);
-        events.push({
+        pushEvent({
           ...base,
           kind: 'tool',
           title: titleFromText(name),
@@ -537,7 +544,7 @@ function emitCycleEvents(
       if (type === 'web_search_end') {
         const query = payload.query ?? '';
         const name = cycleToolName(cycle.rows, payload.call_id) ?? 'web_search';
-        events.push({
+        pushEvent({
           ...base,
           kind: 'tool',
           title: name,
@@ -551,7 +558,7 @@ function emitCycleEvents(
       }
       // A6：context_compacted → compact。
       if (type === 'context_compacted') {
-        events.push({
+        pushEvent({
           ...base,
           kind: 'compact',
           title: 'context_compacted',
@@ -563,7 +570,7 @@ function emitCycleEvents(
       }
       // A6：turn_aborted → system 且置 cancelled（周期事件统一由 hasTurnAborted 处理）。
       if (type === 'turn_aborted') {
-        events.push({
+        pushEvent({
           ...base,
           kind: 'system',
           title: 'turn_aborted',
@@ -583,7 +590,7 @@ function emitCycleEvents(
         type === 'thread_rolled_back' ||
         type === 'user_message'
       ) {
-        events.push({
+        pushEvent({
           ...base,
           kind: 'system',
           title: type,
@@ -597,7 +604,7 @@ function emitCycleEvents(
 
     // ── turn_context / world_state（顶层类型，payload.type 为空）保持 system ──
     if (rowType === 'turn_context' || rowType === 'world_state') {
-      events.push({
+      pushEvent({
         ...base,
         kind: 'system',
         title: rowType,
@@ -610,7 +617,7 @@ function emitCycleEvents(
 
     // A6 / 2.13：未在 A6 命名的 payload 类型仍然回落 system —— 修复收窄了
     // 兜底分支，但没有移除它。
-    events.push({
+    pushEvent({
       ...base,
       kind: 'system',
       title: titleFromText(type ?? 'system'),
@@ -620,13 +627,14 @@ function emitCycleEvents(
     } as EventWithRaw);
   }
 
+  sourceRow = null;
   // A6：token_count 的用量挂到周期的 assistant 事件；周期无 assistant 消息时
   // 生成单个 llm carrier（不产生独立 token_count 事件）。
   if (usage !== null) {
     if (assistantEvent !== null) {
       assistantEvent.tokens = usage;
     } else {
-      events.push({
+      pushEvent({
         id: `codex-${syntheticId.next++}`,
         sessionId,
         sequence: 0,
@@ -798,7 +806,8 @@ export function normalizeCodexSample(
   // 而累计快照正是 Codex 自身向用户展示的口径。快照缺失时才退回逐事件求和。
   const tokenUsage = finalTotalUsage ?? aggregateTokenUsage(classified, semantics);
   const primaryModel = pickPrimaryModel(classified);
-  const cost = computeCostUsd(tokenUsage, primaryModel);
+  // codex.ts:110 已论证 reasoning ⊂ output（reasoningInTotal=false），不叠加。
+  const cost = computeCost(tokenUsage, primaryModel);
   const session: TraceSession = {
     id: sessionId,
     provider: 'codex',
@@ -811,7 +820,7 @@ export function normalizeCodexSample(
     messageCount: rows.length,
     eventCount: classified.length,
     tokenUsage,
-    costUsd: cost.costUsd,
+    costUsd: cost.cost,
     systemPrompt: null,
     dataSource: 'scan',
     sourcePath,
@@ -819,11 +828,13 @@ export function normalizeCodexSample(
     isSubagent: false,
     primaryModel,
     costSource: cost.costSource,
+    costCurrency: cost.currency,
     durationSource: 'derived',
   };
   return {
     session,
     events: classified,
+    nativeIdentities: collectCodexIdentities(rows, collectNativeEventBindings(classified)),
     tokenSemantics: semantics,
     // A5：周期边界由 response_item 流自身的形状推导，源格式没有显式标注。
     turnKeySource: 'stream_structure',

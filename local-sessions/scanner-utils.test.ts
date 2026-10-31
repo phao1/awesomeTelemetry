@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import Database from 'better-sqlite3';
 
@@ -13,6 +13,10 @@ import { codeagentFixture } from '../src/adapters/__fixtures__/codeagent.js';
 import { qoderFixture } from '../src/adapters/__fixtures__/qoder.js';
 import { workbuddyFixture } from '../src/adapters/__fixtures__/workbuddy.js';
 import { initSchema } from '../server/storage/schema.js';
+import { normalizeClaudeSample } from '../src/adapters/claude-code.js';
+import sidechainRows from '../src/adapters/__fixtures__/claude-sidechain.json';
+import { writeNativeIdentities } from '../server/storage/trace-links.js';
+import { getTask } from '../server/storage/task-workbench.js';
 import { claudeScanner } from './claude.js';
 import { codeagentScanner } from './codeagent.js';
 import { codexScanner } from './codex.js';
@@ -23,10 +27,28 @@ import {
   buildIndexEntry,
   cleanupDuplicateSessionRows,
   upsertIndexEntries,
+  storeTraceRecord,
   type ScannerContext,
 } from './scanner-utils.js';
 
 type Db = InstanceType<typeof Database>;
+
+describe('atomic native source storage', () => {
+  it('rolls back session/events/raw/metrics when identity persistence fails and never notifies success', () => {
+    const db = newDb();
+    try {
+      db.exec("CREATE TRIGGER reject_manifest BEFORE INSERT ON trace_identity_sources BEGIN SELECT RAISE(ABORT, 'synthetic identity write failure'); END");
+      const record = normalizeClaudeSample(claudeFixture, '/synthetic/native.jsonl');
+      const notify = vi.fn();
+      expect(() => storeTraceRecord(db, record, '/synthetic/native.jsonl', 'synthetic-key', notify)).toThrow('synthetic identity write failure');
+      expect(db.prepare('SELECT COUNT(*) AS count FROM sessions').get()).toEqual({ count: 0 });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM events').get()).toEqual({ count: 0 });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM event_raw').get()).toEqual({ count: 0 });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM metrics').get()).toEqual({ count: 0 });
+      expect(notify).not.toHaveBeenCalled();
+    } finally { db.close(); }
+  });
+});
 
 const tempDirs: string[] = [];
 
@@ -328,4 +350,29 @@ describe('T-02 统一 session key', () => {
     expect(ids.map((r) => r.id)).toEqual([keptId]);
     db.close();
   });
+});
+
+
+it('scans observed Claude sidechains into one task with separate path keys', async () => {
+  const dir = tempDir();
+  const parent = join(dir, 'parent.jsonl');
+  const child = join(dir, 'child.jsonl');
+  writeFileSync(parent, JSON.stringify({ type: 'user', sessionId: 'parent-a', timestamp: '2026-10-30T00:00:00.000Z', message: { content: 'redacted' } }) + '\n');
+  writeFileSync(child, sidechainRows.map(r => JSON.stringify(r)).join('\n') + '\n');
+  const db = newDb();
+  const config: ProviderConfig = { key: 'claude', enabled: false, path: dir, sourceKind: 'jsonl', watchStrategy: 'chokidar', pollIntervalMs: 0, label: 'Claude Code' };
+  try {
+    await claudeScanner.scanFile(config, child, { db });
+    await claudeScanner.scanFile(config, parent, { db });
+    const rootKey = deriveSessionKey('claude', parent);
+    const childKey = deriveSessionKey('claude', child);
+    const task = getTask(db, 'collected:' + rootKey);
+    expect(task.members).toHaveLength(2);
+    expect(task.members.find(m => m.sessionKey === childKey)?.parentId).toBe(rootKey);
+    expect(task.members.find(m => m.sessionKey === childKey)?.role).toBe('subagent');
+    expect(await claudeScanner.scanFile(config, child, { db })).toMatchObject({ skipped: true });
+    writeNativeIdentities(db, { source: 'scan', key: childKey }, { parserVersion: 2, items: [{ namespace: 'agent:claude', kind: 'session', value: 'parent-a', scope: null, eventId: null, sourcePath: 'events[0].sessionId' }], completeness: { complete: true, omittedCount: 0, reasons: [] } }, '2026-10-30T00:00:00.000Z');
+    expect(await claudeScanner.scanProvider(config, { db })).toMatchObject({ scanned: 1, skipped: 1 });
+    expect(await claudeScanner.scanProvider(config, { db })).toMatchObject({ scanned: 0, skipped: 2 });
+  } finally { db.close(); }
 });

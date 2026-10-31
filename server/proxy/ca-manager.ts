@@ -2,6 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import forge from 'node-forge';
+import { Proxy } from 'http-mitm-proxy';
+import { chmod, readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 export interface CaManagerOptions {
   caDir: string;
@@ -17,6 +20,37 @@ const CA_KEY_FILE = 'proxy-ca-key.pem';
 
 const memoryCache = new Map<string, CaBundle>();
 const domainCertCache = new Map<string, string>();
+const interceptCaPromises = new Map<string, Promise<string>>();
+
+/** Use the actual proxy engine's CA layout and generator, including its public key file. */
+export function ensureInterceptCa(caDir: string): Promise<string> {
+  const directory = resolve(caDir);
+  const cached = interceptCaPromises.get(directory);
+  if (cached !== undefined) return cached;
+  const promise = (async () => {
+    const proxy = new Proxy();
+    try {
+      await new Promise<void>((done, reject) => {
+        proxy.onError((_ctx, error, kind) => reject(error ?? new Error(kind)));
+        proxy.listen({ host: '127.0.0.1', port: 0, sslCaDir: directory }, (error) => error ? reject(error) : done());
+      });
+      await chmod(directory, 0o700);
+      await chmod(join(directory, 'keys'), 0o700);
+      await chmod(join(directory, 'keys', 'ca.private.key'), 0o600);
+      return await readFile(join(directory, 'certs', 'ca.pem'), 'utf8');
+    } finally {
+      if (proxy.httpServer !== undefined) proxy.close();
+    }
+  })().then((pem) => {
+    interceptCaPromises.delete(directory);
+    return pem;
+  }, (error: unknown) => {
+    interceptCaPromises.delete(directory);
+    throw error;
+  });
+  interceptCaPromises.set(directory, promise);
+  return promise;
+}
 
 function randomSerial(): string {
   return `01${forge.util.bytesToHex(forge.random.getBytesSync(15))}`;

@@ -11,6 +11,8 @@ import Database from 'better-sqlite3';
 import type { LocalSessionConfig } from '../src/core/trace-types.js';
 import { initSchema } from './storage/schema.js';
 import { createAgentObservabilityServer } from './server.js';
+import { decideTraceAssociation } from './storage/trace-links.js';
+import { cachedStmt } from './storage/stmt-cache.js';
 
 type Db = InstanceType<typeof Database>;
 
@@ -50,7 +52,7 @@ function messages(n: number, contentLen: number, prefix: string): Array<{ role: 
 }
 
 function seedDiffProxy(db: Db, requestId: string, startedAt: string, body: string): void {
-  db.prepare(
+  const result = cachedStmt(db,
     `INSERT INTO proxy_requests (request_id, method, url, hostname, started_at,
        capture_group_id, request_format, model, parsed_session_id, request_body)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -58,6 +60,8 @@ function seedDiffProxy(db: Db, requestId: string, startedAt: string, body: strin
     requestId, 'POST', 'https://api.anthropic.com', 'api.anthropic.com', startedAt,
     'perf-group', 'anthropic_messages', 'claude-3-5-sonnet', 'perf-session', body,
   );
+  cachedStmt(db, "INSERT OR IGNORE INTO sessions (id, provider, source_agent, source_path, started_at, updated_at) VALUES ('perf-native-session', 'claude', 'Claude', '/synthetic', ?, ?)").run(startedAt, startedAt);
+  decideTraceAssociation(db, Number(result.lastInsertRowid), 'perf-native-session', 'confirmed', 'synthetic performance fixture');
 }
 
 function body(messagesArr: Array<{ role: string; content: string }>): string {

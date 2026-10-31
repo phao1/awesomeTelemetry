@@ -12,6 +12,8 @@ import type {
 } from '../src/core/trace-types.js';
 import { computeMetrics } from '../src/core/metrics.js';
 import { cachedStmt } from '../server/storage/stmt-cache.js';
+import { writeNativeIdentities } from '../server/storage/trace-links.js';
+import { queueTraceLinkChange } from '../server/realtime/coalescer.js';
 import {
   deleteSession,
   upsertEvents,
@@ -153,19 +155,26 @@ export function storeTraceRecord(
   key: string,
   notify?: (key: string) => void,
 ): string {
-  upsertSessionFromTrace(db, { ...record.session, id: key });
-  upsertEvents(db, key, record.events);
-  for (const event of record.events) {
-    const raw = (event as { raw?: string | null }).raw;
-    if (raw !== undefined && raw !== null) {
-      cachedStmt(db, UPSERT_EVENT_RAW_SQL).run(key, event.id, raw);
+  const affected = db.transaction(() => {
+    upsertSessionFromTrace(db, { ...record.session, id: key });
+    upsertEvents(db, key, record.events);
+    for (const event of record.events) {
+      const raw = (event as { raw?: string | null }).raw;
+      if (raw !== undefined && raw !== null) {
+        cachedStmt(db, UPSERT_EVENT_RAW_SQL).run(key, event.id, raw);
+      }
     }
-  }
-  // 没有任何 adapter 会填 record.metrics，早期实现在这里静默跳过写入，
-  // 导致 metrics 表恒为空、验证覆盖 / 错误率 / repair_loop 全站取不到值。
-  // computeMetrics 是纯函数，落库前按已归一化的 record 现算。
-  upsertMetrics(db, key, record.metrics ?? computeMetrics(record));
-  cachedStmt(db, SET_DETAIL_LOADED_SQL).run(key);
+    // 没有任何 adapter 会填 record.metrics，早期实现在这里静默跳过写入，
+    // 导致 metrics 表恒为空、验证覆盖 / 错误率 / repair_loop 全站取不到值。
+    // computeMetrics 是纯函数，落库前按已归一化的 record 现算。
+    upsertMetrics(db, key, record.metrics ?? computeMetrics(record));
+    const changed = record.nativeIdentities === undefined ? [] : writeNativeIdentities(
+      db, { source: 'scan', key }, record.nativeIdentities, record.session.updatedAt,
+    );
+    cachedStmt(db, SET_DETAIL_LOADED_SQL).run(key);
+    return changed;
+  })();
+  for (const changed of affected) queueTraceLinkChange(changed);
   notify?.(key);
   return key;
 }

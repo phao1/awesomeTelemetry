@@ -1,0 +1,54 @@
+{
+  "metrics": {
+    "overview.e2e_ms": {
+      "raw": 3625000,
+      "active": 24000
+    },
+    "plan.rounds": 4,
+    "model.sum_ms": 12000,
+    "act.sum_ms": 12000,
+    "ux.ttfr_log": 3000,
+    "ux.first_write_log": {
+      "active": 21000,
+      "raw": 3622000
+    },
+    "ux.max_gap_log": {
+      "value": 10000,
+      "command": "npm test"
+    }
+  },
+  "rounds": [
+    {
+      "id": "main:r1",
+      "readyMs": 0,
+      "thinkMs": 3000
+    },
+    {
+      "id": "main:r2",
+      "readyMs": 13000,
+      "thinkMs": 2000
+    },
+    {
+      "id": "main:r3",
+      "readyMs": 3616000,
+      "thinkMs": 4000
+    },
+    {
+      "id": "main:r4",
+      "readyMs": 3622000,
+      "thinkMs": 3000
+    }
+  ],
+  "partition": {
+    "modelOnly": 12000,
+    "toolOnly": 12000,
+    "userWait": 3601000,
+    "overlap": 0,
+    "undivided": 0,
+    "delegateWait": 0,
+    "unattributed": 0
+  },
+  "findings": {
+    "perceived.long_gap": null
+  }
+}

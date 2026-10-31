@@ -123,10 +123,14 @@ function sessionListSql(flags: SessionsWhereFlags): string {
 }
 
 function sessionCountSql(flags: SessionsWhereFlags): string {
-  // 标签过滤需要 joined 行；session_annotations.session_id 是主键，每会话至多
-  // 一行，COUNT(*) 仍与会话数一致。
+  // Only tag filtering reads annotations. Without it, count sessions directly
+  // so the metadata index avoids one annotation lookup per matching session.
+  // With tags, the annotation primary key still contributes at most one row.
+  const annotations = flags.tags > 0
+    ? 'LEFT JOIN session_annotations AS sa ON sa.session_id = sessions.id '
+    : '';
   return `SELECT COUNT(*) AS c FROM sessions ` +
-    'LEFT JOIN session_annotations AS sa ON sa.session_id = sessions.id ' +
+    annotations +
     `WHERE ${sessionsWhere(flags)}`;
 }
 
@@ -254,11 +258,12 @@ function mapSession(row: Record<string, unknown>): TraceSession {
     isSubagent: Boolean(row.is_subagent),
     primaryModel: row.primary_model as string | null | undefined,
     costSource: row.cost_source as TraceSession['costSource'],
+    costCurrency: (row.cost_currency as TraceSession['costCurrency']) ?? 'USD',
     durationSource: row.duration_source as TraceSession['durationSource'],
   };
 }
 
-function mapEvent(
+export function mapEvent(
   row: Record<string, unknown>,
   full: boolean,
 ): TraceEventSlim | TraceEvent {
@@ -580,7 +585,7 @@ export function getEventDetail(
   return { ...event, raw: rawRow?.raw ?? null } as TraceEventRaw;
 }
 
-/** REQ-014：窗口内最长 system_prompt（冗余长度列排序，不走 ORDER BY LENGTH）。 */
+/** @deprecated Legacy time-window candidate only, never authoritative session prompt. REQ-014. */
 export function getSystemPromptForSession(
   db: Database,
   startedAt: string,
@@ -647,9 +652,22 @@ export function getProxyRequestById(db: Database, id: number): ProxyRequest | nu
   return row === undefined ? null : mapProxyRequest(row);
 }
 
+/** Metadata-only committed capture patch; never selects body/header columns. */
+export function getProxyRequestListItemById(db: Database, id: number): ProxyRequestListItem | null {
+  const row = cachedStmt(db, `SELECT ${PROXY_LIST_COLS}, system_prompt_len FROM proxy_requests WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
+  return row === undefined ? null : mapProxyListItem(row);
+}
+
+/** Indexed bulk metadata read for linked traces, with no bodies or per-row queries. */
+export function getProxyRequestListItemsByIds(db: Database, ids: number[]): ProxyRequestListItem[] {
+  if (ids.length === 0) return [];
+  const rows = cachedStmt(db, `SELECT ${PROXY_LIST_COLS}, system_prompt_len FROM proxy_requests WHERE id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(ids)) as Array<Record<string, unknown>>;
+  return rows.map(mapProxyListItem);
+}
+
 /**
- * design D4 step 1：同 parsed_session_id + request_format 的最近更早行（id < beforeId）。
- * 显式列、缓存语句、不选 raw 列。
+ * @deprecated Legacy unnamespaced parsed-id candidate, not automatic session authority.
+ * Explicit columns, cached statement and no raw columns; new context selection uses trace-links.
  */
 export function findExactSessionPredecessor(
   db: Database,
@@ -666,9 +684,8 @@ export function findExactSessionPredecessor(
 }
 
 /**
- * design D4 step 2：同 capture_group_id + request_format + null-safe model 相等的
- * 最近更早行（id < beforeId）。冲突判定（双方非空且不同的 parsed_session_id）
- * 由 context-diff 服务在拿到候选行后执行。
+ * @deprecated Legacy capture-run candidate, never proof of session membership.
+ * Retained for compatibility/diagnostics only; context-diff must not call it automatically.
  */
 export function findCaptureGroupPredecessor(
   db: Database,

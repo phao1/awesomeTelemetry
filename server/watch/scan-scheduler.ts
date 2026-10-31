@@ -49,6 +49,8 @@ export interface ScanSchedulerDeps {
   notify?: (key: string) => void;
   emit?: (event: SchedulerEvent) => void;
   isForegroundBusy?: () => boolean;
+  /** Resource owner tracks actual work, not the timeout wrapper. */
+  trackTask?: (task: Promise<unknown>) => void;
   /** 测试注入点：替换单个 provider 的扫描实现（不是 mock 被测逻辑，是调度器的依赖注入）。 */
   scannerOverride?: Partial<Record<ProviderKey, ProviderScanner>>;
 }
@@ -100,8 +102,10 @@ export async function scanLocalSessions(
     providers.map(async (config) => {
       const scanner = deps.scannerOverride?.[config.key] ?? scanners[config.key];
       try {
+        const task = scanner.scanProvider(config, ctx);
+        deps.trackTask?.(task);
         return await withTimeout(
-          scanner.scanProvider(config, ctx),
+          task,
           timeoutMs,
           config.key,
         );
@@ -230,7 +234,7 @@ export function initialScanAndStore(
 
   if (deps.config.prewarmRecent > 0) {
     const recent = visibleEntries.slice(0, deps.config.prewarmRecent);
-    void backgroundPrewarm({
+    const task = backgroundPrewarm({
       sessions: recent,
       isForegroundBusy: deps.isForegroundBusy ?? (() => false),
       loadSession: async (entry) => {
@@ -240,6 +244,8 @@ export function initialScanAndStore(
         });
       },
     });
+    deps.trackTask?.(task);
+    void task.catch(() => console.error('Background prewarm failed'));
   }
   return { indexCount: visibleEntries.length };
 }

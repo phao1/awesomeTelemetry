@@ -1,3 +1,69 @@
+export type NativeIdentityKind = 'session' | 'turn' | 'message' | 'request' | 'response' | 'tool_call' | 'trace' | 'span' | 'parent_session' | 'parent_span';
+export interface NativeIdentity {
+  namespace: string;
+  kind: NativeIdentityKind;
+  value: string;
+  scope: string | null;
+  eventId: string | null;
+  sourcePath: string;
+}
+export interface IdentityCompleteness {
+  complete: boolean;
+  omittedCount: number;
+  reasons: string[];
+}
+export interface NativeIdentitySet {
+  parserVersion: number;
+  items: NativeIdentity[];
+  completeness: IdentityCompleteness;
+}
+export interface TraceSourceIdentity extends NativeIdentity {
+  id: string;
+  source: 'scan' | 'proxy';
+  sourceKey: string;
+}
+export interface TraceIdentityPage {
+  source: 'scan' | 'proxy';
+  sourceKey: string;
+  parserVersion: number | null;
+  items: TraceSourceIdentity[];
+  completeness: IdentityCompleteness;
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+export type TraceAssociationState = 'direct' | 'candidate' | 'confirmed' | 'rejected' | 'revoked';
+export interface TraceAssociation {
+  id: string;
+  sessionKey: string;
+  proxyId: number;
+  state: TraceAssociationState;
+  reason: string;
+  evidenceIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+export interface TraceAssociationDecision {
+  sequence: number;
+  associationId: string;
+  state: 'confirmed' | 'rejected' | 'revoked';
+  note: string | null;
+  decidedAt: string;
+}
+export interface SessionCaptureLinkPage {
+  sessionKey: string;
+  items: Array<{ association: TraceAssociation; request: ProxyRequestListItem }>;
+  confirmedCount: number;
+  candidateCount: number;
+  nextCursor: number | null;
+  hasMore: boolean;
+}
+export interface ProxyTraceLinkPage {
+  proxyId: number;
+  items: TraceAssociation[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 // 权威来源：openspec/contracts/data-model.md。逐字采用，不得发明字段、不得省略字段。
 
 // ── §1 枚举（全集，不得扩展） ──────────────────────────────
@@ -157,6 +223,12 @@ export interface TokenSemantics {
 export type CostSource = 'reported' | 'estimated' | 'unknown';
 
 /**
+ * 计价币种。定价表按币种原样录入、原样展示，**不做汇率换算** ——
+ * 换算需要一个没有出处又天天变的汇率，与 pricing.ts「没有出处的价格不要写」冲突。
+ */
+export type PriceCurrency = 'USD' | 'CNY';
+
+/**
  * 事件时长来源。add-mission-control §1 P0-A：
  * - measured：源数据自带真实起止（opencode OTel span / trae / workbuddy）
  * - derived：由相邻时间戳推导，**含调度间隙**，消费方必须在口径行标注
@@ -241,6 +313,12 @@ export interface TraceSession {
   primaryModel?: string | null;
   /** costUsd 的可信度，见 CostSource。 */
   costSource?: CostSource;
+  /**
+   * costUsd 的实际币种。字段名保留 `costUsd` 只是为了不动库列名，
+   * 国内网关（DeepSeek 等）录的是 CNY 价，展示时必须按这里的币种渲染符号，
+   * 否则 ¥1.36 会被显示成 $1.36。缺省 'USD'。
+   */
+  costCurrency?: PriceCurrency;
   /** 逐事件 durationMs 的来源，见 DurationSource。 */
   durationSource?: DurationSource;
 }
@@ -449,6 +527,7 @@ export interface TurnModel {
 export interface TraceRecord {
   session: TraceSession;
   events: TraceEvent[];
+  nativeIdentities?: NativeIdentitySet;
   metrics?: TraceMetrics;
   tokenSemantics: TokenSemantics;
   /**
@@ -503,7 +582,7 @@ export interface TraceMetrics extends TraceMetricsBase, TraceDimensionMetrics {
   /**
    * 持久化的速度指标（add-mission-control §4 B6，G11.11）：
    * 不持久化 → 跨会话聚合触发 N+1（G11.9）。改算法必须 bump
-   * METRICS_CALC_VERSION（当前 3）。
+   * METRICS_CALC_VERSION（当前 6）。
    */
   ttftMs?: number | null;
   e2eMs?: number;
@@ -531,17 +610,18 @@ export interface TraceMetrics extends TraceMetricsBase, TraceDimensionMetrics {
 
 /** 速度指标，运行时计算，不持久化。 */
 export interface SpeedMetrics {
-  /** 首 token 时延 (ms)。 */
+  /** Legacy scan: first user_prompt to first LLM log startedAt, not wire TTFT. */
   ttftMs: number | null;
-  /** 每秒 token 数。 */
+  /** Legacy scan: arithmetic mean of valid per-event output/duration rates. */
   tps: number | null;
-  /** 每输出 token 时延 (ms)。 */
+  /** Legacy scan: sum valid LLM durations / sum their output, not streaming TPOT. */
   tpotMs: number | null;
   /** 端到端 wall-clock (ms)。 */
   e2eMs: number;
   /** 相邻 turn 间隔中位数 (ms)。 */
   turnGapMedianMs: number | null;
   /**
+   * Legacy scan sum of normalized LLM durations; not guaranteed measured time.
    * ⚠️ 纯 LLM 推理时长必须取自 InferHub.inference_duration。
    * Kernel-Inference 的 duration 包含 Tool 执行时间（G4.1）。
    */
@@ -677,7 +757,8 @@ export type RequestContextFormat =
   | 'openai_responses'
   | 'unknown';
 
-export type ContextPairingConfidence = 'exact' | 'capture_group' | 'manual';
+/** exact/capture_group are retained for historical display compatibility, not emitted by new automatic selection. */
+export type ContextPairingConfidence = 'exact' | 'capture_group' | 'linked_session' | 'manual';
 export type ContextDiffCategory = 'system' | 'messages' | 'tools' | 'parameters';
 export type ContextChangeKind = 'added' | 'removed' | 'modified';
 export type ContextDiffSegmentKind = 'equal' | 'added' | 'removed';
@@ -840,6 +921,11 @@ export interface LocalSessionConfig {
 // ── §10 事件总线 ───────────────────────────────────────────
 
 export interface BusEvents {
+  proxy_stream_started: { requestId: string; hostname: string; startedAt: string };
+  proxy_stream_ended: { requestId: string };
+  /** Ephemeral opaque WS dirty hints; 1s/max64 IDs, selected feed only,
+   * no body, replay, completion or durable-written-prefix guarantee. */
+  proxy_sources_changed: { requestIds: string[] };
   /** 单条会话新建。低频，不合并。 */
   session_created: { key: string; provider: ProviderKey };
   /**
@@ -850,13 +936,37 @@ export interface BusEvents {
   session_deleted: { key: string };
   scan_started: { provider: ProviderKey | 'all' };
   scan_completed: { provider: ProviderKey | 'all'; count: number };
-  proxy_request: { id: number; hostname: string };
+  proxy_request: { id: number; hostname: string; item?: ProxyRequestListItem; requestCount?: number };
+  trace_links_changed: { sessionKeys: string[]; proxyIds: number[]; truncated: boolean };
   /** D4：proxy 启动/停止的异步状态通知（starting → running / idle）。 */
-  proxy_status: { running: boolean; starting: boolean; port?: number | null; error?: string | null };
+  proxy_status: { running: boolean; starting: boolean; port?: number | null; error?: string | null; diagnostics?: ProxyMonitorDiagnostics };
   /** 服务端已按 100ms 窗口拼接，前端无需再节流。 */
   proxy_stream_chunk: { requestId: string; chunk: string };
   frida_capture: { id: number; model?: string; sessionId?: string };
+  hook_events_changed: { latestId: number };
   frida_status: { running: boolean; pid?: number };
+  /**
+   * Team run changes (add-agent-team-observability D14). Coalesced in the
+   * existing 200ms window. `agentIds` / `taskIds` are capped (contract default
+   * 200 each); above the cap the coalescer retains `runIds`, sets `truncated`
+   * and the open run performs one snapshot refresh. No activity ids are
+   * broadcast; the ledger invalidates pages intersecting the changed run/time
+   * stamp. `stamp` is the run's new update stamp for patch/reconnect checks.
+   */
+  team_runs_changed: {
+    runIds: string[];
+    agentIds: string[];
+    taskIds: string[];
+    truncated: boolean;
+    stamp: string;
+  };
+}
+
+export interface SseConnected {
+  serverTime: string;
+  schemaVersion: number;
+  cursor: string;
+  resume: 'fresh' | 'replayed' | 'reset';
 }
 
 // ── §11 Mission Control（add-mission-control） ─────────────
@@ -1045,4 +1155,1150 @@ export interface MissionResponse {
   usage: MissionUsage;
   quality: MissionQuality;
   health: MissionHealth;
+}
+
+// ── §12 Team observability（add-agent-team-observability） ─────
+//
+// 本节枚举与记录类型来自 contracts/data-model.md §12，字段 null 性依据
+// openspec/research/agent-team-evidence.md 的脱敏字段映射矩阵冻结。
+// 所有 adapter、storage、API、前端组件类型必须逐字采用本节定义。
+
+// ── §12.1 闭合 team 枚举 ─────────────────────────────────────
+
+/** 拓扑分类（design D5，由 edges 推导，绝不按 provider 名假设）。 */
+export type TeamTopologyKind =
+  | 'two_level'
+  | 'three_level'
+  | 'deep_tree'
+  | 'peer_graph'
+  | 'hybrid'
+  | 'unknown';
+
+export const TEAM_TOPOLOGY_KINDS: readonly TeamTopologyKind[] = [
+  'two_level', 'three_level', 'deep_tree', 'peer_graph', 'hybrid', 'unknown',
+] as const;
+
+/**
+ * 证据可信度，按事实（fact）而非按 run 赋值（design D4）。
+ * - native：源记录显式陈述该事实
+ * - correlated：显式稳定 id 连接两条 native 记录
+ * - inferred：文档化启发式（如 legacy subagent-title 模式）
+ * - unavailable：无法获取该事实
+ */
+export type EvidenceConfidence = 'native' | 'correlated' | 'inferred' | 'unavailable';
+
+/** 证据维度（design D3；completeness 按此九维独立报告）。 */
+export type EvidenceDimension =
+  | 'topology'
+  | 'tasks'
+  | 'communication'
+  | 'timing'
+  | 'tools'
+  | 'outputs'
+  | 'tokens'
+  | 'cost'
+  | 'verification';
+
+/** 单个维度的完整性水平。 */
+export type CompletenessLevel = 'complete' | 'partial' | 'unavailable' | 'conflicted';
+
+/** team run 生命周期状态。provider 原生状态由 adapter 归一化。 */
+export type TeamRunStatus =
+  | 'planned'
+  | 'running'
+  | 'blocked'
+  | 'success'
+  | 'error'
+  | 'cancelled'
+  | 'unknown';
+
+/** agent 生命周期状态。 */
+export type TeamAgentState =
+  | 'created'
+  | 'ready'
+  | 'busy'
+  | 'blocked'
+  | 'idle'
+  | 'failed'
+  | 'replaced'
+  | 'cancelled'
+  | 'completed'
+  | 'unknown';
+
+/** task 状态。 */
+export type TeamTaskStatus =
+  | 'pending'
+  | 'ready'
+  | 'claimed'
+  | 'running'
+  | 'blocked'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'unknown';
+
+/**
+ * agent 关系边类型（design D5）。拓扑由 `created` / `supervises` 推导，
+ * `coordinates` / `reviews` / `replaces` / `peer` 是覆盖层，不静默改变父边。
+ */
+export type TeamAgentEdgeKind =
+  | 'created'
+  | 'supervises'
+  | 'coordinates'
+  | 'reviews'
+  | 'replaces'
+  | 'peer';
+
+/** 活动账本种类。封闭：provider 原生类型保留在 evidence 元数据，不扩展本 union。 */
+export type TeamActivityKind =
+  | 'agent_lifecycle'
+  | 'task_created'
+  | 'task_dependency'
+  | 'task_assignment'
+  | 'task_status'
+  | 'round'
+  | 'message_sent'
+  | 'message_received'
+  | 'tool_call'
+  | 'tool_result'
+  | 'artifact'
+  | 'verification'
+  | 'handoff'
+  | 'error'
+  | 'recovery'
+  | 'integration'
+  | 'unknown';
+
+/**
+ * 消息投递模式（design D7）。`leader_mediated` 要求观测到两跳，
+ * 绝不从「leader 在场」推断。
+ */
+export type TeamMessageMode = 'direct' | 'leader_mediated' | 'broadcast' | 'unknown';
+
+/** 消息类别。 */
+export type TeamMessageCategory =
+  | 'assignment'
+  | 'coordination'
+  | 'question'
+  | 'answer'
+  | 'handoff'
+  | 'status'
+  | 'blocker'
+  | 'review'
+  | 'correction'
+  | 'result'
+  | 'system'
+  | 'unknown';
+
+/** 比较基准匹配结果（design D10）。unmatched/unknown 仍是成功响应，不是错误。 */
+export type ComparisonMatch = 'matched' | 'partially_matched' | 'unmatched' | 'unknown';
+
+/** 活动账本排序置信度（design D8）：跨源无共享序列时 `ambiguous`。 */
+export type TeamOrderConfidence = 'native' | 'ambiguous';
+
+/** round 边界来源（design D8 四级优先级）。 */
+export type TeamRoundSegmentationSource =
+  | 'native_round'
+  | 'session_turn'
+  | 'turn_model'
+  | 'unavailable';
+
+/** 比较的五维（design D9）。 */
+export type TeamMetricDimension = 'speed' | 'accuracy' | 'stability' | 'cost' | 'collaboration';
+
+/** 指标方向性（metrics-analysis REQ-018）。 */
+export type TeamMetricDirection = 'higher_better' | 'lower_better' | 'descriptive';
+
+// ── §12.2 证据引用与完整性 ───────────────────────────────────
+
+/**
+ * 证据引用。标识一条规范化事实的出处与可信度；**绝不内嵌源正文**
+ * （design D4 / trace-model delta）。`sourceKind` 当前取值集合为
+ * `agent-team-directory`（CodeArts）与 `codex-jsonl`（Codex），随新 dialect 扩展。
+ */
+export interface EvidenceRef {
+  id: string;
+  sourceKind: string;
+  /** 脱敏/不透明的源定位器；真实本地路径留在服务端。 */
+  sourceLocator: string;
+  nativeId: string | null;
+  nativeSequence: number | null;
+  capturedAt: string;
+  confidence: EvidenceConfidence;
+  parserVersion: string;
+}
+
+/** 运行级计数。仅当对应维度 completeness 为 `complete` 时值才是可断言的真实值。 */
+export interface TeamRunCounts {
+  agents: number;
+  tasks: number;
+  communications: number;
+  activities: number;
+  rounds: number;
+  artifacts: number;
+}
+
+/** 单个维度的完整性快照（九维）。 */
+export type TeamCompleteness = Record<EvidenceDimension, CompletenessLevel>;
+
+/** DAG/拓扑校验发现的异常，只报告不修复（design D6 / D5）。 */
+export interface TeamAnomaly {
+  kind: string;
+  dimension: EvidenceDimension;
+  severity: 'info' | 'warning';
+  message: string;
+  entityIds: string[];
+  evidenceIds: string[];
+}
+
+// ── §12.3 核心 team 记录 ─────────────────────────────────────
+
+/**
+ * team run 列表条目（slim）。绝不含 task/message/tool/reasoning/artifact 正文。
+ * `goalFingerprint` 是脱敏归一化指纹，全文只进 detail（design D18）。
+ */
+export interface TeamRunSummary {
+  id: string;
+  provider: ProviderKey;
+  /** provider run 身份：CodeArts = leader sessionID；Codex = 根线程 id。 */
+  nativeRunId: string;
+  /**
+   * run 身份的置信度：CodeArts `native`（目录名/contact/session 三源一致），
+   * Codex `correlated`（根线程 id 本身 native，但「当作 team run 锚点」是推导）。
+   */
+  runIdentityConfidence: EvidenceConfidence;
+  title: string;
+  goalFingerprint: string | null;
+  status: TeamRunStatus;
+  startedAt: string | null;
+  endedAt: string | null;
+  topologyKind: TeamTopologyKind;
+  counts: TeamRunCounts;
+  /** token 维度是否可观测（evidence 实测两 provider 均 native）。 */
+  tokenAvailable: boolean;
+  /** cost 维度是否可观测：CodeArts native(USD)，Codex unavailable。 */
+  costAvailable: boolean;
+  costCurrency: PriceCurrency | null;
+  completeness: TeamCompleteness;
+  updatedAt: string;
+  /** 变更戳 = 受影响的派生投影最大更新时间，供 patch/reconnect 比较。 */
+  stamp: string;
+}
+
+/**
+ * 打开一个 team run 返回的有界快照。summary + 图元数据 + 完整性 + 异常 + 指标；
+ * **绝不**包含 activity、message、tool、raw、reasoning、artifact 正文（design D13）。
+ */
+export interface TeamRunSnapshot {
+  summary: TeamRunSummary;
+  agents: TeamAgent[];
+  agentEdges: TeamAgentEdge[];
+  tasks: TeamTask[];
+  taskDependencies: TeamTaskDependency[];
+  /** 当前 active 指派（unassignedAt === null 的投影）。 */
+  assignments: TeamAssignment[];
+  artifacts: TeamArtifact[];
+  completeness: TeamCompleteness;
+  anomalies: TeamAnomaly[];
+  metrics: TeamMetrics;
+}
+
+/**
+ * 参与者。`role` 保留 provider 原生标签（team-leader/team-mate/agent_nickname…）；
+ * `roleClass` 是规范化类别（`leader` | `teammate` | `subagent` | `unknown`），
+ * Codex 的 root→leader、depth-1 subagent→subagent（design D16，level 标签非硬编码）。
+ */
+export interface TeamAgent {
+  id: string;
+  runId: string;
+  nativeId: string;
+  displayName: string;
+  role: string;
+  roleClass: string;
+  model: string | null;
+  state: TeamAgentState;
+  createdAt: string | null;
+  endedAt: string | null;
+  /** 关联 session 的 keys（可空数组；仅存显式关联，见 design D15 session jump）。 */
+  sessionKeys: string[];
+  evidenceIds: string[];
+}
+
+/** agent 关系边（versioned；`validTo` null = 仍 active）。 */
+export interface TeamAgentEdge {
+  id: string;
+  runId: string;
+  fromAgentId: string;
+  toAgentId: string;
+  kind: TeamAgentEdgeKind;
+  validFrom: string | null;
+  validTo: string | null;
+  confidence: EvidenceConfidence;
+  evidenceIds: string[];
+}
+
+/**
+ * task（slim 身份/状态/时间/body 标志）。无 description/result 正文
+ * （design D11 body policy）。
+ */
+export interface TeamTask {
+  id: string;
+  runId: string;
+  nativeId: string;
+  title: string;
+  descriptionAvailable: boolean;
+  priority: number | null;
+  status: TeamTaskStatus;
+  createdAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  failedAt: string | null;
+  resultAvailable: boolean;
+  evidenceIds: string[];
+}
+
+/** task 依赖边（versioned DAG edge）。 */
+export interface TeamTaskDependency {
+  id: string;
+  runId: string;
+  upstreamTaskId: string;
+  downstreamTaskId: string;
+  validFrom: string | null;
+  validTo: string | null;
+  confidence: EvidenceConfidence;
+  evidenceIds: string[];
+}
+
+/**
+ * task 指派历史（多对多随时间，design D6）。`assignmentKind` 取值集合
+ * `claimed` | `assigned` | `reassigned` | `review`；`unassignedAt` null = active。
+ */
+export interface TeamAssignment {
+  id: string;
+  runId: string;
+  taskId: string;
+  agentId: string;
+  assignedAt: string | null;
+  unassignedAt: string | null;
+  assignmentKind: string;
+  evidenceIds: string[];
+}
+
+/**
+ * 逻辑通信记录（slim，无消息正文，design D7）。广播 = 一条逻辑消息 + 多个
+ * recipient，不复制 N 份正文。body 尺寸/hash 用于重复检测而不外发内容。
+ */
+export interface TeamCommunication {
+  id: string;
+  runId: string;
+  senderAgentId: string;
+  recipientAgentIds: string[];
+  mode: TeamMessageMode;
+  category: TeamMessageCategory;
+  taskId: string | null;
+  correlationId: string | null;
+  replyToId: string | null;
+  sentAt: string | null;
+  receivedAt: string | null;
+  bodyAvailable: boolean;
+  bodyChars: number | null;
+  bodyBytes: number | null;
+  contentHash: string | null;
+  evidenceIds: string[];
+}
+
+/**
+ * 统一执行账本的 slim 行。**绝不含** raw / message / tool 参数与结果 /
+ * reasoning / artifact 正文（design D3）。`status` 复用 `TraceStatus`
+ * （活动自身的执行结果）；agent 的当前状态见 `TeamAgent.state`。
+ */
+export interface TeamActivitySlim {
+  id: string;
+  runId: string;
+  agentId: string | null;
+  taskId: string | null;
+  roundId: string | null;
+  kind: TeamActivityKind;
+  status: TraceStatus;
+  startedAt: string | null;
+  endedAt: string | null;
+  nativeSequence: number | null;
+  /** 显式 session/event/turn 链接（design D15「链接而不复制/重编号」）。 */
+  sessionKey: string | null;
+  eventId: string | null;
+  turnKey: string | null;
+  /** 关联 message/artifact 实体 id（message_sent/received → communication；artifact → artifact）。 */
+  messageId: string | null;
+  artifactId: string | null;
+  tokenUsage: TokenUsage | null;
+  costUsd: number | null;
+  costSource: CostSource | null;
+  costCurrency: PriceCurrency | null;
+  hasInput: boolean;
+  hasOutput: boolean;
+  hasRaw: boolean;
+  evidenceIds: string[];
+  orderConfidence: TeamOrderConfidence;
+}
+
+/**
+ * per-agent round。`aggregates` 里 tokens/cost 可用性独立，unavailable 为 null
+ * 而非 0（design D8 / capability spec）。round 边界优先级见
+ * `TeamRoundSegmentationSource`。
+ */
+export interface TeamRoundAggregates {
+  wallClockMs: number | null;
+  activeMs: number | null;
+  tokenUsage: TokenUsage | null;
+  costUsd: number | null;
+  toolCallCount: number;
+  messageCount: number;
+}
+
+export interface TeamRound {
+  id: string;
+  runId: string;
+  agentId: string;
+  nativeId: string | null;
+  index: number;
+  segmentationSource: TeamRoundSegmentationSource;
+  startedAt: string | null;
+  endedAt: string | null;
+  status: TraceStatus;
+  taskIds: string[];
+  outputArtifactIds: string[];
+  aggregates: TeamRoundAggregates;
+  completeness: CompletenessLevel;
+}
+
+/**
+ * artifact 元数据（无内容正文，design D11/D18）。`kind` 取值集合
+ * `file` | `patch` | `report`；content 只进单条 detail。
+ */
+export interface TeamArtifact {
+  id: string;
+  runId: string;
+  nativeId: string | null;
+  name: string;
+  kind: string;
+  pathRedacted: string | null;
+  contentHash: string | null;
+  producerAgentIds: string[];
+  taskIds: string[];
+  createdAt: string | null;
+  acceptedAt: string | null;
+  hasContent: boolean;
+  evidenceIds: string[];
+}
+
+// ── §12.4 team 指标与比较 ────────────────────────────────────
+
+/**
+ * 单个指标的统一信封（design D9）。每个指标携带可用性、完整性、口径行与
+ * 支撑证据；`value` null = unavailable（禁止 0 冒充）。比例类指标携带
+ * numerator/denominator。
+ */
+export interface TeamMetricValue {
+  value: number | null;
+  available: boolean;
+  complete: boolean;
+  criteria: string;
+  evidenceIds: string[];
+  numerator: number | null;
+  denominator: number | null;
+}
+
+export interface TeamSchedulingMetrics {
+  wallClockMs: TeamMetricValue;
+  agentActiveMs: TeamMetricValue;
+  totalWorkMs: TeamMetricValue;
+  observedWaitMs: TeamMetricValue;
+  maxConcurrency: TeamMetricValue;
+  avgConcurrency: TeamMetricValue;
+  serialWorkEstimateMs: TeamMetricValue;
+  observedSpeedup: TeamMetricValue;
+  peakCapacityUtilization: TeamMetricValue;
+  criticalPathMs: TeamMetricValue;
+  delegationDelayMs: TeamMetricValue;
+  handoffLatencyMs: TeamMetricValue;
+}
+
+export interface TeamQualityMetrics {
+  taskCompletion: TeamMetricValue;
+  verificationCoverage: TeamMetricValue;
+  acceptanceCoverage: TeamMetricValue;
+  reviewRework: TeamMetricValue;
+  acceptedArtifactRate: TeamMetricValue;
+}
+
+export interface TeamStabilityMetrics {
+  failures: TeamMetricValue;
+  retries: TeamMetricValue;
+  replacements: TeamMetricValue;
+  recoveryLatencyMs: TeamMetricValue;
+  blockedOrphanTimeMs: TeamMetricValue;
+  unresolvedErrors: TeamMetricValue;
+  dagAnomalies: TeamMetricValue;
+  incompleteTerminalStates: TeamMetricValue;
+}
+
+export interface TeamCostMetrics {
+  totalInputTokens: TeamMetricValue;
+  totalOutputTokens: TeamMetricValue;
+  totalReasoningTokens: TeamMetricValue;
+  totalCacheReadTokens: TeamMetricValue;
+  totalCacheWriteTokens: TeamMetricValue;
+  totalCostUsd: TeamMetricValue;
+  /** cost 不可观测（Codex）时为 null；禁止显示 $0.0000（evidence §9.3）。 */
+  costCurrency: PriceCurrency | null;
+  coordinationTokens: TeamMetricValue;
+  costGini: TeamMetricValue;
+}
+
+export interface TeamCollaborationMetrics {
+  directRatio: TeamMetricValue;
+  leaderMediatedRatio: TeamMetricValue;
+  responseLatencyMedianMs: TeamMetricValue;
+  responseLatencyP95Ms: TeamMetricValue;
+  taskBalanceGini: TeamMetricValue;
+  leaderWorkConcentration: TeamMetricValue;
+  criticalAgentConcentration: TeamMetricValue;
+  crossAgentReview: TeamMetricValue;
+  duplicateWorkSignal: TeamMetricValue;
+}
+
+/**
+ * 按计算版本持久化的 run 级指标（design D9）。算法/证据语义变更必须 bump
+ * `calcVersion`（metrics-analysis REQ-019）。
+ */
+export interface TeamMetrics {
+  calcVersion: number;
+  generatedAt: string;
+  scheduling: TeamSchedulingMetrics;
+  quality: TeamQualityMetrics;
+  stability: TeamStabilityMetrics;
+  cost: TeamCostMetrics;
+  collaboration: TeamCollaborationMetrics;
+}
+
+/** 比较基准（design D10）。`userDeclared` 不抹除检测到的差异。 */
+export interface TeamComparisonBasis {
+  match: ComparisonMatch;
+  goalMatch: boolean | null;
+  criteriaMatch: boolean | null;
+  projectMatch: boolean | null;
+  revisionMatch: boolean | null;
+  environmentMatch: boolean | null;
+  modelMatch: boolean | null;
+  templateMatch: boolean | null;
+  completenessDelta: boolean | null;
+  userDeclared: boolean;
+  reasons: string[];
+}
+
+/** 单条比较指标行：raw 左右值 + delta（右减左）+ 相对 delta + 方向 + 口径。 */
+export interface TeamComparisonMetricRow {
+  metricId: string;
+  dimension: TeamMetricDimension;
+  criteria: string;
+  direction: TeamMetricDirection;
+  left: TeamMetricValue;
+  right: TeamMetricValue;
+  /** right − left。 */
+  delta: number | null;
+  /** 仅 left 为有限非零时计算，否则 null（禁止 infinity / 0 冒充）。 */
+  relativeDelta: number | null;
+  material: boolean;
+  completeness: CompletenessLevel;
+  evidenceIds: string[];
+}
+
+export interface TeamComparisonDimension {
+  dimension: TeamMetricDimension;
+  rows: TeamComparisonMetricRow[];
+}
+
+/**
+ * 两 run 比较响应（design D10）。strengths/weaknesses/tradeoffs 由确定性规则
+ * 从 material、complete、方向感知的 delta 选出，无 LLM、无 winner、无总评分。
+ */
+export interface TeamComparison {
+  leftRunId: string;
+  rightRunId: string;
+  basis: TeamComparisonBasis;
+  dimensions: TeamComparisonDimension[];
+  strengths: string[];
+  weaknesses: string[];
+  tradeoffs: string[];
+  caveats: string[];
+  generatedAt: string;
+}
+
+// fuse-agent-monitoring: original byte storage, independent of analysis limits.
+export interface ProxyProtocolItem {
+  phase: 'request' | 'response';
+  kind: 'text' | 'reasoning' | 'tool_call' | 'tool_result';
+  id: string | null;
+  callId: string | null;
+  name: string | null;
+  index: number | null;
+  choiceIndex: number | null;
+  content: string;
+  toolResultIsError: boolean | null;
+  complete: boolean;
+  sourcePath: string;
+}
+
+export interface ProxyToolDeclaration {
+  name: string | null;
+  type: string;
+  definition: string;
+  sourcePath: string;
+}
+
+export interface ProxyNativeUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  reasoningTokens: number | null;
+  nativeTotalTokens: number | null;
+  totalTokens: number | null;
+  accounting: 'openai_subsets' | 'anthropic_additive_input' | 'unknown';
+  snapshots: Array<{ eventIndex: number | null; value: string }>;
+}
+
+export interface CaptureReparseSnapshot {
+  parserVersion: number;
+  metricVersion: number;
+  sourceFingerprint: string;
+  parsedAt: string;
+  requestFormat: RequestContextFormat;
+  state: ProxyProtocolAnalysis['state'];
+  usage: Omit<ProxyNativeUsage, 'snapshots'>;
+  completeness: ProxyProtocolAnalysis['completeness'];
+}
+export interface CaptureReparseStatus {
+  proxyId: number;
+  requestId: string;
+  currentParserVersion: number;
+  currentMetricVersion: number;
+  state: 'not_parsed' | 'current' | 'stale' | 'unavailable';
+  unavailableReason: 'originals_deleted' | 'originals_missing' | 'originals_incomplete' | 'originals_invalid' | null;
+  snapshot: CaptureReparseSnapshot | null;
+}
+export interface CaptureReparseResponse {
+  status: CaptureReparseStatus;
+  analysis: ProxyProtocolAnalysis;
+}
+
+export interface ProxyProtocolAnalysis {
+  parserVersion: number;
+  requestFormat: RequestContextFormat;
+  model: string | null;
+  responseId: string | null;
+  state: 'completed' | 'incomplete' | 'failed' | 'unknown';
+  stopReason: string | null;
+  system: string | null;
+  declarations: ProxyToolDeclaration[];
+  items: ProxyProtocolItem[];
+  usage: ProxyNativeUsage;
+  errors: Array<{ code: string | null; message: string; sourcePath: string }>;
+  unknownEvents: number;
+  completeness: { complete: boolean; omittedCount: number; reasons: string[] };
+}
+
+/** Internal durable FILE-cleanup status, not a completed request-erasure claim. */
+export interface OriginalDeletionJob {
+  id: string;
+  proxyId: number;
+  requestId: string;
+  state: 'pending' | 'failed' | 'complete';
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export type CaptureBodyStatus =
+  | 'complete'
+  | 'body_limit'
+  | 'quota_exceeded'
+  | 'queue_full'
+  | 'write_error'
+  | 'interrupted';
+
+export interface CaptureBodyRef {
+  id: string;
+  bytes: number;
+  sha256: string;
+  status: CaptureBodyStatus;
+  error: string | null;
+}
+
+export interface ProxyCaptureActivity {
+  listening: boolean;
+  observedRequests: number;
+  activeRequests: number;
+  pendingWrites: number;
+  persistedRequests: number;
+  interruptedRequests: number;
+  captureErrors: number;
+  lastRequestAt: string | null;
+  lastError: string | null;
+}
+
+export interface ProxyMonitorDiagnostics extends ProxyCaptureActivity {
+  phase: 'idle' | 'starting' | 'waiting_for_traffic' | 'capturing' | 'stopping' | 'failed' | 'degraded';
+  runId: string | null;
+  cleanupPending: boolean;
+  /** Process-wide current allocations and lifetime counters; absent in legacy snapshots. */
+  resources?: CaptureResourceStatus;
+}
+
+export interface CaptureResourceStatus {
+  previewBytes: number;
+  previewLimitBytes: number;
+  previewCollectors: number;
+  previewCollectorLimit: number;
+  queuedBytes: number;
+  queuedByteLimit: number;
+  queuedJobs: number;
+  queuedJobLimit: number;
+  workers: number;
+  workerLimit: number;
+  previewLimitedRequests: number;
+  processingRejectedRequests: number;
+  sseClients: number;
+  slowSseDisconnects: number;
+}
+
+export interface ProxyRuntimeStatus {
+  running: boolean;
+  starting: boolean;
+  port: number | null;
+  requestCount: number;
+  startedAt: string | null;
+  diagnostics?: ProxyMonitorDiagnostics;
+}
+
+export type MonitorAgent = 'claude' | 'codex' | 'opencode';
+
+export type MonitorTransportCapability = 'http1_json_sse' | 'https_connect' | 'compressed_semantics' | 'live_identity_sse'
+  | 'agent_websocket' | 'http2_grpc' | 'mtls_pinning' | 'electron_cdp' | 'trae_cn_frida';
+export interface MonitorCapabilityReport {
+  manifestVersion: 1;
+  generatedAt: string;
+  platform: string;
+  scope: 'terminal_child_and_descendants';
+  listener: 'shared_not_process_filtered';
+  agents: Array<{
+    provider: ProviderKey;
+    processRecipe: MonitorAgent | null;
+    nativeScanner: 'implemented';
+    installedVersion: null;
+    runtimeVerification: 'unverified';
+  }>;
+  transports: Array<{
+    id: MonitorTransportCapability;
+    level: 'controlled_test' | 'unsupported' | 'unverified' | 'dev_only' | 'experimental';
+    testedPlatforms: string[];
+  }>;
+}
+
+export interface MonitorConnectionSettings {
+  label: string;
+  agent: MonitorAgent;
+  projectDirectory: string;
+  executable: string | null;
+  proxyPort: number;
+  noProxy: string | null;
+}
+
+export interface MonitorConnectionProfile extends MonitorConnectionSettings {
+  id: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MonitorConnectionPlan {
+  profile: MonitorConnectionProfile;
+  controlUrl: string;
+  proxyUrl: string;
+  caCertUrl: string;
+  caSha256: string;
+  commands: { posix: string; powershell: string };
+  warnings: Array<'process_and_descendants' | 'existing_process_unchanged' | 'shared_listener' | 'no_proxy_bypass' | 'opencode_loopback_bypass' | 'codex_standalone_required' | 'transport_unverified' | 'stop_affects_connected_processes'>;
+  status: ProxyRuntimeStatus;
+}
+
+export type MonitorDiagnosticCode =
+  | 'listener_idle' | 'listener_starting' | 'port_conflict' | 'cleanup_pending'
+  | 'listener_failed' | 'ca_missing' | 'ca_invalid' | 'trust_unverified'
+  | 'traffic_waiting' | 'traffic_unavailable' | 'capture_errors'
+  | 'bypass_review' | 'transport_unverified' | 'shared_traffic';
+
+export interface MonitorConnectionDiagnostics {
+  profileId: string;
+  profileRevision: number;
+  checkedAt: string;
+  expectedPort: number;
+  listener: 'idle' | 'starting' | 'listening' | 'stopping' | 'failed' | 'port_conflict';
+  ca: { state: 'missing' | 'available' | 'invalid'; sha256: string | null; validUntil: string | null };
+  trust: { scope: 'selected_child_runtime'; variable: 'NODE_EXTRA_CA_CERTS' | 'CODEX_CA_CERTIFICATE'; runtimeVerified: false; osTrust: 'not_checked' };
+  traffic: { scope: 'shared_listener'; state: 'unavailable' | 'waiting' | 'observed' };
+  status: ProxyRuntimeStatus;
+  issues: Array<{ code: MonitorDiagnosticCode; severity: 'info' | 'warning' | 'error'; message: string; nextStep: string }>;
+}
+
+export interface MonitorCaptureSelfTest {
+  profileId: string;
+  profileRevision: number;
+  checkedAt: string;
+  runId: string;
+  proxyId: number;
+  scope: 'local_http_sse';
+  synthetic: true;
+  checks: { forwarding: boolean; persistence: boolean; originals: boolean; parsing: boolean };
+  passed: boolean;
+  agentVerified: false;
+  tlsVerified: false;
+}
+
+export interface CaptureStorageConfig {
+  quotaBytes: number;
+  maxBodyBytes: number;
+  maxPendingBytes: number;
+}
+
+export interface CaptureStorageStatus extends CaptureStorageConfig {
+  usedBytes: number;
+  pendingBytes: number;
+  activeBodies: number;
+  exhausted: boolean;
+}
+
+/** Read-only actual file sizes, not available filesystem capacity or freed space. */
+export interface CaptureMetadataCapacity {
+  databaseBytes: number | null;
+  walBytes: number | null;
+  combinedLimitBytes: number;
+  walLimitBytes: number;
+  combinedAdmissionBytes: number;
+  walAdmissionBytes: number;
+  state: 'ready' | 'limited' | 'unavailable';
+  reason: 'database_limit' | 'wal_limit' | 'stat_error' | null;
+  checkedAt: string;
+}
+export interface ProxyCaptureBodies {
+  request: CaptureBodyRef | null;
+  response: CaptureBodyRef | null;
+  requestPreviewTruncated: boolean;
+  responsePreviewTruncated: boolean;
+  responseHeaders: Record<string, string | string[]>;
+  /** Absent only for legacy/manual fixtures; current MITM records always supply it. */
+  processing?: CaptureProcessingResult;
+  /** Absent for legacy/manual records, not inferred as successful. */
+  transport?: CaptureTransportResult;
+}
+
+export interface CaptureTransportResult {
+  version: 1;
+  state: 'completed' | 'http_error' | 'network_error' | 'timeout' | 'cancelled' | 'interrupted';
+  error: string | null;
+  requestEnded: boolean;
+  responseEnded: boolean;
+  /** Actual upstream status; null before any upstream headers, never a synthetic local status. */
+  statusCode: number | null;
+  timing?: CaptureNetworkTiming;
+  /** Connection observation, NOT one model call or wire-frame archive. */
+  websocket?: CaptureWebSocketConnection;
+}
+
+export interface CaptureWebSocketConnection {
+  version: 1;
+  scope: 'connection';
+  archive: 'awsp1';
+  requestMessages: number;
+  responseMessages: number;
+  /** Observed socket close codes; null when not observed before settlement. */
+  clientCloseCode: number | null;
+  upstreamCloseCode: number | null;
+}
+
+export interface CaptureNetworkTiming {
+  version: 1;
+  clock: 'proxy_monotonic';
+  responseHeadersMs: number | null;
+  firstBodyByteMs: number | null;
+  firstContentMs: number | null;
+  firstContentKind: 'text' | 'reasoning' | 'tool_arguments' | null;
+  firstContentBasis: 'sse_event_dispatch' | 'json_document_complete' | null;
+  completedMs: number | null;
+  contentTimingStatus: 'observed' | 'no_content' | 'not_collected' | 'unsupported_encoding' | 'preview_limit' | 'decode_error';
+  serverTiming: string | null;
+  serverTimingTruncated: boolean;
+}
+
+export interface LinkedExecutionIdentityMatch {
+  eventId: string;
+  scanIdentityId: string;
+  proxyIdentityId: string;
+  namespace: string;
+  kind: NativeIdentityKind;
+  value: string;
+  scope: string;
+}
+export interface LinkedExecutionPage {
+  sessionKey: string;
+  /** Retained session declaration only; NOT measured provenance per event. */
+  sessionDurationSource: DurationSource;
+  events: TraceEventSlim[];
+  eventOffset: number;
+  eventLimit: number;
+  eventTotal: number;
+  eventsHasMore: boolean;
+  attempts: Array<{
+    association: TraceAssociation;
+    request: ProxyRequestListItem;
+    /** Existing bounded network metadata, null for legacy missing evidence. */
+    transport: CaptureTransportResult | null;
+    matches: LinkedExecutionIdentityMatch[];
+  }>;
+  nextCaptureCursor: number | null;
+  capturesHasMore: boolean;
+  identities: TraceSourceIdentity[];
+  identityCompleteness: IdentityCompleteness;
+}
+
+export interface CaptureComparisonAnalysis extends Pick<ProxyProtocolAnalysis,
+  'parserVersion' | 'requestFormat' | 'model' | 'state' | 'stopReason' | 'usage' | 'completeness'> {
+  errorCount: number;
+  errorCodes: Array<string | null>;
+  errorCodesTruncated: boolean;
+}
+export interface CaptureComparisonSide {
+  request: ProxyRequestListItem;
+  evidence: Omit<ProxyCaptureBodies, 'responseHeaders'>;
+  originalDeletion: OriginalDeletionJob | null;
+  analysis: CaptureComparisonAnalysis | null;
+  analysisUnavailableReason: 'original_deleted' | 'analysis_unavailable' | 'metadata_only' | null;
+}
+export interface CaptureComparisonResponse {
+  base: CaptureComparisonSide;
+  target: CaptureComparisonSide;
+  generatedAt: string;
+}
+export interface NativeSessionFamilyPage {
+  session: NativeSessionParentPage['items'][number]['matches'][number];
+  parents: NativeSessionParentPage;
+  children: Array<{
+    session: NativeSessionParentPage['items'][number]['matches'][number];
+    identity: TraceSourceIdentity;
+    state: NativeSessionParentPage['items'][number]['state'];
+  }>;
+  nextCursor: string | null;
+  hasMore: boolean;
+  completeness: IdentityCompleteness;
+}
+
+export interface NativeSessionParentPage {
+  sessionKey: string;
+  items: Array<{
+    identity: TraceSourceIdentity;
+    state: 'resolved' | 'unresolved' | 'ambiguous' | 'incomplete';
+    matches: Array<Pick<SessionIndexEntry, 'id' | 'provider' | 'sourceAgent' | 'title' | 'startedAt'>>;
+    matchesTruncated: boolean;
+  }>;
+  nextCursor: string | null;
+  hasMore: boolean;
+  completeness: IdentityCompleteness;
+}
+
+export interface CaptureEvidenceExport {
+  format: 'awesome-telemetry.capture-evidence';
+  formatVersion: 1;
+  exportedAt: string;
+  schemaVersion: number;
+  request: Omit<ProxyRequest, 'requestBody' | 'responseBody' | 'rawRequestBody' | 'rawResponseBody' | 'systemPrompt'>;
+  capture: ProxyCaptureBodies;
+  originalDeletion: OriginalDeletionJob | null;
+  analysis: ProxyProtocolAnalysis | null;
+  analysisUnavailableReason: 'original_deleted' | 'analysis_unavailable' | 'metadata_only' | null;
+  identities: TraceIdentityPage;
+  traceLinks: ProxyTraceLinkPage;
+  limitations: string[];
+}
+
+/** Internal durable journal only. Never returned on list/SSE/API or exported as a body. */
+export interface CaptureJournalEntry {
+  version: 1;
+  ownerId: string;
+  captureId: string;
+  requestId: string;
+  method: string;
+  url: string;
+  hostname: string;
+  requestHeaders: Record<string, string | string[]>;
+  startedAt: string;
+  captureGroupId: string | null;
+  requestBodyId: string;
+  responseBodyId: string;
+  requestEnded: boolean;
+  responseEnded: boolean;
+  responseStatus: number | null;
+  responseHeaders: Record<string, string | string[]>;
+  completedAt: string | null;
+  durationMs: number | null;
+  transport: CaptureTransportResult | null;
+  requestRef: CaptureBodyRef | null;
+  responseRef: CaptureBodyRef | null;
+}
+
+export interface CaptureProcessingResult {
+  version: 1;
+  status: 'ok' | 'preview_truncated' | 'queue_full' | 'worker_error' | 'timeout' | 'closed' | 'result_limit' | 'decode_error' | 'resource_limit';
+  error: string | null;
+  /** Absent in legacy results; current byte-worker records identify view decoding. */
+  contentDecoding?: { request: CaptureContentEncoding; response: CaptureContentEncoding };
+  /** Present for current MITM captures; semantic preview bytes discarded, not original bytes lost. */
+  previewDroppedBytes?: { request: number; response: number };
+}
+
+export type CaptureContentEncoding = 'identity' | 'gzip' | 'br' | 'deflate' | 'unsupported';
+// contracts/data-model.md — independent offline TraceLog evidence (schema19).
+export interface TraceLogSession {
+  id: string;
+  fileName: string;
+  sourceMember: string | null;
+  importedAt: string;
+  source: CaptureBodyRef;
+  nativeSessionId: string | null;
+  ideType: string | null;
+  model: string | null;
+  title: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  turnCount: number;
+}
+export interface TraceLogTurn {
+  sequence: number;
+  turnId: string | null;
+  turnNumber: number | null;
+  model: string | null;
+  requestTime: string | null;
+  responseTime: string | null;
+  isError: boolean | null;
+  reported: Record<string, number | null>;
+  hasOutput: boolean;
+}
+export interface TraceLogPage<T> { items: T[]; offset: number; limit: number; hasMore: boolean }
+export interface TraceLogImportResult {
+  items: { state: 'imported' | 'duplicate'; session: TraceLogSession }[];
+  ignoredEntries: number;
+}
+export interface TraceLogTurnDetail {
+  sessionId: string;
+  sequence: number;
+  session: Record<string, unknown>;
+  raw: Record<string, unknown>;
+}
+export interface CodexCallSummary {
+  sequence: number;
+  streamId: string | null;
+  responseId: string | null;
+  previousResponseId: string | null;
+  predecessorSequence: number | null;
+  model: string | null;
+  warmup: boolean;
+  nativeSessionId: string | null;
+  nativeTurnId: string | null;
+  startedAt: string;
+  startedMs: number;
+  firstContentMs: number | null;
+  durationMs: number | null;
+  state: 'completed' | 'incomplete' | 'failed' | 'pending';
+  usage: Omit<ProxyNativeUsage, 'snapshots'>;
+  proposedToolIds: string[];
+  returnedToolIds: string[];
+  reasons: string[];
+}
+export interface CodexCallPage {
+  requestId: string;
+  active: boolean;
+  fingerprint: string;
+  items: CodexCallSummary[];
+  offset: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  complete: boolean;
+  reasons: string[];
+  unassignedEvents: number;
+}
+export interface CodexNativeLink {
+  state: 'linked' | 'missing' | 'ambiguous' | 'incomplete' | 'blocked';
+  sessionKey: string | null;
+  matches: Array<{ eventId: string; kind: 'response' | 'tool_call' | 'turn'; value: string; sourcePath: string }>;
+}
+export interface CodexCallDetail {
+  contextDiff: CodexContextDiff | null;
+  contextDiffUnavailableReason: 'no_predecessor' | 'base_outside_projection' | 'normalization_failed' | null;
+  requestId: string;
+  active: boolean;
+  fingerprint: string;
+  call: CodexCallSummary;
+  analysis: ProxyProtocolAnalysis;
+  native: CodexNativeLink;
+  toolReferences: Array<{ callId: string; proposalSequence: number | null }>;
+  requestPreview: string;
+  requestPreviewTruncated: boolean;
+}
+export interface CodexContextDiff {
+  baseSequence: number;
+  categories: ContextCategoryDiff[];
+  growth: ContextGrowth;
+  indicators: ContextIndicator[];
+  completeness: ContextCompleteness;
+  noChange: boolean;
+}
+
+/** Client-only grouping of retained tool observations on ONE execution page.
+ * key is a UI selection key, never a native execution ID or persisted identity.
+ * No count, order or input/output flag establishes execution/causal success. */
+export interface ToolInspectionGroup {
+  key: string;
+  reason: 'native_id' | 'missing_identity' | 'incomplete' | 'ambiguous_identity';
+  identities: TraceSourceIdentity[];
+  events: TraceEventSlim[];
+}
+
+/** Development CDP acquisition, not original wire evidence or Agent execution. */
+export interface CdpDevStatus {
+  state: 'idle' | 'running' | 'stopping';
+  discovering: boolean;
+  targetCount: number;
+  connectedTargetCount: number;
+}
+export interface CdpDevTarget {
+  id: string;
+  title: string;
+  url: string;
+  webSocketDebuggerUrl: string;
+}
+export interface CdpDevCaptureSummary {
+  id: number;
+  targetId: string;
+  url: string;
+  capturedAt: string;
+  bodyBytes: number;
+}
+export interface CdpDevCaptureDetail extends CdpDevCaptureSummary { body: string }
+export interface CdpDevCapturePage {
+  items: CdpDevCaptureSummary[];
+  totalBytes: number;
+  rejectedCount: number;
+  lastIssue: string | null;
 }

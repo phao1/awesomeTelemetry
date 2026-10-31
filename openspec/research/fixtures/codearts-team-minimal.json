@@ -1,0 +1,59 @@
+{
+  "$comment": "脱敏 CodeArts Agent Team 最小 fixture。来源形状：~/.codeartsdoer/agent-team/session/<leaderSessionID>/ 下的 contact.json + team-task.json。所有 sessionID 已替换为合成值，保留真实结构；不含个人路径、提示词、凭证。",
+  "sourceKind": "agent-team-directory",
+  "sourceLocator": "~/.codeartsdoer/agent-team/session/ses_lead_0001",
+  "run": {
+    "nativeRunId": "ses_lead_0001",
+    "derivedFrom": "agent-team session directory name == team-leader.sessionID"
+  },
+  "contact": {
+    "team-leader": {
+      "sessionID": "ses_lead_0001",
+      "modelInfo": { "providerID": "deepseek", "modelID": "deepseek-v4-pro" },
+      "agent_type": "team-leader",
+      "description": "team-leader",
+      "agent_name": "team-leader",
+      "status": "running",
+      "startedAt": "2026-08-17T15:27:54.292Z",
+      "lastUpdated": "2026-08-17T15:27:54.315Z"
+    },
+    "member-1": {
+      "sessionID": "ses_mate_0001",
+      "parentSessionID": "ses_lead_0001",
+      "modelInfo": { "providerID": "deepseek", "modelID": "deepseek-v4-pro" },
+      "agent_type": "team-mate",
+      "description": "证据调查与范围冻结",
+      "agent_name": "member-1",
+      "status": "running",
+      "startedAt": "2026-08-17T15:31:52.004Z",
+      "lastUpdated": "2026-08-17T15:31:52.048Z"
+    }
+  },
+  "team-task": [
+    {
+      "id": 1,
+      "blocked_by": [],
+      "content": "证据调查与范围冻结",
+      "target_files": ["openspec/research/agent-team-evidence.md"],
+      "status": "in_progress",
+      "owner": "ses_mate_0001",
+      "owner_name": "member-1",
+      "publisher": "ses_lead_0001",
+      "publisher_name": "team-leader",
+      "createdAt": 1786980679948,
+      "startedAt": "2026-08-17T15:31:52.004Z"
+    },
+    {
+      "id": 2,
+      "blocked_by": [1],
+      "content": "权威契约冻结",
+      "target_files": ["openspec/contracts/data-model.md"],
+      "status": "pending",
+      "owner": "",
+      "owner_name": "",
+      "publisher": "ses_lead_0001",
+      "publisher_name": "team-leader",
+      "createdAt": 1786980679948
+    }
+  ]
+}

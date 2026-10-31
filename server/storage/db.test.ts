@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -73,6 +73,31 @@ describe('REQ-001 连接初始化', () => {
 });
 
 describe('REQ-002 checkpoint 不得阻塞', () => {
+  it('restores a custom busy policy when checkpoint is refused inside a real transaction', () => {
+    const db = openWritable(join(tempDir(), 'transaction-checkpoint.sqlite'));
+    try {
+      db.pragma('busy_timeout=37'); db.exec('BEGIN IMMEDIATE');
+      checkpointWal(db); expect(db.inTransaction).toBe(true); expect(db.pragma('busy_timeout', { simple: true })).toBe(37);
+      db.exec('ROLLBACK');
+    } finally { if (db.inTransaction) db.exec('ROLLBACK'); db.close(); }
+  });
+  it('skips a real pinned WAL reader without the five-second busy wait and restores policy', () => {
+    const path = join(tempDir(), 'pinned.sqlite'), db = openWritable(path), reader = openReadonly(path);
+    try {
+      checkpointWal(db);
+      reader.exec('BEGIN'); reader.prepare('SELECT value FROM _meta WHERE key=?').get('schema_version');
+      db.prepare('INSERT INTO _meta(key,value) VALUES(?,?)').run('pinned-proof', 'retained');
+      const before = statSync(path + '-wal').size, started = performance.now();
+      checkpointWal(db);
+      expect(performance.now() - started).toBeLessThan(50);
+      expect(db.pragma('busy_timeout', { simple: true })).toBe(5000);
+      expect(statSync(path + '-wal').size).toBe(before);
+      expect(reader.prepare('SELECT value FROM _meta WHERE key=?').get('pinned-proof')).toBeUndefined();
+      reader.exec('ROLLBACK'); checkpointWal(db);
+      expect(statSync(path + '-wal').size).toBe(0);
+      expect(db.prepare('SELECT value FROM _meta WHERE key=?').get('pinned-proof')).toEqual({ value: 'retained' });
+    } finally { if (reader.inTransaction) reader.exec('ROLLBACK'); reader.close(); db.close(); }
+  });
   it('REQ-002 checkpointWal 空闲库上不抛错，journal 保持 wal', () => {
     const path = join(tempDir(), 'ckpt.sqlite');
     const db = openWritable(path);

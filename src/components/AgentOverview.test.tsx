@@ -1,10 +1,11 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AgentOverviewRow, SessionIndexEntry } from '../core/trace-types.js';
 import { AGENT_VIEW_KEY, AgentOverview } from './AgentOverview.js';
 import { ZH } from '../i18n.js';
+import { ApiError } from '../api/client.js';
 
 const rows: AgentOverviewRow[] = [
   {
@@ -36,7 +37,7 @@ const rows: AgentOverviewRow[] = [
 
 const containers: HTMLDivElement[] = [];
 
-function mount(node: React.ReactNode): { unmount: () => void; html: () => string } {
+function mount(node: React.ReactNode): { unmount: () => void; html: () => string; container: HTMLDivElement; rerender: (next: React.ReactNode) => void } {
   const container = document.createElement('div');
   document.body.appendChild(container);
   containers.push(container);
@@ -46,13 +47,16 @@ function mount(node: React.ReactNode): { unmount: () => void; html: () => string
   });
   return {
     unmount: () => {
-      root.unmount();
+      act(() => root.unmount());
     },
     html: () => container.innerHTML,
+    container,
+    rerender: next => act(() => root.render(next)),
   };
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   while (containers.length > 0) {
     const container = containers.pop();
     if (container !== undefined) {
@@ -62,7 +66,82 @@ afterEach(() => {
   localStorage.removeItem(AGENT_VIEW_KEY);
 });
 
+describe('WB-003 Agent overview evidence and ownership', () => {
+  it('retains verify ratios above100% as raw observations with an explicit fixed bar cap, not a quality score', async () => {
+    const { container, unmount } = mount(<AgentOverview locale="en" load={async () => ({ rows: [{ ...rows[0]!, verificationCoverage: 1.5 }], stamp: '2026-10-18T00:00:00.000Z', cached: false })} />);
+    try {
+      await act(async () => { await Promise.resolve(); });
+      expect(container.querySelector('tbody')?.textContent).toContain('150.0%');
+      expect(container.textContent).toContain('Bars stop at100%; raw values above that remain visible');
+      act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Cards')!.click());
+      expect(container.querySelector('.agent-card')?.textContent).toContain('150.0%');
+    } finally { unmount(); }
+  });
+  it('treats a malformed successful response as an explicit error, not infinite loading', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const load = vi.fn().mockResolvedValue(null);
+    const { container, unmount } = mount(<AgentOverview locale="en" load={load} />);
+    try {
+      await act(async () => { await Promise.resolve(); });
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain('OVERVIEW_LOAD_FAILED');
+      expect(container.querySelector('.ui-skeleton')).toBeNull();
+      expect(load).toHaveBeenCalledTimes(1);expect(log).toHaveBeenCalled();
+    } finally { unmount();log.mockRestore(); }
+  });
+  it('reports actual sessions, not groups, without fabricated throughput/accuracy/stability winners', async () => {
+    const { unmount } = mount(<AgentOverview locale="en" load={async () => ({ rows: [rows[0]!, { ...rows[0]!, sourceAgent: 'Other', sessionCount: 98, errorRate: null, verificationCoverage: null }], stamp: '2026-10-18T00:00:00.000Z', cached: true })} />);
+    try {
+      await act(async () => { await Promise.resolve(); });
+      const summaries = [...document.querySelectorAll('.overview-kpis .ui-metric-card')].map(el => el.textContent);
+      expect(summaries).toEqual(expect.arrayContaining([expect.stringContaining('100'), expect.stringContaining('2')]));
+      expect(document.body.textContent).not.toMatch(/tool\/s|Fastest|Most stable|faster than|Accuracy|Stability/);
+      expect(document.body.textContent).toContain('All-history scan');
+      expect(document.body.textContent).toContain('eligible');
+    } finally { unmount(); }
+  });
+  it('times out an abort-ignoring loader, aborts ownership and cannot restore a late success until explicit retry', async () => {
+    vi.useFakeTimers();
+    let resolve!: (value: { rows: AgentOverviewRow[]; stamp: string; cached: boolean }) => void;
+    let signal: AbortSignal | undefined;
+    const load = vi.fn((owned?: AbortSignal) => { signal = owned; return new Promise<{ rows: AgentOverviewRow[]; stamp: string; cached: boolean }>(done => { resolve = done; }); });
+    const { unmount } = mount(<AgentOverview locale="en" load={load} />);
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain('OVERVIEW_TIMEOUT');
+      expect(signal?.aborted).toBe(true);
+      await act(async () => { resolve({ rows, stamp: 'late', cached: true }); await Promise.resolve(); });
+      expect(document.querySelector('table')).toBeNull();
+      expect(load).toHaveBeenCalledTimes(1);
+      const retry = [...document.querySelectorAll('button')].find(button => button.textContent === 'Retry')!;
+      act(() => retry.click());
+      expect(load).toHaveBeenCalledTimes(2);
+    } finally { unmount(); }
+  });
+  it('cancels local waiting without automatic retry and aborts on unmount', async () => {
+    let signal: AbortSignal | undefined;
+    const load = vi.fn((owned?: AbortSignal) => { signal = owned; return new Promise<never>(() => undefined); });
+    const { unmount } = mount(<AgentOverview locale="en" load={load} />);
+    try {
+      const cancel = [...document.querySelectorAll('button')].find(button => button.textContent === 'Cancel waiting')!;
+      expect(cancel).toBeDefined();
+      act(() => cancel.click());
+      expect(signal?.aborted).toBe(true);
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain('OVERVIEW_CANCELLED');
+      expect(load).toHaveBeenCalledTimes(1);
+    } finally { unmount(); }
+  });
+});
+
 describe('REQ-003 Agent 视图', () => {
+  it('shows tokens in both table/cards without money totals, columns or pricing coverage',async()=>{
+    const {unmount}=mount(<AgentOverview locale="en" load={async()=>({rows:[{...rows[0]!,costUsd:456789.1234}],stamp:'s1',cached:false})}/>);
+    try {
+      await act(async()=>{await Promise.resolve();});expect(document.body.textContent).not.toMatch(/[$¥￥€£]\s*\d/);
+      expect([...document.querySelectorAll('th')].map(el=>el.textContent)).not.toContain('Cost');
+      const cards=[...document.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='Cards')!;act(()=>cards.click());
+      expect(document.body.textContent).not.toMatch(/[$¥￥€£]\s*\d/);expect(document.body.textContent).toContain('150');
+    } finally {unmount();}
+  });
   it('只发 1 个请求（重渲染不重拉）', async () => {
     let calls = 0;
     const load = async (): Promise<{ rows: AgentOverviewRow[]; stamp: string; cached: boolean }> => {
@@ -117,10 +196,7 @@ describe('REQ-003 Agent 视图', () => {
       return { rows, stamp: 's1', cached: false };
     };
     const selected: string[] = [];
-    const sessions = [
-      { id: 'codex-recent-1', provider: 'codex', title: 'recent one', eventCount: 5 } as unknown as SessionIndexEntry,
-      { id: 'codex-recent-2', provider: 'codex', title: 'recent two', eventCount: 8 } as unknown as SessionIndexEntry,
-    ];
+    const sessions = [index('codex-recent-1', 'Codex', { title: 'recent one', eventCount: 5 }), index('codex-recent-2', 'Codex', { title: 'recent two', eventCount: 8 })];
     const { unmount } = mount(
       <AgentOverview
         locale="zh"
@@ -133,9 +209,9 @@ describe('REQ-003 Agent 视图', () => {
       await Promise.resolve();
     });
     expect(calls).toBe(1);
-    // 展开按钮的 aria-label 已本地化（不再是写死的英文 "expand"）
+    // Contextual, localized group identity replaces the ambiguous generic label.
     const expandButton = document.querySelector(
-      `button[aria-label="${ZH['a11y.expandRow']}"]`,
+      `button[aria-label="${ZH['agent.recentLoaded']} · Codex · codex"]`,
     ) as HTMLButtonElement;
     expect(expandButton).not.toBeNull();
     act(() => expandButton.click());
@@ -183,6 +259,113 @@ describe('REQ-003 Agent 视图', () => {
     expect(document.querySelectorAll('.agent-card-phase-list li').length).toBe(6);
     expect(html()).toContain('阶段分解');
     unmount();
+  });
+});
+
+function index(id: string, sourceAgent: string, patch: Partial<SessionIndexEntry> = {}): SessionIndexEntry {
+  return { id, sourceAgent, provider: 'codex', title: id, startedAt: '2026-10-18T00:00:00.000Z', updatedAt: '2026-10-18T00:00:00.000Z',
+    status: 'success', cwd: null, eventCount: 2, messageCount: 0, tokenTotal: 3, costUsd: 0, dataSource: 'scan', sourcePath: '/synthetic/session',
+    detailLoaded: false, mergeGroupId: null, hasSystemPrompt: false, tags: [], ...patch };
+}
+
+describe('Agent overview source-group navigation', () => {
+  it('table and cards expose the same exact scan-group sessions and original key without extra reads', async () => {
+    const load = vi.fn(async () => ({ rows, stamp: '2026-10-18T00:00:00.000Z', cached: false }));
+    const selected = vi.fn();
+    const browse = vi.fn();
+    const { container, unmount } = mount(<AgentOverview locale="en" load={load} onSelectSession={selected} onBrowseSessions={browse}
+      sessions={[index('right-key', 'Codex'), index('wrong-group', 'Other'), index('wrong-source', 'Codex', { dataSource: 'proxy' })]} />);
+    try {
+      await act(async () => { await Promise.resolve(); });
+      act(() => container.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click());
+      const expanded = container.querySelector('.overview-expand')!;
+      expect(expanded.textContent).toContain('right-key');
+      expect(expanded.textContent).not.toMatch(/wrong-group|wrong-source/);
+      expect(expanded.textContent).toContain('filtered/paged');
+      expect(container.querySelector('td[colspan="10"]')).not.toBeNull();
+      act(() => container.querySelector<HTMLButtonElement>('.overview-expand-row')!.click());
+      expect(selected).toHaveBeenCalledWith('right-key');
+      act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Cards')!.click());
+      expect(container.querySelector('.agent-card .overview-expand-row')?.textContent).toContain('right-key');
+      act(() => [...container.querySelectorAll('button')].find(button => button.textContent?.startsWith('Browse all sessions'))!.click());
+      expect(browse).toHaveBeenCalledWith('codex');
+      expect(load).toHaveBeenCalledTimes(1);
+    } finally { unmount(); }
+  });
+  it('does not equate no loaded match with no source sessions, and comparison retains both group identities', async () => {
+    const compare = vi.fn();
+    const grouped = [rows[0]!, { ...rows[0]!, sourceAgent: 'Other/Agent' }];
+    const { container, unmount } = mount(<AgentOverview locale="en" load={async () => ({ rows: grouped, stamp: 's1', cached: false })}
+      sessions={[index('not-a-match', 'Third')]} onCompareProviders={compare} />);
+    try {
+      await act(async () => { await Promise.resolve(); });
+      act(() => container.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click());
+      expect(container.querySelector('.overview-expand')?.textContent).toContain('does not mean the source has no sessions');
+      const boxes = container.querySelectorAll<HTMLInputElement>('tbody input');
+      expect(boxes[0]!.getAttribute('aria-label')).toContain('Codex');
+      expect(boxes[1]!.getAttribute('aria-label')).toContain('Other/Agent');
+      act(() => boxes[0]!.click());act(() => boxes[1]!.click());
+      act(() => container.querySelector<HTMLButtonElement>('.compare-float-btn')!.click());
+      expect(compare).toHaveBeenCalledWith('codex', 'codex', ['Codex', 'Other/Agent']);
+    } finally { unmount(); }
+  });
+  it('sorts observed zero before null, supports descending and string order, and never refetches on locale/view/sort changes', async () => {
+    const grouped = [{ ...rows[0]!, sourceAgent: 'Zulu', errorRate: null }, { ...rows[0]!, sourceAgent: 'Alpha', errorRate: 0 }];
+    const load = vi.fn(async () => ({ rows: grouped, stamp: 's1', cached: true }));
+    const { container, unmount, rerender } = mount(<AgentOverview locale="en" load={load} />);
+    try {
+      await act(async () => { await Promise.resolve(); });
+      const errorSort = [...container.querySelectorAll<HTMLButtonElement>('th button')].find(button => button.textContent === 'Mean error-step ratio')!;
+      act(() => errorSort.click());
+      expect(container.querySelector('tbody .agent-provider-cell')?.textContent).toContain('Alpha');
+      expect(errorSort.closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+      act(() => errorSort.click());
+      expect(container.querySelector('tbody .agent-provider-cell')?.textContent).toContain('Alpha');
+      expect(container.querySelector('tbody')?.textContent).toContain('0.0%');
+      rerender(<AgentOverview locale="zh" load={load} />);
+      expect(container.textContent).toContain('错误步骤占比均值');
+      act(() => [...container.querySelectorAll('button')].find(button => button.textContent === '卡片')!.click());
+      expect(load).toHaveBeenCalledTimes(1);
+    } finally { unmount(); }
+  });
+  it('rejects old-loader results and aborts a replaced or unmounted read', async () => {
+    let complete!: (value: { rows: AgentOverviewRow[]; stamp: string; cached: boolean }) => void;
+    let firstSignal: AbortSignal | undefined;
+    const first = (signal?: AbortSignal): Promise<{ rows: AgentOverviewRow[]; stamp: string; cached: boolean }> => { firstSignal = signal; return new Promise(resolve => { complete = resolve; }); };
+    const second = vi.fn(async () => ({ rows: [{ ...rows[0]!, sourceAgent: 'Current group' }], stamp: 'current', cached: false }));
+    const { container, unmount, rerender } = mount(<AgentOverview locale="en" load={first} />);
+    try {
+      rerender(<AgentOverview locale="en" load={second} />);
+      await act(async () => { await Promise.resolve(); complete({ rows, stamp: 'stale', cached: true }); await Promise.resolve(); });
+      expect(firstSignal?.aborted).toBe(true);
+      expect(container.querySelector('tbody')?.textContent).toContain('Current group');
+      expect(container.textContent).not.toContain('stale');
+    } finally { unmount(); }
+  });
+  it('retains an actual ApiError code and inert source message, then succeeds only on explicit retry', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const load = vi.fn().mockRejectedValueOnce(new ApiError('SOURCE_UNAVAILABLE', '<img src=x onerror=alert(1)>', 503)).mockResolvedValue({ rows, stamp: 's1', cached: false });
+    const { container, unmount } = mount(<AgentOverview locale="en" load={load} />);
+    try {
+      await act(async () => { await Promise.resolve(); });
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain('SOURCE_UNAVAILABLE');
+      expect(container.textContent).toContain('<img src=x onerror=alert(1)>');expect(container.querySelector('img')).toBeNull();
+      expect(log).toHaveBeenCalled();expect(load).toHaveBeenCalledTimes(1);
+      act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Retry')!.click());
+      await act(async () => { await Promise.resolve(); });
+      expect(container.querySelector('table')).not.toBeNull();expect(container.querySelector('[role="alert"]')).toBeNull();expect(load).toHaveBeenCalledTimes(2);
+    } finally { unmount();log.mockRestore(); }
+  });
+  it('empty aggregation offers explicit source discovery without pretending the proxy list is empty', async () => {
+    const browse = vi.fn();
+    const load = vi.fn(async () => ({ rows: [], stamp: 's1', cached: false }));
+    const { container, unmount } = mount(<AgentOverview locale="en" load={load} onBrowseSessions={browse} />);
+    try {
+      await act(async () => { await Promise.resolve(); });
+      expect(container.textContent).toContain('excludes the separate capture list');
+      act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Browse scan sessions')!.click());
+      expect(browse).toHaveBeenCalledTimes(1);expect(load).toHaveBeenCalledTimes(1);
+    } finally { unmount(); }
   });
 });
 

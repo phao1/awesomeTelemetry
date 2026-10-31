@@ -19,6 +19,10 @@ export const codeAgentAdapter: Adapter<Record<string, never>, ClaudeRawRow> = {
     const record = normalizeClaudeSample({ ...sample, events: filtered }, sourcePath);
     return {
       ...record,
+      nativeIdentities: record.nativeIdentities === undefined ? undefined : {
+        ...record.nativeIdentities,
+        items: record.nativeIdentities.items.map(item => ({ ...item, namespace: item.namespace === 'agent:claude' ? 'agent:codeagent' : item.namespace })),
+      },
       session: { ...record.session, provider: 'codeagent', sourceAgent: 'CodeAgent' },
       events: record.events.map((event) => ({
         ...event,

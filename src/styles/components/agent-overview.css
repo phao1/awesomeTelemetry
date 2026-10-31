@@ -1,8 +1,38 @@
 /* ===== REQ-018 Agent 概览 ===== */
 
+.overview {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.overview-table > :not(.agent-table-region) { flex-shrink: 0; }
+.agent-overview-header, .agent-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.agent-overview-header { justify-content: space-between; }
+.agent-overview-header h2, .overview-expand h3 { margin: 0; font-size: var(--text-lg); }
+.overview .hint { margin: 0; overflow-wrap: anywhere; }
+.agent-overview-header p { margin-top: var(--space-1); }
+.agent-freshness { flex-basis: 100%; }
+.agent-methodology { padding: var(--space-2); border: 1px solid var(--border-default); border-radius: var(--radius-md); }
+.agent-methodology summary { cursor: pointer; color: var(--fg-default); }
+.agent-methodology ul { margin-bottom: 0; padding-left: var(--space-5); color: var(--fg-muted); font-size: var(--text-sm); }
+.agent-methodology li + li { margin-top: var(--space-2); }
+.agent-table-region { flex: 1; min-width: 0; min-height: calc(var(--space-10) * 4); overflow: auto; }
+.agent-table-region th { white-space: normal; }
+.agent-provider-cell { display: flex; flex-direction: column; gap: var(--space-1); min-width: var(--dist-label-width); }
+.agent-provider-cell > span:first-child, .agent-number-meter { display: inline-flex; align-items: center; gap: var(--space-2); }
+.agent-provider-cell strong { overflow-wrap: anywhere; }
+.agent-detail-metrics { display: flex; flex-wrap: wrap; gap: var(--space-3); color: var(--fg-muted); font-size: var(--text-sm); }
+.overview .compare-float-btn { position: static; margin-left: auto; box-shadow: none; }
+
 .overview-kpis {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--kpi-min)), 1fr));
   gap: var(--space-2);
 }
 
@@ -43,54 +73,16 @@
   text-align: left;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
-}
-
-.overview-expand-row:hover {
-  background: var(--accent-subtle);
-}
-
-/* ---- Agent 概览 v2（§4） ---- */
-.agent-conclusion {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--canvas-subtle);
-}
-
-.agent-conclusion-title {
-  color: var(--fg-muted);
-  font-size: var(--text-sm);
-}
-
-.agent-conclusion-items {
-  display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.agent-conclusion-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  overflow-wrap: anywhere;
   min-width: 0;
 }
 
-.agent-conclusion-label {
-  color: var(--fg-muted);
-  font-size: var(--text-sm);
-}
+.overview-session-title { display: flex; flex-direction: column; flex: 1; min-width: min(100%, var(--chart-min)); }
+.overview-expand > .btn { align-self: flex-start; }
 
-.agent-conclusion-name {
-  font-weight: var(--weight-medium);
-  font-size: var(--text-base);
-}
-
-.agent-conclusion-detail {
-  color: var(--fg-muted);
-  font-size: var(--text-xs);
+.overview-expand-row:hover {
+  background: var(--accent-subtle);
 }
 
 .phase-tile-dot {
@@ -108,6 +100,7 @@
 
 .agent-card-grid {
   display: grid;
+  align-items: start;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-10) * 8)), 1fr));
   gap: var(--space-3);
 }
@@ -127,6 +120,7 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 /* REQ-118：卡片视图 compare 复选框（与表格视图共享选中态） */
@@ -143,6 +137,9 @@
 
 .agent-card-name {
   font-weight: var(--weight-semibold);
+  font-size: var(--text-base);
+  overflow-wrap: anywhere;
+  margin: 0;
 }
 
 .agent-card-provider {
@@ -159,7 +156,7 @@
 
 .agent-card-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--kpi-min)), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-10) * 4)), 1fr));
   gap: var(--space-2);
   margin: 0;
 }
@@ -168,10 +165,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: var(--space-2);
-  border: 1px solid var(--border-muted);
-  border-radius: var(--radius-md);
-  background: var(--canvas-default);
+  padding: var(--space-1) 0;
+  min-width: 0;
 }
 
 .agent-card-metric dt {

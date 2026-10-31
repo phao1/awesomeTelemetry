@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync, type Stats } from 'node:fs';
+import { relative } from 'node:path';
 
 import { watch, type FSWatcher } from 'chokidar';
 
@@ -59,13 +60,26 @@ export function startFileWatcher(
       continue;
     }
 
-    const watcher = watch(providerPath, {
+    // Watch the canonical root: macOS /var -> /private/var aliases can lose
+    // the first write after discovery. Agent roots such as ~/.codex are
+    // intentionally hidden; only descendants are subject to the dotfile rule.
+    let watchRoot: string;
+    try { watchRoot = realpathSync(providerPath); }
+    catch (error) { onError(error); continue; }
+    let discovered = false;
+    const observed = new Map<string, { size: number; mtimeMs: number; ctimeMs: number }>();
+    const watcher = watch(watchRoot, {
       ignoreInitial: true,
-      ignored: /(^|[/\\])\../,
+      alwaysStat: true,
+      ignored: (path, stats) => {
+        if (/(^|[/\\])\../.test(relative(watchRoot, path))) return true;
+        if (!discovered && stats?.isFile()) observed.set(path, { size: stats.size, mtimeMs: stats.mtimeMs, ctimeMs: stats.ctimeMs });
+        return false;
+      },
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
     });
     watchers.push(watcher);
-    readyPromises.push(new Promise<void>((resolve) => { watcher.once('ready', resolve); }));
+    readyPromises.push(new Promise<void>((resolve) => { watcher.once('ready', () => { discovered = true; resolve(); }); }));
     const schedule = (): void => {
       const previous = debounceTimers.get(provider.key);
       if (previous !== undefined) clearTimeout(previous);
@@ -76,7 +90,19 @@ export function startFileWatcher(
       timer.unref();
       debounceTimers.set(provider.key, timer);
     };
-    watcher.on('add', schedule).on('change', schedule).on('unlink', schedule);
+    const changed = (path: string, stats?: Stats): void => {
+      if (stats?.isDirectory()) return;
+      const previous = observed.get(path);
+      if (stats !== undefined) {
+        observed.set(path, { size: stats.size, mtimeMs: stats.mtimeMs, ctimeMs: stats.ctimeMs });
+        // Native events queued during discovery can arrive after ready. They
+        // are not new writes when all observed metadata fields are unchanged.
+        // ctime also catches same-size rewrites that restore the old mtime.
+        if (previous?.size === stats.size && previous.mtimeMs === stats.mtimeMs && previous.ctimeMs === stats.ctimeMs) return;
+      }
+      schedule();
+    };
+    watcher.on('add', changed).on('change', changed).on('unlink', path => { observed.delete(path); schedule(); });
     watcher.on('error', onError);
   }
 

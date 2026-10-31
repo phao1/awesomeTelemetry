@@ -1,15 +1,18 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { ProviderConfig, ProviderKey } from '../../src/core/trace-types.js';
-import { startFileWatcher } from './file-watcher.js';
+import { startFileWatcher, type FileWatcherHandle } from './file-watcher.js';
 
 const dirs: string[] = [];
+const watchers: FileWatcherHandle[] = [];
 
-afterEach(() => {
+afterEach(async () => {
+  // A failed assertion must not leave native handles observing later tests.
+  await Promise.all(watchers.splice(0).map(watcher => watcher.close()));
   for (const dir of dirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -46,6 +49,7 @@ describe('file watcher（session-scanning REQ-017）', () => {
       [provider({ path: dir, pollIntervalMs: 15 })],
       (key) => { changes.push(key); },
     );
+    watchers.push(watcher);
     await watcher.ready;
     await waitFor(() => changes.length > 0);
     await watcher.close();
@@ -65,6 +69,7 @@ describe('file watcher（session-scanning REQ-017）', () => {
       })],
       (key) => { changes.push(key); },
     );
+    watchers.push(watcher);
     await watcher.ready;
     await waitFor(() => changes.length > 0);
     await watcher.close();
@@ -87,11 +92,32 @@ describe('file watcher（session-scanning REQ-017）', () => {
       })],
       (key) => { changes.push(key); },
     );
+    watchers.push(watcher);
     await watcher.ready;
     expect(changes).toHaveLength(0);
     writeFileSync(path, '{}\n{}\n');
     await waitFor(() => changes.length > 0);
     await watcher.close();
+    expect(changes).toEqual(['codex']);
+  });
+
+  it('watches a hidden Agent root while ignoring hidden descendants', async () => {
+    const dir = mkdtempSync(join(tmpdir(), '.watch-agent-'));
+    dirs.push(dir);
+    mkdirSync(join(dir, '.cache'));
+    const path = join(dir, 'session.jsonl');
+    writeFileSync(path, '{}\n');
+    const changes: ProviderKey[] = [];
+    const watcher = startFileWatcher([provider({ key: 'codex', path: dir, watchStrategy: 'chokidar', sourceKind: 'jsonl' })], key => { changes.push(key); });
+    watchers.push(watcher);
+    await watcher.ready;
+    expect(changes).toEqual([]);
+    writeFileSync(join(dir, '.ignored.jsonl'), '{}\n');
+    writeFileSync(join(dir, '.cache', 'hidden.jsonl'), '{}\n');
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    expect(changes).toEqual([]);
+    writeFileSync(path, '{}\n{}\n');
+    await waitFor(() => changes.length > 0);
     expect(changes).toEqual(['codex']);
   });
 });

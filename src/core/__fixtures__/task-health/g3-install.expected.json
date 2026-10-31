@@ -1,0 +1,17 @@
+{
+  "metrics": {
+    "act.duplicate_install": {
+      "count": 3,
+      "sumMs": 353000
+    },
+    "act.long_tool_count": 2
+  },
+  "findings": {
+    "act.cd_prefix_long": {
+      "count": 2
+    },
+    "act.duplicate_install": {
+      "recommendationContains": "核对环境是否重置"
+    }
+  }
+}

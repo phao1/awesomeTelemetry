@@ -5,9 +5,32 @@
     "其他厂商（glm / deepseek / qwen / doubao 等）故意留空 —— 未收录的模型走 costSource='unknown'，",
     "UI 渲染 `—` 而不是 $0.0000。要启用它们的成本统计，在这里补上并填写 source。",
     "",
-    "单位：USD / 1M tokens。contextWindow 供 B12 上下文压力面板使用（禁止硬编码 200k）。",
+    "单位：`currency` / 1M tokens。currency 可填 USD（缺省）或 CNY —— 国内网关按人民币计费，",
+    "**不要自己折汇率**：汇率没有出处又天天变，直接把账单币种原样填进来，展示端会渲染对应符号。",
+    "contextWindow 供 B12 上下文压力面板使用（禁止硬编码 200k）。",
     "source 必填：价格出处 URL + 抓取日期。没有出处的价格不要写 —— 编错比留空更糟。"
   ],
+
+  "_deepseek_comment": [
+    "下面这条的出处是用户自己的网关计费流水导出（amount CSV 的 price 列），不是厂商官网报价，",
+    "所以它只对该网关这个账号有效，换网关必须重新导一次。",
+    "CSV 里的单价是「每 token」：input_cache_hit 0.000000025 / input_cache_miss 0.000003 /",
+    "output 0.000006，乘 1e6 得到下面的每 1M 价格。",
+    "已验证：按此价重算 2026-08-09 两次会话得 ¥1.361969 + ¥0.856894 = ¥2.2188630，",
+    "与同期 cost CSV 的 2.2188630 CNY 完全一致。",
+    "注意 deepseek 把 reasoning 计入 output 计费，adapter 会按 tokenSemantics.reasoningInTotal",
+    "决定是否把 reasoning 叠加到 output —— 漏叠会少算约 23%。"
+  ],
+  "deepseek-v4-pro": {
+    "input": 3.0,
+    "output": 6.0,
+    "cacheRead": 0.025,
+    "cacheWrite": 0,
+    "contextWindow": 184000,
+    "currency": "CNY",
+    "source": "价格：自有网关计费流水 usage_data amount-2026-07-11_2026-08-09.csv 的 price 列（导出于 2026-08-10）；contextWindow：Trae 客户端 model_config.promptMaxTokens 实测值 184000，非厂商公开口径"
+  },
+
   "glm-4-plus": {
     "input": 0,
     "output": 0,

@@ -5,7 +5,7 @@
 
 import type { SessionRange } from './core/trace-types.js';
 
-export const HASH_VIEWS = ['session', 'agent', 'compare', 'proxy', 'frida', 'mission'] as const;
+export const HASH_VIEWS = ['session', 'agent', 'compare', 'proxy', 'frida', 'mission', 'task', 'intake', 'benchmark', 'team-experiment'] as const;
 
 /** 色带宽度模式（add-trajectory-inspector D10/D18）。 */
 export type RibbonMode = 'time' | 'token';

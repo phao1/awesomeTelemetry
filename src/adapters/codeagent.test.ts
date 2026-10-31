@@ -7,6 +7,14 @@ import { codeagentFixture } from './__fixtures__/codeagent.js';
 const SRC = '/tmp/codeagent.jsonl';
 
 describe('CodeAgent adapter（REQ-004/G9.2）', () => {
+  it('preserves source-event bindings while relabeling only the native provider namespace', () => {
+    const result = codeAgentAdapter.normalize({ sourceAgent: 'CodeAgent', session: {}, events: [{ type: 'assistant', sessionId: 's', uuid: 'native-row', requestId: 'native-request', message: { id: 'native-message', content: [{ type: 'text', text: 'ok' }] } }] }, SRC);
+    expect(result.nativeIdentities?.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ namespace: 'agent:codeagent', value: 'native-row', eventId: 'native-message-1' }),
+      expect.objectContaining({ namespace: 'protocol:anthropic', value: 'native-request', eventId: 'native-message-1' }),
+    ]));
+    expect(result.nativeIdentities?.items.some(item => item.namespace === 'agent:claude')).toBe(false);
+  });
   it('fixture：drop file-history-snapshot 行并 relabel actor', () => {
     const r = codeAgentAdapter.normalize(
       { sourceAgent: 'CodeAgent', session: {}, events: codeagentFixture.events },

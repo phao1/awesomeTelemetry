@@ -332,7 +332,7 @@ describe('REQ-006 会话列表查询', () => {
     const now = Date.now();
     insertSession(db, 'long-running-active-today', {
       startedAt: new Date(now - 40 * 86_400_000).toISOString(),
-      updatedAt: new Date(now - 3600_000).toISOString(),
+      updatedAt: new Date(now).toISOString(),
     });
     insertSession(db, 'five-days', {
       startedAt: new Date(now - 20 * 86_400_000).toISOString(),

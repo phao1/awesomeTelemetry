@@ -4,15 +4,22 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19.0"
   },
   "bin": {
+    "telemetry-team-experiment": "./bin/team-experiment.js",
+    "telemetry-benchmark": "./bin/benchmark.js",
     "awesome-telemetry": "./bin/agent-observe.js",
-    "agent-observe": "./bin/agent-observe.js"
+    "agent-observe": "./bin/agent-observe.js",
+    "telemetry-agent-folding": "./bin/agent-folding.js",
+    "telemetry-task-health": "./bin/task-health.js"
   },
   "scripts": {
+    "team:experiment": "node bin/team-experiment.js",
+    "benchmark": "node bin/benchmark.js",
+    "benchmark:demo": "node scripts/benchmark-demo.mjs",
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build && vite build --config vite.cli.config.ts",
+    "build": "tsc -b && vite build && vite build --config vite.cli.config.ts && npm run build:task-health",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -20,7 +27,13 @@
     "start": "node bin/agent-observe.js",
     "perf:check": "node perf-diag/run-all.mjs",
     "pack:binary": "node scripts/pack-binary.mjs",
-    "gen:samples": "node scripts/generate-local-samples.mjs"
+    "gen:samples": "node scripts/generate-local-samples.mjs",
+    "prepack": "node scripts/verify-package.mjs",
+    "pack:smoke": "node scripts/smoke-packed-install.mjs",
+    "agent:folding": "node bin/agent-folding.js",
+    "task-health": "node bin/task-health.js",
+    "health-proxy:codex": "node scripts/codex-health-proxy.mjs",
+    "build:task-health": "node --input-type=module -e \"import { build } from 'vite'; await build({configFile:false,build:{ssr:'server/task-health/cli.ts',outDir:'server-dist/task-health',emptyOutDir:false,target:'node20',rollupOptions:{external:['better-sqlite3'],output:{entryFileNames:'cli.js'}}}})\""
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
@@ -46,5 +59,31 @@
     "typescript-eslint": "^8.65.0",
     "vite": "^8.2.0",
     "vitest": "^4.1.10"
+  },
+  "description": "Local Web UI for AI coding-agent telemetry",
+  "license": "Apache-2.0",
+  "files": [
+    "bin/team-experiment.js",
+    "config/team-experiment.example.json",
+    "docs/team-experiment.md",
+    "bin/benchmark.js",
+    "config/benchmark.example.json",
+    "docs/benchmark.md",
+    "scripts/benchmark-demo.mjs",
+    "bin/agent-observe.js",
+    "server-dist/**/*.js",
+    "dist/**",
+    "!dist/**/*.map",
+    "scripts/trae-extract-key.py",
+    "scripts/frida-chat-monitor-v2.js",
+    "scripts/frida-check-module.js",
+    "README.zh-CN.md",
+    "bin/agent-folding.js",
+    "config/agent-folding.example.json",
+    "docs/agent-folding.md",
+    "data/agent-folding/**"
+  ],
+  "exports": {
+    "./package.json": "./package.json"
   }
 }

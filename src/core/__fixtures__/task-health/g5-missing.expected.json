@@ -1,0 +1,22 @@
+{
+  "metrics": {
+    "model.cache_hit": null,
+    "model.reasoning_rounds": {
+      "all": "unknown"
+    }
+  },
+  "findings": {
+    "cov.incomplete": {
+      "triggered": true
+    }
+  },
+  "dimensions": {
+    "perceived": "insufficient",
+    "plan": "insufficient",
+    "act": "insufficient",
+    "model": "insufficient",
+    "startup": "insufficient",
+    "quality": "insufficient",
+    "coverage": "insufficient"
+  }
+}

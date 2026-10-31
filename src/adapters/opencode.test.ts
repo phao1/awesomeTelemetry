@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { normalizeOpenCode, type OpenCodeMessage, type OpenCodeOtelSpan } from './opencode.js';
-import { opencodeCarrierFixture, opencodeFixture } from './__fixtures__/opencode.js';
+import { opencodeCarrierFixture, opencodeFixture, opencodeNativeTimingFixture } from './__fixtures__/opencode.js';
+import { codeartsFixture } from './__fixtures__/codearts.js';
+import { codeartsAdapter } from './codearts.js';
+import { codeagent2Adapter } from './codeagent2.js';
 import { computeTokenBreakdown } from '../core/token-breakdown.js';
 import { attributeTokensToLlmEvents } from '../core/speed-metrics.js';
 
@@ -29,6 +32,396 @@ function msg(over: Partial<OpenCodeMessage> & { id: string; role: 'user' | 'assi
 }
 
 describe('OpenCode adapter（REQ-005）', () => {
+  it('P1 legacy fixtures keep their complete normalized output', () => {
+    expect([
+      normalizeOpenCode(sample(opencodeFixture.events), SRC),
+      codeartsAdapter.normalize(codeartsFixture, SRC),
+    ]).toMatchInlineSnapshot(`
+      [
+        {
+          "events": [
+            {
+              "actor": "user",
+              "durationMs": 0,
+              "error": null,
+              "hasInput": true,
+              "hasOutput": false,
+              "hasRaw": true,
+              "id": "m-user-0",
+              "inputSummary": "please fix the failing test",
+              "kind": "user_prompt",
+              "model": null,
+              "outputSummary": null,
+              "phase": "verify",
+              "raw": "{"type":"text","text":"please fix the failing test"}",
+              "sequence": 1,
+              "sessionId": "oc-session-1",
+              "startedAt": "2025-07-31T22:13:20.000Z",
+              "status": "success",
+              "title": "please fix the failing test",
+              "tokens": null,
+              "tool": null,
+              "turnKey": "m-user",
+            },
+            {
+              "actor": "assistant",
+              "durationMs": 30000,
+              "error": null,
+              "hasInput": false,
+              "hasOutput": true,
+              "hasRaw": true,
+              "id": "m-tool-0",
+              "inputSummary": null,
+              "kind": "bash",
+              "model": null,
+              "outputSummary": "ok",
+              "phase": "verify",
+              "raw": "{"type":"tool","tool":"Bash","state":{"status":"completed","title":"npm test","output":"ok"}}",
+              "sequence": 2,
+              "sessionId": "oc-session-1",
+              "startedAt": "2025-07-31T22:13:30.000Z",
+              "status": "success",
+              "title": "npm test",
+              "tokens": {
+                "cacheRead": 100,
+                "cacheWrite": 0,
+                "input": 10,
+                "netInput": 0,
+                "output": 5,
+                "reasoning": 0,
+                "total": 115,
+              },
+              "tool": "Bash",
+              "turnKey": "m-tool",
+            },
+            {
+              "actor": "assistant",
+              "durationMs": 0,
+              "error": null,
+              "hasInput": false,
+              "hasOutput": true,
+              "hasRaw": true,
+              "id": "m-llm-0",
+              "inputSummary": null,
+              "kind": "llm",
+              "model": null,
+              "outputSummary": "tests pass now",
+              "phase": "verify",
+              "raw": "{"type":"text","text":"tests pass now"}",
+              "sequence": 3,
+              "sessionId": "oc-session-1",
+              "startedAt": "2025-07-31T22:14:00.000Z",
+              "status": "success",
+              "title": "tests pass now",
+              "tokens": {
+                "cacheRead": 150,
+                "cacheWrite": 5,
+                "input": 15,
+                "netInput": 0,
+                "output": 8,
+                "reasoning": 2,
+                "total": 180,
+              },
+              "tool": null,
+              "turnKey": "m-llm",
+            },
+          ],
+          "nativeIdentities": {
+            "completeness": {
+              "complete": true,
+              "omittedCount": 0,
+              "reasons": [],
+            },
+            "items": [
+              {
+                "eventId": null,
+                "kind": "session",
+                "namespace": "agent:opencode",
+                "scope": null,
+                "sourcePath": "session.id",
+                "value": "oc-session-1",
+              },
+              {
+                "eventId": "m-user-0",
+                "kind": "message",
+                "namespace": "agent:opencode",
+                "scope": "oc-session-1",
+                "sourcePath": "messages[0].id",
+                "value": "m-user",
+              },
+              {
+                "eventId": "m-tool-0",
+                "kind": "message",
+                "namespace": "agent:opencode",
+                "scope": "oc-session-1",
+                "sourcePath": "messages[1].id",
+                "value": "m-tool",
+              },
+              {
+                "eventId": "m-llm-0",
+                "kind": "message",
+                "namespace": "agent:opencode",
+                "scope": "oc-session-1",
+                "sourcePath": "messages[2].id",
+                "value": "m-llm",
+              },
+            ],
+            "parserVersion": 3,
+          },
+          "session": {
+            "costCurrency": "USD",
+            "costSource": "unknown",
+            "costUsd": 0,
+            "cwd": "/home/u/proj",
+            "dataSource": "scan",
+            "durationSource": "derived",
+            "eventCount": 3,
+            "id": "oc-session-1",
+            "isSubagent": true,
+            "messageCount": 3,
+            "primaryModel": null,
+            "provider": "opencode",
+            "sourceAgent": "OpenCode",
+            "sourcePath": "/tmp/oc.sqlite",
+            "startedAt": "2025-07-31T22:13:20.000Z",
+            "status": "success",
+            "systemPrompt": null,
+            "title": "fix build (@main subagent)",
+            "tokenUsage": {
+              "cacheRead": 250,
+              "cacheWrite": 5,
+              "input": 25,
+              "netInput": 0,
+              "output": 13,
+              "reasoning": 2,
+              "total": 295,
+            },
+            "totalDurationMs": 40000,
+            "updatedAt": "2025-07-31T22:14:00.000Z",
+          },
+          "tokenSemantics": {
+            "cacheRead": "incremental",
+            "reasoning": "incremental",
+            "reasoningInTotal": true,
+          },
+          "turnKeySource": "message_identity",
+        },
+        {
+          "events": [
+            {
+              "actor": "user",
+              "durationMs": 0,
+              "error": null,
+              "hasInput": true,
+              "hasOutput": false,
+              "hasRaw": true,
+              "id": "ca2-m1-0",
+              "inputSummary": "write a parser",
+              "kind": "user_prompt",
+              "model": null,
+              "outputSummary": null,
+              "phase": "implement",
+              "raw": "{"type":"text","text":"write a parser"}",
+              "sequence": 1,
+              "sessionId": "ca2-s1",
+              "startedAt": "2025-07-31T22:13:20.000Z",
+              "status": "success",
+              "title": "write a parser",
+              "tokens": null,
+              "tool": null,
+              "turnKey": "ca2-m1",
+            },
+            {
+              "actor": "assistant",
+              "durationMs": 0,
+              "error": null,
+              "hasInput": false,
+              "hasOutput": false,
+              "hasRaw": true,
+              "id": "ca2-m2-0",
+              "inputSummary": null,
+              "kind": "file_write",
+              "model": null,
+              "outputSummary": null,
+              "phase": "implement",
+              "raw": "{"type":"tool","tool":"Write","state":{"status":"completed","title":"write parser.ts"}}",
+              "sequence": 2,
+              "sessionId": "ca2-s1",
+              "startedAt": "2025-07-31T22:13:30.000Z",
+              "status": "success",
+              "title": "write parser.ts",
+              "tokens": {
+                "cacheRead": 50,
+                "cacheWrite": 0,
+                "input": 20,
+                "netInput": 0,
+                "output": 10,
+                "reasoning": 0,
+                "total": 80,
+              },
+              "tool": "Write",
+              "turnKey": "ca2-m2",
+            },
+          ],
+          "nativeIdentities": {
+            "completeness": {
+              "complete": true,
+              "omittedCount": 0,
+              "reasons": [],
+            },
+            "items": [
+              {
+                "eventId": null,
+                "kind": "session",
+                "namespace": "agent:codearts",
+                "scope": null,
+                "sourcePath": "session.id",
+                "value": "ca2-s1",
+              },
+              {
+                "eventId": "ca2-m1-0",
+                "kind": "message",
+                "namespace": "agent:codearts",
+                "scope": "ca2-s1",
+                "sourcePath": "messages[0].id",
+                "value": "ca2-m1",
+              },
+              {
+                "eventId": "ca2-m2-0",
+                "kind": "message",
+                "namespace": "agent:codearts",
+                "scope": "ca2-s1",
+                "sourcePath": "messages[1].id",
+                "value": "ca2-m2",
+              },
+            ],
+            "parserVersion": 3,
+          },
+          "session": {
+            "costCurrency": "USD",
+            "costSource": "unknown",
+            "costUsd": 0,
+            "cwd": null,
+            "dataSource": "scan",
+            "durationSource": "derived",
+            "eventCount": 2,
+            "id": "ca2-s1",
+            "isSubagent": false,
+            "messageCount": 2,
+            "primaryModel": null,
+            "provider": "codearts",
+            "sourceAgent": "CodeArts",
+            "sourcePath": "/tmp/oc.sqlite",
+            "startedAt": "2025-07-31T22:13:20.000Z",
+            "status": "success",
+            "systemPrompt": null,
+            "title": "agent task",
+            "tokenUsage": {
+              "cacheRead": 50,
+              "cacheWrite": 0,
+              "input": 20,
+              "netInput": 0,
+              "output": 10,
+              "reasoning": 0,
+              "total": 80,
+            },
+            "totalDurationMs": 10000,
+            "updatedAt": "2025-07-31T22:13:30.000Z",
+          },
+          "tokenSemantics": {
+            "cacheRead": "incremental",
+            "reasoning": "incremental",
+            "reasoningInTotal": false,
+          },
+          "turnKeySource": "message_identity",
+        },
+      ]
+    `);
+  });
+
+  it.each(['opencode', 'codearts', 'codeagent2'] as const)('P1 %s reads native intervals without capping long tools', (provider) => {
+    const fixture = opencodeNativeTimingFixture;
+    const input = { ...fixture, sourceAgent: provider };
+    const r = provider === 'opencode' ? normalizeOpenCode(input, SRC)
+      : (provider === 'codearts' ? codeartsAdapter : codeagent2Adapter).normalize(input, SRC);
+    expect(r.session.provider).toBe(provider);
+    expect(r.session.durationSource).toBe('measured');
+    expect(r.events.find(e => e.tool === 'Bash')).toMatchObject({
+      startedAt: new Date(1754000005000).toISOString(), durationMs: 601000,
+    });
+    expect(r.events.find(e => e.title === 'plan')).toMatchObject({
+      kind: 'llm', startedAt: new Date(1754000002000).toISOString(), durationMs: 1000,
+    });
+    expect(r.events.find(e => e.title === 'testing')).toMatchObject({
+      startedAt: new Date(1754000003000).toISOString(), durationMs: 2000,
+    });
+    expect(r.events.every(e => Object.getOwnPropertySymbols(e).length === 0)).toBe(true);
+  });
+
+  it('P1 partial timing retains native durations and derives missing parts', () => {
+    const r = normalizeOpenCode(sample([
+      msg({ id: 'missing', role: 'assistant', time: { created: 1000, completed: 999999 }, content: [{ type: 'text', text: 'missing' }] }),
+      msg({ id: 'native', role: 'assistant', content: [{ type: 'text', text: 'native', time: { start: 6000, end: 8000 } }] }),
+    ]), SRC);
+    expect(r.session.durationSource).toBe('derived');
+    expect(r.events.map(e => [e.id, e.startedAt, e.durationMs])).toEqual([
+      ['missing-0', new Date(1000).toISOString(), 5000],
+      ['native-0', new Date(6000).toISOString(), 2000],
+    ]);
+  });
+
+  it('P1 unfinished native running tool stays at zero even before another event', () => {
+    const r = normalizeOpenCode(sample([
+      msg({ id: 'running', role: 'assistant', content: [{ type: 'tool', tool: 'Bash', state: { status: 'running', time: { start: 1000 } } }] }),
+      msg({ id: 'later', role: 'assistant', content: [{ type: 'text', time: { start: 5000, end: 6000 } }] }),
+    ]), SRC);
+    expect(r.session.durationSource).toBe('derived');
+    expect(r.events[0]).toMatchObject({ startedAt: new Date(1000).toISOString(), status: 'running', durationMs: 0 });
+  });
+
+  it('P1 native zero-length intervals survive derivation and equal starts retain source sequence', () => {
+    const r = normalizeOpenCode(sample([msg({
+      id: 'same', role: 'assistant', content: [
+        { type: 'text', text: 'zero', time: { start: 1000, end: 1000 } },
+        { type: 'tool', tool: 'Read', state: { time: { start: 1000, end: 2000 } } },
+        { type: 'text', text: 'later', time: { start: 5000, end: 5000 } },
+        { type: 'text', text: 'last', time: { start: 9000, end: 10000 } },
+      ],
+    })]), SRC);
+    expect(r.session.durationSource).toBe('measured');
+    expect(r.events.map(e => [e.id, e.sequence, e.durationMs])).toEqual([
+      ['same-0', 1, 0], ['same-1', 2, 1000], ['same-2', 3, 0], ['same-3', 4, 1000],
+    ]);
+  });
+
+  it('P1 keeps the existing OTel mixed-source path without deriving untimed message gaps', () => {
+    const r = normalizeOpenCode({
+      ...sample(opencodeFixture.events),
+      events: [...opencodeFixture.events, { name: 'tool', startTime: 1754000080000, endTime: 1754000780000 }],
+    }, SRC);
+    expect(r.session.durationSource).toBe('measured');
+    expect(r.events.map(e => e.durationMs)).toEqual([0, 0, 0, 700000]);
+  });
+
+  it.each([
+    { start: 1000 }, { end: 5000 }, { start: 5000, end: 1000 },
+    { start: NaN, end: 5000 }, { start: 1000, end: Infinity },
+  ])('P1 incomplete or invalid native timing falls back: %j', (time) => {
+    const r = normalizeOpenCode(sample([
+      msg({ id: 'fallback', role: 'assistant', time: { created: 1000 }, content: [{ type: 'text', time }] }),
+      msg({ id: 'later', role: 'assistant', time: { created: 401000 } }),
+    ]), SRC);
+    expect(r.session.durationSource).toBe('derived');
+    expect(r.events[0]).toMatchObject({ startedAt: new Date(1000).toISOString(), durationMs: 300000 });
+  });
+
+  it('binds native message and call ids to exact part events without promoting generated ids to native identity', () => {
+    const result = normalizeOpenCode(sample([msg({ id: 'native-message', role: 'assistant', content: [{ type: 'text', text: 'thinking' }, { type: 'tool', callID: 'native-call', tool: 'Read', state: { status: 'completed', input: {}, output: 'ok' } }] })]), SRC);
+    expect(result.nativeIdentities?.items.find(item => item.kind === 'tool_call')).toMatchObject({ value: 'native-call', eventId: 'native-message-1' });
+    expect(result.nativeIdentities?.items.filter(item => item.kind === 'message').map(item => item.eventId)).toEqual(['native-message-0', 'native-message-1']);
+    expect(result.nativeIdentities?.items.some(item => item.value === 'native-message-1')).toBe(false);
+    expect(result.events.every(event => Object.getOwnPropertySymbols(event).length === 0)).toBe(true);
+  });
   it('fixture 完整 TraceRecord 快照', () => {
     const r = normalizeOpenCode(sample(opencodeFixture.events), SRC);
     expect(r.session.provider).toBe('opencode');
@@ -61,6 +454,14 @@ describe('OpenCode adapter（REQ-005）', () => {
     expect(r.session.tokenUsage.reasoning).toBe(3);
     expect(r.session.tokenUsage.cacheWrite).toBe(2);
     expect(r.session.tokenUsage.total).toBe(2 + 2 + 3 + 40 + 2);
+  });
+
+  it('fusion 9.2 retains the calibrated 6016+4000+2000 incremental cache total', () => {
+    const events = [6016, 4000, 2000].map((read, i) => msg({ id: 'cache-step-' + i, role: 'assistant', tokens: { input: 1, output: 2, reasoning: 1, cache: { read, write: 0 } } }));
+    const r = normalizeOpenCode(sample(events), SRC);
+    expect(r.session.tokenUsage.cacheRead).toBe(12016);
+    expect(r.session.tokenUsage.total).toBe(12028);
+    expect(r.tokenSemantics.cacheRead).toBe('incremental');
   });
 
   it('#5 多 part 消息的 token 只计一次（step 或最后一个 part 挂载）', () => {

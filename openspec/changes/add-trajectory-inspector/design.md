@@ -163,7 +163,13 @@ A turn renders as an ordered list of cards. Grouping rules:
 3. `system` and `user_prompt` events produce their own cards.
 4. `compact` events produce a compact card: a single line naming the compaction with its
    token delta when available, not an expandable body.
-5. `agent` and `subagent_prompt` events produce a sub-agent card linking to that agent.
+5. `subagent_prompt` events produce a sub-agent prompt card. Generic `agent`
+   events use the existing neutral `system` message role, displayed as "Agent
+   record", with original metadata/usage/Raw intact. This workbench correction
+   supersedes the original blanket subagent mapping: CodeArts step-finish
+   bookkeeping is kind=agent and may even carry a legacy actor=subagent, neither
+   of which establishes delegation. Do not fabricate a link from either field.
+   Actual hierarchy/member navigation continues to require its own session evidence.
 
 This mirrors the source structure exactly: a tool call *is* part of an assistant message,
 and a tool result *is* a separate message. It is also why one event feeds two places —
@@ -180,7 +186,7 @@ copyable:
 |---|---|
 | claude | `toolu_0117nwDWENk6VtST1KBHjGxX` |
 | codex | `call_00_FUHEa1XZOVIWinblpRnH4144` |
-| codearts | `msg_e5a6706dd001EO50ARXbYTFmlW-1` |
+| codearts | `msg_example_1-1` |
 
 Rules: display `event.id` as-is; do **not** parse it, reformat it, truncate it in the DOM
 (CSS may truncate visually with the full value copyable), or generate one when absent.
@@ -231,7 +237,7 @@ estimate.
 | `tools` | `toolCount > 0` | `--role-tool-subtle` | `tool` |
 | `stop` | `kind === 'cycle'` with `toolCount === 0` | `--success-subtle` | `check-circle` |
 | `error` | `status === 'error'` | `--danger-subtle` | `x-circle` |
-| `subagent` | a member has kind `agent` or `subagent_prompt` | `--phase-understand-subtle` | `telescope` |
+| `subagent` | a member has explicit kind `subagent_prompt`; generic `agent` alone is insufficient | `--phase-understand-subtle` | `telescope` |
 | `compact` | a member has kind `compact` | `--role-compact-subtle` | `chevron-down` |
 | `running` | `status === 'running'` | `--attention-subtle` | `dot-fill` |
 

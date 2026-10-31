@@ -69,7 +69,7 @@ const SESSION_TRACE_COLS = [
   'token_input', 'token_output', 'token_reasoning', 'token_cache_read',
   'token_cache_write', 'token_total', 'cost_usd', 'system_prompt',
   'source_path', 'data_source', 'total_duration_ms', 'is_subagent',
-  'primary_model', 'cost_source', 'duration_source',
+  'primary_model', 'cost_source', 'duration_source', 'cost_currency',
 ];
 
 const EVENT_COLS = [
@@ -179,6 +179,7 @@ export function upsertSessionFromTrace(db: Database, session: TraceSession): voi
     session.primaryModel ?? null,
     session.costSource ?? 'unknown',
     session.durationSource ?? 'unknown',
+    session.costCurrency ?? 'USD',
   );
 }
 

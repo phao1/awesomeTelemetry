@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { t, type Locale } from '../../i18n.js';
 import type {
@@ -16,6 +16,8 @@ import { TurnList } from './TurnList.js';
 import { TurnNavigator } from './TurnNavigator.js';
 import { AgentHierarchyPanel } from './AgentHierarchyPanel.js';
 import { TrajectoryAnalysisPanel } from './TrajectoryAnalysisPanel.js';
+import { InvestigationToolbar } from './InvestigationToolbar.js';
+import { RecordInspector } from './RecordInspector.js';
 
 export interface TrajectoryPaneProps {
   locale: Locale;
@@ -27,6 +29,8 @@ export interface TrajectoryPaneProps {
   onSelectedTurnChange: (index: number | null) => void;
   /** findings / 命令面板定位事件 → 展开并滚动到其所在回合。 */
   focusEventId?: string | null;
+  /** Distinguishes repeated explicit jumps to the same event from metadata refreshes. */
+  focusEventRequest?: number;
   /** Agent 层级切换 agent（App 重新 selectSession）。 */
   onSelectAgent: (key: string) => void;
   hasMoreEvents?: boolean;
@@ -60,6 +64,7 @@ export function TrajectoryPane({
   selectedTurn,
   onSelectedTurnChange,
   focusEventId = null,
+  focusEventRequest = 0,
   onSelectAgent,
   hasMoreEvents = false,
   loadingMoreEvents = false,
@@ -84,25 +89,41 @@ export function TrajectoryPane({
   );
 
   /** 双向高亮：列表滚动写回 top-most visible 回合（rAF 节流在 TurnList）。 */
-  const [activeTurnIndex, setActiveTurnIndex] = useState<number | null>(0);
+  const [activeTurnIndex, setActiveTurnIndex] = useState<number | null>(model.turns.find(turn => turn.index === selectedTurn)?.index ?? model.turns[0]?.index ?? null);
   const [extensionsOpen, setExtensionsOpen] = useState(false);
   /** 回合导航 / findings 定位目标（TurnList 滚动 + 展开，零请求）。 */
   const [focusTurnIndex, setFocusTurnIndex] = useState<number | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
+  const [inspected, setInspected] = useState<{ sessionKey: string; eventId: string } | null>(null);
+  const externalFocusHandled = useRef<string | null>(null);
+  const inspectorOpener = useRef<HTMLElement | null>(null);
+  const closeInspector = useCallback(() => setInspected(null), []);
+  const inspectedMessage = inspected?.sessionKey === sessionKey
+    ? model.turns.flatMap(turn => turn.messages).find(message => message.eventId === inspected.eventId) ?? null : null;
+
+  useEffect(() => {
+    setActiveTurnIndex(model.turns.find(turn => turn.index === selectedTurn)?.index ?? model.turns[0]?.index ?? null);
+    setFocusTurnIndex(null);
+  }, [sessionKey]);
 
   // findings / 命令面板：focusEventId → 其所在回合。
   useEffect(() => {
     if (focusEventId === null) {
+      externalFocusHandled.current = null;
       return;
     }
+    const signature = JSON.stringify([sessionKey, focusEventId, focusEventRequest]);
+    if (externalFocusHandled.current === signature) return;
     const index = model.turns.findIndex((turn) =>
       turn.messages.some((message) => message.eventId === focusEventId),
     );
     if (index >= 0) {
       setFocusTurnIndex(model.turns[index]!.index);
       setFocusRequest((prev) => prev + 1);
+      setInspected({ sessionKey, eventId: focusEventId });
+      externalFocusHandled.current = signature;
     }
-  }, [focusEventId, model]);
+  }, [focusEventId, focusEventRequest, model, sessionKey]);
 
   const toggleTurn = (index: number): void => {
     onSelectedTurnChange(selectedTurn === index ? null : index);
@@ -116,14 +137,26 @@ export function TrajectoryPane({
     const scroller = document.querySelector<HTMLElement>('.session-scroll');
     const readingArea = document.querySelector<HTMLElement>('.turn-list');
     const navigator = document.querySelector<HTMLElement>('.trajectory-overview');
+    const investigation = document.querySelector<HTMLElement>('.investigation-toolbar');
     if (scroller && readingArea && navigator) {
       const gap = readingArea.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-      const visibleTop = navigator.getBoundingClientRect().height;
+      const visibleTop = navigator.getBoundingClientRect().height + (investigation?.getBoundingClientRect().height ?? 0);
       scroller.scrollTop += gap - visibleTop;
     }
   };
 
   const turnCount = model.complete ? model.turns.length : null;
+  const inspectEvent = (eventId: string): void => {
+    const turn = model.turns.find(item => item.messages.some(message => message.eventId === eventId));
+    if (!turn) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && !active.closest('.record-inspector')) {
+      inspectorOpener.current = active.closest('.investigation-search-results')
+        ? document.querySelector<HTMLInputElement>('.investigation-toolbar input') : active;
+    }
+    setInspected({ sessionKey, eventId });
+    activateSegment(turn.index);
+  };
 
   const rail = (
     <>
@@ -156,11 +189,17 @@ export function TrajectoryPane({
       focusRequest={focusRequest}
       loadDetail={loadDetail}
       loadRaw={loadRaw}
+      onInspect={inspectEvent}
     />
   );
 
   return (
     <div className="trajectory-pane">
+      <InvestigationToolbar key={sessionKey} model={model} locale={locale} selectedEventId={inspectedMessage?.eventId ?? null}
+        onInspect={inspectEvent} focused={focused} onToggleFocus={onToggleFocus}
+        agentsOpen={!railCollapsed} onToggleAgents={onToggleRailCollapse} />
+      <div className="trajectory-reading-layout">
+      <div className="trajectory-reading-main">
       <section className="trajectory-overview" aria-label={t('trajectory.overview', locale)}>
         <TurnNavigator model={model} locale={locale}
           activeTurnIndex={activeTurnIndex} onActivate={activateSegment} />
@@ -171,14 +210,12 @@ export function TrajectoryPane({
         collapsed={railCollapsed || focused}
         onToggleCollapse={onToggleRailCollapse}
       />
+      </div>
+      {inspectedMessage !== null && <RecordInspector sessionKey={sessionKey} session={detail.session}
+        message={inspectedMessage} locale={locale} onClose={closeInspector} loadDetail={loadDetail} loadRaw={loadRaw} restoreFocusRef={inspectorOpener} />}
+      </div>
       <details className="trajectory-extensions" onToggle={(event) => setExtensionsOpen(event.currentTarget.open)}>
         <summary>{t('trajectory.analysis.title', locale)} · {t('trajectory.stats.expand', locale)}</summary>
-        <div className="trajectory-extensions-actions">
-          <button type="button" className="btn ui-btn-sm" aria-pressed={!railCollapsed}
-            onClick={onToggleRailCollapse}>{t('trajectory.agentsToggle', locale)}</button>
-          {onToggleFocus && <button type="button" className="btn ui-btn-sm" aria-pressed={focused}
-            onClick={onToggleFocus}>{t(focused ? 'trajectory.exitFocus' : 'trajectory.focus', locale)}</button>}
-        </div>
         <TrajectoryStatBar locale={locale} model={model} session={detail.session}
           agentLabel={detail.session.sourceAgent} turnKeySource={turnKeySource} />
         {extensionsOpen && <TrajectoryAnalysisPanel model={model} locale={locale} onActivate={activateSegment} />}

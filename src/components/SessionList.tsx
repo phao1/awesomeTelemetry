@@ -19,7 +19,7 @@ import { SESSION_RANGES } from '../core/trace-types.js';
 import { api } from '../api/client.js';
 import { useVirtualList } from '../hooks/useVirtualList.js';
 import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
-import { IconSidebar } from './icons/index.js';
+import { IconAgents, IconSessions, IconSidebar } from './icons/index.js';
 import { ProviderBadge } from './ui/Badge.js';
 import { SearchInput } from './ui/Input.js';
 import { Popover } from './ui/Overlay.js';
@@ -57,6 +57,8 @@ export interface SessionListProps {
   collapsed: boolean;
   onResize: (width: number) => void;
   onToggleCollapse: () => void;
+  /** Existing Team exploration stays within Tasks, not a new global tab. */
+  onOpenTeams?: () => void;
 }
 
 const PROVIDERS: ProviderKey[] = [
@@ -124,6 +126,7 @@ export function SessionList({
   collapsed,
   onResize,
   onToggleCollapse,
+  onOpenTeams,
 }: SessionListProps): React.JSX.Element {
   const [providerOpen, setProviderOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
@@ -200,11 +203,30 @@ export function SessionList({
   };
 
   const filterBadge = (count: number): string => (count > 0 ? ` (${count})` : '');
+  const hasFilters = q.trim() !== '' || range !== 'all' || providerFilter.length > 0 || statusFilter.length > 0;
+  const resetFilters = (): void => {
+    onQChange(''); onRangeChange('all'); onProviderFilterChange([]); onStatusFilterChange([]);
+  };
+  const failed = error !== null && error !== undefined;
+
+  if (collapsed) return (
+    <aside className="rail session-rail-collapsed" aria-label={t('session.listLabel', locale)}>
+      <button type="button" className="ui-icon-btn" aria-label={t('session.expandList', locale)}
+        title={t('session.expandList', locale)} aria-expanded={false} onClick={onToggleCollapse}>
+        <IconSidebar size={16} />
+      </button>
+    </aside>
+  );
 
   return (
-    <aside className="rail" style={{ width: collapsed ? 0 : width }}>
+    <aside className="rail session-rail" style={{ width }} aria-label={t('session.listLabel', locale)}>
       <div className="rail-header">
-        <button type="button" className="ui-icon-btn ui-btn-sm" aria-label="collapse rail" onClick={onToggleCollapse}>
+        <span className="session-rail-title"><IconSessions size={16} />{t('session.listLabel', locale)}</span>
+        {onOpenTeams !== undefined && <a href="#/team" className="btn ui-btn-sm session-team-entry"
+          aria-label={t('session.openTeams', locale)} title={t('session.openTeams', locale)} onClick={(event) => { event.preventDefault(); onOpenTeams(); }}>
+          <IconAgents size={12} />{t('session.teams', locale)}
+        </a>}
+        <button type="button" className="ui-icon-btn ui-btn-sm" aria-label={t('session.collapseList', locale)} title={t('session.collapseList', locale)} aria-expanded={true} onClick={onToggleCollapse}>
           <IconSidebar size={12} />
         </button>
       </div>
@@ -212,6 +234,7 @@ export function SessionList({
         <SearchInput
           inputRef={searchInputRef}
           placeholder={t('session.search', locale)}
+          aria-label={t('session.search', locale)}
           value={q}
           onChange={(e) => onQChange(e.target.value)}
         />
@@ -291,8 +314,12 @@ export function SessionList({
             </div>
           </Popover>
         </div>
+        {hasFilters && <div className="session-filter-summary">
+          <span>{t('session.filteredScope', locale).replace('{range}', t(RANGE_LABEL[range], locale))}</span>
+          <button type="button" className="ui-btn ui-btn-ghost ui-btn-sm" onClick={resetFilters}>{t('session.clearFilters', locale)}</button>
+        </div>}
       </div>
-      {error !== null && error !== undefined && (
+      {failed && (
         <ErrorState code="LIST_LOAD_FAILED" message={error} onRetry={onRetry} />
       )}
       {loading && items.length === 0 && (
@@ -300,23 +327,25 @@ export function SessionList({
           <Skeleton variant="row" count={6} />
         </div>
       )}
-      {!loading && items.length === 0 && (
+      {!loading && !failed && items.length === 0 && (
         <EmptyState
-          icon={<span aria-hidden="true" />}
-          title={t('common.empty', locale)}
-          description={offlineSamples ? t('state.offlineSamples', locale) : undefined}
+          icon={<IconSessions size={20} />}
+          title={t(hasFilters ? 'session.noMatches' : 'session.noRecords', locale)}
+          description={offlineSamples ? t('state.offlineSamples', locale) : t(hasFilters ? 'session.noMatchesHint' : 'session.noRecordsHint', locale)}
           action={
-            <button type="button" className="btn" onClick={onRetry}>
-              {t('common.retry', locale)}
+            <button type="button" className="btn" onClick={hasFilters ? resetFilters : onRetry}>
+              {t(hasFilters ? 'session.clearFilters' : 'common.refresh', locale)}
             </button>
           }
         />
       )}
+      {loading && items.length > 0 && <div className="session-list-updating" role="status">{t('session.updating', locale)}</div>}
       <div
         ref={containerRef}
         className="rail-list"
         role="listbox"
         aria-label={t('session.title', locale)}
+        aria-busy={loading}
         style={{ height: '100%', overflowY: 'auto', position: 'relative' }}
         onScroll={onScroll}
       >
@@ -333,13 +362,21 @@ export function SessionList({
                     }`}
                     role="option"
                     aria-selected={selected}
+                    tabIndex={cursorIndex >= 0 ? (cursorIndex === index ? 0 : -1) : selectedId !== null ? (selected ? 0 : -1) : (index === 0 ? 0 : -1)}
                     onClick={() => onSelect(session.id)}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault(); onSelect(session.id);
+                      }
+                    }}
                     title={`${session.title}\n${new Date(session.startedAt).toLocaleString()}`}
                   >
                     <div className="session-row-main">
                       <span
                         className={`status-dot status-${session.status}`}
-                        aria-hidden="true"
+                        role="img"
+                        aria-label={t(`status.${session.status}` as I18nKey, locale)}
                       />
                       <span className="session-row-title">{session.title}</span>
                       {session.mergeGroupId !== null && (

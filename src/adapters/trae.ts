@@ -13,6 +13,7 @@ import {
   toIsoFromSeconds,
   wallClockDurationMs,
 } from './helpers.js';
+import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
 
 export interface TraeTurn {
@@ -49,6 +50,14 @@ export interface TraeRecordShape {
     /** #7：chat_session.agent_type / agent_name（agent 元数据）。 */
     agentType?: string;
     agentName?: string;
+    /**
+     * 2026-08-11：模型名来自 turn context 的 `model_info.model_name`，
+     * scanner 侧已经解析出来喂给 prompt context 了，之前只是没往会话上接 ——
+     * 结果 sessions.primary_model / events.model 全库为 NULL，成本也就永远算不出来。
+     */
+    modelName?: string;
+    /** 工作目录，来自终端状态 reminder（extractTraeCwd）。 */
+    cwd?: string;
   };
   turns: TraeTurn[];
 }
@@ -274,6 +283,9 @@ export function normalizeTraeSample(
       actor: type === 'user' ? 'user' : 'assistant',
       tool: turn.toolName ?? (['read_file', 'write_file', 'bash'].includes(type) ? type : null),
       tokens,
+      // 每条 llm 行都是同一个会话模型发的；Trae 不逐条落 model，
+      // 但会话级 model_info.model_name 对全会话有效。
+      model: tokens === null ? null : record.modelName ?? null,
       error: status === 'error' ? titleFromText(turn.content ?? 'error', 500) : null,
       hasInput: turn.content != null,
       hasOutput: !isUser && (turn.content != null || turn.reasoningContent != null),
@@ -312,7 +324,15 @@ export function normalizeTraeSample(
       : firstUserTitle ?? fallbackSessionTitle('trae', Date.parse(startedAt));
   // #16（审查 P3）：Trae server_history_info 不含 cache.read 字段，
   // cacheRead 恒为 0；声明 incremental 仅是形式，不产生真实累加。
+  //
+  // ⚠️ 这不是「Trae 没用缓存」——2026-08-09 的网关账单显示同一次会话缓存命中率
+  // 95.26%（357 万命中 / 17.8 万未命中），只是 Trae 本地库不落这个拆分。
+  // 因此下面按 tokenUsage 估出来的成本是**上界**：所有输入都按未命中价计。
+  // 真实成本要么接网关账单，要么开代理抓 usage —— 从这个库里推不出来。
   const semantics = { cacheRead: 'incremental' as const, reasoning: 'incremental' as const };
+  const tokenUsage = aggregateTokenUsage(deduped, semantics);
+  const primaryModel = record.modelName ?? null;
+  const cost = computeCost(tokenUsage, primaryModel);
   const session: TraceSession = {
     id: record.id ?? `trae-${sourcePath}`,
     provider: 'trae',
@@ -323,11 +343,11 @@ export function normalizeTraeSample(
     startedAt,
     updatedAt: nativeUpdatedAt ?? times.updatedAt,
     status: rollupSessionStatus(deduped),
-    cwd: null,
+    cwd: record.cwd ?? null,
     messageCount: turns.length,
     eventCount: deduped.length,
-    tokenUsage: aggregateTokenUsage(deduped, semantics),
-    costUsd: 0,
+    tokenUsage,
+    costUsd: cost.cost,
     systemPrompt: null,
     dataSource: 'scan',
     sourcePath,
@@ -336,6 +356,9 @@ export function normalizeTraeSample(
       record.agentType !== undefined &&
       record.agentType !== '' &&
       SUBAGENT_AGENT_TYPES.has(record.agentType.toLowerCase()),
+    primaryModel,
+    costSource: cost.costSource,
+    costCurrency: cost.currency,
     // trae.ts:100 已按相邻时间戳算 durationMs，语义同 deriveDurations
     durationSource: 'derived' as const,
   };

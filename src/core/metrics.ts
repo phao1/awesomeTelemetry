@@ -7,6 +7,7 @@ import type {
 import { TRACE_PHASES } from './trace-types.js';
 import { computeSpeedMetrics } from './speed-metrics.js';
 import { isWriteEventLike } from './event-groups.js';
+import { commandTextOf, promptTextOf } from './phase-classifier.js';
 
 /**
  * REQ-005：算法变更时 bump，触发 metrics 重算回写。
@@ -17,8 +18,15 @@ import { isWriteEventLike } from './event-groups.js';
  * v4（calibrate-tokens-and-compare-report §4）：TraceMetrics 新增
  * totalToolDurationMs / llmCallCount / userInteractionRounds / hasUnitTests /
  * failedCommandCount —— 必须 bump，否则老行 calc_version=3 永不重算。
+ * v5（2026-08-11 校准审计）：#A userInteractionRounds 改为过滤系统注入
+ * （此前把 <system-reminder> 当用户轮次，CodeArts 虚高 2×、Trae 虚高 2.7×）；
+ * #B hasUnitTests 的 TEST_CMD 补 JVM/.NET 跑测命令并读真实命令文本；
+ * #C phase 分类修好后 verify/debug 首次产出非零值，依赖 phase 的
+ * verificationPresent / verificationCoverage / enteredDebug 全部要重算。
+ * v6 (fusion): publish explicit legacy scan interpretation/comparison policy.
+ * Numeric scan algorithms remain unchanged; capture parser/usage versions are separate.
  */
-export const METRICS_CALC_VERSION = 4;
+export const METRICS_CALC_VERSION = 6;
 
 /** repair_loop 判定：连续 W F W F W（write, fail, write, fail, write），≥2 轮。
  * 与 event-groups detectRepairLoop 的 isWriteEventLike + (bash|test)+error 同口径。 */
@@ -55,8 +63,13 @@ const STEP_KINDS = new Set([
 /**
  * v4 hasUnitTests：命中测试命令正则。与 trae.ts 的 TEST_CMD 同口径
  * （npm test / vitest / jest / pytest / cargo test / go test / tsc / eslint）。
+ *
+ * v5：补 JVM / .NET / Ruby 跑测命令。**故意比 phase-classifier 的 VERIFY_CMD 窄** ——
+ * 这里问的是「有没有跑单元测试」，`mvn compile` / `mvn install -DskipTests` 是构建
+ * 不是测试，必须判 false（2026-08-09 实测两个智能体都没写测试，此处必须保持 0）。
  */
-const TEST_CMD = /(npm test|vitest|jest|pytest|cargo test|go test|tsc|eslint)/;
+const TEST_CMD =
+  /(npm test|vitest|jest|pytest|cargo test|go test|tsc|eslint|\b(mvn|gradle|gradlew)\b[^\n]*\btest\b|dotnet test|\bctest\b|\brspec\b|\bphpunit\b)/;
 
 /** v4 failedCommandCount：命令失败计数的事件种类（有意不含 llm）。 */
 const FAILED_COMMAND_KINDS = new Set([
@@ -102,9 +115,16 @@ export function computeMetrics(record: TraceRecord): TraceMetrics {
     .filter((e) => e.tool !== null)
     .reduce((sum, e) => sum + e.durationMs, 0);
   const llmCallCount = events.filter((e) => e.kind === 'llm').length;
-  const userInteractionRounds = events.filter((e) => e.kind === 'user_prompt').length;
+  // v5：只数**真人**发的轮次。此前直接数 user_prompt，把 <system-reminder>、
+  // skill 提醒、子代理派单这些系统注入全算成了「用户又说了一句话」——
+  // 2026-08-09 实测 CodeArts 7 轮被记成 14、Trae 3 轮被记成 8，
+  // 「平均每轮成本 / 每轮耗时」这类派生指标随之全部腰斩。
+  const userInteractionRounds = events.filter(
+    (e) => e.kind === 'user_prompt' && isGenuineUserPrompt(promptTextOf(e)),
+  ).length;
+  // v5：judge 的是命令文本而不是 title（title 多为模型写的人类描述）。
   const hasUnitTests = events.some(
-    (e) => e.phase === 'verify' && TEST_CMD.test(e.title),
+    (e) => e.phase === 'verify' && TEST_CMD.test(commandTextOf(e)),
   );
   const failedCommandCount = events.filter(
     (e) => e.status === 'error' && FAILED_COMMAND_KINDS.has(e.kind),
@@ -134,9 +154,15 @@ export function computeMetrics(record: TraceRecord): TraceMetrics {
   };
 }
 
-/** REQ-010：过滤 <system-reminder> 等系统注入。 */
+/**
+ * REQ-010：过滤 <system-reminder> 等系统注入。
+ *
+ * 必须同时认**闭标签**：Trae 落库的注入消息正文被前端截去了开头，只剩
+ * `…as your first action.\n</system-reminder>\n\n实际派单内容`，
+ * 只匹配开标签会把它们全部当成真人输入。
+ */
 export function isGenuineUserPrompt(text: string): boolean {
-  return !/<system-reminder>|system_reminder|<system>/i.test(text);
+  return !/<\/?system-reminder>|system_reminder|<\/?system>/i.test(text);
 }
 
 /** REQ-010：清理标签。 */

@@ -3,12 +3,15 @@ import { useMemo, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { SpeedMetrics, TraceEventSlim, TraceSession } from '../core/trace-types.js';
-import { diffPct, fmtMs } from './compare-stats.js';
+import { scanTimingReason, scanTimingValue, type ScanTimingMetric, type ScanTimingSide } from '../core/scan-timing.js';
+import { fmtMs } from './compare-stats.js';
 import { TokenTextModal, type TokenClass } from './TokenTextModal.js';
 import { IconWarning } from './icons/index.js';
+import { CompareTokenUsage } from './CompareTokenUsage.js';
 
 interface SpeedMetricDef {
   key: string;
+  metric: ScanTimingMetric;
   /** SpeedMetrics 真实字段名（tpot → tpotMs 等，防止 undefined 崩溃）。 */
   field: keyof SpeedMetrics;
   label: string;
@@ -41,6 +44,7 @@ export function CompareSpeedMetrics({
   locale,
   sessions,
   events,
+  sides,
 }: {
   speed: { left: SpeedMetrics; right: SpeedMetrics };
   locale: Locale;
@@ -48,14 +52,18 @@ export function CompareSpeedMetrics({
   sessions?: { left: TraceSession; right: TraceSession };
   /** REQ-102：辅助指标 LLM Calls / 工具总时长按事件计数（G-UI-4 之外的字段）。 */
   events?: { left: TraceEventSlim[]; right: TraceEventSlim[] };
+  /** Full page readiness wins over session-only fallback. */
+  sides?: { left: ScanTimingSide; right: ScanTimingSide };
 }): React.JSX.Element {
+  const leftSide = sides?.left ?? (sessions === undefined ? undefined : { session: sessions.left });
+  const rightSide = sides?.right ?? (sessions === undefined ? undefined : { session: sessions.right });
   const defs: SpeedMetricDef[] = [
-    { key: 'e2e', field: 'e2eMs', label: t('compare.metric.e2e', locale), lowerBetter: true, fmt: fmtMsSafe },
-    { key: 'ttft', field: 'ttftMs', label: t('compare.metric.ttft', locale), lowerBetter: true, fmt: fmtMsSafe },
-    { key: 'tps', field: 'tps', label: t('compare.metric.tps', locale), lowerBetter: false, fmt: fmtNumber },
-    { key: 'tpot', field: 'tpotMs', label: t('compare.speed.tpot', locale), lowerBetter: true, fmt: fmtTpot },
-    { key: 'turnGap', field: 'turnGapMedianMs', label: t('compare.speed.turnGap', locale), lowerBetter: true, fmt: fmtMsSafe },
-    { key: 'pureInference', field: 'pureInferenceMs', label: t('compare.speed.pureInference', locale), lowerBetter: true, fmt: fmtMsSafe },
+    { key: 'e2e', metric: 'e2e', field: 'e2eMs', label: t('compare.metric.e2e', locale), lowerBetter: true, fmt: fmtMsSafe },
+    { key: 'ttft', metric: 'ttft', field: 'ttftMs', label: t('compare.metric.ttft', locale), lowerBetter: true, fmt: fmtMsSafe },
+    { key: 'tps', metric: 'tps', field: 'tps', label: t('compare.metric.tps', locale), lowerBetter: false, fmt: fmtNumber },
+    { key: 'tpot', metric: 'tpot', field: 'tpotMs', label: t('compare.speed.tpot', locale), lowerBetter: true, fmt: fmtTpot },
+    { key: 'turnGap', metric: 'turnGap', field: 'turnGapMedianMs', label: t('compare.speed.turnGap', locale), lowerBetter: true, fmt: fmtMsSafe },
+    { key: 'pureInference', metric: 'eventDuration', field: 'pureInferenceMs', label: t('compare.speed.pureInference', locale), lowerBetter: true, fmt: fmtMsSafe },
   ];
 
   const [openToken, setOpenToken] = useState<{ side: 'left' | 'right'; tokenClass: TokenClass } | null>(null);
@@ -66,98 +74,46 @@ export function CompareSpeedMetrics({
   const auxRows = useMemo<AuxRow[]>(() => {
     const lEvents = events?.left ?? [];
     const rEvents = events?.right ?? [];
-    const llmCallsL = lEvents.filter((e) => e.kind === 'llm').length;
-    const llmCallsR = rEvents.filter((e) => e.kind === 'llm').length;
-    const toolDurL = lEvents.filter((e) => e.tool !== null).reduce((sum, e) => sum + e.durationMs, 0);
-    const toolDurR = rEvents.filter((e) => e.tool !== null).reduce((sum, e) => sum + e.durationMs, 0);
+    const llmCallsL = events === undefined ? null : lEvents.filter((e) => e.kind === 'llm').length;
+    const llmCallsR = events === undefined ? null : rEvents.filter((e) => e.kind === 'llm').length;
+    const toolDurL = events === undefined ? null : lEvents.filter((e) => e.tool !== null).reduce((sum, e) => sum + e.durationMs, 0);
+    const toolDurR = events === undefined ? null : rEvents.filter((e) => e.tool !== null).reduce((sum, e) => sum + e.durationMs, 0);
     return [
-      { key: 'llmCalls', label: t('compare.speed.llmCalls', locale), lv: String(llmCallsL), rv: String(llmCallsR), lnum: llmCallsL, rnum: llmCallsR, lowerBetter: false },
-      { key: 'avgLlmDuration', label: t('compare.speed.avgLlmDuration', locale), lv: fmtMs(speed.left.avgLlmDurationMs), rv: fmtMs(speed.right.avgLlmDurationMs), lnum: speed.left.avgLlmDurationMs, rnum: speed.right.avgLlmDurationMs, lowerBetter: true },
-      { key: 'totalToolDuration', label: t('compare.speed.totalToolDuration', locale), lv: fmtMs(toolDurL), rv: fmtMs(toolDurR), lnum: toolDurL, rnum: toolDurR, lowerBetter: true },
-      { key: 'cacheHitRate', label: t('compare.speed.cacheHitRate', locale), lv: fmtPct(speed.left.cacheHitRate), rv: fmtPct(speed.right.cacheHitRate), lnum: speed.left.cacheHitRate, rnum: speed.right.cacheHitRate, lowerBetter: false },
+      { key: 'llmCalls', label: t('compare.speed.llmCalls', locale), lv: String(llmCallsL ?? '—'), rv: String(llmCallsR ?? '—'), lnum: llmCallsL, rnum: llmCallsR, lowerBetter: false },
+      { key: 'avgLlmDuration', label: t('compare.speed.avgLlmDuration', locale), lv: fmtMsSafe(scanTimingValue(speed.left.avgLlmDurationMs)), rv: fmtMsSafe(scanTimingValue(speed.right.avgLlmDurationMs)), lnum: speed.left.avgLlmDurationMs, rnum: speed.right.avgLlmDurationMs, lowerBetter: true },
+      { key: 'totalToolDuration', label: t('compare.speed.totalToolDuration', locale), lv: fmtMsSafe(scanTimingValue(toolDurL)), rv: fmtMsSafe(scanTimingValue(toolDurR)), lnum: toolDurL, rnum: toolDurR, lowerBetter: true },
+      { key: 'cacheHitRate', label: t('compare.speed.cacheHitRate', locale), lv: fmtPct(scanTimingValue(speed.left.cacheHitRate)), rv: fmtPct(scanTimingValue(speed.right.cacheHitRate)), lnum: speed.left.cacheHitRate, rnum: speed.right.cacheHitRate, lowerBetter: false },
     ];
   }, [events, speed, locale]);
-
-  const tokenValues = (side: 'left' | 'right'): Record<TokenClass, number> => {
-    const session = sessions?.[side];
-    return {
-      system: speed[side].systemPromptTokensEstimate ?? 0,
-      input: session?.tokenUsage.input ?? 0,
-      reasoning: session?.tokenUsage.reasoning ?? 0,
-      output: session?.tokenUsage.output ?? 0,
-    };
-  };
-
-  const stack = (side: 'left' | 'right'): React.JSX.Element => {
-    const values = tokenValues(side);
-    const total = Object.values(values).reduce((a, b) => a + b, 0) || 1;
-    const session = sessions?.[side];
-    return (
-      <div className="token-stack" role="group" aria-label={t('compare.charts.tokenDonut', locale)}>
-        {session !== undefined && (
-          <span className="compare-side-mark" style={{ color: side === 'left' ? 'var(--accent-fg)' : 'var(--attention-fg)' }}>
-            {side === 'left' ? 'L' : 'R'}
-          </span>
-        )}
-        <div className="token-stack-bar">
-          {(['system', 'input', 'reasoning', 'output'] as const).map((cls) => {
-            const value = values[cls];
-            if (value <= 0) {
-              return null;
-            }
-            return (
-              <button
-                key={cls}
-                type="button"
-                className={`token-stack-seg token-stack-${cls}`}
-                style={{ width: `${(value / total) * 100}%` }}
-                title={`${t(`compare.charts.tokenClass.${cls}`, locale)} · ${value.toLocaleString()}`}
-                aria-label={`${side === 'left' ? 'L' : 'R'} ${cls}`}
-                onClick={() => setOpenToken({ side, tokenClass: cls })}
-              >
-                <span className="token-stack-seg-label">{t(`compare.charts.tokenClass.${cls}`, locale)}</span>
-                <span className="mono token-stack-seg-count">{value.toLocaleString()}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
 
   const openSession = openToken === null || sessions === undefined ? null : sessions[openToken.side];
 
   return (
     <>
+      <p className="hint">{t('scan.timing.scope', locale)} {t('scan.timing.wallClock', locale)}</p>
       <div className="compare-speed-grid">
         {defs.map((def) => {
-          const lv = (speed.left[def.field] ?? null) as number | null;
-          const rv = (speed.right[def.field] ?? null) as number | null;
-          const leftBetter =
-            lv === null || rv === null || lv === rv
-              ? null
-              : def.lowerBetter
-                ? lv < rv
-                : lv > rv;
+          const lv = scanTimingValue(speed.left[def.field]);
+          const rv = scanTimingValue(speed.right[def.field]);
+          const reason = scanTimingReason(leftSide, rightSide, def.metric, speed.left[def.field], speed.right[def.field]);
+          const delta=reason!==null||lv===null||rv===null?null:rv-lv;
+          const observed=delta===null||!Number.isFinite(delta)?null:`R − L: ${delta>0?'+':delta<0?'−':''}${def.fmt(Math.abs(delta))}`;
           const warns: Array<{ side: 'L' | 'R'; ms: number }> = [];
           if (def.key === 'ttft') {
-            if ((speed.left.ttftMs ?? 0) > 5000) {
-              warns.push({ side: 'L', ms: speed.left.ttftMs! });
+            if (lv !== null && lv > 5000) {
+              warns.push({ side: 'L', ms: lv });
             }
-            if ((speed.right.ttftMs ?? 0) > 5000) {
-              warns.push({ side: 'R', ms: speed.right.ttftMs! });
+            if (rv !== null && rv > 5000) {
+              warns.push({ side: 'R', ms: rv });
             }
           }
           return (
             <div
               key={def.key}
-              className={`compare-speed-card ${leftBetter === null ? '' : leftBetter ? 'compare-speed-card-l' : 'compare-speed-card-r'}`}
+              className="compare-speed-card"
             >
               <div className="compare-speed-card-head">
                 <span className="compare-speed-card-label">{def.label}</span>
-                <span className="compare-speed-card-dir">
-                  {def.lowerBetter ? t('compare.lowerBetter', locale) : t('compare.higherBetter', locale)}
-                </span>
               </div>
               <div className="compare-speed-values">
                 <span className="mono compare-speed-value">
@@ -169,12 +125,8 @@ export function CompareSpeedMetrics({
                   {def.fmt(rv)}
                 </span>
               </div>
-              <div className="compare-speed-winner" aria-hidden="true">
-                {leftBetter === null
-                  ? t('compare.parity', locale)
-                  : leftBetter
-                    ? 'L ✓'
-                    : 'R ✓'}
+              <div className="compare-speed-observation">
+                {reason !== null ? `${t('scan.timing.notComparable', locale)} · ${t(`scan.timing.reason.${reason}`, locale)}` : observed??t('compare.activity.unavailable',locale)}
               </div>
               {warns.map((warn) => (
                 <div key={warn.side} className="compare-speed-warn" role="status">
@@ -189,13 +141,9 @@ export function CompareSpeedMetrics({
       </div>
       <div className="compare-speed-aux">
         {auxRows.map((row) => {
-          const leftBetter =
-            row.lnum === null || row.rnum === null || row.lnum === row.rnum
-              ? null
-              : row.lowerBetter
-                ? row.lnum < row.rnum
-                : row.lnum > row.rnum;
-          const diff = row.lnum === null || row.rnum === null ? 0 : diffPct(row.lnum, row.rnum);
+          const reason = scanTimingReason(leftSide, rightSide, 'eventDuration', row.lnum, row.rnum);
+          const diff = reason !== null || row.lnum === null || row.rnum === null ? null : row.rnum-row.lnum;
+          const delta=diff===null||!Number.isFinite(diff)?null:`R − L: ${diff>0?'+':diff<0?'−':''}${row.key==='llmCalls'?Math.abs(diff).toLocaleString(locale):row.key==='cacheHitRate'?`${(Math.abs(diff)*100).toFixed(1)} ${t('compare.activity.percentagePoints',locale)}`:fmtMs(Math.abs(diff))}`;
           return (
             <div key={row.key} className="compare-speed-aux-card">
               <span className="compare-speed-aux-label">{row.label}</span>
@@ -207,8 +155,9 @@ export function CompareSpeedMetrics({
                 <span className="compare-side-mark" style={{ color: 'var(--attention-fg)' }}>R</span>
                 {row.rv}
               </span>
-              <span className={`compare-delta ${leftBetter === null ? '' : leftBetter ? 'compare-delta-win' : 'compare-delta-lose'}`}>
-                {leftBetter === null ? '=' : `${diff.toFixed(0)}% ${leftBetter ? '← L' : '→ R'}`}
+              <span className="compare-delta">
+                {reason !== null ? `${t('scan.timing.notComparable', locale)} · ${t(`scan.timing.reason.${reason}`, locale)}`
+                  : delta??t('compare.activity.unavailable',locale)}
               </span>
             </div>
           );
@@ -217,8 +166,9 @@ export function CompareSpeedMetrics({
       {sessions !== undefined && (
         <div className="compare-token-stacks">
           <h4 className="compare-token-stacks-title">{t('compare.charts.tokenDonut', locale)}</h4>
-          {stack('left')}
-          {stack('right')}
+          <CompareTokenUsage visual="bars" locale={locale} usage={{left:sessions.left.tokenUsage,right:sessions.right.tokenUsage}}
+            estimates={{left:speed.left.systemPromptTokensEstimate,right:speed.right.systemPromptTokensEstimate}}
+            pending={{left:leftSide?.pending,right:rightSide?.pending}} onInspectText={(side,tokenClass)=>setOpenToken({side,tokenClass})}/>
         </div>
       )}
       {openToken !== null && openSession !== null && (
@@ -227,7 +177,7 @@ export function CompareSpeedMetrics({
           provider={openSession.provider}
           agentName={openSession.sourceAgent}
           tokenClass={openToken.tokenClass}
-          tokenCount={tokenValues(openToken.side)[openToken.tokenClass]}
+          tokenCount={openToken.tokenClass==='system'?speed[openToken.side].systemPromptTokensEstimate??0:openSession.tokenUsage[openToken.tokenClass]}
           locale={locale}
           onClose={() => setOpenToken(null)}
         />

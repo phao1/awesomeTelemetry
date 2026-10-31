@@ -1,7 +1,8 @@
 # Spec: Storage
 
-> SQLite storage layer: schema, writers, queries. Schema version **v1** (fresh
-> build, no historical migration).
+> SQLite storage layer: schema, writers, queries. Current schema version is
+> defined in contracts/database.md (v18 adds a bounded reparse summary).
+> Fresh product build; no historical user-dataset migration is in scope.
 > **The authoritative source for DDL / indexes / PRAGMAs is
 > `contracts/database.md`; this file only defines behavior requirements.**
 > Source files: `server/storage/`
@@ -12,6 +13,54 @@ Persist scan sessions, proxy requests, Frida captures, and metrics. WAL mode,
 single-process writes.
 
 ## Requirements
+
+### REQ-023: Same-capture versioned offline reparse summary
+Explicit reparse SHALL update one bounded metadata-only summary per existing
+capture with parser/usage-metric versions and source fingerprint. Current/stale/
+unavailable are metadata states,not fresh original-file checks. Repeated actions
+MUST NOT insert a new capture/charge or overwrite original/native/scan data.
+Confirmed body deletion clears the summary in its intent transaction; no legacy
+body fallback or startup reparse. Types/DDL/bounds follow contracts schema18.
+
+### REQ-022: Native parent-reference projection
+Read retained parent_session references and exact same-namespace native session
+owners through existing source/session indexes, without source IO, global parent
+scan, schema mutation or inferred topology. Complete unique non-self evidence
+may resolve a declared parent/fork reference only; missing/ambiguous/incomplete
+and truncated matches remain distinct. Paged bounded shape follows contracts.
+
+### REQ-020: Linked execution metadata read model
+Return the retained session duration declaration (unknown fallback) and one
+batched projection of existing transport metadata, null for legacy absence.
+This does not prove any native event's measured duration; do not load event raw
+or source files just to populate the list. Preserve bounded pages and no N+1.
+
+An explicit execution page SHALL combine fixed-size native slim event pages and
+accepted direct/confirmed capture memberships, preserving both original sources.
+Exact scoped native identities may link a retained event only when all relevant
+source manifests are complete and unambiguous, including off-page collisions.
+Session-only/absent evidence SHALL remain unbound. No generated causal/retry/
+billing IDs or server TraceTurn derivation; no raw/summary/body columns, N+1,
+source-file IO or automatic association writes. Bounds/shapes follow contracts.
+
+### REQ-021: Local capture evidence snapshot export
+An explicit capture export SHALL include bounded versioned analysis plus
+metadata/headers/body references and paged identity/link evidence without
+redaction or upstream execution. Full original files remain separately
+downloadable; missing/truncated/deleted evidence is explicit. Recheck fresh
+deletion intent after async analysis and never export cached body projections
+after intent. No filesystem paths/journal/private CA data in the package.
+
+### REQ-018: Evidence-backed capture association
+Persist identity sources/entries, session-proxy associations and append-only user decisions per contracts. Differential/idempotent ingest MUST NOT rewrite original scan/proxy rows, charge a new call, or overwrite a confirmed/rejected/revoked user decision. Late conflicting session identities MUST downgrade previous automatic direct links to candidates. List APIs SHALL use indexed metadata pages and bulk evidence reads, with no raw/body/summary columns and no per-row query.
+
+v17 native lookup index SHALL cover session/scope NULL only, matching current
+automatic association lookups. Keep all other identity values/scopes/locators
+and source-page index intact. Native keys SHALL drive exact index searches
+after ANALYZE, never a scan of the whole retained identity index, even in tiny
+databases. Atomic index+version migration rolls back on
+failure; repeated current initialization never rebuilds it. Large admitted
+captures must not exceed fixed WAL/DB/loop budgets through index amplification.
 
 ### REQ-001: Connection initialization
 `openWritable()` MUST set all 8 PRAGMAs in the order of `contracts/database.md`
@@ -29,14 +78,40 @@ single-process writes.
 `checkpointWal()` MUST use `wal_checkpoint(TRUNCATE)`; on busy, MUST silently
 skip and wait for the next round. MUST NOT retry or block-wait.
 
+Temporarily disable the synchronous busy handler only for this checkpoint and
+restore its exact configured value in finally. Capture-only DB/WAL admission
+uses shared bounded per-DB serialization and actual async file sizes per the
+database contract; pressure blocks new journal/capture commits, not forwarding
+or deletion of prior evidence. Recovery preserves refused journals/originals.
+The independent read-only capacity diagnostic MUST remain reachable under
+pressure and MUST NOT itself checkpoint/recover. No scan cleanup or global DB
+page cap is introduced. This is not full long-term shared-writer certification.
+
+Capacity admission SHALL reject SQLite writes that invalidate an async file-size
+snapshot, using same-connection total_changes/schema_version and observed other-connection
+data_version. Recheck at most3 snapshots total, including after at most1
+checkpoint; continued churn fails explicitly without calling the mutation.
+Reject caller-owned transactions before/during IO without rolling them back,
+never hold a transaction across async stat, and restore the exact busy timeout
+after zero-wait stamp reads. Native rows/raw/metrics/identities remain intact.
+This fixes stale admission, not future external writes or unlimited native
+growth; the NFR §7 separate-store escalation remains required.
+
 ### REQ-003: Idempotent DB creation
 `initSchema(db)` SHALL execute all `contracts/database.md` §3 table creations,
-§4 index creations, write `_meta.schema_version = SCHEMA_VERSION` (constant 1),
+§4 index creations, write `_meta.schema_version = SCHEMA_VERSION` from the current contract,
 and run `ANALYZE`. The whole flow MUST be idempotent; repeated calls have no
 side effects.
 
-This is a fresh build, **no historical migration**. The `migrations/` dir is
-reserved but currently empty.
+Existing development-cache compatibility steps are defined by the higher
+priority database contract; this requirement does not override them with the
+stale v1/empty-migrations description. The v12→v13 processing table is additive,
+with no startup reparse, deletion or scanner-state reset. A missing legacy
+processing outcome is unknown, not success. Current MITM writes its outcome
+atomically with request/body/identity metadata; body completeness is separate.
+The v13→v14 transport table is likewise additive with independent bounded
+CaptureTransportResult, fixed-count detail queries and FK cascade. No legacy
+backfill, original rewrite or scanner reset; absent outcomes remain unknown.
 
 #### Scenario: DB version newer than code
 - **GIVEN** the read `schema_version` is greater than the code constant
@@ -139,6 +214,8 @@ plus `calc_version`. `getMetrics()` MUST recompute and write back when
 `system_prompt_len` redundant column, MUST NOT use
 `ORDER BY LENGTH(system_prompt)`.
 
+This legacy time-window result is candidate evidence only, never an authoritative linked-session prompt. Linked Trace SHALL retain each request's own prompt and permit explicit request selection; never copy the longest nearby prompt into a scan session. Automatic context comparison requires unique direct/confirmed membership for both requests in the same existing scan session, ordered by observed UTC start instant and id tie-break. Same parsed_session_id/captureGroup/model alone is insufficient; candidate/rejected/revoked or multiply owned requests cannot authorize automatic pairing. A manual comparison does not mutate association state.
+
 ### REQ-015: Proxy queries
 `listProxyRequests(opts)` MUST exclude
 `request_body` / `response_body` / `raw_request_body` / `raw_response_body` /
@@ -149,9 +226,49 @@ plus `calc_version`. `getMetrics()` MUST recompute and write back when
 `sessions` + the session's matching `scan_state` row.
 
 ### REQ-017: Data retention
-On startup SHALL purge expired `proxy_requests` per `--proxy-retention-days`
-(default 30, 0 disables). When more than 1000 rows are deleted, trigger one
-`checkpointWal()`.
+Monitoring original body files SHALL have no implicit expiry or eviction. Default 10GB total quota and 100MiB per-direction cap are configurable. At quota exhaustion, stop new body collection and report status while preserving previous evidence. Legacy explicit proxy metadata retention remains independent and cannot silently delete original files. SQLite metadata/previews keep the existing NFR budget.
+
+Explicit metadata retention SHALL atomically persist exact request+both-body
+deletion markers. Recovery MUST NOT recreate those same-owner observations
+when policy is later disabled/lengthened. Matching journal cleanup precedes
+body IO and never deletes originals or scan/team rows. Other old timestamps
+are not deletion identity. Use UTC instants, retain equal boundaries, do not
+guess invalid dates and roll back markers on failure. Apply current explicit TTL
+to uncommitted same-owner journal entries before body IO/insertion using a
+bounded yielding exact-marker admission, not bulk HTTP deletion. A committed
+request-id collision cannot be expired by another journal. Default0 preserves
+uncommitted old evidence; failures retain journals and originals. Capacity and
+manual deletion remain further7.3 gates.
+
+The internal original-removal file operation SHALL be bounded to two validated
+body IDs, reject active readers/writers/recovery and nonregular/traversal paths,
+and stream-reconcile usedBytes even after partial failure. It is NOT a public
+deletion workflow: a durable confirmed intent/restart coordinator must be wired
+before exposing it, and default retention SHALL never invoke it. Surviving
+originals, unrelated paths and scan/team data remain intact.
+
+The internal durable original-file queue SHALL snapshot validated refs and store
+directory and atomically persist the job with exact tombstone. Bound retained
+jobs to1024, share one active run per DB owner, use indexed original-owner and
+pending lookup, reject changed directory/identity/shared refs or changed original
+digests, and persist complete only after IO. Failed state stays explicit and
+requires retry; pending resumes idempotently after reopening. This core alone
+alone is not full request erasure. Confirmed API admission SHALL clear proxy
+body/prompt copies in the same transaction as intent/marker, reject new body/
+analysis/diff access even if cleanup fails, retain metadata/headers/native data,
+and resume pending cleanup before capture admission. Web confirmation/status and
+local cache invalidation follow frontend REQ-020, not global Clear.
+
+### REQ-019: Durable capture recovery
+Before accepting original-file writes, persist bounded atomic same-DB journal
+identity asynchronously. Retain observed headers/end/terminal/ref snapshots.
+After process death, stream and verify original prefixes and commit one existing
+request/body/processing/transport record atomically, without reparsing or replay.
+Unknown clocks/usage remain null. Request-id equality alone cannot authorize
+idempotence: both original IDs must agree. Retry only transient SQLite locks
+with bounded nonblocking attempts; permanent failure keeps evidence and emits
+no saved event. Restart capture queries/start share recovery, and shutdown
+awaits it. No body deletion or scan reset; journal scratch cleanup is distinct.
 
 ## Gotchas
 - G5.1: WAL mode makes file watching unreliable (see session-scanning)
@@ -164,3 +281,45 @@ On startup SHALL purge expired `proxy_requests` per `--proxy-retention-days`
 - G11.4 (new): v4's four queries all produced `USE TEMP B-TREE` because the
   indexes were single-column instead of composite. Confirm with
   `EXPLAIN QUERY PLAN` before adding indexes
+
+### REQ-024: Indexed session family projection
+Return one selected native session, its retained parents and paged reverse-parent declarations via the frozen family contract. Full source/scope/owner validation separates resolved, ambiguous, incomplete and unresolved. Fixed-count batched metadata reads, no source/body IO, inferred retry/spawn/communication, accounting change or source mutation.
+
+### REQ-025: Cross-page native tool-reference observations
+Read selected-session exact scoped tool_call references across slim event pages per the frozen native-tool-observations contract. Validate full-source/off-page conflicts and native owner scope; preserve incomplete/ambiguous/unresolved states. Never infer execution lifecycle, retry, success or measured latency; no source/body IO, N+1 or writes.
+### REQ-026: Local scan metadata trace export
+Serve frozen TX-003 metadata page with three cached SELECTs and no source/body
+IO, native mutation or synthetic causal edges. ISO normalized timestamps remain
+unchanged; isolated OTLP wire conversion follows the additive export contract.
+
+### REQ-027: Independent manual experiment registry
+Manual experiment records follow EXP-001..004 in an asynchronous app-owned JSON
+registry independent of SQLite/native records. New run references use one batched
+scan lookup; unavailable existing refs remain retained. No source/Agent writes.
+
+### REQ-028: Bounded Frida saved-capture reads
+Reuse the existing table and DTO under FC-001..004. Persist complete validated
+frames before saved notifications; list projections cap JSON in SQL and detail
+checks byte limits before full acquisition. No partial frame or silent write
+success. Real target hook compatibility remains a separate acceptance.
+
+### REQ-029: Linked-source metadata trace export
+LTX-001..005 reuses the native export and accepted linked-execution readers in
+one read snapshot with <=11 cached metadata SELECTs. Native and network spans
+keep independent identities, clocks, coverage and unknown states. No body IO,
+source mutation, reparse, causal inference or accounting merge.
+
+### REQ-030: Original capture bundle export
+CB-001..005 SHALL combine the selected retained evidence metadata with exact
+encoded original prefixes in a streamed local tar, with expected SHA/length
+manifest and a verified-transfer receipt emitted only after matching bytes.
+No source mutation, archive spool, new schema or synchronous large-file read.
+Missing refs/partial source/metadata pagination stay explicit; source change and
+confirmed deletion stop transfer, including after asynchronous file acquisition.
+
+### REQ-031: Official hook observation retention
+CH-001..006 preserves each admitted local delivery separately, raw JSON outside
+SQLite and body-free metadata with indexed exact session/agent/tool filtering.
+Metadata/save notifications follow completed original+commit only. Native scan
+jumps require unique complete exact declared session identity; never mutate
+native sources or infer execution, retries, charges or child sessions.

@@ -1,12 +1,13 @@
-import { exec } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { runtimeResourcePath } from './runtime-paths.js';
+import { handoffBrowser, launchedThroughSsh, validateBindHost, webUrl } from './web-launch.js';
 
 import { createAgentObservabilityServer } from './server.js';
+import { runMonitoredLaunch, runMonitorDiagnostics } from './proxy/monitored-launch.js';
 import { openWritable } from './storage/db.js';
 import { checkpointWal } from './storage/db.js';
 import { INDEX_SQL, SCHEMA_VERSION, initSchema } from './storage/schema.js';
@@ -23,12 +24,17 @@ import { queueSessionChange } from './realtime/coalescer.js';
 import { loadSessionGroups, primaryKeyFor } from './storage/session-merge.js';
 import { eventBus } from './realtime/event-bus.js';
 import { initialScanAndStore } from './watch/scan-scheduler.js';
+import { scanTeamSources } from '../local-sessions/team-scanner.js';
+import { defaultTeamSources, expandLocalSessionPath } from '../local-sessions/config.js';
+import { createTeamSink } from './storage/team-storage.js';
+import { queueTeamRunChange } from './realtime/coalescer.js';
+
 import type { Database } from 'better-sqlite3';
 
 const DEFAULT_HOST = '127.0.0.1'; // G3.1：默认 host 必须用 127.0.0.1，不能用 localhost
 const DEFAULT_PORT = 4173;
 const DEFAULT_PROXY_PORT = 7779;
-const DEFAULT_PROXY_RETENTION_DAYS = 30;
+const DEFAULT_PROXY_RETENTION_DAYS = 0;
 
 /** B6（§8）兼容回退：旧数据目录名，仅在新目录不存在且旧目录存在时启用。 */
 const LEGACY_DATA_DIR = 'agent-observe-data';
@@ -43,9 +49,13 @@ export interface CliOptions {
   dbPath: string;
   proxyPort: number;
   enableProxy: boolean;
+  enableMonitoring: boolean;
   prewarmRecent: number;
   proxyRetentionDays: number;
   noGzip: boolean;
+  captureDirectory?: string;
+  captureQuotaBytes?: number;
+  captureMaxBodyBytes?: number;
 }
 
 export function defaultDbPath(configRoot: string): string {
@@ -73,6 +83,7 @@ export function prewarmWarning(prewarmRecent: number): string | null {
 }
 
 export function parseCliArgs(argv: readonly string[]): CliOptions {
+  if (argv[0] === 'web') argv = argv.slice(1);
   let host = DEFAULT_HOST;
   let port = DEFAULT_PORT;
   let open = true;
@@ -80,9 +91,13 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   let dbPath = '';
   let proxyPort = DEFAULT_PROXY_PORT;
   let enableProxy = false;
+  let enableMonitoring = false;
   let prewarmRecent = 0; // G11.17：默认 0，完全按需
   let proxyRetentionDays = DEFAULT_PROXY_RETENTION_DAYS;
   let noGzip = false;
+  let captureDirectory: string | undefined;
+  let captureQuotaBytes = 10_000_000_000;
+  let captureMaxBodyBytes = 100 * 1024 * 1024;
 
   const takeValue = (flag: string, index: number): { value: string; next: number } => {
     const inline = argv[index]?.startsWith(`${flag}=`);
@@ -90,7 +105,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
       return { value: argv[index]!.slice(flag.length + 1), next: index };
     }
     const value = argv[index + 1];
-    if (value === undefined) {
+    if (value === undefined || value === '' || value.startsWith('--')) {
       throw new Error(`${flag} requires a value`);
     }
     return { value, next: index + 1 };
@@ -99,6 +114,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     const flag = arg.split('=')[0] ?? arg;
+    if (['--no-open', '--enable-proxy', '--enable-monitoring', '--no-gzip'].includes(flag) && arg !== flag) throw new Error(`${flag} does not take a value`);
     if (flag === '--host') {
       ({ value: host, next: i } = takeValue('--host', i));
     } else if (flag === '--port') {
@@ -115,6 +131,8 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
       const taken = takeValue('--proxy-port', i);
       proxyPort = parsePort(taken.value);
       i = taken.next;
+    } else if (flag === '--enable-monitoring') {
+      enableMonitoring = true;
     } else if (flag === '--enable-proxy') {
       enableProxy = true;
     } else if (flag === '--prewarm-recent') {
@@ -124,6 +142,15 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     } else if (flag === '--proxy-retention-days') {
       const taken = takeValue('--proxy-retention-days', i);
       proxyRetentionDays = parseNonNegativeInt(taken.value, '--proxy-retention-days');
+      i = taken.next;
+    } else if (flag === '--capture-directory') {
+      ({ value: captureDirectory, next: i } = takeValue(flag, i));
+    } else if (flag === '--capture-quota-gb' || flag === '--capture-max-body-mib') {
+      const taken = takeValue(flag, i);
+      const bytes = Number(taken.value) * (flag === '--capture-quota-gb' ? 1_000_000_000 : 1024 * 1024);
+      if (!Number.isSafeInteger(bytes) || bytes <= 0) throw new Error(`${flag} must produce a positive safe integer byte budget`);
+      if (flag === '--capture-quota-gb') captureQuotaBytes = bytes;
+      else captureMaxBodyBytes = bytes;
       i = taken.next;
     } else if (flag === '--no-gzip') {
       noGzip = true;
@@ -135,6 +162,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     }
   }
 
+  validateBindHost(host);
   return {
     host,
     port,
@@ -143,15 +171,19 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     dbPath: dbPath === '' ? defaultDbPath(configRoot) : dbPath,
     proxyPort,
     enableProxy,
+    enableMonitoring,
     prewarmRecent,
     proxyRetentionDays,
     noGzip,
+    captureDirectory,
+    captureQuotaBytes,
+    captureMaxBodyBytes,
   };
 }
 
 function parsePort(raw: string): number {
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 0 || value > 65535) {
+  if (!/^\d+$/.test(raw) || !Number.isInteger(value) || value < 0 || value > 65535) {
     throw new Error(`Invalid port: ${raw}`);
   }
   return value;
@@ -166,17 +198,25 @@ function parseNonNegativeInt(raw: string, flag: string): number {
 }
 
 function printHelp(): void {
-  console.log(`agent-observe [options]
+  console.log(`awesome-telemetry web [options] (legacy: agent-observe [options])
+
+  launch --server <loopback-url> --profile <uuid> --revision <n> -- [Agent arguments]
+  diagnose --server <loopback-url> --profile <uuid> --revision <n> [--json]
+    diagnose is read-only; retrieval success does not certify Agent readiness
 
   --host <host>                bind address (default 127.0.0.1)
   --port <port>                HTTP port (default 4173)
-  --no-open                    do not auto-open the browser
+  --no-open                    do not auto-open the browser (SSH also disables opening)
   --config-root <path>         config directory (default process.cwd())
-  --db-path <path>             SQLite path (default <config-root>/agent-observe-data/observe.sqlite)
+  --db-path <path>             SQLite path (default <config-root>/awesome-telemetry-data/observe.sqlite)
   --proxy-port <port>          MITM port (default 7779)
+  --enable-monitoring          enable startup session/team scans and automatic watching (default off)
   --enable-proxy               start MITM proxy on launch
   --prewarm-recent <n>         prewarm the most recent N sessions (default 0 = fully on demand)
-  --proxy-retention-days <n>   proxy_requests retention days (default 30, 0 = never purge)
+  --proxy-retention-days <n>   explicit metadata retention (default 0 = never purge)
+  --capture-directory <path>  original body file directory (default beside user config)
+  --capture-quota-gb <n>       original body quota in decimal GB (default 10)
+  --capture-max-body-mib <n>   per-direction original body limit in MiB (default 100)
   --no-gzip                    disable response compression (debug only)
   --help                       show this help`);
 }
@@ -224,7 +264,7 @@ export function runStartupSelfCheck(
   console.log(
     `Startup self-check passed: schemaVersion=${SCHEMA_VERSION} sessions=${sessionCount} ` +
       `db=${(dbSizeBytes / 1024 / 1024).toFixed(2)}MB wal=${(walSizeBytes / 1024 / 1024).toFixed(2)}MB ` +
-      `http://${options.host}:${options.port}/`,
+      `bind=${options.host}:${options.port}`,
   );
   return { sessionCount, dbSizeBytes, walSizeBytes };
 }
@@ -243,13 +283,24 @@ function configLoadOptions(configRoot: string): LoadConfigOptions {
 }
 
 export async function runCli(argv: readonly string[]): Promise<void> {
+  if (argv[0] === 'diagnose') {
+    process.exitCode = await runMonitorDiagnostics(argv.slice(1));
+    return;
+  }
+  if (argv[0] === 'launch') {
+    process.exitCode = await runMonitoredLaunch(argv.slice(1));
+    return;
+  }
   const options = parseCliArgs(argv);
+  if (!existsSync(runtimeResourcePath('dist/index.html'))) throw new Error('Built Web UI is missing. In a source checkout run npm install then npm run build; for an installed package, reinstall a complete package.');
+  await probePort(options.port, options.host);
   const db = openWritable(options.dbPath);
   const config = loadLocalSessionConfig(configLoadOptions(options.configRoot));
   // G2.3：定价覆盖层（config/model-pricing.json + 用户级）在扫描前生效，
-  // adapter 的 computeCostUsd 才能命中扩展价格。
+  // adapter 的 computeCost 才能命中扩展价格。
   setModelPriceOverrides(loadModelPricingOverrides(options.configRoot));
   const enriched = { ...config, prewarmRecent: options.prewarmRecent };
+  const backgroundTasks = new Set<Promise<unknown>>();
 
   const warning = prewarmWarning(options.prewarmRecent);
   if (warning !== null) {
@@ -265,7 +316,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   };
 
   // REQ-013/REQ-002：索引阶段同步完成，预热不 await；listen 不被预热阻塞
-  initialScanAndStore({
+  if (options.enableMonitoring) initialScanAndStore({
     db,
     config: enriched,
     notify: notifyMerged,
@@ -273,28 +324,118 @@ export async function runCli(argv: readonly string[]): Promise<void> {
       eventBus.emit(event.type, event);
     },
     isForegroundBusy: () => false,
+    trackTask: task => {
+      backgroundTasks.add(task);
+      void task.then(() => backgroundTasks.delete(task), () => backgroundTasks.delete(task));
+    },
   });
+
+  // §4.15 team 源扫描：自动发现 ~/.codeartsdoer/agent-team/ + ~/.codex/sessions/。
+  // 与 session scanner 并行的第二条路径；fingerprint/no-change 门禁后解析为
+  // NormalizedTeamEvidence，交给 createTeamSink 差分摄入。失败不阻塞启动。
+  if (options.enableMonitoring) try {
+    const teamSources = defaultTeamSources().filter((source) => {
+      const rootExpanded = expandLocalSessionPath(source.root);
+      return existsSync(rootExpanded);
+    });
+    if (teamSources.length > 0) {
+      const teamSink = createTeamSink(db);
+      const teamResults = await scanTeamSources(teamSources, {
+        db,
+        sink: teamSink,
+        notify: (runIds) => {
+          for (const runId of runIds) {
+            queueTeamRunChange({ runId, stamp: new Date().toISOString() });
+          }
+        },
+      });
+      const totalRuns = teamResults.reduce((sum, r) => sum + r.runs, 0);
+
+      if (totalRuns > 0) {
+        console.log(`Team scan: discovered ${totalRuns} team run(s) from ${teamSources.length} source(s)`);
+      }
+    }
+  } catch (err) {
+    console.warn(
+      `Team scan failed (non-blocking): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   const server: Server = createAgentObservabilityServer({
     db,
     config: enriched,
+    enableMonitoring: options.enableMonitoring,
+    distDir: runtimeResourcePath('dist'),
     dbPath: options.dbPath,
     userConfigPath: configLoadOptions(options.configRoot).userConfigPath,
+    captureDirectory: options.captureDirectory,
+    proxyRetentionDays: options.proxyRetentionDays,
+    captureStorage: {
+      quotaBytes: options.captureQuotaBytes ?? 10_000_000_000,
+      maxBodyBytes: options.captureMaxBodyBytes ?? 100 * 1024 * 1024,
+    },
   });
+  const disposeShutdown = registerCliShutdown(server, db, backgroundTasks);
   // §7.1（calibrate-tokens-and-compare-report）：友好报错优先；
   // TOCTOU 窗口由 listen 自身的 error 处理兜底。
-  await probePort(options.port, options.host);
-  await listen(server, options.port, options.host);
+  try {
+    await listen(server, options.port, options.host);
+  } catch (error) {
+    await new Promise<void>((resolve, reject) => server.close(closeError => closeError === undefined ? resolve() : reject(closeError)));
+    await Promise.allSettled(backgroundTasks);
+    checkpointWal(db);
+    db.close();
+    disposeShutdown();
+    throw error;
+  }
 
-  const url = `http://${options.host}:${options.port}/`;
-  console.log(`AwesomeTelemetry is running at ${url}`);
+  const boundAddress = server.address();
+  if (boundAddress === null || typeof boundAddress === 'string') throw new Error('HTTP listener has no TCP address');
+  const url = webUrl(options.host, boundAddress.port);
+  console.log(`AwesomeTelemetry is running at ${url} (bind ${options.host}:${boundAddress.port})`);
+  console.log(`Automatic monitoring: ${options.enableMonitoring ? 'enabled' : 'disabled'}; proxy: ${options.enableProxy ? 'startup requested' : 'disabled'}`);
+  const ssh = launchedThroughSsh();
+  if (ssh) console.log('SSH session: browser opening disabled. This URL is on the server; use your own local forwarded address/port.');
   if (options.enableProxy) {
-    console.log(`--enable-proxy set; MITM wiring in server/proxy/mitm-proxy.ts (P-3)`);
+    const address = server.address();
+    const controlPort = address !== null && typeof address !== 'string' ? address.port : options.port;
+    const controlHost = options.host === '0.0.0.0' ? '127.0.0.1' : options.host === '::' ? '[::1]' : options.host.includes(':') ? `[${options.host}]` : options.host;
+    const response = await fetch(`http://${controlHost}:${controlPort}/api/proxy/start`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ port: options.proxyPort }),
+    });
+    if (!response.ok) throw new Error(`MITM startup rejected: HTTP ${response.status}`);
+    await response.text();
+    console.log(`MITM startup requested on 127.0.0.1:${options.proxyPort}; connection status is available in the Web monitor`);
   }
 
-  if (options.open) {
-    await openBrowser(url);
-  }
+  await handoffBrowser(url, options.open);
+}
+
+/** CLI owns SQLite; only the server's successful ownership-release callback
+ * permits checkpoint/close. An unsuccessful stop retains handlers for retry.
+ */
+export function registerCliShutdown(server: Server, db: Database, backgroundTasks: ReadonlySet<Promise<unknown>> = new Set()): () => void {
+  let stopping = false;
+  const shutdown = (): void => {
+    if (stopping) return;
+    stopping = true;
+    void (async () => {
+      await new Promise<void>((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)));
+      await Promise.allSettled(backgroundTasks);
+      checkpointWal(db);
+      db.close();
+      process.off('SIGINT', shutdown);
+      process.off('SIGTERM', shutdown);
+      console.log('AwesomeTelemetry stopped; capture writes flushed and database closed');
+    })().catch(() => {
+      stopping = false;
+      process.exitCode = 1;
+      console.error('Shutdown incomplete; database kept open. Retry SIGINT/SIGTERM after resolving the failure.');
+    });
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+  return () => { process.off('SIGINT', shutdown); process.off('SIGTERM', shutdown); };
 }
 
 function listen(server: Server, port: number, host: string): Promise<void> {
@@ -339,28 +480,4 @@ export function probePort(port: number, host: string): Promise<void> {
       });
     });
   });
-}
-
-const execAsync = promisify(exec);
-
-async function openBrowser(url: string): Promise<void> {
-  const command = openCommand(url);
-  try {
-    await execAsync(command);
-  } catch (err) {
-    console.warn(
-      `Failed to open browser: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-}
-
-function openCommand(url: string): string {
-  switch (process.platform) {
-    case 'darwin':
-      return `open ${url}`;
-    case 'win32':
-      return `cmd /c start "" ${url}`;
-    default:
-      return `xdg-open ${url}`;
-  }
 }

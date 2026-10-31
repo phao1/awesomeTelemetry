@@ -1,0 +1,1116 @@
+/*
+ * Team Observability 样式 — add-agent-team-observability §7.10
+ * 仅使用 design tokens（tokens.css），无字面量颜色 / 字面量 px（T2/T3 强制）。
+ * 覆盖 .team-shell / .team-rail / .team-main / 七视图 panel / summary header /
+ * compare panel / state banners / filters。
+ */
+
+/* ===== §7.3 Shell 布局 ===== */
+
+.team-shell {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.team-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-3);
+  gap: var(--space-2);
+  overflow: auto;
+}
+
+/* ===== §7.5 Rail（TeamRunList） ===== */
+
+.team-rail {
+  width: var(--rail-width);
+  border-right: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  gap: var(--space-2);
+  background: var(--canvas-subtle);
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.team-rail-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.team-rail-title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+}
+
+.team-rail-total {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-rail-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* ===== §7.6 Run 行（虚拟化，44px 行高） ===== */
+
+.team-row-cell {
+  min-width: 0;
+}
+
+.team-row {
+  height: var(--row-lg);
+  padding: var(--space-1) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+  overflow: hidden;
+}
+
+.team-row:hover {
+  background: var(--canvas-raised);
+}
+
+.team-row-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.team-row-title {
+  font-size: var(--text-base);
+  color: var(--fg-default);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.team-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  min-width: 0;
+}
+
+.team-row-topo {
+  color: var(--fg-subtle);
+}
+
+/* ===== §7.5 Filters ===== */
+
+.team-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+.team-range-row {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.team-filter-row {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ===== §7.11 六状态提示条 ===== */
+
+.team-state-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  flex: 0 0 auto;
+}
+
+.team-state-partial {
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+  border: 1px solid var(--attention-emphasis);
+}
+
+.team-state-unavailable {
+  background: var(--neutral-subtle);
+  color: var(--neutral-fg);
+  border: 1px solid var(--border-default);
+}
+
+.team-state-invalid {
+  background: var(--danger-subtle);
+  color: var(--danger-fg);
+  border: 1px solid var(--danger-emphasis);
+}
+
+.team-state-deleted {
+  background: var(--neutral-subtle);
+  color: var(--neutral-fg);
+  border: 1px solid var(--border-default);
+}
+
+/* ===== Load more ===== */
+
+.team-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.team-load-more:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--fg-default);
+}
+
+.team-load-more:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ===== §7.3 Team nav 按钮（App.tsx ViewTabs 旁） ===== */
+
+
+
+
+/* ===== §7.6 Summary Header ===== */
+
+.team-summary-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--canvas-default);
+  flex: 0 0 auto;
+}
+
+.team-summary-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.team-summary-title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-summary-topo {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  padding: 0 var(--space-2);
+}
+
+.team-summary-status {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-on-emphasis);
+  background: var(--neutral-emphasis);
+  border-radius: var(--radius-full);
+  padding: 0 var(--space-2);
+}
+
+.team-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-summary-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-summary-completeness {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.team-completeness-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+}
+
+.team-completeness-dim {
+  color: var(--fg-muted);
+}
+
+.team-completeness-level {
+  font-weight: var(--weight-semibold);
+}
+
+.team-completeness-complete {
+  color: var(--success-fg);
+}
+
+.team-completeness-partial {
+  color: var(--attention-fg);
+}
+
+.team-completeness-unavailable {
+  color: var(--neutral-fg);
+}
+
+.team-completeness-conflicted {
+  color: var(--danger-fg);
+}
+
+/* ===== §7.6 Anomalies ===== */
+
+.team-summary-anomalies {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-anomaly {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.team-anomaly-info {
+  background: var(--accent-subtle);
+  color: var(--fg-default);
+}
+
+.team-anomaly-warning {
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+}
+
+.team-anomaly-kind {
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+.team-anomaly-message {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ===== §7.11 Panel 状态包装 ===== */
+
+.team-panel-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.team-panel-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.team-panel-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-2) 0;
+}
+
+.team-panel-hint {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  margin: 0 0 var(--space-2) 0;
+}
+
+/* ===== §7.7 Topology Panel ===== */
+
+.team-topology-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-topo-node {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+}
+
+.team-topo-node:hover {
+  background: var(--canvas-raised);
+}
+
+.team-topo-node-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-topo-role {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--accent-fg);
+  flex: 0 0 auto;
+}
+
+.team-topo-name {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-topo-class {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-topo-edges {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+.team-topo-edge {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+}
+
+.team-topo-edge-created {
+  color: var(--success-fg);
+}
+
+.team-topo-edge-supervises {
+  color: var(--accent-fg);
+}
+
+.team-topo-edge-coordinates {
+  color: var(--phase-plan);
+}
+
+.team-topo-edge-reviews {
+  color: var(--attention-fg);
+}
+
+.team-topo-edge-replaces {
+  color: var(--danger-fg);
+}
+
+.team-topo-edge-peer {
+  color: var(--neutral-fg);
+}
+
+/* ===== §7.7 Tasks Panel ===== */
+
+.team-tasks-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-task-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+}
+
+.team-task-row:hover {
+  background: var(--canvas-raised);
+}
+
+.team-task-row-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-task-status-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.team-task-status-pending {
+  background: var(--neutral-fg);
+}
+
+.team-task-status-ready {
+  background: var(--attention-fg);
+}
+
+.team-task-status-claimed {
+  background: var(--accent-fg);
+}
+
+.team-task-status-running {
+  background: var(--attention-fg);
+  animation: status-pulse var(--duration-slow) var(--ease-in-out) infinite;
+}
+
+.team-task-status-blocked {
+  background: var(--danger-fg);
+}
+
+.team-task-status-completed {
+  background: var(--success-fg);
+}
+
+.team-task-status-failed {
+  background: var(--danger-fg);
+}
+
+.team-task-status-cancelled {
+  background: var(--neutral-fg);
+}
+
+.team-task-status-unknown {
+  background: var(--neutral-fg);
+}
+
+.team-task-title {
+  font-size: var(--text-sm);
+  color: var(--fg-default);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-task-status {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-task-deps {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+.team-task-dep {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+}
+
+/* ===== §7.7 Timeline Panel ===== */
+
+.team-timeline-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-timeline-lane {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row-sm);
+}
+
+.team-timeline-lane-label {
+  flex: 0 0 auto;
+  min-width: calc(var(--rail-width) / 3);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-timeline-lane-label:hover {
+  border-color: var(--border-strong);
+}
+
+.team-timeline-lane-on {
+  border-color: var(--accent-emphasis);
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
+}
+
+.team-timeline-lane-track {
+  flex: 1;
+  min-width: 0;
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  position: relative;
+  overflow: hidden;
+}
+
+.team-timeline-lane-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  background: var(--accent-subtle);
+  border-radius: var(--radius-sm);
+}
+
+/* ===== §7.7 Communication Panel ===== */
+
+.team-communication-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-communication-empty {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  padding: var(--space-3);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+/* ===== §7.7 Ledger Panel ===== */
+
+.team-ledger-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-ledger-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-ledger-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border-left: calc(var(--space-1) / 2) solid transparent;
+  font-size: var(--text-xs);
+}
+
+.team-ledger-row:hover {
+  background: var(--canvas-raised);
+}
+
+.team-ledger-row-on {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent-emphasis);
+}
+
+.team-ledger-row-ambiguous {
+  border-left-style: dashed;
+  border-left-color: var(--attention-emphasis);
+}
+
+.team-ledger-kind {
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+  flex: 0 0 auto;
+}
+
+.team-ledger-status {
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+.team-ledger-time {
+  color: var(--fg-subtle);
+  flex: 0 0 auto;
+}
+
+.team-ledger-ambiguous-marker {
+  color: var(--attention-fg);
+  font-weight: var(--weight-semibold);
+  flex: 0 0 auto;
+}
+
+/* ===== §7.4 Inspector Panel ===== */
+
+.team-inspector-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--canvas-default);
+}
+
+.team-inspector-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.team-inspector-kind {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+}
+
+.team-inspector-id {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-inspector-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-inspector-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-inspector-body-actions {
+  display: flex;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+.team-inspector-body-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.team-body-dl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.team-body-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-body-row dt {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+.team-body-row dd {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+}
+
+.team-body-row pre {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  overflow: auto;
+  max-height: calc(var(--row-lg) * 4);
+}
+
+.team-body-raw {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  overflow: auto;
+  font-size: var(--text-xs);
+  max-height: calc(var(--row-lg) * 8);
+}
+
+/* ===== §7.8 Compare Panel ===== */
+
+.team-compare-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-compare-selectors {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.team-compare-selector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-compare-label {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.team-compare-manual {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.team-compare-manual input {
+  accent-color: var(--accent-emphasis);
+}
+
+.team-compare-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.team-compare-basis {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  flex-wrap: wrap;
+}
+
+.team-compare-basis-matched {
+  background: var(--success-subtle);
+  border: 1px solid var(--success-emphasis);
+}
+
+.team-compare-basis-partially_matched {
+  background: var(--attention-subtle);
+  border: 1px solid var(--attention-emphasis);
+}
+
+.team-compare-basis-unmatched {
+  background: var(--danger-subtle);
+  border: 1px solid var(--danger-emphasis);
+}
+
+.team-compare-basis-unknown {
+  background: var(--neutral-subtle);
+  border: 1px solid var(--border-default);
+}
+
+.team-compare-basis-match {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+}
+
+.team-compare-basis-manual {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.team-compare-basis-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  flex-basis: 100%;
+}
+
+.team-compare-dimension {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.team-compare-dimension h4 {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-default);
+  margin: 0;
+}
+
+.team-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.team-compare-table th {
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--fg-muted);
+  font-weight: var(--weight-semibold);
+}
+
+.team-compare-table td {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--fg-default);
+}
+
+.team-compare-row-material {
+  background: var(--canvas-subtle);
+}
+
+.team-compare-strengths,
+.team-compare-weaknesses,
+.team-compare-tradeoffs,
+.team-compare-caveats {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+}
+
+.team-compare-strengths {
+  background: var(--success-subtle);
+}
+
+.team-compare-weaknesses {
+  background: var(--danger-subtle);
+}
+
+.team-compare-tradeoffs {
+  background: var(--attention-subtle);
+}
+
+.team-compare-caveats {
+  background: var(--neutral-subtle);
+}
+
+.team-compare-strengths h4,
+.team-compare-weaknesses h4,
+.team-compare-tradeoffs h4,
+.team-compare-caveats h4 {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.team-compare-strengths h4 {
+  color: var(--success-fg);
+}
+
+.team-compare-weaknesses h4 {
+  color: var(--danger-fg);
+}
+
+.team-compare-tradeoffs h4 {
+  color: var(--attention-fg);
+}
+
+.team-compare-caveats h4 {
+  color: var(--neutral-fg);
+}
+
+.team-compare-strengths ul,
+.team-compare-weaknesses ul,
+.team-compare-tradeoffs ul,
+.team-compare-caveats ul {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--fg-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* ===== §7.8 Patching banner ===== */
+
+.team-patching-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+  font-size: var(--text-xs);
+  flex: 0 0 auto;
+}
+
+/* ===== §7.3 Run actions ===== */
+
+.team-run-actions {
+  display: flex;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-muted);
+  flex: 0 0 auto;
+}
+
+/* Shared overrides retained for the existing inline Team shell. */
+.team-topo-node:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--space-1);
+}
+.team-topo-edges {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+}
+.team-topo-edge-created .team-topo-edge-kind { color: var(--success-fg); }
+.team-topo-edge-supervises .team-topo-edge-kind { color: var(--accent-fg); }
+.team-topo-edge-coordinates .team-topo-edge-kind { color: var(--phase-plan); }
+.team-topo-edge-reviews .team-topo-edge-kind { color: var(--attention-fg); }
+.team-topo-edge-replaces .team-topo-edge-kind { color: var(--danger-fg); }
+.team-topo-edge-peer .team-topo-edge-kind { color: var(--neutral-fg); }
+.team-timeline-view .team-timeline-lane {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.team-timeline-lane-on {
+  background: var(--accent-subtle);
+}
+
+.team-timeline-lane-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+  min-width: calc(var(--rail-width) / 2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-timeline-lane-label:hover {
+  border-color: var(--border-strong);
+}
+
+.team-timeline-lane-track {
+  flex: 1;
+  min-width: 0;
+  height: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-inset);
+  position: relative;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team-task-status-running {
+    animation: none;
+  }
+}
+
+/* A narrow investigation keeps one owner for run-list state and one visible surface. */
+.team-mobile-runs-toggle { display: none; }
+@media (max-width: 48rem) {
+  .team-shell { flex-direction: column; }
+  .team-mobile-runs-toggle { display: block; align-self: flex-start; margin: var(--space-2) var(--space-3); padding: var(--space-1) var(--space-2); min-height: var(--control-height-md); background: var(--canvas-default); color: var(--accent-fg); font: inherit; border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
+  .team-shell > .team-rail { display: none; }
+  .team-mobile-runs-open > .team-rail { display: flex; width: 100%; flex: 1; border-right: 0; }
+  .team-mobile-runs-open > .team-main { display: none; }
+  .team-panel-tabs { overflow-x: auto; }
+  .team-panel-tabs .ui-tab { white-space: nowrap; flex-shrink: 0; }
+}

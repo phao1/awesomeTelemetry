@@ -11,3 +11,6 @@
 @import './components/inspector.css';
 @import './components/timeline.css';
 @import './components/trajectory.css';
+@import './components/workbench.css';
+@import './components/trace-export.css';
+@import './components/native-tool-observations.css';

@@ -1,9 +1,10 @@
 /**
  * Provider-neutral request-context normalization (add-request-context-diff).
  *
- * T04 scope (§4.1-§4.10): this module is a pure transformation from a *stored
- * desensitized* request body into a bounded, provider-neutral context snapshot.
- * It never reads raw bodies, headers, or cookies, never touches the proxy
+ * Pure transformation from the supplied original (or legacy preview) request
+ * body into a bounded, provider-neutral context snapshot. The historical
+ * desensitizedBody argument name is retained for compatibility; values are
+ * never redacted here. It never reads files/headers, never touches the proxy
  * forwarding path, and never runs a semantic diff (that is T05). Everything
  * below is derived from design D5/D6/D9 and the request-context-diff spec.
  */
@@ -17,7 +18,7 @@ import type {
 
 // ── design D9: contractual hard bounds (single exported backend module) ─────
 
-/** Each stored request body is capped at 2 MiB; partial JSON parsing is forbidden. */
+/** Analysis is capped at 2 MiB, not original capture; no partial JSON parsing. */
 export const MAX_SOURCE_BODY_BYTES = 2 * 1024 * 1024;
 export const MAX_MESSAGES = 2_000;
 export const MAX_TOOLS = 256;
@@ -99,7 +100,7 @@ export type NormalizeResult =
   | { ok: true; normalized: NormalizedRequestContext }
   | { ok: false; reason: NormalizeErrorReason };
 
-// ── design D5: fixed allowlist + secret-key exclusion (D5/D6, spec 4.6) ──────
+// ── bounded parameter projection; original metadata values stay unchanged ──
 
 const PARAMETER_ALLOWLIST: ReadonlySet<string> = new Set([
   'model',
@@ -120,10 +121,6 @@ const PARAMETER_ALLOWLIST: ReadonlySet<string> = new Set([
   'cache_control',
 ]);
 
-/** Any metadata key matching a secret/token/auth/cookie family is excluded. */
-const SECRET_KEY_RE =
-  /secret|token|auth|cookie|password|api[_-]?key|private[_-]?key|credential/i;
-
 // ── value helpers ────────────────────────────────────────────────────────────
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -137,10 +134,6 @@ function isJsonValue(value: unknown): value is JsonValue {
   if (Array.isArray(value)) return value.every(isJsonValue);
   if (t === 'object') return Object.values(value as Record<string, unknown>).every(isJsonValue);
   return false;
-}
-
-function isScalar(value: unknown): boolean {
-  return value === null || ['string', 'number', 'boolean'].includes(typeof value);
 }
 
 // ── design D6: canonical equality ────────────────────────────────────────────
@@ -482,9 +475,8 @@ function buildParameters(body: Record<string, unknown>, parameters: Record<strin
     if (key === 'metadata') {
       if (!isRecord(value)) continue;
       for (const subKey of Object.keys(value)) {
-        if (SECRET_KEY_RE.test(subKey)) continue;
         const subValue = value[subKey];
-        if (isScalar(subValue)) parameters[`metadata.${subKey}`] = subValue as JsonValue;
+        if (isJsonValue(subValue)) parameters[`metadata.${subKey}`] = canonicalize(subValue);
       }
     } else if (isJsonValue(value)) {
       parameters[key] = value;

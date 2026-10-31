@@ -1,0 +1,43 @@
+.stage-replay { min-width: 0; color: var(--fg-default); font-size: var(--text-base); line-height: var(--leading-base); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--canvas-default); padding: var(--space-4); container-type: inline-size; }
+.sr-heading, .sr-controls, .sr-modes { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.sr-heading { justify-content: space-between; align-items: flex-start; }
+.sr-heading h3, .sr-current h4 { margin: var(--space-1) 0 var(--space-2); font-size: var(--text-lg); line-height: var(--leading-lg); }
+.sr-eyebrow, .sr-count, .sr-scope, .sr-context span, .sr-current time { color: var(--fg-muted); font-size: var(--text-sm); }
+.sr-scope { margin: var(--space-2) 0 var(--space-3); }
+.sr-warning { padding: var(--space-2); border-left: var(--space-1) solid var(--border-strong); color: var(--fg-secondary); background: var(--canvas-subtle); }
+.stage-replay button, .stage-replay select { font: inherit; color: inherit; min-height: var(--control-height-md); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-subtle); padding: var(--space-1) var(--space-2); cursor: pointer; }
+.stage-replay button:disabled { color: var(--fg-muted); cursor: default; }
+.stage-replay button[aria-pressed='true'], .stage-replay .sr-play { border-color: var(--accent-emphasis); }
+.sr-controls { margin: var(--space-3) 0; padding: var(--space-2) 0; border-block: 1px solid var(--border-default); }
+.sr-progress { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: min(100%, var(--rail-width)); }
+.sr-progress span { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sr-progress input { min-width: 0; width: 100%; accent-color: var(--accent-emphasis); }
+.sr-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--space-3); align-items: start; }
+.sr-steps { display: flex; flex-direction: column; gap: var(--space-2); }
+.sr-steps button { text-align: left; display: flex; align-items: flex-start; gap: var(--space-2); background: var(--canvas-default); }
+.sr-steps button[aria-current='step'] { border-color: var(--accent-emphasis); background: var(--accent-subtle); }
+.sr-steps strong, .sr-steps small { display: block; } .sr-steps small { color: var(--fg-muted); font-size: var(--text-sm); }
+.sr-step-no { color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+.sr-current { min-width: 0; border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: var(--space-3); }
+.sr-context { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); margin: var(--space-3) 0; }
+.sr-context > div { min-width: 0; padding: var(--space-2); background: var(--canvas-subtle); border-left: var(--space-1) solid var(--accent-emphasis); }
+.sr-context strong, .sr-context span, .sr-context small { display: block; overflow-wrap: anywhere; }
+.sr-context small { margin-top: var(--space-1); color: var(--fg-muted); font-size: var(--text-sm); }
+.sr-evidence { border-top: 1px solid var(--border-default); padding: var(--space-2) 0; overflow-wrap: anywhere; }
+.sr-evidence summary { cursor: pointer; color: var(--accent-fg); }
+.sr-evidence dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-1) var(--space-2); }
+.sr-evidence dt { color: var(--fg-muted); } .sr-evidence dd { margin: 0; white-space: pre-wrap; }
+.sr-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; padding: var(--space-2); border: 1px solid var(--border-default); background: var(--canvas-subtle); font-size: var(--text-sm); }
+.sr-participants { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.sr-participants span { padding: var(--space-1) var(--space-2); color: var(--fg-muted); border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-size: var(--text-sm); }
+.sr-participants .sr-active { color: var(--accent-fg); border-color: var(--accent-emphasis); background: var(--accent-subtle); }
+@container (max-width: 45rem) { .sr-layout, .sr-context { grid-template-columns: minmax(0, 1fr); } .sr-steps { flex-direction: row; overflow-x: auto; } .sr-steps button { min-width: 12rem; } }
+
+.sr-context .sr-task-preview { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sr-task-full summary { cursor: pointer; color: var(--accent-fg); font-size: var(--text-sm); margin-top: var(--space-1); }
+.sr-task-full p { overflow-wrap: anywhere; }
+
+.sr-method { margin-bottom: var(--space-2); }
+.sr-method summary { cursor: pointer; color: var(--fg-muted); font-size: var(--text-sm); }
+/* Let the session's existing outer scroll own long historical content. */
+.session-collab-replay-panel[open] .collab-replay-body:has(.stage-replay) { max-height: none; overflow: visible; }

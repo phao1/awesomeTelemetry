@@ -1,5 +1,94 @@
 # Agent Observability
 
+## Agent 边界评测：该合并谁、保留谁
+
+「任务模式实验」默认进入逐 Agent 决策工作台。已接入 Anthropic
+single-agent-loop-kit 的两个公开历史模型实验（132 条运行记录）、19 个任务定义及
+标明来源的生成流量。逐边界审计 fold / merge / as-tool / keep，任一任务退步优先
+阻止采纳，支持追到具体重复、失败检查、完整动作参数和调用序列。
+
+支持原生任务候选、自有多轮任务与外部驱动计划、真实 skill-off 第三组、迁移材料和
+独立人工决策。免费离线按钮只验证流程、不评分；真实 Messages API 与外部驱动必须
+显式 CLI 执行，密钥只在环境中读取。监控、抓包和 Frida 继续默认关闭。
+详见[逐边界评测与 API 接入](docs/agent-folding.md)。
+
+## 任务模式实验：单 loop / 主子 Agent / Team
+
+顶部「任务模式实验」以同一个任务和独立验收为基线，支持每组不同提示词、配对并行或
+顺序执行、逐用例差异、用量与时间对比，以及成员活动和消息的同步回放。四种离线
+模拟与真实本地子进程流程验证均明确标注，不代表真实模型成绩。真实驱动经
+`npm run team:experiment -- <plan.json> --execute --output <new-directory>` 显式启动。
+监控和抓包继续默认关闭。设计依据、指标口径和接入方法见
+[任务模式实验说明](docs/team-experiment.md)。
+
+任务页「分析拆分与合并」及实验页「分析真实任务 telemetry」可检查上下文增长、
+工具契约冲突和交接引用缺口，逐项定位真实事件 / 捕获 / Codex 逻辑调用，并给出
+拆子 Agent、渐进披露、修复契约或合回主循环的适用条件与复测方法。覆盖不足会明确
+说明，不用模拟成绩推断架构。详见[过程证据分析说明](docs/architecture-diagnosis.md)。
+
+## 同任务自动评测（稳准快省）
+
+顶部「评测中心」支持任务/模型配置、重复运行报告、完整指标对照、规则诊断和泳道
+证据定位。先用 `npm run benchmark:demo` 验证本地执行与验收闭环，再接入真实 GUI
+驱动；Qoder / CodeArts 真实自动操控需要按安装环境适配，合成示例不代表产品成绩。
+详见 [任务评测与驱动接入](docs/benchmark.md)。
+
+## npm / npx local Web UI (package preparation — unpublished)
+
+The intended public package name is `awesome-telemetry`; registry ownership has
+not been confirmed and this version has **not been published**. `private: true`
+remains a publication guard. Do not assume `npx awesome-telemetry web` currently
+resolves to this project. After a separately approved publication, that will be
+the entry command; `agent-observe` remains a compatibility alias.
+
+From source (Node >=20.19, npm):
+
+```bash
+npm install
+npm run build
+npm start -- web
+npm start -- web --no-open
+```
+
+Startup uses existing `dist/` and `server-dist/`; it never runs a build. Missing
+artifacts give build/reinstall guidance. The server defaults to
+`http://127.0.0.1:4173/`, opens the default browser after listening, and keeps
+serving if opening fails. `--no-open` disables opening. An inherited
+`SSH_CONNECTION` or `SSH_TTY` also disables opening and prints the server URL;
+use your SSH client's actual forwarded URL/port. No forwarded port is guessed.
+`--port 0` selects a free port and prints the actual port. `--host` controls the
+bind address; wildcard binds display a loopback browser URL on that host.
+Existing local API Host/Origin restrictions still apply. Config/data remain in
+the chosen `--config-root` (default current directory), outside installed code.
+
+To verify an unpublished tarball:
+
+```bash
+npm run build
+npm pack --pack-destination /tmp
+npm run pack:smoke -- /tmp/awesome-telemetry-0.1.0.tgz --open-browser
+# Or from a separate directory:
+npm install /tmp/awesome-telemetry-0.1.0.tgz
+npx --offline awesome-telemetry web --no-open
+```
+
+`npm pack` verifies existing artifacts without rebuilding. The tarball contains
+built Web/server/worker JavaScript, required helper scripts, README and license;
+it excludes node_modules, source maps, source/tests, local databases, captures,
+certificates and development notes. Native `better-sqlite3` is installed for the
+consumer's OS/architecture/Node ABI. A missing prebuilt binary requires a native
+build toolchain (Windows: MSVC plus Python/node-gyp requirements; macOS: Xcode
+Command Line Tools plus Python). Optional Trae SQLCipher/Frida integrations still
+require their separately installed Python/tools. Copying macOS node_modules is
+not Windows compatibility testing. Windows browser-command branches are tested
+in simulation; actual platform validation must be reported separately.
+
+This independently implemented flow was informed by the
+[dsh Web runtime](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/bundle/web-app/src/index.ts)
+and [clean packed-install verification](https://github.com/deepseek-ai/deepseek-harness/blob/master/scripts/release/verify-packed-install.ts).
+No dsh source code or package namespace is included.
+
+
 [English](README.md) | **简体中文**
 
 本地 Web UI：读取并分析 9 种 AI 编码助手（Claude Code / Codex / OpenCode /
@@ -114,3 +203,9 @@ Unix 用 `agent-observe.sh`。
 - 规格与契约：`openspec/`（类型/DDL/API/性能预算的权威来源）
 - 里程碑进度：`PROGRESS.md`；待决决策：`DECISIONS-PENDING.md`
 - 提交前必须：`npm run typecheck && npm run test && npm run lint` 全绿
+
+## 默认关闭采集
+
+Web 启动默认关闭自动监控与抓包，不扫描本机会话、团队源，也不注册文件监听/轮询；可继续查看历史数据与手动重扫。
+显式传 `--enable-monitoring` 才开启启动扫描与自动监听，`--enable-proxy` 才启动抓包代理。
+通过 `/api/health` 的 `monitoringEnabled` 和 `/api/proxy/status` 的 `running` / `starting` 可检查实际状态。

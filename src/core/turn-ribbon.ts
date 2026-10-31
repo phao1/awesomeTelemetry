@@ -18,7 +18,7 @@
  * an equal width (still floored) and no division by zero occurs.
  */
 
-import type { MessageRole, TraceTurn, TurnMessage } from './trace-types.js';
+import type { MessageRole, TraceTurn } from './trace-types.js';
 
 /** D10 verbatim. */
 export const RIBBON_HEIGHT_PX = 28;
@@ -73,88 +73,7 @@ export interface RibbonResult {
   readonly mode: RibbonMode;
 }
 
-interface TurnGroup {
-  readonly turns: readonly TraceTurn[];
-  readonly weight: number;
-}
-
-function turnWeight(turn: TraceTurn, mode: RibbonMode): number {
-  return mode === 'time' ? turn.durationMs : turn.tokens.total;
-}
-
-/**
- * Split turns into segments. At or below `RIBBON_MAX_SEGMENTS` each turn is
- * its own segment. Above it, group into `RIBBON_MAX_SEGMENTS` equal turn-count
- * buckets (counts differ by at most one), preserving order and dropping no
- * turn.
- */
-function groupTurns(
-  turns: readonly TraceTurn[],
-  mode: RibbonMode,
-): TurnGroup[] {
-  const count = turns.length;
-  if (count === 0) {
-    return [];
-  }
-  if (count <= RIBBON_MAX_SEGMENTS) {
-    return turns.map((turn) => ({
-      turns: [turn],
-      weight: turnWeight(turn, mode),
-    }));
-  }
-  const base = Math.floor(count / RIBBON_MAX_SEGMENTS);
-  const extra = count % RIBBON_MAX_SEGMENTS;
-  const groups: TurnGroup[] = [];
-  let pos = 0;
-  for (let bucket = 0; bucket < RIBBON_MAX_SEGMENTS; bucket += 1) {
-    const size = base + (bucket < extra ? 1 : 0);
-    const members = turns.slice(pos, pos + size);
-    let weight = 0;
-    for (const turn of members) {
-      weight += turnWeight(turn, mode);
-    }
-    groups.push({ turns: members, weight });
-    pos += size;
-  }
-  return groups;
-}
-
-/**
- * Dominant role by message count, ties broken by `RIBBON_ROLE_ORDER`. Only the
- * six ribbon roles compete; `subagent` messages never count toward a ribbon
- * role (no legend entry, no token). Returns null when no ribbon-role message
- * exists in the group.
- */
-function dominantRole(messages: readonly TurnMessage[]): MessageRole | null {
-  const counts = new Map<MessageRole, number>();
-  for (const message of messages) {
-    if (RIBBON_ROLE_ORDER.includes(message.role)) {
-      counts.set(message.role, (counts.get(message.role) ?? 0) + 1);
-    }
-  }
-  let best: MessageRole | null = null;
-  let bestCount = 0;
-  for (const role of RIBBON_ROLE_ORDER) {
-    const count = counts.get(role) ?? 0;
-    if (count > bestCount) {
-      best = role;
-      bestCount = count;
-    }
-  }
-  return best;
-}
-
-function buildAriaLabel(
-  group: readonly TraceTurn[],
-  durationMs: number,
-  tokenTotal: number,
-): string {
-  const indices = group.map((turn) => turn.index);
-  const range = indices.length === 1
-    ? `Turn ${indices[0]}`
-    : `Turns ${indices[0]}-${indices[indices.length - 1]}`;
-  return `${range}: duration ${durationMs} ms, tokens ${tokenTotal}`;
-}
+type RibbonSegmentDraft = Omit<RibbonSegment, 'widthPx'> & { widthPx: number };
 
 /**
  * Compute ribbon segments from the derived turn model.
@@ -172,39 +91,41 @@ export function computeRibbon(
   mode: RibbonMode,
   containerWidthPx: number,
 ): RibbonResult {
-  const groups = groupTurns(turns, mode);
-  const totalWeight = groups.reduce((sum, group) => sum + group.weight, 0);
-
-  const segments: RibbonSegment[] = groups.map((group) => {
-    const durationMs = group.turns.reduce(
-      (sum, turn) => sum + turn.durationMs,
-      0,
-    );
-    const tokenTotal = group.turns.reduce(
-      (sum, turn) => sum + turn.tokens.total,
-      0,
-    );
-    const messages = group.turns.flatMap((turn) => turn.messages);
-    const widthPx = totalWeight === 0
-      ? Math.max(RIBBON_MIN_SEGMENT_PX, containerWidthPx / groups.length)
-      : Math.max(
-        RIBBON_MIN_SEGMENT_PX,
-        (group.weight / totalWeight) * containerWidthPx,
-      );
-    return {
-      turnIndices: group.turns.map((turn) => turn.index),
-      weight: group.weight,
-      widthPx,
-      dominantRole: dominantRole(messages),
-      durationMs,
-      tokenTotal,
-      ariaLabel: buildAriaLabel(group.turns, durationMs, tokenTotal),
-    };
-  });
-
-  return {
-    segments,
-    totalWidthPx: segments.reduce((sum, segment) => sum + segment.widthPx, 0),
-    mode,
-  };
+  const count = Math.min(turns.length, RIBBON_MAX_SEGMENTS);
+  if (count === 0) return { segments: [], totalWidthPx: 0, mode };
+  const base = Math.floor(turns.length / count), extra = turns.length % count;
+  const segments: RibbonSegmentDraft[] = [];
+  const roleCounts = new Array<number>(RIBBON_ROLE_ORDER.length).fill(0);
+  let position = 0, totalWeight = 0;
+  // Walk the original turns directly: no sliced groups, flattened messages or
+  // per-segment Maps. Only output indices/segments escape this calculation.
+  for (let bucket = 0; bucket < count; bucket += 1) {
+    const end = position + base + (bucket < extra ? 1 : 0);
+    const indices: number[] = [];
+    let durationMs = 0, tokenTotal = 0;
+    roleCounts.fill(0);
+    for (; position < end; position += 1) {
+      const turn = turns[position]!;
+      indices.push(turn.index); durationMs += turn.durationMs; tokenTotal += turn.tokens.total;
+      for (const message of turn.messages) {
+        const role = RIBBON_ROLE_ORDER.indexOf(message.role);
+        if (role >= 0) roleCounts[role] = roleCounts[role]! + 1;
+      }
+    }
+    let dominantRole: MessageRole | null = null, bestCount = 0;
+    for (let role = 0; role < roleCounts.length; role += 1) {
+      if (roleCounts[role]! > bestCount) { bestCount = roleCounts[role]!; dominantRole = RIBBON_ROLE_ORDER[role]!; }
+    }
+    const weight = mode === 'time' ? durationMs : tokenTotal;
+    totalWeight += weight;
+    const range = indices.length === 1 ? `Turn ${indices[0]}` : `Turns ${indices[0]}-${indices[indices.length - 1]}`;
+    segments.push({ turnIndices: indices, weight, widthPx: 0, dominantRole, durationMs, tokenTotal,
+      ariaLabel: `${range}: duration ${durationMs} ms, tokens ${tokenTotal}` });
+  }
+  let totalWidthPx = 0;
+  for (const segment of segments) {
+    segment.widthPx = Math.max(RIBBON_MIN_SEGMENT_PX, totalWeight === 0 ? containerWidthPx / count : segment.weight / totalWeight * containerWidthPx);
+    totalWidthPx += segment.widthPx;
+  }
+  return { segments, totalWidthPx, mode };
 }

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "kind": "team-experiment",
+  "name": "同一任务：单 loop 与主子 Agent",
+  "repetitions": 3,
+  "schedule": "parallel",
+  "task": {
+    "id": "fixed-task",
+    "repository": "/absolute/path/to/task-repository",
+    "ref": "HEAD",
+    "prompt": "完成同一任务，并满足固定的独立验收标准。",
+    "caseIds": ["main-flow", "edge-case", "regression"],
+    "expectedTests": 3,
+    "evaluator": ["/absolute/path/to/independent-evaluator"],
+    "timeoutMs": 5400000
+  },
+  "variants": [
+    { "id": "single", "mode": "single_loop", "prompt": "使用一个 Agent loop 完成任务，不委派子 Agent。", "product": "your-agent", "model": "set-exact-model-id", "environment": "fixed local environment", "parameters": "fixed", "toolSet": "fixed task tools", "driver": ["/absolute/path/to/single-loop-driver"] },
+    { "id": "delegated", "mode": "subagents", "prompt": "由主 Agent 委派独立子任务，汇总子 Agent 结果并完成同一任务。", "product": "your-agent", "model": "set-exact-model-id", "environment": "fixed local environment", "parameters": "fixed", "toolSet": "fixed task tools", "driver": ["/absolute/path/to/subagent-driver"] }
+  ]
+}

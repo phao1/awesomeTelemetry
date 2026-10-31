@@ -1,0 +1,26 @@
+{
+  "metrics": {
+    "startup.delegate_latency_ms": 2000,
+    "model.sum_ms": {
+      "includesMemberIds": [
+        "main",
+        "child"
+      ]
+    },
+    "act.sum_ms": {
+      "includesMemberIds": [
+        "main",
+        "child"
+      ]
+    }
+  },
+  "partition": {
+    "delegateWait": 60000
+  },
+  "coverage": {
+    "members": {
+      "loaded": 2,
+      "total": 2
+    }
+  }
+}

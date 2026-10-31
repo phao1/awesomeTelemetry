@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>对比报告</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#1f4fb8}a:hover{color:#163a87}
+td,th{border:1px solid #bbb;padding:5px 8px;text-align:left}
+</style>
+</helmet>
+<div style="width: 1280px; height: 1720px; box-sizing: border-box; font-family: system-ui, -apple-system, 'PingFang SC', sans-serif; color: #222; background: #fff; padding: 24px 32px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; align-items: center; gap: 12px">
+<h1 style="margin: 0; font-size: 20px">对比报告</h1>
+<span style="font-size: 12px; color: #555">题目 ruoyi-perf-management · 数据来自你提供的表 · 中位数</span>
+<span style="margin-left: auto; font-size: 12px; border: 1px solid #999; padding: 4px 8px">导出 HTML</span><span style="font-size: 12px; border: 1px solid #999; padding: 4px 8px">Markdown</span><span style="font-size: 12px; border: 1px solid #999; padding: 4px 8px">CSV</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; font-size: 13px">
+<div style="border: 2px solid #222; padding: 10px 12px"><strong>A 组 · 3 次</strong> · 普通版 + ds-v4.1-flash · 现网 · 3 台执行机</div>
+<div style="border: 2px solid #1f4fb8; padding: 10px 12px"><strong style="color: #1f4fb8">B 组 · 3 次</strong> · 极速版 + ds-v4.1-flash · 测试 · 执行机未记录</div>
+</div>
+<div style="border: 2px solid #8a4b00; background: #fff7ec; padding: 12px 14px; font-size: 14px; display: flex; flex-direction: column; gap: 4px">
+<div><strong>结论：有混杂，不能直接下结论</strong></div>
+<div>· 两组之间改了 2 处：产品模式（普通版 → 极速版）、环境（现网 → 测试）。模型相同。</div>
+<div>· 通过用例 B 多 55 个（201 → 256），超出组内波动（A 极差 10、B 极差 11）。</div>
+<div>· 只导入了通过总数，没有逐用例结果，<strong>无法判断有没有用例从通过变失败</strong>（kit 规则：完成的任务变少即不成立）。</div>
+</div>
+<div style="font-size: 15px; font-weight: 700; border-bottom: 2px solid #222; padding-bottom: 4px">1 · 质量</div>
+<table style="border-collapse: collapse; font-size: 12px; width: 100%">
+<thead><tr style="background: #eee"><th>指标</th><th>A 中位数</th><th>B 中位数</th><th>B − A</th><th>组内（A / B）</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>通过用例 / 总数</td><td>201 / 371</td><td>256 / 371</td><td>+55</td><td>194–204 / 247–258</td><td></td></tr>
+<tr><td>用例通过率</td><td>54.2%</td><td>69.0%</td><td>+14.8 pp</td><td>CV 2.1% / 1.9%</td><td></td></tr>
+<tr><td>是否成功</td><td>0 / 3</td><td>0 / 3</td><td>—</td><td></td><td>都没有全部通过</td></tr>
+<tr><td>逐用例翻转</td><td colspan="3" style="color: #8a4b00">未知：没有导入逐用例结果</td><td></td><td><a href="#">导入 ›</a></td></tr>
+<tr><td>代码规模 LOC</td><td>5,730</td><td>43,952</td><td style="color: #8a4b00">不可比</td><td></td><td>统计范围不同（B 疑似含基线工程）</td></tr>
+<tr><td>漏洞 · 编译告警</td><td>0 · 0</td><td>0 · 0</td><td>0</td><td></td><td></td></tr>
+<tr><td>函数重复率</td><td>10.55%</td><td>2.42%</td><td>−8.1 pp</td><td>9.7–42.0 / 2.3–3.6</td><td>A 有一次 42%，需人工看</td></tr>
+<tr><td>平均圈复杂度 · 冗余</td><td>1.64 · 0</td><td>3.73 · 17</td><td>+2.09 · +17</td><td></td><td>随 LOC 范围一起不可比</td></tr>
+<tr><td>静态告警（Minor / Suggestion）</td><td>1,179</td><td>1,209</td><td>+30</td><td></td><td>每千行告警需先统一 LOC 范围</td></tr>
+</tbody>
+</table>
+<div style="font-size: 15px; font-weight: 700; border-bottom: 2px solid #222; padding-bottom: 4px">2 · 职责去向 <span style="font-size: 12px; font-weight: 400; color: #555">（选一个子 Agent 时显示；示意）</span></div>
+<table style="border-collapse: collapse; font-size: 12px; width: 100%">
+<thead><tr style="background: #eee"><th>A 组里 code-reviewer 做的事</th><th>B 组里由谁做</th><th>覆盖</th></tr></thead>
+<tbody>
+<tr style="background: #fff7ec"><td>找出主 Agent 漏掉的问题</td><td>无人</td><td style="color: #8a4b00">⚠ 0 / 3（A 组有 2 次）</td></tr>
+<tr><td>跑 mvn test</td><td>主 Agent</td><td>3 / 3</td></tr>
+<tr><td>读改动文件</td><td>主 Agent（本来就读过）</td><td>3 / 3</td></tr>
+</tbody>
+</table>
+<div style="font-size: 15px; font-weight: 700; border-bottom: 2px solid #222; padding-bottom: 4px">3 · 调用链</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; font-size: 12px">
+<div style="border: 1px solid #999; padding: 8px 10px">关联完整度：A 100% · B 100%（可比）</div>
+<div style="border: 1px solid #999; padding: 8px 10px">评测覆盖的生产链：A 5/7 · B 5/7 · 缺的 2 条见 ⑥</div>
+</div>
+<div style="font-size: 15px; font-weight: 700; border-bottom: 2px solid #222; padding-bottom: 4px">4 · 过程与时延</div>
+<table style="border-collapse: collapse; font-size: 12px; width: 100%">
+<thead><tr style="background: #eee"><th>指标</th><th>A 中位数</th><th>B 中位数</th><th>B − A</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>E2E 时间（分钟）</td><td>56.5</td><td>19.9</td><td>−36.6</td><td>A 组 CV 19%</td></tr>
+<tr><td>模型调用次数</td><td>238</td><td>85</td><td>−153（0.36×）</td><td><strong>E2E 差异的主因</strong></td></tr>
+<tr><td>单次推理平均耗时（s）</td><td>13.4</td><td>13.4</td><td>0</td><td></td></tr>
+<tr><td>模型总耗时（分钟）</td><td>47.2</td><td>17.7</td><td>−29.5</td><td></td></tr>
+<tr><td>工具调用次数</td><td>553</td><td>206</td><td>−347</td><td></td></tr>
+<tr><td>单次工具耗时（s） · 工具总耗时（分钟）</td><td>0.5 · 3.0</td><td>0.5 · 2.1</td><td>0 · −0.9</td><td>B 有一次 3.5s / 12.2 分钟，异常</td></tr>
+<tr><td>TTFT（ms） · TPOT（ms）</td><td>2,332 · 5.4</td><td>2,280 · 8.2</td><td>−52 · +2.8</td><td>模型服务层，受环境影响，不归因于 Agent</td></tr>
+</tbody>
+</table>
+<div style="border: 1px dashed #999; padding: 10px 12px; font-size: 12px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-weight: 700">E2E 拆解</div>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 24px">A</span><div style="display: flex; flex: 1; height: 18px; border: 1px solid #555"><div style="width: 84%; background: #555"></div><div style="width: 5%; background: #aaa"></div><div style="width: 11%; background: #fff"></div></div><span style="width: 260px">模型 84% · 工具 5% · 其余 11%</span></div>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 24px">B</span><div style="display: flex; width: 35%; height: 18px; border: 1px solid #555"><div style="width: 89%; background: #555"></div><div style="width: 11%; background: #aaa"></div></div><span style="flex: 1">模型 89% · 工具 11%（条长按 E2E 比例）</span></div>
+</div>
+<div style="font-size: 15px; font-weight: 700; border-bottom: 2px solid #222; padding-bottom: 4px">5 · Token 与开销</div>
+<table style="border-collapse: collapse; font-size: 12px; width: 100%">
+<thead><tr style="background: #eee"><th>指标</th><th>A 中位数</th><th>B 中位数</th><th>B − A</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>输入 · 输出 · 思考</td><td>4.63M · 212k · 187k</td><td>5.78M · 115k · 66k</td><td>+1.16M · −96k · −120k</td><td>口径标记：输入是否含缓存 [待核实]</td></tr>
+<tr><td>缓存读 · 缓存写</td><td colspan="2" style="color: #8a4b00">原表合成一列（15.88M · 5.73M），需要分开</td><td></td><td>不分开就无法算命中率</td></tr>
+<tr><td>Token 总消耗（修正）</td><td>20.72M</td><td>11.03M</td><td>−9.68M</td><td>按统一公式重算（原表有的行含思考，有的不含）</td></tr>
+<tr><td>缓存命中率</td><td style="color: #8a4b00">76.9%*</td><td style="color: #8a4b00">45.8%*</td><td style="color: #8a4b00">不可比</td><td>* 原表把缓存写入算成了命中</td></tr>
+<tr><td>每个通过用例的 Token</td><td>103k</td><td>43k</td><td>−60k</td><td>派生</td></tr>
+<tr><td>费用</td><td colspan="3" style="color: #555">未设置单价，不显示（不猜价格）</td><td><a href="#">设置单价 ›</a></td></tr>
+</tbody>
+</table>
+<div style="border: 1px solid #999; padding: 10px 12px; font-size: 12px; display: flex; align-items: center; gap: 10px">
+<strong>明细表</strong><span style="color: #555">每次运行一行，含你那张表的全部 30 列；组内另附均值、中位数、最小–最大、CV</span><span style="margin-left: auto; color: #1f4fb8">展开 6 行 ›</span>
+</div>
+<div style="display: flex; gap: 10px">
+<button type="button" style="border: 2px solid #1f4fb8; background: #fff; color: #1f4fb8; padding: 8px 14px; font-size: 13px; font-weight: 600">记录决定：保留 / 修 / 回退</button>
+<button type="button" style="border: 1px solid #999; background: #fff; padding: 8px 14px; font-size: 13px">只改一处再跑一组（任务模式实验）</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1720}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

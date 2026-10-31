@@ -1,0 +1,12 @@
+.experiment-records { overflow-wrap: anywhere; }
+.experiment-records .experiment-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; }
+.experiment-records .experiment-list { display: grid; gap: var(--space-1); margin: var(--space-3) 0; }
+.experiment-records .experiment-list button { text-align: start; white-space: normal; }
+.experiment-records .experiment-form { display: grid; gap: var(--space-3); min-width: 0; border: 1px solid var(--border-default); }
+.experiment-records label { display: grid; gap: var(--space-1); }
+.experiment-records input:not([type=checkbox]), .experiment-records textarea, .experiment-records select { width: 100%; min-width: 0; box-sizing: border-box; color: var(--fg-default); background: var(--canvas-inset); border: 1px solid var(--border-default); padding: var(--space-2); font: inherit; }
+.experiment-records textarea { min-height: calc(var(--space-8) * 2); resize: vertical; }
+.experiment-records .experiment-matches { display: grid; gap: var(--space-1); max-height: 40vh; overflow: auto; }
+.experiment-records .experiment-run { min-width: 0; display: grid; gap: var(--space-2); border: 1px solid var(--border-default); }
+.experiment-records [role=alert] { border-left: var(--space-1) solid var(--attention-fg); padding: var(--space-2); }
+.experiment-records :focus-visible { box-shadow: var(--focus-ring); }

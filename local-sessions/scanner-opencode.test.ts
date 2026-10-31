@@ -8,9 +8,11 @@ import Database from 'better-sqlite3';
 
 import type { ProviderConfig } from '../src/core/trace-types.js';
 import { initSchema } from '../server/storage/schema.js';
+import { listTraceIdentities } from '../server/storage/trace-links.js';
 import { codeagent2Scanner } from './codeagent2.js';
 import { codeartsScanner } from './codearts.js';
-import { opencodeScanner } from './opencode.js';
+import { opencodeScanner, readOpenCodeDb } from './opencode.js';
+import { opencodeAdapter } from '../src/adapters/opencode.js';
 import {
   upsertIndexEntries,
   type ScannerContext,
@@ -192,6 +194,47 @@ function createRealSchemaDb(dir: string): string {
 }
 
 describe('REQ-010 OpenCode 系 scanner（sqlite）', () => {
+  it('P1 dataCols preserves only finite numeric part.data.time endpoints', () => {
+    const dbPath = createRealSchemaDb(tempDir());
+    const source = new Database(dbPath);
+    const update = source.prepare('UPDATE part SET data = ? WHERE id = ?');
+    try {
+      for (const [time, expected] of [
+        [{ start: 1754000001000, end: 1754000002000, extra: 42 }, { start: 1754000001000, end: 1754000002000 }],
+        [{ start: 0, end: 'bad' }, { start: 0 }],
+        [{ start: 'bad', end: 42 }, { end: 42 }],
+        [{ start: '1000', end: null }, undefined],
+        [null, undefined], [[], undefined], ['bad', undefined],
+      ] as const) {
+        update.run(JSON.stringify({ type: 'text', text: 'timed', time }), 'p1');
+        expect(readOpenCodeDb(dbPath)[0]?.messages[0]?.content?.[0]?.time).toEqual(expected);
+      }
+      // JSON supports overflowing numeric literals; they parse to Infinity.
+      update.run('{"type":"text","time":{"start":1e999,"end":-1e999}}', 'p1');
+      expect(readOpenCodeDb(dbPath)[0]?.messages[0]?.content?.[0]?.time).toBeUndefined();
+    } finally {
+      source.close();
+    }
+  });
+
+  it('keeps optional legacy session.parentID and part.callID without inventing fields for old schemas', () => {
+    const dir = tempDir();
+    const dbPath = createOpenCodeDb(dir);
+    const before = readOpenCodeDb(dbPath);
+    expect(before[0]?.session.parentID).toBeUndefined();
+    expect(before[0]?.messages[1]?.content?.[0]?.callID).toBeUndefined();
+    const source = new Database(dbPath);
+    source.exec('ALTER TABLE session ADD COLUMN parentID TEXT; ALTER TABLE part ADD COLUMN callID TEXT');
+    source.prepare('UPDATE session SET parentID = ? WHERE id = ?').run('parent-session', 'oc-s1');
+    source.prepare('UPDATE part SET callID = ? WHERE id = ?').run('native-call:9', 'p2');
+    source.close();
+    const item = readOpenCodeDb(dbPath)[0]!;
+    const record = opencodeAdapter.normalize({ sourceAgent: 'OpenCode', session: item.session, events: item.messages }, dbPath);
+    expect(record.nativeIdentities?.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'parent_session', value: 'parent-session', scope: 'oc-s1' }),
+      expect.objectContaining({ kind: 'tool_call', value: 'native-call:9', scope: 'oc-s1' }),
+    ]));
+  });
   it('opencode scanner：读 message join part 并入库', async () => {
     const dir = tempDir();
     createOpenCodeDb(dir);
@@ -290,6 +333,42 @@ describe('T-03 SQLite 类多会话索引', () => {
 });
 
 describe('T-03 真实 OpenCode v2 schema（JSON data 列）', () => {
+  it.each([
+    ['opencode', opencodeScanner], ['codearts', codeartsScanner], ['codeagent2', codeagent2Scanner],
+  ] as const)('preserves native parent/session/call identities from real SQLite to %s storage', async (provider, scanner) => {
+    const dir = tempDir();
+    const dbPath = createRealSchemaDb(dir);
+    const source = new Database(dbPath);
+    source.exec('ALTER TABLE session ADD COLUMN parent_id TEXT');
+    source.prepare('UPDATE session SET parent_id = ? WHERE id = ?').run('ses-1', 'ses-2');
+    source.prepare('UPDATE part SET data = ? WHERE id = ?').run(JSON.stringify({
+      type: 'tool', callID: 'native-call:2', tool: 'Bash', state: { status: 'completed', title: 'npm test' },
+    }), 'p4');
+    source.close();
+    const samples = readOpenCodeDb(dbPath);
+    const child = samples.find(item => item.session.id === 'ses-2')!;
+    const record = opencodeAdapter.normalize({ sourceAgent: 'OpenCode', session: child.session, events: child.messages }, dbPath);
+    expect(record.nativeIdentities?.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ namespace: 'agent:opencode', kind: 'parent_session', value: 'ses-1', scope: 'ses-2', sourcePath: 'session.parentID' }),
+      expect.objectContaining({ namespace: 'agent:opencode', kind: 'tool_call', value: 'native-call:2', scope: 'ses-2', sourcePath: 'messages[1].content[0].callID' }),
+    ]));
+    expect(record.nativeIdentities?.items.some(item => item.kind === 'parent_session' && item.value === 'm3')).toBe(false);
+    expect(record.events).toHaveLength(2);
+    expect(record.session.tokenUsage.cacheRead).toBe(100);
+    const db = newDb();
+    try {
+      await scanner.scanProvider(config(provider, dir), { db, traeKeyPath: null });
+      const sessions = db.prepare('SELECT id, title FROM sessions ORDER BY title').all() as Array<{ id: string; title: string }>;
+      const childKey = sessions.find(item => item.title === 'debug login')!.id;
+      const identities = listTraceIdentities(db, { source: 'scan', key: childKey });
+      expect(identities.parserVersion).toBe(3);
+      expect(identities.items).toEqual(expect.arrayContaining([
+        expect.objectContaining({ namespace: 'agent:' + provider, kind: 'parent_session', value: 'ses-1', scope: 'ses-2' }),
+        expect.objectContaining({ namespace: 'agent:' + provider, kind: 'tool_call', value: 'native-call:2', scope: 'ses-2', eventId: 'm4-0' }),
+      ]));
+      expect(identities.items.some(item => item.kind === 'parent_session' && item.value === 'm3')).toBe(false);
+    } finally { db.close(); }
+  });
   it('索引阶段按 session 行展开，title 为真实标题', () => {
     const dir = tempDir();
     const dbPath = createRealSchemaDb(dir);

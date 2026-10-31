@@ -134,6 +134,8 @@ MUST NOT regex-split the whole file string.
 independent timeout per provider (default 30s). Timed-out providers MUST be
 skipped and recorded, MUST NOT block others.
 
+The resource owner SHALL retain each actual scan promise until settled, including a task whose timeout wrapper already returned. Closing HTTP/SQLite waits for these tasks; a timeout is not cancellation of database work. Startup background prewarm is tracked similarly without delaying listen.
+
 ### REQ-012: Trae decryption is async
 Trae's Python bridge MUST use `spawn` + Promise, MUST NOT use `spawnSync`.
 
@@ -309,3 +311,6 @@ from "parse failure", and the correct UI differs completely.
   200 + empty array. The frontend cannot distinguish "this session is
   genuinely empty" from "the backend failed to parse", and the correct UI for
   the two differs completely (REQ-022)
+
+### Codex team updates during monitoring
+After an automatic or explicit Codex session scan, refresh Codex team metadata from the same enabled provider root through the team scanner fingerprint gate. New child threads and appended activities must update the team run. Emit affected run IDs through the existing coalesced `team_runs_changed` stream; never emit activity bodies. Default-disabled monitoring still registers no watchers.

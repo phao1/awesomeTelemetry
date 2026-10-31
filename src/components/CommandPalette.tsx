@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { copy as taskCopy } from './task/copy.js';
+import { useMemo, useRef, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
@@ -95,6 +96,7 @@ export function CommandPalette({
   providerFilter = [],
 }: CommandPaletteProps): React.JSX.Element {
   const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
   /** REQ-111：`/compare` 二段式 —— 点动作后进入会话挑选模式。 */
   const [comparePicking, setComparePicking] = useState(false);
   const [comparePick, setComparePick] = useState<string[]>([]);
@@ -175,10 +177,10 @@ export function CommandPalette({
 
     const navCommands: Command[] =
       prefix === null || prefix === 'nav'
-        ? (['agent', 'compare', 'proxy', 'frida', 'mission'] as const)
+        ? (['task', 'intake', 'agent', 'compare', 'proxy', 'frida', 'mission'] as const)
             .map((target) => ({
               id: `view-${target}`,
-              label: t(`view.${target}`, locale),
+              label: target === 'task' ? taskCopy(locale).tasks : target === 'intake' ? taskCopy(locale).intake : t(`view.${target}`, locale),
               hint: 'nav',
               category: 'nav' as const,
               run: () => run({ type: 'view', view: target }),
@@ -337,7 +339,7 @@ export function CommandPalette({
   ]);
 
   return (
-    <Modal title={t('palette.title', locale)} onClose={onClose} size="md">
+    <Modal title={t('palette.title', locale)} onClose={onClose} size="md" initialFocusRef={searchRef}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
         {comparePicking ? (
           <div className="palette-mode-head">
@@ -357,7 +359,7 @@ export function CommandPalette({
           </div>
         ) : (
           <SearchInput
-            autoFocus
+            inputRef={searchRef}
             placeholder={t('palette.searchPlaceholder', locale)}
             value={search}
             onChange={(e) => setSearch(e.target.value)}

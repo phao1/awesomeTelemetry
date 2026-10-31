@@ -2,14 +2,27 @@ import { describe, expect, it } from 'vitest';
 
 import {
   compareSideStats,
+  compareActivity,
   diffPct,
   errorDistribution,
   eventKindCounts,
   phaseDurations,
 } from './compare-stats.js';
-import { makeEvent, makeSession, makeSpeed } from './compare-test-fixtures.js';
+import { makeDetail, makeEvent, makeSession, makeSpeed } from './compare-test-fixtures.js';
 
 describe('compare-stats', () => {
+  it('WB-003: activity ratios use step denominators and distinguish partial/no-step/unknown status', () => {
+    const detail=makeDetail('s',[
+      makeEvent({id:'prompt',kind:'user_prompt'}),makeEvent({id:'verify',phase:'verify'}),makeEvent({id:'failure',status:'error'}),
+    ]);
+    expect(compareActivity(detail)).toMatchObject({complete:true,steps:2,verification:0.5,errorRate:0.5,unknownStatuses:0});
+    for(const patch of [{hasMore:true},{pending:true},{eventOffset:1},{eventTotal:4}]) {
+      expect(compareActivity({...detail,...patch})).toMatchObject({complete:false,verification:null,errorRate:null});
+    }
+    expect(compareActivity(makeDetail('empty',[]))).toMatchObject({complete:true,steps:0,verification:null,errorRate:null});
+    expect(compareActivity(makeDetail('unknown',[makeEvent({status:'unknown',phase:'verify'})])))
+      .toMatchObject({complete:true,steps:1,unknownStatuses:1,verification:1,errorRate:null});
+  });
   it('diffPct 相等为 0，倍率按较小值为基', () => {
     expect(diffPct(10, 10)).toBe(0);
     expect(diffPct(20, 10)).toBe(100);

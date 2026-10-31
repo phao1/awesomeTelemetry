@@ -55,9 +55,11 @@ export function openReadonly(path: string): Db {
 
 /** REQ-002：主动 checkpoint。有活跃读事务时返回 busy，捕获后跳过，不得重试阻塞。 */
 export function checkpointWal(db: Db): void {
+  const timeout = db.pragma('busy_timeout', { simple: true }) as number;
   try {
+    db.pragma('busy_timeout = 0');
     db.pragma('wal_checkpoint(TRUNCATE)');
   } catch {
     // 下轮再来
-  }
+  } finally { db.pragma(`busy_timeout = ${timeout}`); }
 }

@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { TraceEventSlim } from '../core/trace-types.js';
+import { scanTimingReason, scanTimingValue, type ScanTimingMetric, type ScanTimingReason } from '../core/scan-timing.js';
 import {
   compareSideStats,
   diffPct,
@@ -20,6 +21,7 @@ interface DimRow {
   rv: number | null;
   lowerBetter: boolean;
   fmt: (value: number | null) => string;
+  reason?: ScanTimingReason | null;
 }
 
 function DimensionCard({
@@ -35,14 +37,14 @@ function DimensionCard({
   const ranked = useMemo(
     () =>
       [...rows].sort((a, b) => {
-        const da = a.lv === null || a.rv === null ? 0 : diffPct(a.lv, a.rv);
-        const db = b.lv === null || b.rv === null ? 0 : diffPct(b.lv, b.rv);
+        const da = a.reason != null || a.lv === null || a.rv === null ? 0 : diffPct(a.lv, a.rv);
+        const db = b.reason != null || b.lv === null || b.rv === null ? 0 : diffPct(b.lv, b.rv);
         return db - da;
       }),
     [rows],
   );
   const significant = ranked.filter(
-    (row) => row.lv !== null && row.rv !== null && diffPct(row.lv, row.rv) >= SIGNIFICANT_DIFF,
+    (row) => row.reason != null || row.lv === null || row.rv === null || diffPct(row.lv, row.rv) >= SIGNIFICANT_DIFF,
   );
   const insignificantCount = ranked.length - significant.length;
   const shown = showAll ? ranked : significant;
@@ -59,38 +61,37 @@ function DimensionCard({
       ) : (
         <ul className="compare-dim-rows">
           {shown.map((row) => {
-            const leftBetter =
-              row.lv === null || row.rv === null
+            const leftLarger =
+              row.reason != null || row.lv === null || row.rv === null
                 ? null
                 : row.lv === row.rv
                   ? null
-                  : row.lowerBetter
-                    ? row.lv < row.rv
-                    : row.lv > row.rv;
-            const diff = row.lv === null || row.rv === null ? 0 : diffPct(row.lv, row.rv);
+                  : row.lv > row.rv;
+            const diff = row.reason != null || row.lv === null || row.rv === null ? 0 : diffPct(row.lv, row.rv);
             const barWidth = Math.min(diff, 100) / 2;
             return (
               <li key={row.label} className="compare-dim-row">
                 <span className="compare-dim-row-label">{row.label}</span>
                 <span className="mono compare-dim-row-value">{row.fmt(row.lv)}</span>
                 <span className="compare-diff-track" aria-hidden="true">
-                  {leftBetter === null ? null : (
+                  {leftLarger === null ? null : (
                     <>
-                      {leftBetter ? (
+                      {leftLarger ? (
                         <span
                           className="compare-diff-fill compare-diff-fill-left"
-                          style={{ width: `${barWidth}%`, background: 'var(--success-emphasis)' }}
+                          style={{ width: `${barWidth}%`, background: 'var(--accent-emphasis)' }}
                         />
                       ) : (
                         <span
                           className="compare-diff-fill compare-diff-fill-right"
-                          style={{ width: `${barWidth}%`, background: 'var(--danger-emphasis)' }}
+                          style={{ width: `${barWidth}%`, background: 'var(--attention-emphasis)' }}
                         />
                       )}
                     </>
                   )}
                 </span>
                 <span className="mono compare-dim-row-value">{row.fmt(row.rv)}</span>
+                {row.reason != null && <small className="hint">{t('scan.timing.notComparable', locale)} · {t(`scan.timing.reason.${row.reason}`, locale)}</small>}
               </li>
             );
           })}
@@ -123,19 +124,23 @@ export function CompareDimensions({
   const ls: CompareSideStats = compareSideStats(leftEvents, speed.left, left);
   const rs: CompareSideStats = compareSideStats(rightEvents, speed.right, right);
   const fmtConcise = (v: number | null): string => (v === null ? '—' : v.toFixed(2));
-  const fmtYesNo = (v: number | null): string => (v === 1 ? t('compare.yes', locale) : t('compare.no', locale));
+  const fmtYesNo = (v: number | null): string => v===null?'—':v===1?t('compare.yes',locale):t('compare.no',locale);
+  const complete=(side:CompareResult['left']):boolean=>!side.pending&&!side.hasMore&&side.eventOffset===0&&side.events.length>=side.eventTotal;
 
+  const timingRow = (label: string, metric: ScanTimingMetric, lv: number | null, rv: number | null, lowerBetter: boolean, fmt: DimRow['fmt']): DimRow => ({
+    label, lv: scanTimingValue(lv), rv: scanTimingValue(rv), lowerBetter, fmt,
+    reason: scanTimingReason(result.left, result.right, metric, lv, rv),
+  });
   const speedRows: DimRow[] = [
-    { label: t('compare.speed', locale), lv: speed.left.e2eMs ?? 0, rv: speed.right.e2eMs ?? 0, lowerBetter: true, fmt: fmtMs },
-    { label: 'TTFT', lv: speed.left.ttftMs ?? 0, rv: speed.right.ttftMs ?? 0, lowerBetter: true, fmt: fmtMs },
-    { label: 'TPS', lv: speed.left.tps ?? 0, rv: speed.right.tps ?? 0, lowerBetter: false, fmt: (v) => v?.toFixed(1) ?? '—' },
-    { label: 'TPOT', lv: speed.left.tpotMs ?? 0, rv: speed.right.tpotMs ?? 0, lowerBetter: true, fmt: (v) => (v === null ? '—' : `${v.toFixed(1)}ms`) },
-    { label: t('compare.kpi.llmCalls', locale), lv: ls.llmCalls, rv: rs.llmCalls, lowerBetter: false, fmt: (v) => String(v ?? '—') },
-    { label: t('compare.kpi.totalToolDuration', locale), lv: ls.totalToolDuration, rv: rs.totalToolDuration, lowerBetter: true, fmt: fmtMs },
+    timingRow(t('compare.speed', locale), 'e2e', speed.left.e2eMs, speed.right.e2eMs, true, fmtMs),
+    timingRow('TTFT', 'ttft', speed.left.ttftMs, speed.right.ttftMs, true, fmtMs),
+    timingRow('TPS', 'tps', speed.left.tps, speed.right.tps, false, (v) => v?.toFixed(1) ?? '—'),
+    timingRow('TPOT', 'tpot', speed.left.tpotMs, speed.right.tpotMs, true, (v) => v === null ? '—' : `${v.toFixed(1)}ms`),
+    timingRow(t('compare.kpi.llmCalls', locale), 'eventDuration', ls.llmCalls, rs.llmCalls, false, (v) => String(v ?? '—')),
+    timingRow(t('compare.kpi.totalToolDuration', locale), 'eventDuration', ls.totalToolDuration, rs.totalToolDuration, true, fmtMs),
   ];
   const costRows: DimRow[] = [
     { label: t('session.tokens', locale), lv: left.tokenUsage.total, rv: right.tokenUsage.total, lowerBetter: true, fmt: (v) => (v === null ? '—' : v.toLocaleString()) },
-    { label: t('session.cost', locale), lv: left.costUsd, rv: right.costUsd, lowerBetter: true, fmt: (v) => (v === null ? '—' : `$${v.toFixed(4)}`) },
   ];
   const qualityRows: DimRow[] = [
     {
@@ -161,8 +166,8 @@ export function CompareDimensions({
     },
     {
       label: t('agent.verification', locale),
-      lv: leftEvents.length === 0 ? 0 : leftEvents.filter((e) => e.phase === 'verify').length / leftEvents.length,
-      rv: rightEvents.length === 0 ? 0 : rightEvents.filter((e) => e.phase === 'verify').length / rightEvents.length,
+      lv: ls.totalSteps === 0 ? null : leftEvents.filter((e) => e.phase === 'verify').length / ls.totalSteps,
+      rv: rs.totalSteps === 0 ? null : rightEvents.filter((e) => e.phase === 'verify').length / rs.totalSteps,
       lowerBetter: false,
       fmt: (v) => (v === null ? '—' : `${(v * 100).toFixed(0)}%`),
     },
@@ -200,7 +205,8 @@ export function CompareDimensions({
     <div className="compare-dims-grid">
       <DimensionCard title={t('metric.speed', locale)} rows={speedRows} locale={locale} />
       <DimensionCard title={t('metric.cost', locale)} rows={costRows} locale={locale} />
-      <DimensionCard title={t('compare.dim.quality', locale)} rows={qualityRows} locale={locale} />
+      <DimensionCard title={t('compare.dim.quality', locale)} rows={qualityRows.map(row=>({...row,lv:complete(result.left)?row.lv:null,rv:complete(result.right)?row.rv:null}))} locale={locale} />
+      <p className="hint">{t('compare.observed.bars',locale)}</p>
       <p className="hint">{t('compare.dim.qualityDesc', locale)}</p>
       <p className="hint">{t('compare.criteria.codeConciseness', locale)}</p>
     </div>

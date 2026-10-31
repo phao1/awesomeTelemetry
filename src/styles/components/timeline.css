@@ -72,11 +72,6 @@
   color: var(--fg-muted);
 }
 
-.phase-tile-on {
-  background: var(--accent-emphasis);
-  color: var(--fg-on-emphasis);
-  border-color: var(--accent-emphasis);
-}
 
 .phase-tiles {
   display: flex;
