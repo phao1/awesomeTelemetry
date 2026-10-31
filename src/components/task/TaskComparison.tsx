@@ -2,7 +2,7 @@ import { RequestPicker } from './TaskRequests.js';
 import { isSystemRecord } from '../../core/system-records.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Locale } from '../../i18n.js';
-import { formatTaskCosts } from '../../core/task-alerts.js';
+import { formatCacheHitRate } from '../../core/task-alerts.js';
 import type { TaskComparisonSnapshot, TaskSummary } from '../../core/task-types.js';
 import type { HealthReport } from '../../core/task-health/types.js';
 import { comparisonConfounded, comparisonLimitations, comparisonNumber, formatComparisonValue, formatComparisonRatio, exactComparisonValue, comparisonReason, exportTaskComparison, healthDifferences, healthRuleCounts, taskComparisonRows, verdictLabel } from '../../core/task-comparison.js';
@@ -31,7 +31,7 @@ function TaskGroupPicker({ side, ids, other, selected, locale, onChange }: { sid
   return <fieldset className="task-compare-picker"><legend>{side} · {name} ({ids.length}/40)</legend>
     <input aria-label={`${name} ${zh ? '搜索任务' : 'search tasks'}`} value={query} onChange={e => setQuery(e.target.value)} placeholder={zh ? '搜索任务标题或 ID' : 'Search task title or ID'} />
     <select aria-label={`${name} ${zh ? '来源' : 'origin'}`} value={origin} onChange={e => { setOrigin(e.target.value as typeof origin); setOffset(0); }}><option value="collected">{zh ? '本地任务' : 'Collected tasks'}</option><option value="imported">{zh ? '导入任务' : 'Imported tasks'}</option></select>
-    <ul className="task-compare-selected">{ids.map(id => <li key={id}><span>{selected.find(t => t.id === id)?.title || id}<small> · {zh?'费用：':'Cost: '}{formatTaskCosts(selected.find(t=>t.id===id)?.metrics,zh)}{selected.find(t=>t.id===id)?.metrics?.costs?.amounts.map(amount=>` · ${amount.source}`).join('')}</small></span><button className="btn" aria-label={`${zh ? '移除' : 'Remove'} ${id}`} onClick={() => onChange(ids.filter(x => x !== id))}>×</button></li>)}</ul>
+    <ul className="task-compare-selected">{ids.map(id => <li key={id}><span>{selected.find(t => t.id === id)?.title || id}<small> · {zh?'缓存命中率：':'Cache hit rate: '}{formatCacheHitRate(selected.find(t=>t.id===id)?.metrics,zh)}</small></span><button className="btn" aria-label={`${zh ? '移除' : 'Remove'} ${id}`} onClick={() => onChange(ids.filter(x => x !== id))}>×</button></li>)}</ul>
     <details><summary>{zh ? '选择任务' : 'Choose tasks'}</summary>
       {tasks.loading && <p role="status">{zh ? '读取任务…' : 'Reading tasks…'}</p>}
       {tasks.error && <ArchitectureReadError error={tasks.errorInfo ?? tasks.error} locale={locale} retry={tasks.retry} />}
@@ -104,7 +104,7 @@ export function TaskComparison({ route, onRoute, locale, onLocate, invalidateKey
     {route.compareImport && <ImportedArchitectureCompare locale={locale} onLocate={onLocate} onClose={() => onRoute({ ...route, compareImport: undefined })} />}
     {snapshot.loading && <p role="status">{zh ? '正在读取任务摘要…' : 'Reading task summaries…'}</p>}
     {snapshot.error && <ArchitectureReadError error={snapshot.errorInfo ?? snapshot.error} locale={locale} retry={snapshot.retry} />}
-    {snapshot.value && <><section><h2>{zh ? '结论' : 'Conclusions'}</h2><div className="task-compare-conclusions">{rows.filter(r => !['costCNY', 'costUSD'].includes(r.key) || r.a.median !== null || r.b.median !== null).map(r => <p key={r.key} data-verdict={r.verdict}><strong>{r.label} · {verdictLabel(r.verdict, locale)}</strong><span><span title={exactComparisonValue(r.delta,r.unit)}>B − A {formatComparisonValue(r.delta,r.unit,locale,true)}</span> · <span title={exactComparisonValue(r.ratio)}>B/A {formatComparisonRatio(r.ratio)}</span></span>{r.reason && <small>{comparisonReason(r.reason, locale)}</small>}</p>)}</div>{rows.filter(r=>r.key.startsWith('cost')).every(r=>r.a.median===null&&r.b.median===null)&&<p><strong>{zh?'费用 · 不可比':'Cost · Not comparable'}</strong> · B − A — · B/A —<small> · {comparisonReason('cost',locale)}</small></p>}{limitations.map(line => <p key={line}>{line}</p>)}</section>
+    {snapshot.value && <><section><h2>{zh ? '结论' : 'Conclusions'}</h2><div className="task-compare-conclusions">{rows.map(r => <p key={r.key} data-verdict={r.verdict}><strong>{r.label} · {verdictLabel(r.verdict, locale)}</strong><span><span title={exactComparisonValue(r.delta,r.unit)}>B − A {formatComparisonValue(r.delta,r.unit,locale,true)}</span> · <span title={exactComparisonValue(r.ratio)}>B/A {formatComparisonRatio(r.ratio)}</span></span>{r.reason && <small>{comparisonReason(r.reason, locale)}</small>}</p>)}</div>{limitations.map(line => <p key={line}>{line}</p>)}</section>
       <section><h2>{zh ? '指标' : 'Metrics'}</h2><ComparisonMetricTable rows={rows} locale={locale} />
         {architecture.loading && <p role="status">{zh ? '读取架构与 Token 口径…' : 'Reading architecture and token conventions…'}</p>}
         {architecture.error && <ArchitectureReadError error={architecture.errorInfo ?? architecture.error} locale={locale} retry={architecture.retry} />}

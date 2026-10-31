@@ -9,7 +9,7 @@ import { CaptureTimingPanel } from './CaptureTimingPanel.js';
 const timingCopy = {
   en: { title: 'Native and proxy timing', native: 'Normalized log duration', declaration: 'Session declaration',
     hint: 'This is the retained session declaration, not provenance for each event. Per-event measurement provenance is unknown. Zero does not prove a measured zero; it can also mean an absent endpoint or no derived interval.',
-    separate: 'Values are independent observations, not proof of the same call or measured tool execution. No cross-clock subtraction, speed ratio or billing deduction is made.',
+    separate: 'Values are independent observations, not proof of the same call or measured tool execution. No cross-clock subtraction, speed ratio deduction is made.',
     select: 'Select a native event to show its normalized log duration beside the selected capture.', derived: 'derived', measured: 'measured', unknown: 'unknown' },
   zh: { title: '原生与代理时序', native: '规范化日志时长', declaration: '会话来源声明',
     hint: '此处仅为保留的会话级声明，不是每条事件的测量证明；逐事件测量来源未知。0 不证明实测为零，也可能表示缺少结束点或没有推导区间。',

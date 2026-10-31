@@ -360,7 +360,7 @@ it('Phase B review refreshes the shared retained page after background hydration
  vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
   const path=String(input);
   if(path==='/api/task-home/hydrate')return new Response(new ReadableStream<Uint8Array>({start(value){controller=value;}}));
-  if(path.startsWith('/api/tasks?')){reads++;return json({items:[{...task,loadedMemberCount:reads>1?2:0,metrics:reads>1?{durationMs:2000,toolCalls:8,errors:1,input:60,output:20,cacheRead:30,correctedTotal:110,costUsd:null,models:[]}:undefined}],total:1,offset:0,limit:50,hasMore:false});}
+  if(path.startsWith('/api/tasks?')){reads++;return json({items:[{...task,loadedMemberCount:reads>1?2:0,metrics:reads>1?{durationMs:2000,toolCalls:8,errors:1,input:60,output:20,cacheRead:30,correctedTotal:110,promptInput:90,cacheHitRate:1/3,models:[]}:undefined}],total:1,offset:0,limit:50,hasMore:false});}
   return original(input,init);
  }));
  let notify!:(changes:TaskChanges)=>void;

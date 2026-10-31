@@ -6,8 +6,8 @@ import type { LinkedExportCoverage } from '../core/linked-trace-export.js';
 import '../styles/components/linked-trace-export.css';
 
 const COPY = {
-  en: { title: 'Export linked metadata (OTLP JSON)', scope: 'Local read-only download of native observations and accepted capture memberships. No upload or model/tool execution. Bodies, titles, errors, paths, headers, URLs, models, tokens and fees are excluded. Originals remain available through their existing downloads.',
-    timing: 'Scan spans are observation points. Network spans describe observed intervals or explicitly unknown ends; WebSockets describe a connection. These are not model inference times or proof of instantaneous execution. Generated IDs and memberships do not certify unique owners, causality, retries, billing or Agent success.',
+  en: { title: 'Export linked metadata (OTLP JSON)', scope: 'Local read-only download of native observations and accepted capture memberships. No upload or model/tool execution. Bodies, titles, errors, paths, headers, URLs, models, tokens are excluded. Originals remain available through their existing downloads.',
+    timing: 'Scan spans are observation points. Network spans describe observed intervals or explicitly unknown ends; WebSockets describe a connection. These are not model inference times or proof of instantaneous execution. Generated IDs and memberships do not certify unique owners, causality, retries or Agent success.',
     page: 'Native and capture pages are independent. Each download is a live snapshot; multiple pages are not a consistent archive. Source-history completeness and retry identity remain unknown. Capture page size is 20.',
     offset: 'Event offset', limit: 'Native page size', cursor: 'Capture cursor (empty = first batch)', range: 'Use offset 0–1000000, native page size 1–200 and an empty cursor or positive safe integer.', action: 'Download linked OTLP JSON', retry: 'Retry local export',
     cancel: 'Cancel export', cancelled: 'Export cancelled; no download requested.', pending: 'Reading retained metadata…', timeout: 'Export exceeded 10 seconds; retry explicitly.',
@@ -17,7 +17,7 @@ const COPY = {
     next: 'Select next native page', nextCapture: 'Select next capture page', empty: 'No exportable observations on this page.',
     capture: 'Capture rows read', capturePartial: 'Partial capture coverage', captureComplete: 'All currently accepted captures covered', identity: 'Retained identity locators', identityComplete: 'Loaded identity manifests complete (source history still unknown)', identityIncomplete: 'Identity evidence incomplete', missing: 'Omitted evidence count', reasons: 'Evidence reasons (codes)',
   },
-  zh: { title: '导出关联元数据（OTLP JSON）', scope: '只读、本地下载原生日志观测与已接受的采集归属。不上传、不执行模型或工具。不包含正文、标题、错误文本、路径、请求头、URL、模型、Token 或费用；原文仍可通过已有入口独立下载。',
+  zh: { title: '导出关联元数据（OTLP JSON）', scope: '只读、本地下载原生日志观测与已接受的采集归属。不上传、不执行模型或工具。不包含正文、标题、错误文本、路径、请求头、URL、模型、Token；原文仍可通过已有入口独立下载。',
     timing: 'scan span 是观测点；网络 span 是观测区间或明确标记结束未知的记录，WebSocket 表示连接范围。这不是模型推理耗时或瞬时执行证明。生成 ID 与归属不能认证唯一所有者、因果、重试、计费或 Agent 成功。',
     page: '原生事件与采集独立分页，每次下载是实时快照，多页不保证一致。源历史完整性与重试身份始终未知。采集每页固定 20 条。',
     offset: '事件偏移', limit: '原生每页数量', cursor: '采集游标（留空为首批）', range: '偏移为 0–1000000，原生每页数量为 1–200；采集游标留空或输入安全正整数。', action: '下载关联 OTLP JSON', retry: '重试本地导出',

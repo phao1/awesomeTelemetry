@@ -26,7 +26,7 @@ export function formatComparisonValue(value:number|null,unit:string,locale:Local
     return `${sign}${number(abs/scale)} ${label}`;
   }
   if(unit==='%')return `${sign}${number(abs,true)}${signed?(locale==='zh'?' 个百分点':' pp'):'%'}`;
-  return sign+(unit==='USD'||unit==='CNY'?comparisonNumber(abs)+' '+unit:number(abs));
+  return sign+number(abs);
 }
 export function formatComparisonRatio(value:number|null):string{
   if(value===null||!Number.isFinite(value))return '—';
@@ -45,7 +45,6 @@ export function comparisonReason(reason: string | null, locale: Locale): string 
   const t = (zh: string, en: string) => comparisonText(locale, zh, en);
   if (!reason) return '';
   if (reason === 'missing') return t('缺少可靠测量或覆盖不完整', 'Missing reliable measurements or incomplete coverage');
-  if (reason === 'cost') return t('币种、费用来源不同或费用覆盖不完整', 'Currency, cost source or coverage differs');
   if (reason === 'health') return t('请读取两侧同口径、完整的标准健康报告', 'Read complete standard health reports with matching conventions');
   if (reason === 'Token 口径不同或未知') return t(reason, 'Token accounting differs or is unknown');
   return locale === 'zh' ? reason : 'Missing or incompatible measurement conventions';
@@ -63,12 +62,9 @@ export function taskComparisonRows(snapshot: TaskComparisonSnapshot, runs: { a: 
     row('toolFailure', t('工具失败率', 'Tool failure rate'), '%', task => { const m = task.metrics; return m?.toolResults && m.toolFailures != null ? 100 * m.toolFailures / m.toolResults : null; }),
     row('toolCalls', t('工具调用数', 'Tool calls'), '', task => task.metrics?.toolCalls ?? null),
   ];
-  for (const currency of ['USD', 'CNY']) {
-    const amounts = [...snapshot.a, ...snapshot.b].map(task => task.metrics?.costs);
-    const sources = amounts.map(c => c?.amounts.find(a => a.currency === currency)?.source);
-    const valid = amounts.every(c => c && c.known === c.total && c.total > 0 && c.amounts.some(a=>a.currency===currency)) && new Set(sources).size === 1 && !sources.includes('mixed');
-    rows.push(row('cost' + currency, t('费用', 'Cost') + ' ' + currency, currency, task => task.metrics?.costs?.amounts.find(a => a.currency === currency)?.amount ?? null, valid ? null : 'cost'));
-  }
+  const cacheRow=row('cacheHitRate',t('缓存命中率','Cache hit rate'),'%',task=>{const m=task.metrics,c=m?.coverage?.cacheHitRate;return c&&c.total>0&&c.known===c.total&&m?.cacheHitRate!=null?m.cacheHitRate*100:null;},tokenReason);
+  if(cacheRow.verdict==='better')cacheRow.verdict='worse';else if(cacheRow.verdict==='worse')cacheRow.verdict='better';
+  rows.push(cacheRow);
   for (const key of ['subAgents', 'delegations'] as const) {
     const f = fold?.rows.find(r => r.key === key);
     rows.push(comparisonRow(key, key === 'subAgents' ? t('子 Agent 数', 'Sub-agents') : t('委派数', 'Delegations'), '', runs?.a.map(r => r.architecture[key]) ?? snapshot.a.map(() => null), runs?.b.map(r => r.architecture[key]) ?? snapshot.b.map(() => null), f?.reason ?? null));
@@ -129,7 +125,7 @@ export function comparisonConfounded(snapshot: TaskComparisonSnapshot, runs: { a
 }
 export function comparisonLimitations(locale: Locale, single: boolean, confounded: boolean): string[] {
   const t = (zh: string, en: string) => comparisonText(locale, zh, en);
-  return [t('描述性对比；更少的工具、Agent、Token 或费用不证明质量改善或因果收益。', 'Descriptive comparison; fewer tools, agents, tokens or lower costs do not prove quality or causal benefits.'),
+  return [t('描述性对比；更少的工具、Agent、Token不证明质量改善或因果收益。', 'Descriptive comparison; fewer tools, agents, tokens do not prove quality or causal benefits.'),
     t('任务难度与未知配置可能混杂；时长是任务墙钟，不是模型推理时间。', 'Task difficulty and unknown configuration may confound results; duration is task wall clock, not model inference.'),
     t('健康匹配按规则与证据序位，不证明语义等价；证据不足不能判定问题消失。', 'Health matching uses rule and evidence position, not semantic equivalence; insufficient evidence cannot prove resolution.'),
     ...(single ? [t('单样本，不能证明因果', 'Single sample; cannot prove causality')] : []),

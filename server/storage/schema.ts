@@ -32,7 +32,7 @@ import { cachedStmt } from './stmt-cache.js';
  * CREATE INDEX IF NOT EXISTS），失败抛带重建指引的错误，禁止静默 catch。
  * v9（2026-08-11 校准审计）：**只增不改**——sessions 增列 cost_currency。
  * 定价表此前只认 USD，国内网关按 CNY/token 计费的模型（deepseek 等）压根录不进来，
- * cost_usd 只能恒为 0；加币种后价格原样录入，展示端据此渲染 ¥ 而不是 $。
+ * 旧字段保留源数据单位；Phase F1 不再计算或展示金额。
  * 单条幂等 ADD COLUMN，默认 'USD'，历史行语义不变，不触发重扫。
  * v10（add-agent-team-observability D11）：**只增不改**——新增 13 张 team 主表 +
  * team_message_recipients（收件人归一化 junction）+ team_run_sessions（session

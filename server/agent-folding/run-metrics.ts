@@ -27,7 +27,7 @@ async function sourceMetrics(path: string, provider: string, budget: SourceBudge
     cacheRead: number(provider === 'claude' ? u.cache_read_input_tokens : u.cached_input_tokens),
     cacheWrite: number(provider === 'claude' ? u.cache_creation_input_tokens : u.cache_write_input_tokens),
     inputIncludesCache: provider === 'codex', outputIncludesReasoning: true,
-    cacheWriteReported: (provider === 'claude' ? 'cache_creation_input_tokens' : 'cache_write_input_tokens') in u ? true : null,
+    cacheWriteReported: (provider === 'claude' ? 'cache_creation_input_tokens' : 'cache_write_input_tokens') in u ? true : provider === 'codex' ? false : null,
   });
   try {
     for await (const line of lines) {
@@ -90,7 +90,7 @@ export async function collectFoldingMetricRun(db: Database, taskId: string, proj
       // Legacy counters default absent fields to zero. Only positive indexed fields establish reported usage.
       const known = (v: number) => v > 0 ? v : null;
       source = { calls: [], tools, total: { input: known(row.token_input), output: known(row.token_output), reasoning: row.provider === 'codex' ? known(row.token_reasoning) : null,
-        cacheRead: known(row.token_cache_read), cacheWrite: known(row.token_cache_write), inputIncludesCache: false, outputIncludesReasoning: true, cacheWriteReported: row.token_cache_write > 0 ? true : null } };
+        cacheRead: known(row.token_cache_read), cacheWrite: known(row.token_cache_write), inputIncludesCache: false, outputIncludesReasoning: true, cacheWriteReported: row.token_cache_write > 0 ? true : row.provider === 'codex' ? false : null } };
     }
     modelCount += source.calls.length;
     usages.push(source.total); if (row.id !== context.task.rootSessionKey) subUsage.push(correctedUsage(source.total).total);

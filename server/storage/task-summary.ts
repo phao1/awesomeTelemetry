@@ -1,9 +1,9 @@
 import type { Database } from 'better-sqlite3';
 import type { TaskContext, TaskMetrics, TaskMetricKey } from '../../src/core/task-types.js';
-import { computeCost, lookupModelPrice, lookupContextWindow, modelPricingRevision } from '../../src/core/pricing.js';
-import { correctedUsage } from '../../src/core/benchmark-analysis.js';
+import { lookupContextWindow } from '../../src/core/context-windows.js';
+import { correctedUsage, promptUsage } from '../../src/core/benchmark-analysis.js';
 import { cachedStmt } from './stmt-cache.js';
-export type SummarySession = { telemetry_usage?: ReturnType<typeof telemetryUsage>;  id: string; provider: string; started_at: string; total_duration_ms: number; duration_source: string; detail_loaded: number; token_input: number; token_output: number; token_cache_read: number; token_cache_write: number; cost_usd: number; cost_source: string; cost_currency: string; primary_model: string | null; tools: number; errors: number; results: number; failures: number; pressure: number | null };
+export type SummarySession = { telemetry_usage?: ReturnType<typeof telemetryUsage>;  id: string; provider: string; started_at: string; total_duration_ms: number; duration_source: string; detail_loaded: number; token_input: number; token_output: number; token_cache_read: number; token_cache_write: number; primary_model: string | null; tools: number; errors: number; results: number; failures: number; pressure: number | null };
 const cache = new WeakMap<Database, Map<string, { revision: string; value: TaskMetrics }>>();
 const known = (n: number) => Number.isSafeInteger(n) && n > 0 ? n : null;
 const sum = (values: Array<number | null>): number | null => values.length && values.every(v => v !== null) && Number.isSafeInteger(values.reduce<number>((n, v) => n + (v ?? 0), 0)) ? values.reduce<number>((n, v) => n + v!, 0) : null;
@@ -12,16 +12,19 @@ const sum = (values: Array<number | null>): number | null => values.length && va
 function telemetryUsage(values: Array<{usage: Record<string,number|null>;kind:string}>) {
   const models=values.filter(s=>s.kind==='llm');
   const count=(key:string):number|null=>models.every(s=>s.usage[key]!==null && s.usage[key]!==undefined)?models.reduce((n,s)=>n+s.usage[key]!,0):null;
-  return {input:count('input'),output:count('output'),cacheRead:count('cacheRead'),total:count('total')};
+  const input=count('input'), cacheRead=count('cacheRead');
+  return {input,output:count('output'),cacheRead,total:count('total'),...promptUsage({input,cacheRead,cacheWrite:null,cacheWriteReported:null,inputIncludesCache:null})};
 }
-export function sessionUsage(row: Pick<SummarySession, 'provider' | 'token_input' | 'token_output' | 'token_cache_read' | 'token_cache_write' | 'telemetry_usage'>) {
-  if(row.provider==='opentelemetry')return row.telemetry_usage??{input:null,output:null,cacheRead:null,total:null};
-  const input = known(row.token_input), output = known(row.token_output), cacheRead = known(row.token_cache_read);
+export function sessionUsage(row: Pick<SummarySession, 'provider' | 'token_input' | 'token_output' | 'token_cache_read' | 'token_cache_write' | 'telemetry_usage'>, reported?: Set<string>) {
+  if(row.provider==='opentelemetry')return row.telemetry_usage??{input:null,output:null,cacheRead:null,total:null,promptInput:null,cacheHitRate:null};
+  const counter=(key:string,n:number)=>reported ? reported.has(key) ? n : null : known(n);
+  const input = counter('input',row.token_input), output = counter('output',row.token_output), cacheRead = counter('cacheRead',row.token_cache_read);
   const convention = ['codex', 'claude', 'codeagent', 'workbuddy'].includes(row.provider);
-  const cacheWriteReported = row.token_cache_write > 0 ? true : row.provider === 'codex' && row.token_cache_write === 0 ? false : null;
-  return { input, output, cacheRead, total: convention ? correctedUsage({ input, output, cacheRead, cacheWrite: known(row.token_cache_write), reasoning: null, inputIncludesCache: false, outputIncludesReasoning: true, cacheWriteReported }).total : null };
+  const cacheWriteReported = reported?.has('cacheWrite') || row.token_cache_write > 0 ? true : row.provider === 'codex' && row.token_cache_write === 0 ? false : null;
+  const prompt = promptUsage({input,cacheRead,cacheWrite:counter('cacheWrite',row.token_cache_write),cacheWriteReported,inputIncludesCache:convention ? false : null});
+  return { input, output, cacheRead, ...prompt, total: convention ? correctedUsage({ input, output, cacheRead, cacheWrite: counter('cacheWrite',row.token_cache_write), reasoning: null, inputIncludesCache: false, outputIncludesReasoning: true, cacheWriteReported }).total : null };
 }
-export const SESSION_METRIC_COLS = 's.id,s.provider,s.started_at,s.total_duration_ms,s.duration_source,s.detail_loaded,s.token_input,s.token_output,s.token_cache_read,s.token_cache_write,s.cost_usd,s.cost_source,s.cost_currency,s.primary_model';
+export const SESSION_METRIC_COLS = 's.id,s.provider,s.started_at,s.total_duration_ms,s.duration_source,s.detail_loaded,s.token_input,s.token_output,s.token_cache_read,s.token_cache_write,s.primary_model';
 /** Correlated counts stay on covering indexes; body columns are never acquired. */
 export function readSummarySessions(db: Database, keys: string[], includePressure = false): SummarySession[] {
   const rows = cachedStmt(db, `SELECT ${SESSION_METRIC_COLS},
@@ -44,10 +47,10 @@ export function readSummarySessions(db: Database, keys: string[], includePressur
   return rows.map(row => ({ ...row, pressure: pressure.get(row.id) ?? null }));
 }
 export function taskMetrics(db: Database, context: TaskContext, supplied?: SummarySession[]): TaskMetrics {
-  const revision = supplied ? '' : String(db.pragma('data_version', { simple: true })) + ':' + (cachedStmt(db, 'SELECT total_changes() AS n').get() as { n: number }).n + ':' + modelPricingRevision();
+  const revision = supplied ? '' : String(db.pragma('data_version', { simple: true })) + ':' + (cachedStmt(db, 'SELECT total_changes() AS n').get() as { n: number }).n;
   let entries = cache.get(db); if (!entries) { entries = new Map(); cache.set(db, entries); }
   const hit = entries.get(context.task.id); if (!supplied && hit?.revision === revision) return structuredClone(hit.value);
-  const value: TaskMetrics = { durationMs: null, toolCalls: null, errors: null, input: null, output: null, cacheRead: null, correctedTotal: null, costUsd: null, models: [] };
+  const value: TaskMetrics = { durationMs: null, toolCalls: null, errors: null, input: null, output: null, cacheRead: null, correctedTotal: null, promptInput: null, cacheHitRate: null, models: [] };
   if (context.importSession) {
     const s = context.importSession, start = Date.parse(s.startedAt ?? ''), end = Date.parse(s.endedAt ?? '');
     value.durationMs = Number.isFinite(start) && Number.isFinite(end) && end >= start ? end - start : null;
@@ -61,7 +64,7 @@ export function taskMetrics(db: Database, context: TaskContext, supplied?: Summa
       const row = member.sessionKey ? byKey.get(member.sessionKey) : undefined;
       return { member, row, usage: row?.detail_loaded === 1 ? sessionUsage(row) : null };
     });
-    const metricKeys: TaskMetricKey[] = ['input', 'output', 'cacheRead', 'correctedTotal', 'models'];
+    const metricKeys: TaskMetricKey[] = ['input', 'output', 'cacheRead', 'correctedTotal', 'promptInput', 'cacheHitRate', 'models'];
     const coverage = {} as NonNullable<TaskMetrics['coverage']>;
     for (const key of metricKeys) {
       const metric = key === 'correctedTotal' ? 'total' : key;
@@ -78,7 +81,11 @@ export function taskMetrics(db: Database, context: TaskContext, supplied?: Summa
       }
       coverage[key] = { known: key === 'models' ? models.length : knownValues.length, total: context.task.memberCount, missing };
       if (key === 'models') value.models = [...new Set(models)];
-      else value[key] = sum(knownValues);
+      else if (key === 'cacheHitRate') {
+        const eligible=members.flatMap(m=>m.usage?.promptInput!=null&&m.usage.cacheHitRate!=null?[m.usage]:[]);
+        const denominator=sum(eligible.map(u=>u.promptInput));
+        value.cacheHitRate=denominator ? eligible.reduce((n,u)=>n+u.cacheRead!,0)/denominator : null;
+      } else value[key] = sum(knownValues);
     }
     value.coverage = coverage;
     if (complete) {
@@ -87,29 +94,6 @@ export function taskMetrics(db: Database, context: TaskContext, supplied?: Summa
       const starts = rows.map(r => Date.parse(r.started_at));
       if (starts.every(Number.isFinite) && rows.every(r => ['measured', 'derived'].includes(r.duration_source) && r.total_duration_ms >= 0)) value.durationMs = Math.max(...rows.map((r, i) => starts[i]! + r.total_duration_ms)) - Math.min(...starts);
     }
-    const amounts: NonNullable<TaskMetrics['costs']>['amounts'] = [];
-    let costKnown = 0;
-    const missingPrices=new Set<string>(),missingReasons=new Set<NonNullable<NonNullable<TaskMetrics['costs']>['missingReasons']>[number]>();
-    if(rows.length<context.task.memberCount)missingReasons.add('session_unavailable');
-    for (const r of rows) {
-      let amount: number | null = null, currency: 'USD' | 'CNY' = r.cost_currency === 'CNY' ? 'CNY' : 'USD', source: 'reported' | 'estimated' = 'reported';
-      if (r.cost_source === 'reported' && ['USD','CNY'].includes(r.cost_currency) && Number.isFinite(r.cost_usd) && r.cost_usd >= 0) amount = r.cost_usd;
-      else if (r.provider !== 'opentelemetry' && r.detail_loaded === 1 && sessionUsage(r).total !== null) {
-        const result = computeCost({ input:r.token_input,output:r.token_output,cacheRead:r.token_cache_read,cacheWrite:r.token_cache_write,reasoning:0,netInput:r.token_input,total:sessionUsage(r).total! },r.primary_model);
-        if (result.costSource !== 'unknown') { amount=result.cost; currency=result.currency; source='estimated'; }
-      }
-      if (amount === null) {
-        if(r.detail_loaded!==1)missingReasons.add('detail_not_loaded');
-        if(r.detail_loaded===1&&!r.primary_model)missingReasons.add('model_unknown');
-        else if(r.detail_loaded===1&&r.primary_model&&!lookupModelPrice(r.primary_model)){missingPrices.add(r.primary_model);missingReasons.add('model_unpriced');}
-        if(r.detail_loaded===1&&(r.provider==='opentelemetry'||sessionUsage(r).total===null))missingReasons.add('usage_unknown');
-        continue;
-      }
-      costKnown++; const entry=amounts.find(a=>a.currency===currency);
-      if (entry) { entry.amount+=amount; if(entry.source!==source)entry.source='mixed'; } else amounts.push({currency,amount,source});
-    }
-    value.costs={amounts,known:costKnown,total:context.task.memberCount,...(missingPrices.size?{missingPrices:[...missingPrices]}:{}),...(missingReasons.size?{missingReasons:[...missingReasons]}:{})};
-    value.costUsd=costKnown===context.task.memberCount && amounts.length===1 && amounts[0]!.currency==='USD' ? amounts[0]!.amount : null;
     const pressures=rows.flatMap(r=>r.pressure===null?[]:[r.pressure]);
     value.contextPressurePct=pressures.length ? Math.max(...pressures) : null;
   }
@@ -117,3 +101,15 @@ export function taskMetrics(db: Database, context: TaskContext, supplied?: Summa
   if (entries.size >= 32) entries.delete(entries.keys().next().value!);
   entries.set(context.task.id, { revision, value }); return structuredClone(value);
 }
+
+const cacheFunctions = new WeakSet<Database>();
+/** SQL aggregation reuses the same per-member normalization as task summaries. */
+export function registerCacheUsage(db: Database): void {
+  if(cacheFunctions.has(db))return;
+  db.function('cache_prompt_input',{deterministic:true},(provider,loaded,input,read,write)=>{
+    if(loaded!==1)return null;
+    return sessionUsage({provider:String(provider),token_input:Number(input),token_output:0,token_cache_read:Number(read),token_cache_write:Number(write)}).promptInput;
+  });
+  cacheFunctions.add(db);
+}
+export const CACHE_PROMPT_SQL='cache_prompt_input(provider,detail_loaded,token_input,token_cache_read,token_cache_write)';

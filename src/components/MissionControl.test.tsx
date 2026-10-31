@@ -29,7 +29,6 @@ function makeResponse(): MissionResponse {
   };
   const quality = {
     closure: widget('closure', false),
-    costEfficiency: widget('costEfficiency', false),
     toolFailure: widget('toolFailure', false),
     tokenTrend: widget('tokenTrend', false),
     errorReasons: widget('errorReasons', false),
@@ -233,8 +232,8 @@ describe('MissionControl（REQ-027）', () => {
           available: true,
           unavailableReason: null,
           data: [
-            { model: 'glm-4-plus', calls: 3, input: 100, output: 50, cacheRead: 0, cacheWrite: 0, costUsd: 0, costSource: 'unknown' },
-            { model: 'claude-opus-4-8', calls: 1, input: 100, output: 50, cacheRead: 0, cacheWrite: 0, costUsd: 0.5, costSource: 'estimated' },
+            { model: 'glm-4-plus', calls: 3, input: 100, output: 50, cacheRead: 0, cacheWrite: 0,  },
+            { model: 'claude-opus-4-8', calls: 1, input: 100, output: 50, cacheRead: 0, cacheWrite: 0,  },
           ],
         },
       },
@@ -263,14 +262,6 @@ describe('MissionControl（REQ-027）', () => {
       act(() => root?.unmount());
       host.remove();
     }
-  });
-});
-
-describe('monetary-only Mission widgets',()=>{
-  it('omits populated cost efficiency, never mutates its source and counts only rendered widgets',async()=>{
-    const response=makeResponse();response.quality.costEfficiency={id:'costEfficiency',criteria:'MONEY_CRITERIA_SENTINEL',available:true,unavailableReason:null,data:{totalUsd:456789.1234,perTurnUsd:1,perOkToolUsd:2,perSessionUsd:3,turns:1,tools:1,pricedSessions:1,unpricedSessions:0}};
-    const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
-    try {act(()=>root.render(<MissionControl locale="en" load={async()=>response}/>));await act(async()=>{await Promise.resolve();});expect(host.querySelector('#widget-costEfficiency')).toBeNull();expect(host.textContent).not.toContain('MONEY_CRITERIA_SENTINEL');expect(host.textContent).not.toContain('456789.1234');expect(host.querySelectorAll('.mission-widget')).toHaveLength(20);expect(response.quality.costEfficiency.data?.totalUsd).toBe(456789.1234);}finally{act(()=>root.unmount());host.remove();}
   });
 });
 
@@ -344,5 +335,13 @@ it('Phase B overview range restores controlled hash state and reports range chan
   await act(async()=>{root.render(<MissionControl locale="en" load={load} initialRange="7d" onRangeChange={onRangeChange}/>);await Promise.resolve();});
   await act(async()=>{host.querySelectorAll<HTMLButtonElement>('.mission-range button')[1]!.click();await Promise.resolve();});expect(onRangeChange).toHaveBeenCalledWith('30d');expect(load).toHaveBeenLastCalledWith('30d');
   await act(async()=>{root.render(<MissionControl locale="en" load={load} initialRange="all" onRangeChange={onRangeChange}/>);await Promise.resolve();});expect(load).toHaveBeenLastCalledWith('all');
+ }finally{act(()=>root.unmount());}
+});
+
+it('renders daily cache hit with one decimal and partial member coverage',async()=>{
+ const response=makeResponse();response.quality.tokenTrend={id:'tokenTrend',criteria:'daily cache',available:true,unavailableReason:null,data:[{day:'2026-10-31',sessions:2,input:60,output:20,cacheRead:30,cacheWrite:10,cacheHitRate:0.3,cacheKnownMembers:1,cacheTotalMembers:2,errorEvents:0,successRate:null}]};
+ const host=document.createElement('div'),root=createRoot(host);
+ try{await act(async()=>{root.render(<MissionControl locale="en" load={async()=>response}/>);await Promise.resolve();});
+ expect(host.querySelector('[aria-label="Daily cache hit rate"]')?.textContent).toContain('30.0% · Partial (1/2 members)');
  }finally{act(()=>root.unmount());}
 });

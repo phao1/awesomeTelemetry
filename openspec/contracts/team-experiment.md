@@ -119,3 +119,6 @@ note in `contracts/database.md`. Preserve the existing unrelated predecessor
 test draft. The capture ceiling workload, thresholds and identity/association
 semantics are unchanged; eliminate redundant serialization only if controlled
 phase evidence and the full workload validate it.
+
+Phase F1: monetary UI/report fields and alert rules are removed; raw evidence
+remains stored faithfully. Token/cacheHitRate follows data-model F1-001/002.

@@ -170,6 +170,7 @@ export function AgentOverview({ locale, load, sessions = [], onSelectSession, on
     { key: 'tokenTotal', label: t('agent.tokens', locale), sortable: true, align: 'right', render: row => <span className="agent-number-meter">
       <span className="mono">{fmtNum(row.tokenTotal)}</span><BarMeter value={row.tokenTotal} max={maxTokens} tone="neutral" />
     </span> },
+    {key:'cacheHitRate',label:locale==='zh'?'缓存命中':'Cache hit',sortable:true,align:'right',render:row=><span>{row.cacheHitRate==null?'—':(row.cacheHitRate*100).toFixed(1)+'%'}{row.cacheKnownMembers<row.cacheTotalMembers?` · ${locale==='zh'?'部分':'Partial'} (${row.cacheKnownMembers}/${row.cacheTotalMembers} ${locale==='zh'?'成员':'members'})`:''}</span>},
     { key: 'verificationCoverage', label: t('agent.verification', locale), sortable: true, align: 'right', render: row => ratio(row.verificationCoverage) },
     { key: 'errorRate', label: t('agent.errorRate', locale), sortable: true, align: 'right', render: row => ratio(row.errorRate) },
     { key: 'debugEntryRate', label: t('agent.debugRate', locale), sortable: true, align: 'right', render: row => <span className="mono">{pct(row.debugEntryRate)}</span> },
@@ -235,7 +236,7 @@ export function AgentOverview({ locale, load, sessions = [], onSelectSession, on
       {sortedRows.map(row => {
         const key = overviewGroupKey(row);
         const metrics = [
-          [t('agent.sessions', locale), fmtNum(row.sessionCount)], [t('agent.tokens', locale), fmtNum(row.tokenTotal)],
+          [t('agent.sessions', locale), fmtNum(row.sessionCount)], [t('agent.tokens', locale), fmtNum(row.tokenTotal)], [locale==='zh'?'缓存命中':'Cache hit',row.cacheHitRate==null?'—':(row.cacheHitRate*100).toFixed(1)+'%'+(row.cacheKnownMembers<row.cacheTotalMembers?` · ${locale==='zh'?'部分':'Partial'} (${row.cacheKnownMembers}/${row.cacheTotalMembers} ${locale==='zh'?'成员':'members'})`:'')],
           [t('agent.events', locale), fmtNum(row.eventCount)], [t('agent.avgDuration', locale), duration(row.avgWallClockMs)],
           [t('agent.verification', locale), pct(row.verificationCoverage)], [t('agent.errorRate', locale), pct(row.errorRate)],
         ];

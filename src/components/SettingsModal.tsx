@@ -33,7 +33,7 @@ function validConfig(value:unknown):value is LocalSessionConfig {
 }
 interface Operation {kind:'load'|'save';controller:AbortController;timer:ReturnType<typeof setTimeout>}
 
-/** Settings edits local scanner, sourced prices and local alert limits; never launches an Agent. */
+/** Settings edits local scanner and local alert limits; never launches an Agent. */
 export function SettingsModal({locale,onClose,onSettingsSaved,initialTarget,load=defaultLoad,save=defaultSave}:SettingsModalProps):React.JSX.Element {
   const [localDirty,setLocalDirty]=useState(false),[localRevision,setLocalRevision]=useState(0);
   const [draft,setDraft]=useState<LocalSessionConfig|null>(null),[baseline,setBaseline]=useState<LocalSessionConfig|null>(null);

@@ -4,7 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import type { TaskContext, TaskRequest } from '../../core/task-types.js';
 import { RequestNavigator, RequestExpansion, RequestPicker } from './TaskRequests.js';
 const context:TaskContext={task:{id:'collected:root',origin:'collected',rootSessionKey:'root',runId:null,title:'Thread',provider:'codex',provenanceKnown:true,startedAt:null,updatedAt:'2026-10-30T00:00:00.000Z',recordedStatus:'success',memberCount:1,loadedMemberCount:1,eventCount:9},members:[],importSession:null,warnings:[]};
-const items:TaskRequest[]=[1,2].map(n=>({id:'request:root:event:p'+n,ordinal:n,title:'Question '+n,startedAt:`2026-10-30T00:00:0${n}.000Z`,endedAt:`2026-10-30T00:00:0${n+1}.000Z`,nextStartedAt:null,eventCount:n,metrics:{durationMs:n*1000,toolCalls:n,errors:0,input:10*n,output:20*n,cacheRead:30*n,correctedTotal:60*n,costUsd:null,models:[]},alerts:[]}));
+const items:TaskRequest[]=[1,2].map(n=>({id:'request:root:event:p'+n,ordinal:n,title:'Question '+n,startedAt:`2026-10-30T00:00:0${n}.000Z`,endedAt:`2026-10-30T00:00:0${n+1}.000Z`,nextStartedAt:null,eventCount:n,metrics:{durationMs:n*1000,toolCalls:n,errors:0,input:10*n,output:20*n,cacheRead:30*n,correctedTotal:60*n,promptInput:100,cacheHitRate:0.3,models:[]},alerts:[]}));
 let host:HTMLDivElement,root:Root;
 const settle=async()=>{await act(async()=>{for(let n=0;n<15;n++)await Promise.resolve();});};
 beforeEach(()=>{host=document.createElement('div');document.body.append(host);root=createRoot(host);vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({taskId:context.task.id,revision:'rev',items}),{status:200})));});
@@ -33,7 +33,7 @@ const malformedLists:unknown[]=[
   {...validList,items:[{...items[0],metrics:undefined}]},
   {...validList,items:[{...items[0],metrics:{...items[0]!.metrics,models:null}}]},
   {...validList,items:[{...items[0],metrics:{...items[0]!.metrics,coverage:{}}}]},
-  {...validList,items:[{...items[0],metrics:{...items[0]!.metrics,costs:{amounts:null}}}]},
+  {...validList,items:[{...items[0],metrics:{...items[0]!.metrics,cacheHitRate:1.1}}]},
   {...validList,items:[{...items[0],alerts:null}]},
   {...validList,items:[{...items[0],alerts:[null]}]},
 ];

@@ -1,13 +1,12 @@
 import type { Database } from 'better-sqlite3';
 import type { AlertThresholds, TaskContext, TaskKpis, TaskListQuery, TaskPage, TaskSummary } from '../../src/core/task-types.js';
 import { taskAlerts } from '../../src/core/task-alerts.js';
-import { modelPricingRevision } from '../../src/core/pricing.js';
 import { cachedStmt } from './stmt-cache.js';
 import { TASK_BINDINGS_SQL, importedTask, TaskReadError } from './task-workbench.js';
 import { readSummarySessions, taskMetrics } from './task-summary.js';
 export class TaskHomeChangedError extends Error { readonly code='SOURCE_CHANGED'; constructor(){super('Task metadata changed; refresh the list');} }
 const cache = new WeakMap<Database,{revision:string;promise:Promise<TaskSummary[]>}>();
-const revision=(db:Database,includePressure=false)=>`${db.pragma('data_version',{simple:true})}:${(cachedStmt(db,'SELECT total_changes() AS n').get() as {n:number}).n}:${modelPricingRevision()}:${includePressure}`;
+const revision=(db:Database,includePressure=false)=>`${db.pragma('data_version',{simple:true})}:${(cachedStmt(db,'SELECT total_changes() AS n').get() as {n:number}).n}:${includePressure}`;
 async function snapshot(db:Database,includePressure=false):Promise<TaskSummary[]> {
   const stamp=revision(db,includePressure), hit=cache.get(db); if(hit?.revision===stamp)return structuredClone(await hit.promise);
   const promise=(async()=>{
@@ -57,19 +56,20 @@ export async function listTaskHome(db:Database,query:TaskListQuery,thresholds:Al
   if(query.errors)items=items.filter(t=>t.metrics!.errors!==null&&t.metrics!.errors!>0);
   if(query.alerts)items=items.filter(t=>t.alerts.length>0);
   const value=(t:TaskSummary):number|null=>{
-    const m=t.metrics!;switch(query.sort){case'duration':return m.durationMs;case'errors':return m.errors;case'tokens':return m.correctedTotal;case'cost':return m.costs?.amounts.find(a=>a.currency===(query.currency??'USD'))?.amount??null;default:return t.startedAt?Date.parse(t.startedAt):null;}
+    const m=t.metrics!;switch(query.sort){case'duration':return m.durationMs;case'errors':return m.errors;case'tokens':return m.correctedTotal;case'cacheHitRate':return m.cacheHitRate;default:return t.startedAt?Date.parse(t.startedAt):null;}
   };
   items.sort((a,b)=>{const x=value(a),y=value(b);return (x==null||!Number.isFinite(x)?y==null?0:1:y==null||!Number.isFinite(y)?-1:(x-y)*(query.direction==='asc'?1:-1))||a.id.localeCompare(b.id);});
   const page=items.slice(offset,offset+limit);
-  for(const task of page){const m=task.metrics!;m.models=m.models.slice(0,3);if(m.costs?.missingPrices)m.costs.missingPrices=m.costs.missingPrices.filter(id=>id.length<=256).slice(0,3);if(m.coverage)for(const c of Object.values(m.coverage))c.missing=c.missing.slice(0,1).map(member=>({...member,name:member.name.slice(0,128)}));}
+  for(const task of page){const m=task.metrics!;m.models=m.models.slice(0,3);if(m.coverage)for(const c of Object.values(m.coverage))c.missing=c.missing.slice(0,1).map(member=>({...member,name:member.name.slice(0,128)}));}
   return {items:page,total:items.length,offset,limit,hasMore:offset+limit<items.length};
 }
 export async function taskKpis(db:Database,thresholds:AlertThresholds):Promise<TaskKpis>{
   const items=(await snapshot(db,thresholds.contextPressurePct!==null)).filter(t=>t.origin==='collected'&&t.startedAt&&Date.parse(t.startedAt)>=Date.now()-7*86400000),failedTasks=items.filter(t=>t.recordedStatus==='error').length;
   const statusKnownTasks=items.filter(t=>['success','error'].includes(t.recordedStatus)).length;
-  const out:TaskKpis={tasks:items.length,statusKnownTasks,toolKnownTasks:0,failedTasks,failurePct:statusKnownTasks?100*failedTasks/statusKnownTasks:null,toolFailurePct:null,tokens:null,tokenKnownTasks:0,costs:{amounts:[],known:0,total:0},alerts:0};
-  let results=0,failures=0;
-  for(const t of items){const m=t.metrics!;if(m.correctedTotal!==null){out.tokens=(out.tokens??0)+m.correctedTotal;if(m.coverage?.correctedTotal.known===m.coverage?.correctedTotal.total)out.tokenKnownTasks++;}if(m.toolResults!=null&&m.toolFailures!=null){results+=m.toolResults;failures+=m.toolFailures;out.toolKnownTasks++;}out.alerts+=taskAlerts(m,thresholds).length?1:0;out.costs.total+=t.memberCount;out.costs.known+=m.costs?.known??0;for(const c of m.costs?.amounts??[]){const found=out.costs.amounts.find(a=>a.currency===c.currency);if(found){found.amount+=c.amount;if(found.source!==c.source)found.source='mixed';}else out.costs.amounts.push({...c});}}
+  const out:TaskKpis={tasks:items.length,statusKnownTasks,toolKnownTasks:0,failedTasks,failurePct:statusKnownTasks?100*failedTasks/statusKnownTasks:null,toolFailurePct:null,tokens:null,tokenKnownTasks:0,cacheHitRate:null,cacheKnownMembers:0,cacheTotalMembers:0,alerts:0};
+  let results=0,failures=0,cacheRead=0,promptInput=0;
+  for(const t of items){const m=t.metrics!;if(m.correctedTotal!==null){out.tokens=(out.tokens??0)+m.correctedTotal;if(m.coverage?.correctedTotal.known===m.coverage?.correctedTotal.total)out.tokenKnownTasks++;}if(m.toolResults!=null&&m.toolFailures!=null){results+=m.toolResults;failures+=m.toolFailures;out.toolKnownTasks++;}out.alerts+=taskAlerts(m,thresholds).length?1:0;out.cacheTotalMembers+=t.memberCount;out.cacheKnownMembers+=m.coverage?.cacheHitRate.known??0;if(m.cacheHitRate!==null&&m.promptInput!==null){promptInput+=m.promptInput;cacheRead+=m.cacheHitRate*m.promptInput;}}
+  out.cacheHitRate=promptInput>0?cacheRead/promptInput:null;
   out.toolFailurePct=results?100*failures/results:null;return out;
 }
 

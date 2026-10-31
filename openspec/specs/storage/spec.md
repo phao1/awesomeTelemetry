@@ -332,14 +332,14 @@ without source hydration or full event/body scans. Counts describe input records
 (kind=tool,input_len>0) and error records (status=error), not proven executions.
 Use schema22 covering indexes; cache up to32 task summaries per database by
 data_version + total_changes. An unchanged revision skips aggregation/counts.
-Incomplete members yield null counts/duration/cost. Token metrics sum available
+Incomplete members yield null counts/duration. Token metrics sum available
 trusted members independently; TaskMetrics.coverage records per-field known/total
 counts and missing IDs/names/reasons. No trusted members means null, never0.
 Unloaded member counters are unconfirmed and excluded; a retained primary_model
 is independently usable metadata. Missing models never erase known model names.
 
 Wall clock is earliest start to latest start+declared duration; overlap is not added.
-Imports use only TraceLogSession endpoints/model; its schema has no token/cost
+Imports use only TraceLogSession endpoints/model; its schema has no token
 fields, so counters remain null. Native input is adapter-normalized uncached input
 (Codex subtracts cache subsets; Claude already excludes cache). Legacy default-zero
 usage is unknown. Sum correctedUsage only for proven inclusion conventions and
@@ -354,12 +354,12 @@ under api.md's explicit preview exception; never return body fields or read sour
 
 ## Phase B (2026-10-31)
 
-REQ-PHASE-B: Revision-cached batched task summaries reuse Phase A computations with covering indexed counts. No body/source hydration. Full-scope sort/filter precedes <=50 row pagination. Costs preserve reported amounts; fallback estimation requires trusted supported session usage/model and explicit cache convention, grouped by currency with known/total coverage. No price for unknown models is fabricated. New optional costs supersedes Phase A reported-only restriction; costUsd remains a complete single-USD compatibility projection.
+REQ-PHASE-B: Revision-cached batched task summaries reuse Phase A computations with covering indexed counts. Full-scope Token/cache-hit sorting and filtering precede <=50-row pagination. No monetary calculation or response fields. Cache hit uses paired weighted per-member sums with partial coverage under data-model F1-002.
 
 ## Phase B review (2026-11-01)
 
 REQ-PHASE-B-REVIEW: Implement api.md's page-owned hydration lease, loaded/unknown
-reasons, price and threshold deep links and responsive label density. List GETs
+reasons and threshold deep links and responsive label density. List GETs
 remain metadata-only. Reuse native scanners with global concurrency2, shared
 pending jobs and page cancellation; preserve missing-file rows. No per-session
 fetches/SSE or parser replacement. Adjacent tests cover queue/admission/cancel/

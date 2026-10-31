@@ -37,7 +37,7 @@ it('round-trips a shared health report and its exact evidence record', () => {
 });
 
 it('Phase B restores home filters/sorting and retains old session evidence anchors',()=>{
- const route={...DEFAULT_TASK_ROUTE,homeProvider:'codex' as const,homeSort:'cost' as const,homeRange:'7d' as const,homeFilter:'alerts' as const,homeCurrency:'CNY' as const,homeDirection:'asc' as const};
+ const route={...DEFAULT_TASK_ROUTE,homeProvider:'codex' as const,homeSort:'cacheHitRate' as const,homeRange:'7d' as const,homeFilter:'alerts' as const,homeDirection:'asc' as const};
  expect(parseTaskRoute(serializeTaskRoute(route))).toEqual(route);
  expect(parseTaskRoute('#/task?key=native&eventId=e')).toMatchObject({task:'collected:native',event:'native:event:e'});
  expect(parseTaskRoute('#/task?sort=invalid&filter=bad&direction=wrong')).toEqual(DEFAULT_TASK_ROUTE);
@@ -84,4 +84,10 @@ it('round-trips request selection and comparison references while keeping old li
   const compare={...DEFAULT_TASK_ROUTE,compareA:['collected:root'],compareB:['collected:root'],requestA:'request:root:event:one',requestB:'request:root:event:two'};
   expect(parseTaskRoute(serializeComparisonRoute(compare))).toEqual(compare);
   expect(parseTaskRoute('#/compare?a=collected:a&b=collected:b').requestA).toBeUndefined();
+});
+
+it('ignores retired currency and monetary sort parameters during canonicalization',()=>{
+ const parsed=parseTaskRoute('#/task?sort=cost&currency=CNY');expect(parsed).toEqual(DEFAULT_TASK_ROUTE);
+ expect(serializeTaskRoute(parsed)).not.toMatch(/currency|cost/);
+ expect(parseTaskRoute('#/task?currency=invalid&sort=cacheHitRate').homeSort).toBe('cacheHitRate');
 });

@@ -34,7 +34,6 @@ import type {
   TeamAgentState,
   TeamArtifact,
   TeamCommunication,
-  TeamCostMetrics,
   TeamMetricDimension,
   TeamMetricDirection,
   TeamMetricValue,
@@ -626,7 +625,6 @@ describe('add-agent-team-observability required id 存在且非空', () => {
 describe('add-agent-team-observability nullable 可用性（禁止 0 冒充）', () => {
   it('cost 不可观测必须能表达 null', () => {
     expectTypeOf<Pick<TeamRunSummary, 'costCurrency'>>().toEqualTypeOf<{ costCurrency: PriceCurrency | null }>();
-    expectTypeOf<Pick<TeamCostMetrics, 'costCurrency'>>().toEqualTypeOf<{ costCurrency: PriceCurrency | null }>();
   });
 
   it('指标 value 不可用必须能表达 null', () => {

@@ -28,7 +28,7 @@ const COPY = {
     failure: 'Local comparison failed. Retry only this evidence read.', timeout: 'Comparison exceeded 10 seconds. Retry explicitly.',
     baseOpen: 'Open base capture', targetOpen: 'Open target capture', metric: 'Observed metric', delta: 'Target − base', basis: 'Basis / source',
     timing: 'Proxy timing offsets', usage: 'Native usage counters', unknown: 'Unknown / unavailable',
-    cost: 'Cost is unknown; no price or billing aggregate is estimated.', metadata: 'Metadata-only comparison: body-derived analysis is excluded.',
+    metadata: 'Metadata-only comparison: body-derived analysis is excluded.',
     diff: 'Open context diff for this pair', hideDiff: 'Close context diff', diffBlocked: 'Context diff is unavailable while either original is deleted/uncertain or this is metadata-only.',
     warnings: 'Comparison boundaries and evidence warnings', generated: 'Snapshot generated', protocol: 'Protocol state', requestFormat: 'Observed request format', analysisFormat: 'Analysis format',
     model: 'Observed model', network: 'Network state', processing: 'Processing state', requestOriginal: 'Request original', responseOriginal: 'Response original',
@@ -44,7 +44,7 @@ const COPY = {
     cancelled: '已取消对比；没有重放模型请求。', loading: '正在读取选定的本地证据…',
     stale: '证据已更新。旧结果已隐藏；请显式刷新以重新比较此组合。', failure: '本地对比读取失败；重试只读取这些证据。', timeout: '对比读取超过 10 秒，请显式重试。',
     baseOpen: '打开基线抓包', targetOpen: '打开目标抓包', metric: '观测指标', delta: '目标 − 基线', basis: '口径 / 来源',
-    timing: '代理时序偏移', usage: '原生 usage 计数', unknown: '未知 / 不可用', cost: '成本未知；不估算价格或合并计费。', metadata: '仅元数据对比：不包含由正文派生的分析。',
+    timing: '代理时序偏移', usage: '原生 usage 计数', unknown: '未知 / 不可用', metadata: '仅元数据对比：不包含由正文派生的分析。',
     diff: '打开此组合的上下文差异', hideDiff: '关闭上下文差异', diffBlocked: '任一正文已删除、不可确认或处于仅元数据模式时，不能读取上下文差异。',
     warnings: '对比边界与证据警告', generated: '快照生成时间', protocol: '协议状态', requestFormat: '观测请求格式', analysisFormat: '分析格式', model: '观测模型',
     network: '网络状态', processing: '解析任务状态', requestOriginal: '请求原文', responseOriginal: '响应原文', deletion: '原文删除意图', completeness: '分析完整性',
@@ -69,11 +69,11 @@ const WARNINGS: Record<Locale, Record<CaptureComparisonWarningCode, string>> = {
   en: { model_mismatch: 'Models differ', model_unknown: 'Model identity unknown', protocol_mismatch: 'Protocols differ', protocol_unknown: 'Protocol unknown', accounting_mismatch: 'Usage accounting differs', accounting_unknown: 'Usage accounting unknown',
     processing_mismatch: 'Processing outcomes differ', processing_unknown: 'Processing outcome unknown', processing_incomplete: 'Processing incomplete', retention_mismatch: 'Original retention differs', retention_unknown: 'Original retention unknown', retention_incomplete: 'Original retention incomplete',
     analysis_mismatch: 'Protocol outcomes differ', analysis_incomplete: 'Analysis incomplete', analysis_unavailable: 'Analysis unavailable', completeness_mismatch: 'Evidence completeness differs', measurement_mismatch: 'Measurement bases differ', timing_unavailable: 'Timing unavailable', timing_incomplete: 'Timing evidence incomplete', original_deleted: 'Original deletion intent exists',
-    task_tool_parameters_quality_unproven: 'Task, tools, parameters and quality equivalence are unproven', natural_comparison_not_causal: 'Natural comparison is not causal evidence', cost_unknown: 'Cost unknown' },
+    task_tool_parameters_quality_unproven: 'Task, tools, parameters and quality equivalence are unproven', natural_comparison_not_causal: 'Natural comparison is not causal evidence' },
   zh: { model_mismatch: '模型不同', model_unknown: '模型身份未知', protocol_mismatch: '协议不同', protocol_unknown: '协议未知', accounting_mismatch: 'usage 计数口径不同', accounting_unknown: 'usage 计数口径未知',
     processing_mismatch: '解析任务结果不同', processing_unknown: '解析任务结果未知', processing_incomplete: '解析任务不完整', retention_mismatch: '原文保留状态不同', retention_unknown: '原文保留状态未知', retention_incomplete: '原文保留不完整',
     analysis_mismatch: '协议结果不同', analysis_incomplete: '分析不完整', analysis_unavailable: '分析不可用', completeness_mismatch: '证据完整性不同', measurement_mismatch: '测量口径不同', timing_unavailable: '时序不可用', timing_incomplete: '时序证据不完整', original_deleted: '存在原文删除意图',
-    task_tool_parameters_quality_unproven: '任务、工具、参数与质量是否等价尚未验证', natural_comparison_not_causal: '自然流量对比不能证明因果', cost_unknown: '成本未知' },
+    task_tool_parameters_quality_unproven: '任务、工具、参数与质量是否等价尚未验证', natural_comparison_not_causal: '自然流量对比不能证明因果' },
 };
 const validBase = (value: string, targetId: number): number | null => {
   if (!/^[1-9]\d*$/.test(value)) return null;
@@ -195,7 +195,7 @@ function ComparisonMetrics({ data, locale }: { data: CaptureComparisonResponse; 
       <td style={{ overflowWrap: 'anywhere' }}>{!row.comparable && <p>{copy.notComparable}: {row.reasons.map(reason => REASONS[locale][reason]).join(' · ')}</p>}<details><summary>{copy.basis}</summary><code>{row.baseSource}</code><br /><code>{row.targetSource}</code></details></td></tr>)}</tbody>
   </table></div></section>;
   return <>{table(copy.timing, view.timings)}{table(copy.usage, view.usage)}
-    <h4>{copy.warnings}</h4><ul>{view.warnings.filter(warning=>warning.code!=='cost_unknown').map((warning, index) => <li key={`${warning.code}:${index}`}>{WARNINGS[locale][warning.code]}
+    <h4>{copy.warnings}</h4><ul>{view.warnings.map((warning, index) => <li key={`${warning.code}:${index}`}>{WARNINGS[locale][warning.code]}
       {warning.sides.length > 0 && <> · {warning.sides.map(side => side === 'base' ? copy.base : copy.target).join(' / ')}</>}
       {warning.details.length > 0 && <span className="mono" style={{ overflowWrap: 'anywhere' }}> · {warning.details.join(' · ')}</span>}</li>)}</ul>
   </>;

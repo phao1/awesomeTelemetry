@@ -82,7 +82,7 @@ trace ID。没有分组属性的同 trace span 仅在已有唯一显式分组时
 
 新增遥测数据只保存脱敏、有界预览（每方向最多2048个字符），不保留原文。未知属性
 不写入原文库；已识别的身份字段和 nullable usage 保留。既有 TraceLog 和抓包原文
-策略独立。未报告的时间、token、cache、reasoning、费用保持未知；不把 `endTime`
+策略独立。未报告的时间、token、cache、reasoning保持未知；不把 `endTime`
 单独当作执行成功，不猜测 input/cache 或 output/reasoning 的包含关系。健康监测的
 span 区间标为来源观察值，TTFT 未知；主 Agent 包含子调用的包络不重复算成模型工作。
 

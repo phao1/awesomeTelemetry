@@ -1641,7 +1641,7 @@ IDs, names and stable reasons (`session_unavailable`, `detail_not_loaded`,
 `not_reported`, `accounting_unknown`). Available compatible members contribute
 partial sums; unknown conventions never enter corrected totals. Model lists keep
 known names even with incomplete coverage. Imports retain session-only semantics.
-Cost, duration and indexed count completeness requirements remain unchanged.
+Duration and indexed count completeness requirements remain unchanged.
 Summary aggregation is revision-cached (data_version + total_changes, max32 tasks
 per database), using only <=100 session rows and covering indexed event counts.
 No native-source hydration or event-body aggregation. No additional client request.
@@ -1657,38 +1657,31 @@ See task-process.md Phase A, storage/frontend specs and database.md schema22.
 
 ## Phase B task home and local settings (2026-10-31)
 
-GET /api/tasks accepts summary=1, limit1..50, offset0..100000, sort=time|duration|errors|tokens|cost,
-direction=asc|desc(default desc), alerts=1, errors=1, currency=USD|CNY(default USD).
+GET /api/tasks accepts summary=1, limit1..50, offset0..100000, sort=time|duration|errors|tokens|cacheHitRate,
+direction=asc|desc(default desc), alerts=1, errors=1. Legacy sort=cost and any currency parameter are ignored.
 Existing origin/q/provider/range filters remain. Sort and filter apply before paging;
-unknown sorts last in both directions, ID breaks ties. Cost ordering uses only the
-selected currency, never exchange conversion. TaskPage items include optional
+unknown sorts last in both directions, ID breaks ties. TaskPage items include optional
 metrics, latestHealth (null without saved projection), and structured alerts.
 GET /api/task-kpis returns TaskKpis over collected tasks started in the last7days.
-Tokens/costs expose partial coverage. Failed tasks are recordedStatus=error; failure percentage uses success/error task outcomes only, with statusKnownTasks coverage;
+Tokens/cacheHitRate expose partial member coverage. Failed tasks are recordedStatus=error; failure percentage uses success/error task outcomes only, with statusKnownTasks coverage;
 tool failure denominator is retained terminal tool results (output_len>0 and
 status success/error); pending/input-only records are excluded. These are
 result observations, not proof of execution lifecycle or deduplicated billing.
 Context pressure uses max per-LLM (input+cacheRead+cacheWrite)/model window,
 identical to mission, with missing windows/counters unavailable.
 
-GET/PUT /api/config/model-pricing returns/accepts Record<normalized model ID,ModelPrice>.
-GET returns effective built-in/project/user prices; PUT updates only the named normalized user overrides, preserving all other user entries.
-All seven ModelPrice fields required on PUT: input/output/cacheRead/cacheWrite
-finite>=0, contextWindow positive safe integer, source trimmed nonempty<=2048,
-currency USD|CNY; model ID nonempty<=256; <=256entries/256KiB. Unknown keys,
-normalized duplicate IDs and malformed/duplicate JSON reject400 BAD_REQUEST.
 GET/PUT /api/config/alert-thresholds returns/accepts AlertThresholds, every key
 required; null disables (all defaults null); finite>=0, counts/duration/tokens
-safe integers, percentages<=100. Cost thresholds are independent by currency.
-Strict greater-than triggers; partial task counters/tokens/costs and missing
-pressure never trigger. Alerts contain only rule/threshold/actual/currency.
+safe integers, percentages<=100. Monetary thresholds are removed.
+Strict greater-than triggers; partial task counters/tokens and missing
+pressure never trigger. Alerts contain only rule/threshold/actual.
 
 Config IO is bounded asynchronous, serialized and atomic0600 tmp+rename in the
 user config directory. Corrupt existing files are not overwritten. Every route
 uses loopback/Host/Origin guards, no-store, foreground accounting, gzip and
-unified ApiError. Writes increment pricing/config revision and invalidate task
+unified ApiError. Writes increment config revision and invalidate task
 and mission caches; UI explicitly refreshes after save. No native/source writes,
-exchange rate lookup, external notifications, webhook or report generation.
+external notifications, webhook or report generation.
 Saved standard report summaries are a bounded metadata projection stored at
 report save; list reads only this projection, never report bodies. Legacy report
 metadata can be reconciled when explicit history is read. Summary identifies its
@@ -1708,7 +1701,7 @@ bounded saved standard report, never generated or requested through list work.
 Pressure aggregation is requested only while its local threshold is enabled;
 otherwise optional contextPressurePct stays null (not computed). The selected
 context does not acquire this unused diagnostic. Complete result counters and
-all Phase A/price values keep their shared basis. Metadata batches use<=25 session
+all Phase A/cache values keep their shared basis. Metadata batches use<=25 session
 keys, or one session when pressure JSON numeric projection is enabled, yielding
 between batches. No body or native-source enrichment is admitted.
 
@@ -1745,12 +1738,7 @@ retain their values; unknown pending cells show Loading. Missing source/failed/
 unavailable cells stay Unknown with localized reasons. A refresh may explicitly
 retry; mere rerender/locale/unchanged revision does not restart a lease.
 
-TaskCosts optionally supplies missingPrices (actual missing model IDs) and
-missingReasons. Complete reported cost still wins. Missing price is distinct
-from incomplete members/usage/model. List missing-price examples cap3 models,
-model IDs<=256chars. Price links open LocalSettingsTarget model-pricing and prefill
-the exact model; no price/source is invented or automatically saved. Threshold
-links next to home alert filters and overview alert KPI open alert-thresholds.
+Threshold links next to home alert filters and overview alert KPI open alert-thresholds.
 Settings opens, expands, scrolls and focuses the requested section while retaining
 existing unsaved-draft protection. Desktop column labels occur only in headers;
 narrow cards may use row labels. These amendments supersede only the prior blanket
@@ -1783,3 +1771,16 @@ both telemetry origins (HTTP collected; file imported).
 
 Request DTOs, indexed projection budgets and additive routes/filters follow
 [task-requests.md](task-requests.md) TR-001–005. Existing routes remain compatible.
+
+Phase F1: data-model.md F1-001/002 defines cacheHitRate/promptInput and coverage.
+Task summaries/home/requests/KPIs and agent-overview omit all monetary fields.
+Removed model configuration routes return the normal404 ApiError.
+
+F1-003 AgentOverviewRow adds nullable fraction cacheHitRate and member coverage
+cacheKnownMembers/cacheTotalMembers. Existing Mission tokenTrend daily points add
+cacheHitRate with the same paired, per-session input normalization and unknown
+policy; MissionDayPoint removes costUsd and MissionQuality removes costEfficiency.
+MissionModelRow removes monetary fields. No additional frontend read or schema.
+
+Daily MissionDayPoint cacheKnownMembers/cacheTotalMembers carry the same
+known-session coverage; partial daily/cache-card values show n/m members.

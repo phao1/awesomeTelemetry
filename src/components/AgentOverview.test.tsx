@@ -15,9 +15,9 @@ const rows: AgentOverviewRow[] = [
     eventCount: 10,
     tokenInput: 100,
     tokenOutput: 50,
-    tokenTotal: 150,
-    costUsd: 0.02,
-    pricedSessionCount: 2,
+    cacheHitRate:null,cacheKnownMembers:0,cacheTotalMembers:0,tokenTotal: 150,
+
+
     avgWallClockMs: 1000,
     latestUpdatedAt: '2026-08-01T00:00:00.000Z',
     avgToolDurationMs: 100,
@@ -134,7 +134,7 @@ describe('WB-003 Agent overview evidence and ownership', () => {
 
 describe('REQ-003 Agent 视图', () => {
   it('shows tokens in both table/cards without money totals, columns or pricing coverage',async()=>{
-    const {unmount}=mount(<AgentOverview locale="en" load={async()=>({rows:[{...rows[0]!,costUsd:456789.1234}],stamp:'s1',cached:false})}/>);
+    const {unmount}=mount(<AgentOverview locale="en" load={async()=>({rows:[{...rows[0]!,}],stamp:'s1',cached:false})}/>);
     try {
       await act(async()=>{await Promise.resolve();});expect(document.body.textContent).not.toMatch(/[$¥￥€£]\s*\d/);
       expect([...document.querySelectorAll('th')].map(el=>el.textContent)).not.toContain('Cost');
@@ -245,7 +245,7 @@ describe('REQ-003 Agent 视图', () => {
     unmount();
   });
 
-  it('REQ-107：卡片含 6 指标 + 堆叠 Phase 条 + 阶段分解', async () => {
+  it('REQ-107：卡片含 7 指标 + 堆叠 Phase 条 + 阶段分解', async () => {
     localStorage.setItem(AGENT_VIEW_KEY, 'cards');
     const { html, unmount } = mount(
       <AgentOverview locale="zh" load={async () => ({ rows, stamp: 's1', cached: true })} />,
@@ -254,7 +254,7 @@ describe('REQ-003 Agent 视图', () => {
       await Promise.resolve();
     });
     expect(document.querySelector('.agent-card-grid')).not.toBeNull();
-    expect(document.querySelectorAll('.agent-card-metric').length).toBe(6);
+    expect(document.querySelectorAll('.agent-card-metric').length).toBe(7);
     expect(document.querySelector('.agent-phase-stack')).not.toBeNull();
     expect(document.querySelectorAll('.agent-card-phase-list li').length).toBe(6);
     expect(html()).toContain('阶段分解');
@@ -264,8 +264,8 @@ describe('REQ-003 Agent 视图', () => {
 
 function index(id: string, sourceAgent: string, patch: Partial<SessionIndexEntry> = {}): SessionIndexEntry {
   return { id, sourceAgent, provider: 'codex', title: id, startedAt: '2026-10-18T00:00:00.000Z', updatedAt: '2026-10-18T00:00:00.000Z',
-    status: 'success', cwd: null, eventCount: 2, messageCount: 0, tokenTotal: 3, costUsd: 0, dataSource: 'scan', sourcePath: '/synthetic/session',
-    detailLoaded: false, mergeGroupId: null, hasSystemPrompt: false, tags: [], ...patch };
+    status: 'success', cwd: null, eventCount: 2, messageCount: 0, tokenTotal: 3,  dataSource: 'scan', sourcePath: '/synthetic/session',
+    detailLoaded: false, mergeGroupId: null, costUsd:0,hasSystemPrompt: false, tags: [], ...patch };
 }
 
 describe('Agent overview source-group navigation', () => {
@@ -282,7 +282,7 @@ describe('Agent overview source-group navigation', () => {
       expect(expanded.textContent).toContain('right-key');
       expect(expanded.textContent).not.toMatch(/wrong-group|wrong-source/);
       expect(expanded.textContent).toContain('filtered/paged');
-      expect(container.querySelector('td[colspan="10"]')).not.toBeNull();
+      expect(container.querySelector('td[colspan="11"]')).not.toBeNull();
       act(() => container.querySelector<HTMLButtonElement>('.overview-expand-row')!.click());
       expect(selected).toHaveBeenCalledWith('right-key');
       act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Cards')!.click());

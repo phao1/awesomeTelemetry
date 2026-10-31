@@ -38,10 +38,10 @@ it('assigns child activity by time and never opens requests on child prompts',as
   add(2,'user_prompt','child');add(5,'tool','child');
   expect((await taskRequests(db,c)).items.map(r=>r.eventCount)).toEqual([2,2]);
 });
-it('aggregates incremental usage with Phase A corrected accounting and unknown cost',async()=>{
+it('aggregates incremental usage with Phase A corrected accounting and weighted cache hit rate',async()=>{
   add(1,'user_prompt');add(2,'llm','root','answer',JSON.stringify({input:10,output:20,reasoning:5,cacheRead:30,cacheWrite:0}));add(3,'llm','root','answer',JSON.stringify({input:10,output:20,cacheRead:30,cacheWrite:0}));
   const r=(await taskRequests(db,context())).items[0]!;
-  expect(r.metrics).toMatchObject({input:20,output:40,cacheRead:60,correctedTotal:120,errors:1,costUsd:null});expect(r.metrics.coverage!.correctedTotal).toMatchObject({known:1,total:1});
+  expect(r.metrics).toMatchObject({input:20,output:40,cacheRead:60,correctedTotal:120,errors:1,promptInput:80,cacheHitRate:0.75});expect(r.metrics.coverage!.correctedTotal).toMatchObject({known:1,total:1});
 });
 it('filters before trajectory pagination and binds the opaque page window to request',()=>{
   add(1,'user_prompt');for(let n=2;n<8;n++)add(n);add(8,'user_prompt');add(9);
@@ -118,4 +118,13 @@ it('extracts attached-file request titles without altering IDs, boundaries, even
   expect(list.items.map(r=>r.eventCount)).toEqual([2,2]);expect(requestBoundaries(db,c)).toEqual(before);
   expect(db.prepare('SELECT title FROM events WHERE session_id=? AND id=?').get('root','e1')).toEqual({title:header});
   expect((await taskRequests(db,c)).items.map(r=>r.title)).toEqual(list.items.map(r=>r.title));
+});
+
+it('preserves reported zero cache hits and rejects a missing counter in any model call',async()=>{
+ add(1,'user_prompt');add(2,'llm','root','Answer',JSON.stringify({input:10,output:20,cacheRead:0}));
+ let r=(await taskRequests(db,context())).items[0]!;
+ expect(r.metrics).toMatchObject({promptInput:10,cacheHitRate:0,correctedTotal:30});
+ add(3,'llm','root','Answer',JSON.stringify({input:10,output:20}));
+ r=(await taskRequests(db,context())).items[0]!;
+ expect(r.metrics.cacheHitRate).toBeNull();expect(r.metrics.promptInput).toBeNull();expect(r.metrics.coverage!.cacheHitRate).toMatchObject({known:0,total:1});
 });

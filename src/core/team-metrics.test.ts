@@ -340,8 +340,8 @@ describe('§5.10/5.11 质量与成本', () => {
       T0,
     );
     expect(metrics.cost.totalInputTokens.value).toBe(100);
-    expect(metrics.cost.totalCostUsd.value).toBeNull();
-    expect(metrics.cost.costCurrency).toBeNull();
+    expect(metrics.cost).not.toHaveProperty('totalCostUsd');
+    expect(metrics.cost).not.toHaveProperty('costCurrency');
   });
 });
 

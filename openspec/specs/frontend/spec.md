@@ -79,15 +79,11 @@ information-dense, keyboard-reachable, semantically restrained.
 
 ## Requirements
 
-User-directed presentation amendment (2026-10-18, supersedes legacy cost/currency
-columns in REQ-017/018/019/027): omit all monetary summaries, currency badges,
-price coverage, money trends/rankings, monetary deltas and generated HTML-report
-amounts. Show Token/cache/call evidence instead; do not equate lower token usage
-with quality or a monetary saving. Hide the monetary-only Mission costEfficiency
-widget and money parts of mixed model/Team views. Team token rows remain readable
-without totalCostUsd/costGini or money-derived verdicts. Backend schemas, API
-payloads, raw evidence and explicit original downloads remain unchanged and
-faithful; this is presentation removal, not deletion/redaction of captured data.
+Phase F1 supersedes all older monetary presentation instructions. Delete monetary
+widgets, settings, sorting, report/export fields and estimates. Task summary,
+home/rail, requests, overview and comparison show Token and one-decimal cache-hit
+percentages under data-model F1-001/002, with explicit unknown/partial coverage.
+Legacy query parameters are ignored and dropped on URL canonicalization.
 
 ### REQ-034: WebSocket connection transcript inspection
 Selected WS capture SHALL label connection scope, observed message counts,
@@ -391,7 +387,7 @@ Four segments top to bottom:
   | Speed | `IconSpeed` | TTFT / TPS | end-to-end duration |
   | Accuracy | `IconAccuracy` | verificationCoverage | whether tests ran |
   | Stability | `IconStability` | errorRate | whether debug was entered |
-  | Cost | `IconCost` | tokenTotal | costUsd · tokensPerStep |
+  | Tokens | `IconCost` | tokenTotal | tokensPerStep |
 
   `null` values display `—` with a tooltip explaining why; MUST NOT show `0`
   as a stand-in.
@@ -566,8 +562,7 @@ Normalize available raw values by the larger side value without a lower-better
 inversion, disclose raw side values and scales, omit partial/missing axes rather
 than zero-filling, and use the raw-value disclosure without a plot when fewer
 than three comparable axes remain. Do not infer test success or model latency
-from title patterns, record intervals or plot area. Existing pricing/currency
-contract-gap resolution and remaining detailed comparison audit stay separate.
+from title patterns, record intervals or plot area. Remaining detailed comparison audit stays separate.
 
 Token rings and speed-panel stacks SHALL share one presentation of the five
 recorded components (input/output/reasoning/cacheRead/cacheWrite) and native
@@ -908,11 +903,10 @@ area (NOT three columns) with A/B/C section chip navigation:
 - **AND** no `sessions.map(s => fetch(...))` pattern exists anywhere in the
   mission components
 
-#### Scenario: pricing gap renders dash
-- **GIVEN** sessions whose `cost_source = 'unknown'`
-- **WHEN** the cost widgets render
-- **THEN** those sessions show `—` and are excluded from `$/turn` numerator
-  and denominator
+#### Scenario: missing cache counters stay unknown
+- **GIVEN** a task with missing cacheRead or complete prompt-input counters
+- **WHEN** its cache-hit metric renders
+- **THEN** it shows Unknown, while compatible known members retain partial coverage
 
 ---
 
@@ -1066,7 +1060,7 @@ monitoring, proxy capture, CDP, Frida or an upstream Agent.
 
 Task detail displays a summary under its title: localized recorded status, local
 start time, wall-clock duration, members/events/tool-input/error observations,
-normalized input/output/cache-read and corrected total tokens, reported USD cost
+normalized input/output/cache-read and corrected total tokens, cache hit rate
 and model. Every field exposes its basis; unknown is localized, never fabricated0.
 Complete multiple-model coverage shows “多个 / Multiple” with names on hover.
 Partial token values show known sums and “部分（n/m 成员） / Partial (n/m members)”,
@@ -1074,9 +1068,7 @@ with missing member names and reasons on hover. Partial models list known names
 with the same coverage indicator; only entirely missing values show unknown.
 Wrap at375px. Narrow tool rows use measured multi-line grids with bounded text
 tracks, keeping preview, status and a single ↗/↙ evidence pair reachable.
-Only all-member cost_source=reported and cost_currency=USD permits a cost sum.
-This narrow summary requirement supersedes the older monetary presentation
-removal; no price estimates or other monetary views are introduced.
+No monetary fields are shown or calculated; cache hit follows data-model F1-002.
 
 Implement task-process.md TP-006 merged rows with existing navigation/virtualization.
 Health projection limitations use a stable localized code, including legacy English
@@ -1088,7 +1080,7 @@ evaluation. Comparison UI states and source actions respect locale.
 
 ## Phase B (2026-10-31)
 
-REQ-PHASE-B: Task home shares the rail page, task selection and A/B selection. Dense health rows show Phase A metrics, partial coverage, saved report conclusion/date and structured alert tooltip. Time/duration/errors/tokens/currency-cost sorting and provider/range/errors/alerts filters. Health entry selects the task and opens its existing drawer. Primary navigation Overview/Tasks/Benchmarks/Agent boundary evaluation/Data intake/Settings; overview retains mission widgets, role anchors and Agent overview group, with clickable last7day KPIs. Old hashes canonicalize preserving evidence locators; compare remains reachable from Tasks. Settings provides explicit model-price and threshold editing with validation, owned cancellation and errors; save refreshes displayed prices.
+REQ-PHASE-B: Task home shares the rail page, task selection and A/B selection. Dense health rows show Phase A metrics, partial coverage, saved report conclusion/date and structured alert tooltip. Time/duration/errors/tokens/cache-hit sorting and provider/range/errors/alerts filters. Health entry selects the task and opens its existing drawer. Primary navigation Overview/Tasks/Benchmarks/Agent boundary evaluation/Data intake/Settings; overview retains mission widgets, role anchors and Agent overview group, with clickable last7day KPIs. Old hashes canonicalize preserving evidence locators; compare remains reachable from Tasks. Settings provides explicit threshold editing with validation, owned cancellation and errors; save refreshes displayed thresholds.
 
 Phase B task process is lazy in adjacent TaskProcess.tsx; all selected reading
 state remains task-scoped under the same App shell. Overview and legacy evidence
@@ -1100,7 +1092,7 @@ reload pricing-dependent overview widgets, ordinary SSE only marks them stale.
 ## Phase B review (2026-11-01)
 
 REQ-PHASE-B-REVIEW: Implement api.md's page-owned hydration lease, loaded/unknown
-reasons, price and threshold deep links and responsive label density. List GETs
+reasons and threshold deep links and responsive label density. List GETs
 remain metadata-only. Reuse native scanners with global concurrency2, shared
 pending jobs and page cancellation; preserve missing-file rows. No per-session
 fetches/SSE or parser replacement. Adjacent tests cover queue/admission/cancel/
@@ -1109,7 +1101,7 @@ source absence/notifications, retained-page refresh and direct settings focus.
 ## Phase C unified task comparison
 
 User-authorized Phase C supersedes legacy compare entry/monetary removal copy
-for this page: costs follow Phase B by currency/source/coverage. Implement
+for this page: cache hit follows data-model F1-002. Implement
 contracts/task-comparison.md TC-001..006 as REQ-035..040 respectively. Primary
 navigation is Overview / Tasks / Compare / Benchmarks / Agent boundary evaluation /
 Data intake / Settings. Existing A/B actions read Baseline / Improvement and keep

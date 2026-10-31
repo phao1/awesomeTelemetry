@@ -1063,7 +1063,7 @@ Diagnostics are optional only for legacy consumers/fixtures; the current server 
   the adapter is ISO).
 - All optional fields use `?:`, **not `| undefined`**, and `undefined` must be
   converted to `null` before writing to the DB.
-- All amounts are USD, `number`, preserving original precision without rounding.
+- Raw monetary evidence preserves its original unit and precision; no derived monetary totals.
 - All token counts are `number`, non-negative integers.
 - Field naming: camelCase on the TypeScript side, snake_case on the SQLite
   side; the mapping happens in the storage layer and never leaks to the API.
@@ -1178,13 +1178,10 @@ export type SourceKind = 'jsonl' | 'json' | 'sqlite' | 'sqlcipher' | 'otel';
 ### 1.1 Cost & duration provenance (add-mission-control)
 
 ```ts
-/**
- * 成本来源。add-mission-control §1 P0-C：
- * - reported：厂商直接给出金额（workbuddy credit）
- * - estimated：由 pricing.ts 按 model 定价表估算
- * - unknown：模型未知或定价表无此模型 → UI 必须渲染 `—`，禁止显示 $0.0000
- */
+/** Retained source provenance only; legacy estimated values are never recalculated or displayed. */
 export type CostSource = 'reported' | 'estimated' | 'unknown';
+/** Original source unit retained for evidence fidelity only. */
+export type PriceCurrency = 'USD' | 'CNY';
 
 /**
  * 事件时长来源。add-mission-control §1 P0-A：
@@ -1213,7 +1210,7 @@ export type TurnKeySource =
 
 ---
 
-## 2. Tokens & cost
+## 2. Tokens and retained source evidence
 
 ```ts
 export interface TokenUsage {
@@ -1680,8 +1677,7 @@ export interface MissionModelRow {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  costUsd: number;
-  costSource: CostSource;
+
 }
 
 export interface MissionDayPoint {
@@ -1691,7 +1687,9 @@ export interface MissionDayPoint {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  costUsd: number;
+  cacheHitRate: number | null;
+  cacheKnownMembers: number;
+  cacheTotalMembers: number;
   errorEvents: number;
   successRate: number | null;
   /** B11 漂移专用：当日 E2E p95（wall-clock 分位数）。 */
@@ -1728,16 +1726,6 @@ export interface MissionQuality {
     e2eP99Ms: number | null;
     turnsP50: number;
     repairSessions: number;
-  }>;
-  costEfficiency: MissionWidget<{
-    totalUsd: number;
-    perTurnUsd: number | null;
-    perOkToolUsd: number | null;
-    perSessionUsd: number | null;
-    turns: number;
-    tools: number;
-    pricedSessions: number;
-    unpricedSessions: number;
   }>;
   toolFailure: MissionWidget<Array<{ tool: string; rate: number; errors: number; attempts: number }>>;
   tokenTrend: MissionWidget<MissionDayPoint[]>;
@@ -1821,8 +1809,6 @@ export interface MissionHealth {
     title: string;
     provider: ProviderKey;
     tokenTotal: number;
-    costUsd: number;
-    costSource: CostSource;
   }>>;
 }
 
@@ -1966,7 +1952,9 @@ export interface AgentOverviewRow {
   tokenInput: number;
   tokenOutput: number;
   tokenTotal: number;
-  costUsd: number;
+  cacheHitRate: number | null;
+  cacheKnownMembers: number;
+  cacheTotalMembers: number;
   avgWallClockMs: number;
   latestUpdatedAt: string;
   avgToolDurationMs: number | null;
@@ -2857,7 +2845,7 @@ export interface TeamActivitySlim {
 }
 
 /**
- * per-agent round。`aggregates` 里 tokens/cost 可用性独立，unavailable 为 null
+ * per-agent round。`aggregates` 里 tokens 可用性独立，unavailable 为 null；旧 monetary slot 始终 null
  * 而非 0（design D8 / capability spec）。round 边界优先级见
  * `TeamRoundSegmentationSource`。
  */
@@ -2965,11 +2953,7 @@ export interface TeamCostMetrics {
   totalReasoningTokens: TeamMetricValue;
   totalCacheReadTokens: TeamMetricValue;
   totalCacheWriteTokens: TeamMetricValue;
-  totalCostUsd: TeamMetricValue;
-  /** cost 不可观测（Codex）时为 null；禁止显示 $0.0000（evidence §9.3）。 */
-  costCurrency: PriceCurrency | null;
   coordinationTokens: TeamMetricValue;
-  costGini: TeamMetricValue;
 }
 
 export interface TeamCollaborationMetrics {
@@ -3139,7 +3123,7 @@ expectTypeOf<Pick<TeamActivitySlim, 'id' | 'runId'>>().toEqualTypeOf<{ id: strin
 
 // nullable 可用性：cost 不可观测必须能表达 null（禁止 0 冒充）
 expectTypeOf<Pick<TeamRunSummary, 'costCurrency'>>().toEqualTypeOf<{ costCurrency: PriceCurrency | null }>();
-expectTypeOf<Pick<TeamCostMetrics, 'costCurrency'>>().toEqualTypeOf<{ costCurrency: PriceCurrency | null }>();
+
 expectTypeOf<Pick<TeamMetricValue, 'value'>>().toEqualTypeOf<{ value: number | null }>();
 ```
 
@@ -3269,7 +3253,7 @@ export interface TaskMember {
   detailLoaded: boolean;
   eventCount: number;
 }
-export type TaskMetricKey = 'input' | 'output' | 'cacheRead' | 'correctedTotal' | 'models';
+export type TaskMetricKey = 'input' | 'output' | 'cacheRead' | 'correctedTotal' | 'promptInput' | 'cacheHitRate' | 'models';
 export interface TaskMetricCoverage {
   known: number;
   total: number;
@@ -3283,8 +3267,12 @@ export interface TaskMetrics {
   output: number | null;
   cacheRead: number | null;
   correctedTotal: number | null;
-  costUsd: number | null;
+  promptInput: number | null;
+  cacheHitRate: number | null;
   models: string[];
+  toolResults?: number | null;
+  toolFailures?: number | null;
+  contextPressurePct?: number | null;
   coverage?: Record<TaskMetricKey, TaskMetricCoverage>;
 }
 export interface TaskContext {
@@ -3386,7 +3374,7 @@ Parser version advances to 3 for Claude. Scanner storage keys remain path-based.
 
 The following supersedes Phase A monetary restrictions. Canonical task types:
 ```ts
-import type { PriceCurrency, ProviderKey, TraceEventSlim, TraceLogSession, TraceLogTurn, TraceStatus } from './trace-types.js';
+import type { ProviderKey, TraceEventSlim, TraceLogSession, TraceLogTurn, TraceStatus } from './trace-types.js';
 
 /** Task identity is a read projection; native IDs and evidence remain unchanged. */
 export type TaskOrigin = 'collected' | 'imported';
@@ -3417,7 +3405,7 @@ export interface TaskMember {
   detailLoaded: boolean;
   eventCount: number;
 }
-export type TaskMetricKey = 'input' | 'output' | 'cacheRead' | 'correctedTotal' | 'models';
+export type TaskMetricKey = 'input' | 'output' | 'cacheRead' | 'correctedTotal' | 'promptInput' | 'cacheHitRate' | 'models';
 export interface TaskMetricCoverage {
   known: number;
   total: number;
@@ -3431,9 +3419,9 @@ export interface TaskMetrics {
   output: number | null;
   cacheRead: number | null;
   correctedTotal: number | null;
-  costUsd: number | null;
+  promptInput: number | null;
+  cacheHitRate: number | null;
   models: string[];
-  costs?: TaskCosts;
   toolResults?: number | null;
   toolFailures?: number | null;
   contextPressurePct?: number | null;
@@ -3476,8 +3464,8 @@ export interface TaskRecordPage {
   /** Optional indexed native facts; semantic grouping remains client-only. */
   structure?: TaskStructure;
 }
-export type TaskSort = 'time' | 'duration' | 'errors' | 'tokens' | 'cost';
-export interface TaskListQuery { failed?: boolean; toolFailures?: boolean; summary?: boolean; sort?: TaskSort; direction?: 'asc' | 'desc'; alerts?: boolean; errors?: boolean; currency?: PriceCurrency; origin?: TaskOrigin; q?: string; provider?: ProviderKey; range?: 'today' | '7d' | '30d' | 'all'; offset?: number; limit?: number }
+export type TaskSort = 'time' | 'duration' | 'errors' | 'tokens' | 'cacheHitRate';
+export interface TaskListQuery { failed?: boolean; toolFailures?: boolean; summary?: boolean; sort?: TaskSort; direction?: 'asc' | 'desc'; alerts?: boolean; errors?: boolean; origin?: TaskOrigin; q?: string; provider?: ProviderKey; range?: 'today' | '7d' | '30d' | 'all'; offset?: number; limit?: number }
 export interface TaskRecordQuery { member?: string; q?: string; status?: TraceStatus; offset?: number; limit?: number; window?: string; anchor?: string; from?: string; to?: string; structure?: boolean }
 
 /** A retained, scoped identity, never an ID inferred from a title or timestamp. */
@@ -3508,29 +3496,22 @@ export interface TaskTimeline {
   coverage: { loadedMembers: number; totalMembers: number };
 }
 
-export interface TaskCosts {
-  amounts: Array<{ currency: PriceCurrency; amount: number; source: 'reported' | 'estimated' | 'mixed' }>;
-  known: number; total: number;
-  missingPrices?: string[];
-  missingReasons?: TaskCostReason[];
-}
 export interface TaskHealthSummary {
   id: string; generatedAt: string; revision: string;
   conclusion: 'findings' | 'not_observed' | 'insufficient'; issues: number;
   scope?: { member: string; from: string | null; to: string | null };
 }
-export interface TaskAlert { rule: keyof AlertThresholds; threshold: number; actual: number; currency?: PriceCurrency }
+export interface TaskAlert { rule: keyof AlertThresholds; threshold: number; actual: number }
 export interface AlertThresholds {
   errors: number | null; toolFailurePct: number | null; durationMs: number | null;
-  tokens: number | null; costUSD: number | null; costCNY: number | null; contextPressurePct: number | null;
+  tokens: number | null; contextPressurePct: number | null;
 }
 export interface TaskKpis {
   tasks: number; statusKnownTasks: number; toolKnownTasks: number; failedTasks: number; failurePct: number | null;
   toolFailurePct: number | null; tokens: number | null; tokenKnownTasks: number;
-  costs: TaskCosts; alerts: number;
+  cacheHitRate: number | null; cacheKnownMembers: number; cacheTotalMembers: number; alerts: number;
 }
 
-export type TaskCostReason = 'detail_not_loaded' | 'session_unavailable' | 'usage_unknown' | 'model_unknown' | 'model_unpriced';
 export type TaskHydrationReason = 'source_missing' | 'source_unreadable' | 'parse_failed' | 'member_unavailable' | 'cancelled' | 'request_failed';
 export interface TaskHydrationProgress {
   taskId: string;
@@ -3539,7 +3520,7 @@ export interface TaskHydrationProgress {
   reasons: TaskHydrationReason[];
 }
 export interface TaskHydrationFrame { items: TaskHydrationProgress[]; done: boolean }
-export interface LocalSettingsTarget { section: 'model-pricing' | 'alert-thresholds'; model?: string }
+export interface LocalSettingsTarget { section: 'alert-thresholds' }
 
 ```
 
@@ -3560,3 +3541,42 @@ The additive SessionProviderKey and canonical telemetry DTOs follow
 
 Request DTOs, indexed projection budgets and additive routes/filters follow
 [task-requests.md](task-requests.md) TR-001–005. Existing routes remain compatible.
+
+## Phase F1 Token/cache presentation (2026-11-01)
+
+F1-001 Supersedes every older monetary presentation/estimation requirement in
+this contract and lower-priority specs. TaskMetrics, task summaries/home/request
+lists and TaskKpis have no monetary fields. No monetary alert rule, threshold,
+configuration, sorting or report/UI output remains. Raw captured monetary fields
+and their storage/provenance types remain evidence only; OTLP/trace originals
+remain faithful. Legacy Team/Mission raw metric types do not authorize displaying
+monetary values. Pricing estimation and configuration are removed. Context windows
+retain the existing sourced model metadata in context-windows.ts, independently
+of removed prices; unknown models stay unknown.
+
+F1-002 cacheHitRate is a nullable fraction (0..1), displayed as a percentage with
+one decimal. cacheHitRate = Σ cacheRead / Σ promptInput. Normalize EACH model
+call/member with existing benchmark correctedUsage / FoldingMetricRun accounting
+BEFORE summation: inputIncludesCache=true => promptInput=input; false =>
+promptInput=input+cacheRead+cacheWrite. Confirmed unreported cache writes count
+as0. Unknown cacheRead/input/convention or required write counter, invalid
+counters or zero denominator => unknown. This metric does not require output
+or reasoning counters. Partial results use only compatible known members for
+BOTH numerator and denominator, with Phase A n/m member coverage; never average
+percentages or sum incompatible input conventions. TaskMetrics adds promptInput
+and cacheHitRate, and coverage keys for both. TaskKpis adds cacheHitRate,
+cacheKnownMembers/cacheTotalMembers over the same paired member observations.
+Comparisons require complete coverage and the existing Token comparability guard;
+cache hit is higher-is-better, never proof of quality. Request metrics use the
+same convention. Legacy sort=cost/currency URL parameters are ignored and removed
+on canonical serialization. No new schema or dependencies.
+
+F1-004 TeamCostMetrics retains its historical name for Token metrics only:
+remove totalCostUsd/costCurrency/costGini; TEAM_METRICS_CALC_VERSION=2 invalidates
+stored derived summaries. TeamRoundAggregates.costUsd is a legacy storage slot
+and always null. Captured TeamActivity monetary attributes remain originals.
+Legacy saved alert configuration may contain retired costUSD/costCNY keys; reads
+discard them, while new PUT bodies reject them. No monetary rule can trigger.
+
+F1-005 CaptureComparisonViewModel removes its legacy always-null cost object
+and cost_unknown warning; no monetary inference/presentation is emitted.

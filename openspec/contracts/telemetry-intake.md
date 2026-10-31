@@ -141,8 +141,7 @@ export interface TelemetryImportResult { format: TelemetrySource; spanCount: num
 export type TelemetryMetadata = Omit<TelemetrySpan, 'input' | 'output'>;
 ```
 
-Telemetry charges/context pressure remain unknown even when a local model price
-exists: no input/cache or output/reasoning inclusion convention is inferred. Legacy
+Telemetry context pressure remains unknown: no input/cache or output/reasoning inclusion convention is inferred. Monetary attributes are original evidence only, never derived summary fields. Legacy
 TraceSession/TraceEvent time strings use '' as the explicit unavailable sentinel;
 TaskSummary.startedAt and TelemetryMetadata.start/end retain null at that boundary.
 Source span intervals remain observed, with no TTFT or causal/communication claim.

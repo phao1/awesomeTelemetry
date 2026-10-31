@@ -519,27 +519,26 @@ Windows, `agent-observe.sh` on Unix.
 
 The primary navigation is **Overview / Tasks / Benchmarks / Agent boundary evaluation / Data intake / Settings**.
 Tasks opens a health list sharing the sidebar's page, task selection and A/B checkboxes.
-Sort by start time, duration, retained errors, corrected tokens or cost in a selected currency;
+Sort by start time, duration, retained errors, corrected tokens or cache hit rate;
 filter by tool, time range, errors or local alerts. Click a task to inspect its evidence,
 or **Health monitoring** to open its drawer. Saved standard conclusions show their report date;
-viewing the list never generates a report. Missing data remains unknown; partial token/cost
+viewing the list never generates a report. Missing data remains unknown; partial token/cache-hit
 coverage shows known members out of total members.
 
 Overview exposes the existing Mission widgets, page section anchors, an expandable Agent overview,
 and six clickable last-seven-day task metrics. Failures describe recorded states; tool failure
 rates count terminal result observations, excluding unfinished input records.
 
-In Settings, expand **Model prices and alert thresholds**. Model prices require a model ID,
-USD/CNY currency, input/output/cache-read/cache-write prices per million tokens, a positive context
-window and a source (URL or document plus retrieval date). Built-in → project `config/model-pricing.json`
-→ user `<config-directory>/model-pricing.json` priority remains intact. Saving a model updates only
-that user's named override. Reported cost takes priority; eligible usage without a reported amount
-uses sourced estimates. USD and CNY remain separate; no exchange conversion is performed.
+In Settings, expand **Alert thresholds**. Blank thresholds disable local alerts.
+Counts, duration, tokens, tool failure rate and context pressure use explicit
+known-data coverage. Cache hit rate is cache-read tokens divided by complete
+prompt input, normalized per member before summation and shown to one decimal.
+
 
 Alert thresholds are **all off by default**. Blank disables a rule; a known value strictly above
 its threshold marks the task locally. Context pressure can be set to 80 (%); unknown model windows
 cannot trigger it. Thresholds persist in `<config-directory>/alert-thresholds.json`. No external
-notifications or webhooks are sent. Price and threshold saves refresh relevant displays.
+notifications or webhooks are sent. Threshold saves refresh relevant displays.
 
 Old `#/session?key=…` links open the corresponding task and retain evidence anchors;
 `#/proxy`, `#/frida` and `#/cdp` open the matching Data intake channel.
@@ -554,7 +553,3 @@ Paging, filtering, task selection, leaving home or hiding the browser tab withdr
 admitted parsing may finish into cache. Pending unknown cells show Loading; missing files keep
 the task and expose a reason on hover. Completion hints coalesce summary refreshes, without
 per-member frontend fetches. Desktop labels appear only in headers; narrow cards use inline labels.
-
-**Price not set** opens Model prices with the missing model prefilled, without inventing rates
-or sources. **Configure thresholds** beside the home alert filter and Overview alert KPI opens,
-scrolls and focuses the Alert thresholds section directly.

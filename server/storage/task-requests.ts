@@ -6,7 +6,6 @@ import { setImmediate as yieldLoop } from 'node:timers/promises';
 import type { AlertThresholds, TaskContext, TaskMetrics, TaskRequest, TaskRequestList } from '../../src/core/task-types.js';
 import { isGenuineUserRecord } from '../../src/core/system-records.js';
 import { redactHealthText } from '../../src/core/task-health/render.js';
-import { modelPricingRevision } from '../../src/core/pricing.js';
 import { taskAlerts, DEFAULT_ALERT_THRESHOLDS } from '../../src/core/task-alerts.js';
 import { sessionUsage } from './task-summary.js';
 import { cachedStmt } from './stmt-cache.js';
@@ -44,15 +43,15 @@ function attachedFileTitles(db:Database,context:TaskContext,prompts:Prompt[]):Ma
 const cache = new WeakMap<Database, Map<string, { revision: string; value: TaskRequestList }>>();
 export async function taskRequests(db: Database, context: TaskContext, thresholds: AlertThresholds = DEFAULT_ALERT_THRESHOLDS): Promise<TaskRequestList> {
   const stamp=changeStamp(db);
-  const revision = createHash('sha256').update(JSON.stringify([USER_PROMPT_POLICY_VERSION,REQUEST_TITLE_VERSION,db.pragma('data_version',{simple:true}), cachedStmt(db,'SELECT total_changes() AS n').get(),context.task,context.members,modelPricingRevision()])).digest('hex');
+  const revision = createHash('sha256').update(JSON.stringify([USER_PROMPT_POLICY_VERSION,REQUEST_TITLE_VERSION,db.pragma('data_version',{simple:true}), cachedStmt(db,'SELECT total_changes() AS n').get(),context.task,context.members])).digest('hex');
   let entries = cache.get(db); if (!entries) { entries=new Map();cache.set(db,entries); }
   const hit=entries.get(context.task.id);
   if(hit?.revision===revision)return {...structuredClone(hit.value),items:hit.value.items.map(r=>({...structuredClone(r),alerts:taskAlerts(r.metrics,thresholds)}))};
   const prompts=requestBoundaries(db,context);
   const attachedTitles=attachedFileTitles(db,context,prompts);
-  const items: TaskRequest[]=prompts.map((p,i)=>({id:requestId(context,p),ordinal:i+1,title:attachedTitles.get(p.id)??redactHealthText(p.title.split(/\r?\n/,1)[0]??'').slice(0,200),startedAt:p.started_at,endedAt:p.started_at,nextStartedAt:prompts[i+1]?.started_at??null,eventCount:0,metrics:{durationMs:0,toolCalls:0,errors:0,toolResults:0,toolFailures:0,input:null,output:null,cacheRead:null,correctedTotal:null,costUsd:null,models:[]} as TaskMetrics,alerts:[]}));
+  const items: TaskRequest[]=prompts.map((p,i)=>({id:requestId(context,p),ordinal:i+1,title:attachedTitles.get(p.id)??redactHealthText(p.title.split(/\r?\n/,1)[0]??'').slice(0,200),startedAt:p.started_at,endedAt:p.started_at,nextStartedAt:prompts[i+1]?.started_at??null,eventCount:0,metrics:{durationMs:0,toolCalls:0,errors:0,toolResults:0,toolFailures:0,input:null,output:null,cacheRead:null,correctedTotal:null,promptInput:null,cacheHitRate:null,models:[]} as TaskMetrics,alerts:[]}));
   const modelsByMember=items.map(()=>new Set<string>());
-  const usage=items.map(()=>new Map<string,{input:number;output:number;cacheRead:number;cacheWrite:number;seen:Set<string>}>());
+  const usage=items.map(()=>new Map<string,{input:number;output:number;cacheRead:number;cacheWrite:number;seen:Set<string>;missing:Set<string>}>());
   const providers=new Map((cachedStmt(db,'SELECT id,provider FROM sessions WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify(context.members.flatMap(m=>m.sessionKey?[m.sessionKey]:[]))) as {id:string;provider:string}[]).map(r=>[r.id,r.provider]));
   if(items.length)for(const member of context.members){
     if(!member.sessionKey||!member.detailLoaded)continue;
@@ -69,10 +68,10 @@ export async function taskRequests(db: Database, context: TaskContext, threshold
         if(row.kind==='tool'&&row.output_len>0&&['success','error'].includes(row.status)){r.metrics.toolResults!++;if(row.status==='error')r.metrics.toolFailures!++;}
         if(row.model)modelsByMember[i]!.add(member.id);
         if(row.model&&!r.metrics.models.includes(row.model))r.metrics.models.push(row.model);
-        if(row.tokens_json){
-          const tokens=JSON.parse(row.tokens_json) as Record<string,unknown>;
-          let u=usage[i]!.get(member.id);if(!u){u={input:0,output:0,cacheRead:0,cacheWrite:0,seen:new Set()};usage[i]!.set(member.id,u);}
-          for(const key of ['input','output','cacheRead','cacheWrite'] as const){const n=tokens[key];if(typeof n==='number'&&Number.isSafeInteger(n)&&n>=0){u[key]+=n;u.seen.add(key);}}
+        if(row.tokens_json||row.kind==='llm'){
+          const tokens=(row.tokens_json?JSON.parse(row.tokens_json):{}) as Record<string,unknown>;
+          let u=usage[i]!.get(member.id);if(!u){u={input:0,output:0,cacheRead:0,cacheWrite:0,seen:new Set(),missing:new Set()};usage[i]!.set(member.id,u);}
+          for(const key of ['input','output','cacheRead','cacheWrite'] as const){const n=tokens[key];if(typeof n==='number'&&Number.isSafeInteger(n)&&n>=0){u[key]+=n;u.seen.add(key);}else u.missing.add(key);}
         }
       }
       await yieldLoop();if(page.length<200)break;last=page.at(-1)!.sequence;
@@ -83,15 +82,15 @@ export async function taskRequests(db: Database, context: TaskContext, threshold
     const values=context.members.map(member=>{
       const u=usage[i]!.get(member.id);
       const provider=member.sessionKey?providers.get(member.sessionKey):'';
-      return {member,usage:u?sessionUsage({provider:provider??'',token_input:u.seen.has('input')?u.input:0,token_output:u.seen.has('output')?u.output:0,token_cache_read:u.seen.has('cacheRead')?u.cacheRead:0,token_cache_write:u.seen.has('cacheWrite')?u.cacheWrite:0}):null};
+      return {member,usage:u?sessionUsage({provider:provider??'',token_input:u.seen.has('input')?u.input:0,token_output:u.seen.has('output')?u.output:0,token_cache_read:u.seen.has('cacheRead')?u.cacheRead:0,token_cache_write:u.seen.has('cacheWrite')?u.cacheWrite:0},new Set([...u.seen].filter(key=>!u.missing.has(key)))):null};
     });
     // Same partial-known aggregation/explicit coverage as Phase A; never divide session totals.
     r.metrics.coverage={} as NonNullable<TaskMetrics['coverage']>;
-    for(const key of ['input','output','cacheRead','correctedTotal','models'] as const){
+    for(const key of ['input','output','cacheRead','correctedTotal','promptInput','cacheHitRate','models'] as const){
       const field=key==='correctedTotal'?'total':key;
       const known=values.filter(v=>field==='models'?modelsByMember[i]!.has(v.member.id):v.usage?.[field]!=null);
       r.metrics.coverage[key]={known:known.length,total:context.task.memberCount,missing:values.filter(v=>!known.includes(v)).map(v=>({memberId:v.member.id,name:v.member.name,reason:!v.member.detailLoaded?'detail_not_loaded':'not_reported'}))};
-      if(key!=='models'){const total=known.reduce((n,v)=>n+v.usage![field as 'input'|'output'|'cacheRead'|'total']!,0);r.metrics[key]=known.length&&Number.isSafeInteger(total)?total:null;}
+      if(key!=='models'){const total=known.reduce((n,v)=>n+v.usage![field as 'input'|'output'|'cacheRead'|'total'|'promptInput'|'cacheHitRate']!,0);r.metrics[key]=key==='cacheHitRate' ? (()=>{const denominator=known.reduce((n,v)=>n+v.usage!.promptInput!,0);return denominator>0?known.reduce((n,v)=>n+v.usage!.cacheRead!,0)/denominator:null;})() : known.length&&Number.isSafeInteger(total)?total:null;}
     }
     if(context.task.memberCount>context.members.length||context.members.some(m=>!m.detailLoaded)){r.metrics.toolCalls=null;r.metrics.errors=null;r.metrics.toolResults=null;r.metrics.toolFailures=null;}
     r.alerts=taskAlerts(r.metrics,thresholds);

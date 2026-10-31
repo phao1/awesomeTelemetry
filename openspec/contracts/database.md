@@ -705,8 +705,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 > v9 column (pre-existing 2026-08-11 cost_currency calibration audit):
 > - `cost_currency` ∈ `USD | CNY` (`PriceCurrency` in `contracts/data-model.md`
 >   §12.4), default `USD`. The field name `cost_usd` is retained only to avoid
->   renaming the column; domestic gateways (DeepSeek etc.) price in CNY and the
->   display MUST render `¥` vs `$` by this value. This change is additive-only
+>   renaming the column; original source units remain faithful. Phase F1 removes monetary
+>   display and estimation; these columns are retained evidence only. This change is additive-only
 >   and recorded here so the contract matches the already-shipped
 >   `server/storage/schema.ts`; the team migration below is therefore **v10**,
 >   not v9.
@@ -1579,3 +1579,7 @@ The shared serialized WAL-only admission checks fresh stamps and WAL8MB, with at
 most one zero-wait checkpoint and at most three snapshots. It does not inspect
 combined database size; the existing capture-only combined180MB gate is unchanged.
 Failure reasons and the exception to global DB-size admission follow TD-006.
+
+Phase F1: monetary source/storage columns are retained without migration.
+No task/overview monetary aggregates or pricing estimation remain.
+team_rounds.cost_usd is a legacy nullable slot; newly derived rounds write null.

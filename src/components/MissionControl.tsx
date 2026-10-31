@@ -78,7 +78,7 @@ function entries(
     out.push({ id, widget: widget as MissionWidget<unknown> });
   }
   for (const [id, widget] of Object.entries(quality)) {
-    if(id!=='costEfficiency')out.push({ id, widget: widget as MissionWidget<unknown> });
+    out.push({ id, widget: widget as MissionWidget<unknown> });
   }
   for (const [id, widget] of Object.entries(health)) {
     out.push({ id, widget: widget as MissionWidget<unknown> });
@@ -214,14 +214,14 @@ function WidgetData({
         return <EmptyState icon="—" title={t('state.empty', locale)} description="" />;
       }
       return (
-        <StackedAreaChart
+        <div><StackedAreaChart
           series={[
             { label: 'input', points: points.map((p) => p.input) },
             { label: 'output', points: points.map((p) => p.output) },
             { label: 'cache', points: points.map((p) => p.cacheRead + p.cacheWrite) },
           ]}
           xLabels={points.map((p) => p.day.slice(5))}
-        />
+        />{id==='tokenTrend'&&<ul aria-label={locale==='zh'?'每日缓存命中率':'Daily cache hit rate'}>{points.map(p=><li key={p.day}>{p.day} · {p.cacheHitRate==null?'—':(p.cacheHitRate*100).toFixed(1)+'%'}{p.cacheHitRate!=null&&p.cacheKnownMembers<p.cacheTotalMembers?` · ${locale==='zh'?'部分':'Partial'} (${p.cacheKnownMembers}/${p.cacheTotalMembers} ${locale==='zh'?'成员':'members'})`:''}</li>)}</ul>}</div>
       );
     }
     case 'errorReasons':

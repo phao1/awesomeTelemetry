@@ -13,7 +13,6 @@ import {
   toIsoFromSeconds,
   wallClockDurationMs,
 } from './helpers.js';
-import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
 
 export interface TraeTurn {
@@ -327,12 +326,10 @@ export function normalizeTraeSample(
   //
   // ⚠️ 这不是「Trae 没用缓存」——2026-08-09 的网关账单显示同一次会话缓存命中率
   // 95.26%（357 万命中 / 17.8 万未命中），只是 Trae 本地库不落这个拆分。
-  // 因此下面按 tokenUsage 估出来的成本是**上界**：所有输入都按未命中价计。
-  // 真实成本要么接网关账单，要么开代理抓 usage —— 从这个库里推不出来。
+  // 缓存计数在此来源不可观测，不能把默认零当作实测零。
   const semantics = { cacheRead: 'incremental' as const, reasoning: 'incremental' as const };
   const tokenUsage = aggregateTokenUsage(deduped, semantics);
   const primaryModel = record.modelName ?? null;
-  const cost = computeCost(tokenUsage, primaryModel);
   const session: TraceSession = {
     id: record.id ?? `trae-${sourcePath}`,
     provider: 'trae',
@@ -347,7 +344,7 @@ export function normalizeTraeSample(
     messageCount: turns.length,
     eventCount: deduped.length,
     tokenUsage,
-    costUsd: cost.cost,
+    costUsd: 0,
     systemPrompt: null,
     dataSource: 'scan',
     sourcePath,
@@ -357,8 +354,8 @@ export function normalizeTraeSample(
       record.agentType !== '' &&
       SUBAGENT_AGENT_TYPES.has(record.agentType.toLowerCase()),
     primaryModel,
-    costSource: cost.costSource,
-    costCurrency: cost.currency,
+    costSource: 'unknown',
+    costCurrency: 'USD',
     // trae.ts:100 已按相邻时间戳算 durationMs，语义同 deriveDurations
     durationSource: 'derived' as const,
   };

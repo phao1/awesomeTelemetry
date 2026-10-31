@@ -886,7 +886,7 @@ SSE 增加事件类型 `agent_boundary_job: AbJobStatus`（写入 trace-types �
 | DELETE | `/review/connections/:id` | — | 204 | 同时清除内存密钥 |
 | PUT | `/review/connections/:id/key` | `{ apiKey }` | `{ keyState }` | 只存内存；响应和日志都不回显 |
 | DELETE | `/review/connections/:id/key` | — | `{ keyState }` | |
-| POST | `/review/connections/:id/test` | `{}` | `{ ok, latencyMs, model, usage, error? }` | 最小请求；界面提示会产生少量费用 |
+| POST | `/review/connections/:id/test` | `{}` | `{ ok, latencyMs, model, usage, error? }` | 最小请求；界面提示将调用模型 |
 | POST | `/review/preview` | `{ scope, definitionIds (1–3), connectionId, excludedItemIds?, language }` | `AbReviewPreview` | 不调用模型 |
 | POST | `/review/jobs` | `{ scope, definitionIds, connectionId, excludedItemIds, language, packDigest, confirm: true }` | 202 `{ reviewId }` | 服务端重建证据包，digest 不一致返回 `AGENT_BOUNDARY_STALE` |
 | GET | `/reviews?provider&definition=` | — | `{ items: AbReviewMeta[] }`（≤50） | |
@@ -1257,7 +1257,7 @@ PRD §10.6 列出的指标全部在这里算。**原则：只有一套公式。*
 - **证据跳转**：用现有 `taskRoute` 结构 `{ task: 'collected:<root>', member, event: '<sessionKey>:event:<eventId>', mode: 'trajectory' }`；返回时恢复抽屉、选中的定义、对比页和滚动位置。
 - **缺失值**：显示「未知」及原因，不显示 0；`path_only` 的重叠标「内容未核实」；`parent_only` / `unresolved` 的委派显示关联等级标签。
 - **判定徽章**：文字和颜色同时表达，不只靠颜色；置信度单独显示。任务页里的判定一律写成「这个定义跨 N 个任务的判定」。
-- **复核确认对话框**：必须显示接收方主机、模型、条目数、总字符数、估算 token、输出上限和费用提示；勾选确认后才能提交；提交按钮防重复点击。
+- **复核确认对话框**：必须显示接收方主机、模型、条目数、总字符数、估算 token、输出上限和用量提示；勾选确认后才能提交；提交按钮防重复点击。
 - **对比页**：状态横幅 → 质量 → 职责去向 → 调用链覆盖 → 过程 → 开销，顺序不可调整；汇总数字只出现在开销一节。
 - **其他**：中英文切换不重新请求数据；全部操作可用键盘完成；窄屏（≥360px）下抽屉全屏、判定卡单列；列表 DOM 有上限（定义表 ≤100 行，证据每页 20 行，对比输入 ≤200 行，用虚拟列表）。
 - 所有请求都有超时、取消和过期结果丢弃；切换筛选范围或任务时清除旧结果。

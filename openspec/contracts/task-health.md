@@ -773,3 +773,6 @@ request lists explain the unavailable boundary and keep whole-task available.
 
 Phase E correction: calc4 forces regeneration under the shared question/reply/
 injection classifier; rule version remains3, saved older reports remain readable.
+
+Phase F1: monetary UI/report fields and alert rules are removed; raw evidence
+remains stored faithfully. Token/cacheHitRate follows data-model F1-001/002.

@@ -64,12 +64,12 @@ it('sums root plus child usage, deduplicates snapshots and never turns inferred 
   } finally { db.close(); await rm(dir, { recursive: true, force: true }); }
 });
 
-it('uses the final Codex cumulative usage snapshot, not the sum of cumulative snapshots', async () => {
+it.each([true,false])('uses final Codex cumulative usage with cache writes reported=%s', async reportedWrites => {
   const { codexScanner } = await import('../../local-sessions/codex.js');
   const dir = await mkdtemp(join(tmpdir(), 'folding-codex-metrics-')), db = new Database(':memory:'); initSchema(db);
   try {
     const file = join(dir, 'codex.jsonl'), timestamp = '2026-10-30T00:00:00.000Z';
-    const usage = (input: number) => ({ input_tokens: input, output_tokens: 20, reasoning_output_tokens: 5, cached_input_tokens: 50, cache_write_input_tokens: 0 });
+    const usage = (input: number) => ({ input_tokens: input, output_tokens: 20, reasoning_output_tokens: 5, cached_input_tokens: 50, ...(reportedWrites?{cache_write_input_tokens:0}:{}) });
     await writeFile(file, [
       { type: 'session_meta', timestamp, payload: { id: 'codex-root', cwd: '/test' } },
       { type: 'response_item', timestamp, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'TEST_ONLY' }] } },
@@ -82,13 +82,14 @@ it('uses the final Codex cumulative usage snapshot, not the sum of cumulative sn
     await codexScanner.scanFile({ key: 'codex', enabled: false, path: dir, sourceKind: 'jsonl', watchStrategy: 'chokidar', pollIntervalMs: 0, label: 'Codex' }, file, { db });
     const id = 'collected:' + deriveSessionKey('codex', file), collector = createNativeScopeCollector(db), p = await collector.collect({ taskIds: [id] });
     const run = await collectFoldingMetricRun(db, id, p);
-    expect(foldingRunMetrics(run)).toMatchObject({ input: 200, output: 20, reasoning: 5, tokens: 220, cacheRead: 50, modelCalls: null, toolCalls: 1, ttft: null });
+    expect(foldingRunMetrics(run)).toMatchObject({ input: 200, output: 20, reasoning: 5, tokens: 220, cacheHit:25, cacheRead: 50, modelCalls: null, toolCalls: 1, ttft: null });
     const pending = collectFoldingMetricRun(db, id, p);
     db.prepare('UPDATE sessions SET title=? WHERE id=?').run('changed', id.slice(10));
     await expect(pending).rejects.toMatchObject({ reason: 'SOURCE_CHANGED' });
     await rm(file);
     const indexed = await collectFoldingMetricRun(db, id, await collector.collect({ taskIds: [id] }));
     expect(indexed.run.telemetry).toMatchObject({ complete: false, usage: { input: 150, cacheRead: 50, cacheWrite: null, inputIncludesCache: false } });
+    expect(foldingRunMetrics(indexed)).toMatchObject({tokens:220,cacheHit:25});
     expect(indexed.recorded).toMatchObject({ toolCalls: 1, modelCalls: null });
     expect(indexed.limitations.join(' ')).toContain('indexed');
     collector.close();

@@ -144,7 +144,7 @@ it('reads deep history with local dates and keeps the report visible when its pa
   expect(host.querySelector(`[title="${findingId}"]`)!.textContent).toBe('aaaaaaaaaaaa…aaaaaa'); expect(host.textContent).toContain('全部采纳'); expect(host.querySelector('[role=alert]')).toBeNull();
 });
 it('defaults oversized tasks to the latest request and preserves explicit whole-task analysis',async()=>{
-  const requests=[{id:'request:main:event:first',ordinal:1,title:'First'},{id:'request:main:event:last',ordinal:2,title:'Last'}].map(r=>({...r,startedAt:input.t0,endedAt:input.snapshotAt,nextStartedAt:null,eventCount:1,metrics:{durationMs:1000,toolCalls:0,errors:0,input:null,output:null,cacheRead:null,correctedTotal:null,costUsd:null,models:[]},alerts:[]}));
+  const requests=[{id:'request:main:event:first',ordinal:1,title:'First'},{id:'request:main:event:last',ordinal:2,title:'Last'}].map(r=>({...r,startedAt:input.t0,endedAt:input.snapshotAt,nextStartedAt:null,eventCount:1,metrics:{durationMs:1000,toolCalls:0,errors:0,input:null,output:null,cacheRead:null,correctedTotal:null,promptInput:null,cacheHitRate:null,models:[]},alerts:[]}));
   vi.mocked(fetch).mockImplementation(async(url,init)=>{
     if(String(url).endsWith('/requests'))return json({taskId:context.task.id,revision:'rev',items:requests});
     if(init?.method==='POST'){

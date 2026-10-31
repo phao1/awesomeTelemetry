@@ -211,8 +211,8 @@ function makeMetrics(): TeamMetrics {
     },
     cost: {
       totalInputTokens: v, totalOutputTokens: v, totalReasoningTokens: v,
-      totalCacheReadTokens: v, totalCacheWriteTokens: v, totalCostUsd: v,
-      costCurrency: null, coordinationTokens: v, costGini: v,
+      totalCacheReadTokens: v, totalCacheWriteTokens: v,
+      coordinationTokens: v,
     },
     collaboration: {
       directRatio: v, leaderMediatedRatio: v, responseLatencyMedianMs: v,

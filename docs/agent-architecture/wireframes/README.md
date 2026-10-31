@@ -12,6 +12,6 @@
 | ② | `2-verdict-card.dc.html` | 抽屉内选中一行后展开 | 判定词用 kit 的 main / fold / merge / as-tool / keep，另加「证据不足」。逐条核对 kit 的三条「值得独立上下文」理由，列出 kit 排除的理由。成本数字可以点回证据。附反证、方案 A / B。按钮：AI 复核、生成迁移草稿、查看涉及的任务、同意判定 → 加入改造计划、不同意（写原因） |
 | ③ | `3-task-architecture-tab.dc.html` | 任务页，现有「轨迹 · 对话 · 原始」后新增「架构」页签 | 打开任务时自动计算（只读本地记录，不调模型）。内容：调用链树（标出找不到子会话的委派）、本任务指标、每条边界的账（链到定义级判定）、反证提示；现有「分析拆分与合并」面板挪进来 |
 | ④ | `4-multiselect-groups.dc.html` | 任务列表 | 勾选后设为 A 组或 B 组，再点「对比」；两组不能重叠。点对比之前就提示两组之间改了几处。另外三种建组方式：分界点前后、实验两臂、导入 kit 的 results.jsonl |
-| ⑤ | `5-compare-report.dc.html` | 对比页，可导出 HTML / Markdown / CSV | 顺序固定：结论横幅 → ① 质量 → ② 职责去向 → ③ 调用链 → ④ 过程与时延（含 E2E 拆解）→ ⑤ Token 与开销 → 明细表。口径不一致的行标「不可比」；没有单价就不显示费用 |
+| ⑤ | `5-compare-report.dc.html` | 对比页，可导出 HTML / Markdown / CSV | 顺序固定：结论横幅 → ① 质量 → ② 职责去向 → ③ 调用链 → ④ 过程与时延（含 E2E 拆解）→ ⑤ Token 与开销 → 明细表。口径不一致的行标「不可比」；展示 Token 和缓存命中率 |
 | ⑥ | `6-baseline-coverage.dc.html` | 改造计划第 1 步 | 三种评测来源。调用链覆盖表（kit `chain_coverage`），没有题覆盖的链标出来，可从真实任务生成候选题。付费运行前给出 Token 估算（kit `estimate`），确认后才运行 |
 | ⑦ | `7-improvement-plan.dc.html` | 架构概况 › 改造计划 | kit 6 步进度、工作清单、四个检查点、分界点；与 kit 的导出、导入和只读 CLI |

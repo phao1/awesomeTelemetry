@@ -64,8 +64,8 @@ describe('getMission 信封', () => {
       ...Object.values(r.quality),
       ...Object.values(r.health),
     ];
-    expect(widgets.length).toBe(21);
-    expect(r.meta.widgetCount).toBe(21);
+    expect(widgets.length).toBe(20);
+    expect(r.meta.widgetCount).toBe(20);
     expect(typeof r.meta.stamp).toBe('string');
     expect(r.meta.range).toBe('all');
     expect(r.meta.tz).toBe(480);
@@ -326,15 +326,10 @@ describe('P2 逐 widget 口径断言（B1/B3/B5/B11/B12/B13/B15/F1-3+/C2）', ()
     expect(c.err).toBe(1);
   });
 
-  it('B3 costEfficiency：unknown 从分子分母剔除并公示', async () => {
-    seedP2Fixture();
-    const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
-    const c = r.quality.costEfficiency.data!;
-    expect(c.pricedSessions).toBe(2);
-    expect(c.unpricedSessions).toBe(1);
-    expect(c.totalUsd).toBeCloseTo(0.03);
-    expect(c.turns).toBe(8); // 3 + 5
-    expect(c.perTurnUsd).toBeCloseTo(0.03 / 8);
+  it('omits retired monetary overview fields and publishes daily cache rates',async()=>{
+    seedP2Fixture();const r=await getMission(db,{range:'all',dataSource:'scan',tz:0});
+    expect(r.quality).not.toHaveProperty('costEfficiency');
+    for(const row of r.quality.tokenTrend.data??[]){expect(row).not.toHaveProperty('costUsd');expect(row).toHaveProperty('cacheHitRate');}
   });
 
   it('F1-3+ parallelism：Σdurations/wall > 1.2 判定并行', async () => {
@@ -364,10 +359,10 @@ describe('P2 逐 widget 口径断言（B1/B3/B5/B11/B12/B13/B15/F1-3+/C2）', ()
     const rows = r.quality.models.data!;
     const claude = rows.find((row) => row.model === 'claude-opus-4-8')!;
     expect(claude.calls).toBe(2);
-    expect(claude.costSource).toBe('estimated');
+    expect(claude).not.toHaveProperty('costUsd');
     const glm = rows.find((row) => row.model === 'glm-4-plus')!;
-    expect(glm.costSource).toBe('unknown');
-    expect(glm.costUsd).toBe(0);
+    expect(glm).not.toHaveProperty('costSource');
+    expect(glm.calls).toBeGreaterThan(0);
   });
 
   it('B12 contextPressure：窗口来自定价表 + 骤降 >50% 判定压缩', async () => {
@@ -375,7 +370,7 @@ describe('P2 逐 widget 口径断言（B1/B3/B5/B11/B12/B13/B15/F1-3+/C2）', ()
     const r = await getMission(db, { range: 'all', dataSource: 'scan', tz: 0 });
     const cp = r.quality.contextPressure.data!;
     expect(cp.samples).toBe(2); // glm-4-plus 无定价窗口 → 不计入
-    expect(cp.windowSource).toContain('pricing');
+    expect(cp.windowSource).toContain('model context metadata');
     expect(cp.peakPct).toBeCloseTo(((4000 + 200) / 1_000_000) * 100);
     expect(cp.compactions).toBe(0); // 1000→4000 是上升
   });
@@ -461,4 +456,18 @@ describe('P3 逐 widget 口径断言（B7/B8/B9/B10/A2/A6）', () => {
     expect(habits.n).toBe(2); // system-reminder 那条被过滤
     expect(habits.max).toBe(Math.max('Fix the login bug in auth.ts with sk-abcdefghijklmnopqrstuvwxyz1234567890'.length, 'Refactor the parser module'.length));
   });
+});
+
+it('normalizes daily and Agent cache rates per member, retaining weighted partial coverage',async()=>{
+ seedSession('a',{provider:'codex'});seedSession('b',{provider:'claude'});seedSession('c',{provider:'codex'});
+ db.prepare("UPDATE sessions SET token_input=60,token_cache_read=30,token_cache_write=0 WHERE id='a'").run();
+ db.prepare("UPDATE sessions SET token_input=10,token_cache_read=80,token_cache_write=10 WHERE id='b'").run();
+ const r=await getMission(db,{range:'all',dataSource:'scan',tz:0});
+ expect(r.quality.tokenTrend.data![0]).toMatchObject({cacheKnownMembers:2,cacheTotalMembers:3});
+ expect(r.quality.tokenTrend.data![0]!.cacheHitRate).toBeCloseTo(110/190);
+ const {getAgentOverview}=await import('./overview.js');const rows=getAgentOverview(db,'scan').rows;
+ const codex=rows.find(row=>row.provider==='codex')!;
+ expect(codex).toMatchObject({cacheKnownMembers:1,cacheTotalMembers:2});expect(codex.cacheHitRate).toBeCloseTo(1/3);
+ expect(rows.find(row=>row.provider==='claude')!.cacheHitRate).toBe(0.8);
+ expect(rows.every(row=>!('costUsd' in row))).toBe(true);
 });

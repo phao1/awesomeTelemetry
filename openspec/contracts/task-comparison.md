@@ -12,7 +12,7 @@ TC-002 `POST /api/task-comparison` JSON `{a:string[],b:string[]}` returns
 1..40 per side, collected/imported IDs<=1024chars, body<=128KiB, no extra keys.
 Collected session references resolve to canonical root tasks in one indexed
 binding query; collapsed duplicate roots or cross-side overlap reject400.
-Missing tasks404. Same Phase B cached/yielded metadata projection and pricing,
+Missing tasks404. Same Phase B cached/yielded metadata projection,
 coverage, result denominators; no native hydration/body reads/schema changes.
 No-store, local guards, gzip, ApiError; metadata source change409 SOURCE_CHANGED.
 
@@ -21,8 +21,7 @@ unknown ratio). Verdicts better/worse/equal/unavailable describe observed resour
 or issue magnitude only, never quality, model inference or causal benefit.
 All members/tasks must have reliable values; partial/missing stays unavailable.
 Token verdict additionally requires foldingComparison's exact accounting guard;
-architecture metrics use foldingComparison unchanged. Costs separate currency,
-require complete coverage and identical source basis, never exchange conversion.
+architecture metrics use foldingComparison unchanged. Cache hit rate requires complete coverage and the same Token accounting guard; higher is better.
 Lower counts of tools/agents/delegations are descriptive, not quality proof.
 Single sample on either side explicitly cannot prove causality. Mixed providers
 and multiple changed labels are confounded. Unknown rows collapse; medians only
@@ -63,7 +62,7 @@ state-to-hash write; a/b, pa/pb, compareImport and legacy left/right survive.
 Display/export share human duration units (ms/s/min/h/days), signed deltas,
 grouped counts/tokens, two-decimal B/A multipliers and one-decimal percentages.
 Exact raw values remain inspectable via titles / export raw-value appendix.
-Selected-task cost hints carry an explicit Cost label. Process timeline defaults
+Selected-task hints show cache hit rate with explicit member coverage. Process timeline defaults
 to hiding system/injected/bookkeeping records using the task reader's shared
 presentation predicate, aligned with TH-004a; an explicit bilingual switch
 restores them without IO. Filtering is presentation-only: no denominator, health,

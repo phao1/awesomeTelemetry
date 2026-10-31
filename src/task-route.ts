@@ -1,7 +1,7 @@
 import { PROVIDER_KEYS, type ProviderKey } from './core/trace-types.js';
 import type { TaskSort, TaskOrigin } from './core/task-types.js';
 export type TaskMode = 'trajectory' | 'conversation' | 'raw' | 'architecture';
-export interface TaskRoute { request?: string; requestA?: string; requestB?: string; processA?: string; processB?: string; homeProvider?: ProviderKey; homeSort?: TaskSort; homeDirection?: 'asc' | 'desc'; homeRange?: 'all' | 'today' | '7d' | '30d'; homeFilter?: 'all' | 'alerts' | 'errors' | 'failed' | 'toolFailures'; homeCurrency?: 'USD' | 'CNY'; health?: string; overview?: boolean; compareA?: string[]; compareB?: string[]; compareImport?: boolean; task: string | null; origin: TaskOrigin; member: string; mode: TaskMode; event: string | null; q?: string; errors?: boolean; from?: string; to?: string }
+export interface TaskRoute { request?: string; requestA?: string; requestB?: string; processA?: string; processB?: string; homeProvider?: ProviderKey; homeSort?: TaskSort; homeDirection?: 'asc' | 'desc'; homeRange?: 'all' | 'today' | '7d' | '30d'; homeFilter?: 'all' | 'alerts' | 'errors' | 'failed' | 'toolFailures'; health?: string; overview?: boolean; compareA?: string[]; compareB?: string[]; compareImport?: boolean; task: string | null; origin: TaskOrigin; member: string; mode: TaskMode; event: string | null; q?: string; errors?: boolean; from?: string; to?: string }
 export const DEFAULT_TASK_ROUTE: TaskRoute = { task: null, origin: 'collected', member: 'main', mode: 'trajectory', event: null };
 /** Legacy session/team references retain their native identity until server resolution. */
 export function parseTaskRoute(hash: string): TaskRoute {
@@ -17,11 +17,10 @@ export function parseTaskRoute(hash: string): TaskRoute {
   const provider=q.get('provider')?.split(',')[0];
   const home = {
     ...(provider&&(PROVIDER_KEYS as readonly string[]).includes(provider)?{homeProvider:provider as ProviderKey}:{}),
-    ...(['time','duration','errors','tokens','cost'].includes(q.get('sort')??'')?{homeSort:q.get('sort') as TaskSort}:{}),
+    ...(['time','duration','errors','tokens','cacheHitRate'].includes(q.get('sort')??'')?{homeSort:q.get('sort') as TaskSort}:{}),
     ...(q.get('direction')==='asc'?{homeDirection:'asc' as const}:{}),
     ...(['today','7d','30d','all'].includes(q.get('range')??'')?{homeRange:q.get('range') as TaskRoute['homeRange']}:{}),
     ...(['alerts','errors','failed','toolFailures'].includes(q.get('filter')??'')?{homeFilter:q.get('filter') as TaskRoute['homeFilter']}:{}),
-    ...(q.get('currency')==='CNY'?{homeCurrency:'CNY' as const}:{}),
   };
   return { ...(q.get('request')?{request:q.get('request')!}:{}),...(q.get('ar')?{requestA:q.get('ar')!}:{}),...(q.get('br')?{requestB:q.get('br')!}:{}), ...(q.get('pa')?{processA:q.get('pa')!}:{}),...(q.get('pb')?{processB:q.get('pb')!}:{}), ...home, ...(q.get('health') ? { health: q.get('health')!.slice(0, 128) } : {}), ...groups, ...(q.get('overview') === '1' ? { overview: true } : {}), ...(q.get('compareImport') === '1' ? { compareImport: true } : {}), ...time, ...(q.has('q') ? { q: q.get('q')!.slice(0, 200) } : {}), ...(q.get('errors') === '1' ? { errors: true } : {}), task, origin: q.get('origin') === 'imported' || task?.startsWith('imported:') ? 'imported' : 'collected',
     member: q.get('member') ?? q.get('replayAgent') ?? (q.get('sel')?.startsWith('agent:') ? q.get('sel')!.slice(6) : 'main'),
@@ -35,11 +34,10 @@ export function serializeTaskRoute(route: TaskRoute): string {
   if(route.processA)q.set('pa',route.processA);
   if(route.processB)q.set('pb',route.processB);
   if(route.homeProvider)q.set('provider',route.homeProvider);
-  if(route.homeSort)q.set('sort',route.homeSort);
+  if(route.homeSort&&['time','duration','errors','tokens','cacheHitRate'].includes(route.homeSort))q.set('sort',route.homeSort);
   if(route.homeDirection)q.set('direction',route.homeDirection);
   if(route.homeRange)q.set('range',route.homeRange);
   if(route.homeFilter)q.set('filter',route.homeFilter);
-  if(route.homeCurrency)q.set('currency',route.homeCurrency);
   if (route.health) q.set('health', route.health);
   if (route.overview) q.set('overview', '1');
   if (route.compareImport) q.set('compareImport', '1');

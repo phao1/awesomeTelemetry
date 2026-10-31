@@ -7,7 +7,6 @@ import type {
   ProviderConfig,
   ProviderKey,
 } from '../src/core/trace-types.js';
-import type { ModelPrice } from '../src/core/pricing.js';
 
 /** REQ-005 / G2.2：三种路径展开语法：~、~\、%VAR%。 */
 export function expandLocalSessionPath(raw: string): string {
@@ -202,39 +201,6 @@ export function loadLocalSessionConfig(opts: LoadConfigOptions = {}): LocalSessi
     readJsonIfExists(projectPath) as LocalSessionConfig | null,
     readJsonIfExists(userPath) as LocalSessionConfig | null,
   );
-}
-
-/**
- * G2.3 三层覆盖：内置默认（pricing.ts）→ 项目级 `config/model-pricing.json`
- * → 用户级 `<configDir>/model-pricing.json`。后写覆盖先写；`_` 开头的元数据
- * 键（如 example 的 `_comment`）被过滤，缺 `source` 的条目被忽略。
- */
-export function loadModelPricingOverrides(configRoot = process.cwd()): Record<string, ModelPrice> {
-  const projectPath = join(configRoot, 'config', 'model-pricing.json');
-  const userPath = join(dirname(defaultUserConfigPath()), 'model-pricing.json');
-  const project = readJsonIfExists(projectPath) as Record<string, unknown> | null;
-  const user = readJsonIfExists(userPath) as Record<string, unknown> | null;
-  const merged: Record<string, ModelPrice> = {};
-  for (const layer of [project, user]) {
-    if (layer === null) {
-      continue;
-    }
-    for (const [key, value] of Object.entries(layer)) {
-      if (key.startsWith('_')) {
-        continue;
-      }
-      if (typeof value === 'object' && value !== null && typeof (value as ModelPrice).source === 'string') {
-        const price = value as ModelPrice;
-        // currency 是手写 JSON，拼错了不能让它一路流到 CURRENCY_SYMBOL 查表变 undefined；
-        // 认不出的值按缺省 USD 处理（价格数字照用，只是符号退回 $）。
-        merged[key] =
-          price.currency === 'CNY' || price.currency === 'USD'
-            ? price
-            : { ...price, currency: 'USD' };
-      }
-    }
-  }
-  return merged;
 }
 
 /** REQ-004：写入用户配置 MUST 原子写（tmp + rename，G2.3）。 */

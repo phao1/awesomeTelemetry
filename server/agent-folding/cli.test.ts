@@ -17,7 +17,7 @@ it('requires separate execute and paid flags and an explicit model for Anthropic
   const dir = await mkdtemp(join(tmpdir(), 'folding-cli-paid-')); dirs.push(dir); const config = join(dir, 'plan.json');
   await writeFile(config, JSON.stringify({ ...DEFAULT_FOLDING_PLAN, provider: 'anthropic', model: 'explicit-model' }));
   vi.spyOn(console, 'log').mockImplementation(() => undefined);
-  await expect(runAgentFoldingCli([config, '--execute', '--output', join(dir, 'run')])).rejects.toThrow('--allow-paid');
+  await expect(runAgentFoldingCli([config, '--execute', '--output', join(dir, 'run')])).rejects.toThrow('--allow-model-calls');
   expect(await readdir(dir)).toEqual(['plan.json']);
 });
 
@@ -44,4 +44,10 @@ it('reads existing SQLite without writes, exports only to a new directory, and r
   await expect(runAgentFoldingCli(['export', '--db', path, '--output', target])).rejects.toThrow();
   await expect(runAgentFoldingCli(['compare', '--db', path, '--execute'])).rejects.toThrow('Invalid');
   expect(await readFile(path)).toEqual(snapshot);
+});
+
+it.each(['--allow-model-calls','--allow-paid'])('accepts model consent alias %s without implicitly executing a plan',async flag=>{
+ const dir=await mkdtemp(join(tmpdir(),'folding-cli-alias-'));dirs.push(dir);const config=join(dir,'plan.json');
+ await writeFile(config,JSON.stringify(DEFAULT_FOLDING_PLAN));vi.spyOn(console,'log').mockImplementation(()=>undefined);
+ await runAgentFoldingCli([config,flag]);expect(await readdir(dir)).toEqual(['plan.json']);
 });

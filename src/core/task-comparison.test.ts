@@ -4,7 +4,7 @@ import { analyzeTaskHealth } from './task-health/report.js';
 import input from './__fixtures__/task-health/g1-serial.input.json';
 import type { HealthInput, HealthReport } from './task-health/types.js';
 import type { TaskSummary } from './task-types.js';
-const task = (id: string, provider = 'codex'): TaskSummary => ({ id, provider, origin: 'collected', provenanceKnown: true, rootSessionKey: id.slice(10), runId: null, title: id, startedAt: null, updatedAt: '2026-10-30T00:00:00.000Z', recordedStatus: 'success', memberCount: 1, eventCount: 1, loadedMemberCount: 1, metrics: { durationMs: 100, errors: 0, toolCalls: 1, toolResults: 1, toolFailures: 0, input: null, output: null, cacheRead: null, correctedTotal: 100, costUsd: null, models: [], costs: { amounts: [{ currency: 'USD', amount: 1, source: 'reported' }], known: 1, total: 1 } } });
+const task = (id: string, provider = 'codex'): TaskSummary => ({ id, provider, origin: 'collected', provenanceKnown: true, rootSessionKey: id.slice(10), runId: null, title: id, startedAt: null, updatedAt: '2026-10-30T00:00:00.000Z', recordedStatus: 'success', memberCount: 1, eventCount: 1, loadedMemberCount: 1, metrics: { durationMs: 100, errors: 0, toolCalls: 1, toolResults: 1, toolFailures: 0, input: null, output: null, cacheRead: null, correctedTotal: 100, promptInput:100,cacheHitRate:0.3, models: [] } });
 function report(id: string): HealthReport {
   const r = analyzeTaskHealth(input as HealthInput, undefined, { id, generatedAt: '2026-10-30T00:00:00.000Z' });
   // Fully observed scope fixture: unknown quality cannot be construed as passed.
@@ -29,14 +29,15 @@ it('retains single sample and confounded warnings independently of numerical dir
   expect(comparisonLimitations('zh', true, true)).toContain('单样本，不能证明因果');
   expect(comparisonLimitations('en', true, true).join(' ')).toContain('Confounded');
 });
-it('requires folding token conventions and complete, same-source, same-currency costs', () => {
-  const a = task('collected:a'), b = task('collected:b');
-  const rows = () => taskComparisonRows({ a: [a], b: [b] }, null, null, 'en');
-  expect(rows().find(r => r.key === 'tokens')!.verdict).toBe('unavailable');
-  expect(rows().find(r => r.key === 'costUSD')!.verdict).toBe('equal');
-  b.metrics!.costs!.known = 0; expect(rows().find(r => r.key === 'costUSD')!.verdict).toBe('unavailable');
-  b.metrics!.costs!.known = 1; b.metrics!.costs!.amounts[0]!.source = 'estimated'; expect(rows().find(r => r.key === 'costUSD')!.verdict).toBe('unavailable');
-  b.metrics!.costs!.amounts[0]!.currency = 'CNY'; expect(rows().filter(r => r.key.startsWith('cost')).every(r => r.verdict === 'unavailable')).toBe(true);
+it('requires complete compatible cache evidence and judges higher cache hit as better',()=>{
+ const a=task('a'),b=task('b'),coverage={known:1,total:1,missing:[]};
+ for(const t of [a,b]){t.requestId='request:'+t.id;t.metrics!.coverage={input:coverage,output:coverage,cacheRead:coverage,correctedTotal:coverage,promptInput:coverage,cacheHitRate:{...coverage},models:coverage};}
+ b.metrics!.cacheHitRate=0.6;
+ const row=()=>taskComparisonRows({a:[a],b:[b]},null,null,'en').find(r=>r.key==='cacheHitRate')!;
+ expect(row()).toMatchObject({verdict:'better',delta:30,ratio:2});
+ b.metrics!.cacheHitRate=0.1;expect(row().verdict).toBe('worse');
+ b.metrics!.coverage!.cacheHitRate.known=0;expect(row().verdict).toBe('unavailable');
+ expect(taskComparisonRows({a:[a],b:[b]},null,null,'en').some(r=>r.key.startsWith('cost'))).toBe(false);
 });
 it('matches stable rule and normalized evidence positions across different task/native IDs', () => {
   const a = report('a'), b = report('b');
@@ -69,15 +70,7 @@ it('exports localized conclusions, metrics, health changes, group counts and lim
   expect(md).toContain('变好'); expect(md).toContain('尚未读取标准报告'); expect(md).not.toContain('[x](javascript:'); expect(md).toContain('限制');
 });
 
-it('preserves small nonzero costs instead of formatting them as zero, and compares currencies independently',()=>{
- expect(comparisonNumber(0.00001)).toBe('0.00001');
- const a=task('a'),b=task('b');
- a.metrics!.costs!.amounts.push({currency:'CNY',amount:2,source:'estimated'});
- b.metrics!.costs!.amounts.push({currency:'CNY',amount:3,source:'estimated'});
- const rows=taskComparisonRows({a:[a],b:[b]},null,null,'en');
- expect(rows.find(r=>r.key==='costUSD')!.verdict).toBe('equal');
- expect(rows.find(r=>r.key==='costCNY')!.verdict).toBe('worse');
-});
+it('preserves small nonzero measurements',()=>{expect(comparisonNumber(0.00001)).toBe('0.00001');});
 
 it('uses human durations, signed changes, grouped counts, one-decimal percentages and a single multiplier convention',async()=>{
  const {formatComparisonValue:f,formatComparisonRatio:ratio}=await import('./task-comparison.js');
@@ -96,13 +89,13 @@ it('uses the same readable numbers in MD/HTML exports and retains exact precisio
 it('compares normalized request tokens only with complete declared provider coverage',()=>{
  const a=task('collected:a'),b=task('collected:b');a.requestId='request:a:event:p';b.requestId='request:b:event:p';
  const coverage={known:1,total:1,missing:[]};
- for(const t of [a,b])t.metrics!.coverage={input:coverage,output:coverage,cacheRead:coverage,correctedTotal:{...coverage},models:coverage};
+ for(const t of [a,b])t.metrics!.coverage={input:coverage,output:coverage,cacheRead:coverage,correctedTotal:{...coverage},promptInput:coverage,cacheHitRate:coverage,models:coverage};
  b.metrics!.correctedTotal=50;
  const row=()=>taskComparisonRows({a:[a],b:[b]},null,null,'en').find(r=>r.key==='tokens')!;
  expect(row()).toMatchObject({verdict:'better',delta:-50});
  b.metrics!.coverage!.correctedTotal.known=0;expect(row().verdict).toBe('unavailable');
  b.metrics!.coverage=undefined;expect(row().verdict).toBe('unavailable');
- b.metrics!.coverage={input:coverage,output:coverage,cacheRead:coverage,correctedTotal:coverage,models:coverage};b.provider='claude';expect(row().verdict).toBe('unavailable');
+ b.metrics!.coverage={input:coverage,output:coverage,cacheRead:coverage,correctedTotal:coverage,promptInput:coverage,cacheHitRate:coverage,models:coverage};b.provider='claude';expect(row().verdict).toBe('unavailable');
 });
 it('compares complete request health reports with request-relative evidence, but never mixes whole and request scopes',()=>{
  const a=report('a'),b=report('b');a.scope={member:'all',from:input.t0,to:null,request:'request:a:event:p'};b.scope={member:'all',from:input.t0,to:null,request:'request:b:event:p'};b.findings=[];

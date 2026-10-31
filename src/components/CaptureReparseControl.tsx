@@ -27,7 +27,7 @@ const COPY = {
     format: 'Recorded request format', protocol: 'Recorded protocol state', completeness: 'Projection completeness', complete: 'Complete', partial: 'Incomplete', usage: 'Native usage (unknown is not zero)',
   },
   zh: { title: '离线重解析', refresh: '刷新重解析状态', action: '重新解析已保留原文', cancel: '停止等待',
-    scope: '仅显式本地重解析：校验两份已保留原文并更新小型版本摘要；不调用模型或工具，不新增抓包或费用，不回退到预览。',
+    scope: '仅显式本地重解析：校验两份已保留原文并更新小型版本摘要；不调用模型或工具，不新增抓包，不回退到预览。',
     blocked: '正文可用性被阻断或未知。旧状态及结果已隐藏，不能重解析。',
     metadataHint: '当前仅表示版本与原文引用元数据匹配，不代表重新校验文件完整性，也不代表 Agent 或协议成功；只有显式重解析才重新验证文件。',
     waiting: '正在等待本地证据…', uncertain: '已停止等待，但不保证服务端回滚。已接受的重解析可能继续完成；请显式刷新状态后再操作，旧正文结果不会恢复。',

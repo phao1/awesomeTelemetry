@@ -56,7 +56,7 @@ describe('local OTLP receiver and file import',()=>{
       expect((await f.enable()).status).toBe(200);
       const input=batch([span('1',{'gen_ai.operation.name':'invoke_agent','gen_ai.conversation.id':'conversation','gen_ai.agent.name':'main'}),span('2',{'gen_ai.operation.name':'chat','gen_ai.usage.input_tokens':4,'gen_ai.usage.output_tokens':6,'llm.token_count.total':10},'1'),span('3',{'gen_ai.operation.name':'invoke_agent','gen_ai.agent.name':'child'},'1'),span('4',{'gen_ai.operation.name':'execute_tool','gen_ai.tool.name':'search','input.value':'hello','output.value':'result'},'3')]);
       expect(await f.call('/v1/traces',input)).toMatchObject({status:200,json:{}});
-      const listed=await f.call('/api/tasks?range=all&summary=1');expect(listed.status).toBe(200);const page=listed.json as TaskPage;expect(page.items).toHaveLength(1);expect(page.items[0]).toMatchObject({provider:'OpenTelemetry',memberCount:2,eventCount:4,provenanceKnown:true,metrics:{input:4,output:6,correctedTotal:10,toolCalls:1,costUsd:null}});
+      const listed=await f.call('/api/tasks?range=all&summary=1');expect(listed.status).toBe(200);const page=listed.json as TaskPage;expect(page.items).toHaveLength(1);expect(page.items[0]).toMatchObject({provider:'OpenTelemetry',memberCount:2,eventCount:4,provenanceKnown:true,metrics:{input:4,output:6,correctedTotal:10,toolCalls:1,cacheHitRate:null}});
       const id=page.items[0]!.id, context=(await f.call('/api/tasks/'+encodeURIComponent(id))).json as TaskContext;
       expect(context.members).toHaveLength(2);expect(context.members.find(m=>m.role==='subagent')?.parentId).toBe(context.task.rootSessionKey);
       const records=(await f.call('/api/tasks/'+encodeURIComponent(id)+'/records?member=all&offset=0')).json as TaskRecordPage;expect(records.items).toHaveLength(4);expect(records.items.find(r=>r.event?.kind==='tool')?.event?.telemetry).toMatchObject({parentSpanId:'3'.padStart(16,'0'),durationMs:1000});expect(JSON.stringify(records)).not.toContain('inputSummary');
@@ -91,7 +91,7 @@ describe('local OTLP receiver and file import',()=>{
       for(const id of [collected.items[0]!.id,(lf.json as TelemetryImportResult).taskIds[0]!, (ls.json as TelemetryImportResult).taskIds[0]!]){
         const context=await f.call('/api/tasks/'+encodeURIComponent(id));expect(context.status).toBe(200);
         if(id!==(ls.json as TelemetryImportResult).taskIds[0]!)expect((context.json as TaskContext).members.map(m=>m.name).sort()).toEqual(['planner','researcher']);
-        const summary=await f.call('/api/tasks/'+encodeURIComponent(id)+'/summary');expect(summary.status).toBe(200);expect(summary.json).toMatchObject({id,metrics:{costUsd:null},latestHealth:null});expect(summary.body).not.toMatch(/span_json|inputSummary|outputSummary/);
+        const summary=await f.call('/api/tasks/'+encodeURIComponent(id)+'/summary');expect(summary.status).toBe(200);expect(summary.json).toMatchObject({id,metrics:{cacheHitRate:null},latestHealth:null});expect(summary.body).not.toMatch(/span_json|inputSummary|outputSummary/);
         if(id===(ls.json as TelemetryImportResult).taskIds[0]!)expect(summary.json).toMatchObject({metrics:{durationMs:1000}});
         const report=await f.call('/api/tasks/'+encodeURIComponent(id)+'/health-reports',{mode:'standard',member:'all'});expect(report.status,report.body).toBe(200);expect(report.json).toMatchObject({taskId:id,mode:'standard'});
         const saved=report.json as HealthReport;expect(saved.coverage.members.loaded).toBe((context.json as TaskContext).members.length);
@@ -165,7 +165,7 @@ describe('local OTLP receiver and file import',()=>{
       const bytes=Buffer.from(rows.map(r=>JSON.stringify(r)).join('\n'));
       const uploaded=await f.call('/api/telemetry/import',bytes,'POST',{'content-type':'application/x-ndjson'});expect(uploaded.status).toBe(200);expect(uploaded.json).toMatchObject({format,spanCount:2});
       const taskId=(uploaded.json as TelemetryImportResult).taskIds[0]!;
-      const context=(await f.call('/api/tasks/'+encodeURIComponent(taskId))).json as TaskContext;expect(context.task).toMatchObject({origin:'imported',provider:format,startedAt:null});expect(context.metrics?.input).toBe(0);expect(context.metrics?.output).toBe(8);expect(context.metrics?.costUsd).toBeNull();expect(context.metrics?.durationMs).toBeNull();
+      const context=(await f.call('/api/tasks/'+encodeURIComponent(taskId))).json as TaskContext;expect(context.task).toMatchObject({origin:'imported',provider:format,startedAt:null});expect(context.metrics?.input).toBe(0);expect(context.metrics?.output).toBe(8);expect(context.metrics?.cacheHitRate).toBeNull();expect(context.metrics?.durationMs).toBeNull();
       const before=f.db.prepare('SELECT total_changes() AS n').get();await f.call('/api/telemetry/import',bytes,'POST',{'content-type':'application/x-ndjson'});expect(f.db.prepare('SELECT total_changes() AS n').get()).toEqual(before);
       const invalid=await f.call('/api/telemetry/import',{arbitrary:true});expect(invalid.status).toBe(400);expect(invalid.body).toContain('Unrecognized format');expect((await f.call('/api/telemetry/import',Buffer.from('\n'),'POST',{'content-type':'application/x-ndjson'})).status).toBe(400);
       expect((await f.call('/api/tasks?origin=imported&range=all')).json).toMatchObject({total:1});

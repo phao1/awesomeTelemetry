@@ -44,7 +44,7 @@ import { classifyTopology } from './team-topology.js';
  * 团队指标计算版本（metrics-analysis REQ-019）：算法/证据语义变更必须 bump，
  * 触发 metrics 重算回写。v1 为 add-agent-team-observability 的冻结算法。
  */
-export const TEAM_METRICS_CALC_VERSION = 1;
+export const TEAM_METRICS_CALC_VERSION = 2;
 
 // ── 指标方向性（design D9 / metrics-analysis REQ-018） ───────
 
@@ -84,9 +84,7 @@ export const TEAM_METRIC_DIRECTIONS: Readonly<Record<string, TeamMetricDirection
   totalReasoningTokens: 'descriptive',
   totalCacheReadTokens: 'descriptive',
   totalCacheWriteTokens: 'descriptive',
-  totalCostUsd: 'lower_better',
   coordinationTokens: 'descriptive',
-  costGini: 'descriptive',
   // collaboration
   directRatio: 'descriptive',
   leaderMediatedRatio: 'descriptive',
@@ -338,7 +336,7 @@ export function mapAgentRounds(input: RoundMappingInput): TeamRound[] {
       const startedAt = first.startedAt;
       const endedAt = last.endedAt;
       const tokenUsage = sumTokenUsage(members.map((activity) => activity.tokenUsage));
-      const costUsd = sumNullable(members.map((activity) => activity.costUsd));
+
       const toolCallCount = members.filter((activity) => activity.kind === 'tool_call').length;
       const messageCount = members.filter(
         (activity) => activity.kind === 'message_sent' || activity.kind === 'message_received',
@@ -353,7 +351,7 @@ export function mapAgentRounds(input: RoundMappingInput): TeamRound[] {
         wallClockMs,
         activeMs,
         tokenUsage,
-        costUsd,
+        costUsd: null,
         toolCallCount,
         messageCount,
       };
@@ -379,19 +377,6 @@ export function mapAgentRounds(input: RoundMappingInput): TeamRound[] {
   }
   void agentById;
   return rounds;
-}
-
-function sumNullable(values: readonly (number | null)[]): number | null {
-  let any = false;
-  let total = 0;
-  for (const value of values) {
-    if (value === null) {
-      continue;
-    }
-    any = true;
-    total += value;
-  }
-  return any ? total : null;
 }
 
 function diffMs(startIso: string | null, endIso: string | null): number | null {
@@ -885,11 +870,9 @@ function computeStability(input: TeamMetricsInput, dagAnomalyCount: number): Tea
   };
 }
 
-function computeCost(input: TeamMetricsInput): TeamCostMetrics {
+function computeTokenMetrics(input: TeamMetricsInput): TeamCostMetrics {
   const tokensAvailable = input.completeness.tokens !== 'unavailable';
   const tokensComplete = input.completeness.tokens === 'complete';
-  const costAvailable = input.completeness.cost !== 'unavailable' && input.costCurrency !== null;
-  const costComplete = input.completeness.cost === 'complete';
   const communicationComplete = input.completeness.communication === 'complete';
 
   const totalTokens = sumTokenUsage(input.activities.map((activity) => activity.tokenUsage));
@@ -899,8 +882,6 @@ function computeCost(input: TeamMetricsInput): TeamCostMetrics {
   const totalCacheReadTokens = tokensAvailable ? (totalTokens?.cacheRead ?? 0) : null;
   const totalCacheWriteTokens = tokensAvailable ? (totalTokens?.cacheWrite ?? 0) : null;
 
-  const totalCostUsdRaw = sumNullable(input.activities.map((activity) => activity.costUsd));
-  const totalCostUsd = costAvailable ? totalCostUsdRaw : null;
 
   const coordinationKinds = new Set([
     'message_sent',
@@ -918,15 +899,6 @@ function computeCost(input: TeamMetricsInput): TeamCostMetrics {
         ? 0
         : null;
 
-  const costByAgent = new Map<string, number>();
-  for (const activity of input.activities) {
-    if (activity.agentId === null || activity.costUsd === null) {
-      continue;
-    }
-    costByAgent.set(activity.agentId, (costByAgent.get(activity.agentId) ?? 0) + activity.costUsd);
-  }
-  const costGini = gini([...costByAgent.values()]);
-
   const evidence = collectEvidence(input.activities);
   return {
     totalInputTokens: metric(totalInputTokens, 'sum of incremental input tokens across activities', evidence, tokensComplete),
@@ -934,10 +906,7 @@ function computeCost(input: TeamMetricsInput): TeamCostMetrics {
     totalReasoningTokens: metric(totalReasoningTokens, 'sum of incremental reasoning tokens across activities', evidence, tokensComplete),
     totalCacheReadTokens: metric(totalCacheReadTokens, 'sum of incremental cache-read tokens across activities', evidence, tokensComplete),
     totalCacheWriteTokens: metric(totalCacheWriteTokens, 'sum of incremental cache-write tokens across activities', evidence, tokensComplete),
-    totalCostUsd: metric(totalCostUsd, 'sum of reported activity costs; unavailable when cost not observable', evidence, costComplete),
-    costCurrency: input.costCurrency,
     coordinationTokens: metric(coordinationTokens, 'tokens of message/orchestration activities only', evidence, communicationComplete),
-    costGini: metric(costGini, 'Gini of per-agent cost distribution', evidence, costComplete),
   };
 }
 
@@ -1096,7 +1065,7 @@ export function computeTeamMetrics(input: TeamMetricsInput, generatedAt: string)
     scheduling: computeScheduling(input, criticalPathMs),
     quality: computeQuality(input),
     stability: computeStability(input, dag.anomalies.length),
-    cost: computeCost(input),
+    cost: computeTokenMetrics(input),
     collaboration: computeCollaboration(input),
   };
 }

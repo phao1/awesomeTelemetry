@@ -1,4 +1,3 @@
-import { lookupModelPrice } from '../../src/core/pricing.js';
 import Database from 'better-sqlite3';
 import { describe,it,expect } from 'vitest';
 import { initSchema } from './schema.js';
@@ -46,9 +45,8 @@ describe('telemetry session storage and membership',()=>{
   });
   it('keeps cost/accounting/context unknown even for priced models, counts completed tool errors without prose',()=>{
     const db=fixture();try{
-      expect(lookupModelPrice('claude-sonnet-4-6')).not.toBeNull();
       const saved=storeTelemetry(db,[mapOtlpSpan(span('1',{'gen_ai.operation.name':'chat','gen_ai.response.model':'claude-sonnet-4-6','gen_ai.usage.input_tokens':4,'gen_ai.usage.output_tokens':6,'llm.token_count.total':10})),mapOtlpSpan({...span('2',{'gen_ai.operation.name':'execute_tool'}),status:{code:2}})],'collected');
-      const context=getTask(db,saved.taskIds[0]!);expect(context.metrics).toMatchObject({input:4,output:6,correctedTotal:10,costUsd:null,contextPressurePct:null,toolCalls:1,toolFailures:1,errors:1});
+      const context=getTask(db,saved.taskIds[0]!);expect(context.metrics).toMatchObject({input:4,output:6,correctedTotal:10,cacheHitRate:null,contextPressurePct:null,toolCalls:1,toolFailures:1,errors:1});
     }finally{db.close();}
   });
   it('rolls back additive schema24 tables/indexes when its version write fails',()=>{

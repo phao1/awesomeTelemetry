@@ -103,7 +103,7 @@ using Node native fetch, plus an external driver adapter using the existing
 isolated Git/argv/independent-evaluator infrastructure. No new SDK dependency.
 No model/tool execution on page load, import, analysis, export or replay. Browser
 runs only the fixed offline fixture. Real execution is CLI-only, explicit
---execute and --allow-paid for Anthropic, after a concrete plan/token estimate.
+--execute and --allow-model-calls for Anthropic, after a concrete plan/token estimate.
 Credentials stay in the process environment; status reveals configured booleans,
 never key values. Current model name is explicit, not inferred from old logs.
 No live API is claimed tested without a real authorized request.
@@ -112,8 +112,8 @@ One stable graph intervention per experiment; each case gets fresh backend /
 isolated driver workspace. Keep each completed trial and an atomic partial
 report when cancelled. Stop owned process groups/requests; no auto retry. Per-case
 wall deadline, call cap, max output/request, input chars/request, tool batch cap
-and measured token budget include nested agents. Token budget charged after a
-response cannot guarantee an exact maximum bill; show this limitation. Parallel
+and measured token budget include nested agents. Token usage is recorded after a
+response; show this timing limitation without monetary estimates. Parallel
 read-only tools are bounded; writes require a runtime gate and execute in order.
 The fictional fixture writes only its in-memory backend; external writes are
 explicit driver scope. Direct tool precondition/permission/policy tests must
@@ -308,7 +308,7 @@ score:number,perCase:Record<string,number>,latency_s,model_calls,in_tokens,out_t
 (number|null). Scores are task-weighted; other means are row-weighted.
 Missing grades/nonfinite grades and no common cases fail explicitly. Actions
 compare sorted names per repetition, independent of full-argument diagnostics.
-No cost is shown without explicit prices.
+Only Token and cache-hit metrics are shown.
 
 `kitEstimate(results,{tasks?,reps?,heavy?,only?}?)` returns
 {tasks,reps,covered,rows,input:{low,high,likely},output:{low,high,likely}};
@@ -409,10 +409,10 @@ quality scanner/scope makes those rows incomparable. Confound dimensions are the
 eight identifiers in r4 §4; missing metadata is a limitation, never sameness.
 Per-case flips require verdict.cases in every run; otherwise explicitly unknown.
 
-Report order: quality, responsibilities, chains, process/timing, tokens/cost,
+Report order: quality, responsibilities, chains, process/timing, tokens/cache hit rate,
 per-run details. HTML reuses compare-report.ts's new shared static shell;
 Markdown/HTML/CSV escape all user text (CSV also spreadsheet-formula prefixes).
-No session body, prompt or generated answer in reports. No price => no cost.
+No session body, prompt or generated answer in reports. No monetary presentation.
 
 `collectFoldingMetricRun(db, taskId, project, signal?)` reads only existing members
 and bounded source metadata, returns FoldingMetricRun for root+all linked children.
@@ -581,3 +581,10 @@ fresh input before summing: included input subtracts cacheRead and cacheWrite
 make that member input null; the aggregate convention is false. Uniform
 conventions keep existing values/flags unchanged. Retained native usage remains
 visible even when details are incomplete, accompanied by an explicit limitation.
+
+Phase F1: monetary UI/report fields and alert rules are removed; raw evidence
+remains stored faithfully. Token/cacheHitRate follows data-model F1-001/002.
+
+Phase F1 CLI presentation uses --allow-model-calls for explicit model execution
+consent. --allow-paid remains a backward-compatible alias with identical guards;
+no run is started by viewing/exporting a plan.

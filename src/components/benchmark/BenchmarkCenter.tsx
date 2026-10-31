@@ -72,7 +72,7 @@ export function BenchmarkCenter({ locale }: { locale: Locale }): React.JSX.Eleme
       <p>{text('设置任务仓库、起始提交、提示词、验收器、GUI 驱动及模型。默认每组 3 次；每次独立工作区，完成后运行相同验收器。驱动需负责模型选择、提交任务、等待完成并导出证据。', 'Set repository, revision, prompt, evaluator, GUI drivers and models. Default: 3 trials per variant in isolated workspaces, followed by the same evaluator. Each driver selects the model, submits the task, waits and exports evidence.')}</p>
       <textarea aria-label={text('实验配置 JSON', 'Experiment manifest JSON')} value={draft} onChange={e => setDraft(e.target.value)} spellCheck={false}/>
       <button className="btn" onClick={() => { try { const value = validateBenchmarkManifest(JSON.parse(draft)); download('benchmark.json', value); setError(''); } catch { setError(text('配置无效：请检查字段、命令数组、重复次数和用例数。', 'Invalid manifest: check fields, command arrays, repetitions and test count.')); } }}>{text('校验并下载配置', 'Validate and download manifest')}</button>
-      <p>{text('构建项目后先检查计划，再显式执行。运行模型可能产生费用。报告仅在本机导入查看。', 'After building, inspect the plan, then execute explicitly. Model runs may incur charges. Reports are imported locally.')}</p>
+      <p>{text('构建项目后先检查计划，再显式执行。报告仅在本机导入查看。', 'After building, inspect the plan, then execute explicitly. Reports are imported locally.')}</p>
       <pre>npm run benchmark -- benchmark.json{'\n'}npm run benchmark -- benchmark.json --execute --output ./benchmark-results/new-experiment</pre>
     </details>
     {!report && <section className="benchmark-empty"><h2>{text('从一份可重复实验开始', 'Start with a reproducible experiment')}</h2><p>{text('1. 配置同一任务与验收标准　2. 执行工具 × 模型 × 重复次数　3. 导入 report.json，比较指标并定位问题。', '1. Fix the task and evaluator. 2. Run tools × models × repetitions. 3. Import report.json to compare metrics and inspect findings.')}</p><p>{text('还没有真实驱动或任务？先查看合成示例了解结果结构。', 'No real driver or task yet? Explore the synthetic example.')}</p></section>}
@@ -93,7 +93,7 @@ export function BenchmarkCenter({ locale }: { locale: Locale }): React.JSX.Eleme
       </section>)}</div>
       <details className="benchmark-matrix" open><summary>{text('完整指标对照', 'Full metric comparison')}</summary>
         <label>{text('统计方式', 'Statistic')} <select value={stat} onChange={e => setStat(e.target.value as typeof stat)}><option value="mean">{text('均值', 'Mean')}</option><option value="median">{text('中位数', 'Median')}</option><option value="p95">P95</option></select></label>
-        <p>{text('— 为未知；n 为有效样本数。成功率请读上方成功 / 已知次数。累计时长可能重叠；E2E 不包含准备和验收。TTFT / TPOT 仅使用驱动声明为实测且完整的模型调用。Token 不等于费用。', '— means unknown; n is valid sample count. Read success / known trials above for success rate. Duration sums may overlap. E2E excludes setup and evaluation. TTFT / TPOT require complete, driver-declared measured calls. Tokens are not money.')}</p>
+        <p>{text('— 为未知；n 为有效样本数。成功率请读上方成功 / 已知次数。累计时长可能重叠；E2E 不包含准备和验收。TTFT / TPOT 仅使用驱动声明为实测且完整的模型调用。', '— means unknown; n is valid sample count. Read success / known trials above for success rate. Duration sums may overlap. E2E excludes setup and evaluation. TTFT / TPOT require complete, driver-declared measured calls. ')}</p>
         <div className="benchmark-table-scroll"><table><thead><tr><th>{text('指标', 'Metric')}</th>{groups.map(g => <th key={g.variant.id}>{g.variant.product}<br/>{g.variant.model}</th>)}</tr></thead><tbody>
           {(Object.keys(METRIC_LABELS) as BenchmarkMetric[]).filter(k => k !== 'success').map(k => <tr key={k}><th>{METRIC_LABELS[k][zh ? 0 : 1]}</th>{groups.map(g => <td key={g.variant.id}>{summary(g.metrics[k])}</td>)}</tr>)}
         </tbody></table></div>

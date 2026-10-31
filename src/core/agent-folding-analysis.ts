@@ -289,7 +289,7 @@ export function analyzeFoldingProject(value: FoldingProject): FoldingAnalysis {
   return analysis;
 }
 
-/** A planning estimate, never a price quote or a promise of a hard maximum API bill. */
+/** A planning estimate of calls and Token usage; actual counters are observed after responses. */
 export function estimateFoldingPlan(value: FoldingRunPlan, project?: FoldingProject): FoldingEstimate {
   const plan = validateFoldingRunPlan(value);
   const verified = project ? validateFoldingProject(project) : null;
@@ -309,8 +309,8 @@ export function estimateFoldingPlan(value: FoldingRunPlan, project?: FoldingProj
     : Math.ceil(perVersion![key === 'inputTokens' ? 'input' : 'output'].likely! * variants);
   return { cases: plan.caseIds.length, repetitions: plan.repetitions, variants, modelCalls: estimate('modelCalls'), inputTokens: estimate('inputTokens'), outputTokens: estimate('outputTokens'),
     basis: complete ? 'measured_baseline' : 'unknown', limitations: [
-      'Candidate costs are estimated from the measured baseline and may differ. Nested calls must be included by the runner; do not add overlapping per-agent totals.',
-      'Measured token budgets are charged after responses and cannot guarantee an exact maximum bill. No model call or external command was executed to make this estimate.',
+      'Candidate Token usage is estimated from the measured baseline and may differ. Nested calls must be included by the runner; do not add overlapping per-agent totals.',
+      'Token usage is measured after responses. No model call or external command was executed to make this estimate.',
       ...(complete ? [] : ['A complete comparable measured baseline for every selected case and the explicit model is missing; unknown usage is not zero.']),
     ] };
 }

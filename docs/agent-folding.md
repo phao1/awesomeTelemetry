@@ -92,8 +92,8 @@ npm run agent:folding -- config/agent-folding.example.json --execute --output ./
 ```
 
 真实 Anthropic 计划需要明确模型、进程环境里的 `ANTHROPIC_API_KEY`，并同时加
-`--execute --allow-paid`。浏览器不接收密钥，不提供任意真实执行入口。当前机器没有发现
-可用认证，本次交付没有新发起付费模型调用；本地 HTTP 协议测试不冒称 vendor 实跑。
+`--execute --allow-model-calls`。浏览器不接收密钥，不提供任意真实执行入口。当前机器没有发现
+可用认证，本次交付没有新发起模型调用；本地 HTTP 协议测试不冒称 vendor 实跑。
 
 直连使用 Node 原生 fetch 调 `POST /v1/messages`，正确保留工具结果关联、模型返回名与
 输入/输出/缓存口径。local `load_skill` 与托管 Skills API 不同；tool search 的 deferred
@@ -105,11 +105,11 @@ loading 控制进上下文，完整工具 Schema 仍随请求提交。并行只�
 [并行工具](https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use)。
 
 每 case 有墙钟、调用数、每请求输出、输入字符、工具批次和实测总 Token 预算，嵌套调用
-共同计量。实测 Token 在响应后才能扣除，因此它不是精确账单上限；不会猜价格或把估算
+共同计量。实测 Token 在响应后才能扣除，因此它不是精确账单上限；不会把估算
 当成发票。Admin 账单汇总、异步 Message Batches、API Skills/code execution 是不同的
 接口，不能用它们代替逐 Agent 的当前运行归因。
 
-`/claude-api build-eval`、`hillclimb`、`prompt-audit`、`cost-optimize` 是 Claude Code
+`/claude-api build-eval`、`hillclimb`、`prompt-audit` 是 Claude Code
 的工作流命令。导出的迁移材料提供接入配方；这里不会虚构四个可直接调用的评测 HTTP
 API。真实优化还须隔离 train/confirmation，不能反复用公开确认任务挑版本。
 

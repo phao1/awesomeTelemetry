@@ -616,7 +616,7 @@ export function createAgentObservabilityServer(
     res.once('close',release);res.once('finish',()=>{release();res.off('close',release);});
     if(res.destroyed||res.writableEnded)release();
   });
-  const localSettings = createLocalSettings(opts.userConfigPath,opts.configRoot??(opts.projectConfigPath?dirname(dirname(opts.projectConfigPath)):process.cwd()));
+  const localSettings = createLocalSettings(opts.userConfigPath);
   const healthStore = createHealthReportStore(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')));
   const healthSummaryWarmup=healthStore.warmSummaries();
   void healthSummaryWarmup.catch(error=>console.error('[task-home] Saved report projection failed',error));
@@ -631,7 +631,6 @@ export function createAgentObservabilityServer(
     let body:{a:string[];b:string[];ar?:string;br?:string};
     try{body=parseHealthJson(await readBody(req,128*1024)) as typeof body;}catch{throw new HttpError(400,'BAD_REQUEST','Invalid comparison JSON');}
     if(!body||typeof body!=='object'||Object.keys(body).some(k=>!['a','b','ar','br'].includes(k))||[body.ar,body.br].some(v=>v!==undefined&&(typeof v!=='string'||v.length>2048))||[body.a,body.b].some(group=>!Array.isArray(group)||group.length<1||group.length>40||group.some(id=>typeof id!=='string'||id.length>1024||!/^(collected|imported):[^\s]+$/.test(id)))||new Set([...body.a,...body.b]).size!==body.a.length+body.b.length&&!(body.a.length===1&&body.b.length===1&&body.ar&&body.br&&body.ar!==body.br))throw new HttpError(400,'BAD_REQUEST','Select disjoint groups of 1..40 tasks');
-    await localSettings.prices();
     const result=await taskComparisonSnapshot(db,body.a,body.b,await localSettings.alerts(),Boolean(body.ar&&body.br&&body.ar!==body.br));
     for(const side of ['a','b'] as const){
       const id=side==='a'?body.ar:body.br;
@@ -652,24 +651,21 @@ export function createAgentObservabilityServer(
     const options: TaskListQuery = { origin, q: query.get('q') ?? undefined, provider: provider as ProviderKey | undefined ?? undefined,
       range: range as TaskListQuery['range'], offset: taskNumber(query.get('offset')), limit: taskNumber(query.get('limit')) };
     for (const key of ['summary','alerts','errors','failed','toolFailures']) if(query.has(key)&&query.get(key)!=='1')throw new HttpError(400,'BAD_REQUEST','Invalid task filters');
-    if(query.has('sort')&&!['time','duration','errors','tokens','cost'].includes(query.get('sort')!)||query.has('direction')&&!['asc','desc'].includes(query.get('direction')!)||query.has('currency')&&!['USD','CNY'].includes(query.get('currency')!))throw new HttpError(400,'BAD_REQUEST','Invalid task sorting');
-    const page=query.get('summary')==='1' ? await listTaskHome(db,{...options,summary:true,sort:query.get('sort') as TaskListQuery['sort']??undefined,direction:query.get('direction') as TaskListQuery['direction']??undefined,failed:query.get('failed')==='1',toolFailures:query.get('toolFailures')==='1',alerts:query.get('alerts')==='1',errors:query.get('errors')==='1',currency:query.get('currency') as TaskListQuery['currency']??undefined},await localSettings.alerts()) : listTasks(db,options);
+    if(query.has('sort')&&!['time','duration','errors','tokens','cacheHitRate','cost'].includes(query.get('sort')!)||query.has('direction')&&!['asc','desc'].includes(query.get('direction')!))throw new HttpError(400,'BAD_REQUEST','Invalid task sorting');
+    const page=query.get('summary')==='1' ? await listTaskHome(db,{...options,summary:true,sort:query.get('sort')==='cost'?undefined:query.get('sort') as TaskListQuery['sort']??undefined,direction:query.get('direction') as TaskListQuery['direction']??undefined,failed:query.get('failed')==='1',toolFailures:query.get('toolFailures')==='1',alerts:query.get('alerts')==='1',errors:query.get('errors')==='1'},await localSettings.alerts()) : listTasks(db,options);
     if(query.get('summary')==='1')await healthSummaryWarmup;
     if(query.get('summary')==='1')await Promise.all(page.items.map(async item=>{item.latestHealth=await healthStore.summary(item.id);}));
     res.setHeader('cache-control', 'no-store'); sendJson(res, 200, page, req);
   });
   router.register('GET', '/api/tasks/:id', async (req, res, params) => {
-    await localSettings.prices();
     res.setHeader('cache-control', 'no-store'); sendJson(res, 200, getTask(db, params.id!), req);
   });
   router.register('GET', '/api/tasks/:id/requests', async (req,res,params) => {
     if(parseQuery(req).size)throw new HttpError(400,'BAD_REQUEST','Unexpected request-list query');
-    await localSettings.prices();
     const value=await taskRequests(db,getTask(db,params.id!),await localSettings.alerts());
     res.setHeader('cache-control','no-store');sendJson(res,200,value,req);
   });
   router.register('GET', '/api/tasks/:id/summary', async (req, res, params) => {
-    await localSettings.prices();
     const context = getTask(db, params.id!);
     res.setHeader('cache-control', 'no-store');
     sendJson(res, 200, { ...context.task, metrics: context.metrics, latestHealth: await healthStore.summary(context.task.id) }, req);
@@ -1811,8 +1807,6 @@ export function createAgentObservabilityServer(
   });
 
   router.register('GET','/api/task-kpis',async(req,res)=>sendJson(res,200,await taskKpis(db,await localSettings.alerts()),req));
-  router.register('GET','/api/config/model-pricing',async(req,res)=>sendJson(res,200,await localSettings.prices(),req));
-  router.register('PUT','/api/config/model-pricing',async(req,res)=>sendJson(res,200,await localSettings.savePrices(await readSettingsBody(req)),req));
   router.register('GET','/api/config/alert-thresholds',async(req,res)=>sendJson(res,200,await localSettings.alerts(),req));
   router.register('PUT','/api/config/alert-thresholds',async(req,res)=>sendJson(res,200,await localSettings.saveAlerts(await readSettingsBody(req)),req));
   router.register('GET', '/api/config/providers', (_req, res) => {
@@ -2375,7 +2369,7 @@ export function createAgentObservabilityServer(
     }
     const handler = (async () => {
       try {
-        if (pathname === '/v1/traces' || pathname.startsWith('/api/telemetry') || pathname === '/api/task-comparison' || pathname.startsWith('/api/task-home/') || pathname.startsWith('/api/config/model-pricing') || pathname.startsWith('/api/config/alert-thresholds') || pathname === '/api/task-kpis' || pathname.startsWith('/api/agent-folding/') || pathname.startsWith('/api/team-experiments/') || pathname.startsWith('/api/benchmarks/') || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
+        if (pathname === '/v1/traces' || pathname.startsWith('/api/telemetry') || pathname === '/api/task-comparison' || pathname.startsWith('/api/task-home/') || pathname.startsWith('/api/config/alert-thresholds') || pathname === '/api/task-kpis' || pathname.startsWith('/api/agent-folding/') || pathname.startsWith('/api/team-experiments/') || pathname.startsWith('/api/benchmarks/') || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
           if (pathname.startsWith('/api/config/') || pathname === '/api/task-kpis' || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring') res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/hooks/')) res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/frida/')) res.setHeader('cache-control', 'no-store');

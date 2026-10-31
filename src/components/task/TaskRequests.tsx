@@ -1,3 +1,4 @@
+import { formatCacheHitRate } from '../../core/task-alerts.js';
 import { useCallback, useState } from 'react';
 import type { TaskContext, TaskSummary } from '../../core/task-types.js';
 import type { Locale } from '../../i18n.js';
@@ -34,7 +35,7 @@ export function RequestExpansion({task,locale,onSelect,open=false}:{task:TaskSum
   const items=result.value?.items??[];
   return <details open={expanded} onToggle={e=>setExpanded(e.currentTarget.open)}><summary>{zh?'请求列表':'Requests'} · {task.title}</summary>
     {expanded&&<RequestListNotice loading={result.loading} error={result.error} empty={Boolean(result.value&&!items.length)} locale={locale} retry={result.retry}/>}
-    <ul style={{maxHeight:'calc(var(--space-6) * 12)',overflow:'auto'}}>{items.map(r=><li key={r.id}><button className="btn" onClick={()=>onSelect(r.id)}>{r.ordinal}. {r.title}</button> · {formatDuration(r.metrics.durationMs,locale)} · {r.eventCount} {zh?'事件':'events'} · {r.metrics.toolCalls??'—'} {zh?'工具':'tools'} · {r.metrics.errors??'—'} {zh?'错误':'errors'} · Token {r.metrics.correctedTotal??'—'} {r.metrics.coverage&&r.metrics.coverage.correctedTotal.known<r.metrics.coverage.correctedTotal.total?`(${r.metrics.coverage.correctedTotal.known}/${r.metrics.coverage.correctedTotal.total} ${zh?'成员已知':'members known'})`:''} {r.alerts.length?`⚠ ${r.alerts.length}`:''}</li>)}</ul>
+    <ul style={{maxHeight:'calc(var(--space-6) * 12)',overflow:'auto'}}>{items.map(r=><li key={r.id}><button className="btn" onClick={()=>onSelect(r.id)}>{r.ordinal}. {r.title}</button> · {formatDuration(r.metrics.durationMs,locale)} · {r.eventCount} {zh?'事件':'events'} · {r.metrics.toolCalls??'—'} {zh?'工具':'tools'} · {r.metrics.errors??'—'} {zh?'错误':'errors'} · Token {r.metrics.correctedTotal??'—'} {r.metrics.coverage&&r.metrics.coverage.correctedTotal.known<r.metrics.coverage.correctedTotal.total?`(${r.metrics.coverage.correctedTotal.known}/${r.metrics.coverage.correctedTotal.total} ${zh?'成员已知':'members known'})`:''} · {zh?'缓存命中':'Cache hit'} {formatCacheHitRate(r.metrics,zh)} {r.alerts.length?`⚠ ${r.alerts.length}`:''}</li>)}</ul>
   </details>;
 }
 

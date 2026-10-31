@@ -1,4 +1,4 @@
-import { benchmarkMetrics, benchmarkStats, correctedUsage, METRIC_LABELS } from './benchmark-analysis.js';
+import { benchmarkMetrics, benchmarkStats, correctedUsage, promptUsage, METRIC_LABELS } from './benchmark-analysis.js';
 import type { BenchmarkMetric, BenchmarkMetrics } from './benchmark-analysis.js';
 import type { BenchmarkRun } from './benchmark-types.js';
 export interface FoldingMetricLabels {
@@ -35,7 +35,7 @@ export function foldingRunMetrics(item: FoldingMetricRun): FoldingMetrics {
       base.cacheWrite = u.cacheWriteReported === false ? 0 : u.cacheWrite;
       base.cache = u.cacheRead !== null && base.cacheWrite !== null ? u.cacheRead + base.cacheWrite : null;
     }
-    const corrected = correctedUsage(u); base.tokens = corrected.total; base.cacheHit = corrected.hit;
+    const corrected = correctedUsage(u); base.tokens = corrected.total; base.cacheHit = promptUsage(u).cacheHitRate === null ? null : promptUsage(u).cacheHitRate! * 100;
   }
   if (!item.run.verdict) base.success = null;
   if (item.labels.ttftSource === 'unknown') { base.ttft = null; base.tpot = null; }

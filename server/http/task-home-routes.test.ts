@@ -11,7 +11,6 @@ import {initSchema} from '../storage/schema.js';
 import {createAgentObservabilityServer} from '../server.js';
 import {DEFAULT_LOCAL_SESSION_CONFIG} from '../../local-sessions/config.js';
 import {DEFAULT_ALERT_THRESHOLDS} from '../../src/core/task-alerts.js';
-import {setModelPriceOverrides} from '../../src/core/pricing.js';
 let db:Database.Database,dir:string,server:ReturnType<typeof createAgentObservabilityServer>;
 class Response extends EventEmitter {
  headersSent=false;statusCode=200;headers:Record<string,unknown>={};body='';writableEnded=false;destroyed=false;
@@ -26,7 +25,7 @@ beforeEach(async()=>{
  db.prepare(`INSERT INTO events(session_id,id,sequence,kind,phase,started_at,status,input_len,output_len) VALUES('s','failure',0,'tool','implement',?,'error',1,1)`).run(new Date().toISOString());
  server=createAgentObservabilityServer({db,dbPath:join(dir,'state.sqlite'),config:DEFAULT_LOCAL_SESSION_CONFIG,userConfigPath:join(dir,'user','agent-observe.json'),enableMonitoring:false});
 });
-afterEach(async()=>{await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));db.close();setModelPriceOverrides({});await rm(dir,{recursive:true,force:true});});
+afterEach(async()=>{await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));db.close();await rm(dir,{recursive:true,force:true});});
 async function call(path:string,method='GET',value?:unknown,headers:Record<string,string>={},remote='127.0.0.1'){
  const request=Readable.from(value===undefined?[]:[Buffer.from(typeof value==='string'?value:JSON.stringify(value))]) as IncomingMessage;
  Object.assign(request,{method,url:path,headers:{host:'127.0.0.1','content-type':'application/json',...headers},socket:{remoteAddress:remote}});
@@ -36,23 +35,22 @@ async function call(path:string,method='GET',value?:unknown,headers:Record<strin
 }
 it('serves one bounded summary, persists local limits and invalidates price estimates without source IO',async()=>{
  const page=await call('/api/tasks?summary=1');expect(page.status).toBe(200);expect(page.headers['cache-control']).toBe('no-store');expect(page.text).not.toMatch(/inputSummary|outputSummary|"raw"|never-read/);
- const row=(page.body.items as Array<Record<string,unknown>>)[0]!;expect(row.latestHealth).toBeNull();expect(row.metrics).toMatchObject({correctedTotal:110,costs:{known:0},errors:1});
+ const row=(page.body.items as Array<Record<string,unknown>>)[0]!;expect(row.latestHealth).toBeNull();expect(row.metrics).toMatchObject({correctedTotal:110,cacheHitRate:1/3,errors:1});
  const saved=await call('/api/config/alert-thresholds','PUT',{...DEFAULT_ALERT_THRESHOLDS,errors:0});expect(saved.status).toBe(200);
  expect((await call('/api/tasks?summary=1&alerts=1')).body.total).toBe(1);
- const price={input:1,output:2,cacheRead:0,cacheWrite:0,contextWindow:100,source:'fixture 2026-10-31',currency:'CNY'};
- expect((await call('/api/config/model-pricing','PUT',{fixture:price})).status).toBe(200);
- const updated=(await call('/api/tasks?summary=1')).body.items as Array<{metrics:unknown}>;expect(updated[0]!.metrics).toMatchObject({costs:{amounts:[{currency:'CNY',amount:0.0001,source:'estimated'}]}});
+ expect((await call('/api/config/model-pricing','PUT',{})).status).toBe(404);
+ const updated=(await call('/api/tasks?summary=1&currency=invalid&sort=cost')).body.items as Array<{metrics:unknown}>;
+ expect(updated[0]!.metrics).not.toHaveProperty('costs');
  expect((await call('/api/tasks/collected%3As')).body.metrics).toEqual(updated[0]!.metrics);
  const kpi=await call('/api/task-kpis');expect(kpi.status).toBe(200);expect(kpi.body).toMatchObject({tasks:1,alerts:1,toolFailurePct:100});
 });
 it('rejects invalid paging, query flags, duplicate JSON, prices and remote/Host/Origin requests with ApiError',async()=>{
  for(const path of ['/api/tasks?summary=1&limit=51','/api/tasks?summary=1&sort=bad','/api/tasks?summary=1&alerts=false']){const result=await call(path);expect(result.status).toBe(400);expect(result.body.error).toMatchObject({code:'BAD_REQUEST'});}
- for(const path of ['/api/config/model-pricing','/api/config/alert-thresholds','/api/task-kpis']){
+ for(const path of ['/api/config/alert-thresholds','/api/task-kpis']){
   for(const headers of [{host:'attacker.example'},{origin:'https://attacker.example'}] as Record<string,string>[])expect((await call(path,'GET',undefined,headers)).status).toBe(400);
   expect((await call(path,'GET',undefined,{},'192.0.2.1')).status).toBe(400);
  }
  expect((await call('/api/config/alert-thresholds','PUT','{"errors":1,"errors":2}')).status).toBe(400);
- expect((await call('/api/config/model-pricing','PUT',{fixture:{input:1,output:2,cacheRead:0,cacheWrite:0,contextWindow:100,source:'',currency:'CNY'}})).status).toBe(400);
 });
 
 it('streams missing-source status without deleting the task, defers parsing and keeps local guards',async()=>{

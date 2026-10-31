@@ -803,32 +803,32 @@ describe('Trajectory event pagination', () => {
   });
 });
 
-it.each(['price','threshold','overview-threshold'])('Phase B review: %s opens and focuses its settings section without saving',async entry=>{
+it.each(['threshold','overview-threshold'])('Phase B review: %s opens and focuses its settings section without saving',async entry=>{
  const requests:Array<{path:string;method:string}>=[];
  vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
   const path=String(input);requests.push({path,method:init?.method??'GET'});
   if(path==='/api/config/providers')return apiResponse({providers:Object.fromEntries(PROVIDER_KEYS.map(key=>[key,{key,enabled:true,path:'/fixture/'+key,label:key,sourceKind:'jsonl',watchStrategy:'chokidar',pollIntervalMs:0}])),traeKeyPath:null,prewarmRecent:0});
-  if(path==='/api/config/model-pricing')return apiResponse({});
   if(path==='/api/config/alert-thresholds')return apiResponse(DEFAULT_ALERT_THRESHOLDS);
-  if(path==='/api/task-kpis')return apiResponse({tasks:3,statusKnownTasks:3,toolKnownTasks:3,failedTasks:0,failurePct:0,toolFailurePct:0,tokens:null,tokenKnownTasks:0,costs:{known:0,total:3,amounts:[]},alerts:0});
+  if(path==='/api/task-kpis')return apiResponse({tasks:3,statusKnownTasks:3,toolKnownTasks:3,failedTasks:0,failurePct:0,toolFailurePct:0,tokens:null,tokenKnownTasks:0,cacheHitRate:null,cacheKnownMembers:0,cacheTotalMembers:3,alerts:0});
   if(path.startsWith('/api/mission'))return apiResponse({meta:{range:'7d',generatedAt:'2026-10-31T00:00:00Z',tz:0,widgetCount:0,durationMs:0,stamp:'2026-10-31T00:00:00Z',cached:false},usage:{},quality:{},health:{}});
-  if(path.startsWith('/api/tasks?'))return apiResponse({items:TASK_FIXTURES.map(t=>({...t,metrics:{durationMs:1000,toolCalls:1,errors:0,input:10,output:20,cacheRead:1,correctedTotal:31,costUsd:null,models:['needs-price'],costs:{known:0,total:1,amounts:[],missingPrices:['needs-price'],missingReasons:['model_unpriced']}}})),total:3,offset:0,limit:50,hasMore:false});
+  if(path.startsWith('/api/tasks?'))return apiResponse({items:TASK_FIXTURES.map(t=>({...t,metrics:{durationMs:1000,toolCalls:1,errors:0,input:10,output:20,cacheRead:1,correctedTotal:31,promptInput:11,cacheHitRate:1/11,models:['test-model']}})),total:3,offset:0,limit:50,hasMore:false});
   return taskResponse(path);
  }));
  const {container,unmount}=renderAppWithUnmount();
  try{
   await readyTasks(container);
   if(entry==='overview-threshold')await navigateHash('#/overview');
-  const selector=entry==='price'?'.task-price-link':entry==='overview-threshold'?'.overview-threshold-link':'.task-home-toolbar button';
+  const selector=entry==='overview-threshold'?'.overview-threshold-link':'.task-home-toolbar button';
   let button:HTMLButtonElement|undefined;
-  for(let i=0;i<100&&!button;i++){button=[...container.querySelectorAll<HTMLButtonElement>(selector)].find(b=>entry==='price'||b.textContent==='配置阈值');if(!button)await act(async()=>{await new Promise(r=>setTimeout(r,10));});}
+  for(let i=0;i<100&&!button;i++){button=[...container.querySelectorAll<HTMLButtonElement>(selector)].find(b=>b.textContent==='配置阈值');if(!button)await act(async()=>{await new Promise(r=>setTimeout(r,10));});}
   expect(button).toBeDefined();act(()=>button!.click());
-  const section=entry==='price'?'model-pricing':'alert-thresholds';
+  const section='alert-thresholds';
   for(let i=0;i<100&&!container.querySelector('#settings-'+section+' input');i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});
   await act(async()=>{await new Promise(r=>setTimeout(r,30));});
   const input=container.querySelector<HTMLInputElement>('#settings-'+section+' input')!;expect(input).not.toBeNull();expect(document.activeElement).toBe(input);
   expect(container.querySelector<HTMLDetailsElement>('.settings-workbench details')!.open).toBe(true);
-  if(entry==='price')expect(input.value).toBe('needs-price');
+  expect(requests.some(r=>r.path.includes('model-pricing'))).toBe(false);
+  expect(container.querySelector('.task-price-link')).toBeNull();
   expect(requests.some(r=>r.method==='PUT'||r.method==='POST')).toBe(false);
   expect(requests.filter(r=>r.path==='/api/config/providers')).toHaveLength(1);
  }finally{unmount();}

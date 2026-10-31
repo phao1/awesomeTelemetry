@@ -23,8 +23,8 @@ alerts}; ordinal starts at1; title is redacted first prompt-title line <=200char
 TaskMetrics/TaskAlert reuse Phase A/B types. Count tool inputs and error records;
 usage sums retained incremental counters with Phase A accounting guards (Codex
 output includes reasoning, input excludes cache). Absent counters remain null;
-unsupported total accounting remains null; no allocation of session-wide money.
-Revision binds DB changes, task membership and pricing; <=24 task projections
+unsupported total accounting remains null; cacheHitRate follows data-model F1-002.
+Revision binds DB changes, task membership and the metric policy; <=24 task projections
 cached per DB, invalidated on writes. Fixed indexed member/sequence reads with
 batch yields, no body/source/raw reads or per-request SQL. No schema change.
 25,000-event fixture: cold <250ms target, warm <20ms; existing loop budgets apply.
