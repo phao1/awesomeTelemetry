@@ -12,3 +12,8 @@ export { CalendarGrid } from './CalendarGrid.js';
 export { ComboBarLine } from './ComboBarLine.js';
 export type { CalendarDay } from './CalendarGrid.js';
 export type { ChartSlice, ChartTone, StackSeries } from './types.js';
+export { AreaChart } from './AreaChart.js';
+export { LineChart } from './LineChart.js';
+export { BarChart } from './BarChart.js';
+export { BarList } from './BarList.js';
+export type { ChartSeries, CartesianProps } from './CartesianChart.js';

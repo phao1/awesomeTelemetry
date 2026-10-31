@@ -1,3 +1,4 @@
+import { PageSkeleton } from './ui/PageSkeleton.js';
 import { fmtDur } from '../core/session-findings.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -13,7 +14,7 @@ import type {
   MissionWidget,
 } from '../core/trace-types.js';
 import { api } from '../api/client.js';
-import { EmptyState, ErrorState, Skeleton } from './ui/States.js';
+import { EmptyState, ErrorState } from './ui/States.js';
 import { HBarChart } from './charts/HBarChart.js';
 import { Histogram } from './charts/Histogram.js';
 import { ComboBarLine } from './charts/ComboBarLine.js';
@@ -604,7 +605,7 @@ export function MissionControl({
           {error !== null && (
             <ErrorState code="MISSION_LOAD_FAILED" message={error} onRetry={() => setRetryKey((k) => k + 1)} />
           )}
-          {response === null && error === null && <Skeleton variant="row" count={6} />}
+          {response === null && error === null && <PageSkeleton locale={locale} />}
           {response !== null &&
             byRole.map(({ role, widgets }) => (
               <section key={role} id={`mission-role-${role}`} className="mission-role-section" data-role={role}>

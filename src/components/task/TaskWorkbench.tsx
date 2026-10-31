@@ -1,3 +1,4 @@
+import { PageSkeleton } from '../ui/PageSkeleton.js';
 import { RequestExpansion } from './TaskRequests.js';
 import { useTaskHydration } from './task-hydration.js';
 import { loadBool, storeBool, LAYOUT_KEYS } from '../../layout.js';
@@ -99,16 +100,16 @@ export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpe
       </div>
       <div className="task-list-count"><span>{listPage?.total ?? '—'} {c.taskCount}</span><button type="button" onClick={refresh}>{listStale ? `${c.newer} ↻` : c.refresh}</button></div>
       <div className="architecture-toolbar"><button className="btn" onClick={() => onRoute({ ...route, overview: true })}>架构概况</button><span>{checked.length} 已选</span>{(['A', 'B'] as const).map(group => <button className="btn" key={group} disabled={!checked.length} onClick={()=>assignGroup(group)}>{locale==='zh'?'设为':'Set as'} {group==='A'?(locale==='zh'?'基线':'Baseline'):(locale==='zh'?'改进':'Improvement')}</button>)}<small>{locale==='zh'?'基线':'Baseline'} {route.compareA?.length ?? 0} / {locale==='zh'?'改进':'Improvement'} {route.compareB?.length ?? 0}</small><button className="btn" onClick={onLegacyCompare}>{locale==='zh'?'进入对比':'Open comparison'}</button></div>
-      {tasks.loading && <p role="status" className="task-inline-state">{c.loading}</p>}
+      {tasks.loading && <PageSkeleton compact variant="table" />}
       {tasks.error && <div className="task-inline-state" role="alert"><p>{tasks.error}</p><button type="button" className="btn" onClick={tasks.retry}>{c.retry}</button></div>}
       {listPage && <TaskList items={listPage.items} selected={context.value?.task.id ?? route.task} locale={locale} onSelect={selectTask} checked={checked} onCheck={onCheck} onRequest={(task,request)=>onRoute({...route,task:task.id,origin:task.origin,request,member:'all',event:null,health:undefined})} />}
       {listPage?.items.length === 0 && <div className="task-inline-state"><p>{c.empty}</p><button type="button" className="btn" onClick={() => { setQ(''); setProvider(''); setRange('all'); }}>{c.clear}</button></div>}
       <footer><button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>←</button><span>{offset + (listPage?.items.length ? 1 : 0)}–{offset + (listPage?.items.length ?? 0)}</span><button type="button" disabled={!listPage?.hasMore} onClick={() => setOffset(offset + 50)}>→</button><button type="button" className="btn" onClick={onIntake}>＋ {c.intake}</button></footer>
     </aside>
-    <main className="task-main"><Suspense fallback={<p role="status">{c.loading}</p>}>
+    <main className="task-main"><Suspense fallback={<PageSkeleton compact />}>
       {route.task && <button type="button" className="btn task-mobile-back" onClick={() => onRoute({ ...route, task: null, event: null, member: 'main' })}>← {c.showList}</button>}
       {collapsed && <button type="button" className="task-restore-list btn" onClick={() => setCollapsed(false)}>☰ {c.showList}</button>}
-      {context.loading && <div className="task-loading" role="status">{c.loading}</div>}
+      {context.loading && <PageSkeleton />}
       {context.error && <div className="task-empty" role="alert"><h2>{context.error}</h2><button type="button" className="btn" onClick={context.retry}>{c.retry}</button></div>}
       {!route.task && !comparing && <>
         <div className="task-home-toolbar"><h1>{locale==='zh'?'任务健康':'Task health'}</h1>
@@ -124,7 +125,7 @@ export function TaskWorkbench({ locale, route, onRoute, changes, onIntake, onOpe
         </div>
         <div className="task-home-toolbar"><span>{listPage?.total??'—'} {c.taskCount} · {checked.length} {locale==='zh'?'已选':'selected'}</span>{(['A','B'] as const).map(group=><button className="btn" key={group} disabled={!checked.length} onClick={()=>assignGroup(group)}>{locale==='zh'?'设为':'Set as'} {group==='A'?(locale==='zh'?'基线':'Baseline'):(locale==='zh'?'改进':'Improvement')}</button>)}<small>{locale==='zh'?'基线':'Baseline'} {route.compareA?.length??0} / {locale==='zh'?'改进':'Improvement'} {route.compareB?.length??0}</small><button className="btn" disabled={offset===0} onClick={()=>setOffset(Math.max(0,offset-50))}>←</button><span>{offset+(listPage?.items.length?1:0)}–{offset+(listPage?.items.length??0)}</span><button className="btn" disabled={!listPage?.hasMore} onClick={()=>setOffset(offset+50)}>→</button><button className="btn" onClick={refresh}>{listStale?c.newer:c.refresh}</button></div>
         {listPage&&<TaskHealthList onRequest={(task,request)=>onRoute({...route,task:task.id,origin:task.origin,request,member:'all',event:null,health:undefined})} refreshError={Boolean(tasks.error)} progress={hydration.progress} onSettings={onSettings} items={listPage.items} locale={locale} checked={checked} onCheck={onCheck} onSelect={selectTask} onIntake={onIntake} onHealth={task=>{selectTask(task);onRoute({...route,task:task.id,origin:task.origin,member:'all',event:null,health:task.latestHealth?.id??'new'});}}/>}
-        {tasks.loading&&<p role="status">{c.loading}</p>}
+        {tasks.loading&&<PageSkeleton variant="table" />}
         {tasks.error&&<p role="alert">{tasks.error}<button className="btn" onClick={tasks.retry}>{c.retry}</button></p>}
       </>}
       {route.compareImport && <ImportedArchitectureCompare locale={locale} onLocate={locateArchitecture} onClose={() => onRoute({ ...route, compareImport: undefined })} />}

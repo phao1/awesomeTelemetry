@@ -15,10 +15,10 @@ function render() {
   return { container, root };
 }
 async function toggle(container: Element, open: boolean) {
-  await act(async () => { const details = container.querySelector('details')!; details.open = open; details.dispatchEvent(new Event('toggle')); });
+  await act(async () => { const details = container.ownerDocument.body.querySelector('details')!; details.open = open; details.dispatchEvent(new Event('toggle')); });
 }
 async function click(container: Element, text: string) {
-  await act(async () => { const button = [...container.querySelectorAll('button')].find(button => button.textContent === text); expect(button).toBeDefined(); button!.click(); });
+  await act(async () => { const button = [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === text); expect(button).toBeDefined(); button!.click(); });
 }
 function transport() {
   return vi.fn(async (url: string, init?: RequestInit) => {
@@ -36,29 +36,29 @@ describe('explicit development CDP workspace', () => {
   it('opens without IO, refreshes bounded metadata explicitly and reads only a selected inert response', async () => {
     const fetcher = transport(); vi.stubGlobal('fetch', fetcher); const f = render();
     expect(fetcher).not.toHaveBeenCalled(); await toggle(f.container, true); expect(fetcher).not.toHaveBeenCalled();
-    const start = [...f.container.querySelectorAll('button')].find(button => button.textContent === 'Start CDP')!; expect(start.disabled).toBe(true);
+    const start = [...f.container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === 'Start CDP')!; expect(start.disabled).toBe(true);
     await click(f.container, 'Refresh status and responses'); expect(fetcher).toHaveBeenCalledTimes(3);
-    expect(f.container.textContent).toContain('Rejected responses: 2'); expect(f.container.textContent).toContain('capture_limit'); expect(f.container.textContent).not.toContain(body);
+    expect(f.container.ownerDocument.body.textContent).toContain('Rejected responses: 2'); expect(f.container.ownerDocument.body.textContent).toContain('capture_limit'); expect(f.container.ownerDocument.body.textContent).not.toContain(body);
     await click(f.container, '#1 · ' + item.url); expect(fetcher).toHaveBeenCalledTimes(4); expect(fetcher.mock.calls[3]?.[0]).toBe('/api/cdp/captures/1');
-    expect(f.container.querySelector('pre')!.textContent).toBe(body); expect(f.container.querySelector('script')).toBeNull();
-    expect(f.container.textContent).toContain('Body acquired at (UTC)');
-    await click(f.container, 'A+'); expect(f.container.querySelector('pre')!.style.fontSize).toBe('15px');
-    act(() => f.root.render(<CdpPanel locale="zh" />)); expect(fetcher).toHaveBeenCalledTimes(4); expect(f.container.textContent).toContain('正文获取时间');
+    expect(f.container.ownerDocument.body.querySelector('pre')!.textContent).toBe(body); expect(f.container.ownerDocument.body.querySelector('script')).toBeNull();
+    expect(f.container.ownerDocument.body.textContent).toContain('Body acquired at (UTC)');
+    await click(f.container, 'A+'); expect(f.container.ownerDocument.body.querySelector('pre')!.style.fontSize).toBe('15px');
+    act(() => f.root.render(<CdpPanel locale="zh" />)); expect(fetcher).toHaveBeenCalledTimes(4); expect(f.container.ownerDocument.body.textContent).toContain('正文获取时间');
   });
   it('performs explicit start/stop, without automatic reads, polling or locale retries', async () => {
     const fetcher = transport(); vi.stubGlobal('fetch', fetcher); const f = render(); await toggle(f.container, true);
     await click(f.container, 'Refresh status and responses'); await click(f.container, 'Start CDP');
-    expect(fetcher).toHaveBeenCalledTimes(4); expect(f.container.textContent).toContain('Manager enabled');
-    await click(f.container, 'Stop CDP'); expect(fetcher).toHaveBeenCalledTimes(5); expect(f.container.textContent).toContain('Stopped');
+    expect(fetcher).toHaveBeenCalledTimes(4); expect(f.container.ownerDocument.body.textContent).toContain('Manager enabled');
+    await click(f.container, 'Stop CDP'); expect(fetcher).toHaveBeenCalledTimes(5); expect(f.container.ownerDocument.body.textContent).toContain('Stopped');
     act(() => f.root.render(<CdpPanel locale="zh" />)); expect(fetcher).toHaveBeenCalledTimes(5);
   });
   it('shows production dev-only guidance and allows an explicit read retry', async () => {
     const fetcher = vi.fn(async () => response({ error: { code: 'ROUTE_NOT_FOUND', message: 'No route' } }, 404)); vi.stubGlobal('fetch', fetcher);
     const f = render(); await toggle(f.container, true); await click(f.container, 'Refresh status and responses');
-    expect(f.container.textContent).toContain('npm run dev'); expect(f.container.textContent).toContain('ROUTE_NOT_FOUND');
+    expect(f.container.ownerDocument.body.textContent).toContain('npm run dev'); expect(f.container.ownerDocument.body.textContent).toContain('ROUTE_NOT_FOUND');
     fetcher.mockImplementation(async () => response(idle));
     // Return valid per-route metadata on the explicit retry.
-    vi.stubGlobal('fetch', transport()); await click(f.container, 'Refresh status and responses'); expect(f.container.textContent).not.toContain('ROUTE_NOT_FOUND');
+    vi.stubGlobal('fetch', transport()); await click(f.container, 'Refresh status and responses'); expect(f.container.ownerDocument.body.textContent).not.toContain('ROUTE_NOT_FOUND');
   });
   it('keeps a cancelled mutation uncertain and ignores late success until explicit status reconciliation', async () => {
     let release: (value: Response) => void = () => undefined; let signal: AbortSignal | null | undefined;
@@ -66,17 +66,17 @@ describe('explicit development CDP workspace', () => {
     vi.stubGlobal('fetch', fetcher); const f = render(); await toggle(f.container, true); await click(f.container, 'Refresh status and responses');
     await click(f.container, 'Start CDP'); await click(f.container, 'Cancel waiting'); expect(signal?.aborted).toBe(true);
     await act(async () => release(response({ ...idle, state: 'running' })));
-    expect(f.container.textContent).toContain('Command outcome is unknown'); expect(f.container.textContent).not.toContain('Manager enabled');
-    expect([...f.container.querySelectorAll('button')].find(button => button.textContent === 'Start CDP')!.disabled).toBe(true);
-    await click(f.container, 'Refresh status and responses'); expect(f.container.textContent).not.toContain('Command outcome is unknown');
+    expect(f.container.ownerDocument.body.textContent).toContain('Command outcome is unknown'); expect(f.container.ownerDocument.body.textContent).not.toContain('Manager enabled');
+    expect([...f.container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === 'Start CDP')!.disabled).toBe(true);
+    await click(f.container, 'Refresh status and responses'); expect(f.container.ownerDocument.body.textContent).not.toContain('Command outcome is unknown');
   });
   it('times out local control waits and aborts selected reads when collapsed', async () => {
     vi.useFakeTimers(); const base = transport(); let signal: AbortSignal | null | undefined;
     const fetcher = vi.fn((url: string, init?: RequestInit) => url.endsWith('/start') || url.endsWith('/captures/1') ? new Promise<Response>(() => { signal = init?.signal; }) : base(url, init));
     vi.stubGlobal('fetch', fetcher); const f = render(); await toggle(f.container, true); await click(f.container, 'Refresh status and responses');
     await click(f.container, 'Start CDP'); await act(async () => vi.advanceTimersByTimeAsync(12000));
-    expect(f.container.textContent).toContain('CDP_TIMEOUT'); expect(f.container.textContent).toContain('Command outcome is unknown'); expect(signal?.aborted).toBe(true);
+    expect(f.container.ownerDocument.body.textContent).toContain('CDP_TIMEOUT'); expect(f.container.ownerDocument.body.textContent).toContain('Command outcome is unknown'); expect(signal?.aborted).toBe(true);
     await click(f.container, 'Refresh status and responses'); await click(f.container, '#1 · ' + item.url); expect(signal?.aborted).toBe(false);
-    await toggle(f.container, false); expect(signal?.aborted).toBe(true); expect(f.container.querySelector('[role="dialog"]')).toBeNull();
+    await toggle(f.container, false); expect(signal?.aborted).toBe(true); expect(f.container.ownerDocument.body.querySelector('[role="dialog"]')).toBeNull();
   });
 });

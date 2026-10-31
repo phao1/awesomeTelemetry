@@ -18,10 +18,10 @@ afterEach(() => {
 });
 
 describe('REQ-007 Toast', () => {
-  it('4s 自动消失', () => {
+  it('3s 自动消失', () => {
     vi.useFakeTimers();
     let dismissed = false;
-    const container = render(
+    render(
       <Toast
         title="已保存"
         onDismiss={() => {
@@ -29,9 +29,11 @@ describe('REQ-007 Toast', () => {
         }}
       />,
     );
-    expect(container.querySelector('.ui-toast')).not.toBeNull();
+    expect(document.querySelector('.ui-toast')).not.toBeNull();
     act(() => {
-      vi.advanceTimersByTime(4100);
+      vi.advanceTimersByTime(2999);
+      expect(dismissed).toBe(false);
+      vi.advanceTimersByTime(1);
     });
     expect(dismissed).toBe(true);
   });

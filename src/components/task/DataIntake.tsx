@@ -1,3 +1,4 @@
+import { PageSkeleton } from '../ui/PageSkeleton.js';
 import { TelemetryIntakePanel } from '../TelemetryIntakePanel.js';
 import '../../styles/task-workbench.css';
 import { lazy, Suspense, useCallback, useState, type ReactNode } from 'react';
@@ -41,7 +42,7 @@ export function DataIntake({ locale, initialChannel = 'native', onConfigure, pro
           {(error || monitoring.error) && <p role="alert">{error ?? monitoring.error}</p>}<div className="task-channel-actions"><button type="button" className="btn" onClick={onConfigure}>{c.configure} ↗</button><button type="button" className="btn" onClick={monitoring.retry}>{c.checkState}</button><button type="button" className="btn" onClick={() => void api.scan().then(() => monitoring.retry()).catch(cause => setError(String(cause)))}>{c.refresh}</button></div><p className="hint">{c.noPolling}</p></>}
         {channel === 'otel' && <TelemetryIntakePanel locale={locale} />}
         {channel === 'proxy' && proxy}{channel === 'frida' && frida}
-        <Suspense fallback={<p role="status">{c.loading}</p>}>{channel === 'cdp' && <CdpPanel locale={locale} />}{channel === 'import' && <><TelemetryIntakePanel locale={locale} file />{proxyState.loading && <p role="status">{c.loading}</p>}{proxyState.error && <p role="alert">{proxyState.error}</p>}<TraceLogImportPanel locale={locale} stopped={proxyState.value !== null && !proxyState.value.running && !proxyState.value.starting} /></>}</Suspense>
+        <Suspense fallback={<PageSkeleton compact />}>{channel === 'cdp' && <CdpPanel locale={locale} />}{channel === 'import' && <><TelemetryIntakePanel locale={locale} file />{proxyState.loading && <PageSkeleton compact />}{proxyState.error && <p role="alert">{proxyState.error}</p>}<TraceLogImportPanel locale={locale} stopped={proxyState.value !== null && !proxyState.value.running && !proxyState.value.starting} /></>}</Suspense>
       </section>
     </div>
   </main>;

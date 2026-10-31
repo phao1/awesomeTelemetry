@@ -1,3 +1,4 @@
+import { PageSkeleton } from './ui/PageSkeleton.js';
 /**
  * agent-collaboration-replay §2.1.3 / §3.6 — Agent 协作回放主组件。
  *
@@ -284,7 +285,7 @@ export function AgentCollabReplay({
 
   return (
     <div className="agent-collab-replay">
-      <Suspense fallback={<Skeleton />}><StageReplay snapshot={snapshot} activities={activities} coverage={activityCoverage} onSelect={setSelection} locale={locale} /></Suspense>
+      <Suspense fallback={<PageSkeleton compact />}><StageReplay snapshot={snapshot} activities={activities} coverage={activityCoverage} onSelect={setSelection} locale={locale} /></Suspense>
       <details className="collab-secondary"><summary>{locale === 'zh' ? '当前快照 · 成员与任务概览' : 'Current snapshot · members and tasks'}</summary>
       <TeamWorkbench snapshot={snapshot} activities={activities} activityCoverage={activityCoverage}
         selection={selection} onSelect={next => {

@@ -77,7 +77,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
     const { container, unmount } = renderAppWithUnmount();
     try {
       await act(async () => { await Promise.resolve(); });expect(paths.filter(path => path.includes('/proxy/'))).toHaveLength(0);
-      const tab = container.querySelector<HTMLButtonElement>('.task-primary-nav button:nth-child(5)')!;
+      const tab = container.querySelector<HTMLButtonElement>('.app-sidebar nav [aria-label=数据接入]')!;
       expect(tab).toBeDefined();await navigateHash('#/proxy');
       await act(async () => { await import('./components/ProxyView.js');await Promise.resolve(); });
       expect(paths.filter(path => path.includes('/proxy/')).sort()).toEqual(['/api/proxy/requests?limit=50', '/api/proxy/status']);
@@ -243,7 +243,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
       await act(async()=>{for(let i=0;i<30&&!paths.some(path=>path.includes('/agent-overview'));i++)await new Promise(resolve=>setTimeout(resolve,10));});
       expect(paths.filter(path=>path.includes('/agent-overview'))).toHaveLength(1);
       expect(paths.filter(path=>/\/sessions\/[^?]/.test(path))).toHaveLength(0);
-      expect(container.querySelectorAll('.task-primary-nav button')).toHaveLength(7);
+      expect(container.querySelectorAll('.app-sidebar nav button')).toHaveLength(7);
     } finally {unmount();}
   });
 });
@@ -282,7 +282,7 @@ function renderApp(): HTMLDivElement {
   const root = createRoot(container);
   appRoots.add(root);
   act(() => { root.render(<App />); });
-  return container;
+  return document.body as unknown as HTMLDivElement;
 }
 
 /** team 测试专用：返回 container + unmount，确保组件正确卸载避免 hash 残留。 */
@@ -294,7 +294,7 @@ function renderAppWithUnmount(): { container: HTMLDivElement; unmount: () => voi
   act(() => {
     root.render(<App />);
   });
-  return { container, unmount: () => act(() => { root.unmount(); appRoots.delete(root); }) };
+  return { container:document.body as unknown as HTMLDivElement, unmount: () => act(() => { root.unmount(); appRoots.delete(root); }) };
 }
 
 beforeEach(() => {
@@ -391,7 +391,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
 
   it('WB-002: the Tasks-scoped Team link reaches existing runs while global navigation stays at six views', async () => {
     installTaskApi();const original=fetch;vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).includes('/api/team-runs')?Promise.resolve(apiResponse({items:[],total:0,hasMore:false,nextCursor:null})):original(input,init)));
-    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);expect(container.querySelectorAll('.task-primary-nav button')).toHaveLength(7);expect(container.querySelector('.task-primary-nav details')).toBeNull();expect(vi.mocked(fetch).mock.calls.some(([i])=>String(i).includes('/api/team-runs'))).toBe(false);await navigateHash('#/team');await act(async()=>{await import('./components/team/TeamShell.js');});await act(async()=>{await new Promise(r=>setTimeout(r,350));});expect(container.querySelector('.team-shell')).not.toBeNull();expect(window.location.hash).toMatch(/^#\/team/);expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/api/team-runs'))).toHaveLength(1);expect(vi.mocked(fetch).mock.calls.some(([i])=>/\/api\/team-runs\/[^/?]+/.test(String(i)))).toBe(false);}finally{unmount();}
+    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);expect(container.querySelectorAll('.app-sidebar nav button')).toHaveLength(7);expect(container.querySelector('.app-sidebar nav details')).toBeNull();expect(vi.mocked(fetch).mock.calls.some(([i])=>String(i).includes('/api/team-runs'))).toBe(false);await navigateHash('#/team');await act(async()=>{await import('./components/team/TeamShell.js');});await act(async()=>{await new Promise(r=>setTimeout(r,350));});expect(container.querySelector('.team-shell')).not.toBeNull();expect(window.location.hash).toMatch(/^#\/team/);expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/api/team-runs'))).toHaveLength(1);expect(vi.mocked(fetch).mock.calls.some(([i])=>/\/api\/team-runs\/[^/?]+/.test(String(i)))).toBe(false);}finally{unmount();}
   });
 
   it('WB-001: visible global search opens the real lazy palette without detail fan-out and restores focus', async () => {
@@ -399,7 +399,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     try {
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
       const before = vi.mocked(fetch).mock.calls.length;
-      const trigger = container.querySelector('.app-header-search') as HTMLButtonElement;
+      const trigger = container.querySelector('.page-search') as HTMLButtonElement;
       expect(trigger).not.toBeNull();
       await act(async () => {
         trigger.focus(); trigger.click();
@@ -467,7 +467,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
   it('Phase C direct comparison entry loads populated baseline and improvement task pickers', async () => {
     installTaskApi();const container=renderApp();
     await readyTasks(container);
-    const tab=[...container.querySelectorAll<HTMLButtonElement>('.task-primary-nav button')].find(b=>b.textContent==='对比')!;
+    const tab=[...container.querySelectorAll<HTMLButtonElement>('.app-sidebar nav button')].find(b=>b.textContent==='对比')!;
     expect(tab).toBeDefined();
     await act(async()=>{tab.click();await import('./components/task/TaskComparison.js');});
     await vi.waitFor(()=>expect(container.querySelectorAll('.task-compare-options label')).toHaveLength(6));
@@ -480,7 +480,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
   });
 
   it('REQ-023：/api/health 只请求一次，不轮询', async () => {
-    const container = renderApp();
+    renderApp();
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -492,7 +492,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       String(call[0]).includes('/api/health'),
     );
     expect(healthCalls).toHaveLength(1);
-    container.remove();
+
   });
 
   it('会话视图 IA：粘性工具条 + findings 折叠 + turn 表面（统计条 + 色带 + 回合列表）', async () => {
@@ -624,7 +624,7 @@ describe('Compare 端到端（UI-TASKS 2 回归）', () => {
     expect(container.textContent).not.toContain('COMPARE_FAILED');
     expect(container.textContent).not.toContain('NaN');
     expect(container.querySelector('.ui-error-boundary')).toBeNull();
-    container.remove();
+
   });
 });
 

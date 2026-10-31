@@ -1,5 +1,5 @@
 import { ta } from '../../i18n.js';
-import { useState, type InputHTMLAttributes, type RefObject, type SelectHTMLAttributes } from 'react';
+import { useState, useRef, type InputHTMLAttributes, type RefObject } from 'react';
 
 import { IconClose, IconSearch } from '../icons/index.js';
 
@@ -29,30 +29,8 @@ export function Input({ size = 'md', icon, className, ...rest }: InputProps): Re
   );
 }
 
-export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
-  size?: 'sm' | 'md';
-  options: Array<{ value: string; label: string }>;
-}
-
-/** REQ-005：Select。 */
-export function Select({ size = 'md', options, className, ...rest }: SelectProps): React.JSX.Element {
-  const classes = [
-    'ui-select',
-    size === 'sm' ? 'ui-btn-sm' : 'ui-btn-md',
-    className ?? '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-  return (
-    <select className={classes} {...rest}>
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  );
-}
+export { Select } from './Select.js';
+export type { SelectProps } from './Select.js';
 
 export interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
   /** 本地化占位符 */
@@ -77,6 +55,8 @@ export function SearchInput({
   inputRef,
   ...rest
 }: SearchInputProps): React.JSX.Element {
+  const ownRef=useRef<HTMLInputElement>(null);
+  const searchRef=inputRef??ownRef;
   const [internalValue, setInternalValue] = useState(() => String(defaultValue ?? ''));
 
   const controlled = value !== undefined;
@@ -94,7 +74,7 @@ export function SearchInput({
         <IconSearch size={12} />
       </span>
       <input
-        ref={inputRef}
+        ref={searchRef}
         type="search"
         className="ui-input ui-input-with-icon ui-btn-md"
         placeholder={placeholder}
@@ -111,7 +91,7 @@ export function SearchInput({
             aria-label={ta('a11y.clearSearch')}
             onClick={() => {
               commit('');
-              inputRef?.current?.focus();
+              searchRef.current?.focus();
             }}
           >
             <IconClose size={12} />

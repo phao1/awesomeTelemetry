@@ -1,3 +1,4 @@
+import { PageSkeleton } from '../ui/PageSkeleton.js';
 import { RequestPicker } from './TaskRequests.js';
 import { isSystemRecord } from '../../core/system-records.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -33,7 +34,7 @@ function TaskGroupPicker({ side, ids, other, selected, locale, onChange }: { sid
     <select aria-label={`${name} ${zh ? '来源' : 'origin'}`} value={origin} onChange={e => { setOrigin(e.target.value as typeof origin); setOffset(0); }}><option value="collected">{zh ? '本地任务' : 'Collected tasks'}</option><option value="imported">{zh ? '导入任务' : 'Imported tasks'}</option></select>
     <ul className="task-compare-selected">{ids.map(id => <li key={id}><span>{selected.find(t => t.id === id)?.title || id}<small> · {zh?'缓存命中率：':'Cache hit rate: '}{formatCacheHitRate(selected.find(t=>t.id===id)?.metrics,zh)}</small></span><button className="btn" aria-label={`${zh ? '移除' : 'Remove'} ${id}`} onClick={() => onChange(ids.filter(x => x !== id))}>×</button></li>)}</ul>
     <details><summary>{zh ? '选择任务' : 'Choose tasks'}</summary>
-      {tasks.loading && <p role="status">{zh ? '读取任务…' : 'Reading tasks…'}</p>}
+      {tasks.loading && <PageSkeleton compact variant="table" />}
       {tasks.error && <ArchitectureReadError error={tasks.errorInfo ?? tasks.error} locale={locale} retry={tasks.retry} />}
       <div className="task-compare-options">{tasks.value?.items.map(task => <label key={task.id}><input type="checkbox" checked={ids.includes(task.id)} disabled={other.includes(task.id) || !ids.includes(task.id) && ids.length >= 40} onChange={() => onChange(ids.includes(task.id) ? ids.filter(id => id !== task.id) : [...ids, task.id])} /><span>{task.title || task.id} · {task.provider}</span></label>)}</div>
       {tasks.value?.items.length === 0 && <p>{zh ? '没有匹配任务，请调整搜索或来源。' : 'No matching tasks. Change search or origin.'}</p>}
@@ -102,7 +103,7 @@ export function TaskComparison({ route, onRoute, locale, onLocate, invalidateKey
     {recent.length > 0 && <details><summary>{zh ? '最近对比' : 'Recent comparisons'}</summary><ul>{recent.map(hash => <li key={hash}><a href={hash}>{hash}</a></li>)}</ul></details>}
     {!valid && <p>{zh ? '请为基线与改进各选择 1–40 个任务；两组不可重复。优先选择相同工具/provider。' : 'Choose 1–40 distinct tasks for baseline and improvement. Prefer the same tool/provider.'}</p>}
     {route.compareImport && <ImportedArchitectureCompare locale={locale} onLocate={onLocate} onClose={() => onRoute({ ...route, compareImport: undefined })} />}
-    {snapshot.loading && <p role="status">{zh ? '正在读取任务摘要…' : 'Reading task summaries…'}</p>}
+    {snapshot.loading && <PageSkeleton />}
     {snapshot.error && <ArchitectureReadError error={snapshot.errorInfo ?? snapshot.error} locale={locale} retry={snapshot.retry} />}
     {snapshot.value && <><section><h2>{zh ? '结论' : 'Conclusions'}</h2><div className="task-compare-conclusions">{rows.map(r => <p key={r.key} data-verdict={r.verdict}><strong>{r.label} · {verdictLabel(r.verdict, locale)}</strong><span><span title={exactComparisonValue(r.delta,r.unit)}>B − A {formatComparisonValue(r.delta,r.unit,locale,true)}</span> · <span title={exactComparisonValue(r.ratio)}>B/A {formatComparisonRatio(r.ratio)}</span></span>{r.reason && <small>{comparisonReason(r.reason, locale)}</small>}</p>)}</div>{limitations.map(line => <p key={line}>{line}</p>)}</section>
       <section><h2>{zh ? '指标' : 'Metrics'}</h2><ComparisonMetricTable rows={rows} locale={locale} />

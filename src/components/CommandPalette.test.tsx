@@ -81,13 +81,13 @@ function render(node: React.JSX.Element): HTMLDivElement {
 describe('REQ-025 命令面板', () => {
   it('WB-001: opens ready to type, preserves focus while filtering and clearing', () => {
     const container = render(<CommandPalette sessions={twoSessions} locale="zh" onClose={() => undefined} onAction={() => undefined} />);
-    const input = container.querySelector('input')!;
+    const input = container.ownerDocument.body.querySelector('input')!;
     expect(document.activeElement).toBe(input);
     typeInto(container, 'auth');
     expect(rowsOf(container).map(row => row.textContent)).toHaveLength(1);
     expect(rowsOf(container)[0]!.textContent).toContain('add auth');
     expect(document.activeElement).toBe(input);
-    const clear = container.querySelector('[aria-label="清空搜索"]') as HTMLButtonElement;
+    const clear = container.ownerDocument.body.querySelector('[aria-label="清空搜索"]') as HTMLButtonElement;
     expect(clear).not.toBeNull();
     act(() => { clear.focus(); clear.click(); });
     expect(input.value).toBe('');
@@ -104,13 +104,13 @@ describe('REQ-025 命令面板', () => {
         onAction={(action) => actions.push(action)}
       />,
     );
-    expect(container.textContent).toContain('fix build');
-    const input = container.querySelector('input') as HTMLInputElement;
+    expect(container.ownerDocument.body.textContent).toContain('fix build');
+    const input = container.ownerDocument.body.querySelector('input') as HTMLInputElement;
     act(() => {
       Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, 'fix');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    const row = Array.from(container.querySelectorAll('.palette-row')).find((el) =>
+    const row = Array.from(container.ownerDocument.body.querySelectorAll('.palette-row')).find((el) =>
       el.textContent?.includes('fix build'),
     ) as HTMLButtonElement;
     expect(row).not.toBeNull();
@@ -128,7 +128,7 @@ describe('REQ-025 命令面板', () => {
         onAction={(action) => actions.push(action)}
       />,
     );
-    const rows = Array.from(container.querySelectorAll('.palette-row'));
+    const rows = Array.from(container.ownerDocument.body.querySelectorAll('.palette-row'));
     expect(rows.length).toBeGreaterThanOrEqual(8);
     const scan = rows.find((row) => row.textContent?.includes('Trigger scan')) as HTMLButtonElement;
     act(() => scan.click());
@@ -144,15 +144,15 @@ describe('REQ-025 命令面板', () => {
         onAction={() => undefined}
       />,
     );
-    const input = container.querySelector('input') as HTMLInputElement;
+    const input = container.ownerDocument.body.querySelector('input') as HTMLInputElement;
     act(() => {
       Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, '/act 导出');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    const rows = Array.from(container.querySelectorAll('.palette-row'));
+    const rows = Array.from(container.ownerDocument.body.querySelectorAll('.palette-row'));
     expect(rows.length).toBe(1);
     expect(rows[0]!.textContent).toContain('导出报告');
-    expect(container.querySelector('.palette-row-icon')).not.toBeNull();
+    expect(container.ownerDocument.body.querySelector('.palette-row-icon')).not.toBeNull();
   });
 
   it('REQ-110：/nav 只显示导航，/s 只显示会话', () => {
@@ -164,7 +164,7 @@ describe('REQ-025 命令面板', () => {
         onAction={() => undefined}
       />,
     );
-    const input = container.querySelector('input') as HTMLInputElement;
+    const input = container.ownerDocument.body.querySelector('input') as HTMLInputElement;
     const setValue = (value: string): void => {
       act(() => {
         Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, value);
@@ -172,7 +172,7 @@ describe('REQ-025 命令面板', () => {
       });
     };
     setValue('/nav');
-    const navRows = Array.from(container.querySelectorAll('.palette-row'));
+    const navRows = Array.from(container.ownerDocument.body.querySelectorAll('.palette-row'));
     expect(navRows.length).toBe(6);
     expect(navRows.map(row => row.textContent).join(' ')).toContain('任务');
     expect(navRows.map(row => row.textContent).join(' ')).toContain('数据接入');
@@ -180,14 +180,14 @@ describe('REQ-025 命令面板', () => {
     const navHints = navRows.map((row) => row.querySelector('.palette-row-hint')?.textContent);
     expect(navHints.every((hint) => hint === 'nav')).toBe(true);
     setValue('/s fix');
-    const sessionRows = Array.from(container.querySelectorAll('.palette-row'));
+    const sessionRows = Array.from(container.ownerDocument.body.querySelectorAll('.palette-row'));
     expect(sessionRows.length).toBe(1);
     expect(sessionRows[0]!.textContent).toContain('fix build');
   });
 });
 
 function typeInto(container: HTMLElement, value: string): void {
-  const input = container.querySelector('input') as HTMLInputElement;
+  const input = container.ownerDocument.body.querySelector('input') as HTMLInputElement;
   act(() => {
     Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -195,7 +195,7 @@ function typeInto(container: HTMLElement, value: string): void {
 }
 
 function rowsOf(container: HTMLElement): HTMLButtonElement[] {
-  return Array.from(container.querySelectorAll('.palette-row')) as HTMLButtonElement[];
+  return Array.from(container.ownerDocument.body.querySelectorAll('.palette-row')) as HTMLButtonElement[];
 }
 
 describe('REQ-111 /compare 发起对比', () => {
@@ -317,7 +317,7 @@ describe('REQ-113 /filter 按 provider 过滤', () => {
     typeInto(container, '/filter');
     const rows = rowsOf(container);
     expect(rows.length).toBe(9);
-    expect(container.querySelectorAll('.ui-provider-badge').length).toBe(9);
+    expect(container.ownerDocument.body.querySelectorAll('.ui-provider-badge').length).toBe(9);
     act(() => rows[0]!.click());
     expect(actions).toEqual([{ type: 'filter', provider: 'claude' }]);
   });

@@ -1,3 +1,5 @@
+import { IconButton } from './ui/Button.js';
+import { Tooltip } from './ui/Overlay.js';
 import type { ThemePreference } from '../theme.js';
 import { IconContrast } from './icons/index.js';
 
@@ -12,15 +14,6 @@ interface ThemeToggleProps {
  * 统一使用 IconContrast（亮/暗对比），按钮 title/aria 仍如实表达当前状态。
  */
 export function ThemeToggle({ theme, effective, onCycle }: ThemeToggleProps): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      className="btn"
-      onClick={onCycle}
-      title={`theme: ${theme} (${effective})`}
-      aria-label={`theme: ${theme}`}
-    >
-      <IconContrast size={16} />
-    </button>
-  );
+  const description=`theme: ${theme} (${effective})`;
+  return <Tooltip label={description}><IconButton label={`theme: ${theme}`} title={description} icon={<IconContrast size={16}/>} onClick={onCycle}/></Tooltip>;
 }

@@ -3,6 +3,7 @@ import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
 
 import { IconClose } from '../icons/index.js';
 import { useFocusTrap } from './focus-trap.js';
+import { Portal } from './portal.js';
 import { pushOverlay } from '../../keyboard.js';
 
 export interface ModalProps {
@@ -29,7 +30,7 @@ export function Modal({
   useEffect(() => pushOverlay(onClose), [onClose]);
 
   return (
-    <div
+    <Portal><div
       className="modal-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
@@ -65,7 +66,7 @@ export function Modal({
           </div>
         )}
       </div>
-    </div>
+    </div></Portal>
   );
 }
 
@@ -90,7 +91,7 @@ export function Drawer({ title, onClose, children, open, footer, className, widt
     return <div className="ui-drawer" aria-hidden="true" />;
   }
   return (
-    <>
+    <Portal>
       <div className="modal-backdrop" onMouseDown={onClose} />
       <div
         ref={containerRef}
@@ -113,6 +114,9 @@ export function Drawer({ title, onClose, children, open, footer, className, widt
           </div>
         )}
       </div>
-    </>
+    </Portal>
   );
 }
+
+export const Dialog = Modal;
+export const Sheet = Drawer;

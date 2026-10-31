@@ -21,7 +21,7 @@ function mount(node: React.ReactNode): { unmount: () => void; html: () => string
     unmount: () => {
       root.unmount();
     },
-    html: () => container.innerHTML,
+    html: () => container.ownerDocument.body.innerHTML,
   };
 }
 

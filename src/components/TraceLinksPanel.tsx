@@ -1,3 +1,4 @@
+import { PageSkeleton } from './ui/PageSkeleton.js';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import type { ProxyTraceLinkPage, SessionCaptureLinkPage, SessionIndexEntry, TraceAssociationDecision, TraceAssociationState, TraceIdentityPage } from '../core/trace-types.js';
@@ -170,21 +171,21 @@ export function SessionCaptureLinksPanel({ sessionKey, locale, onOpenRequest, on
   return <><div className="family-entry"><button className="btn" type="button" disabled={sessionKey === ''} onClick={() => setFamilyOpen(true)}>{locale === 'zh' ? 'Agent 家族与尝试' : 'Agent family & attempts'} →</button><span>{locale === 'zh' ? '父子会话 · 独立网络尝试 · 原始 Trace' : 'Parent & child sessions · independent attempts · original traces'}</span></div>
     <div className="family-entry"><button className="btn" type="button" disabled={sessionKey === ''} onClick={() => setToolsOpen(true)}>{locale === 'zh' ? '工具执行调查台' : 'Tool execution investigation'} →</button><span>{locale === 'zh' ? '原生工具 ID · 输入与输出 · 错误与上下文' : 'Native tool IDs · inputs & outputs · errors & context'}</span></div>
     {traceExportEnabled && <><div className="family-entry"><button className="btn" type="button" aria-expanded={traceExportOpen} onClick={() => setTraceExportOpen(open => !open)}>{locale === 'zh' ? '标准 Trace 导出' : 'Standard Trace export'}</button></div>
-      {traceExportOpen && <Suspense fallback={<Skeleton count={1} />}><TraceExportPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} /></Suspense>}
+      {traceExportOpen && <Suspense fallback={<PageSkeleton compact />}><TraceExportPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} /></Suspense>}
       <div className="family-entry"><button className="btn" type="button" aria-expanded={linkedExportOpen} onClick={() => setLinkedExportOpen(open => !open)}>{locale === 'zh' ? '跨来源 Trace 导出' : 'Cross-source Trace export'}</button></div>
-      {linkedExportOpen && <Suspense fallback={<Skeleton count={1} />}><LinkedTraceExportPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} /></Suspense>}
+      {linkedExportOpen && <Suspense fallback={<PageSkeleton compact />}><LinkedTraceExportPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} /></Suspense>}
     </>}
-    {toolsOpen && <Suspense fallback={<Skeleton count={1} />}><ToolExecutionPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} onClose={() => setToolsOpen(false)} onOpenRequest={onOpenRequest} /></Suspense>}
-    {familyOpen && <Suspense fallback={<Skeleton count={1} />}><SessionFamilyPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} onClose={() => setFamilyOpen(false)} onOpenSession={onOpenSession} onOpenRequest={onOpenRequest} /></Suspense>}
+    {toolsOpen && <Suspense fallback={<PageSkeleton compact />}><ToolExecutionPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} onClose={() => setToolsOpen(false)} onOpenRequest={onOpenRequest} /></Suspense>}
+    {familyOpen && <Suspense fallback={<PageSkeleton compact />}><SessionFamilyPanel sessionKey={sessionKey} locale={locale} invalidateKey={invalidateKey} onClose={() => setFamilyOpen(false)} onOpenSession={onOpenSession} onOpenRequest={onOpenRequest} /></Suspense>}
     <details className="session-findings-panel" onToggle={event => setExpanded(event.currentTarget.open)}>
     <summary>{t('trace.links.title', locale)}</summary>
     {expanded && <div>
       <p className="hint">{t('trace.links.hint', locale)}</p>
       <p className="hint">{t('trace.links.promptHint', locale)}</p>
       <button className="btn" type="button" aria-expanded={executionOpen} onClick={() => setExecutionOpen(value => !value)}>{t('trace.execution.title', locale)}</button>
-      {executionOpen && <Suspense fallback={<Skeleton count={1} />}><LinkedExecutionPanel sessionKey={sessionKey} locale={locale} onOpenRequest={onOpenRequest} invalidateKey={invalidateKey} /></Suspense>}
+      {executionOpen && <Suspense fallback={<PageSkeleton compact />}><LinkedExecutionPanel sessionKey={sessionKey} locale={locale} onOpenRequest={onOpenRequest} invalidateKey={invalidateKey} /></Suspense>}
       <button className="btn" type="button" aria-expanded={parentsOpen} onClick={() => setParentsOpen(value => !value)}>{t('trace.parents.title', locale)}</button>
-      {parentsOpen && <Suspense fallback={<Skeleton count={1} />}><NativeSessionParentsPanel sessionKey={sessionKey} locale={locale} onOpenSession={onOpenSession} invalidateKey={invalidateKey} /></Suspense>}
+      {parentsOpen && <Suspense fallback={<PageSkeleton compact />}><NativeSessionParentsPanel sessionKey={sessionKey} locale={locale} onOpenSession={onOpenSession} invalidateKey={invalidateKey} /></Suspense>}
       {loadedVersion >= 0 && loadedVersion !== invalidateKey && <p role="status">{t('trace.links.stale', locale)}</p>}
       <button className="btn" type="button" disabled={busy} onClick={() => void load()}>{t('trace.links.refresh', locale)}</button>
       {busy && <Skeleton count={2} />}

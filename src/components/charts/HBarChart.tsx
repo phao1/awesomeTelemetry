@@ -1,3 +1,6 @@
+import { EmptyState } from '../ui/States.js';
+import { IconList } from '../icons/index.js';
+import { useChartWidth } from './CartesianChart.js';
 import type { ChartSlice, ChartTone } from './types.js';
 
 export interface HBarChartProps {
@@ -16,16 +19,19 @@ export interface HBarChartProps {
 export function HBarChart({
   rows,
   max,
-  tone = 'accent',
+  tone: _tone = 'accent',
   width = 520,
   height = 200,
-  rowHeight = 18,
+  rowHeight = 24,
   labelWidth = 140,
 }: HBarChartProps): React.JSX.Element {
+  const [ref,responsiveWidth]=useChartWidth(width);
+  width=responsiveWidth;
+  if(!rows.length)return <EmptyState icon={<IconList/>} title="暂无数据 / No data"/>;
   const peak = max ?? Math.max(0, ...rows.map((r) => r.value), 1);
   const barMax = Math.max(0, width - labelWidth - 42);
   return (
-    <svg
+    <div ref={ref} className="instrument-chart"><svg
       width="100%"
       height={Math.max(height, rows.length * (rowHeight + 6))}
       viewBox={`0 0 ${width} ${Math.max(height, rows.length * (rowHeight + 6))}`}
@@ -35,10 +41,10 @@ export function HBarChart({
       {rows.map((row, i) => {
         const y = 4 + i * (rowHeight + 6);
         const w = peak > 0 ? Math.max(1, (row.value / peak) * barMax) : 1;
-        const fill = `var(--${row.tone ?? tone}-emphasis)`;
+        const fill = row.tone ? `var(--${row.tone}-emphasis)` : `var(--chart-${i%8+1})`;
         return (
           <g key={row.label}>
-            <text x={0} y={y + rowHeight - 5} fill="var(--fg-muted)" fontSize={11}>
+            <text x={0} y={y + rowHeight - 5} fill="var(--fg-muted)" className="chart-axis">
               {row.label}
             </text>
             <rect
@@ -49,12 +55,12 @@ export function HBarChart({
               rx={3}
               fill={fill}
             />
-            <text x={labelWidth + w + 5} y={y + rowHeight - 5} fill="var(--fg-default)" fontSize={11}>
+            <text x={labelWidth + w + 5} y={y + rowHeight - 5} fill="var(--fg-default)" className="chart-axis">
               {row.value.toLocaleString()}
             </text>
           </g>
         );
       })}
-    </svg>
+    </svg></div>
   );
 }

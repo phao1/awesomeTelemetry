@@ -56,14 +56,58 @@ const ICON_NAMES = [
   'IconMoon',
   'IconDeviceDesktop',
   'IconContrast',
+  'IconDashboard',
+  'IconList',
+  'IconGitCompare',
+  'IconFlask',
+  'IconNetwork',
+  'IconPlug',
+  'IconSettings',
+  'IconChevronUp',
+  'IconChevronLeft',
+  'IconCheck',
+  'IconX',
+  'IconMinus',
+  'IconMoreHorizontal',
+  'IconUpload',
+  'IconAlertTriangle',
+  'IconAlertCircle',
+  'IconCheckCircle',
+  'IconXCircle',
+  'IconInfo',
+  'IconClock',
+  'IconHourglass',
+  'IconCpu',
+  'IconDatabase',
+  'IconZap',
+  'IconUser',
+  'IconBot',
+  'IconUsers',
+  'IconWrench',
+  'IconFileText',
+  'IconEye',
+  'IconEyeOff',
+  'IconLanguages',
+  'IconPanelLeft',
+  'IconArrowUp',
+  'IconArrowDown',
+  'IconTrendingUp',
+  'IconTrendingDown',
+  'IconPlay',
+  'IconPause',
+  'IconSparkles',
+  'IconLayers',
+  'IconMessageSquare',
+  'IconGitBranch',
+
 ] as const;
 
 describe('REQ-004 图标集（T6 / T7）', () => {
   it('T6: 导出名集合与清单严格相等，无多无少（= 48）', () => {
     const exported = Object.keys(icons).filter((key) => key !== 'IconShell').sort();
     expect(exported).toEqual([...ICON_NAMES].sort());
-    expect(ICON_NAMES).toHaveLength(48);
-    expect(exported).toHaveLength(48);
+    expect(ICON_NAMES).toHaveLength(91);
+    expect(exported).toHaveLength(91);
   });
 
   it('T7: 每个图标含 viewBox="0 0 16 16"，无 fill="#"/stroke="#"', () => {
@@ -71,6 +115,8 @@ describe('REQ-004 图标集（T6 / T7）', () => {
       const Component = icons[name] as (props?: Record<string, unknown>) => React.JSX.Element;
       const markup = renderToStaticMarkup(<Component />);
       expect(markup, name).toContain('viewBox="0 0 16 16"');
+      expect(markup, name).toContain('stroke-width="1.5"');
+      expect(markup, name).toContain('stroke-linecap="round"');
       expect(markup, name).not.toMatch(/fill="#/);
       expect(markup, name).not.toMatch(/stroke="#/);
     }
@@ -92,19 +138,20 @@ describe('REQ-004 图标集（T6 / T7）', () => {
 
   it('§8: 单个图标路径数据 ≤ 512 字节', () => {
     const source = readFileSync(join(process.cwd(), 'src', 'components', 'icons', 'index.tsx'), 'utf8');
-    const ds = [...source.matchAll(/\bd="([^"]*)"/g)].map((m) => m[1]!);
+    expect(Buffer.byteLength(source)).toBeLessThan(12 * 1024);
+    const ds = [...source.matchAll(/makeIcon\("([^"]*)"\)/g)].map((m) => m[1]!);
     expect(ds.length).toBeGreaterThan(0);
     for (const d of ds) {
       expect(Buffer.byteLength(d)).toBeLessThanOrEqual(512);
     }
   });
 
-  it('REQ-010: 全套未压缩 SVG 标记 < 12KB', () => {
+  it('F2: expanded rendered SVG audit < 32KiB', () => {
     let total = 0;
     for (const name of ICON_NAMES) {
       const Component = icons[name] as (props?: Record<string, unknown>) => React.JSX.Element;
       total += Buffer.byteLength(renderToStaticMarkup(<Component />), 'utf8');
     }
-    expect(total).toBeLessThan(12 * 1024);
+    expect(total).toBeLessThan(32 * 1024);
   });
 });

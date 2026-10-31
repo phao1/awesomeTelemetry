@@ -1,3 +1,4 @@
+import { useChartWidth } from './CartesianChart.js';
 import { useState } from 'react';
 
 export interface SparklinePoint {
@@ -23,6 +24,8 @@ export interface SparklineProps {
   ariaLabel?: string;
   /** 数值格式化（tooltip 用）。 */
   format?: (value: number) => string;
+  /** Stretch to the available content width; preserves compact inline default. */
+  fluid?: boolean;
 }
 
 const PAD = 2;
@@ -35,10 +38,13 @@ const PAD = 2;
 export function Sparkline({
   series,
   width = 120,
-  height = 28,
+  height = 32,
   ariaLabel = 'sparkline',
   format = (v) => v.toLocaleString(),
+  fluid=false,
 }: SparklineProps): React.JSX.Element {
+  const [ref,measuredWidth]=useChartWidth(width);
+  if(fluid)width=measuredWidth;
   const [hover, setHover] = useState<{ s: number; i: number } | null>(null);
   const all = series.flatMap((s) => s.points.map((p) => p.value));
   const max = all.length === 0 ? 1 : Math.max(...all);
@@ -52,9 +58,9 @@ export function Sparkline({
   const hovered = hover === null ? null : series[hover.s]?.points[hover.i] ?? null;
 
   return (
-    <span className="sparkline">
+    <span ref={ref} className={`sparkline ${fluid?'sparkline-fluid':''}`}>
       <svg
-        width={width}
+        width={fluid?'100%':width}
         height={height}
         viewBox={`0 0 ${width} ${height}`}
         role="img"
@@ -70,11 +76,12 @@ export function Sparkline({
             .join(' ');
           return (
             <g key={s.label}>
-              <path d={d} fill="none" stroke={s.color} strokeWidth={1.2} />
+              <polygon points={`${xAt(0,n)},${height-PAD} ${s.points.map((p,i)=>`${xAt(i,n)},${yAt(p.value)}`).join(" ")} ${xAt(n-1,n)},${height-PAD}`} fill={s.color} fillOpacity={0.1}/><path d={d} fill="none" stroke={s.color} strokeWidth={2} />
               {s.points.map((p, i) => (
                 <circle
                   key={i}
                   className="sparkline-dot"
+                  data-active={hover?.s===si&&hover.i===i}
                   cx={xAt(i, n)}
                   cy={yAt(p.value)}
                   r={hover?.s === si && hover.i === i ? 2.4 : 1.4}

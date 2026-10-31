@@ -1,3 +1,5 @@
+import { EmptyState } from '../ui/States.js';
+import { IconDashboard } from '../icons/index.js';
 /** REQ-119：可复用雷达图 —— 从 CompareCharts.tsx 提取，props 标准化为 N 个系列。 */
 
 export interface RadarAxis {
@@ -34,6 +36,7 @@ export function RadarChart({
   size = 220,
   ariaLabel = 'radar chart',
 }: RadarChartProps): React.JSX.Element {
+  if(!data.length)return <EmptyState icon={<IconDashboard/>} title="暂无数据 / No data"/>;
   const n = data.length;
   const pointAt = (value: number, i: number): [number, number] => {
     const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
@@ -61,7 +64,7 @@ export function RadarChart({
           key={scale}
           points={ringPoints(scale)}
           fill="none"
-          stroke="var(--border-muted)"
+          stroke="var(--chart-grid)"
           strokeWidth={0.8}
         />
       ))}
@@ -74,7 +77,7 @@ export function RadarChart({
             y1={CENTER}
             x2={CENTER + Math.cos(angle) * RADIUS}
             y2={CENTER + Math.sin(angle) * RADIUS}
-            stroke="var(--border-muted)"
+            stroke="var(--chart-grid)"
             strokeWidth={0.8}
           />
         );
@@ -85,7 +88,8 @@ export function RadarChart({
           points={seriesPoints(index)}
           fill={fills?.[index] ?? stroke}
           stroke={stroke}
-          strokeWidth={1.5}
+          strokeWidth={2}
+          fillOpacity={0.12}
         />
       ))}
       {data.map((axis, i) => {

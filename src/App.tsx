@@ -1,3 +1,7 @@
+import { PageSkeleton } from './components/ui/PageSkeleton.js';
+import { AppSidebar } from './components/AppSidebar.js';
+import { PageHeader } from './components/PageHeader.js';
+const UiKit=lazy(()=>import('./components/UiKit.js').then(m=>({default:m.UiKit})));
 import type { LocalSettingsTarget } from './core/task-types.js';
 import { OverviewKpis } from './components/task/OverviewKpis.js';
 import type { TaskChanges } from './components/task/TaskWorkbench.js';
@@ -39,7 +43,7 @@ import { eventDetailCache, invalidateSessionDetail, recordCache } from './cache/
 import { mergeSessionsPatch } from './core/list-utils.js';
 import { localSamples } from './generated/local-samples.js';
 import { LanguageToggle } from './components/LanguageToggle.js';
-import { LiveIndicator } from './components/LiveIndicator.js';
+
 const SessionList=lazy(()=>import('./components/SessionList.js').then(m=>({default:m.SessionList})));
 const SessionStart=lazy(()=>import('./components/SessionStart.js').then(m=>({default:m.SessionStart})));
 const SessionToolbar=lazy(()=>import('./components/SessionToolbar.js').then(m=>({default:m.SessionToolbar})));
@@ -74,7 +78,7 @@ import { ThemeToggle } from './components/ThemeToggle.js';
 import { ErrorState, EmptyState } from './components/ui/States.js';
 import { ErrorBoundary } from './components/ui/ErrorBoundary.js';
 import { useTheme } from './theme.js';
-import { AppHeader, StatusBar, type AppView } from './components/AppShell.js';
+import { StatusBar, type AppView } from './components/AppShell.js';
 import {
   LAYOUT_KEYS,
   LAYOUT_RANGES,
@@ -187,6 +191,11 @@ export default function App() {
     loadNumber(LAYOUT_KEYS.fontSize, BASE_FONT_PX, LAYOUT_RANGES.fontSize),
   ); // REQ-012：8–28px
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>{try {const saved=localStorage.getItem('awesome-telemetry.sidebarCollapsed');return saved===null?window.innerWidth<1280:saved==='true';}catch(error){console.error('[sidebar] preference read failed',error);return window.innerWidth<1280;}});
+  const [mobileNav,setMobileNav]=useState(false);
+  useEffect(()=>{const media=window.matchMedia('(max-width: 1279px)');const resize=(event:MediaQueryListEvent)=>setSidebarCollapsed(event.matches);media.addEventListener('change',resize);return ()=>media.removeEventListener('change',resize);},[]);
+  useEffect(()=>{try{localStorage.setItem('awesome-telemetry.sidebarCollapsed',String(sidebarCollapsed));}catch(error){console.error('[sidebar] preference write failed',error);}},[sidebarCollapsed]);
+  useEffect(()=>{if(view==='settings')setSettingsOpen(true);},[view]);
   const [promptContextKey, setPromptContextKey] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteLoadError, setPaletteLoadError] = useState(false);
@@ -614,9 +623,6 @@ export default function App() {
     [sessions, switchView],
   );
 
-  const adjustFont = useCallback((delta: number) => {
-    setFontPx((prev) => Math.min(28, Math.max(8, prev + delta)));
-  }, []);
 
   const triggerScan = useCallback(() => {
     void api
@@ -780,31 +786,26 @@ export default function App() {
 
   return (
     <div className={`app ${trajectoryFocus && view === 'session' ? 'app-trajectory-focus' : ''}`}>
-      <AppHeader locale={locale} onSearch={openPalette}>
-        <button type="button" className="btn" onClick={() => adjustFont(-2)}>
-          {t('common.fontSmall', locale)}
-        </button>
-        <button type="button" className="btn" onClick={() => adjustFont(2)}>
-          {t('common.fontLarge', locale)}
-        </button>
-        <button type="button" className="btn" onClick={() => setFontPx(BASE_FONT_PX)}>
-          {t('common.fontReset', locale)}
-        </button>
-        <button type="button" className="btn" onClick={() => setSettingsOpen(true)}>
-          {t('settings.title', locale)}
-        </button>
-        <LanguageToggle locale={locale} onChange={setLocale} />
-        <ThemeToggle
-          theme={theme.theme}
-          effective={theme.effective}
-          onCycle={theme.cycle}
-        />
-        <LiveIndicator connected={live} locale={locale} />
-      </AppHeader>
-      <nav className="task-primary-nav" aria-label={locale==='zh'?'主导航':'Primary navigation'}><div>
-        {([['overview',locale==='zh'?'概览':'Overview'],['task',taskCopy(locale).tasks],['compare',locale==='zh'?'对比':'Compare'],['benchmark',locale==='zh'?'评测中心':'Benchmarks'],['team-experiment',t('view.team-experiment',locale)],['intake',taskCopy(locale).intake]] as const).map(([id,label])=><button type="button" key={id} aria-current={view===id?'page':undefined} onClick={()=>{if(id==='task')setTaskRoute({...taskRoute,task:null,health:undefined,event:null,compareImport:undefined,overview:undefined});switchView(id);}}>{label}</button>)}
-        <button type="button" onClick={()=>setSettingsOpen(true)}>{taskCopy(locale).settings}</button>
-      </div></nav>
+      <AppSidebar view={settingsOpen?'settings':view} locale={locale} collapsed={sidebarCollapsed} mobileOpen={mobileNav} onClose={()=>setMobileNav(false)} onCollapse={()=>setSidebarCollapsed(v=>!v)} onFont={setFontPx} onNavigate={id=>{if(id==='settings'){setSettingsOpen(true);return;}if(id==='task')setTaskRoute({...taskRoute,task:null,health:undefined,event:null,compareImport:undefined,overview:undefined});switchView(id as AppView);}} status={<StatusBar
+        live={live}
+        locale={locale}
+        /* 状态栏是系统级读数：显示全库总量，不是当前筛选/已加载的那一页。
+           筛选后的条数由列表底部的「共 N 条」负责。 */
+        sessionCount={health?.sessionCount ?? sessionTotal}
+        eventCount={health?.eventCount ?? 0}
+        scanning={scanning}
+        lastScanAt={lastScanAt}
+        dbSizeBytes={health?.dbSizeBytes ?? null}
+        walSizeBytes={health?.walSizeBytes ?? null}
+        offlineSamples={offlineSamples}
+        onScan={triggerScan}
+      />}>
+        <ThemeToggle theme={theme.theme} effective={theme.effective} onCycle={theme.cycle}/>
+        <LanguageToggle locale={locale} onChange={setLocale}/>
+      </AppSidebar>
+      <div className="app-workspace">
+      <PageHeader title={view==='ui-kit'?'UI Kit':view==='settings'?taskCopy(locale).settings:view==='task'?taskCopy(locale).tasks:view==='overview'?(locale==='zh'?'概览':'Overview'):view==='compare'?(locale==='zh'?'对比':'Compare'):view==='intake'?taskCopy(locale).intake:view==='benchmark'?(locale==='zh'?'评测中心':'Benchmarks'):t(`view.${view}` as Parameters<typeof t>[0],locale)} locale={locale} onSearch={openPalette} onMenu={()=>setMobileNav(true)}/>
+      {view==='ui-kit'&&<Suspense fallback={<PageSkeleton locale={locale} />}><UiKit locale={locale} theme={theme}/></Suspense>}
       {paletteLoadError && <div className="workbench-error" role="alert">
         <span>{t('workbench.searchUnavailable', locale)}</span>
         <button type="button" className="btn" onClick={openPalette}>{t('common.retry', locale)}</button>
@@ -814,20 +815,20 @@ export default function App() {
           team 视图保留用于团队任务详情：点击团队任务 → switchView('team')。
           D15：Sessions(任务) | Agents | ...，AppShell 不含 team */}
 
-      {view === 'task' && <ErrorBoundary label={taskCopy(locale).tasks}><Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}><TaskWorkbench onSettings={openSettingsTarget} settingsRevision={settingsRevision} onLegacyCompare={()=>switchView('compare')} locale={locale} route={taskRoute} onRoute={setTaskRoute} changes={taskChanges} diagnosisInvalidateKey={traceLinksVersion} providerPreset={providerFilter[0] ?? ''} onProviderPresetChange={value => setProviderFilter(value ? [value] : [])}
+      {view === 'task' && <ErrorBoundary label={taskCopy(locale).tasks}><Suspense fallback={<PageSkeleton locale={locale} />}><TaskWorkbench onSettings={openSettingsTarget} settingsRevision={settingsRevision} onLegacyCompare={()=>switchView('compare')} locale={locale} route={taskRoute} onRoute={setTaskRoute} changes={taskChanges} diagnosisInvalidateKey={traceLinksVersion} providerPreset={providerFilter[0] ?? ''} onProviderPresetChange={value => setProviderFilter(value ? [value] : [])}
         onIntake={() => { setIntakeChannel(taskRoute.origin === 'imported' ? 'import' : 'native'); switchView('intake'); }}
         onOpenRequest={id => { setProxyFocusedId(id); switchView('proxy'); }} /></Suspense></ErrorBoundary>}
-      {view === 'benchmark' && <ErrorBoundary label={locale === 'zh' ? '评测中心' : 'Benchmarks'}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><BenchmarkCenter locale={locale}/></Suspense></ErrorBoundary>}
-      {view === 'team-experiment' && <ErrorBoundary label={t('view.team-experiment', locale)}><Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><TeamExperimentCenter locale={locale} diagnosisInvalidateKey={traceLinksVersion}/></Suspense></ErrorBoundary>}
+      {view === 'benchmark' && <ErrorBoundary label={locale === 'zh' ? '评测中心' : 'Benchmarks'}><Suspense fallback={<PageSkeleton locale={locale} />}><BenchmarkCenter locale={locale}/></Suspense></ErrorBoundary>}
+      {view === 'team-experiment' && <ErrorBoundary label={t('view.team-experiment', locale)}><Suspense fallback={<PageSkeleton locale={locale} />}><TeamExperimentCenter locale={locale} diagnosisInvalidateKey={traceLinksVersion}/></Suspense></ErrorBoundary>}
       {view === 'intake' && <ErrorBoundary label={taskCopy(locale).intake}><DataIntake key={intakeChannel} locale={locale} initialChannel={intakeChannel}
         onConfigure={() => setSettingsOpen(true)} onTasks={() => switchView('task')}
-        proxy={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates} latestHookId={latestHookId}
+        proxy={<Suspense fallback={<PageSkeleton locale={locale} />}><ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates} latestHookId={latestHookId}
           sessions={sessions} focusedRequestId={proxyFocusedId} onFocusedRequestHandled={clearProxyFocus} traceInvalidateKey={traceLinksVersion}
-          livePreview={<Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}><ProxyLivePanel streams={proxyStreams} locale={locale} invalidateKey={traceLinksVersion} onOpenSession={key=>{setTaskRoute({...taskRoute,task:'collected:'+key,origin:'collected',member:'main',event:null});switchView('task');}}/></Suspense>}
+          livePreview={<Suspense fallback={<PageSkeleton locale={locale} />}><ProxyLivePanel streams={proxyStreams} locale={locale} invalidateKey={traceLinksVersion} onOpenSession={key=>{setTaskRoute({...taskRoute,task:'collected:'+key,origin:'collected',member:'main',event:null});switchView('task');}}/></Suspense>}
           onOpenSession={key => { setTaskRoute({ ...taskRoute, task: 'collected:' + key, origin: 'collected', member: 'main', event: null }); switchView('task'); }} /></Suspense>}
-        frida={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><FridaView key={liveReset} locale={locale} liveStatus={fridaLiveStatus} savedNotifications={fridaSaved} connected={live} /></Suspense>} /></ErrorBoundary>}
+        frida={<Suspense fallback={<PageSkeleton locale={locale} />}><FridaView key={liveReset} locale={locale} liveStatus={fridaLiveStatus} savedNotifications={fridaSaved} connected={live} /></Suspense>} /></ErrorBoundary>}
       {view === 'session' && (
-        <div className="view-body session-view-body"><Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}>
+        <div className="view-body session-view-body"><Suspense fallback={<PageSkeleton locale={locale} />}>
           <SessionList
             items={sessions}
             selectedId={selectedKey}
@@ -1035,7 +1036,7 @@ export default function App() {
         <div className="view-body">
           <main className="main">
             <ErrorBoundary label={t('view.agent',locale)}>
-            <Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}>
+            <Suspense fallback={<PageSkeleton locale={locale} />}>
             <AgentOverview
               locale={locale}
               sessions={sessions}
@@ -1056,7 +1057,7 @@ export default function App() {
       {view === 'compare' && (
         <div className="view-body">
           <main className="main">
-            <Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}>
+            <Suspense fallback={<PageSkeleton locale={locale} />}>
             <TaskComparison locale={locale} route={taskRoute} onRoute={setTaskRoute} invalidateKey={taskChanges.version}
               onLocate={(task,event,request)=>{setTaskRoute({...taskRoute,task,request,origin:task.startsWith('imported:')?'imported':'collected',member:'all',mode:'trajectory',event:event??null,health:undefined,q:undefined,from:undefined,to:undefined,errors:undefined,compareImport:undefined});switchView('task');}} />
             </Suspense>
@@ -1067,11 +1068,11 @@ export default function App() {
         <div className="view-body">
           <main className="main">
             <ErrorBoundary label={t('view.proxy',locale)}>
-            <Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}>
+            <Suspense fallback={<PageSkeleton locale={locale} />}>
             <ProxyView key={liveReset} locale={locale} liveStatus={proxyLiveStatus} liveUpdates={proxyLiveUpdates}
               latestHookId={latestHookId}
               sessions={sessions} focusedRequestId={proxyFocusedId} onFocusedRequestHandled={clearProxyFocus} traceInvalidateKey={traceLinksVersion}
-              livePreview={<Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}><ProxyLivePanel streams={proxyStreams} locale={locale} invalidateKey={traceLinksVersion}
+              livePreview={<Suspense fallback={<PageSkeleton locale={locale} />}><ProxyLivePanel streams={proxyStreams} locale={locale} invalidateKey={traceLinksVersion}
                 onOpenSession={key => { setTaskRoute({ ...taskRoute, task: 'collected:' + key, origin: 'collected', member: 'main', event: null }); switchView('task'); }} /></Suspense>}
               onOpenSession={key => { setTaskRoute({ ...taskRoute, task: 'collected:' + key, origin: 'collected', member: 'main', event: null }); switchView('task'); }} />
             </Suspense>
@@ -1083,7 +1084,7 @@ export default function App() {
         <div className="view-body">
           <main className="main">
             <ErrorBoundary label={t('view.frida',locale)}>
-            <Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}>
+            <Suspense fallback={<PageSkeleton locale={locale} />}>
               <FridaView key={liveReset} locale={locale} liveStatus={fridaLiveStatus} savedNotifications={fridaSaved} connected={live} />
             </Suspense>
             </ErrorBoundary>
@@ -1095,7 +1096,7 @@ export default function App() {
           <div className="overview-workspace">
           <OverviewKpis onConfigureThresholds={()=>openSettingsTarget({section:'alert-thresholds'})} locale={locale} invalidateKey={missionInvalidateKey+taskChanges.version} onNavigate={patch=>{setTaskRoute({...parseTaskRoute('#/task'),...patch,task:null,homeRange:'7d'});setProviderFilter([]);switchView('task');}}/>
           <details className="overview-agents" onToggle={e=>setAgentsExpanded(e.currentTarget.open)}><summary>{locale==='zh'?'Agent 概览':'Agent overview'}</summary>{agentsExpanded&&<AgentOverview locale={locale} sessions={sessions} onCompareProviders={startCompare} onBrowseSessions={provider=>{setProviderFilter(provider?[provider]:[]);setTaskRoute({...taskRoute,task:null});switchView('task');}} onSelectSession={key=>{setTaskRoute({...taskRoute,task:'collected:'+key,origin:'collected',member:'main',event:null});switchView('task');}}/>}</details>
-<Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}>
+<Suspense fallback={<PageSkeleton locale={locale} />}>
           <MissionControl key={settingsRevision}
             locale={locale}
             initialRange={missionRange}
@@ -1108,7 +1109,7 @@ export default function App() {
       {view === 'team' && (
         <div className="view-body">
           <ErrorBoundary label={t('team.runListTitle',locale)}>
-          <Suspense fallback={<p role="status">{t('common.loading',locale)}</p>}>
+          <Suspense fallback={<PageSkeleton locale={locale} />}>
           <TeamShell
             locale={locale}
             teamHash={teamHash}
@@ -1120,13 +1121,14 @@ export default function App() {
         </div>
       )}
 
+      </div>
       {settingsOpen && (
         <ErrorBoundary label={t('settings.title',locale)} fallback={()=>
-          <Modal title={t('settings.title',locale)} onClose={()=>{setSettingsOpen(false);setSettingsTarget(undefined);}}>
+          <Modal title={t('settings.title',locale)} onClose={()=>{setSettingsOpen(false);setSettingsTarget(undefined);if(view==='settings')switchView('task');}}>
             <p role="alert">{t('state.error',locale)} · {t('settings.codeFailed',locale)}</p>
           </Modal>}>
-          <Suspense fallback={<Modal title={t('settings.title',locale)} onClose={()=>{setSettingsOpen(false);setSettingsTarget(undefined);}}><p role="status">{t('common.loading',locale)}</p></Modal>}>
-            <SettingsModal initialTarget={settingsTarget} onSettingsSaved={()=>{setSettingsRevision(n=>n+1);setMissionInvalidateKey(n=>n+1);}} locale={locale} onClose={() => {setSettingsOpen(false);setSettingsTarget(undefined);}} />
+          <Suspense fallback={<Modal title={t('settings.title',locale)} onClose={()=>{setSettingsOpen(false);setSettingsTarget(undefined);if(view==='settings')switchView('task');}}><PageSkeleton locale={locale} compact /></Modal>}>
+            <SettingsModal initialTarget={settingsTarget} onSettingsSaved={()=>{setSettingsRevision(n=>n+1);setMissionInvalidateKey(n=>n+1);}} locale={locale} onClose={() => {setSettingsOpen(false);setSettingsTarget(undefined);if(view==='settings')switchView('task');}} />
           </Suspense>
         </ErrorBoundary>
       )}
@@ -1187,20 +1189,7 @@ export default function App() {
       {!paletteHintSeen && view === 'session' && (
         <div className="palette-hint mono">{t('palette.hint', locale)}</div>
       )}
-      <StatusBar
-        live={live}
-        locale={locale}
-        /* 状态栏是系统级读数：显示全库总量，不是当前筛选/已加载的那一页。
-           筛选后的条数由列表底部的「共 N 条」负责。 */
-        sessionCount={health?.sessionCount ?? sessionTotal}
-        eventCount={health?.eventCount ?? 0}
-        scanning={scanning}
-        lastScanAt={lastScanAt}
-        dbSizeBytes={health?.dbSizeBytes ?? null}
-        walSizeBytes={health?.walSizeBytes ?? null}
-        offlineSamples={offlineSamples}
-        onScan={triggerScan}
-      />
+
     </div>
   );
 }

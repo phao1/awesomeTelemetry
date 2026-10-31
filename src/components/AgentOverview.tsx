@@ -1,10 +1,11 @@
+import { PageSkeleton } from './ui/PageSkeleton.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { t, type Locale, type I18nKey } from '../i18n.js';
 import type { AgentOverviewRow, ProviderKey, SessionIndexEntry, TracePhase } from '../core/trace-types.js';
 import { TRACE_PHASES } from '../core/trace-types.js';
 import { api, ApiError, type AgentOverviewResponse } from '../api/client.js';
-import { EmptyState, Skeleton } from './ui/States.js';
+import { EmptyState } from './ui/States.js';
 import { Table, type TableColumn } from './ui/Table.js';
 import { BarMeter, MetricCard, Sparkline } from './ui/Misc.js';
 import { ProviderBadge } from './ui/Badge.js';
@@ -182,7 +183,7 @@ export function AgentOverview({ locale, load, sessions = [], onSelectSession, on
     <code>{error.code}</code><p>{t(error.key, locale)}</p>{error.detail !== undefined && <p>{error.detail}</p>}{retry}
   </div></section>;
   if (snapshot === null) return <section className="overview" aria-label={t('view.agent', locale)}>
-    <Skeleton variant="row" count={8} /><button type="button" className="btn ui-btn-sm" onClick={() => cancelRead.current?.()}>{t('agent.cancelWaiting', locale)}</button>
+    <PageSkeleton locale={locale} variant="table" /><button type="button" className="btn ui-btn-sm" onClick={() => cancelRead.current?.()}>{t('agent.cancelWaiting', locale)}</button>
   </section>;
   if (rows.length === 0) return <section className="overview"><EmptyState icon={<IconAgents />} title={t('agent.emptyTitle', locale)}
     description={t('agent.emptyDescription', locale)} action={<div className="agent-toolbar">{retry}{onBrowseSessions !== undefined &&

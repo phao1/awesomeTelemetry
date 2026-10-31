@@ -1,3 +1,4 @@
+import { PageSkeleton } from './ui/PageSkeleton.js';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client.js';
 import { buildCaptureComparison } from '../core/capture-comparison.js';
@@ -155,7 +156,7 @@ function Comparison({ targetId, locale, loadedItems, onOpenRequest, invalidateKe
       <CaptureDiagnosticsPanel data={shown} locale={locale} onOpenRequest={onOpenRequest} />
       <button className="btn" type="button" disabled={diffBlocked} onClick={() => setShowDiff(value => !value)}>{showDiff && !diffBlocked ? copy.hideDiff : copy.diff}</button>
       {diffBlocked && <p className="hint">{copy.diffBlocked}</p>}
-      {showDiff && !diffBlocked && <Suspense fallback={<Skeleton count={2} />}><RequestContextDiffPanel key={pair}
+      {showDiff && !diffBlocked && <Suspense fallback={<PageSkeleton compact />}><RequestContextDiffPanel key={pair}
         targetId={targetId} initialBaseId={shown.base.request.id} targetFormat={shown.target.request.requestFormat} locale={locale} loadedItems={loadedItems}
         onOpenRequest={onOpenRequest} invalidateKey={invalidateKey} /></Suspense>}
     </div>}

@@ -39,27 +39,27 @@ describe('PromptContextModal', () => {
     const load = vi.fn(async () => SAMPLE);
     const container = await render(load);
     expect(load).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain('仅动态上下文');
-    expect(container.textContent).toContain('未捕获完整静态 System Prompt');
-    expect(container.textContent).toContain('glm-5.2__dev');
-    expect(container.textContent).toContain('重复于 reminder-1');
-    expect(container.textContent).toContain('terminal ready');
+    expect(container.ownerDocument.body.textContent).toContain('仅动态上下文');
+    expect(container.ownerDocument.body.textContent).toContain('未捕获完整静态 System Prompt');
+    expect(container.ownerDocument.body.textContent).toContain('glm-5.2__dev');
+    expect(container.ownerDocument.body.textContent).toContain('重复于 reminder-1');
+    expect(container.ownerDocument.body.textContent).toContain('terminal ready');
   });
 
   it('PROMPT_CONTEXT_NOT_FOUND 显示可解释 empty state', async () => {
     const container = await render(async () => {
       throw new ApiError('PROMPT_CONTEXT_NOT_FOUND', 'missing', 404);
     });
-    expect(container.textContent).toContain('该会话暂无 Prompt 上下文');
-    expect(container.textContent).toContain('重新扫描');
+    expect(container.ownerDocument.body.textContent).toContain('该会话暂无 Prompt 上下文');
+    expect(container.ownerDocument.body.textContent).toContain('重新扫描');
   });
 
   it('其他失败显示错误码与 retry', async () => {
     const container = await render(async () => {
       throw new ApiError('INTERNAL_ERROR', 'boom', 500);
     });
-    expect(container.textContent).toContain('INTERNAL_ERROR');
-    expect(container.textContent).toContain('boom');
-    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.ownerDocument.body.textContent).toContain('INTERNAL_ERROR');
+    expect(container.ownerDocument.body.textContent).toContain('boom');
+    expect(container.ownerDocument.body.querySelector('[role="alert"]')).not.toBeNull();
   });
 });

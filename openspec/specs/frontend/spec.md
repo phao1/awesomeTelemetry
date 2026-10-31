@@ -1110,3 +1110,7 @@ URL selection. Imported evaluation transfer remains explicitly temporary.
 
 Phase E: implement task-requests.md TR-001–005 and task-health.md TH-009.
 This additive authorization supersedes the old no-new-fields restriction.
+
+## Phase F2 Calm Instrument shell
+
+REQ-F2-SHELL: Supersedes header/tab/statusbar presentation in REQ-012/015/023 and older navigation prose. App.tsx remains sole global state shell. Grouped sidebar: Observe(Overview/Tasks/Compare), Evaluate(Benchmarks/Agent boundary evaluation), Configure(Data intake/Settings). Width232px, collapsed56px, persisted with guarded localStorage. Default collapsed below1280px; below768px navigation is a focus-trapped mobile drawer with header menu. Bottom contains existing live/SSE/scan/full-library counts/DB size, theme/language and Display small12/standard13/large14/reset13, driving ui-scale. No extra health polling. PageHeader sticky56px, title/breadcrumb, search⌘K, actions and scrolled border. Existing page internals, legacy redirect state, shortcuts, lazy reads and trajectory/conversation behavior remain. Hidden #/ui-kit is a lazy demonstration gallery; #/settings opens existing settings dialog. New foundation token values and components follow docs/design/ui-design-system.md §1–4.

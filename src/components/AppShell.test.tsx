@@ -42,9 +42,15 @@ describe('workbench shared shell', () => {
     const scan = vi.fn();
     const host = mount(<StatusBar live locale={locale} sessionCount={12} eventCount={34} scanning={false}
       lastScanAt={null} dbSizeBytes={null} walSizeBytes={null} offlineSamples={false} onScan={scan} />);
-    expect(host.textContent).toContain(t('workbench.nativeIndex', locale));
+    expect(host.querySelector('.statusbar-summary')?.getAttribute('title')).toContain(t('workbench.nativeIndex', locale));
     expect(host.textContent).toContain('—');
     act(() => host.querySelector<HTMLButtonElement>('.statusbar-scan')?.click());
     expect(scan).toHaveBeenCalledTimes(1);
   });
+});
+
+it('uses two status rows, compact counts and a designed scan action',()=>{
+ const scan=vi.fn(),host=mount(<StatusBar live locale="zh" sessionCount={33} eventCount={60200} scanning={false} lastScanAt={null} dbSizeBytes={656*1024*1024} walSizeBytes={0} offlineSamples={false} onScan={scan}/>);
+ expect(host.querySelector('.statusbar-live')!.textContent).toBe('实时已连接');expect(host.querySelector('.statusbar-summary')!.textContent).toBe('33 会话 · 60.2K 事件 · 656 MB');
+ const button=host.querySelector<HTMLButtonElement>('.statusbar-scan')!;expect(button.classList.contains('ui-btn-ghost')).toBe(true);expect(button.querySelector('svg')).not.toBeNull();act(()=>button.click());expect(scan).toHaveBeenCalledOnce();
 });

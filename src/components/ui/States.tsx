@@ -2,6 +2,7 @@ import { ta } from '../../i18n.js';
 import { useEffect, type ReactNode } from 'react';
 
 import { IconClose } from '../icons/index.js';
+import { Portal } from './portal.js';
 import { Button } from './Button.js';
 
 export interface SkeletonProps {
@@ -72,17 +73,17 @@ export interface ToastProps {
   title: string;
   message?: string;
   onDismiss: () => void;
-  /** REQ-007：自动消失 4s */
+  /** REQ-007：自动消失 3s */
   autoDismissMs?: number;
 }
 
-/** REQ-007：Toast。4s 自动消失，可堆叠（容器 .ui-toast-stack）。 */
+/** REQ-007：Toast。3s 自动消失，可堆叠（容器 .ui-toast-stack）。 */
 export function Toast({
   tone = 'info',
   title,
   message,
   onDismiss,
-  autoDismissMs = 4000,
+  autoDismissMs = 3000,
 }: ToastProps): React.JSX.Element {
   useEffect(() => {
     const timer = setTimeout(onDismiss, autoDismissMs);
@@ -90,7 +91,7 @@ export function Toast({
   }, [autoDismissMs, onDismiss]);
 
   return (
-    <div className={`ui-toast ui-toast-${tone}`} role="status" aria-live="polite">
+    <Portal region="toasts"><div className={`ui-toast ui-toast-${tone}`} role="status" aria-live="polite">
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 'var(--weight-medium)' }}>{title}</div>
         {message !== undefined && <div style={{ color: 'var(--fg-muted)' }}>{message}</div>}
@@ -98,6 +99,6 @@ export function Toast({
       <button type="button" className="ui-icon-btn ui-btn-sm" aria-label={ta('a11y.dismiss')} onClick={onDismiss}>
         <IconClose size={12} />
       </button>
-    </div>
+    </div></Portal>
   );
 }

@@ -80,7 +80,7 @@ SHALL provide a three-state theme toggle: `system` (default) / `dark` /
 |------|------------|
 | Persistence | localStorage `agent-observability.theme` |
 | Default | `system`; resolves to `dark` when the system has no preference |
-| Entry | icon button at the right of the global header, cycles system → dark → light |
+| Entry | icon button at the bottom of the sidebar, cycles system → dark → light |
 | Icons | `system` → `device-desktop`; `dark` → `moon`; `light` → `sun` |
 | System follow | under `system`, MUST listen to `matchMedia('(prefers-color-scheme: dark)')` changes and follow in real time |
 
@@ -88,73 +88,11 @@ SHALL provide a three-state theme toggle: `system` (default) / `dark` /
 
 ### REQ-004: Icon set
 
-SHALL provide `src/components/icons/index.tsx` exporting the following — and
-**only** the following — 47 icon components. Implementation constraints in
-`contracts/design-tokens.md` §8 (16×16 grid, `currentColor`, zero
-dependencies, inline SVG).
+SHALL export the following canonical icon names. All use 16×16 viewBox, 1.5 currentColor stroke, round caps and joins, no fill. Existing names remain compatible; IconCost depicts layers, never currency.
 
-Unified wrapper:
+`IconSessions`, `IconAgents`, `IconCompare`, `IconProxy`, `IconFrida`, `IconSidebar`, `IconPanel`, `IconCommand`, `IconUnderstand`, `IconPlan`, `IconImplement`, `IconDebug`, `IconVerify`, `IconReport`, `IconSuccess`, `IconError`, `IconRunning`, `IconPending`, `IconCancelled`, `IconWarning`, `IconMessage`, `IconTool`, `IconFile`, `IconTerminal`, `IconThought`, `IconSystem`, `IconSpeed`, `IconAccuracy`, `IconStability`, `IconCost`, `IconSearch`, `IconFilter`, `IconRefresh`, `IconCopy`, `IconDownload`, `IconExternalLink`, `IconTrash`, `IconClose`, `IconChevronRight`, `IconChevronDown`, `IconKebab`, `IconPlus`, `IconGear`, `IconGlobe`, `IconSun`, `IconMoon`, `IconDeviceDesktop`, `IconContrast`, `IconDashboard`, `IconList`, `IconGitCompare`, `IconFlask`, `IconNetwork`, `IconPlug`, `IconSettings`, `IconChevronUp`, `IconChevronLeft`, `IconCheck`, `IconX`, `IconMinus`, `IconMoreHorizontal`, `IconUpload`, `IconAlertTriangle`, `IconAlertCircle`, `IconCheckCircle`, `IconXCircle`, `IconInfo`, `IconClock`, `IconHourglass`, `IconCpu`, `IconDatabase`, `IconZap`, `IconUser`, `IconBot`, `IconUsers`, `IconWrench`, `IconFileText`, `IconEye`, `IconEyeOff`, `IconLanguages`, `IconPanelLeft`, `IconArrowUp`, `IconArrowDown`, `IconTrendingUp`, `IconTrendingDown`, `IconPlay`, `IconPause`, `IconSparkles`, `IconLayers`, `IconMessageSquare`, `IconGitBranch`.
 
-```tsx
-export interface IconProps {
-  size?: 12 | 16 | 20 | 24;   // default 16
-  className?: string;
-  /** omitted = aria-hidden decorative icon; provided = role="img" and renders <title> */
-  label?: string;
-}
-```
-
-**Navigation / views (8)**
-
-| Name | Use |
-|------|-----|
-| `IconSessions` | sessions view |
-| `IconAgents` | Agent overview view |
-| `IconCompare` | compare view (git-compare shaped) |
-| `IconProxy` | proxy view (double-arrow shaped) |
-| `IconFrida` | Frida view (cpu shaped) |
-| `IconSidebar` | collapse/expand left rail |
-| `IconPanel` | collapse/expand right panel |
-| `IconCommand` | ⌘ command palette |
-
-**Phase (6)** — one-to-one with `--phase-*`, MUST appear together with the
-color
-
-`IconUnderstand`(telescope) · `IconPlan`(checklist) · `IconImplement`(code) ·
-`IconDebug`(bug) · `IconVerify`(beaker) · `IconReport`(report)
-
-**Status (6)**
-
-`IconSuccess`(check-circle) · `IconError`(x-circle) · `IconRunning`(dot-fill) ·
-`IconPending`(clock) · `IconCancelled`(skip) · `IconWarning`(alert)
-
-**Event kinds (6)** — mapping `TraceEvent.kind`
-
-`IconMessage` · `IconTool` · `IconFile` · `IconTerminal` · `IconThought` ·
-`IconSystem`
-
-**Metrics (4)** — Speed / Accuracy / Stability / Cost
-
-`IconSpeed`(zap) · `IconAccuracy`(shield-check) · `IconStability`(pulse) ·
-`IconCost`(coin)
-
-**Actions (12)**
-
-`IconSearch` · `IconFilter` · `IconRefresh` · `IconCopy` · `IconDownload` ·
-`IconExternalLink` · `IconTrash` · `IconClose` · `IconChevronRight` ·
-`IconChevronDown` · `IconKebab` · `IconPlus`
-
-**Other (6)**
-
-`IconGear`(settings) · `IconGlobe`(language) · `IconSun` · `IconMoon` ·
-`IconDeviceDesktop` · `IconContrast`(theme)
-
-> Total 8+6+6+6+4+12+6 = **48**. This table is the item-by-item canonical
-> list; `contracts/design-tokens.md` §9 T6 asserts the export name set is
-> exactly equal. The global header theme toggle SHALL use `IconContrast`
-> (single icon for all three states); `IconSun` / `IconMoon` /
-> `IconDeviceDesktop` remain part of the icon set and MUST keep independent
-> paths.
+IconProps retains optional size 12/16/20/24, className and label (label supplies title and role=img; omitted means aria-hidden).
 
 #### Scenario: icons do not carry isolated meaning
 - **GIVEN** a Gantt row renders a phase
@@ -182,14 +120,14 @@ MUST be a pure presentational piece with no business logic.
 | `SearchInput` | built-in `IconSearch` + clear button + `/` focus | |
 | `Tabs` | `variant: underline｜pill` | view switching uses `underline` (GitHub-style) |
 | `Table` | `density: compact｜default`, `sortable`, `sticky header` | header `--canvas-subtle` + sticky |
-| `Tooltip` | `placement`, 400ms delay | pure CSS + minimal JS positioning, no library |
+| `Tooltip` | `placement`, 300ms delay | pure CSS + minimal JS positioning, no library |
 | `Popover` / `DropdownMenu` | Esc close, outside click close, focus return | |
 | `Modal` | `size: sm｜md｜lg`, focus trap | reused for Transcript / Token / Settings |
 | `Drawer` | slides in from the right | proxy request detail |
 | `Skeleton` | `variant: text｜row｜block`, `count` | see REQ-006 |
 | `EmptyState` | `icon`, `title`, `description`, `action?` | see REQ-006 |
 | `ErrorState` | `code`, `message`, `onRetry` | see REQ-006 |
-| `Toast` | `tone`, auto-dismiss 4s, stackable | see REQ-007 |
+| `Toast` | `tone`, auto-dismiss 3s, stackable | see REQ-007 |
 | `Kbd` | renders key caps | `⌘K` / `j` / `Esc` |
 | `MetricCard` | `icon`, `label`, `value`, `unit`, `trend?` | Speed/Accuracy/Stability/Cost KPIs |
 | `BarMeter` | `value`, `max`, `tone` | inline table bar |
@@ -246,7 +184,7 @@ placeholder + wait for SSE, MUST NOT poll (existing REQ-009).
 - Long-running actions (first scan, Trae decryption) SHALL show an in-progress
   indicator in the status bar instead of blocking the UI.
 - Copy-type operations SHALL give in-place feedback (icon briefly becomes
-  `IconSuccess`), no Toast needed.
+  `IconSuccess`), also emits Toast.
 
 ---
 
@@ -336,11 +274,18 @@ constraints:
 
 | Item | Budget |
 |------|--------|
-| Total CSS (gzipped) | < 16KB |
-| Total icon set (uncompressed) | < 12KB |
+| 首屏主 CSS gzip（first-screen main CSS） | ≤ 40KB (40,960 bytes) |
+| Icon source (uncompressed) / expanded rendered SVG audit | <12KiB / <32KiB |
 | Theme switch to repaint complete | < 16ms (one frame) |
 | New runtime deps | **0** (`project.md` §2 hard constraint) |
 | CSS transitions inside virtual-scroll containers | **forbidden** |
+
+The historical total-CSS16KB limit predates the current evidence readers and
+feature-owned styles. This local-first application serves assets locally without
+network transfer cost; the enforceable budget is now the main CSS linked from
+the built index.html, gzip <=40KiB. Lazy feature styles are outside this first-screen
+measurement. Existing JS/HTML preload budgets in contracts/nfr.md are unchanged.
+The build-output budget test reports actual main CSS bytes after npm run build.
 
 #### Scenario: dense list scrolling without dropped frames
 - **GIVEN** a session list of 500 rows and an event tree of 9,590 rows
@@ -366,3 +311,37 @@ constraints:
 - **G-DS-5**: in the CJK font stack, `PingFang SC` must come before
   `Microsoft YaHei`, otherwise Chinese on macOS falls through to a missing
   font and the weights look fuzzy.
+
+## F2 foundation amendment
+
+REQ-F2-001: Implement docs/design/ui-design-system.md §1–4. Button primary/secondary(default alias)/ghost/danger/link sm28/md32/lg36; custom Select and searchable single/multiple comboboxes; segmented control, checkbox/radio/switch, cards/stat/strip, callout, overlays, steps, accordion, copy/key-value/meter, table and charts. All controls keyboard accessible with controlled/uncontrolled and disabled states where relevant. Shared portal positioning flips at viewport edges, focus trap reused. Tooltip delay300ms, Toast3s.
+
+REQ-F2-002: SVG chart family provides responsive ResizeObserver layout, axis/grid/legend, empty state, hover reference/values and reduced-motion. Charts use categorical/token/compare tokens. UI kit at #/ui-kit shows all components, icons, formatting and fixed explicitly labelled demonstration charts in both themes.
+
+The icon source retains a12KiB uncompressed budget via pure shared path factories. Expanded rendered SVG audit is32KiB, accounting for repeated accessible wrappers across compatibility aliases. No dependencies. All existing nfr application budgets remain in force.
+
+## F2 review acceptance
+
+REQ-F2-003: All anchored overlays use one opaque canvas-overlay surface, border,
+shadow-md, layer above sticky chrome; window capture scroll/resize and anchor/layer
+ResizeObserver reposition; fully offscreen/clipped anchors close. Fixed-size option
+icons16px/dots8px never flex. MultiCombobox chips contain real12px remove buttons,
+never nested buttons, and overflow after two chips reads +N.
+
+REQ-F2-004: Numeric chart axes use shared1/2/5×10^n ticks; explicit percent axes
+span0–100%, ratio input by default (percentScale documents0–100 input). Token
+format is one decimal with trailing .0 removed. StatCard sparklines are full content
+width and40px high; change/comparison share the line immediately below the value.
+
+REQ-F2-005: PageSkeleton replaces every Suspense fallback and page-level loading;
+reader-specific pending/cancel states retain their existing meaning. Sidebar status
+uses connection row plus compact session/event/database-size row, ghost refresh
+scan button, and uniformly32px tooltip-equipped theme/language/display/collapse
+controls. Collapsed sidebar keeps only icons/status dot.
+
+REQ-F2-006: Table/DataTable offers controlled page selection including mixed header,
+page-local select-all preserving off-page selections, row status stripes, mouse and
+ArrowUp/Down/Enter activation, isolated child controls, hover action menus, controlled
+expanded child rows, sticky title/utility columns, internal overflow, zero-based
+controlled pagination/page size, bulk toolbar, skeleton rows and empty state.
+UiKit demonstrates every behavior with labelled fixed data; no IO in Table.

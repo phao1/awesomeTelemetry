@@ -1,8 +1,8 @@
 import type { ButtonHTMLAttributes } from 'react';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'default' | 'danger' | 'ghost';
-  size?: 'sm' | 'md';
+  variant?: 'primary' | 'default' | 'secondary' | 'danger' | 'ghost' | 'link';
+  size?: 'sm' | 'md' | 'lg';
   icon?: React.JSX.Element;
   loading?: boolean;
 }
@@ -40,8 +40,8 @@ export interface IconButtonProps
   /** REQ-005：必填 —— 读屏器标签，同时作为 tooltip 文案。 */
   label: string;
   icon: React.JSX.Element;
-  size?: 'sm' | 'md';
-  variant?: 'default' | 'ghost';
+  size?: 'sm' | 'md' | 'lg';
+  variant?: ButtonProps['variant'];
 }
 
 /** REQ-005：IconButton。命中区 ≥ 24×24（--space-6），MUST 有 tooltip（title）。 */
@@ -56,7 +56,7 @@ export function IconButton({
   const classes = [
     'ui-icon-btn',
     `ui-btn-${variant}`,
-    size === 'sm' ? 'ui-btn-sm' : 'ui-btn-md',
+    `ui-btn-${size}`,
     className ?? '',
   ]
     .filter(Boolean)
@@ -67,3 +67,5 @@ export function IconButton({
     </button>
   );
 }
+
+export function ButtonGroup({children,label}:{children:React.ReactNode;label:string}):React.JSX.Element { return <div role="group" aria-label={label} className="ui-button-group">{children}</div>; }

@@ -38,58 +38,6 @@
   display: inline-flex;
 }
 
-.ui-tooltip {
-  position: absolute;
-  z-index: var(--z-popover);
-  background: var(--canvas-overlay);
-  color: var(--fg-default);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--text-xs);
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-out);
-}
-
-.ui-tooltip-visible {
-  opacity: 1;
-}
-
-.ui-tooltip-bottom {
-  top: calc(100% + var(--space-1));
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.ui-tooltip-top {
-  bottom: calc(100% + var(--space-1));
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.ui-popover {
-  position: absolute;
-  z-index: var(--z-popover);
-  background: var(--canvas-overlay);
-  color: var(--fg-default);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  min-width: var(--space-10);
-}
-
-.ui-menu {
-  list-style: none;
-  margin: 0;
-  padding: var(--space-1);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
 .ui-menu-item {
   appearance: none;
   border: none;

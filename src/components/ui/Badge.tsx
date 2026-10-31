@@ -22,6 +22,8 @@ export interface BadgeProps {
   variant?: 'subtle' | 'solid';
   children: React.ReactNode;
   className?: string;
+  dot?: boolean;
+  icon?: React.ReactNode;
 }
 
 /** REQ-005：Badge。色见契约 §2.4 语义组。 */
@@ -29,18 +31,18 @@ export function Badge({
   tone = 'neutral',
   variant = 'subtle',
   children,
-  className,
+  className, dot=false, icon,
 }: BadgeProps): React.JSX.Element {
   const classes = ['ui-badge', `ui-badge-${tone}`, `ui-badge-${variant}`, className ?? '']
     .filter(Boolean)
     .join(' ');
-  return <span className={classes}>{children}</span>;
+  return <span className={classes}>{dot&&<span className="ui-badge-dot"/>}{icon}{children}</span>;
 }
 
 const STATUS_TONE: Record<TraceStatus, BadgeTone> = {
   success: 'success',
   error: 'danger',
-  running: 'attention',
+  running: 'accent',
   cancelled: 'neutral',
   unknown: 'neutral',
 };
@@ -129,12 +131,12 @@ export function ProviderBadge({ provider, showLabel = false, locale }: ProviderB
       className="ui-provider-badge"
       style={{
         color: provider === 'opentelemetry' ? 'var(--fg-default)' : `var(--provider-${provider})`,
-        background: provider === 'opentelemetry' ? 'var(--canvas-subtle)' : `var(--provider-${provider}-subtle)`,
+        background: 'var(--canvas-subtle)',
       }}
       aria-label={showLabel ? label : undefined}
       role={showLabel ? 'img' : undefined}
     >
-      {PROVIDER_LETTER[provider]}
+      <span className="ui-color-dot" style={{background:provider==='opentelemetry'?'var(--fg-muted)':`var(--provider-${provider})`}}/><span className="ui-provider-letter">{PROVIDER_LETTER[provider]}</span>
     </span>
   );
   if (!showLabel) {

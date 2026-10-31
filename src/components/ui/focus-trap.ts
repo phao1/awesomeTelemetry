@@ -75,7 +75,7 @@ export function useFocusTrap(
       const index = activeTraps.lastIndexOf(container);
       if (index >= 0) activeTraps.splice(index, 1);
       if (previouslyFocused instanceof HTMLElement && previouslyFocused.isConnected) {
-        previouslyFocused.focus();
+        previouslyFocused.focus({preventScroll:true});
       }
     };
   }, [containerRef, open, restoreFocusRef, initialFocusRef]);

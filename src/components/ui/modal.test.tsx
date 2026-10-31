@@ -17,7 +17,7 @@ function render(node: React.JSX.Element): HTMLDivElement {
   const root = createRoot(container);
   roots.push(root);
   act(() => root.render(node));
-  return container;
+  return document.body as unknown as HTMLDivElement;
 }
 
 function SearchDialog(): React.JSX.Element {

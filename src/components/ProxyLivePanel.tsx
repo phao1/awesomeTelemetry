@@ -1,3 +1,4 @@
+import { PageSkeleton } from './ui/PageSkeleton.js';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 const CodexCallsPanel = lazy(() => import('./CodexCallsPanel.js').then(module => ({ default: module.CodexCallsPanel })));
 
@@ -184,7 +185,7 @@ export function ProxyLivePanel({ streams, locale, onOpenSession, invalidateKey =
         <button type="button" className="btn" onClick={() => setSelectedId(null)}>{copy.close}</button>
         <PreviewConnection key={selectedId} requestId={selectedId} ended={selected?.ended ?? false} available={selected !== undefined} locale={locale} onSourceChange={sourceChanged} />
         {selectedId.startsWith('ws-') && <button className="btn" type="button" onClick={() => setInspect(value => !value)}>{locale === 'zh' ? 'Codex 调用链路' : 'Codex call chain'}</button>}
-        {inspect && selectedId.startsWith('ws-') && <Suspense fallback={<p role="status">Loading…</p>}>
+        {inspect && selectedId.startsWith('ws-') && <Suspense fallback={<PageSkeleton compact />}>
           <CodexCallsPanel key={selectedId} source={{ requestId: selectedId }} locale={locale} onOpenSession={onOpenSession} invalidateKey={invalidateKey} changeKey={sourceRevision} />
         </Suspense>}
       </>}

@@ -1,3 +1,5 @@
+import { EmptyState } from '../ui/States.js';
+import { IconDashboard } from '../icons/index.js';
 import type { KeyboardEvent } from 'react';
 
 import type { ChartSlice, ChartTone } from './types.js';
@@ -35,7 +37,7 @@ export function DonutRing({
   thickness,
   total,
   circumference,
-  tone = 'accent',
+  tone: _tone = 'accent',
   onSliceClick,
   interactiveLabels,
   segmentClassName,
@@ -44,7 +46,7 @@ export function DonutRing({
   const sum = (total ?? slices.reduce((acc, s) => acc + s.value, 0)) || 1;
   const circ = circumference ?? 2 * Math.PI * r;
   let offset = 0;
-  const segments = slices.map((slice) => {
+  const segments = slices.map((slice, index) => {
     const length = (slice.value / sum) * circ;
     const interactive = onSliceClick !== undefined && length > 0
       && (interactiveLabels === undefined || interactiveLabels.includes(slice.label));
@@ -66,9 +68,9 @@ export function DonutRing({
         cy={cy}
         r={r}
         fill="none"
-        stroke={`var(--${slice.tone ?? tone}-emphasis)`}
+        stroke={slice.tone ? `var(--${slice.tone}-emphasis)` : `var(--chart-${index % 8 + 1})`}
         strokeWidth={thickness}
-        strokeDasharray={`${length} ${circ - length}`}
+        strokeDasharray={`${Math.max(0,length - 2)} ${circ - Math.max(0,length - 2)}`}
         strokeDashoffset={-offset}
         className={interactive ? segmentClassName : undefined}
         role={interactive ? 'button' : undefined}
@@ -109,9 +111,10 @@ export function DonutChart({
   tone = 'accent',
   centerLabel,
 }: DonutChartProps): React.JSX.Element {
-  const total = slices.reduce((sum, s) => sum + s.value, 0) || 1;
+  const total = slices.reduce((sum, s) => sum + Math.max(0,s.value), 0);
+  if (!total) return <EmptyState icon={<IconDashboard/>} title="暂无数据 / No data"/>;
   return (
-    <svg width={size} height={size} viewBox="0 0 120 120" role="img" aria-label="donut chart">
+    <div className="chart-donut"><svg width={size} height={size} viewBox="0 0 120 120" role="img" aria-label="donut chart">
       <circle cx={60} cy={60} r={50} fill="none" stroke="var(--canvas-subtle)" strokeWidth={thickness} />
       <DonutRing
         slices={slices}
@@ -123,12 +126,12 @@ export function DonutChart({
         circumference={CIRCUMFERENCE}
         tone={tone}
       />
-      <text x={60} y={58} textAnchor="middle" fill="var(--fg-default)" fontSize={16} fontWeight={600}>
+      <text x={60} y={58} textAnchor="middle" fill="var(--fg-default)" fontSize={20} fontWeight={600}>
         {centerLabel ?? total.toLocaleString()}
       </text>
       <text x={60} y={74} textAnchor="middle" fill="var(--fg-muted)" fontSize={10}>
         total
       </text>
-    </svg>
+    </svg><div className="chart-donut-legend">{slices.map((s,i)=><div key={s.label}><i style={{background:s.tone?`var(--${s.tone}-emphasis)`:`var(--chart-${i%8+1})`}}/>{s.label}<strong className="num">{(s.value/total*100).toFixed(1)}%</strong></div>)}</div></div>
   );
 }
