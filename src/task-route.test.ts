@@ -75,3 +75,13 @@ it('Phase C storage failures are diagnosed without preventing URL-defined compar
   expect(diagnostic).toHaveBeenCalledExactlyOnceWith('[task-comparison] Failed to save recent comparisons:',writeError);
  }finally{read.mockRestore();write.mockRestore();diagnostic.mockRestore();}
 });
+
+it('round-trips request selection and comparison references while keeping old links whole-task',async()=>{
+  const {serializeComparisonRoute}=await import('./task-route.js');
+  const route={...DEFAULT_TASK_ROUTE,task:'collected:root',request:'request:root:event:prompt/1'};
+  expect(parseTaskRoute(serializeTaskRoute(route))).toEqual(route);
+  expect(parseTaskRoute('#/task?task=collected:root').request).toBeUndefined();
+  const compare={...DEFAULT_TASK_ROUTE,compareA:['collected:root'],compareB:['collected:root'],requestA:'request:root:event:one',requestB:'request:root:event:two'};
+  expect(parseTaskRoute(serializeComparisonRoute(compare))).toEqual(compare);
+  expect(parseTaskRoute('#/compare?a=collected:a&b=collected:b').requestA).toBeUndefined();
+});

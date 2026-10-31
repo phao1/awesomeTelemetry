@@ -77,3 +77,23 @@ it('projects the latest saved standard conclusion without returning report bodie
  await rm(join(dir,'task-health-summaries'),{recursive:true,force:true});
  const reopened=createHealthReportStore(dir);await reopened.warmSummaries();expect(await reopened.summary(ordinary.taskId)).toEqual(summary);expect(await reopened.get(ordinary.id)).toEqual(ordinary);
 });
+it('keeps request reuse keys isolated and never promotes request health to whole-task summary',async()=>{
+  const store=createHealthReportStore(dir),base=await report();
+  const first={...base,scope:{...base.scope,request:'request:root:event:a'}};
+  await store.save(first);
+  expect(await store.reusable(first.taskId,first.revision,first.scope,first.thresholds)).toEqual(first);
+  expect(await store.reusable(first.taskId,first.revision,{...first.scope,request:'request:root:event:b'},first.thresholds)).toBeNull();
+  expect(await store.reusable(base.taskId,base.revision,base.scope,base.thresholds)).toBeNull();
+  expect(await store.summary(base.taskId)).toBeNull();
+  const whole={...base,id:randomUUID()};await store.save(whole);expect((await store.summary(base.taskId))!.id).toBe(whole.id);
+  const second={...base,id:randomUUID(),generatedAt:'2026-10-31T00:00:00.000Z',scope:{...base.scope,request:'request:root:event:b'}};
+  await store.save(second);expect((await store.summary(base.taskId))!.id).toBe(whole.id);expect((await store.list(base.taskId,base.revision)).items).toHaveLength(3);
+});
+it('regenerates calc3 reports after the genuine-input correction while preserving old saved reports',async()=>{
+  const store=createHealthReportStore(dir),current=await report(),old={...current,id:randomUUID(),calcVersion:3};
+  expect(current.calcVersion).toBe(4);await store.save(old);
+  expect(await store.reusable(old.taskId,old.revision,old.scope,old.thresholds)).toBeNull();
+  expect((await store.get(old.id) as HealthReport).calcVersion).toBe(3);
+  await store.save(current);expect(await store.reusable(current.taskId,current.revision,current.scope,current.thresholds)).toEqual(current);
+  expect((await store.list(current.taskId,current.revision)).items).toHaveLength(2);
+});

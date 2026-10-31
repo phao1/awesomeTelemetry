@@ -1,3 +1,4 @@
+import { resolveTaskRequest } from './task-requests.js';
 import type { Database } from 'better-sqlite3';
 import type { TaskContext, TaskNativeRef, TaskRecord, TaskStructure, TaskTimeline } from '../../src/core/task-types.js';
 import { cachedStmt } from './stmt-cache.js';
@@ -87,7 +88,11 @@ export function taskStructure(db: Database, items: TaskRecord[]): TaskStructure 
 /** Full fixed-window start density. No source parsing, raw data or event bodies. */
 export function taskTimeline(db: Database, context: TaskContext, member: string, window: string, ceilings: [string, number][]): TaskTimeline {
   const bins = 160;
-  const from = context.importSession ? `FROM trace_log_turns e WHERE e.import_id=?` : `FROM json_each(?) c CROSS JOIN events e ON e.session_id=json_extract(c.value,'$[0]') AND e.sequence<=json_extract(c.value,'$[1]') WHERE 1=1`;
+  const cut=JSON.parse(Buffer.from(window,'base64url').toString()) as {request?:string};
+  const request=cut.request?resolveTaskRequest(db,context,cut.request):null;
+  const requestSql=request?` AND e.started_at>=? ${request.next?'AND (e.started_at<? OR (e.session_id=? AND e.started_at=?))':''} AND (e.session_id<>? OR e.sequence>=?) ${request.next?'AND (e.session_id<>? OR e.sequence<?)':''}`:'';
+  const requestParams=request?[request.from,...(request.next?[request.next.started_at,context.task.rootSessionKey,request.next.started_at]:[]),context.task.rootSessionKey,request.prompt.sequence,...(request.next?[context.task.rootSessionKey,request.next.sequence]:[])]:[];
+  const from = context.importSession ? `FROM trace_log_turns e WHERE e.import_id=?` : `FROM json_each(?) c CROSS JOIN events e ON e.session_id=json_extract(c.value,'$[0]') AND e.sequence<=json_extract(c.value,'$[1]') WHERE 1=1${requestSql}`;
   const source = context.importSession ? context.importSession.id : JSON.stringify(ceilings);
   const time = context.importSession ? "json_extract(e.metadata_json,'$.requestTime')" : 'e.started_at';
   const kind = context.importSession ? "'llm'" : "CASE WHEN (e.kind='llm' AND e.title='token_count' AND e.output_len=0) OR (e.kind='reasoning' AND e.title='' AND e.output_len=0) THEN 'system' ELSE e.kind END";
@@ -95,7 +100,7 @@ export function taskTimeline(db: Database, context: TaskContext, member: string,
   const owner = context.importSession ? "'main'" : 'e.session_id';
   const endTime = context.importSession ? `MAX(julianday(${time}),COALESCE(julianday(json_extract(e.metadata_json,'$.responseTime')),julianday(${time})))` : `julianday(${time})+(${TASK_LOG_DURATION_SQL})/86400000.0`;
   const range = cachedStmt(db, `SELECT MIN(julianday(${time})) AS start,MAX(${endTime}) AS end,COUNT(1) AS n,COUNT(julianday(${time})) AS timed ${from}`)
-    .get(source) as { start: number | null; end: number | null; n: number; timed: number };
+    .get(source,...requestParams) as { start: number | null; end: number | null; n: number; timed: number };
   const result: TaskTimeline = { taskId: context.task.id, member, window, from: null, to: null, bins, total: range.n, untimed: range.n - range.timed, lanes: [], coverage: { loadedMembers: context.task.loadedMemberCount, totalMembers: context.task.memberCount } };
   if (range.start === null || range.end === null) return result;
   const start = Math.round((range.start - 2440587.5) * 86400000), end = Math.round((range.end - 2440587.5) * 86400000);
@@ -108,7 +113,7 @@ export function taskTimeline(db: Database, context: TaskContext, member: string,
     SUM(CASE WHEN ${kind} NOT IN ('user_prompt','llm','reasoning','message','tool','bash','file_read','file_write','test') THEN 1 ELSE 0 END) AS other,
     SUM(CASE WHEN ${status}='error' THEN 1 ELSE 0 END) AS errors,COUNT(1) AS n
     ${from} AND julianday(${time}) IS NOT NULL GROUP BY owner,bin`)
-    .all(range.start, width, source) as { owner: string; bin: number; input: number; model: number; tool: number; other: number; errors: number; n: number }[];
+    .all(range.start, width, source,...requestParams) as { owner: string; bin: number; input: number; model: number; tool: number; other: number; errors: number; n: number }[];
   const byKey = new Map(context.members.map(value => [value.sessionKey ?? 'main', value]));
   const lanes = new Map<string, TaskTimeline['lanes'][number]>();
   for (const row of rows) {

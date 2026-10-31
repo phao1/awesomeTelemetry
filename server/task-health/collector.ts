@@ -1,3 +1,4 @@
+import { resolveTaskRequest, requestBoundaries } from '../storage/task-requests.js';
 import { attachTelemetry } from '../storage/telemetry.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -255,16 +256,22 @@ async function pairRecords(db: Database, input: HealthInput, signal?: AbortSigna
 export async function collectTaskHealth(db: Database, taskId: string, scope: HealthScope = { member: 'all', from: null, to: null }, signal?: AbortSignal): Promise<HealthInput> {
   signal?.throwIfAborted();
   if (!scope.member || scope.member.length > 512) throw new HealthError('BAD_REQUEST', 400);
-  const range = validateTaskRange({ ...(scope.from === null ? {} : { from: scope.from }), ...(scope.to === null ? {} : { to: scope.to }) });
+  const range = scope.request ? {from:'',to:''} : validateTaskRange({ ...(scope.from === null ? {} : { from: scope.from }), ...(scope.to === null ? {} : { to: scope.to }) });
   const before = JSON.stringify(counter(db)), revision = await healthRevision(db, taskId), context = getTask(db, taskId);
+  let request: ReturnType<typeof resolveTaskRequest> | null = null;
+  if(scope.request){
+    if(scope.member!=='all')throw new HealthError('BAD_REQUEST',400);
+    try{request=resolveTaskRequest(db,context,scope.request);}catch{throw new HealthError('BAD_REQUEST',400);}
+    range.from=request.from;range.to=request.next?request.next.started_at:'';
+  }
   const selected = recordMembers(context, scope.member), keys = selected.flatMap(m => m.sessionKey ? [m.sessionKey] : []);
   const rows = cachedStmt(db, 'SELECT id,provider,duration_source,cwd,source_path,detail_loaded FROM sessions WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id').all(JSON.stringify(selected.flatMap(m => m.sessionKey ? [m.sessionKey] : []))) as SessionRow[];
   const byKey = new Map(rows.map(r => [r.id, r]));
   const ceilings = cachedStmt(db, 'SELECT session_id,MAX(sequence) AS n FROM events WHERE session_id IN (SELECT value FROM json_each(?)) GROUP BY session_id').all(JSON.stringify(keys)) as { session_id: string; n: number }[];
   const importMax = context.importSession ? (cachedStmt(db, 'SELECT MAX(sequence) AS n FROM trace_log_turns WHERE import_id=?').get(context.importSession.id) as { n: number | null }).n : null;
   const snapshotAt = new Date().toISOString();
-  const input: HealthInput = { version: 1, taskId: context.task.id, t0: snapshotAt, scope: { member: scope.member, from: range.from || null, to: range.to || null }, revision, snapshotAt,
-    running: context.task.recordedStatus === 'running', recordedStatus: ['success', 'error', 'running', 'cancelled', 'unknown'].includes(context.task.recordedStatus) ? context.task.recordedStatus as HealthInput['recordedStatus'] : 'unknown',
+  const input: HealthInput = { version: 1, taskId: context.task.id, t0: snapshotAt, scope: { ...(scope.request?{request:scope.request}:{}), member: scope.member, from: range.from || null, to: range.to || null }, revision, snapshotAt,
+    running: !request?.next && context.task.recordedStatus === 'running', recordedStatus: request?.next ? 'unknown' : ['success', 'error', 'running', 'cancelled', 'unknown'].includes(context.task.recordedStatus) ? context.task.recordedStatus as HealthInput['recordedStatus'] : 'unknown',
     window: Buffer.from(JSON.stringify({ task: context.task.id, member: scope.member, ceilings: ceilings.map(r => [r.session_id, r.n]), importMax })).toString('base64url'),
     members: selected.map(m => { const row = m.sessionKey ? byKey.get(m.sessionKey) : null; const provider = row?.provider ?? null, durationSource = row?.duration_source ?? 'unknown'; return { id: m.id, parentId: m.parentId, role: m.role, sessionKey: m.sessionKey, provider, detailLoaded: m.detailLoaded, durationSource,
       tokenSemantics: provider === 'codex' ? { cacheRead: 'incremental', reasoning: 'incremental', reasoningInTotal: false } : provider === 'claude' || provider === 'codeagent' ? { cacheRead: 'incremental', reasoning: 'incremental' } : null,
@@ -294,7 +301,7 @@ export async function collectTaskHealth(db: Database, taskId: string, scope: Hea
       let last = -1;
       while (input.records.length < 20000) {
         signal?.throwIfAborted();
-        const page = cachedStmt(db, `SELECT ${HEALTH_EVENT_SLIM_COLS} FROM events WHERE session_id=? AND sequence>? AND sequence<=? ORDER BY sequence LIMIT ?`).all(member.sessionKey, last, ceiling, Math.min(200, 20000 - input.records.length)) as Record<string, unknown>[];
+        const page = cachedStmt(db, `SELECT ${HEALTH_EVENT_SLIM_COLS} FROM events WHERE session_id=? AND sequence>? AND sequence<=? ${request?`AND started_at>=? ${request.next?(member.sessionKey===context.task.rootSessionKey?'AND started_at<=?':'AND started_at<?'):''} ${member.sessionKey===context.task.rootSessionKey?'AND sequence>=? '+(request.next?'AND sequence<?':''):''}`:''} ORDER BY sequence LIMIT ?`).all(member.sessionKey, last, ceiling, ...(request?[request.from,...(request.next?[request.next.started_at]:[]),...(member.sessionKey===context.task.rootSessionKey?[request.prompt.sequence,...(request.next?[request.next.sequence]:[])]:[])]:[]), Math.min(200, 20000 - input.records.length)) as Record<string, unknown>[];
         const lengths = new Map<string, [number | null, number | null]>();
         const items = page.map(row => { const event = mapEvent(row, false) as TraceEventSlim, id = member.sessionKey + ':event:' + event.id; lengths.set(id, [row.input_len as number, row.output_len as number]); return { id, memberId: member.id, memberName: member.name, sessionKey: member.sessionKey, event, importedTurn: null }; });
         await addPage(items, lengths); if (page.length < 200) break; last = page.at(-1)!.sequence as number;
@@ -305,8 +312,8 @@ export async function collectTaskHealth(db: Database, taskId: string, scope: Hea
   const allKeys = context.members.flatMap(m => m.sessionKey ? [m.sessionKey] : []);
   const origin = context.importSession
     ? (cachedStmt(db, "SELECT MIN(json_extract(metadata_json,'$.requestTime')) AS at FROM trace_log_turns WHERE import_id=?").get(context.importSession.id) as { at: string | null }).at
-    : (cachedStmt(db, "SELECT MIN(started_at) AS at FROM events WHERE session_id IN (SELECT value FROM json_each(?)) AND kind='user_prompt'").get(JSON.stringify(allKeys)) as { at: string | null }).at;
-  if (origin && date(origin)) input.t0 = date(origin)!; else input.reasons.push('missing_origin');
+    : requestBoundaries(db,context)[0]?.started_at ?? null;
+  if(request) input.t0=request.from; else if (origin && date(origin)) input.t0 = date(origin)!; else input.reasons.push('missing_origin');
   await pairRecords(db, input, signal);
   const nativeMembers = cachedStmt(db, `SELECT s.session_key,i.value FROM trace_identity_sources s JOIN trace_identities i ON i.source_id=s.id WHERE s.complete=1 AND s.session_key IN (SELECT value FROM json_each(?)) AND i.kind='session' AND i.scope IS NULL AND i.namespace='agent:codex' AND NOT EXISTS(SELECT 1 FROM trace_identities other INDEXED BY idx_trace_identities_native JOIN trace_identity_sources owner ON owner.id=other.source_id WHERE other.kind='session' AND other.scope IS NULL AND other.namespace=i.namespace AND other.value=i.value AND owner.session_key<>s.session_key)`).all(JSON.stringify(allKeys)) as { session_key: string; value: string }[];
   const owners = new Map<string, Set<string>>();

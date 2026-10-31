@@ -54,7 +54,8 @@ export function taskComparisonRows(snapshot: TaskComparisonSnapshot, runs: { a: 
   const t = (zh: string, en: string) => comparisonText(locale, zh, en);
   const fold = runs ? foldingComparison(runs.a, runs.b) : null;
   const row = (key: string, label: string, unit: string, value: (task: TaskSummary) => number | null, reason: string | null = null) => comparisonRow(key, label, unit, snapshot.a.map(value), snapshot.b.map(value), reason);
-  const tokenReason = fold?.rows.find(r => r.key === 'tokens')?.reason ?? (fold ? null : 'Token 口径不同或未知');
+  const requestTokens=[...snapshot.a,...snapshot.b].every(task=>{const c=task.metrics?.coverage?.correctedTotal;return Boolean(task.requestId&&task.metrics?.correctedTotal!=null&&c&&c.total>0&&c.known===c.total);})&&new Set([...snapshot.a,...snapshot.b].map(t=>t.provider)).size===1;
+  const tokenReason = requestTokens ? null : fold?.rows.find(r => r.key === 'tokens')?.reason ?? (fold ? null : 'Token 口径不同或未知');
   const rows = [
     row('duration', t('时长', 'Duration'), 'ms', task => task.metrics?.durationMs ?? null),
     row('tokens', 'Token', '', task => { const m = task.metrics, c = m?.coverage?.correctedTotal; return c && c.known === c.total ? m?.correctedTotal ?? null : null; }, tokenReason),
@@ -77,7 +78,8 @@ export function taskComparisonRows(snapshot: TaskComparisonSnapshot, runs: { a: 
   return rows;
 }
 export function compatibleHealth(reports: HealthReport[]): boolean {
-  return reports.length > 0 && reports.every(r => !r.running && r.scope.member === 'all' && r.scope.from === null && r.scope.to === null && r.coverage.members.loaded === r.coverage.members.total && !r.coverage.limits.length && !r.coverage.reasons.length)
+  return reports.length > 0 && reports.every(r => !r.running && r.scope.member === 'all' && (Boolean(r.scope.request)||r.scope.from === null && r.scope.to === null) && r.coverage.members.loaded === r.coverage.members.total && !r.coverage.limits.length && !r.coverage.reasons.length)
+    && new Set(reports.map(r=>Boolean(r.scope.request))).size===1
     && new Set(reports.map(r => JSON.stringify([r.calcVersion, r.ruleVersion, Object.entries(r.thresholds).sort()]))).size === 1;
 }
 export interface HealthOccurrence { report: HealthReport; finding: HealthFinding }

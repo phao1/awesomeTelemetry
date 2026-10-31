@@ -68,3 +68,8 @@ to hiding system/injected/bookkeeping records using the task reader's shared
 presentation predicate, aligned with TH-004a; an explicit bilingual switch
 restores them without IO. Filtering is presentation-only: no denominator, health,
 tool, usage, raw evidence or stored-event changes. Tool column header is Tool.
+
+
+Phase E: TR-005 amends TC-001/002/004/005 with ar/br request references,
+request-aware process pages and compatible all-request report comparisons.
+Whole-task architecture/usage conventions never certify selected requests.

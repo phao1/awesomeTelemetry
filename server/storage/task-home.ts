@@ -74,11 +74,11 @@ export async function taskKpis(db:Database,thresholds:AlertThresholds):Promise<T
 }
 
 /** TC-002: resolve session aliases in one binding query, then reuse Phase B projection. */
-export async function taskComparisonSnapshot(db:Database,a:string[],b:string[],thresholds:AlertThresholds){
+export async function taskComparisonSnapshot(db:Database,a:string[],b:string[],thresholds:AlertThresholds,distinctRequests=false){
   const aliases=cachedStmt(db,`${TASK_BINDINGS_SQL} SELECT session_id,root_id FROM bindings WHERE session_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify([...a,...b].filter(id=>id.startsWith('collected:')).map(id=>id.slice(10)))) as Array<{session_id:string;root_id:string}>;
   const roots=new Map(aliases.map(row=>['collected:'+row.session_id,'collected:'+row.root_id]));
   const aa=a.map(id=>roots.get(id)??id),bb=b.map(id=>roots.get(id)??id);
-  if(new Set([...aa,...bb]).size!==aa.length+bb.length)throw new TaskReadError('BAD_REQUEST','Select distinct root tasks');
+  if(new Set([...aa,...bb]).size!==aa.length+bb.length&&!(distinctRequests&&aa.length===1&&bb.length===1))throw new TaskReadError('BAD_REQUEST','Select distinct root tasks');
   const tasks=new Map((await snapshot(db,thresholds.contextPressurePct!==null)).map(task=>[task.id,task]));
   const group=(ids:string[])=>ids.map(id=>{const task=tasks.get(id);if(!task)throw new TaskReadError('SESSION_NOT_FOUND','Task not found');return {...task,alerts:taskAlerts(task.metrics!,thresholds)};});
   return {a:group(aa),b:group(bb)};

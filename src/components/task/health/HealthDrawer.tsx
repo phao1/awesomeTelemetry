@@ -1,28 +1,34 @@
+import { RequestListNotice } from '../TaskRequests.js';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Locale } from '../../../i18n.js';
 import type { TaskContext } from '../../../core/task-types.js';
 import type { DeepHealthReport, HealthEvidence, HealthReport, HealthScope } from '../../../core/task-health/types.js';
 import { ApiError } from '../../../api/client.js';
 import { formatHealthDate, healthLabel } from '../../../core/task-health/format.js';
-import { taskApi } from '../task-data.js';
+import { taskApi, useTaskRead } from '../task-data.js';
 import { healthApi } from './health-client.js';
 import type { HealthDeepPreview, HealthModelStatus, HealthReportIndexItem } from './health-client.js';
 import { healthCopy, healthErrorCopy } from './health-copy.js';
 import { DeepHealthReportView } from './DeepHealthReportView.js';
 import { HealthReportView } from './HealthReportView.js';
 
-export function HealthDrawer({ context, locale, reportId, from, to, onReport, onClose, onLocate, sourceVersion = 0, evidenceUnavailable = false }: {
-  context: TaskContext; locale: Locale; reportId: string; from?: string; to?: string;
-  onReport: (id: string) => void; onClose: () => void; onLocate: (evidence: HealthEvidence, recordId: string) => void;
+export function HealthDrawer({ context, locale, reportId, request, from, to, onReport, onClose, onLocate, sourceVersion = 0, evidenceUnavailable = false }: {
+  context: TaskContext; locale: Locale; reportId: string; request?: string; from?: string; to?: string;
+  onReport: (id: string) => void; onClose: () => void; onLocate: (evidence: HealthEvidence, recordId: string,request?:string) => void;
   sourceVersion?: number; evidenceUnavailable?: boolean;
 }) {
   const c = healthCopy(locale), taskId = context.task.id;
   const [deepReport, setDeepReport] = useState<DeepHealthReport | null>(null), [preview, setPreview] = useState<HealthDeepPreview | null>(null), [model, setModel] = useState<HealthModelStatus | null>(null), [tab, setTab] = useState<'standard' | 'deep'>('standard');
-  const [selection, setSelection] = useState('all'), [prepared, setPrepared] = useState<TaskContext | null>(null);
+  const [selection, setSelection] = useState(request||context.task.eventCount>20000?'request':'all'), [prepared, setPrepared] = useState<TaskContext | null>(null);
   const [report, setReport] = useState<HealthReport | null>(null), [history, setHistory] = useState<HealthReportIndexItem[]>([]);
   const [busy, setBusy] = useState(false), [historyBusy, setHistoryBusy] = useState(false), [error, setError] = useState(''), [historyError, setHistoryError] = useState(false), [message, setMessage] = useState<'cancelled' | 'preparing' | 'updated' | ''>('');
-  const scope: HealthScope = { member: selection === 'main' ? 'main' : 'all', from: selection === 'window' ? from ?? null : null, to: selection === 'window' ? to ?? null : null };
-  const identity = JSON.stringify([taskId, selection, scope.from, scope.to, context.task.updatedAt, sourceVersion]);
+  const requests=useTaskRead(selection==='request'?JSON.stringify([taskId,context.task.updatedAt,context.task.eventCount,context.task.loadedMemberCount,prepared?.task.eventCount,prepared?.task.loadedMemberCount]):null,signal=>taskApi.requests(taskId,signal),10000);
+  const [chosenRequest,setChosenRequest]=useState(request??'');
+  const requestItems=requests.value?.items??[];
+  const requestId=chosenRequest?requestItems.find(r=>r.id===chosenRequest)?.id:requestItems.at(-1)?.id;
+  const selectedRequest=chosenRequest||requestItems.at(-1)?.id;
+  const scope: HealthScope = { ...(selection==='request'&&selectedRequest?{request:selectedRequest}:{}), member: selection === 'main' ? 'main' : 'all', from: selection === 'window' ? from ?? null : null, to: selection === 'window' ? to ?? null : null };
+  const identity = JSON.stringify([taskId, selection, scope.request, scope.from, scope.to, context.task.updatedAt, sourceVersion]);
   const sourceIdentity = JSON.stringify([taskId, context.task.updatedAt, sourceVersion]);
   const previousSource = useRef(sourceIdentity);
   const currentIdentity = useRef(identity); currentIdentity.current = identity;
@@ -60,12 +66,13 @@ export function HealthDrawer({ context, locale, reportId, from, to, onReport, on
       if (!signal.aborted && currentIdentity.current === identity) setReport(value);
     });
   }, [taskId, reportId]);
-  const generate = () => void run(async signal => {
+  const generate = () => { if(selection==='request'&&!requestId)return; void run(async signal => {
     const value = await healthApi.generate(taskId, scope, signal);
     if (signal.aborted || currentIdentity.current !== identity) return;
     activeReport.current = value; setReport(value); setDeepReport(null); setPreview(null); setTab('standard'); callbacks.current.onReport(value.id);
     setHistory(old => [{ id: value.id, generatedAt: value.generatedAt, mode: 'standard' as const, revision: value.revision, expired: false, reportId: null }, ...old.filter(item => item.id !== value.id)].slice(0, 50));
   });
+  };
   const showPreview = () => { if (!report) return; void run(async signal => {
     const status = await healthApi.modelStatus(signal);
     if (signal.aborted) return; setModel(status);
@@ -97,16 +104,20 @@ export function HealthDrawer({ context, locale, reportId, from, to, onReport, on
   useEffect(() => { const previous = document.activeElement; focusStart.current?.focus(); return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); }; }, []);
   return <aside id="task-health-drawer" className="health-drawer" aria-label={c.title} ref={drawer} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } }}>
     <header><h2>{c.title} · {context.task.title}</h2><button type="button" className="btn" ref={focusStart} onClick={onClose}>{c.close}</button></header>
-    <div className="health-toolbar"><label>{c.scope}<select value={selection} onChange={event => { setSelection(event.target.value); onReport('new'); }}><option value="all">{c.all}</option><option value="main">{c.main}</option><option value="window" disabled={!from || !to}>{c.window}</option></select></label><button type="button" className="btn" disabled={busy} onClick={prepare}>{c.prepare}</button></div>
+    {context.task.eventCount>20000&&<p>{locale==='zh'?'任务超过 20,000 事件，建议按请求分析；整任务报告仍受原有限制。':'Task exceeds 20,000 events. Analyze a request; whole-task limits still apply.'}</p>}
+    {selection==='request'&&<div><RequestListNotice loading={requests.loading} error={requests.error} empty={Boolean(requests.value&&!requestItems.length)} locale={locale} retry={requests.retry}/>
+      {requestItems.length>0&&<label>{locale==='zh'?'请求':'Request'}<select aria-label={locale==='zh'?'健康请求':'Health request'} value={requestId??''} onChange={e=>{setChosenRequest(e.target.value);onReport('new');}}><option value="" disabled>{locale==='zh'?'选择请求':'Choose request'}</option>{requestItems.map(r=><option key={r.id} value={r.id}>{r.ordinal}. {r.title}</option>)}</select></label>}
+    </div>}
+    <div className="health-toolbar"><label>{c.scope}<select value={selection} onChange={event => { setSelection(event.target.value); onReport('new'); }}><option value="request">{locale==='zh'?'按请求分析':'Analyze a request'}</option><option value="all">{c.all}</option><option value="main">{c.main}</option><option value="window" disabled={!from || !to}>{c.window}</option></select></label><button type="button" className="btn" disabled={busy} onClick={prepare}>{c.prepare}</button></div>
     <p>{data.task.loadedMemberCount}/{data.task.memberCount} {c.coverage} · {report ? Object.entries(report.coverage.timing).filter(([, n]) => n > 0).map(([key, n]) => `${healthLabel(key, locale)} ${n}`).join(' / ') : c.unknownTiming}</p>
     {data.task.loadedMemberCount < data.task.memberCount && <p role="status">{c.insufficient}</p>}
-    <div className="health-toolbar"><button type="button" className="btn" disabled={busy || selection === 'window' && (!from || !to)} onClick={generate}>{c.generate}</button><button type="button" className="btn" disabled={busy || !report} onClick={showPreview}>{c.deep}</button>{busy && <button type="button" className="btn" onClick={cancel}>{c.cancel}</button>}</div>
+    <div className="health-toolbar"><button type="button" className="btn" disabled={busy || selection==='request'&&!requestId || selection === 'window' && (!from || !to)} onClick={generate}>{c.generate}</button><button type="button" className="btn" disabled={busy || !report} onClick={showPreview}>{c.deep}</button>{busy && <button type="button" className="btn" onClick={cancel}>{c.cancel}</button>}</div>
     {busy && <p role="status">{c.loading}</p>}{error && <p role="alert">{error}</p>}{message && <p role="status">{c[message]}</p>}{evidenceUnavailable && <p role="alert">{c.inaccessible}</p>}
     <section><div className="health-toolbar"><h3>{c.history}</h3><button type="button" className="btn" disabled={historyBusy} onClick={() => void loadHistory()}>{c.refresh}</button></div>{historyBusy && <p role="status">{c.loading}</p>}{historyError && <p role="alert">{c.error}</p>}{!historyBusy && !history.length && <p>{c.empty}</p>}<ul>{history.filter(item => item.mode === 'standard').map(item => <li key={item.id}><button type="button" className="btn" aria-current={reportId === item.id ? 'true' : undefined} onClick={() => { if (item.id === reportId) { if (!report && !busy) void run(async signal => { const value = await healthApi.read(item.id, taskId, signal); if (!signal.aborted && currentIdentity.current === identity) setReport(value); }); return; } sequence.current++; owner.current?.abort(); setReport(null); setPreview(null); setDeepReport(null); setTab('standard'); onReport(item.id); }}>{formatHealthDate(item.generatedAt, locale)} · {c.standardTab}{item.expired ? ` · ${c.updated}` : ''}</button></li>)}</ul></section>
-    {preview && <section aria-label={c.preview}><h3>{c.preview}</h3><p>{c.redacted} · {preview.estimate.bytes} bytes · {c.estimatedTokens}: {preview.estimate.inputTokens} / {preview.estimate.outputTokens}</p><p>{c.model}: {model?.provider} / {model?.model}</p><details><summary>{c.evidence}</summary><pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: '20rem', overflow: 'auto' }}>{JSON.stringify(preview.pack, null, 2)}</pre></details><button type="button" className="btn" disabled={busy} onClick={confirmDeep}>{c.confirm}</button><button type="button" className="btn" onClick={() => setPreview(null)}>{c.cancel}</button></section>}
-    {history.some(item => item.mode === 'deep') && <ul>{history.filter(item => item.mode === 'deep').map(item => <li key={item.id}><button className="btn" type="button" disabled={busy} onClick={() => readDeep(item.id)}>{formatHealthDate(item.generatedAt, locale)} · {c.deepTab}{item.expired ? ` · ${c.updated}` : ''}</button></li>)}</ul>}
+    {preview && <section aria-label={c.preview}><h3>{c.preview}</h3><p>{c.redacted} · {preview.estimate.bytes} bytes · {c.estimatedTokens}: {preview.estimate.inputTokens} / {preview.estimate.outputTokens}</p><p>{c.model}: {model?.provider} / {model?.model}</p><details><summary>{c.evidence}</summary><pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: '20rem', overflow: 'auto' }}>{JSON.stringify(preview.pack, null, 2)}</pre></details><button type="button" className="btn" disabled={busy||(selection==='request'&&!requestId)} onClick={confirmDeep}>{c.confirm}</button><button type="button" className="btn" onClick={() => setPreview(null)}>{c.cancel}</button></section>}
+    {history.some(item => item.mode === 'deep') && <ul>{history.filter(item => item.mode === 'deep').map(item => <li key={item.id}><button className="btn" type="button" disabled={busy||(selection==='request'&&!requestId)} onClick={() => readDeep(item.id)}>{formatHealthDate(item.generatedAt, locale)} · {c.deepTab}{item.expired ? ` · ${c.updated}` : ''}</button></li>)}</ul>}
     {report && <div role="tablist" aria-label={c.title}><button type="button" role="tab" aria-selected={tab === 'standard'} onClick={() => setTab('standard')}>{c.standardTab}</button><button type="button" role="tab" disabled={!deepReport} aria-selected={tab === 'deep'} onClick={() => setTab('deep')}>{c.deepTab}</button></div>}
-    {report && tab === 'standard' && <div role="tabpanel"><HealthReportView report={report} locale={locale} onLocate={onLocate}/></div>}
+    {report && tab === 'standard' && <div role="tabpanel"><HealthReportView report={report} locale={locale} onLocate={(e,id)=>report.scope.request?onLocate(e,id,report.scope.request):onLocate(e,id)}/></div>}
     {deepReport && tab === 'deep' && <div role="tabpanel"><DeepHealthReportView report={deepReport} parent={report ?? undefined} locale={locale}/></div>}
   </aside>;
 }

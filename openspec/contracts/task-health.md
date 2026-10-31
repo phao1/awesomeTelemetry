@@ -29,7 +29,7 @@ type ToolClass = 'install' | 'build' | 'test' | 'lint/typecheck' | 'read'
   | 'search' | 'write/edit' | 'web' | 'delegate' | 'shell' | 'other';
 type Dimension = 'perceived' | 'plan' | 'act' | 'model' | 'startup' | 'quality' | 'coverage';
 type Coverage = 'complete' | 'partial' | 'unavailable';
-interface HealthScope { member: string; from: string | null; to: string | null }
+interface HealthScope { member: string; from: string | null; to: string | null; request?: string }
 interface HealthMember {
   id: string; parentId: string | null; role: string;
   sessionKey: string | null; provider: ProviderKey | null;
@@ -447,6 +447,8 @@ section wins.
    genuine user_prompt of the same member or the end of scope. Step 3 restarts
    in every user turn: its first round's ready = that user_prompt; later rounds
    as before. A round, think interval or tool span never crosses a turn boundary.
+   Genuine-input classification and question replies follow the amendment below.
+
 2. Turn end = latest end of the turn's non-bookkeeping production records and
    located tool intervals; a running tool keeps the turn open. Bookkeeping and
    system records (task_complete, task_started, thread_settings_applied,
@@ -491,6 +493,54 @@ active facet 24000; partition modelOnly 12000, toolOnly 12000, userWait 3601000,
 overlap/undivided/delegateWait/unattributed 0; ux.ttfr_log 3000;
 ux.first_write_log 21000 (raw facet 3622000); ux.max_gap_log 10000 cause
 `npm test`; no perceived.long_gap finding.
+
+### Genuine user-input classification (Phase E correction, 2026-11-01)
+
+Request boundaries and TH-004a MUST use the SAME pure `classifyUserPrompt`
+classifier (`src/core/user-prompts.ts`), through `isGenuineUserRecord` for event
+metadata. Results are question / reply / injection; only question starts a
+request or user turn. Parent→child prompts and existing bookkeeping stay excluded.
+
+- A message consisting entirely of one or more XML-style blocks, with only
+  whitespace outside those blocks, is injection regardless of tag name. Nested
+  blocks, attributes (including quoted >) and self-closing blocks are supported.
+  The known-tag list below is documentation/test coverage, NOT an allowlist.
+- A tag-only message containing an outer `send_user_message_question_reply`
+  block is reply: user input continuing the CURRENT request, never a new turn.
+  It can end a preceding explicit requested wait of that member; an ordinary
+  injection or goal continuation cannot. Without a preceding explicit request,
+  no wait is fabricated. A subsequent genuine question still ends a wait.
+- `# AGENTS.md instructions for` and Markdown skill/system/developer instruction
+  headers at the start are injection. The known truncated skill-instruction
+  fragment ending in </system-reminder> remains injection. Ordinary prose that
+  merely discusses instructions/tags is not injection.
+- Retained event titles are first-line/200-character projections. The same
+  classifier's retained-prefix mode treats an unfinished leading XML-style block
+  as injection (or reply for the reply wrapper). This handles multiline/truncated
+  platform envelopes without fetching bodies/source files. A completed block
+  followed by outside ordinary text remains a question. Plain prose BEFORE a
+  tag remains a question, even if a tag later has no closing match.
+- Examples: `<unknown_platform><data/></unknown_platform> <another/>` is injection;
+  `<codex_internal_context source="goal">continue</codex_internal_context>` is
+  injection; `<send_user_message_question_reply>yes</send_user_message_question_reply>`
+  is reply; `请解释 <environment_context>...</environment_context>` and
+  `<example>data</example> then fix the bug` are questions.
+
+Known envelope tags (normative test catalogue; generic rule also covers new tags):
+`external_codex_apps_open_page`, `codex_apps_open_page`, `codex_apps_context`,
+`app-context`, `app_context`, `environment_context`, `multi_agent_role`,
+`multi_agent_mode`, `codex_internal_context`, `in-app-browser-context`,
+`user_instructions`, `turn_aborted`, `subagent_notification`,
+`send_user_message_question_reply`, `system-reminder`, `system`, `skills`,
+`skill_instructions`, `tools`, `developer_instructions`, `turn_context`, `world_state`.
+
+The d01f-shaped 15-message regression has exactly8 questions at positions
+3,4,5,6,9,10,11,14; positions7,12,15 are replies, the remaining positions injection.
+Repeated goal continuations never add requests or restart readiness. Reply
+boundaries restart model readiness at the reply timestamp within the SAME user
+turn (split a reused round key deterministically by reply record ID if needed),
+so requested waiting is not counted as model thinking. Replies are input markers,
+not production, and injections neither extend semantic E2E nor user-turn end.
 
 ## TH-005 Metric dictionary (and timing-layer summary)
 
@@ -702,3 +752,24 @@ These tests are future runtime work, not P0 .ts edits.
 TC-004 in task-comparison.md defines client-only comparison of standard saved
 reports. Existing exact reuse key and single-job guard are unchanged. No deep
 analysis or new stored report format is introduced by the comparison action.
+
+
+## TH-009 Request health scope (Phase E)
+
+POST standard health accepts optional `scope:"request", request:<TR-001 ID>`,
+member=all, without caller from/to. Resolve the root genuine user_prompt per
+TH-004a.1 and TR-001–004; collect only that window across ALL members BEFORE
+applying event limits. HealthScope.request retains the ID; from/to are resolved
+window bounds (exclusive event membership at the next boundary; interval clipping at that boundary).
+Request t0 is the opening prompt, not whole-task origin. Exact reuse includes
+request ID, resolved bounds, revision, thresholds and existing version keys.
+HEALTH_CALC_VERSION=4 invalidates previous collector/turn semantics; rules stay3.
+Old stored reports remain readable. Request reports retain all normal limits,
+partial coverage and source-change checks; off-window tool partners can establish
+identity but never count off-window work. Whole-task reports keep existing bounds.
+For tasks >20000 events the drawer defaults to request selection, latest request
+first, with an explicit whole-task option and existing limit explanation. Empty
+request lists explain the unavailable boundary and keep whole-task available.
+
+Phase E correction: calc4 forces regeneration under the shared question/reply/
+injection classifier; rule version remains3, saved older reports remain readable.

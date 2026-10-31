@@ -143,3 +143,42 @@ it('reads deep history with local dates and keeps the report visible when its pa
   act(() => button(historyText).click()); await settle();
   expect(host.querySelector(`[title="${findingId}"]`)!.textContent).toBe('aaaaaaaaaaaa…aaaaaa'); expect(host.textContent).toContain('全部采纳'); expect(host.querySelector('[role=alert]')).toBeNull();
 });
+it('defaults oversized tasks to the latest request and preserves explicit whole-task analysis',async()=>{
+  const requests=[{id:'request:main:event:first',ordinal:1,title:'First'},{id:'request:main:event:last',ordinal:2,title:'Last'}].map(r=>({...r,startedAt:input.t0,endedAt:input.snapshotAt,nextStartedAt:null,eventCount:1,metrics:{durationMs:1000,toolCalls:0,errors:0,input:null,output:null,cacheRead:null,correctedTotal:null,costUsd:null,models:[]},alerts:[]}));
+  vi.mocked(fetch).mockImplementation(async(url,init)=>{
+    if(String(url).endsWith('/requests'))return json({taskId:context.task.id,revision:'rev',items:requests});
+    if(init?.method==='POST'){
+      const body=JSON.parse(String(init.body)),r=makeReport();r.scope=body.scope==='request'?{member:'all',request:body.request,from:input.t0,to:null}:{member:'all',from:null,to:null};return json(r);
+    }
+    return json({items:[]});
+  });
+  mount({context:{...context,task:{...context.task,eventCount:25000}}});await settle();
+  expect(host.textContent).toContain('20,000');expect(host.querySelector<HTMLSelectElement>('[aria-label="健康请求"]')!.value).toBe(requests[1]!.id);
+  act(()=>button('普通监测').click());await settle();
+  expect(host.textContent).toContain(requests[1]!.id);
+  const post=vi.mocked(fetch).mock.calls.find(([,init])=>init?.method==='POST')![1]!;expect(JSON.parse(String(post.body))).toEqual({mode:'standard',member:'all',scope:'request',request:requests[1]!.id});
+  act(()=>{const select=[...host.querySelectorAll('select')].find(s=>s.querySelector('option[value="all"]'))!;select.value='all';select.dispatchEvent(new Event('change',{bubbles:true}));});await settle();
+  act(()=>button('普通监测').click());await settle();expect(JSON.parse(String(vi.mocked(fetch).mock.calls.filter(([,init])=>init?.method==='POST').at(-1)![1]!.body))).toEqual({mode:'standard',member:'all'});
+});
+it.each([null,{}, {items:{}}, {items:[null]}, {taskId:context.task.id,revision:'rev',items:[]}])('keeps health and whole-task actions usable when request metadata is unavailable: %#',async body=>{
+  vi.mocked(fetch).mockImplementation(async(url,init)=>String(url).endsWith('/requests')?json(body):json(init?.method==='POST'?makeReport():{items:[]}));
+  mount({context:{...context,task:{...context.task,eventCount:25000}},request:'request:main:event:selected'});await settle();
+  expect(host.querySelector('[aria-label="健康请求"]')).toBeNull();expect(host.textContent).toContain('请求不可用');expect(button('普通监测').disabled).toBe(true);
+  expect(host.textContent).toContain('历史报告');expect(vi.mocked(fetch).mock.calls.every(([,init])=>init?.method!=='POST')).toBe(true);
+  act(()=>{const select=[...host.querySelectorAll('select')].find(s=>s.querySelector('option[value="all"]'))!;select.value='all';select.dispatchEvent(new Event('change',{bubbles:true}));});await settle();
+  expect(button('普通监测').disabled).toBe(false);act(()=>button('普通监测').click());await settle();
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls.find(([,init])=>init?.method==='POST')![1]!.body))).toEqual({mode:'standard',member:'all'});
+});
+it('keeps request-health generation disabled through loading and timeout, with retry available',async()=>{
+  vi.useFakeTimers();let finish!:(response:Response)=>void;
+  vi.mocked(fetch).mockImplementation((url)=>String(url).endsWith('/requests')?new Promise(resolve=>{finish=resolve;}):Promise.resolve(json({items:[]})));
+  mount({context:{...context,task:{...context.task,eventCount:25000}},request:'request:main:event:selected'});await settle();
+  expect(host.querySelector('[aria-label="健康请求"]')).toBeNull();expect(button('普通监测').disabled).toBe(true);
+  act(()=>vi.advanceTimersByTime(10000));await settle();expect(host.textContent).toContain('请求不可用');expect(button('普通监测').disabled).toBe(true);
+  finish(json({taskId:context.task.id,revision:'rev',items:[]}));await settle();expect(host.querySelector('[aria-label="健康请求"]')).toBeNull();expect(button('普通监测').disabled).toBe(true);
+});
+it('keeps failed request reads local to the health request selector',async()=>{
+  vi.mocked(fetch).mockImplementation(url=>String(url).endsWith('/requests')?Promise.reject(new Error('Network failed')):Promise.resolve(json({items:[]})));
+  mount({context:{...context,task:{...context.task,eventCount:25000}}});await settle();
+  expect(host.textContent).toContain('请求不可用');expect(host.textContent).toContain('历史报告');expect(host.querySelector('[aria-label="健康请求"]')).toBeNull();expect(button('普通监测').disabled).toBe(true);expect(button('重试')).toBeTruthy();
+});

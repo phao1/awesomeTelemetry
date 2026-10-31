@@ -911,3 +911,9 @@ eligible. WAL8MB admission/one nonblocking checkpoint reserves20MB WAL headroom.
 This explicit Phase D exception changes no capture gate or existing performance
 measurement requirement; large native stores are not newly certified. Full bounds
 and differentiated refusal codes are in TD-006.
+
+
+## Phase E requests
+
+Request DTOs, indexed projection budgets and additive routes/filters follow
+[task-requests.md](task-requests.md) TR-001–005. Existing routes remain compatible.

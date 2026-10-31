@@ -13,7 +13,7 @@ import { modelRules } from './rules/model.js';
 import { startupRules } from './rules/startup.js';
 import { qualityRules } from './rules/quality.js';
 import { relativeTime } from './snapshot-tracelog.js';
-export const HEALTH_CALC_VERSION = 2;
+export const HEALTH_CALC_VERSION = 4;
 export const HEALTH_RULE_VERSION = 3;
 const dimensions: Dimension[] = ['perceived', 'plan', 'act', 'model', 'startup', 'quality', 'coverage'];
 /** Bilingual templates consume fact parameters; rule predicates contain no prose. */

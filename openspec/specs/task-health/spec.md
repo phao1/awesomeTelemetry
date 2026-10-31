@@ -142,3 +142,7 @@ Phase A presentation amendment: public-projection limitations use
 `partial_public_projection`, mapped in zh/en along with old saved English prose.
 Unknown codes remain readable; no rule-version change because calculations are
 unchanged. Empty deep rejected sections are omitted from UI and MD/HTML exports.
+
+
+Phase E: implement task-requests.md TR-001–005 and task-health.md TH-009.
+This additive authorization supersedes the old no-new-fields restriction.

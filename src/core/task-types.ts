@@ -3,6 +3,7 @@ import type { PriceCurrency, ProviderKey, TraceEventSlim, TraceLogSession, Trace
 /** Task identity is a read projection; native IDs and evidence remain unchanged. */
 export type TaskOrigin = 'collected' | 'imported';
 export interface TaskSummary {
+  requestId?: string;
   id: string;
   origin: TaskOrigin;
   provenanceKnown: boolean;
@@ -90,7 +91,7 @@ export interface TaskRecordPage {
 }
 export type TaskSort = 'time' | 'duration' | 'errors' | 'tokens' | 'cost';
 export interface TaskListQuery { failed?: boolean; toolFailures?: boolean; summary?: boolean; sort?: TaskSort; direction?: 'asc' | 'desc'; alerts?: boolean; errors?: boolean; currency?: PriceCurrency; origin?: TaskOrigin; q?: string; provider?: ProviderKey; range?: 'today' | '7d' | '30d' | 'all'; offset?: number; limit?: number }
-export interface TaskRecordQuery { member?: string; q?: string; status?: TraceStatus; offset?: number; limit?: number; window?: string; anchor?: string; from?: string; to?: string; structure?: boolean }
+export interface TaskRecordQuery { request?: string; member?: string; q?: string; status?: TraceStatus; offset?: number; limit?: number; window?: string; anchor?: string; from?: string; to?: string; structure?: boolean }
 
 /** A retained, scoped identity, never an ID inferred from a title or timestamp. */
 export interface TaskNativeRef { namespace: string; kind: 'turn' | 'request' | 'response' | 'tool_call'; value: string; scope: string }
@@ -155,3 +156,10 @@ export interface LocalSettingsTarget { section: 'model-pricing' | 'alert-thresho
 
 /** TC-002: the same metadata projection as the Phase B task home. */
 export interface TaskComparisonSnapshot { a: TaskSummary[]; b: TaskSummary[] }
+
+/** TR-001–003: read-only genuine root-user request projection. */
+export interface TaskRequest {
+  id: string; ordinal: number; title: string; startedAt: string; endedAt: string;
+  nextStartedAt: string | null; eventCount: number; metrics: TaskMetrics; alerts: TaskAlert[];
+}
+export interface TaskRequestList { taskId: string; revision: string; items: TaskRequest[] }

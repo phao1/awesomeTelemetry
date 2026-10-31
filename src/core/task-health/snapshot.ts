@@ -1,3 +1,4 @@
+import { isSystemRecord, isGenuineUserRecord, isUserReplyRecord } from '../system-records.js';
 import type { TaskNativeRef } from '../task-types.js';
 import type { HealthInput, HealthMember, HealthRecord, HealthRound, HealthSpan, ReasoningState } from './types.js';
 import type { Interval } from './intervals.js';
@@ -9,7 +10,7 @@ export const DERIVED_DURATION_CAP_MS = 300000;
 export const nativeKey = (ref: TaskNativeRef): string => JSON.stringify([ref.namespace, ref.kind, ref.value, ref.scope]);
 export const sequence = (r: HealthRecord): number => r.event?.sequence ?? r.importedTurn?.sequence ?? 0;
 export const isTool = (r: HealthRecord): boolean => Boolean(r.event && ['tool', 'bash', 'file_read', 'file_write', 'test'].includes(r.event.kind));
-export const isBookkeeping = (r: HealthRecord): boolean => Boolean(r.event && (r.event.kind === 'system' || r.event.kind === 'agent' || r.event.kind === 'subagent_prompt' || r.event.title === 'token_count' || r.event.kind === 'reasoning' && !r.event.title && !r.event.hasOutput));
+export const isBookkeeping = (r: HealthRecord): boolean => Boolean(r.event && isSystemRecord(r.event));
 export const isProduction = (r: HealthRecord): boolean => !isBookkeeping(r) && Boolean(r.event && (['llm', 'reasoning', 'message'].includes(r.event.kind) || isTool(r) && !(r.event.hasOutput && !r.event.hasInput)));
 export interface ToolObservation {
     span: HealthSpan;
@@ -78,10 +79,12 @@ export function buildSnapshot(input: HealthInput): Snapshot {
             continue;
         }
         const semantics = member.timestampSemantics ?? timestampSemantics(member.provider, member.durationSource);
+        const genuinePrompt=(r:HealthRecord)=>isGenuineUserRecord(r.event)&&member.parentId===null&&!['subagent','worker'].includes(member.role);
+        const replyPrompt=(r:HealthRecord)=>isUserReplyRecord(r.event)&&member.parentId===null&&!['subagent','worker'].includes(member.role);
         const turns: UserTurn[] = [{ prompt: null, records: [], boundary: null }];
         const recordTurns = new Map<string, UserTurn>();
         for (const r of list) {
-            if (r.event?.kind === 'user_prompt' && !isBookkeeping(r)) {
+            if (genuinePrompt(r)) {
                 turns.at(-1)!.boundary = time(r);
                 turns.push({ prompt: r, records: [], boundary: null });
             }
@@ -97,10 +100,12 @@ export function buildSnapshot(input: HealthInput): Snapshot {
                 span.startMs = null; span.endMs = null; out.reasons.push('invalid_turn_clock');
             }
         };
-        const firstTurnForKey = new Map<string, UserTurn>(), roundTurns = new Map<string, UserTurn>();
+        const firstTurnForKey = new Map<string, UserTurn | HealthRecord>(), roundTurns = new Map<string, UserTurn>();
         const callsByTool = new Map<string, HealthRecord>();
         for (const r of list) if (isTool(r) && r.tool && r.pairing === 'exact' && r.event?.hasInput) callsByTool.set(nativeKey(r.tool), r);
         const assignments = new Map<string, string>();
+        const roundResumes=new Map<string,HealthRecord>();
+        let resume:HealthRecord|null=null;
         let fallback = 0, current: string | null = null, afterResult = false;
         for (const r of list) {
             if (r.importedTurn) {
@@ -110,17 +115,24 @@ export function buildSnapshot(input: HealthInput): Snapshot {
                 out.roundRecords.set(t.round.id, [r]);
                 continue;
             }
-            if (r.event?.kind === 'user_prompt') {
+            if (genuinePrompt(r)) {
+                resume=null;
                 current = null;
                 afterResult = false;
                 continue;
             }
+            if(replyPrompt(r)){resume=r;current=null;afterResult=false;continue;}
             if (!isProduction(r) && !isTool(r))
                 continue;
             const turn = recordTurns.get(r.recordId)!;
             // A late partner remains pairing context, not a new turn's decision.
             const call = r.tool && r.pairing === 'exact' ? callsByTool.get(nativeKey(r.tool)) : null;
             if (call && !r.event?.hasInput && recordTurns.get(call.recordId) !== turn) continue;
+            // An exact late result stays with its original call across an answer.
+            if(call&&!r.event?.hasInput&&assignments.has(call.recordId)){
+                const original=assignments.get(call.recordId)!;
+                assignments.set(r.recordId,original);out.roundRecords.get(original)!.push(r);afterResult=true;continue;
+            }
             let id = r.event?.turnKey ?? (r.round ? JSON.stringify([member.id, r.round.namespace, r.round.kind, r.round.value, r.round.scope]) : null);
             if (id === null) {
                 if (current === null || afterResult && isProduction(r)) {
@@ -131,10 +143,11 @@ export function buildSnapshot(input: HealthInput): Snapshot {
             }
             if (id !== null && (r.event?.turnKey || r.round)) {
                 const first = firstTurnForKey.get(id);
-                if (first && first !== turn) id = `${id}@${turn.prompt!.recordId}`;
-                else if (!first) firstTurnForKey.set(id, turn);
+                if (first && first !== (resume??turn)) id = `${id}@${resume?.recordId??turn.prompt!.recordId}`;
+                else if (!first) firstTurnForKey.set(id, resume??turn);
             }
             roundTurns.set(id, turn);
+            if(resume)roundResumes.set(id,resume);
             current = id;
             assignments.set(r.recordId, id);
             const group = out.roundRecords.get(id) ?? [];
@@ -203,12 +216,13 @@ export function buildSnapshot(input: HealthInput): Snapshot {
             out.spans.push(span);
             out.tools.push({ span, records: group, source: r, durationMs: duration, targets, command: commandProjection(r.native.command, r.native.cwd ?? member.cwd) });
         }
-        let ready: number | null = null, previousTurn: UserTurn | null = null;
+        let ready: number | null = null, previousTurn: UserTurn | null = null, previousResume:HealthRecord|null=null;
         const groups = [...out.roundRecords].filter(([, rs]) => rs[0]?.memberId === member.id && !rs[0]?.importedTurn);
         for (let i = 0; i < groups.length; i++) {
             const [id, rs] = groups[i]!;
             const turn = roundTurns.get(id)!;
-            if (turn !== previousTurn) { ready = turn.prompt ? time(turn.prompt) : null; previousTurn = turn; }
+            const resumed=roundResumes.get(id)??null;
+            if (turn !== previousTurn||resumed!==previousResume) { ready = resumed?time(resumed):turn.prompt ? time(turn.prompt) : null; previousTurn = turn;previousResume=resumed; }
             const productions = rs.filter(isProduction), points = productions.map(time).filter((n): n is number => n !== null);
             const tools = out.tools.filter(t => t.span.roundId === id), exact = tools.filter(t => ['observed', 'measured'].includes(t.span.timing));
             const first = points.length ? Math.min(...points) : null, last = points.length ? Math.max(...points) : null;
@@ -275,7 +289,7 @@ export function buildSnapshot(input: HealthInput): Snapshot {
             const r = list[i]!;
             if (r.native.requestsUserInput !== true)
                 continue;
-            const next = list.slice(i + 1).find(x => x.event?.kind === 'user_prompt');
+            const next = list.slice(i + 1).find(r=>genuinePrompt(r)||replyPrompt(r));
             const a = time(r), b = next ? time(next) : input.running ? relativeTime(input, input.snapshotAt) : null;
             if (a !== null && b !== null && b >= a)
                 out.memberWaits.push({ memberId: member.id, component: 'requested', intervalMs: [a, b], recordIds: [r.recordId, ...(next ? [next.recordId] : [])] });
@@ -324,7 +338,7 @@ export function buildSnapshot(input: HealthInput): Snapshot {
     out.undivided = memberUndivided.flatMap(value => subtract([value.intervalMs], ownWaits.get(value.memberId) ?? []));
     const otherActivity = new Map(members.map(m => [m.id, union(out.spans.filter(s => s.memberId !== m.id && ['model', 'tool', 'delegate'].includes(s.kind)).flatMap(s => { const value = located(s); return value ? [value] : []; }))]));
     out.userWait = union(out.memberWaits.flatMap(w => subtract([w.intervalMs], otherActivity.get(w.memberId) ?? [])));
-    const observations = records.filter(r => r.importedTurn || r.event?.kind === 'user_prompt' || isProduction(r) || isTool(r)).flatMap(r => { const a = time(r), b = relativeTime(input, r.importedTurn?.responseTime ?? null); return [...(a === null ? [] : [a]), ...(b === null ? [] : [b])]; });
+    const observations = records.filter(r => r.importedTurn || isGenuineUserRecord(r.event) || isUserReplyRecord(r.event) || isProduction(r) || isTool(r)).flatMap(r => { const a = time(r), b = relativeTime(input, r.importedTurn?.responseTime ?? null); return [...(a === null ? [] : [a]), ...(b === null ? [] : [b])]; });
     const ends = out.spans.filter(s => ['measured', 'observed', 'reported'].includes(s.timing)).flatMap(s => s.endMs === null ? [] : [s.endMs]);
     const rawEnd = input.running ? relativeTime(input, input.snapshotAt) : Math.max(0, ...observations, ...ends);
     if (!input.reasons.includes('missing_origin') && rawEnd !== null) {

@@ -52,7 +52,7 @@ export function createHealthReportStore(dataDirectory: string) {
   const summaryStamps=new Map<string,string>();
   const summaryCache = new Map<string, TaskHealthSummary | null>();
   async function project(taskId: string, values: SavedHealthReport[]) {
-    const latest=values.filter(standard).sort((a,b)=>b.generatedAt.localeCompare(a.generatedAt)||a.id.localeCompare(b.id))[0];
+    const latest=values.filter(standard).filter(r=>!r.scope.request).sort((a,b)=>b.generatedAt.localeCompare(a.generatedAt)||a.id.localeCompare(b.id))[0];
     const value: TaskHealthSummary | null = latest ? {id:latest.id,generatedAt:latest.generatedAt,revision:latest.revision,issues:latest.findings.length,scope:latest.scope,conclusion:latest.findings.length?'findings':Object.values(latest.dimensions).includes('insufficient')?'insufficient':'not_observed'} : null;
     const cached=summaryCache.get(taskId);if(cached&&value&&(cached.generatedAt>value.generatedAt||cached.generatedAt===value.generatedAt&&cached.id.localeCompare(value.id)<0))return;
     await mkdir(summaryRoot,{recursive:true,mode:0o700});

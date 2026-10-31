@@ -1,3 +1,4 @@
+import { taskRequests, TaskRequestChangedError } from './storage/task-requests.js';
 import { TelemetryReceiver } from './telemetry/receiver.js';
 import { TelemetryError } from './telemetry/mapping.js';
 import { taskComparisonSnapshot } from './storage/task-home.js';
@@ -627,11 +628,18 @@ export function createAgentObservabilityServer(
   router.register('POST', '/api/task-comparison', async (req,res) => {
     res.setHeader('cache-control','no-store');
     if(parseQuery(req).size||!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']??''))throw new HttpError(400,'BAD_REQUEST','Comparison requires JSON without query parameters');
-    let body:{a:string[];b:string[]};
+    let body:{a:string[];b:string[];ar?:string;br?:string};
     try{body=parseHealthJson(await readBody(req,128*1024)) as typeof body;}catch{throw new HttpError(400,'BAD_REQUEST','Invalid comparison JSON');}
-    if(!body||typeof body!=='object'||Object.keys(body).sort().join()!=='a,b'||[body.a,body.b].some(group=>!Array.isArray(group)||group.length<1||group.length>40||group.some(id=>typeof id!=='string'||id.length>1024||!/^(collected|imported):[^\s]+$/.test(id)))||new Set([...body.a,...body.b]).size!==body.a.length+body.b.length)throw new HttpError(400,'BAD_REQUEST','Select disjoint groups of 1..40 tasks');
+    if(!body||typeof body!=='object'||Object.keys(body).some(k=>!['a','b','ar','br'].includes(k))||[body.ar,body.br].some(v=>v!==undefined&&(typeof v!=='string'||v.length>2048))||[body.a,body.b].some(group=>!Array.isArray(group)||group.length<1||group.length>40||group.some(id=>typeof id!=='string'||id.length>1024||!/^(collected|imported):[^\s]+$/.test(id)))||new Set([...body.a,...body.b]).size!==body.a.length+body.b.length&&!(body.a.length===1&&body.b.length===1&&body.ar&&body.br&&body.ar!==body.br))throw new HttpError(400,'BAD_REQUEST','Select disjoint groups of 1..40 tasks');
     await localSettings.prices();
-    const result=await taskComparisonSnapshot(db,body.a,body.b,await localSettings.alerts());
+    const result=await taskComparisonSnapshot(db,body.a,body.b,await localSettings.alerts(),Boolean(body.ar&&body.br&&body.ar!==body.br));
+    for(const side of ['a','b'] as const){
+      const id=side==='a'?body.ar:body.br;
+      if(id){const task=result[side][0]!,requests=await taskRequests(db,getTask(db,task.id),await localSettings.alerts()),request=requests.items.find(r=>r.id===id);
+        if(!request)throw new HttpError(400,'BAD_REQUEST','Request does not belong to selected task');
+        result[side][0]={...task,requestId:request.id,recordedStatus:'unknown',title:request.title,startedAt:request.startedAt,eventCount:request.eventCount,metrics:request.metrics,alerts:request.alerts};
+      }
+    }
     await healthSummaryWarmup;
     for(const task of [...result.a,...result.b])task.latestHealth=await healthStore.summary(task.id);
     res.setHeader('cache-control','no-store');sendJson(res,200,result,req);
@@ -654,6 +662,12 @@ export function createAgentObservabilityServer(
     await localSettings.prices();
     res.setHeader('cache-control', 'no-store'); sendJson(res, 200, getTask(db, params.id!), req);
   });
+  router.register('GET', '/api/tasks/:id/requests', async (req,res,params) => {
+    if(parseQuery(req).size)throw new HttpError(400,'BAD_REQUEST','Unexpected request-list query');
+    await localSettings.prices();
+    const value=await taskRequests(db,getTask(db,params.id!),await localSettings.alerts());
+    res.setHeader('cache-control','no-store');sendJson(res,200,value,req);
+  });
   router.register('GET', '/api/tasks/:id/summary', async (req, res, params) => {
     await localSettings.prices();
     const context = getTask(db, params.id!);
@@ -669,7 +683,7 @@ export function createAgentObservabilityServer(
     const query = parseQuery(req), status = query.get('status');
     if (status !== null && !(TRACE_STATUSES as readonly string[]).includes(status)) throw new HttpError(400, 'BAD_REQUEST', 'Invalid record status');
     if (query.has('structure') && !['true','false'].includes(query.get('structure')!)) throw new HttpError(400,'BAD_REQUEST','Invalid structure option');
-    const options: TaskRecordQuery = { member: query.get('member') ?? 'main', q: query.get('q') ?? undefined, status: status as TraceStatus | undefined ?? undefined,
+    const options: TaskRecordQuery = { request: query.get('request') ?? undefined, member: query.get('member') ?? 'main', q: query.get('q') ?? undefined, status: status as TraceStatus | undefined ?? undefined,
       offset: taskNumber(query.get('offset')), limit: taskNumber(query.get('limit')), window: query.get('window') ?? undefined, anchor: query.get('anchor') ?? undefined,
       from: query.get('from') ?? undefined, to: query.get('to') ?? undefined, structure: query.get('structure') === 'true' };
     validateTaskRange(options);
@@ -1889,13 +1903,22 @@ export function createAgentObservabilityServer(
     if (typeof leftKey !== 'string' || typeof rightKey !== 'string') {
       throw new HttpError(400, 'BAD_REQUEST', 'leftKey and rightKey are required');
     }
-    const left = await ensureDetail(leftKey, 'slim');
+    const leftDetail = await ensureDetail(leftKey, 'slim');
+    const left=leftDetail?{...leftDetail}:null;
     if (left === null) {
       throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${leftKey}`, { key: leftKey });
     }
-    const right = await ensureDetail(rightKey, 'slim');
+    const rightDetail = await ensureDetail(rightKey, 'slim');
+    const right=rightDetail?{...rightDetail}:null;
     if (right === null) {
       throw new HttpError(404, 'SESSION_NOT_FOUND', `No session with key ${rightKey}`, { key: rightKey });
+    }
+    for(const [detail,key,request] of [[left,leftKey,body.leftRequest],[right,rightKey,body.rightRequest]] as const){
+      if(request===undefined)continue;
+      if(typeof request!=='string'||request.length>2048)throw new HttpError(400,'BAD_REQUEST','Invalid comparison request');
+      const context=getTask(db,'collected:'+key);
+      const page=taskRecords(db,context,{member:'main',request,offset:0,limit:200});
+      detail.events=page.items.flatMap(r=>r.event?[r.event]:[]);detail.eventTotal=page.total;detail.eventOffset=0;detail.eventLimit=200;detail.hasMore=page.hasMore;
     }
     const toRecord = (detail: SessionDetailResponse): TraceRecord => ({
       session: detail.session,
@@ -2386,6 +2409,7 @@ export function createAgentObservabilityServer(
         if (err instanceof HomeHydrationBusy) { sendApiError(res,409,'BUSY',err.message,undefined,req); return; }
         if (err instanceof TaskHomeChangedError) { sendApiError(res,409,err.code,err.message,undefined,req); return; }
         if (err instanceof LocalSettingsError) { sendApiError(res,400,err.code,err.message,undefined,req); return; }
+        if(err instanceof TaskRequestChangedError){sendApiError(res,409,'SOURCE_CHANGED',err.message,undefined,req);return;}
         if (err instanceof TaskReadError) {
           sendApiError(res, err.code === 'BAD_REQUEST' ? 400 : 404, err.code, err.message, undefined, req); return;
         }

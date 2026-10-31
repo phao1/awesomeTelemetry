@@ -364,3 +364,7 @@ remain metadata-only. Reuse native scanners with global concurrency2, shared
 pending jobs and page cancellation; preserve missing-file rows. No per-session
 fetches/SSE or parser replacement. Adjacent tests cover queue/admission/cancel/
 source absence/notifications, retained-page refresh and direct settings focus.
+
+
+Phase E: implement task-requests.md TR-001–005 and task-health.md TH-009.
+This additive authorization supersedes the old no-new-fields restriction.

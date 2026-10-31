@@ -1,3 +1,4 @@
+import { RequestNavigator } from './TaskRequests.js';
 import { isSystemRecord } from '../../core/system-records.js';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { TaskSummaryBar } from './TaskSummaryBar.js';
@@ -30,7 +31,7 @@ export function TaskProcess({ context, route, onRoute, locale, changes, onRefres
   diagnosisInvalidateKey: number;
 }): React.JSX.Element {
   const auditRead = useCallback((signal: AbortSignal) => architectureApi.scope({ taskIds: [context.task.id] }, signal), [context.task.id]);
-  const audit = useTaskRead(context.task.origin === 'collected' && route.mode === 'architecture' ? context.task.id : null, auditRead, 35000);
+  const audit = useTaskRead(context.task.origin === 'collected' && !route.request && route.mode === 'architecture' ? context.task.id : null, auditRead, 35000);
   const c = copy(locale), [membersOpen, setMembersOpen] = useState(false), [q, setQ] = useState(route.q ?? ''), [search, setSearch] = useState(route.q ?? ''), [errors, setErrors] = useState(route.errors === true);
   const [paging, setPaging] = useState<{ offset?: number; window?: string }>({}), [revision, setRevision] = useState(0), [stale, setStale] = useState(false), [playing, setPlaying] = useState(false), [following, setFollowing] = useState(false);
   const [savedRecord, setSavedRecord] = useState<TaskRecord | null>(null), [timeRange, setTimeRange] = useState<[number, number] | null>(() => route.from && route.to ? [Date.parse(route.from), Date.parse(route.to)] : null);
@@ -65,11 +66,11 @@ export function TaskProcess({ context, route, onRoute, locale, changes, onRefres
   const mainMember = context.members.find(member => member.role === 'main'), memberRef = useRef(route.member);
   useEffect(() => { if (q === search) return; const timer = setTimeout(() => { setSearch(q); onRoute({ ...currentRoute.current, q, event: null }); setPaging({}); setAnchor(null); setPlaying(false); }, 250); return () => clearTimeout(timer); }, [q, search]);
   useEffect(() => { if (memberRef.current !== route.member) { memberRef.current = route.member; setPaging({}); setSavedRecord(null); setPlaying(false); setTimeRange(null); } }, [route.member]);
-  const query: TaskRecordQuery = useMemo(() => ({ member: route.member, q: search, status: errors ? 'error' : undefined, from: route.from, to: route.to, structure: true, ...paging, limit: 200 }), [route.member, search, errors, paging, route.from, route.to]);
+  const query: TaskRecordQuery = useMemo(() => ({ request:route.request, member: route.member, q: search, status: errors ? 'error' : undefined, from: route.from, to: route.to, structure: true, ...paging, limit: 200 }), [route.request, route.member, search, errors, paging, route.from, route.to]);
   // Selecting an already-loaded row does not change the request. An external anchor does.
   const anchorRef = useRef(route.event);
   const [anchor, setAnchor] = useState(route.event);
-  const filterKey = JSON.stringify([route.member,search,errors,route.from,route.to]);
+  const filterKey = JSON.stringify([route.request,route.member,search,errors,route.from,route.to]);
   const previousFilter = useRef(filterKey);
   useEffect(() => { if (previousFilter.current===filterKey) return; previousFilter.current=filterKey; setPaging({}); setAnchor(route.event); setPlaying(false); },[filterKey,route.event]);
   const pageRef = useRef<Set<string>>(new Set());
@@ -83,7 +84,7 @@ export function TaskProcess({ context, route, onRoute, locale, changes, onRefres
   const readTimeline = useCallback((signal: AbortSignal) => taskApi.timeline(context.task.id, route.member, page!.window, signal), [context.task.id, route.member, page]);
   const timeline = useTaskRead(page ? JSON.stringify([context.task.id, route.member, page.window]) : null, readTimeline, 10000);
   const retainedTimeline = useRef<TaskTimeline | null>(null);
-  if (retainedTimeline.current?.member !== route.member || retainedTimeline.current.taskId !== context.task.id) retainedTimeline.current = null;
+  if (retainedTimeline.current?.window!==page?.window || retainedTimeline.current?.member !== route.member || retainedTimeline.current.taskId !== context.task.id) retainedTimeline.current = null;
   if (timeline.value) retainedTimeline.current = timeline.value;
 
   useEffect(() => { pageRef.current = new Set(page?.items.map(item => item.id)); }, [page]);
@@ -168,15 +169,16 @@ export function TaskProcess({ context, route, onRoute, locale, changes, onRefres
       <button type="button" className="btn" onClick={() => void navigator.clipboard.writeText(window.location.href).then(() => onNotice(c.copied)).catch(() => onNotice(c.copyFailed))}>{healthCopy(locale).share} ↗</button>
       <HealthButton locale={locale} open={Boolean(route.health)} onClick={() => onRoute({ ...route, health: route.health ? undefined : 'new' })}/>
     </header>
-    <TaskSummaryBar context={displayContext} locale={locale} />
+    {route.mode!=='architecture'&&<RequestNavigator context={displayContext} request={route.request} locale={locale} onSelect={request=>onRoute({...route,request,member:'all',event:null,health:undefined,from:undefined,to:undefined})} />}
+    {!route.request&&<TaskSummaryBar context={displayContext} locale={locale} />}
     <div className="task-reading-toolbar">
-      <div className="task-mode-tabs" role="tablist" aria-label={c.trajectory}>{(['trajectory', 'conversation', 'raw', 'architecture'] as const).map(mode => <button type="button" role="tab" aria-selected={route.mode === mode} key={mode} onClick={() => changeMode(mode)}>{mode === 'architecture' ? (locale === 'zh' ? '架构' : 'Architecture') : c[mode]}</button>)}</div>
+      <div className="task-mode-tabs" role="tablist" aria-label={c.trajectory}>{(['trajectory', 'conversation', 'raw', 'architecture'] as const).map(mode => <button type="button" role="tab" disabled={mode==='architecture'&&Boolean(route.request)} aria-selected={route.mode === mode} key={mode} onClick={() => changeMode(mode)}>{mode === 'architecture' ? (locale === 'zh' ? '架构' : 'Architecture') : c[mode]}</button>)}</div>
       <div className="task-record-filters" hidden={route.mode === 'architecture'}><input maxLength={200} aria-label={c.metadataSearch} placeholder={locale === 'zh' ? '搜索记录…' : 'Search records…'} value={q} onChange={event => setQ(event.target.value)} /><label title={c.errors}><input type="checkbox" checked={errors} onChange={event => { setErrors(event.target.checked); onRoute({ ...route, errors: event.target.checked, event: null }); setPaging({}); setAnchor(null); setPlaying(false); }} />{c.errors}</label></div>
       <div className="task-playback" hidden={route.mode === 'architecture'}><button type="button" className="ui-icon-btn" title={playing ? c.pause : c.play} aria-label={playing ? c.pause : c.play} disabled={!playbackRecords.length || route.mode !== 'trajectory'} onClick={() => { setFollowing(false); if (!playing && playbackRecords[0] && (playbackRecords.findIndex(item => item.id === route.event) < 0 || playbackRecords.at(-1)?.id === route.event)) selectRecord(playbackRecords[0]); setPlaying(!playing); }}>{playing ? 'Ⅱ' : '▷'}</button><button type="button" className="ui-icon-btn" title={c.step} aria-label={c.step} disabled={!playbackRecords.length} onClick={() => { setPlaying(false); const index = playbackRecords.findIndex(item => item.id === route.event); const next = playbackRecords[index + 1]; if (next) { userScroll.current = false; selectRecord(next); } }}>›</button><button type="button" className="ui-icon-btn" title={c.latest} aria-label={c.latest} onClick={goLatest}>↓</button>
       {displayContext.members.length > 1 && <button type="button" className="ui-icon-btn" title={c.membersToggle} aria-label={c.membersToggle} aria-expanded={membersOpen} onClick={() => setMembersOpen(!membersOpen)}>⑂</button>}</div>
     </div>
-    {route.mode === 'architecture' ? <section className="architecture-panel">{audit.loading && <p role="status">{locale === 'zh' ? '正在审计本地记录…' : 'Reading local records…'}</p>}{audit.error && <ArchitectureReadError error={audit.errorInfo ?? audit.error} locale={locale} retry={audit.retry} />}{audit.value && <TaskArchitecture key={audit.value.sources[0]?.revision} project={audit.value} locale={locale} onLocate={(task, session, event) => onRoute({ ...route, task, mode: 'trajectory', member: 'all', event: session && event ? `${session}:event:${event}` : null })} />}
-      {displayContext.task.origin === 'collected' && <ArchitectureDiagnosisPanel taskId={displayContext.task.id} member={route.member} locale={locale}
+    {route.mode === 'architecture' ? <section className="architecture-panel">{route.request&&<p>{locale==='zh'?'架构分析使用全任务范围。':'Architecture analysis uses whole-task scope.'}<button className="btn" onClick={()=>onRoute({...route,request:undefined})}>{locale==='zh'?'回到全任务':'Whole task'}</button></p>}{audit.loading && <p role="status">{locale === 'zh' ? '正在审计本地记录…' : 'Reading local records…'}</p>}{audit.error && <ArchitectureReadError error={audit.errorInfo ?? audit.error} locale={locale} retry={audit.retry} />}{audit.value && <TaskArchitecture key={audit.value.sources[0]?.revision} project={audit.value} locale={locale} onLocate={(task, session, event) => onRoute({ ...route, task, mode: 'trajectory', member: 'all', event: session && event ? `${session}:event:${event}` : null })} />}
+      {displayContext.task.origin === 'collected' && !route.request && <ArchitectureDiagnosisPanel taskId={displayContext.task.id} member={route.member} locale={locale}
         invalidateKey={JSON.stringify([displayContext.task, displayContext.members, page?.window, revision, diagnosisRevision, diagnosisInvalidateKey])}
         onLocate={ref => {
           if (ref.source !== 'native_event') { if (ref.captureId !== null) onOpenRequest(ref.captureId); return; }
@@ -220,9 +222,9 @@ export function TaskProcess({ context, route, onRoute, locale, changes, onRefres
       : null}
     </div></> }
   </div>
-    {route.health && <HealthDrawer key={context.task.id} context={displayContext} locale={locale} reportId={route.health} from={route.from} to={route.to} sourceVersion={diagnosisRevision + diagnosisInvalidateKey}
+    {route.health && <HealthDrawer key={context.task.id} context={displayContext} request={route.request} locale={locale} reportId={route.health} from={route.from} to={route.to} sourceVersion={diagnosisRevision + diagnosisInvalidateKey}
       evidenceUnavailable={Boolean(route.event && !records.loading && (records.error || page && !page.items.some(item => item.id === route.event)))}
       onReport={id => onRoute({ ...currentRoute.current, health: id })} onClose={() => onRoute({ ...currentRoute.current, health: undefined })}
-      onLocate={(_evidence, id) => { userScroll.current = false; setFollowing(false); setPlaying(false); setPaging({}); setAnchor(id); onRoute({ ...route, mode: 'trajectory', member: 'all', event: id, q: undefined, errors: undefined, from: undefined, to: undefined }); }}/>}
+      onLocate={(_evidence, id,request) => { userScroll.current = false; setFollowing(false); setPlaying(false); setPaging({}); setAnchor(id); onRoute({ ...route, request,mode: 'trajectory', member: 'all', event: id, q: undefined, errors: undefined, from: undefined, to: undefined }); }}/>}
   </div>;
 }

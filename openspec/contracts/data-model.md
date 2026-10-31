@@ -3554,3 +3554,9 @@ export interface TaskComparisonSnapshot { a: TaskSummary[]; b: TaskSummary[] }
 
 The additive SessionProviderKey and canonical telemetry DTOs follow
 [telemetry-intake.md](telemetry-intake.md) TD-001..006 and src/core/telemetry-types.ts.
+
+
+## Phase E requests
+
+Request DTOs, indexed projection budgets and additive routes/filters follow
+[task-requests.md](task-requests.md) TR-001–005. Existing routes remain compatible.

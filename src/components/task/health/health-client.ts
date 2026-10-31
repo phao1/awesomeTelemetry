@@ -34,8 +34,8 @@ export const healthApi = {
     return report;
   },
   generate: async (id: string, scope: HealthScope, signal: AbortSignal) => {
-    const report = checked(await fetchJson<HealthReport>(taskPath(id), { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'standard', member: scope.member, ...(scope.from && scope.to ? { from: scope.from, to: scope.to } : {}) }) }), id);
-    if (report.scope.member !== scope.member || report.scope.from !== scope.from || report.scope.to !== scope.to) throw new Error('INVALID_HEALTH_SCOPE');
+    const report = checked(await fetchJson<HealthReport>(taskPath(id), { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'standard', member: scope.member, ...(scope.request?{scope:'request',request:scope.request}:{}), ...(!scope.request && scope.from && scope.to ? { from: scope.from, to: scope.to } : {}) }) }), id);
+    if (report.scope.member !== scope.member || (scope.request ? report.scope.request !== scope.request : report.scope.from !== scope.from || report.scope.to !== scope.to)) throw new Error('INVALID_HEALTH_SCOPE');
     return report;
   },
   exportUrl: (id: string, format: 'html' | 'md' | 'json') => '/api' + reportPath(id) + '/export?format=' + format,

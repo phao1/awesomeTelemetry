@@ -490,3 +490,13 @@ interface HealthReport {
 | 深度模型编造或越界 | 证据包限定 + 引用校验 + 数字校验 + 拒绝态；事实永远来自普通报告 |
 | 大任务卡住 UI 或采集 | 服务端分页、预算、让出事件循环、单活跃分析、perf-diag 场景 |
 | 单任务结论被当成产品对比结论 | 报告页脚固定说明“单任务诊断，不代表产品整体”；对比走评测中心或同题 A/B |
+
+
+Phase E (2026-11-01): [request scopes](requests.md) implements TR-001–005 / TH-009.
+The collector applies the root genuine-user window before resource limits.
+HEALTH_CALC_VERSION3 / HEALTH_RULE_VERSION3; whole-task saved summaries remain
+separate from request reports. Full integration and perf:check remain coordinator gates.
+
+Phase E classification correction: calc4 / rules3. Generic tag-only platform
+envelopes and goal continuations are not new turns; question replies resume the
+current request and end explicit requested waits. See requests.md for examples.

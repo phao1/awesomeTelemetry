@@ -103,3 +103,17 @@ it('Phase C comparison reuses Phase B summary, validates bounded disjoint JSON a
  expect((await call('/api/task-comparison','POST',{...value,a:['collected:missing']})).status).toBe(404);
  expect((await call('/api/task-comparison','POST',value,{origin:'https://attacker.example'})).status).toBe(400);
 });
+it('serves indexed requests, request-filtered records and request comparison metrics',async()=>{
+ db.prepare("UPDATE events SET started_at='2026-10-30T00:00:00.000Z' WHERE session_id='s'").run();
+ const insert=db.prepare("INSERT INTO events(session_id,id,sequence,kind,phase,title,started_at,status,input_len,output_len) VALUES('s',?,?,?,'implement',?,?,'success',1,1)");
+ insert.run('p1',1,'user_prompt','First prompt','2026-10-30T01:00:00.000Z');insert.run('tool1',2,'tool','Read','2026-10-30T01:00:01.000Z');
+ insert.run('p2',3,'user_prompt','Second prompt','2026-10-30T01:00:02.000Z');insert.run('tool2',4,'tool','Read','2026-10-30T01:00:03.000Z');
+ const list=await call('/api/tasks/collected%3As/requests');expect(list.status).toBe(200);expect(list.headers['cache-control']).toBe('no-store');expect(list.text).not.toMatch(/inputSummary|outputSummary|"raw"|never-read/);
+ const items=list.body.items as Array<{id:string;eventCount:number}>;expect(items).toHaveLength(2);expect(items[1]!.eventCount).toBe(2);
+ const page=await call('/api/tasks/collected%3As/records?member=all&request='+encodeURIComponent(items[0]!.id)+'&offset=0');expect(page.status).toBe(200);expect(page.body.total).toBe(2);
+ const comparison=await call('/api/task-comparison','POST',{a:['collected:s'],b:['collected:s'],ar:items[0]!.id,br:items[1]!.id});expect(comparison.status).toBe(200);expect((comparison.body.a as Array<{title:string}>)[0]!.title).toBe('First prompt');
+ const process=await call('/api/compare','POST',{leftKey:'s',rightKey:'s',leftRequest:items[0]!.id,rightRequest:items[1]!.id});expect(process.status).toBe(200);
+ expect((process.body.left as {events:Array<{id:string}>}).events.map(e=>e.id)).toEqual(['p1','tool1']);expect((process.body.right as {events:Array<{id:string}>}).events.map(e=>e.id)).toEqual(['p2','tool2']);
+ expect((await call('/api/task-comparison','POST',{a:['collected:s'],b:['collected:s'],ar:items[0]!.id,br:items[0]!.id})).status).toBe(400);
+ expect((await call('/api/tasks/collected%3As/records?request=foreign')).status).toBe(400);
+});

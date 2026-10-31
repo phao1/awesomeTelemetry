@@ -11,7 +11,7 @@ export type ToolClass = 'install' | 'build' | 'test' | 'lint/typecheck' | 'read'
   | 'search' | 'write/edit' | 'web' | 'delegate' | 'shell' | 'other';
 export type Dimension = 'perceived' | 'plan' | 'act' | 'model' | 'startup' | 'quality' | 'coverage';
 export type Coverage = 'complete' | 'partial' | 'unavailable';
-export interface HealthScope { member: string; from: string | null; to: string | null }
+export interface HealthScope { request?: string; member: string; from: string | null; to: string | null }
 export interface HealthMember {
   id: string; parentId: string | null; role: string;
   sessionKey: string | null; provider: SessionProviderKey | null;

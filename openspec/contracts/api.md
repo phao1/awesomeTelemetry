@@ -1777,3 +1777,9 @@ GET /api/tasks/:id/summary returns TaskSummary with metrics and nullable
 latestHealth; same task identity resolution, loopback guard/no-store/ApiError,
 no source hydration/body reads. Existing standard health report route works for
 both telemetry origins (HTTP collected; file imported).
+
+
+## Phase E requests
+
+Request DTOs, indexed projection budgets and additive routes/filters follow
+[task-requests.md](task-requests.md) TR-001–005. Existing routes remain compatible.

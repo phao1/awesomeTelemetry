@@ -128,3 +128,15 @@ it('formats table values and deltas readably while keeping exact values on hover
  expect(rows[2]!.querySelectorAll('td')[3]!.textContent).toBe('1,234.57×');
  }finally{act(()=>root.unmount());}
 });
+it('sends request references to the process comparison API and labels the root-page boundary',async()=>{
+ const {ComparisonProcess}=await import('./TaskComparison.js');const {makeResult}=await import('../compare-test-fixtures.js');const {vi}=await import('vitest');
+ const result=makeResult();vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(result),{status:200})));
+ const host=document.createElement('div'),root=createRoot(host);
+ const task=(id:string)=>({id:'collected:'+id,rootSessionKey:id,title:id} as TaskSummary);
+ try{
+   act(()=>root.render(<ComparisonProcess a={task('left')} b={task('right')} requestA="request:left:event:p1" requestB="request:right:event:p2" locale="en" scope="requests" onLocate={()=>{}}/>));
+   await act(async()=>{for(let n=0;n<20;n++)await Promise.resolve();});
+   expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body))).toEqual({leftKey:'left',rightKey:'right',leftRequest:'request:left:event:p1',rightRequest:'request:right:event:p2'});
+   expect(host.textContent).toContain('Request window');expect(host.textContent).toContain('loaded root-session page only');
+ }finally{act(()=>root.unmount());vi.unstubAllGlobals();}
+});

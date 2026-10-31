@@ -140,3 +140,8 @@ An existing multi-record/native pair or an explicit off-page partner keeps the
 original pairing/log-interval policy. A native input-only record alone is not
 completed solely by a positive duration and success flag. No identity, retry,
 measured timing, lifecycle or source mutation is inferred.
+
+
+Phase E: a request-bound record window restricts timeline extent/count/histogram
+to TR-004 membership. TP-003 still ignores search/status and user time narrowing
+inside that request, keeping context stable. Original whole-task windows unchanged.

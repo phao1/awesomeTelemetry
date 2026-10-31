@@ -1114,3 +1114,7 @@ contracts/task-comparison.md TC-001..006 as REQ-035..040 respectively. Primary
 navigation is Overview / Tasks / Compare / Benchmarks / Agent boundary evaluation /
 Data intake / Settings. Existing A/B actions read Baseline / Improvement and keep
 URL selection. Imported evaluation transfer remains explicitly temporary.
+
+
+Phase E: implement task-requests.md TR-001–005 and task-health.md TH-009.
+This additive authorization supersedes the old no-new-fields restriction.

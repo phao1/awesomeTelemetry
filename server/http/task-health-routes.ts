@@ -44,8 +44,9 @@ async function body(req: IncomingMessage, signal: AbortSignal): Promise<unknown>
 }
 const object = (v: unknown): Record<string, unknown> => { if (!v || typeof v !== 'object' || Array.isArray(v)) throw new HealthError('BAD_REQUEST', 400); return v as Record<string, unknown>; };
 export function validateHealthRequest(value: unknown, query: URLSearchParams): { scope: HealthScope; thresholds: HealthThresholds } {
-  const v = object(value), allowed = ['mode', 'member', 'from', 'to', 'profile', 'thresholds'];
+  const v = object(value), allowed = ['mode', 'member', 'from', 'to', 'profile', 'thresholds','scope','request'];
   if (Object.keys(v).some(key => !allowed.includes(key)) || v.mode !== 'standard' || typeof v.member !== 'string' || !v.member || v.member.length > 512 || v.profile !== undefined && v.profile !== 'codearts-perf-v1' || v.from !== undefined && typeof v.from !== 'string' || v.to !== undefined && typeof v.to !== 'string') throw new HealthError('BAD_REQUEST', 400);
+  if(v.scope!==undefined&&v.scope!=='request'||v.request!==undefined&&(v.scope!=='request'||typeof v.request!=='string'||!v.request||v.request.length>2048||v.member!=='all'||v.from!==undefined||v.to!==undefined)||v.scope==='request'&&v.request===undefined)throw new HealthError('BAD_REQUEST',400);
   const range = validateTaskRange({ ...(v.from === undefined ? {} : { from: v.from as string }), ...(v.to === undefined ? {} : { to: v.to as string }) });
   const overrides = v.thresholds === undefined ? {} : object(v.thresholds);
   if (Object.hasOwn(overrides, 'profile')) throw new HealthError('BAD_REQUEST', 400);
@@ -56,7 +57,7 @@ export function validateHealthRequest(value: unknown, query: URLSearchParams): {
     else { if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(raw)) throw new HealthError('BAD_REQUEST', 400); overrides[key] = Number(raw); }
   }
   if (Object.values(overrides).some(value => typeof value === 'number' && Math.abs(value) > Number.MAX_SAFE_INTEGER)) throw new HealthError('BAD_REQUEST', 400);
-  try { return { scope: { member: v.member, from: range.from || null, to: range.to || null }, thresholds: validateHealthThresholds(overrides) }; }
+  try { return { scope: { ...(v.request?{request:v.request as string}:{}), member: v.member, from: range.from || null, to: range.to || null }, thresholds: validateHealthThresholds(overrides) }; }
   catch { throw new HealthError('BAD_REQUEST', 400); }
 }
 const messages: Record<string, string> = { BAD_REQUEST: 'Invalid health report request.', BUSY: 'A health analysis is running or the server is closing.', HEALTH_REPORT_LIMIT: 'Report capacity reached. Manually remove saved reports before generating another.', SOURCE_CHANGED: 'Task sources changed. Refresh and retry explicitly.', HEALTH_REPORT_NOT_FOUND: 'Health report not found.', HEALTH_TIMEOUT: 'Health analysis deadline exceeded.' };

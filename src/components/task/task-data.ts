@@ -1,3 +1,4 @@
+import { isTaskRequestList } from './request-list.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchJson } from '../../api/client.js';
 import type { TaskContext, TaskListQuery, TaskPage, TaskRecordPage, TaskRecordQuery, TaskTimeline } from '../../core/task-types.js';
@@ -7,6 +8,7 @@ export function params(values: object): string {
   return q.toString();
 }
 export const taskApi = {
+  requests: async (id:string,signal?:AbortSignal) => { const result=await fetchJson<unknown>('/tasks/'+encodeURIComponent(id)+'/requests',{signal});if(!isTaskRequestList(result))throw new Error('INVALID_TASK_REQUEST_LIST');return result; },
   list: async (query: TaskListQuery, signal?: AbortSignal) => { const result = await fetchJson<TaskPage>('/tasks?' + params(query), { signal }); if (!result || !Array.isArray(result.items) || !Number.isSafeInteger(result.total) || result.items.some(item => typeof item.id !== 'string' || !['collected', 'imported'].includes(item.origin))) throw new Error('Invalid task list response'); return result; },
   context: async (id: string, signal?: AbortSignal) => { const result = await fetchJson<TaskContext>('/tasks/' + encodeURIComponent(id), { signal }); if (!result?.task || !Array.isArray(result.members) || !Array.isArray(result.warnings)) throw new Error('Invalid task context response'); return result; },
   records: async (id: string, query: TaskRecordQuery, signal?: AbortSignal) => { const result = await fetchJson<TaskRecordPage>('/tasks/' + encodeURIComponent(id) + '/records?' + params({...query,structure:query.structure===undefined?undefined:String(query.structure)}), { signal }); if (!result || result.context?.task.id !== id || !Array.isArray(result.items) || result.items.length > (query.limit ?? 200) || !Number.isSafeInteger(result.offset) || !Number.isSafeInteger(result.total) || typeof result.window !== 'string') throw new Error('Invalid task record response'); return result; },

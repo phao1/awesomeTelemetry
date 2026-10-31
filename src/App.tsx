@@ -1058,7 +1058,7 @@ export default function App() {
           <main className="main">
             <Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}>
             <TaskComparison locale={locale} route={taskRoute} onRoute={setTaskRoute} invalidateKey={taskChanges.version}
-              onLocate={(task,event)=>{setTaskRoute({...taskRoute,task,origin:task.startsWith('imported:')?'imported':'collected',member:'all',mode:'trajectory',event:event??null,health:undefined,q:undefined,from:undefined,to:undefined,errors:undefined,compareImport:undefined});switchView('task');}} />
+              onLocate={(task,event,request)=>{setTaskRoute({...taskRoute,task,request,origin:task.startsWith('imported:')?'imported':'collected',member:'all',mode:'trajectory',event:event??null,health:undefined,q:undefined,from:undefined,to:undefined,errors:undefined,compareImport:undefined});switchView('task');}} />
             </Suspense>
           </main>
         </div>

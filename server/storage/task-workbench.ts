@@ -1,3 +1,4 @@
+import { resolveTaskRequest, requestBoundaryKey } from './task-requests.js';
 import { attachTelemetry } from './telemetry.js';
 import type { Database } from 'better-sqlite3';
 import type { TaskContext, TaskListQuery, TaskMember, TaskPage, TaskRecordPage, TaskRecordQuery, TaskSummary, TaskTimeline } from '../../src/core/task-types.js';
@@ -158,7 +159,7 @@ function readTask(db: Database, id: string): TaskContext {
   const warnings = [...JSON.parse(String(row.telemetry_warnings??'[]')) as string[],!task.provenanceKnown ? 'origin_unconfirmed' : '', rows.length > 100 || agents.length > 100 ? 'member_limit' : '', binding.root_count > 1 ? 'relationship_conflict' : '', binding.unresolved_parent ? 'relationship_unresolved' : ''].filter(Boolean);
   return { task: { ...task, memberCount: Math.max(task.memberCount, members.length) }, members, importSession: null, warnings };
 }
-interface WindowCut { task: string; member: string; q: string; status: string; from: string; to: string; ceilings: [string, number][] }
+interface WindowCut { request?: string; requestBoundary?:string; task: string; member: string; q: string; status: string; from: string; to: string; ceilings: [string, number][] }
 export function validateTaskRange(query: Pick<TaskRecordQuery, 'from' | 'to'>): { from: string; to: string } {
   if (query.from===undefined && query.to===undefined) return { from: '', to: '' };
   if (!query.from || !query.to || !query.from.endsWith('Z') || !query.to.endsWith('Z') || !Number.isFinite(Date.parse(query.from)) || !Number.isFinite(Date.parse(query.to)) || Date.parse(query.from)>Date.parse(query.to)) invalid('Invalid UTC task time range');
@@ -174,6 +175,7 @@ export function getTaskTimeline(db: Database, context: TaskContext, member: stri
     return taskTimeline(db,context,member,window,[]);
   }
   if (!cut || Array.isArray(cut) || cut.task!==context.task.id || cut.member!==member || !Array.isArray(cut.ceilings) || cut.ceilings.length>100 || new Set(cut.ceilings.map(value=>Array.isArray(value)?value[0]:null)).size!==cut.ceilings.length || cut.ceilings.some(value=>!Array.isArray(value)||value.length!==2||!keys.includes(value[0])||!Number.isSafeInteger(value[1])||value[1]<0)) return invalid('Timeline window scope mismatch');
+  if(cut.request!==undefined){try{if(typeof cut.request!=='string'||cut.requestBoundary!==requestBoundaryKey(resolveTaskRequest(db,context,cut.request)))return invalid('Timeline request boundary changed');}catch{return invalid('Invalid timeline request');}}
   return taskTimeline(db,context,member,window,cut.ceilings);
 }
 export function recordMembers(context: TaskContext, member = 'main'): TaskMember[] {
@@ -185,6 +187,9 @@ export function taskRecords(db: Database, context: TaskContext, query: TaskRecor
   const limit = integer(query.limit, 200, 200); if (limit < 1 || (query.q?.length ?? 0) > 200) invalid('Invalid record filters');
   const selected = recordMembers(context, query.member), member = query.member ?? 'main';
   const time = validateTaskRange(query);
+  let request: ReturnType<typeof resolveTaskRequest> | null = null;
+  if(query.request!==undefined){try{request=resolveTaskRequest(db,context,query.request);}catch{return invalid('Invalid task request');}}
+
   if (context.importSession !== null) {
     const window = Buffer.from(JSON.stringify([context.task.id, member, query.q ?? '', query.status ?? '', time.from, time.to])).toString('base64url');
     if (query.window && query.window !== window) invalid('Record window scope mismatch');
@@ -206,7 +211,7 @@ export function taskRecords(db: Database, context: TaskContext, query: TaskRecor
     return { context, items: rows.map(row => { const turn = JSON.parse(row.metadata_json) as TraceLogTurn; return { id: `import:${turn.sequence}`, memberId: 'main', memberName: context.importSession!.ideType ?? 'TraceLog', sessionKey: null, event: null, importedTurn: turn }; }), total, offset, limit, hasMore: offset + limit < total, hasPrevious: offset > 0, window, warnings: [] };
   }
   const keys = selected.flatMap(item => item.sessionKey === null ? [] : [item.sessionKey]);
-  const shape = { task: context.task.id, member, q: query.q ?? '', status: query.status ?? '', ...time };
+  const shape = { ...(query.request&&request?{request:query.request,requestBoundary:requestBoundaryKey(request)}:{}), task: context.task.id, member, q: query.q ?? '', status: query.status ?? '', ...time };
   let cut: WindowCut;
   if (query.window) {
     if (query.window.length > 32768) invalid('Record window too large');
@@ -220,9 +225,9 @@ export function taskRecords(db: Database, context: TaskContext, query: TaskRecor
   const needle = '%' + shape.q.toLowerCase().replace(/[\\%_]/g, '\\$&') + '%';
   // Omit inactive filters so COUNT can stay on the covering session/sequence index.
   const from = `FROM json_each(?) c CROSS JOIN events e ON e.session_id=json_extract(c.value,'$[0]') AND e.sequence<=json_extract(c.value,'$[1]')
-    WHERE 1=1 ${shape.q ? "AND lower(e.title || ' ' || COALESCE(e.tool,'') || ' ' || e.actor) LIKE ? ESCAPE '\\'" : ''} ${shape.status ? 'AND e.status=?' : ''}
+    WHERE 1=1 ${request ? `AND e.started_at>=? ${request.next?'AND (e.started_at<? OR (e.session_id=? AND e.started_at=?))':''} AND (e.session_id<>? OR e.sequence>=?) ${request.next?'AND (e.session_id<>? OR e.sequence<?)':''}` : ''} ${shape.q ? "AND lower(e.title || ' ' || COALESCE(e.tool,'') || ' ' || e.actor) LIKE ? ESCAPE '\\'" : ''} ${shape.status ? 'AND e.status=?' : ''}
     ${time.from ? `AND ROUND((julianday(e.started_at)-2440587.5)*86400000)<=? AND ROUND((julianday(e.started_at)-2440587.5)*86400000)+(${TASK_LOG_DURATION_SQL})>=?` : ''}`;
-  const params = [JSON.stringify(cut.ceilings), ...(shape.q ? [needle] : []), ...(shape.status ? [shape.status] : []), ...(time.from ? [Date.parse(time.to),Date.parse(time.from)] : [])];
+  const params = [JSON.stringify(cut.ceilings), ...(request?[request.from,...(request.next?[request.next.started_at,context.task.rootSessionKey,request.next.started_at]:[]),context.task.rootSessionKey,request.prompt.sequence,...(request.next?[context.task.rootSessionKey,request.next.sequence]:[])]:[]), ...(shape.q ? [needle] : []), ...(shape.status ? [shape.status] : []), ...(time.from ? [Date.parse(time.to),Date.parse(time.from)] : [])];
   const total = (cachedStmt(db, `SELECT COUNT(1) AS n ${from}`).get(...params) as { n: number }).n;
   let offset = integer(query.offset, Math.max(0, total - limit), 100000);
   if (query.anchor) {

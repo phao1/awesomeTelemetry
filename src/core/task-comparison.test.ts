@@ -93,3 +93,19 @@ it('uses the same readable numbers in MD/HTML exports and retains exact precisio
  expect(output).toContain('+13.9 days');expect(output).toContain('17.5%');expect(output).toContain('1,234,567');expect(output).toContain('Exact raw values');expect(output).toContain('1203343364 ms');expect(output).toContain('17.5417');
  }
 });
+it('compares normalized request tokens only with complete declared provider coverage',()=>{
+ const a=task('collected:a'),b=task('collected:b');a.requestId='request:a:event:p';b.requestId='request:b:event:p';
+ const coverage={known:1,total:1,missing:[]};
+ for(const t of [a,b])t.metrics!.coverage={input:coverage,output:coverage,cacheRead:coverage,correctedTotal:{...coverage},models:coverage};
+ b.metrics!.correctedTotal=50;
+ const row=()=>taskComparisonRows({a:[a],b:[b]},null,null,'en').find(r=>r.key==='tokens')!;
+ expect(row()).toMatchObject({verdict:'better',delta:-50});
+ b.metrics!.coverage!.correctedTotal.known=0;expect(row().verdict).toBe('unavailable');
+ b.metrics!.coverage=undefined;expect(row().verdict).toBe('unavailable');
+ b.metrics!.coverage={input:coverage,output:coverage,cacheRead:coverage,correctedTotal:coverage,models:coverage};b.provider='claude';expect(row().verdict).toBe('unavailable');
+});
+it('compares complete request health reports with request-relative evidence, but never mixes whole and request scopes',()=>{
+ const a=report('a'),b=report('b');a.scope={member:'all',from:input.t0,to:null,request:'request:a:event:p'};b.scope={member:'all',from:input.t0,to:null,request:'request:b:event:p'};b.findings=[];
+ expect(healthDifferences([a],[b]).map(d=>d.status)).toEqual(['resolved']);
+ b.scope={member:'all',from:null,to:null};expect(healthDifferences([a],[b]).map(d=>d.status)).toEqual(['uncertain']);
+});
