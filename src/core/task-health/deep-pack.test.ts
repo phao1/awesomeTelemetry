@@ -90,3 +90,42 @@ it('reaches a valid minimum before failing, with every budget step recorded', as
   p.findings[0]!.facts.context = 'fact '.repeat(11000);
   expect(() => fitDeepHealthPack(p)).toThrow('HEALTH_SIZE_LIMIT');
 });
+
+const numericPack = () => {
+  const p = structuredClone(pack);
+  p.metrics = [{ ...p.metrics[0]!, key: 'act.max_ms', value: 4937823, unit: 'ms' }]; p.findings = [];
+  return p;
+};
+it.each([
+  '对应 finding 记录调用耗时为 4937823 ms，换算为 4937.823 秒（毫秒除以 1000），长间隔 finding 指向相同调用。',
+  '4937823 ms', '4937.823 秒', '4937.823 s', '82.29705 min', '1.3716175 h',
+  '毫秒除以 1000', '/1000', '÷ 60000', '/3600000',
+  '同一调用', '逐一核对', '一部分时间', '一段空窗',
+  ...['十分', '万一', '千万', '一旦', '一直', '一些', '一般', '一致', '一起', '一定', '一样', '统一', '唯一', '进一步', '之一', '百分比'].map(word => `影响${word}明显`),
+])('accepts supported conversion or nonquantitative phrase: %s', reason => {
+  const raw = output(); raw.valueMoments[0]!.reason = reason;
+  expect(validateDeepHealthOutput(raw, numericPack()).status).toBe('accepted');
+});
+it.each([
+  ['4937824 ms', '4937824'], ['1000 次调用', '1000'], ['4937.824 秒', '4937.824'],
+  ['这是一个长调用', '一个'], ['出现两次长等待', '两次'], ['需要一次验证', '一次'], ['三轮等待', '三轮'],
+  ['1000', '1000'], ['/10000', '10000'], ['999999 ms 后两次等待', '999999'], ['requires nine trials', 'nine'],
+])('rejects unsupported numeric claim with original first token: %s', (reason, token) => {
+  const raw = output(); raw.valueMoments[0]!.reason = reason;
+  expect(validateDeepHealthOutput(raw, numericPack())).toMatchObject({ status: 'rejected', rejected: [{ token, excerpt: reason }] });
+});
+it.each([['act.long_tool', 'durationMs'], ['perceived.long_gap', 'gap'], ['model.slow_first_output', 'delay']])('converts millisecond fact %s.%s without a metric', (rule, key) => {
+  const p = numericPack(); p.metrics = []; p.findings = [{ id: 'f', rule, dimension: 'act', facts: { [key]: 4937823 }, evidenceIds: [] }];
+  for (const reason of ['4937823 ms', '4937.823 秒', '82.29705 min', '1.3716175 h']) {
+    const raw = output(); raw.valueMoments[0]!.reason = reason;
+    expect(validateDeepHealthOutput(raw, p).status).toBe('accepted');
+  }
+  p.findings[0]!.rule = 'act.duplicate_install';
+  const raw = output(); raw.valueMoments[0]!.reason = '4937.823 秒';
+  expect(validateDeepHealthOutput(raw, p).status).toBe('rejected');
+});
+it('redacts before clipping excerpts, including foreign-reference rejection', () => {
+  const raw = output(); raw.valueMoments[0]!.reason = 'Bearer SECRET123 ' + '内容'.repeat(150); raw.valueMoments[0]!.evidenceIds = ['foreign'];
+  const rejected = validateDeepHealthOutput(raw, numericPack()).rejected[0]!;
+  expect(rejected.token).toBeNull(); expect(rejected.excerpt).toHaveLength(160); expect(rejected.excerpt).not.toContain('SECRET123'); expect(rejected.excerpt).toContain('[redacted]');
+});

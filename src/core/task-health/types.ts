@@ -133,7 +133,7 @@ export interface DeepHealthReport {
   version: 1; id: string; reportId: string; taskId: string;
   digest: string; generatedAt: string;
   provider: 'anthropic' | 'openai-compatible'; model: string;
-  promptVersion: number; status: 'accepted' | 'partial' | 'rejected';
+  promptVersion: 1 | 2; status: 'accepted' | 'partial' | 'rejected';
   timing: 'model_judged';
   valueMoments: { kind: 'ttfmp' | 'ttv'; recordId: string;
     reason: string; counterEvidence: string; evidenceIds: string[] }[];
@@ -142,7 +142,7 @@ export interface DeepHealthReport {
   causes: { hypothesis: string; support: string; against: string; evidenceIds: string[] }[];
   experiments: { variable: string; primaryMetric: string; qualityGate: string;
     fixedTask: string; expectedInterval: string; evidenceIds: string[] }[];
-  rejected: { section: string; index: number | null; reason: string }[];
+  rejected: { section: string; index: number | null; reason: string; token?: string | null; excerpt?: string }[];
   analysis: { inputTokens: number | null; outputTokens: number | null; durationMs: number };
   limitations: string[];
 }

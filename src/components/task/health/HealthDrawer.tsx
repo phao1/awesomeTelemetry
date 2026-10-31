@@ -3,7 +3,7 @@ import type { Locale } from '../../../i18n.js';
 import type { TaskContext } from '../../../core/task-types.js';
 import type { DeepHealthReport, HealthEvidence, HealthReport, HealthScope } from '../../../core/task-health/types.js';
 import { ApiError } from '../../../api/client.js';
-import { healthLabel } from '../../../core/task-health/format.js';
+import { formatHealthDate, healthLabel } from '../../../core/task-health/format.js';
 import { taskApi } from '../task-data.js';
 import { healthApi } from './health-client.js';
 import type { HealthDeepPreview, HealthModelStatus, HealthReportIndexItem } from './health-client.js';
@@ -81,7 +81,9 @@ export function HealthDrawer({ context, locale, reportId, from, to, onReport, on
   }, 125000, true); };
   const readDeep = (id: string) => void run(async signal => {
     const value = await healthApi.readDeep(id, taskId, signal);
-    const parent = await healthApi.read(value.reportId, taskId, signal);
+    let parent: HealthReport | null = null;
+    try { parent = await healthApi.read(value.reportId, taskId, signal); }
+    catch (e) { if (!(e instanceof ApiError) || e.code !== 'HEALTH_REPORT_NOT_FOUND') throw e; }
     if (signal.aborted || currentIdentity.current !== identity) return;
     setReport(parent); activeReport.current = parent; setDeepReport(value); setTab('deep'); setPreview(null);
   });
@@ -100,11 +102,11 @@ export function HealthDrawer({ context, locale, reportId, from, to, onReport, on
     {data.task.loadedMemberCount < data.task.memberCount && <p role="status">{c.insufficient}</p>}
     <div className="health-toolbar"><button type="button" className="btn" disabled={busy || selection === 'window' && (!from || !to)} onClick={generate}>{c.generate}</button><button type="button" className="btn" disabled={busy || !report} onClick={showPreview}>{c.deep}</button>{busy && <button type="button" className="btn" onClick={cancel}>{c.cancel}</button>}</div>
     {busy && <p role="status">{c.loading}</p>}{error && <p role="alert">{error}</p>}{message && <p role="status">{c[message]}</p>}{evidenceUnavailable && <p role="alert">{c.inaccessible}</p>}
-    <section><div className="health-toolbar"><h3>{c.history}</h3><button type="button" className="btn" disabled={historyBusy} onClick={() => void loadHistory()}>{c.refresh}</button></div>{historyBusy && <p role="status">{c.loading}</p>}{historyError && <p role="alert">{c.error}</p>}{!historyBusy && !history.length && <p>{c.empty}</p>}<ul>{history.filter(item => item.mode === 'standard').map(item => <li key={item.id}><button type="button" className="btn" aria-current={reportId === item.id ? 'true' : undefined} onClick={() => { if (item.id === reportId) { if (!report && !busy) void run(async signal => { const value = await healthApi.read(item.id, taskId, signal); if (!signal.aborted && currentIdentity.current === identity) setReport(value); }); return; } sequence.current++; owner.current?.abort(); setReport(null); setPreview(null); setDeepReport(null); setTab('standard'); onReport(item.id); }}>{item.generatedAt} · {c.generate}{item.expired ? ` · ${c.updated}` : ''}</button></li>)}</ul></section>
+    <section><div className="health-toolbar"><h3>{c.history}</h3><button type="button" className="btn" disabled={historyBusy} onClick={() => void loadHistory()}>{c.refresh}</button></div>{historyBusy && <p role="status">{c.loading}</p>}{historyError && <p role="alert">{c.error}</p>}{!historyBusy && !history.length && <p>{c.empty}</p>}<ul>{history.filter(item => item.mode === 'standard').map(item => <li key={item.id}><button type="button" className="btn" aria-current={reportId === item.id ? 'true' : undefined} onClick={() => { if (item.id === reportId) { if (!report && !busy) void run(async signal => { const value = await healthApi.read(item.id, taskId, signal); if (!signal.aborted && currentIdentity.current === identity) setReport(value); }); return; } sequence.current++; owner.current?.abort(); setReport(null); setPreview(null); setDeepReport(null); setTab('standard'); onReport(item.id); }}>{formatHealthDate(item.generatedAt, locale)} · {c.standardTab}{item.expired ? ` · ${c.updated}` : ''}</button></li>)}</ul></section>
     {preview && <section aria-label={c.preview}><h3>{c.preview}</h3><p>{c.redacted} · {preview.estimate.bytes} bytes · {c.estimatedTokens}: {preview.estimate.inputTokens} / {preview.estimate.outputTokens}</p><p>{c.model}: {model?.provider} / {model?.model}</p><details><summary>{c.evidence}</summary><pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: '20rem', overflow: 'auto' }}>{JSON.stringify(preview.pack, null, 2)}</pre></details><button type="button" className="btn" disabled={busy} onClick={confirmDeep}>{c.confirm}</button><button type="button" className="btn" onClick={() => setPreview(null)}>{c.cancel}</button></section>}
-    {history.some(item => item.mode === 'deep') && <ul>{history.filter(item => item.mode === 'deep').map(item => <li key={item.id}><button className="btn" type="button" disabled={busy} onClick={() => readDeep(item.id)}>{item.generatedAt} · {c.deepTab}{item.expired ? ` · ${c.updated}` : ''}</button></li>)}</ul>}
+    {history.some(item => item.mode === 'deep') && <ul>{history.filter(item => item.mode === 'deep').map(item => <li key={item.id}><button className="btn" type="button" disabled={busy} onClick={() => readDeep(item.id)}>{formatHealthDate(item.generatedAt, locale)} · {c.deepTab}{item.expired ? ` · ${c.updated}` : ''}</button></li>)}</ul>}
     {report && <div role="tablist" aria-label={c.title}><button type="button" role="tab" aria-selected={tab === 'standard'} onClick={() => setTab('standard')}>{c.standardTab}</button><button type="button" role="tab" disabled={!deepReport} aria-selected={tab === 'deep'} onClick={() => setTab('deep')}>{c.deepTab}</button></div>}
     {report && tab === 'standard' && <div role="tabpanel"><HealthReportView report={report} locale={locale} onLocate={onLocate}/></div>}
-    {deepReport && tab === 'deep' && <div role="tabpanel"><DeepHealthReportView report={deepReport} locale={locale}/></div>}
+    {deepReport && tab === 'deep' && <div role="tabpanel"><DeepHealthReportView report={deepReport} parent={report ?? undefined} locale={locale}/></div>}
   </aside>;
 }

@@ -32,6 +32,7 @@
     "pack:smoke": "node scripts/smoke-packed-install.mjs",
     "agent:folding": "node bin/agent-folding.js",
     "task-health": "node bin/task-health.js",
+    "health-proxy:codex": "node scripts/codex-health-proxy.mjs",
     "build:task-health": "node --input-type=module -e \"import { build } from 'vite'; await build({configFile:false,build:{ssr:'server/task-health/cli.ts',outDir:'server-dist/task-health',emptyOutDir:false,target:'node20',rollupOptions:{external:['better-sqlite3'],output:{entryFileNames:'cli.js'}}}})\""
   },
   "dependencies": {

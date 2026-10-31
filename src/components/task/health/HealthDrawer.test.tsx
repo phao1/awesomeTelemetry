@@ -1,3 +1,4 @@
+import { formatHealthDate } from '../../../core/task-health/format.js';
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -53,7 +54,7 @@ it('scope changes abort old work and generate main scope with no search/page fil
 it('reads saved history on selection, preserves expired indicator and locates exact evidence', async () => {
   const r = makeReport('history'); vi.mocked(fetch).mockResolvedValueOnce(json({ items: [{ id: r.id, generatedAt: r.generatedAt, mode: 'standard', revision: r.revision, expired: true, reportId: null }] })).mockResolvedValueOnce(json(r));
   const locate = vi.fn(); mount({ onLocate: locate }); await settle();
-  act(() => button(`${r.generatedAt} · 普通监测 · 数据已更新`).click()); await settle();
+  act(() => button(`${formatHealthDate(r.generatedAt)} · 普通报告 · 数据已更新`).click()); await settle();
   expect(String(vi.mocked(fetch).mock.calls.at(-1)![0])).toBe('/api/health-reports/history');
   const e = r.evidence.find(e => r.findings.some(f => f.evidenceIds.includes(e.id)) && e.recordIds.length)!;
   const target = [...host.querySelectorAll('button')].find(n => n.textContent === `定位证据 · ${e.recordIds[0]}`)!;
@@ -101,7 +102,7 @@ it('previews evidence, confirms one call, shows independent tabs and rejected it
   expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/deep'))).toHaveLength(0);
   vi.mocked(fetch).mockResolvedValueOnce(json({ version: 1, id: 'deep', taskId: r.taskId, reportId: r.id, timing: 'model_judged', generatedAt: r.generatedAt, status: 'partial', provider: 'anthropic', model: 'fixture-model', promptVersion: 1, digest, valueMoments: [], necessity: [], causes: [{ hypothesis: '需要验证', support: '有证据', against: '覆盖有限', evidenceIds: ['f'] }], experiments: [], rejected: [{ section: 'causes', index: 1, reason: 'Numeric claim outside fact table; not adopted.' }], analysis: { inputTokens: 20, outputTokens: 10, durationMs: 10 }, limitations: [] }));
   act(() => button('确认并调用模型').click()); await settle(); expect(JSON.parse(vi.mocked(fetch).mock.calls.at(-1)![1]!.body as string)).toEqual({ digest });
-  expect(host.textContent).toContain('最值得验证的原因'); expect(host.textContent).toContain('被拒绝 / 未采纳'); expect(host.textContent).toContain('inputTokens: 20');
+  expect(host.textContent).toContain('最值得验证的原因'); expect(host.textContent).toContain('被拒绝 / 未采纳'); expect(host.textContent).toContain('输入 20 token');
   act(() => button('普通报告').click()); expect(host.querySelectorAll('.health-card')).toHaveLength(5); expect(host.textContent).not.toContain('Numeric claim outside fact table');
 });
 it('cancels preview with no deep call and reports an unconfigured model', async () => {
@@ -131,4 +132,14 @@ it.each([
   act(() => button('深度监测').click()); await settle();
   expect(host.querySelector('[role=alert]')!.textContent).toContain(message);
   expect(host.textContent).not.toContain('请求未完成'); expect(host.querySelectorAll('.health-card')).toHaveLength(5);
+});
+it('reads deep history with local dates and keeps the report visible when its parent is missing', async () => {
+  const r = makeReport(), findingId = 'a'.repeat(64);
+  vi.mocked(fetch).mockResolvedValueOnce(json({ items: [{ id: 'deep', mode: 'deep', generatedAt: r.generatedAt, revision: r.revision, reportId: r.id, expired: false }] }));
+  mount(); await settle();
+  const historyText = `${formatHealthDate(r.generatedAt)} · 深度报告`;
+  expect(host.textContent).toContain(historyText); expect(host.textContent).not.toContain(r.generatedAt);
+  vi.mocked(fetch).mockResolvedValueOnce(json({ version: 1, id: 'deep', taskId: r.taskId, reportId: r.id, timing: 'model_judged', generatedAt: r.generatedAt, status: 'accepted', provider: 'anthropic', model: 'fixture', promptVersion: 1, digest: 'digest', valueMoments: [], necessity: [{ findingId, verdict: 'unknown', alternative: '无法判断', evidenceIds: ['f'] }], causes: [], experiments: [], rejected: [], analysis: { inputTokens: null, outputTokens: null, durationMs: 10 }, limitations: [] })).mockResolvedValueOnce(json({ error: { code: 'HEALTH_REPORT_NOT_FOUND', message: 'Missing parent' } }, 404));
+  act(() => button(historyText).click()); await settle();
+  expect(host.querySelector(`[title="${findingId}"]`)!.textContent).toBe('aaaaaaaaaaaa…aaaaaa'); expect(host.textContent).toContain('全部采纳'); expect(host.querySelector('[role=alert]')).toBeNull();
 });

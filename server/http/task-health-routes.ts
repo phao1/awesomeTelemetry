@@ -169,7 +169,12 @@ export function registerTaskHealthRoutes(router: Router, deps: {
       const query = new URL(req.url ?? '/', 'http://localhost').searchParams, format = query.get('format');
       if ([...query.keys()].some(k => k !== 'format') || query.getAll('format').length !== 1 || !['html', 'md', 'json'].includes(format ?? '')) throw new HealthError('BAD_REQUEST', 400);
       const report = await deps.store.get(params.reportId!);
-      const text = format === 'json' ? await deps.store.bytes(report.id) : format === 'html' ? renderTaskHealthHtml(report) : renderTaskHealthMarkdown(report);
+      let parent: HealthReport | undefined;
+      if (!('mode' in report) && format !== 'json') {
+        try { const saved = await deps.store.get(report.reportId); if ('mode' in saved) parent = saved; }
+        catch (e) { if (!(e instanceof HealthError) || e.code !== 'HEALTH_REPORT_NOT_FOUND') throw e; }
+      }
+      const text = format === 'json' ? await deps.store.bytes(report.id) : format === 'html' ? renderTaskHealthHtml(report, parent) : renderTaskHealthMarkdown(report, parent);
       if (Buffer.byteLength(text) > (format === 'json' ? 1 : 4) * 1024 * 1024) throw new HealthError('HEALTH_SIZE_LIMIT');
       res.setHeader('content-type', format === 'html' ? 'text/html; charset=utf-8' : format === 'md' ? 'text/markdown; charset=utf-8' : 'application/json; charset=utf-8');
       res.setHeader('content-disposition', `attachment; filename="task-health-${report.id}.${format}"`);

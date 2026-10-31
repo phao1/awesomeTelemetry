@@ -1,3 +1,4 @@
+import { redactHealthText } from './render.js';
 import type { DeepHealthFragment, DeepHealthPack, DeepHealthReport, HealthFinding, HealthInput, HealthMetric, HealthReport } from './types.js';
 
 /** Compact preview projection authorized by the P4 budget correction.
@@ -99,28 +100,38 @@ type Sections = Pick<DeepHealthReport, 'valueMoments' | 'necessity' | 'causes' |
 const fields = { valueMoments: ['kind', 'recordId', 'reason', 'counterEvidence', 'evidenceIds'], necessity: ['findingId', 'verdict', 'alternative', 'evidenceIds'], causes: ['hypothesis', 'support', 'against', 'evidenceIds'], experiments: ['variable', 'primaryMetric', 'qualityGate', 'fixedTask', 'expectedInterval', 'evidenceIds'] } as const;
 /** Numeric claims are allowed only from numeric facts, with explicit unit conversions.
  * Unknown word forms are conservatively excluded rather than inferred. */
-function unsupportedNumber(text: string, pack: BudgetDeepHealthPack): boolean {
+function unsupportedNumber(text: string, pack: BudgetDeepHealthPack): string | null {
   const values = new Set<number>(), byUnit = new Map<string, Set<number>>();
   const put = (n: number, unit: string) => { values.add(n); const set = byUnit.get(unit) ?? new Set<number>(); set.add(n); byUnit.set(unit, set); };
   for (const m of pack.metrics) for (const v of [m.value]) if (v !== null) {
     put(v, m.unit);
     if (m.unit === 'ms') { put(v / 1000, 's'); put(v / 60000, 'min'); put(v / 3600000, 'h'); }
   }
-  for (const f of pack.findings) for (const v of Object.values(f.facts)) if (typeof v === 'number') values.add(v);
-  const words: Record<string, number> = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, hundred: 100, thousand: 1000 };
-  const units: Record<string, string> = { ms: 'ms', milliseconds: 'ms', millisecond: 'ms', '毫秒': 'ms', s: 's', seconds: 's', second: 's', '秒': 's', min: 'min', minutes: 'min', minute: 'min', '分钟': 'min', hours: 'h', hour: 'h', '小时': 'h', '%': 'pct', '％': 'pct', percent: 'pct', tokens: 'tokens', token: 'tokens', chars: 'chars', characters: 'chars', trials: 'count', calls: 'count', rounds: 'count', times: 'count', '次': 'count', '轮': 'count', '个': 'count' };
-  if (/\b(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|million|billion|dozen|half|twice|double|triple)\b/i.test(text)) return true;
-  const normalized = text.toLowerCase().replace(/\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|hundred|thousand)\b/g, word => String(words[word]));
-  // Unrecognized Chinese compounds are excluded rather than guessed.
-  if (/[零〇二两三四五六七八九十百千万亿]+|一(?:个|次|轮|秒|分钟|小时|倍|成|%|％)/.test(text)) return true;
-  const pattern = /([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)(?:\s*(milliseconds?|ms|seconds?|s\b|minutes?|min\b|hours?|tokens?|chars|characters|percent|trials|calls|rounds|times|毫秒|分钟|小时|秒|次|轮|个|%|％))?/gi;
-  for (const match of normalized.matchAll(pattern)) {
-    const n = Number(match[1]), unit = match[2] && units[match[2]];
-    if (unit ? !byUnit.get(unit)?.has(n) : !values.has(n)) return true;
+  const milliseconds = (v: number) => { put(v, 'ms'); put(v / 1000, 's'); put(v / 60000, 'min'); put(v / 3600000, 'h'); };
+  const msFacts: Record<string, string[]> = { 'act.long_tool': ['durationMs'], 'perceived.long_gap': ['gap'], 'model.slow_first_output': ['delay'] };
+  for (const f of pack.findings) for (const [key, v] of Object.entries(f.facts)) if (typeof v === 'number') {
+    values.add(v);
+    if (msFacts[f.rule]?.includes(key)) milliseconds(v);
   }
-  return false;
+  // Only coefficients immediately following an explicit conversion operator are exempt.
+  text = text.replace(/(?:除以|÷|\/)\s*(?:3600000|60000|1000)(?![\d.eE])/g, ' ');
+  text = text.replace(/十分|万一|千万|一旦|一直|一些|一般|一致|一起|一定|一样|统一|唯一|进一步|之一|百分比/g, ' ');
+  const words: Record<string, number> = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, hundred: 100, thousand: 1000 };
+  const units: Record<string, string> = { ms: 'ms', milliseconds: 'ms', millisecond: 'ms', '毫秒': 'ms', s: 's', seconds: 's', second: 's', '秒': 's', min: 'min', minutes: 'min', minute: 'min', '分钟': 'min', h: 'h', hours: 'h', hour: 'h', '小时': 'h', '%': 'pct', '％': 'pct', percent: 'pct', tokens: 'tokens', token: 'tokens', chars: 'chars', characters: 'chars', trials: 'count', calls: 'count', rounds: 'count', times: 'count', '次': 'count', '轮': 'count', '个': 'count' };
+  const word = /\b(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|million|billion|dozen|half|twice|double|triple)\b/i.exec(text);
+  const invalidTokens: { index: number; token: string }[] = word ? [{ index: word.index, token: word[0] }] : [];
+  // Unrecognized Chinese compounds are excluded rather than guessed.
+  // A lone 一 is common prose (同一、逐一、一段); it counts only before a measure word.
+  const chinese = /[零〇二两三四五六七八九十百千万亿]+(?:个|次|轮|秒|分钟|小时|倍|成|%|％)?|一(?:个|次|轮|秒|分钟|小时|倍|成|%|％)/.exec(text);
+  if (chinese) invalidTokens.push({ index: chinese.index, token: chinese[0] });
+  const pattern = /(\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|hundred|thousand)\b|[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)(?:\s*(milliseconds?|ms|seconds?|s\b|minutes?|min\b|hours?|h\b|tokens?|chars|characters|percent|trials|calls|rounds|times|毫秒|分钟|小时|秒|次|轮|个|%|％))?/gi;
+  for (const match of text.matchAll(pattern)) {
+    const n = words[match[1]!.toLowerCase()] ?? Number(match[1]), unit = match[2] && units[match[2].toLowerCase()];
+    if (unit ? !byUnit.get(unit)?.has(n) : !values.has(n)) invalidTokens.push({ index: match.index, token: match[1]! });
+  }
+  return invalidTokens.sort((a, b) => a.index - b.index)[0]?.token ?? null;
 }
-export function validateDeepHealthOutput(raw: unknown, pack: BudgetDeepHealthPack): Sections {
+export function validateDeepHealthOutput(raw: unknown, pack: BudgetDeepHealthPack, redact: (text: string) => string = redactHealthText): Sections {
   const result: Sections = { valueMoments: [], necessity: [], causes: [], experiments: [], rejected: [], status: 'rejected' };
   const invalid = () => ({ ...result, rejected: [{ section: 'report', index: null, reason: 'Invalid model output schema.' }] });
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).sort().join() !== Object.keys(fields).sort().join()) return invalid();
@@ -142,7 +153,10 @@ export function validateDeepHealthOutput(raw: unknown, pack: BudgetDeepHealthPac
       const inlineRefs = Object.values(item).filter((v): v is string => typeof v === 'string').flatMap(v => [...v.matchAll(/\[\[([^\]]+)\]\]/g)].map(m => m[1]!));
       const foreign = inlineRefs.some(id => !ids.has(id)) || (item.evidenceIds as string[]).some(id => !ids.has(id)) || section === 'valueMoments' && !records.has(String(item.recordId)) || section === 'necessity' && !pack.findings.some(f => f.id === item.findingId);
       const text = fields[section].filter(k => !['evidenceIds', 'recordId', 'findingId', 'kind', 'verdict'].includes(k)).map(k => item[k]).join(' ').replace(/\[\[[^\]]+\]\]/g, '');
-      if (foreign || unsupportedNumber(text, pack)) result.rejected.push({ section, index, reason: foreign ? 'Reference outside evidence pack.' : 'Numeric claim outside fact table; not adopted.' });
+      const token = unsupportedNumber(text, pack);
+      const firstText = fields[section].find(k => !['evidenceIds', 'recordId', 'findingId', 'kind', 'verdict'].includes(k))!;
+      const excerpt = redact(String(item[firstText])).replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[private key redacted]').slice(0, 160);
+      if (foreign || token !== null) result.rejected.push({ section, index, reason: foreign ? 'Reference outside evidence pack.' : 'Numeric claim outside fact table; not adopted.', token: foreign ? null : token, excerpt });
       else (result[section] as unknown[]).push(structuredClone(item));
     });
   }

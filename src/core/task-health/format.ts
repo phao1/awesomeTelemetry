@@ -1,4 +1,4 @@
-import type { HealthMetric, HealthReport } from './types.js';
+import type { DeepHealthReport, HealthMetric, HealthReport } from './types.js';
 export type HealthLocale = 'zh' | 'en';
 const labels: Record<string, [string, string]> = {
   model: ['模型', 'Model'], tool: ['工具', 'Tool'], unattributed: ['未归因', 'Unattributed'], userWait: ['等用户', 'User wait'], delegateWait: ['子 Agent 进行中', 'Delegation wait'], modelOnly: ['仅模型', 'Model only'], toolOnly: ['仅工具', 'Tool only'], overlap: ['模型与工具重叠', 'Model/tool overlap'], undivided: ['模型或工具（不可拆）', 'Undivided model/tool'],
@@ -103,4 +103,58 @@ export function reconciliationRows(r: HealthReport, locale: HealthLocale = 'zh')
   for (const key of ['model.sum_ms', 'model.union_ms', 'act.sum_ms', 'act.union_ms']) if (!r.metrics.some(m => m.key === key)) rows.push([metricName(key, locale), `— (${coverageReason('missing_eligible_evidence', locale)})`, healthLabel('unavailable', locale)]);
   for (const key of ['modelOnly', 'toolOnly', 'overlap', 'undivided', 'delegateWait', 'userWait', 'unattributed'] as const) rows.push([healthLabel(key, locale), r.partition ? formatDuration(r.partition[key], locale) : `— (${coverageReason('unknown_timestamp_semantics', locale)})`, r.partition ? healthLabel('derived', locale) : healthLabel('unavailable', locale)]);
   return rows;
+}
+
+const deepLabels: Record<string, [string, string]> = {
+  hypothesis: ['假设', 'Hypothesis'], support: ['支持依据', 'Support'], against: ['反对依据', 'Against'], evidenceIds: ['证据', 'Evidence'], kind: ['类型', 'Kind'], recordId: ['记录', 'Record'], reason: ['理由', 'Reason'], counterEvidence: ['反证', 'Counter-evidence'], findingId: ['发现', 'Finding'], verdict: ['判定', 'Verdict'], alternative: ['替代做法', 'Alternative'], variable: ['变量', 'Variable'], primaryMetric: ['主指标', 'Primary metric'], qualityGate: ['质量门槛', 'Quality gate'], fixedTask: ['固定任务', 'Fixed task'], expectedInterval: ['预期区间', 'Expected interval'], section: ['所属部分', 'Section'], index: ['序号', 'Item'], token: ['未接受的数字或数词', 'Unsupported token'], excerpt: ['原文摘录', 'Excerpt'],
+  ttfmp: ['首次有意义进展', 'First meaningful progress'], ttv: ['交付价值时刻', 'Time to value'], necessary: ['必要', 'Necessary'], likely_waste: ['可能浪费', 'Likely waste'], unknown: ['无法判断', 'Unknown'], partial: ['部分采纳', 'Partially accepted'], accepted: ['全部采纳', 'Accepted'], rejected: ['全部拒绝', 'Rejected'],
+  causes: ['最值得验证的原因', 'Causes worth validating'], valueMoments: ['价值时刻判定', 'Value moments'], necessity: ['必要性判定', 'Necessity'], experiments: ['优化假设与实验', 'Experiments'], report: ['报告', 'Report'],
+};
+export const deepLabel = (key: string, locale: HealthLocale = 'zh'): string => deepLabels[key]?.[locale === 'zh' ? 0 : 1] ?? healthLabel(key, locale);
+export const shortHealthId = (id: string): string => id.length > 20 ? `${id.slice(0, 12)}…${id.slice(-6)}` : id;
+export const formatHealthDate = (value: string, locale: HealthLocale = 'zh'): string => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-NZ', { hour12: false }) : value;
+const rejectionReasons: Record<string, [string, string]> = {
+  'Numeric claim outside fact table; not adopted.': ['数字或单位换算不在事实表内，未采纳。', 'Numeric claim or conversion outside fact table; not adopted.'],
+  'Reference outside evidence pack.': ['引用不属于本次证据包，未采纳。', 'Reference outside evidence pack; not adopted.'],
+  'Invalid model output schema.': ['模型输出结构不符合要求，未采纳。', 'Invalid model output schema; not adopted.'],
+};
+
+const findingNames: Record<string, [string, string]> = {
+  'cov.incomplete': ['数据覆盖不足', 'Incomplete coverage'], 'act.long_tool': ['工具调用耗时过长', 'Long tool call'], 'act.duplicate_install': ['重复安装依赖', 'Repeated dependency installation'], 'act.cd_prefix_long': ['长命令带目录切换前缀', 'Long commands with cd prefix'], 'act.tool_errors': ['工具调用错误', 'Tool errors'], 'act.small_write_batches': ['写入批次过小', 'Small write batches'], 'act.serial_independent': ['独立只读调用串行', 'Serial independent reads'], 'plan.many_rounds': ['轮数偏多', 'Many rounds'], 'plan.explore_heavy': ['首写前探索较多', 'Heavy exploration before first write'], 'plan.repeated_reads': ['重复读取文件', 'Repeated file reads'], 'plan.rework_chain': ['返工链', 'Rework chain'], 'model.slow_first_output': ['模型首条输出延迟较长', 'Slow first model output'], 'model.always_reasoning': ['持续使用思考', 'Always reasoning'], 'model.reasoning_split': ['思考组延迟较高', 'Higher reasoning-group latency'], 'model.low_cache': ['缓存命中偏低', 'Low cache hit rate'], 'perceived.long_gap': ['日志反馈空窗过长', 'Long log feedback gap'], 'quality.unverified': ['未观察到验证', 'Verification not observed'], 'quality.error_end': ['任务以错误或取消结束', 'Error or cancelled task ending'],
+};
+export interface DeepField { label: string; text: string; title?: string }
+export function deepFields(item: object, locale: HealthLocale = 'zh', parent?: HealthReport): DeepField[] {
+  return Object.entries(item).map(([key, value]) => {
+    let text = value === null || value === undefined ? '—' : String(value), title: string | undefined;
+    if (key === 'index' && typeof value === 'number') text = String(value + 1);
+    else if (key === 'reason') text = rejectionReasons[text]?.[locale === 'zh' ? 0 : 1] ?? text;
+    else if (['kind', 'verdict', 'section'].includes(key)) text = deepLabel(text, locale);
+    else if (['recordId', 'findingId', 'evidenceIds'].includes(key)) {
+      const ids = Array.isArray(value) ? value as string[] : [String(value)];
+      title = ids.join(', ');
+      text = ids.map(id => {
+        const finding = key === 'findingId' && parent?.findings.find(f => f.id === id);
+        return finding ? findingNames[finding.rule]?.[locale === 'zh' ? 0 : 1] ?? finding.recommendation.action.split(' / ')[locale === 'zh' ? 0 : 1] ?? finding.rule : shortHealthId(id);
+      }).join(', ');
+    }
+    return { label: deepLabel(key, locale), text, ...(title ? { title } : {}) };
+  });
+}
+export function deepAnalysisText(analysis: DeepHealthReport['analysis'], locale: HealthLocale = 'zh'): string {
+  const tokens = (value: number | null) => value === null ? '—' : value.toLocaleString('en-US');
+  return locale === 'zh' ? `输入 ${tokens(analysis.inputTokens)} token · 输出 ${tokens(analysis.outputTokens)} token · 用时 ${formatDuration(analysis.durationMs, locale)}` : `Input ${tokens(analysis.inputTokens)} token · Output ${tokens(analysis.outputTokens)} token · Time ${formatDuration(analysis.durationMs, locale)}`;
+}
+export function deepLimitation(code: string, locale: HealthLocale = 'zh'): { text: string; detail?: string } {
+  const zh = locale === 'zh';
+  if (code.startsWith('null_metrics:')) {
+    const keys = code.slice(code.indexOf(':') + 1).split(',').map(k => k.trim()).filter(Boolean);
+    return { text: zh ? `${keys.length} 项指标无数据` : `${keys.length} metrics without data`, detail: keys.map(key => `${metricName(key, locale)} (${key})`).join('；') };
+  }
+  const fixed: Record<string, [string, string]> = {
+    facts_compacted: ['事实表已精简，省略原始样本。', 'Fact table compacted; raw samples omitted.'], evidence_projection_compacted: ['证据定位已精简。', 'Evidence projection compacted.'], goal_unavailable: ['任务目标正文不可用。', 'Goal unavailable.'], final_unavailable: ['最终回复正文不可用。', 'Final reply unavailable.'], verification_unavailable: ['验证输出不可用。', 'Verification unavailable.'], normal_samples_shortage: ['相邻正常样本不足。', 'Neighboring normal samples are insufficient.'], rounds_limit: ['轮摘要达到数量上限。', 'Round summary limit reached.'], selected_body_unavailable: ['部分选中证据正文不可用。', 'Selected evidence bodies unavailable.'], budget_minimum_pack: ['证据包已精简到最小范围。', 'Minimum evidence pack retained.'], budget_normal_final_verification_and_rounds_omitted: ['因大小预算省略正常样本、最终回复、验证输出及轮摘要。', 'Normal/final/verification excerpts and rounds omitted for budget.'],
+  };
+  const budget = /^budget_(rounds|normal_samples|excerpts)_(\d+)$/.exec(code);
+  if (budget) return { text: zh ? `${budget[1] === 'rounds' ? '轮摘要' : budget[1] === 'excerpts' ? '摘录字数' : '正常样本'}因大小预算缩减至 ${budget[2]}。` : `${budget[1]} reduced to ${budget[2]} for budget.` };
+  const key = code.split(':')[0]!;
+  return { text: fixed[code]?.[zh ? 0 : 1] ?? (reasons[key] ? coverageReason(code, locale) : code.includes(' / ') ? code.split(' / ')[zh ? 0 : 1] ?? code : code) };
 }

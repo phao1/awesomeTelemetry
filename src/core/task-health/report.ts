@@ -14,7 +14,7 @@ import { startupRules } from './rules/startup.js';
 import { qualityRules } from './rules/quality.js';
 import { relativeTime } from './snapshot-tracelog.js';
 export const HEALTH_CALC_VERSION = 2;
-export const HEALTH_RULE_VERSION = 2;
+export const HEALTH_RULE_VERSION = 3;
 const dimensions: Dimension[] = ['perceived', 'plan', 'act', 'model', 'startup', 'quality', 'coverage'];
 /** Bilingual templates consume fact parameters; rule predicates contain no prose. */
 const templates: Record<string, [
@@ -46,8 +46,9 @@ export function renderFinding(draft: FindingDraft): HealthFinding {
     const fillPart = (s: string, locale: 'zh' | 'en') => s.replace(/\{(\w+)\}/g, (_, key: string) => formatFact(key, draft.facts[key] ?? null, locale));
     const fill = (s: string) => s.split(' / ').map((part, i) => fillPart(part, i === 0 ? 'zh' : 'en')).join(' / ');
     const cause = String(draft.facts.cause ?? 'unattributed');
-    const advice = cause === 'model' ? ['长思考期间输出阶段提示', 'Show stage updates during long reasoning'] : cause === 'unattributed' ? ['核对该空窗两端记录，补齐计时数据', 'Inspect both gap endpoints and complete timing evidence'] : ['长工具期间输出进度', 'Show progress during long tools'];
-    const actionTemplate = draft.rule === 'perceived.long_gap' ? `最大日志空窗{gap}，归因为{cause}；${advice[0]}。 / Maximum log gap is {gap}, attributed to {cause}; ${advice[1]}.` : action;
+    const unknownCause = ['unattributed', '无法归因'].includes(cause);
+    const advice = cause === 'model' ? ['长思考期间输出阶段提示', 'Show stage updates during long reasoning'] : unknownCause ? ['核对该空窗两端记录，补齐计时数据', 'Inspect both gap endpoints and complete timing evidence'] : ['长工具期间输出进度', 'Show progress during long tools'];
+    const actionTemplate = draft.rule === 'perceived.long_gap' ? `最大日志空窗{gap}，${unknownCause ? '未能归因到具体环节' : '归因为{cause}'}；${advice[0]}。 / Maximum log gap is {gap}, ${unknownCause ? 'could not be attributed to a specific stage' : 'attributed to {cause}'}; ${advice[1]}.` : action;
     return { ...draft, recommendation: { action: fill(actionTemplate), conditions: fill(conditions), retest: [...retest] } };
 }
 function states(c: RuleContext, findings: HealthFinding[]): HealthReport['dimensions'] {

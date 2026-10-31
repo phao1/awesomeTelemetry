@@ -112,3 +112,20 @@ it('previews a realistic large report within budget, retaining findings, normal 
   expect(JSON.stringify(large)).toBe(before);
   expect(previewDeepPack(preview.pack)).toEqual(preview);
 });
+
+it('uses prompt version 2 and explicit numeric prose rules', async () => {
+  const preview = previewDeepPack(pack());
+  const create = vi.fn(async () => ({ text: JSON.stringify(output), inputTokens: 1, outputTokens: 1 }));
+  const result = await runDeepHealth(report, preview, preview.digest, new AbortController().signal, { client: { create }, env });
+  expect(result.promptVersion).toBe(2);
+  const system = (create.mock.calls[0] as unknown as [{ system: string }])[0].system;
+  for (const text of ['Arabic digits', 'never conversion coefficients', 'evidenceIds', '一个、一次、两次、三轮', '无法判断']) expect(system).toContain(text);
+});
+
+it('fully redacts rejected model excerpts before persisting bounded diagnostics', async () => {
+  const preview = previewDeepPack(pack());
+  const raw = { ...output, causes: [{ ...output.causes[0]!, hypothesis: '999999 person@example.com Bearer SECRET123 ' + '正文'.repeat(100) }] };
+  const result = await runDeepHealth(report, preview, preview.digest, new AbortController().signal, { client: { create: async () => ({ text: JSON.stringify(raw), inputTokens: null, outputTokens: null }) }, env });
+  expect(result.rejected[0]!.token).toBe('999999'); expect(result.rejected[0]!.excerpt).toHaveLength(160);
+  expect(result.rejected[0]!.excerpt).not.toMatch(/person@example.com|SECRET123/);
+});

@@ -258,7 +258,7 @@ interface DeepHealthReport {
   version: 1; id: string; reportId: string; taskId: string;
   digest: string; generatedAt: string;
   provider: 'anthropic' | 'openai-compatible'; model: string;
-  promptVersion: number; status: 'accepted' | 'partial' | 'rejected';
+  promptVersion: 1 | 2; status: 'accepted' | 'partial' | 'rejected';
   timing: 'model_judged';
   valueMoments: { kind: 'ttfmp' | 'ttv'; recordId: string;
     reason: string; counterEvidence: string; evidenceIds: string[] }[];
@@ -267,7 +267,7 @@ interface DeepHealthReport {
   causes: { hypothesis: string; support: string; against: string; evidenceIds: string[] }[];
   experiments: { variable: string; primaryMetric: string; qualityGate: string;
     fixedTask: string; expectedInterval: string; evidenceIds: string[] }[];
-  rejected: { section: string; index: number | null; reason: string }[];
+  rejected: { section: string; index: number | null; reason: string; token?: string | null; excerpt?: string }[];
   analysis: { inputTokens: number | null; outputTokens: number | null; durationMs: number };
   limitations: string[];
 }
@@ -292,6 +292,22 @@ valid items survive (partial). References outside this pack are rejected, never
 repaired by model guesses. No accepted items means rejected. Never overwrite
 ordinary facts. Model output <=64KiB. Numeric claims include number words and
 units; validation uses the fact values with explicit unit conversion only.
+Prompt version 2 is current (version 1 reports remain readable). Prose uses Arabic
+digits, copied fact values with units or ms converted to s/min/h results only;
+no conversion coefficients, Chinese quantity phrases, counts, ordinals or ID
+digits in prose. Use evidenceIds and 无法判断 where no corresponding fact exists.
+Validation exempts coefficients only in `(除以|÷|/)\s*(1000|60000|3600000)`
+phrases; unrelated coefficients remain ordinary claims. Before Chinese numeral
+checks, exclude 十分、万一、千万、一旦、一直、一些、一般、一致、一起、一定、一样、统一、唯一、进一步、之一、百分比.
+Milliseconds in finding facts are act.long_tool.durationMs,
+perceived.long_gap.gap and model.slow_first_output.delay; these permit the same
+unit conversions as ms metrics. Other finding facts retain their numeric rules.
+Rejected items include token (first unsupported original numeric/quantity token,
+null for foreign references) and excerpt (first prose field, redacted then
+truncated to <=160 characters). Schema rejection has no item excerpt. These
+fields are optional solely for compatibility with earlier saved reports.
+Rule version 3 changes only unattributed long-gap recommendation wording;
+calculation version remains 2.
 Prompt treats all excerpts as untrusted data, ignores embedded instructions,
 forbids tools/files/configuration changes, and requires unknown when unsupported.
 Analysis token counts/elapsed are diagnostic overhead, excluded from task metrics.

@@ -31,3 +31,10 @@ it('localizes every fixed facet value emitted by the metric engine and labels ch
   expect(formatFacets({ component: 'reads' })).toBe('读取次数');
   expect(metricValue({ value: 42, unit: 'chars', reason: null })).toBe('42 字符');
 });
+it('describes an unattributed gap without attributing it to unattributed', () => {
+  for (const cause of ['unattributed', '无法归因']) {
+    const f = renderFinding({ id: 'gap', rule: 'perceived.long_gap', dimension: 'perceived', severity: 'notice', confidence: 'observed', facts: { gap: 120000, cause }, evidenceIds: [], intervalMs: null });
+    expect(f.recommendation.action).toContain('最大日志空窗2 分 0 秒，未能归因到具体环节');
+    expect(f.recommendation.action).toContain('could not be attributed'); expect(f.recommendation.action).not.toContain('归因为未归因');
+  }
+});

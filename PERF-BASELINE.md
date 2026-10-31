@@ -2032,3 +2032,25 @@ Browser check against a copied local DB with a stub provider pointed at an
 unreachable loopback port: preview 200 (33,034 bytes, redacted), run 503 with a
 specific "model request failed" message, standard report SHA-256 unchanged, stub
 key absent from data dir, reports and server logs. No real model was called.
+
+## 2026-10-31 — M12 task-health P4b (deep validator, readable deep report, Codex proxy)
+
+Prompt v2 states the numeric rules the validator enforces; the validator accepts
+explicit ms conversion coefficients, common non-quantity words and ms finding facts,
+and records the first rejected token plus a redacted excerpt. Deep report UI and
+HTML/Markdown export use shared Chinese labels; history shows local times. The
+perceived.long_gap wording no longer reads "归因为未归因" (ruleVersion 3). Adds
+scripts/codex-health-proxy.mjs (loopback OpenAI-compatible bridge to `codex exec`
+with tools disabled) and `npm run health-proxy:codex`. No schema, index or runtime
+dependency change.
+
+Build, typecheck and lint passed. Full suite: 392 files passed, 4550 tests passed,
+1 existing skip. All ten perf:check diagnostics passed. 10-task-health: 20000
+events / 5 members, 818 ms (budget 3 s), event-loop p99 3.28 ms, max 7.94 ms,
+0 external requests.
+
+Real run through the Codex proxy (gpt-6.1-sol, medium) on a copied local DB:
+fresh standard report, preview 33,034 bytes, deep run 26.9 s, accepted with 0
+rejected (before this change the same task's top cause was rejected for writing
+"毫秒除以 1000"), 22,939 input / 1,143 output tokens (Codex adds ~9.4k tokens of
+its own system prompt).

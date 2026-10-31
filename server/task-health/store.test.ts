@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm, mkdir, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { analyzeTaskHealth } from '../../src/core/task-health/report.js';
-import type { HealthInput, HealthReport } from '../../src/core/task-health/types.js';
+import type { DeepHealthReport, HealthInput, HealthReport } from '../../src/core/task-health/types.js';
 import { atomicHealthWrite, createHealthReportStore } from './store.js';
 let dir: string;
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'health-store-')); vi.stubGlobal('fetch', vi.fn()); });
@@ -56,4 +56,15 @@ it('rejects path traversal, oversized files and malformed orphan reports', async
   const store = createHealthReportStore(dir), r = await report(); await expect(store.get('../index')).rejects.toMatchObject({ status: 404 });
   await mkdir(taskDir(r), { recursive: true }); await writeFile(join(taskDir(r), r.id + '.json'), '{}'); await expect(store.list(r.taskId, null)).rejects.toMatchObject({ code: 'HEALTH_STORAGE_FAILED' });
   await expect(store.save({ ...r, limitations: ['x'.repeat(1024 * 1024)] })).rejects.toMatchObject({ code: 'HEALTH_SIZE_LIMIT' });
+});
+
+it('reads legacy rejected items and validates new rejection diagnostics and prompt versions', async () => {
+  const store = createHealthReportStore(dir), parent = await report(); await store.save(parent);
+  const deep: DeepHealthReport = { version: 1, id: randomUUID(), reportId: parent.id, taskId: parent.taskId, generatedAt: parent.generatedAt, digest: 'a'.repeat(64), provider: 'openai-compatible', model: 'fixture', promptVersion: 1, timing: 'model_judged', status: 'rejected', valueMoments: [], necessity: [], causes: [], experiments: [], rejected: [{ section: 'causes', index: 0, reason: 'Numeric claim outside fact table; not adopted.' }], analysis: { inputTokens: null, outputTokens: null, durationMs: 10 }, limitations: [] };
+  await store.saveDeep(deep); expect(await store.get(deep.id)).toEqual(deep);
+  const modern: DeepHealthReport = { ...deep, id: randomUUID(), promptVersion: 2, rejected: [{ ...deep.rejected[0]!, token: '两次', excerpt: '出现两次长等待' }] };
+  await store.saveDeep(modern); expect(await store.get(modern.id)).toEqual(modern);
+  for (const rejected of [[{ ...modern.rejected[0]!, excerpt: 'x'.repeat(161) }], [{ ...modern.rejected[0]!, token: 123 }]]) {
+    await expect(store.saveDeep({ ...modern, id: randomUUID(), rejected } as DeepHealthReport)).rejects.toMatchObject({ code: 'HEALTH_STORAGE_FAILED' });
+  }
 });
