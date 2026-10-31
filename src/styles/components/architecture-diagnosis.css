@@ -9,7 +9,7 @@
 .architecture-thresholds fieldset { border: 1px solid var(--border-muted); margin: var(--space-2) 0; padding: var(--space-2); }
 .architecture-threshold-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--space-10) * 4), 1fr)); gap: var(--space-2); }
 .architecture-threshold-grid label, .architecture-real-controls label, .architecture-real-entry form label { display: grid; gap: var(--space-1); }
-.architecture-threshold-grid input, .architecture-real-entry select, .architecture-real-entry input { box-sizing: border-box; min-width: 0; max-width: 100%; background: var(--canvas-inset); color: var(--fg-default); border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); font: inherit; }
+.architecture-threshold-grid input:not(.ui-input):not([type=hidden]), .architecture-real-entry select:not(.ui-select), .architecture-real-entry input:not(.ui-input):not([type=hidden]) { box-sizing: border-box; min-width: 0; max-width: 100%; background: var(--canvas-inset); color: var(--fg-default); border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); font: inherit; }
 .architecture-threshold-grid small { color: var(--fg-muted); }
 .architecture-report { margin-top: var(--space-3); }
 .architecture-report-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; }

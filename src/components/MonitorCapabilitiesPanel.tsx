@@ -1,3 +1,5 @@
+import { Skeleton } from './ui/States.js';
+import { Button } from './ui/Button.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client.js';
 import type { MonitorAgent, MonitorCapabilityReport, MonitorTransportCapability, ProviderKey } from '../core/trace-types.js';
@@ -93,11 +95,11 @@ export function MonitorCapabilitiesPanel({ locale, onConfigure }: Props): React.
   return <section aria-label={labels.title}>
     <h3>{labels.title}</h3><p className="hint">{labels.meaning}</p><p className="hint">{labels.scope}</p>
     <p className="hint">{labels.listener}</p><p className="hint">{labels.action}</p>
-    <button className="btn" type="button" disabled={busy} onClick={() => void load()}>{labels.refresh}</button>
-    {busy && <p role="status" aria-live="polite">{labels.loading}</p>}
+    <Button  type="button" disabled={busy} onClick={() => void load()}>{labels.refresh}</Button>
+    {busy && <div role="status" aria-live="polite"><Skeleton variant="row"/></div>}
     {error !== null && <div role="alert"><code>{error.code}</code><p>{error.timeout ? labels.timeout : labels.error}</p>
       {error.message !== '' && <p>{error.message}</p>}
-      <button className="btn" type="button" onClick={() => void load()}>{labels.retry}</button></div>}
+      <Button  type="button" onClick={() => void load()}>{labels.retry}</Button></div>}
     {report !== null && <>
       <p>{labels.host}: <code>{report.platform}</code> · {labels.generated}: <time dateTime={report.generatedAt}>{report.generatedAt}</time></p>
       <p className="hint">{labels.evidence}</p>
@@ -108,7 +110,7 @@ export function MonitorCapabilitiesPanel({ locale, onConfigure }: Props): React.
             const recipe = agent.processRecipe;
             return <tr key={agent.provider} data-capability-agent={agent.provider}>
             <th scope="row">{names[agent.provider]}</th><td>{labels.implemented}</td><td>{labels.unknown}</td><td>{labels.unverified}</td>
-            <td>{recipe === null ? labels.noRecipe : <button className="btn" type="button" data-configure-agent={recipe} onClick={() => onConfigure(recipe)}>{labels.configure} {recipe}</button>}</td>
+            <td>{recipe === null ? labels.noRecipe : <Button  type="button" data-configure-agent={recipe} onClick={() => onConfigure(recipe)}>{labels.configure} {recipe}</Button>}</td>
           </tr>;
           })}</tbody></table></div>
         <h4>{labels.transports}</h4><div style={{ overflowX: 'auto' }}><table className="data-table">

@@ -1,4 +1,4 @@
-import { ta } from '../../i18n.js';
+import { useUiTranslate } from './Locale.js';
 import type { ReactNode } from 'react';
 
 /** REQ-005：Kbd —— 渲染键位（⌘K / j / Esc）。 */
@@ -75,6 +75,7 @@ export function Sparkline({
   height = 24,
   label,
 }: SparklineProps): React.JSX.Element {
+  const ta=useUiTranslate();
   const a11yLabel = ta('a11y.sparkline', { label: label ?? '' }).trim();
   if (points.length < 2) {
     return (

@@ -348,7 +348,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       await act(async()=>{for(let i=0;i<30&&!container.querySelector('.cmp-run-evidence');i++)await new Promise(resolve=>setTimeout(resolve,10));});
       act(()=>[...container.querySelectorAll<HTMLButtonElement>('.ui-accordion > button')].find(b=>b.textContent==='调查入口')!.click());
       const left=container.querySelector('.cmp-evidence-side')!;
-      act(()=>left.querySelector('summary')!.click());
+      act(()=>left.querySelector<HTMLButtonElement>('.ui-accordion > button')!.click());
       await act(async()=>{left.querySelector<HTMLButtonElement>('.cmp-evidence-errors button')!.click();for(let i=0;i<10;i++)await Promise.resolve();});
       for(let i=0;i<100&&!container.querySelector('.task-evidence')?.textContent?.includes('SYNTHETIC_SELECTED_ERROR');i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});
       expect(fetcher.mock.calls.filter(([path])=>String(path).includes('/api/tasks/collected%3As-1/records?')&&String(path).includes('anchor=s-1%3Aevent%3Abeyond-first-page'))).toHaveLength(1);

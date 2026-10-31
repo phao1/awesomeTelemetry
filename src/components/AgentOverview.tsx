@@ -75,7 +75,7 @@ function RecentSessions({ row, recent, locale, onSelectSession, onBrowseSessions
         <time className="mono hint" dateTime={session.startedAt}>{session.startedAt.slice(0, 16).replace('T', ' ')} UTC</time>
         <span className="mono">{fmtNum(session.eventCount)} {t('agent.events', locale)}</span>
       </Button>)}
-    {onBrowseSessions !== undefined && <Button type="button" className="btn ui-btn-sm"
+    {onBrowseSessions !== undefined && <Button type="button" className="ui-btn ui-btn-sm"
       onClick={() => onBrowseSessions(row.provider === 'opentelemetry' ? undefined : row.provider)}>{t('agent.browseProvider', locale)} · {row.provider}</Button>}
   </div>;
 }
@@ -180,21 +180,21 @@ export function AgentOverview({ locale, load, sessions = [], onSelectSession, on
     { key: 'avgToolDurationMs', label: t('agent.toolDuration', locale), sortable: true, align: 'right', render: row => <span className="mono">{duration(row.avgToolDurationMs)}</span> },
   ];
 
-  const retry = <Button type="button" className="btn ui-btn-sm" onClick={() => setRetryKey(key => key + 1)}>{t('common.retry', locale)}</Button>;
+  const retry = <Button type="button" className="ui-btn ui-btn-sm" onClick={() => setRetryKey(key => key + 1)}>{t('common.retry', locale)}</Button>;
   if (error !== null) return <section className="overview"><div className="ui-error" role="alert">
     <code>{error.code}</code><p>{t(error.key, locale)}</p>{error.detail !== undefined && <p>{error.detail}</p>}{retry}
   </div></section>;
   if (snapshot === null) return <section className="overview" aria-label={t('view.agent', locale)}>
-    <PageSkeleton locale={locale} variant="table" /><Button type="button" className="btn ui-btn-sm" onClick={() => cancelRead.current?.()}>{t('agent.cancelWaiting', locale)}</Button>
+    <PageSkeleton locale={locale} variant="table" /><Button type="button" className="ui-btn ui-btn-sm" onClick={() => cancelRead.current?.()}>{t('agent.cancelWaiting', locale)}</Button>
   </section>;
   if (rows.length === 0) return <section className="overview"><EmptyState icon={<IconAgents />} title={t('agent.emptyTitle', locale)}
     description={t('agent.emptyDescription', locale)} action={<div className="agent-toolbar">{retry}{onBrowseSessions !== undefined &&
-      <Button type="button" className="btn ui-btn-sm" onClick={() => onBrowseSessions()}>{t('agent.browseSessions', locale)}</Button>}</div>} /></section>;
+      <Button type="button" className="ui-btn ui-btn-sm" onClick={() => onBrowseSessions()}>{t('agent.browseSessions', locale)}</Button>}</div>} /></section>;
 
   return <section className={'overview overview-' + viewMode} aria-label={t('view.agent', locale)}>
     <header className="agent-overview-header">
       <div><h2>{t('view.agent', locale)}</h2><p className="hint">{t('agent.scope', locale)}</p></div>
-      <Button type="button" className="btn ui-btn-sm" onClick={() => { setSnapshot(null); setRetryKey(key => key + 1); }}>{t('common.refresh', locale)}</Button>
+      <Button type="button" className="ui-btn ui-btn-sm" onClick={() => { setSnapshot(null); setRetryKey(key => key + 1); }}>{t('common.refresh', locale)}</Button>
     </header>
     <div className="overview-kpis">
       <StatCard icon={<IconSessions />} label={t('agent.sessions', locale)} value={fmtNum(totals.sessions)} />
@@ -215,12 +215,12 @@ export function AgentOverview({ locale, load, sessions = [], onSelectSession, on
         onClick={() => setSort({ key, direction: key === 'tokenTotal' || key === 'verificationCoverage' ? 'desc' : 'asc' })}>
         {t((['agent.sortDuration', 'agent.sortTokens', 'agent.sortError', 'agent.sortVerify'] as const)[index]!, locale)}
       </Button>)}
-      {sort !== null && <Button type="button" className="btn ui-btn-sm" onClick={() => setSort(null)}>{t('agent.resetSort', locale)}</Button>}
+      {sort !== null && <Button type="button" className="ui-btn ui-btn-sm" onClick={() => setSort(null)}>{t('agent.resetSort', locale)}</Button>}
       <span className="hint agent-freshness">{t(snapshot.cached ? 'agent.cached' : 'agent.fresh', locale)} · {t('agent.sourceStamp', locale)} <time dateTime={snapshot.stamp}>{snapshot.stamp}</time></span>
     </div>
     <div className="agent-toolbar">
       <p className="hint">{t('agent.selectHint', locale)} · {compareSelection.length}/2 · {t('agent.compareBasis', locale)}</p>
-      {compareSelection.length === 2 && onCompareProviders !== undefined && <Button type="button" className="btn compare-float-btn" onClick={() => {
+      {compareSelection.length === 2 && onCompareProviders !== undefined && <Button type="button" className="ui-btn compare-float-btn" onClick={() => {
         const pair = compareSelection.map(key => rows.find(row => overviewGroupKey(row) === key));
         if (pair[0] !== undefined && pair[1] !== undefined && pair[0].provider !== 'opentelemetry' && pair[1].provider !== 'opentelemetry') onCompareProviders(pair[0].provider, pair[1].provider, [pair[0].sourceAgent, pair[1].sourceAgent]);
       }}><IconCompare />{t('agent.compareSelected', locale)}</Button>}
@@ -253,7 +253,7 @@ export function AgentOverview({ locale, load, sessions = [], onSelectSession, on
             <span>{t('agent.debugRate', locale)}: {pct(row.debugEntryRate)}</span>
             <span>{t('agent.tokenParts', locale)}: {fmtNum(row.tokenInput)} / {fmtNum(row.tokenOutput)}</span></div>
           <PhaseDetails row={row} locale={locale} />
-          <Button type="button" className="btn ui-btn-sm" aria-expanded={expanded === key} onClick={() => toggleExpand(key)}>{expandName(row)}</Button>
+          <Button type="button" className="ui-btn ui-btn-sm" aria-expanded={expanded === key} onClick={() => toggleExpand(key)}>{expandName(row)}</Button>
           {expanded === key && renderRecent(row)}
         </CardBody></Card>;
       })}

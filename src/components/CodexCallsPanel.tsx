@@ -1,3 +1,5 @@
+import { Disclosure } from './ui/PageControls.js';
+import { Button } from './ui/Button.js';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client.js';
 import type { CodexCallDetail, CodexCallPage } from '../core/trace-types.js';
@@ -91,7 +93,8 @@ function CodexCallsContent({ source, locale, onOpenSession, invalidateKey = 0, c
   useEffect(() => {
     if (inspectKey === null) return;
     const target = root.current?.querySelector<HTMLElement>('[data-codex-evidence="' + inspectKey.value + '"]');
-    if (target instanceof HTMLDetailsElement) target.open = true;
+    const trigger=target?.querySelector<HTMLButtonElement>(':scope > .ui-accordion > button[aria-expanded=false]');
+    trigger?.click();
     target?.focus(); target?.scrollIntoView?.({ block: 'nearest' });
   }, [inspectKey, itemPage]);
   useEffect(() => {
@@ -135,7 +138,7 @@ function CodexCallsContent({ source, locale, onOpenSession, invalidateKey = 0, c
   const move = (next: number): void => { selection.current = { sequence: null, detail: null }; setSelected(null); setDetail(null); setOffset(next); };
   return <section ref={root} aria-label={copy.title}>
     <h3>{copy.title}</h3><p className="hint">{copy.notice}</p>
-    <button className="btn" type="button" disabled={pending || detailPending} onClick={() => { manual.current = true; settlementUsed.current = false; setAttempt(value => value + 1); }}>{copy.refresh}</button>
+    <Button  type="button" disabled={pending || detailPending} onClick={() => { manual.current = true; settlementUsed.current = false; setAttempt(value => value + 1); }}>{copy.refresh}</Button>
     {'requestId' in source && <label><input type="checkbox" checked={automatic} onChange={event => setAutomatic(event.target.checked)} /> {copy.auto}</label>}
     {budgetHeld && <p role="status">{copy.budget}</p>}
     {settlementRetry && <p role="status">{copy.settling}</p>}
@@ -146,47 +149,47 @@ function CodexCallsContent({ source, locale, onOpenSession, invalidateKey = 0, c
       {!page.complete && <p className="hint">{copy.partial}: {page.reasons.join(', ') || copy.unknown} · unassigned: {page.unassignedEvents}</p>}
       {page.items.length === 0 && <p>{copy.empty}</p>}
       <div style={{ overflowX: 'auto' }}><table className="ui-table ui-table-compact" style={{ minWidth: 720 }}><thead><tr><th>#</th><th>Model / lane</th><th>State</th><th>Input / output</th><th>Cache / reasoning</th><th>ms</th></tr></thead>
-        <tbody>{page.items.map(call => <tr key={call.sequence}><td><button type="button" className="btn" disabled={pending || detailPending} style={{ whiteSpace: 'nowrap' }} aria-pressed={selected === call.sequence} onClick={() => choose(call.sequence)}>{call.warmup ? copy.warmup : copy.call} {call.sequence + 1}</button></td>
+        <tbody>{page.items.map(call => <tr key={call.sequence}><td><Button type="button"  disabled={pending || detailPending} style={{ whiteSpace: 'nowrap' }} aria-pressed={selected === call.sequence} onClick={() => choose(call.sequence)}>{call.warmup ? copy.warmup : copy.call} {call.sequence + 1}</Button></td>
           <td>{call.model ?? '—'} / {call.streamId ?? 'default'}</td><td>{call.state}{call.reasons.length > 0 ? ' ⚠' : ''}</td>
           <td>{call.usage.inputTokens ?? '—'} / {call.usage.outputTokens ?? '—'}</td><td>{call.usage.cacheReadTokens ?? '—'} / {call.usage.reasoningTokens ?? '—'}</td>
           <td>{call.firstContentMs ?? '—'} / {call.durationMs ?? '—'}</td></tr>)}</tbody></table></div>
       <p>{offset + (page.items.length ? 1 : 0)}–{offset + page.items.length} / {page.total}</p>
-      <button className="btn" type="button" disabled={offset === 0 || pending || detailPending} onClick={() => move(Math.max(0, offset - 20))}>{copy.previous}</button>
-      <button className="btn" type="button" disabled={!page.hasMore || pending || detailPending} onClick={() => move(offset + 20)}>{copy.next}</button>
+      <Button  type="button" disabled={offset === 0 || pending || detailPending} onClick={() => move(Math.max(0, offset - 20))}>{copy.previous}</Button>
+      <Button  type="button" disabled={!page.hasMore || pending || detailPending} onClick={() => move(offset + 20)}>{copy.next}</Button>
     </>}
     {detailPending && <Skeleton count={3} />}
     {detail !== null && <div>
       <h4>{detail.call.warmup ? copy.warmup : copy.call} {detail.call.sequence + 1}</h4>
       <p>{copy.source}: <code>{detail.call.responseId ?? '—'}</code> / <code>{detail.call.nativeTurnId ?? '—'}</code></p>
       <p>{copy.timing}: {detail.call.firstContentMs ?? '—'} / {detail.call.durationMs ?? '—'} ms · {copy.noTiming}</p>
-      <p>{copy.parent}: {detail.call.predecessorSequence !== null ? <button className="btn" type="button" disabled={pending || detailPending} onClick={() => choose(detail.call.predecessorSequence!)}>{detail.call.predecessorSequence + 1}</button> : detail.call.previousResponseId ?? '—'}</p>
-      <details><summary>{locale === 'zh' ? '上下文差异（仅本次发送载荷）' : 'Context diff (transmitted payload only)'}</summary>
+      <p>{copy.parent}: {detail.call.predecessorSequence !== null ? <Button  type="button" disabled={pending || detailPending} onClick={() => choose(detail.call.predecessorSequence!)}>{detail.call.predecessorSequence + 1}</Button> : detail.call.previousResponseId ?? '—'}</p>
+      <Disclosure title={<>{locale === 'zh' ? '上下文差异（仅本次发送载荷）' : 'Context diff (transmitted payload only)'}</>}>
         <p className="hint">{copy.notice}</p>
         {detail.contextDiff === null ? <p>{copy.unknown}: {detail.contextDiffUnavailableReason}</p> : <>
           <p>Chars: {detail.contextDiff.growth.baseChars} → {detail.contextDiff.growth.targetChars} ({detail.contextDiff.growth.deltaChars > 0 ? '+' : ''}{detail.contextDiff.growth.deltaChars}); input tokens Δ: {detail.contextDiff.growth.inputTokenDelta ?? '—'}</p>
-          {detail.contextDiff.categories.map(category => <details key={category.category}><summary>{category.category}: +{category.added} / −{category.removed} / ~{category.modified}</summary>
-            {category.entries.slice(0, 50).map((entry, i) => <details key={i}><summary>{entry.kind} · {entry.label}</summary><p>{entry.beforePath ?? '—'} → {entry.afterPath ?? '—'}</p><pre style={PRE_STYLE}>{JSON.stringify({ before: entry.before, after: entry.after, changedPaths: entry.changedPaths }, null, 2)}</pre></details>)}
+          {detail.contextDiff.categories.map(category => <Disclosure key={category.category} title={<>{category.category}: +{category.added} / −{category.removed} / ~{category.modified}</>}>
+            {category.entries.slice(0, 50).map((entry, i) => <Disclosure key={i} title={<>{entry.kind} · {entry.label}</>}><p>{entry.beforePath ?? '—'} → {entry.afterPath ?? '—'}</p><pre style={PRE_STYLE}>{JSON.stringify({ before: entry.before, after: entry.after, changedPaths: entry.changedPaths }, null, 2)}</pre></Disclosure>)}
             {category.entries.length > 50 && <p>{copy.truncated}</p>}
-          </details>)}
+          </Disclosure>)}
           {!detail.contextDiff.completeness.complete && <p>{copy.partial}: {detail.contextDiff.completeness.reasons.join(', ')}</p>}
         </>}
-      </details>
+      </Disclosure>
       <p>{copy.native}: <code>{detail.call.nativeSessionId ?? '—'}</code> · {detail.native.state}
-        {detail.native.sessionKey !== null && onOpenSession !== undefined && <button className="btn" type="button" onClick={() => onOpenSession(detail.native.sessionKey!)}>{copy.open}</button>}</p>
+        {detail.native.sessionKey !== null && onOpenSession !== undefined && <Button  type="button" onClick={() => onOpenSession(detail.native.sessionKey!)}>{copy.open}</Button>}</p>
       {detail.native.matches.map((match, i) => <p className="mono" key={i}>{match.kind}: {match.value} → {match.eventId} · {match.sourcePath}</p>)}
       {detail.call.reasons.length > 0 && <p role="status">{copy.reason}: {detail.call.reasons.join(', ')}</p>}
       <ProxyInsights analysis={detail.analysis} locale={locale} onInspect={value => { if (value.startsWith('item-')) setItemPage(Math.floor(Number(value.slice(5)) / 50)); setInspectKey({ value }); }} />
       {!detail.analysis.completeness.complete && <p role="status">{copy.partial}: {detail.analysis.completeness.reasons.join(', ')}</p>}
-      <details><summary>{copy.input}</summary>{detail.requestPreviewTruncated && <p>{copy.truncated}</p>}<pre className="mono" style={PRE_STYLE}>{detail.requestPreview}</pre></details>
-      {detail.analysis.system !== null && <details data-codex-evidence="system" tabIndex={-1}><summary>{copy.system}</summary><pre style={PRE_STYLE}>{detail.analysis.system}</pre></details>}
-      <details><summary>{copy.tools} ({detail.analysis.declarations.length})</summary>{detail.analysis.declarations.map((tool, i) => <pre data-codex-evidence={'declaration-' + i} tabIndex={-1} style={PRE_STYLE} key={i}>{tool.definition}</pre>)}</details>
-      <details data-codex-evidence="usage" tabIndex={-1}><summary>{copy.usage}</summary><pre style={PRE_STYLE}>{JSON.stringify(detail.analysis.usage, null, 2)}</pre></details>
+      <Disclosure title={<>{copy.input}</>}>{detail.requestPreviewTruncated && <p>{copy.truncated}</p>}<pre className="mono" style={PRE_STYLE}>{detail.requestPreview}</pre></Disclosure>
+      {detail.analysis.system !== null && <Disclosure data-codex-evidence="system" tabIndex={-1} title={<>{copy.system}</>}><pre style={PRE_STYLE}>{detail.analysis.system}</pre></Disclosure>}
+      <Disclosure title={<>{copy.tools} ({detail.analysis.declarations.length})</>}>{detail.analysis.declarations.map((tool, i) => <pre data-codex-evidence={'declaration-' + i} tabIndex={-1} style={PRE_STYLE} key={i}>{tool.definition}</pre>)}</Disclosure>
+      <Disclosure data-codex-evidence="usage" tabIndex={-1} title={<>{copy.usage}</>}><pre style={PRE_STYLE}>{JSON.stringify(detail.analysis.usage, null, 2)}</pre></Disclosure>
       {detail.analysis.errors.map((value, i) => <p data-codex-evidence={'error-' + i} tabIndex={-1} role="alert" key={i}>{value.code}: {value.message}</p>)}
-      {detail.toolReferences.length > 0 && <div><h4>{copy.references}</h4>{detail.toolReferences.map(ref => <p key={ref.callId}><code>{ref.callId}</code> → {ref.proposalSequence === null ? copy.unknown : <button className="btn" type="button" disabled={pending || detailPending} onClick={() => choose(ref.proposalSequence!)}>{copy.call} {ref.proposalSequence + 1}</button>}</p>)}</div>}
+      {detail.toolReferences.length > 0 && <div><h4>{copy.references}</h4>{detail.toolReferences.map(ref => <p key={ref.callId}><code>{ref.callId}</code> → {ref.proposalSequence === null ? copy.unknown : <Button  type="button" disabled={pending || detailPending} onClick={() => choose(ref.proposalSequence!)}>{copy.call} {ref.proposalSequence + 1}</Button>}</p>)}</div>}
       <h4>{copy.items}</h4>
-      {detail.analysis.items.slice(itemPage * 50, (itemPage + 1) * 50).map((item, i) => <details data-codex-evidence={'item-' + (itemPage * 50 + i)} tabIndex={-1} key={itemPage * 50 + i}><summary>{item.phase} · {item.kind} · {item.name ?? item.callId ?? item.id ?? '—'}{!item.complete && ' …'}</summary><p className="hint">{item.sourcePath}</p><pre style={PRE_STYLE}>{item.content}</pre></details>)}
-      <button className="btn" type="button" disabled={itemPage === 0} onClick={() => setItemPage(value => value - 1)}>{copy.back}</button>
-      <button className="btn" type="button" disabled={(itemPage + 1) * 50 >= detail.analysis.items.length} onClick={() => setItemPage(value => value + 1)}>{copy.more}</button>
+      {detail.analysis.items.slice(itemPage * 50, (itemPage + 1) * 50).map((item, i) => <Disclosure data-codex-evidence={'item-' + (itemPage * 50 + i)} tabIndex={-1} key={itemPage * 50 + i} title={<>{item.phase} · {item.kind} · {item.name ?? item.callId ?? item.id ?? '—'}{!item.complete && ' …'}</>}><p className="hint">{item.sourcePath}</p><pre style={PRE_STYLE}>{item.content}</pre></Disclosure>)}
+      <Button  type="button" disabled={itemPage === 0} onClick={() => setItemPage(value => value - 1)}>{copy.back}</Button>
+      <Button  type="button" disabled={(itemPage + 1) * 50 >= detail.analysis.items.length} onClick={() => setItemPage(value => value + 1)}>{copy.more}</Button>
     </div>}
   </section>;
 }

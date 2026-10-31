@@ -15,7 +15,7 @@
 .benchmark-setup legend { font-weight: 600; margin-block: var(--space-2); }
 .benchmark-form-grid, .benchmark-variant-form { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); margin-bottom: var(--space-3); }
 .benchmark-setup label { display: flex; flex-direction: column; gap: var(--space-1); flex: 1; min-width: 10rem; }
-.benchmark-setup input, .benchmark-setup select { padding: var(--space-2); background: var(--canvas-default); color: var(--fg-default); border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
+.benchmark-setup input:not(.ui-input):not([type=hidden]), .benchmark-setup select:not(.ui-select) { padding: var(--space-2); background: var(--canvas-default); color: var(--fg-default); border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
 .benchmark-run-action { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
 .benchmark-run-action > span { color: var(--fg-muted); }
 .benchmark-scorecards { display: grid; grid-template-columns: repeat(auto-fit,minmax(18rem,1fr)); gap: var(--space-3); }
@@ -56,7 +56,7 @@
 .benchmark-variant-form { padding: var(--space-3); border: 1px solid var(--border-muted); border-radius: var(--radius-md); background: var(--canvas-default); }
 .benchmark-heading > label { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
 .benchmark-heading input[type=file] { max-width: 100%; min-width: 0; }
-.benchmark-heading input::file-selector-button { border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-subtle); color: var(--fg-default); padding: var(--space-1) var(--space-2); margin-right: var(--space-2); font: inherit; cursor: pointer; }
+.benchmark-heading input:not(.ui-input):not([type=hidden])::file-selector-button { border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-subtle); color: var(--fg-default); padding: var(--space-1) var(--space-2); margin-right: var(--space-2); font: inherit; cursor: pointer; }
 .benchmark-run-action > button { background: var(--accent-emphasis); color: var(--fg-on-emphasis); border-color: var(--accent-emphasis); }
 .benchmark-scorecards, .benchmark-findings { grid-template-columns: repeat(auto-fit,minmax(min(100%,var(--dims-card-min)),1fr)); }
 @media (max-width: 40em) { .benchmark-center { padding: var(--space-3); } .benchmark-heading > div { min-width: 0; flex-basis: 100%; } .benchmark-setup { padding: var(--space-3); } }
@@ -85,3 +85,6 @@
 .benchmark-center .benchmark-scorecards .ui-metric-strip dd { font-size: var(--text-lg); }
 .benchmark-center .benchmark-scorecards .ui-metric-strip dt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .benchmark-center .benchmark-scorecards > .ui-card .ui-card { border: 0; border-radius: 0; box-shadow: none; }
+
+.benchmark-center { padding-top: 0; }
+.benchmark-center > .page-header { position: sticky; top: 0; padding-block: var(--space-2); padding-inline: 0; }

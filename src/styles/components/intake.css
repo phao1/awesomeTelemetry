@@ -10,3 +10,6 @@
 .intake-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin-bottom: var(--space-4); }
 .f5-stats, .f5-charts { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,var(--dims-card-min)),1fr)); gap: var(--space-4); margin-block: var(--space-4); min-width: 0; }
 .f5-intake .page-header { position: static; padding: 0; min-height: var(--page-header-height); }
+
+.f5-intake { padding-top: 0; }
+.f5-intake > .page-header { position: sticky; top: 0; padding-block: var(--space-2); padding-inline: 0; }

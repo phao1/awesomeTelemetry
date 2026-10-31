@@ -21,3 +21,6 @@
 .settings-savebar { position: sticky; bottom: 0; z-index: var(--z-sticky); display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--border-default); border-radius: var(--radius-lg); background: var(--canvas-overlay); box-shadow: var(--shadow-md); }
 .settings-savebar > span { flex: 1; font-weight: var(--weight-medium); }
 @media (max-width: 48em) { .settings-layout { grid-template-columns: minmax(0,1fr); } .settings-nav { position: static; flex-direction: row; overflow: auto; } .settings-content .ui-field { grid-template-columns: minmax(0,1fr); } .settings-content .ui-field > :not(.ui-field-label):not(.ui-field-hint):not(.ui-field-error) { grid-column: 1; grid-row: 3; } .settings-content .ui-check-label { justify-self: start; } }
+
+.settings-page { padding-top: 0; }
+.settings-page > .page-header { position: sticky; top: 0; padding-block: var(--space-2); padding-inline: 0; }

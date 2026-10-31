@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import {act,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {afterEach,expect,it,vi} from 'vitest';
@@ -63,4 +64,12 @@ it('keeps off-page selected chips without letting them crowd out actual search r
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
  try{await act(async()=>root.render(<CompareTaskPicker side="A" ids={['imported:off-page']} selected={[{...task('off-page'),origin:'imported',provenanceKnown:true,rootSessionKey:null,runId:null,startedAt:null,recordedStatus:'success',memberCount:1,eventCount:0,loadedMemberCount:1,metrics:undefined}]} other={[]} locale="en" onChange={()=>{}} onRequest={()=>{}}/>));expect(host.querySelector('.ui-chip')!.textContent).toContain('TASK off-page');act(()=>host.querySelector<HTMLElement>('.ui-multi-trigger')!.click());expect(document.querySelectorAll('[role=option]')).toHaveLength(1);expect(document.querySelector('[role=option]')!.textContent).toContain('TASK visible');
  }finally{act(()=>root.unmount());host.remove();}
+});
+
+it('bounds task popup width and truncates option titles while retaining tooltip and metadata',async()=>{
+ const title='Long source task '.repeat(50);vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({items:[{...task('long'),title}],total:1,hasMore:false,offset:0,limit:50}))));
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);vi.useFakeTimers();
+ try{await act(async()=>root.render(<CompareTaskPicker side="A" ids={[]} other={[]} selected={[]} locale="en" onChange={()=>{}} onRequest={()=>{}}/>));act(()=>host.querySelector<HTMLElement>('[role=combobox]')!.click());const popup=document.querySelector('.task-compare-picker-popup')!;expect(popup).not.toBeNull();const text=popup.querySelector('.ui-option-title')!;expect(text.textContent).toBe(title);expect(popup.querySelector('.ui-option-label small')!.textContent).toContain('codex');act(()=>text.dispatchEvent(new FocusEvent('focusin',{bubbles:true})));act(()=>vi.advanceTimersByTime(300));expect(document.querySelector('[role=tooltip]')!.textContent).toBe(title);
+ const css=readFileSync(process.cwd()+'/src/styles/components/foundation.css','utf8');expect(css).toContain('width:min(calc(var(--space-10) * 14),calc(100vw - var(--space-8)))');expect(css).toContain('.ui-option-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}');
+ }finally{act(()=>root.unmount());host.remove();vi.useRealTimers();}
 });

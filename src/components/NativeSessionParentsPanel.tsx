@@ -1,3 +1,5 @@
+import { Skeleton } from './ui/States.js';
+import { Button } from './ui/Button.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import type { NativeSessionParentPage } from '../core/trace-types.js';
@@ -17,13 +19,13 @@ function References({ items, labels, onSelect, selectedId }: { items: Item[]; la
   const { containerRef, range, onScroll } = useVirtualList(items.length, 72, 4, 288);
   return <div ref={containerRef} onScroll={onScroll} tabIndex={0} aria-label={labels.title} style={{ height: Math.min(288, items.length * 72), overflow: 'auto' }}>
     <div style={{ height: range.totalHeight }}><div style={{ transform: `translateY(${range.offsetY}px)` }}>
-      {items.slice(range.startIndex, range.endIndex).map(item => <button className="btn mono" type="button" key={item.identity.id}
+      {items.slice(range.startIndex, range.endIndex).map(item => <Button className="mono"  type="button" key={item.identity.id}
         data-native-parent-reference={item.identity.id} aria-expanded={selectedId === item.identity.id} onClick={() => onSelect(item.identity.id)}
         style={{ display: 'block', height: 72, width: '100%', textAlign: 'left', overflow: 'hidden' }} title={`${item.identity.namespace} · ${item.identity.value}\n${item.identity.scope ?? '—'}\n${item.identity.sourcePath}`}>
         <div style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{stateLabel(item.state, labels)} · {item.identity.namespace} · {item.identity.value}</div>
         <div style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{labels.scope}: {item.identity.scope ?? '—'}</div>
         <div style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{item.identity.sourcePath}</div>
-      </button>)}
+      </Button>)}
     </div></div>
   </div>;
 }
@@ -40,7 +42,7 @@ function Candidates({ item, labels, onOpenSession }: { item: Item; labels: Label
         </div>)}
       </div></div>
     </div>
-    {item.state === 'resolved' && !item.matchesTruncated && item.matches.length === 1 && onOpenSession !== undefined && <button className="btn" type="button" onClick={() => onOpenSession(item.matches[0]!.id)}>{labels.open}</button>}
+    {item.state === 'resolved' && !item.matchesTruncated && item.matches.length === 1 && onOpenSession !== undefined && <Button  type="button" onClick={() => onOpenSession(item.matches[0]!.id)}>{labels.open}</Button>}
   </>;
 }
 
@@ -80,15 +82,15 @@ function ParentReferences({ sessionKey, locale, onOpenSession, invalidateKey = 0
   const selected = shown?.items.find(item => item.identity.id === selectedId);
   return <section aria-label={labels.title}>
     <h3>{labels.title}</h3><p className="hint">{labels.hint}</p>
-    <button className="btn" type="button" disabled={busy} onClick={() => void load()}>{labels.refresh}</button>
+    <Button  type="button" disabled={busy} onClick={() => void load()}>{labels.refresh}</Button>
     {stale && <p role="status">{labels.stale}</p>}
-    {busy && <p role="status" aria-live="polite">{labels.loading}</p>}
+    {busy && <div role="status" aria-live="polite"><Skeleton variant="row"/></div>}
     {error !== null && <div role="alert"><span className="mono">PARENT_READ_FAILED</span><p>{error === 'PARENT_TIMEOUT' ? labels.timeout : error}</p>
-      <button className="btn" type="button" onClick={() => void load(cursor)}>{labels.retry}</button></div>}
+      <Button  type="button" onClick={() => void load(cursor)}>{labels.retry}</Button></div>}
     {shown !== null && <>
       {!shown.completeness.complete && <p role="status">{labels.incomplete}: {shown.completeness.reasons.join(', ')}</p>}
       {shown.items.length === 0 ? <p>{labels.empty}</p> : <References key={cursor ?? ''} items={shown.items} labels={labels} selectedId={selectedId} onSelect={id => setSelectedId(previous => previous === id ? null : id)} />}
-      {shown.hasMore && shown.nextCursor !== null && <button className="btn" type="button" onClick={() => void load(shown.nextCursor!)}>{labels.next}</button>}
+      {shown.hasMore && shown.nextCursor !== null && <Button  type="button" onClick={() => void load(shown.nextCursor!)}>{labels.next}</Button>}
       {selected !== undefined && <section aria-label={labels.source}>
         <h4>{stateLabel(selected.state, labels)}</h4>
         <dl style={{ overflowWrap: 'anywhere' }}><dt>{labels.namespace}</dt><dd className="mono">{selected.identity.namespace}</dd>

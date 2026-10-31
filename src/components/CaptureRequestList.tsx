@@ -86,6 +86,6 @@ export function CaptureRequestList({ items, selected, pending, error, hasMore, l
     {pending && <Skeleton variant="row" count={6}/>}
     {!pending && error === null && filtered.length === 0 && !(cleared && items.length === 0) && <p className="hint">{t(items.length === 0 ? 'capture.noSavedRequests' : 'capture.noFilterMatch', locale)}</p>}
     {filtered.length > 0 && <RequestRows key={JSON.stringify([deferred, method, status])} items={filtered} selected={selected} locale={locale} onOpen={onOpen} />}
-    {hasMore && <Button type="button" className="btn capture-more" disabled={pending} onClick={onLoadMore}>{t('capture.loadMore', locale)}</Button>}
+    {hasMore && <Button type="button" className="ui-btn capture-more" disabled={pending} onClick={onLoadMore}>{t('capture.loadMore', locale)}</Button>}
   </section>;
 }

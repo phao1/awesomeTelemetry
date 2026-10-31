@@ -7,8 +7,8 @@
 .tw-communication { border-left: var(--space-1) solid var(--border-strong); padding: var(--space-2) var(--space-3); margin-bottom: var(--space-3); color: var(--fg-muted); background: var(--canvas-default); }
 .tw-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-3); }
 .tw-toolbar input { flex: 1; min-width: min(100%, var(--rail-width)); }
-.team-workbench button, .tw-toolbar input, .tw-toolbar select, .tw-detail-content button { font: inherit; color: inherit; }
-.tw-toolbar input, .tw-toolbar select, .tw-toolbar > button, .tw-pager button, .tw-detail-head button { background: var(--canvas-default); border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-height: var(--control-height-md); }
+.team-workbench button, .tw-toolbar input:not(.ui-input):not([type=hidden]), .tw-toolbar select:not(.ui-select), .tw-detail-content button { font: inherit; color: inherit; }
+.tw-toolbar input:not(.ui-input):not([type=hidden]), .tw-toolbar select:not(.ui-select), .tw-toolbar > button, .tw-pager button, .tw-detail-head button { background: var(--canvas-default); border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-height: var(--control-height-md); }
 .tw-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); align-items: start; gap: var(--space-3); }
 .tw-grid.tw-compact { grid-template-columns: minmax(0, 1fr); }
 .tw-lists, .tw-section { min-width: 0; }
@@ -52,7 +52,7 @@
 .tw-state-running, .tw-state-busy { color: var(--accent-fg); }
 .tw-state-completed { color: var(--success-fg); }
 .tw-drawer { max-width: 96vw; }
-.team-workbench button:focus-visible, .team-workbench input:focus-visible, .team-workbench select:focus-visible, .tw-detail-content button:focus-visible { outline: calc(var(--space-1) / 2) solid var(--accent-fg); outline-offset: 1px; }
+.team-workbench button:focus-visible, .team-workbench input:focus-visible, .team-workbench select:focus-visible, .tw-detail-content button:focus-visible { outline: calc(var(--space-1) / 2) solid var(--accent-fg); outline-offset: calc(var(--space-1) / 4); }
 .collab-secondary { border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: var(--space-2); min-width: 0; }
 .collab-secondary > summary { cursor: pointer; font-size: var(--text-base); color: var(--fg-muted); }
 .collab-secondary[open] > summary { margin-bottom: var(--space-3); }

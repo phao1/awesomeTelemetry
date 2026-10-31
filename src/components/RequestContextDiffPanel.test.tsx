@@ -446,7 +446,7 @@ describe('RequestContextDiffPanel §7', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(container.textContent).toContain('INTERNAL_ERROR');
-    const retryButton = [...container.querySelectorAll('button')].find((button) => button.textContent === 'retry');
+    const retryButton = [...container.querySelectorAll('button')].find((button) => button.textContent === '重试');
     expect(retryButton).not.toBeUndefined();
     await act(async () => {
       (retryButton as HTMLButtonElement).click();

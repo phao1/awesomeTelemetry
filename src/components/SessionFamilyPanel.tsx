@@ -1,3 +1,5 @@
+import { Skeleton } from './ui/States.js';
+import { Button } from './ui/Button.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import type { LinkedExecutionPage, NativeSessionFamilyPage, TraceEvent } from '../core/trace-types.js';
@@ -40,7 +42,7 @@ function useRead<T>() {
   return { value, busy, error, run, reset };
 }
 function ReadState({ read, labels, retry }: { read: { busy: boolean; error: string | null }; labels: Labels; retry: () => void }): React.JSX.Element {
-  return <>{read.busy && <p role="status">{labels.loading}</p>}{read.error !== null && <div className="family-error" role="alert"><strong>{labels.error}</strong><p>{read.error === 'LOCAL_READ_TIMEOUT' ? labels.timeout : read.error}</p><button className="btn" type="button" onClick={retry}>{labels.retry}</button></div>}</>;
+  return <>{read.busy && <div role="status"><Skeleton variant="row"/></div>}{read.error !== null && <div className="family-error" role="alert"><strong>{labels.error}</strong><p>{read.error === 'LOCAL_READ_TIMEOUT' ? labels.timeout : read.error}</p><Button  type="button" onClick={retry}>{labels.retry}</Button></div>}</>;
 }
 
 type TreeRow = { session: Metadata; state: Child['state']; relation: 'parents' | 'current' | 'children'; depth: number; path: string[]; cycle: boolean };
@@ -80,18 +82,18 @@ function AttemptEvidence({ sessionKey, locale, onOpenRequest }: { sessionKey: st
       <div className="family-attempt-list">{page.attempts.map(item => <button type="button" className={'family-attempt' + (selected === item.request.id ? ' is-selected' : '')} key={item.request.id} aria-expanded={selected === item.request.id} onClick={() => { setSelected(selected === item.request.id ? null : item.request.id); body.reset(); setEventId(null); }}>
         <strong>#{item.request.id} · {labels.inspect}</strong><span>{item.request.startedAt.replace('T', ' ').replace('.000Z', 'Z')}</span><span className={'family-state ' + (item.transport?.state === 'completed' ? 'is-ok' : 'is-unknown')}>{item.transport === null ? labels.unknown : labels[item.transport.state]}</span>
       </button>)}</div>
-      {page.capturesHasMore && <button className="btn" type="button" onClick={() => void load({ ...params, captureCursor: page.nextCaptureCursor! })}>{labels.nextAttempts}</button>}
+      {page.capturesHasMore && <Button  type="button" onClick={() => void load({ ...params, captureCursor: page.nextCaptureCursor! })}>{labels.nextAttempts}</Button>}
       {attempt !== undefined && <section className="family-attempt-detail" aria-label={labels.inspect}>
-        <header><h3>{labels.request} #{attempt.request.id}</h3><button className="btn ui-btn-primary" type="button" onClick={() => onOpenRequest(attempt.request.id)}>{labels.capture} ↗</button></header>
+        <header><h3>{labels.request} #{attempt.request.id}</h3><Button className="ui-btn-primary"  type="button" onClick={() => onOpenRequest(attempt.request.id)}>{labels.capture} ↗</Button></header>
         <dl><dt>{labels.status}</dt><dd>{state === undefined ? labels.unknown : labels[state]} · HTTP {attempt.transport?.statusCode ?? labels.unknown}</dd><dt>{labels.request}</dt><dd className="mono">{attempt.request.method} {attempt.request.hostname}</dd></dl>
-        <h4>{labels.matching}</h4>{attempt.matches.length === 0 ? <p>{labels.unbound}</p> : attempt.matches.map(match => <button className="btn family-match" type="button" key={match.scanIdentityId + match.proxyIdentityId} onClick={() => event(match.eventId)}>{labels.read} · {match.eventId}<span className="mono">{match.namespace} · {match.kind} · {match.value}</span></button>)}
+        <h4>{labels.matching}</h4>{attempt.matches.length === 0 ? <p>{labels.unbound}</p> : attempt.matches.map(match => <Button className="family-match"  type="button" key={match.scanIdentityId + match.proxyIdentityId} onClick={() => event(match.eventId)}>{labels.read} · {match.eventId}<span className="mono">{match.namespace} · {match.kind} · {match.value}</span></Button>)}
       </section>}
       <h3>{labels.events} <span className="family-count">{Math.min(page.eventOffset + page.events.length, page.eventTotal)}/{page.eventTotal}</span></h3>
       {page.events.length === 0 ? <div className="family-empty">{labels.noEvents}</div> : <div className="family-events">{page.events.map(item => <button className="family-event" type="button" key={item.id} onClick={() => event(item.id)}><span className="mono">#{item.sequence} · {item.kind}</span><strong>{item.title}</strong><span>{item.status}</span></button>)}</div>}
-      {page.eventsHasMore && <button className="btn" type="button" onClick={() => void load({ ...params, eventOffset: page.eventOffset + page.events.length })}>{labels.nextEvents}</button>}
+      {page.eventsHasMore && <Button  type="button" onClick={() => void load({ ...params, eventOffset: page.eventOffset + page.events.length })}>{labels.nextEvents}</Button>}
     </>}
     <ReadState read={body} labels={labels} retry={() => { if (eventId !== null) event(eventId); }} />
-    {body.value !== null && <section className="family-body" aria-label={labels.eventDetail}><header><h3>{labels.eventDetail} · {body.value.title}</h3><div aria-label="Font"><button className="btn" type="button" onClick={() => setFontSize(size => Math.max(8, size - 1))}>A−</button><button className="btn" type="button" onClick={() => setFontSize(size => Math.min(28, size + 1))}>A+</button><button className="btn" type="button" onClick={() => setFontSize(14)}>R</button></div></header><h4>{labels.input}</h4><pre style={{ fontSize }}>{body.value.inputSummary ?? '—'}</pre><h4>{labels.output}</h4><pre style={{ fontSize }}>{body.value.outputSummary ?? '—'}</pre></section>}
+    {body.value !== null && <section className="family-body" aria-label={labels.eventDetail}><header><h3>{labels.eventDetail} · {body.value.title}</h3><div aria-label="Font"><Button  type="button" onClick={() => setFontSize(size => Math.max(8, size - 1))}>A−</Button><Button  type="button" onClick={() => setFontSize(size => Math.min(28, size + 1))}>A+</Button><Button  type="button" onClick={() => setFontSize(14)}>R</Button></div></header><h4>{labels.input}</h4><pre style={{ fontSize }}>{body.value.inputSummary ?? '—'}</pre><h4>{labels.output}</h4><pre style={{ fontSize }}>{body.value.outputSummary ?? '—'}</pre></section>}
   </div>;
 }
 
@@ -141,20 +143,20 @@ function Family({ sessionKey, locale, invalidateKey = 0, onClose, onOpenSession,
   }
   return <Drawer open title={labels.title} onClose={onClose} className="session-family" width={1180}>
     <div className="family-intro"><span className="family-eyebrow">NATIVE RELATIONS</span><h2>{labels.intro}</h2><p>{labels.evidence}</p></div>
-    <div className="family-toolbar"><button className="btn" type="button" disabled={read.busy} onClick={() => void load(selected)}>{labels.refresh}</button><button className="btn" type="button" onClick={() => { setCenter(sessionKey); setExpanded(new Set([sessionKey])); select(sessionKey); }}>{labels.back}</button>{stale && <span role="status">{labels.stale}</span>}</div>
+    <div className="family-toolbar"><Button  type="button" disabled={read.busy} onClick={() => void load(selected)}>{labels.refresh}</Button><Button  type="button" onClick={() => { setCenter(sessionKey); setExpanded(new Set([sessionKey])); select(sessionKey); }}>{labels.back}</Button>{stale && <span role="status">{labels.stale}</span>}</div>
     <ReadState read={read} labels={labels} retry={() => void load(selected)} />
     <div className="family-layout"><aside className="family-sidebar"><header><h3>{labels.scope}</h3><span className="family-count">{root?.children.length ?? '—'} {labels.children}</span></header>
       <FamilyTree rows={rows} labels={labels} expanded={expanded} selected={selected} onSelect={select} onExpand={toggle} />
       {root?.children.length === 0 && <p className="family-footnote">{labels.noChildren}</p>}
-      {root?.hasMore && <button className="btn" type="button" onClick={() => void load(center, root.nextCursor!)}>{labels.next}</button>}
+      {root?.hasMore && <Button  type="button" onClick={() => void load(center, root.nextCursor!)}>{labels.next}</Button>}
     </aside><main className="family-selected">
-      {page !== undefined && <><div className="family-selection"><span className="family-eyebrow">{labels.selected} · {page.session.sourceAgent}</span><h2>{page.session.title || page.session.id}</h2><p className="mono">{page.session.id}</p><div className="family-actions"><button className="btn ui-btn-primary" type="button" disabled={onOpenSession === undefined} onClick={() => { onClose(); onOpenSession?.(selected); }}>{labels.open} ↗</button><button className="btn" type="button" onClick={() => { setCenter(selected); setExpanded(new Set([selected])); }}>{labels.center}</button></div></div>
+      {page !== undefined && <><div className="family-selection"><span className="family-eyebrow">{labels.selected} · {page.session.sourceAgent}</span><h2>{page.session.title || page.session.id}</h2><p className="mono">{page.session.id}</p><div className="family-actions"><Button className="ui-btn-primary"  type="button" disabled={onOpenSession === undefined} onClick={() => { onClose(); onOpenSession?.(selected); }}>{labels.open} ↗</Button><Button  type="button" onClick={() => { setCenter(selected); setExpanded(new Set([selected])); }}>{labels.center}</Button></div></div>
         <div className="family-tabs" role="tablist" aria-label={labels.selected}><button type="button" role="tab" aria-selected={tab === 'overview'} onClick={() => setTab('overview')}>{labels.overview}</button><button type="button" role="tab" aria-selected={tab === 'execution'} onClick={() => setTab('execution')}>{labels.execution}</button></div>
         {tab === 'overview' ? <section className="family-overview"><h3>{labels.details}</h3>{!page.completeness.complete && <p role="status" className="family-notice">{labels.partial} · {page.completeness.reasons.join(', ')}</p>}
-          {page.parents.items.length === 0 ? <div className="family-empty"><strong>{labels.noParents}</strong><p>{labels.emptyHint}</p></div> : page.parents.items.map(reference => <div className="family-reference" key={reference.identity.id}><header><strong>{labels.parents}</strong><span className={'family-state ' + (reference.state === 'resolved' ? 'is-ok' : 'is-unknown')}>{labels[reference.state]}</span></header><dl><dt>{labels.native}</dt><dd className="mono">{reference.identity.scope ?? labels.unknown}</dd><dt>{labels.parents}</dt><dd className="mono">{reference.identity.value}</dd><dt>{labels.source}</dt><dd className="mono">{reference.identity.sourcePath}</dd></dl>{reference.matches.map(parent => <button className="btn" type="button" key={parent.id} onClick={() => select(parent.id)}>{parent.title || parent.id} ↗</button>)}</div>)}
+          {page.parents.items.length === 0 ? <div className="family-empty"><strong>{labels.noParents}</strong><p>{labels.emptyHint}</p></div> : page.parents.items.map(reference => <div className="family-reference" key={reference.identity.id}><header><strong>{labels.parents}</strong><span className={'family-state ' + (reference.state === 'resolved' ? 'is-ok' : 'is-unknown')}>{labels[reference.state]}</span></header><dl><dt>{labels.native}</dt><dd className="mono">{reference.identity.scope ?? labels.unknown}</dd><dt>{labels.parents}</dt><dd className="mono">{reference.identity.value}</dd><dt>{labels.source}</dt><dd className="mono">{reference.identity.sourcePath}</dd></dl>{reference.matches.map(parent => <Button  type="button" key={parent.id} onClick={() => select(parent.id)}>{parent.title || parent.id} ↗</Button>)}</div>)}
           {page.parents.hasMore && <p>{labels.parentMore}</p>}
           {page.children.length === 0 && page.parents.items.length === 0 && <p className="family-footnote">{labels.empty}</p>}
-          <div className="family-notice"><strong>{labels.retryUnknown}</strong><p>{labels.retryHint}</p><button className="btn" type="button" onClick={() => setTab('execution')}>{labels.execution} →</button></div>
+          <div className="family-notice"><strong>{labels.retryUnknown}</strong><p>{labels.retryHint}</p><Button  type="button" onClick={() => setTab('execution')}>{labels.execution} →</Button></div>
         </section> : <AttemptEvidence key={selected} sessionKey={selected} locale={locale} onOpenRequest={id => { onClose(); onOpenRequest(id); }} />}
       </>}
     </main></div>

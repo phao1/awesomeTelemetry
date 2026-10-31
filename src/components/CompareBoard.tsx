@@ -1,3 +1,4 @@
+import { Button } from './ui/Button.js';
 import { PageSkeleton } from './ui/PageSkeleton.js';
 import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
 
@@ -79,7 +80,7 @@ function SessionPicker({
         }
       }}
       trigger={(props) => (
-        <button type="button" className="btn compare-picker" aria-label={`${side} · ${selectedName}`} title={`${selectedName}${selected?' · '+selected.provider+' / '+selected.sourceAgent:''}`} {...props}>
+        <Button type="button" className="compare-picker"  aria-label={`${side} · ${selectedName}`} title={`${selectedName}${selected?' · '+selected.provider+' / '+selected.sourceAgent:''}`} {...props}>
           <span
             className="compare-side-mark"
             style={{
@@ -92,7 +93,7 @@ function SessionPicker({
           <span className="compare-picker-selected">
             {selectedName}
           </span>
-        </button>
+        </Button>
       )}
       style={{ maxHeight: '60vh', overflowY: 'auto', width: 'var(--rail-width)' }}
     >
@@ -179,14 +180,14 @@ export function CompareSelectorBar({
         open={rightOpen}
         onOpenChange={onRightOpenChange}
       />
-      <button
+      <Button
         type="button"
-        className="btn"
+
         disabled={loading || leftKey === '' || rightKey === '' || leftKey === rightKey}
         onClick={() => onCompare(leftKey, rightKey)}
       >
         {t('compare.load', locale)}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -594,10 +595,10 @@ export function CompareBoard({
         onRightOpenChange={setRightOpen}
         loading={currentLoading}
       />
-      <button className="btn" type="button" onClick={() => setExperimentsOpen(true)}>{locale === 'zh' ? '手工实验记录' : 'Manual experiment records'}</button>
+      <Button  type="button" onClick={() => setExperimentsOpen(true)}>{locale === 'zh' ? '手工实验记录' : 'Manual experiment records'}</Button>
       {experimentsOpen && <ErrorBoundary label={locale === 'zh' ? '手工实验记录' : 'Manual experiment records'} fallback={() => <div role="alert">
         <p>{locale === 'zh' ? '面板加载失败，请关闭后重试。' : 'Panel loading failed. Close and retry.'}</p>
-        <button className="btn" type="button" onClick={() => setExperimentsOpen(false)}>{locale === 'zh' ? '关闭' : 'Close'}</button>
+        <Button  type="button" onClick={() => setExperimentsOpen(false)}>{locale === 'zh' ? '关闭' : 'Close'}</Button>
       </div>}><Suspense fallback={<PageSkeleton compact />}>
         <ExperimentRecordsPanel sessions={sessions} locale={locale} onClose={() => setExperimentsOpen(false)} onCompare={(left, right) => {
           if (left === leftKey && right === rightKey) onCompare(left, right);
@@ -605,9 +606,9 @@ export function CompareBoard({
         }} />
       </Suspense></ErrorBoundary>}
       <div className="cmp-selector-scope"><span>{t('compare.pickerScope',locale).replace('{n}',String(sessions.length))}</span>
-        {onBrowseRuns&&<button type="button" className="btn ui-btn-sm" onClick={onBrowseRuns}>{t('compare.browseRuns',locale)}</button>}</div>
-      {currentLoading && <p role="status" className="hint compare-read-status">{t('compare.read.loading',locale)}{' '}
-        <button type="button" className="btn ui-btn-sm" onClick={()=>{cancelPending();setLoading(false);setErrorCode('COMPARE_CANCELLED');setError('COMPARE_CANCELLED');}}>{t('compare.read.cancel',locale)}</button></p>}
+        {onBrowseRuns&&<Button type="button" className="ui-btn-sm"  onClick={onBrowseRuns}>{t('compare.browseRuns',locale)}</Button>}</div>
+      {currentLoading && <div role="status" className="hint compare-read-status"><Skeleton variant="row"/>{' '}
+        <Button type="button" className="ui-btn-sm"  onClick={()=>{cancelPending();setLoading(false);setErrorCode('COMPARE_CANCELLED');setError('COMPARE_CANCELLED');}}>{t('compare.read.cancel',locale)}</Button></div>}
       {currentError !== null && (
         <ErrorState
           code={errorCode}
@@ -635,13 +636,13 @@ export function CompareBoard({
              点下去只会把已经选好的那一侧再打开一次。 */
           action={
             leftKey === '' ? (
-              <button type="button" className="btn" onClick={() => setLeftOpen(true)}>
+              <Button type="button"  onClick={() => setLeftOpen(true)}>
                 {t('compare.pickLeft', locale)}
-              </button>
+              </Button>
             ) : rightKey === '' ? (
-              <button type="button" className="btn" onClick={() => setRightOpen(true)}>
+              <Button type="button"  onClick={() => setRightOpen(true)}>
                 {t('compare.pickRight', locale)}
-              </button>
+              </Button>
             ) : undefined
           }
         />

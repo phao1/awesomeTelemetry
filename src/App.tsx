@@ -1,3 +1,4 @@
+import { useSidebarPreference } from './sidebar-preference.js';
 import { UiLocaleProvider } from './components/ui/Locale.js';
 import type { SettingsSection } from './settings-route.js';
 import { PageSkeleton } from './components/ui/PageSkeleton.js';
@@ -192,10 +193,8 @@ export default function App() {
   const [fontPx, setFontPx] = useState(() =>
     loadNumber(LAYOUT_KEYS.fontSize, BASE_FONT_PX, LAYOUT_RANGES.fontSize),
   ); // REQ-012：8–28px
-  const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>{try {const saved=localStorage.getItem('awesome-telemetry.sidebarCollapsed');return saved===null?window.innerWidth<1280:saved==='true';}catch(error){console.error('[sidebar] preference read failed',error);return window.innerWidth<1280;}});
+  const [sidebarCollapsed,toggleSidebar]=useSidebarPreference();
   const [mobileNav,setMobileNav]=useState(false);
-  useEffect(()=>{const media=window.matchMedia('(max-width: 1279px)');const resize=(event:MediaQueryListEvent)=>setSidebarCollapsed(event.matches);media.addEventListener('change',resize);return ()=>media.removeEventListener('change',resize);},[]);
-  useEffect(()=>{try{localStorage.setItem('awesome-telemetry.sidebarCollapsed',String(sidebarCollapsed));}catch(error){console.error('[sidebar] preference write failed',error);}},[sidebarCollapsed]);
   const [promptContextKey, setPromptContextKey] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteLoadError, setPaletteLoadError] = useState(false);
@@ -247,7 +246,7 @@ export default function App() {
   useEffect(() => {
     localeRef.current = locale;
     document.documentElement.lang = locale;
-    // ui/* 基础组件不接收 locale prop，其 aria-label 走 ta() 读这里的当前语言。
+    // Retain the legacy translation entry for compatibility readers; shared UI uses UiLocaleProvider.
     setActiveLocale(locale);
   }, [locale]);
 
@@ -794,7 +793,7 @@ export default function App() {
 
   return (
     <UiLocaleProvider locale={locale}><div className={`app ${trajectoryFocus && view === 'session' ? 'app-trajectory-focus' : ''}`}>
-      <AppSidebar view={view} locale={locale} collapsed={sidebarCollapsed} mobileOpen={mobileNav} onClose={()=>setMobileNav(false)} onCollapse={()=>setSidebarCollapsed(v=>!v)} onFont={setFontPx} onNavigate={id=>{if(id==='settings'){openSettings();return;}if(id==='task')setTaskRoute({...taskRoute,task:null,health:undefined,event:null,compareImport:undefined,overview:undefined});switchView(id as AppView);}} status={<StatusBar
+      <AppSidebar view={view} locale={locale} collapsed={sidebarCollapsed} mobileOpen={mobileNav} onClose={()=>setMobileNav(false)} onCollapse={toggleSidebar} onFont={setFontPx} onNavigate={id=>{if(id==='settings'){openSettings();return;}if(id==='task')setTaskRoute({...taskRoute,task:null,health:undefined,event:null,compareImport:undefined,overview:undefined});switchView(id as AppView);}} status={<StatusBar
         live={live}
         locale={locale}
         /* 状态栏是系统级读数：显示全库总量，不是当前筛选/已加载的那一页。

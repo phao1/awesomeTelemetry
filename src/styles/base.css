@@ -88,7 +88,7 @@ body { background: var(--canvas-inset); overflow: hidden; }
 :where(button,input,select,textarea) { font: inherit; color: inherit; }
 :where(button) { cursor: pointer; white-space: nowrap; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-default); min-height: var(--control-height-md); padding: var(--space-1) var(--space-3); }
 :where(button):hover { background: var(--canvas-subtle); }
-:where(button):active { transform: translateY(1px); }
+:where(button):active { transform: translateY(calc(var(--space-1) / 4)); }
 :where(button,input,select,textarea):disabled { opacity: .5; cursor: not-allowed; }
 :where(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea) { min-height: var(--control-height-md); min-width: 0; max-width: 100%; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-default); padding: var(--space-1) var(--space-2); }
 :where(input,select,textarea):hover { border-color: var(--border-strong); }

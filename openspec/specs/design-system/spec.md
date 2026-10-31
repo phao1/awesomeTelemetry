@@ -345,3 +345,13 @@ ArrowUp/Down/Enter activation, isolated child controls, hover action menus, cont
 expanded child rows, sticky title/utility columns, internal overflow, zero-based
 controlled pagination/page size, bulk toolbar, skeleton rows and empty state.
 UiKit demonstrates every behavior with labelled fixed data; no IO in Table.
+
+## F6 shared component polish
+
+REQ-F6-001: Shared component copy uses UiLocaleProvider/explicit locale with a
+reactive document-language fallback. No separate component-copy language store.
+SearchInput reserves icon and clear-button padding independent of button sizing.
+REQ-F6-002: AreaChart/BarChart/LineChart legends use labelled native buttons with
+aria-pressed. Visibility filters numeric axis, stacking, grouped bars and tooltips,
+preserves series colors and retains restoration controls even if all are hidden.
+Option titles truncate on one line with full Tooltip; metadata is a second line.

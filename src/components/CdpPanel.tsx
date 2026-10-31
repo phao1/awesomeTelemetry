@@ -87,7 +87,7 @@ function Workspace({ locale }: { locale: Locale }) {
     {targets.map(target => <p key={target.id} className="mono">{target.title} · {target.id} · {target.url}</p>)}
     {page && <><p>{c.records}: {page.items.length} · {c.bytes}: {page.totalBytes} · {c.rejected}: {page.rejectedCount} · {c.issue}: {page.lastIssue ?? '—'}</p>
       <p className="hint">{c.hint}</p>{page.items.length === 0 && <p>{c.empty}</p>}
-      {page.items.map(item => <div key={item.id} className="capture-toolbar"><Button type="button" className="btn mono" disabled={pending} onClick={() => select(item.id)}>#{item.id} · {item.url}</Button><span>{item.bodyBytes} B · {item.capturedAt}</span></div>)}
+      {page.items.map(item => <div key={item.id} className="capture-toolbar"><Button type="button" className="ui-btn mono" disabled={pending} onClick={() => select(item.id)}>#{item.id} · {item.url}</Button><span>{item.bodyBytes} B · {item.capturedAt}</span></div>)}
     </>}
     <Drawer open={selected !== null} title={c.response + ' #' + selected} onClose={closeDetail} width={700}>
       <Button type="button"  onClick={closeDetail}>{c.close}</Button>

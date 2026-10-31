@@ -37,3 +37,8 @@ it('opens recent alert tasks by keyboard and allows retry after a failed read',a
  await act(async()=>host.querySelector<HTMLButtonElement>('.ui-error button')!.click());act(()=>host.querySelector('tbody tr')!.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})));expect(navigate).toHaveBeenCalledWith(expect.objectContaining({task:'collected:real'}));
  }finally{act(()=>root.unmount());}
 });
+
+it.each([['zh','11/1'],['en','Nov 1']] as const)('uses short UTC dates in %s charts',async(locale,label)=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(response))));const host=document.createElement('div'),root=createRoot(host);
+ try{await act(async()=>root.render(<OverviewKpis locale={locale} invalidateKey={0} onNavigate={()=>{}}/>));const labels=[...host.querySelectorAll('.instrument-chart svg text')].map(node=>node.textContent);expect(labels).toContain(label);expect(labels).not.toContain('2026-11-01');}finally{act(()=>root.unmount());}
+});

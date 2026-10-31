@@ -176,7 +176,7 @@
 .capture-request-table th:nth-child(4) { width: var(--status-col-width); }
 .capture-request-table th:nth-child(5), .capture-request-table th:nth-child(6) { width: calc(var(--space-10) * 3); }
 .capture-request-table td { height: var(--row-sm); white-space: nowrap; line-height: 1; overflow: hidden; text-overflow: ellipsis; }
-.capture-request-open { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; height: calc(var(--row-sm) - 1px); line-height: 1; padding: 0; border: 0; background: transparent; color: var(--fg-default); cursor: pointer; text-align: left; }
+.capture-request-open { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; height: calc(var(--row-sm) - calc(var(--space-1) / 4)); line-height: 1; padding: 0; border: 0; background: transparent; color: var(--fg-default); cursor: pointer; text-align: left; }
 .capture-request-open strong { max-width: 38%; overflow: hidden; text-overflow: ellipsis; }
 .capture-request-open > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .capture-model-cell > span + span { margin-left: var(--space-2); color: var(--fg-muted); }

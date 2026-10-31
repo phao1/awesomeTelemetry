@@ -9,7 +9,7 @@
 .task-origin-tabs button[aria-selected=true]{color:var(--accent-fg);border-color:var(--accent-emphasis);background:var(--accent-subtle)}
 .task-list-filters{display:grid;gap:var(--space-2);padding:0 var(--space-4) var(--space-3)}
 .task-list-filters>div{display:flex;gap:var(--space-2)}
-.task-workbench input:not([type=checkbox]):not([type=range]),.task-workbench select{min-width:0;max-width:100%;padding:var(--space-2);border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--canvas-default);color:var(--fg-default);font:inherit}
+.task-workbench input:not(.ui-input):not([type=hidden]):not([type=checkbox]):not([type=range]),.task-workbench select:not(.ui-select){min-width:0;max-width:100%;padding:var(--space-2);border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--canvas-default);color:var(--fg-default);font:inherit}
 .task-list-filters select{flex:1;font-size:var(--text-xs)}
 .task-list-count{display:flex;justify-content:space-between;align-items:center;padding:var(--space-2) var(--space-4);color:var(--fg-muted);font-size:var(--text-xs)}
 .task-list-count button,.task-new-records button,.task-timing button:not(.task-time-lane button){border:0;background:none;color:var(--accent-fg);cursor:pointer}
@@ -105,7 +105,7 @@
 .task-context-header h1{margin-top:var(--space-1);margin-bottom:var(--space-2)}
 .task-timing-head{margin-bottom:var(--space-1)}
 .task-time-filter{margin-top:var(--space-1)}
-.task-record-filters input:not([type=checkbox]){padding:var(--space-1) var(--space-2)}
+.task-record-filters input:not(.ui-input):not([type=hidden]):not([type=checkbox]){padding:var(--space-1) var(--space-2)}
 .task-record-pager{min-height:var(--row-lg)}
 
 /* Phase B: one bounded metadata page feeds both task entries. */

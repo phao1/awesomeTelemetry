@@ -5,7 +5,7 @@
 .sr-eyebrow, .sr-count, .sr-scope, .sr-context span, .sr-current time { color: var(--fg-muted); font-size: var(--text-sm); }
 .sr-scope { margin: var(--space-2) 0 var(--space-3); }
 .sr-warning { padding: var(--space-2); border-left: var(--space-1) solid var(--border-strong); color: var(--fg-secondary); background: var(--canvas-subtle); }
-.stage-replay button, .stage-replay select { font: inherit; color: inherit; min-height: var(--control-height-md); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-subtle); padding: var(--space-1) var(--space-2); cursor: pointer; }
+.stage-replay button, .stage-replay select:not(.ui-select) { font: inherit; color: inherit; min-height: var(--control-height-md); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-subtle); padding: var(--space-1) var(--space-2); cursor: pointer; }
 .stage-replay button:disabled { color: var(--fg-muted); cursor: default; }
 .stage-replay button[aria-pressed='true'], .stage-replay .sr-play { border-color: var(--accent-emphasis); }
 .sr-controls { margin: var(--space-3) 0; padding: var(--space-2) 0; border-block: 1px solid var(--border-default); }

@@ -1,5 +1,5 @@
 import type { Locale } from '../../i18n.js';
-import { useComponentCopy } from '../ui/component-copy.js';
+import { useUiCopy } from '../ui/Locale.js';
 import { EmptyState } from '../ui/States.js';
 import { IconList } from '../icons/index.js';
 import { useChartWidth } from './CartesianChart.js';
@@ -29,7 +29,7 @@ export function HBarChart({
   rowHeight = 24,
   labelWidth = 140,
 }: HBarChartProps): React.JSX.Element {
-  const copy=useComponentCopy(locale);
+  const copy=useUiCopy(locale);
   const [ref,responsiveWidth]=useChartWidth(width);
   width=responsiveWidth;
   if(!rows.length)return <EmptyState icon={<IconList/>} title={copy.empty}/>;

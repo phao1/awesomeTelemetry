@@ -1,4 +1,4 @@
-import { ta } from '../../i18n.js';
+import { useUiTranslate } from './Locale.js';
 import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
 
 import { IconClose } from '../icons/index.js';
@@ -25,6 +25,7 @@ export function Modal({
   footer,
   initialFocusRef,
 }: ModalProps): React.JSX.Element {
+  const ta=useUiTranslate();
   const containerRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(containerRef, true, onClose, undefined, initialFocusRef);
   useEffect(() => pushOverlay(onClose), [onClose]);
@@ -83,6 +84,7 @@ export interface DrawerProps {
 
 /** REQ-005：Drawer。右侧滑入（transform 过渡，reduced-motion 归零）。 */
 export function Drawer({ title, onClose, children, open, footer, className, width }: DrawerProps): React.JSX.Element {
+  const ta=useUiTranslate();
   const containerRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(containerRef, open, onClose);
   useEffect(() => (open ? pushOverlay(onClose) : undefined), [open, onClose]);

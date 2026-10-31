@@ -1,3 +1,4 @@
+import { Button } from './ui/Button.js';
 import { Card, CardBody, CardHeader, Pill } from './ui/Display.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -381,12 +382,12 @@ function CompareEventPanel({
               </section>
             )}
             <div className="inspector-actions">
-              <button type="button" className="btn" onClick={() => onOpenTranscript(event)}>
+              <Button type="button"  onClick={() => onOpenTranscript(event)}>
                 {t('transcript.title', locale)}
-              </button>
-              <button type="button" className="btn" onClick={() => onOpenTokens(event)}>
+              </Button>
+              <Button type="button"  onClick={() => onOpenTokens(event)}>
                 {t('token.title', locale)}
-              </button>
+              </Button>
             </div>
           </div>
         )}

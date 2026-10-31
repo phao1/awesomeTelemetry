@@ -1,3 +1,4 @@
+import { t } from '../i18n.js';
 import { chooseOption, selectedValue, optionsText } from './ui/test-controls.js';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -199,4 +200,22 @@ describe('explicit process-scoped connection setup', () => {
     expect(optionsText(container.ownerDocument.body.querySelector('[role=combobox]')!)).toContain('<img src=x onerror=unsafe()>');
     expect(container.querySelector('script,img')).toBeNull();
   });
+});
+
+it('selects a newly saved recipe using named fields and exposes its saved ID and label',async()=>{
+ let submitted:unknown;
+ const created={...profile,label:'New isolated recipe'};
+ const fetcher=vi.fn(async(_url:string,init?:RequestInit)=>{
+  if(init?.method==='POST'){submitted=JSON.parse(String(init.body));return response(created);}
+  return response({items:[]});
+ });vi.stubGlobal('fetch',fetcher);
+ const container=await render();
+ const field=(key:'label'|'project'|'port')=>container.querySelector<HTMLInputElement>(`input[aria-label="${t(`monitor.${key}`,'zh')}"]`)!;
+ const edit=(input:HTMLInputElement,value:string)=>act(()=>{expect(input).not.toBeNull();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));});
+ edit(field('label'),created.label);edit(field('project'),created.projectDirectory);edit(field('port'),String(created.proxyPort));
+ await act(async()=>container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+ expect(submitted).toMatchObject({label:created.label,projectDirectory:created.projectDirectory,proxyPort:created.proxyPort,agent:'claude'});
+ expect(fetcher.mock.calls.filter(([,init])=>init?.method==='POST')).toHaveLength(1);
+ const picker=container.querySelector(`[role=combobox][aria-label="${t('monitor.savedProfiles','zh')}"]`)!;
+ expect(selectedValue(picker)).toBe(created.id);expect(picker.textContent).toContain(created.label);expect(container.querySelector('[role=alert]')).toBeNull();
 });

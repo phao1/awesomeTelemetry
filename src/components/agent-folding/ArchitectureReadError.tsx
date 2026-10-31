@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button.js';
 import { ApiError } from '../../api/client.js';
 import type { Locale } from '../../i18n.js';
 export function ArchitectureReadError({ error, locale, retry }: { error: unknown; locale: Locale; retry: () => void }) {
@@ -17,5 +18,5 @@ export function ArchitectureReadError({ error, locale, retry }: { error: unknown
   const scale = ['bytes', 'events', 'spans', 'tasks', 'agents', 'boundaries', 'evidence', 'traffic'].find(k => typeof details?.[k] === 'number');
   const format = (n: number) => scale === 'bytes' ? (n / (1024 * 1024)).toFixed(1) : n.toLocaleString(zh ? 'zh-CN' : 'en-US');
   const size = scale && typeof details?.limit === 'number' ? ` ${zh ? '规模 / 上限' : 'Size / limit'}: ${format(details[scale] as number)} / ${format(details.limit)} ${scale === 'bytes' ? 'MiB' : scale}` : '';
-  return <p role="alert">{text[reason as keyof typeof text] ?? text.UNEXPECTED}{size} {['SOURCE_CHANGED', 'TIMEOUT', 'BUSY', 'UNEXPECTED'].includes(String(reason)) && <button className="btn" onClick={retry}>{zh ? '重试' : 'Retry'}</button>}</p>;
+  return <p role="alert">{text[reason as keyof typeof text] ?? text.UNEXPECTED}{size} {['SOURCE_CHANGED', 'TIMEOUT', 'BUSY', 'UNEXPECTED'].includes(String(reason)) && <Button  onClick={retry}>{zh ? '重试' : 'Retry'}</Button>}</p>;
 }

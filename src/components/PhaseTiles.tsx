@@ -1,3 +1,4 @@
+import { Button } from './ui/Button.js';
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { TracePhase } from '../core/trace-types.js';
@@ -88,12 +89,12 @@ export function PhaseTiles({
       })}
       <span className="spacer" />
       <span className="phase-tiles-meta mono">{visibleCount} events</span>
-      <button type="button" className="btn ui-btn-sm" onClick={onSelectAll} disabled={allSelected}>
+      <Button type="button" className="ui-btn-sm"  onClick={onSelectAll} disabled={allSelected}>
         {t('session.selectAll', locale)}
-      </button>
-      <button type="button" className="btn ui-btn-sm" onClick={onClearAll} disabled={active.length === 0}>
+      </Button>
+      <Button type="button" className="ui-btn-sm"  onClick={onClearAll} disabled={active.length === 0}>
         {t('session.deselectAll', locale)}
-      </button>
+      </Button>
     </div>
   );
 }

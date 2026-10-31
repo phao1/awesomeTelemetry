@@ -47,7 +47,7 @@
 .ui-icon-btn.ui-btn-sm { width: var(--control-height-sm); }
 .ui-icon-btn.ui-btn-lg { width: var(--control-height-lg); }
 .ui-button-group { display: inline-flex; }
-.ui-button-group > :not(:first-child) { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
+.ui-button-group > :not(:first-child) { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: calc(var(--space-1) * -.25); }
 .ui-button-group > :not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .ui-input,.ui-select { height: var(--control-height-md); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-default); color: var(--fg-default); font-size: var(--text-base); }
 .ui-select { display: inline-flex; align-items: center; gap: var(--space-2); width: 100%; padding: 0 var(--space-3); }
@@ -218,3 +218,12 @@ tr:hover .ui-row-actions,tr:focus-within .ui-row-actions { opacity: 1; }
 .app-sidebar .sidebar-controls > .ui-overlay-anchor { width: var(--control-height-md); height: var(--control-height-md); flex: 0 0 var(--control-height-md); }
 .ui-table td.ui-table-control,.ui-table th.ui-table-control { padding: 0; text-align: center; }
 .app-sidebar.is-collapsed:not(.is-mobile-open) .statusbar > .ui-overlay-anchor:has(.statusbar-summary) { display: none; }
+
+.task-compare-picker-popup{width:min(calc(var(--space-10) * 14),calc(100vw - var(--space-8)));max-width:calc(100vw - var(--space-8));min-width:0}
+.ui-option-label>.ui-overlay-anchor{display:block;min-width:0;max-width:100%;overflow:hidden}
+.ui-option-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ui-option-label small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chart-legend button{display:inline-flex;align-items:center;gap:var(--space-1);border:0;background:transparent;color:var(--fg-default);font-size:var(--text-xs);padding:var(--space-1);border-radius:var(--radius-sm)}
+.chart-legend button[aria-pressed=false]{opacity:.45;text-decoration:line-through}
+
+@media(max-width:47.999rem){.page-header{flex-wrap:wrap;height:auto;min-height:var(--page-header-height)}.page-actions{min-width:0;max-width:100%;flex-wrap:wrap}.page-actions>*{max-width:100%}.page-heading{min-width:0}}

@@ -296,10 +296,10 @@
 
 .team-compare-view-table-caption {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  width: calc(var(--space-1) / 4);
+  height: calc(var(--space-1) / 4);
   padding: 0;
-  margin: -1px;
+  margin: calc(var(--space-1) * -.25);
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;

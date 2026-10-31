@@ -34,6 +34,6 @@ it('keeps a scrollable semantic table with health actions at narrow widths',()=>
  vi.stubGlobal('matchMedia',()=>({matches:true,addEventListener:()=>{},removeEventListener:()=>{}}));
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
  vi.spyOn(HTMLElement.prototype,'offsetHeight','get').mockReturnValue(600);vi.spyOn(HTMLElement.prototype,'offsetWidth','get').mockReturnValue(375);
- try{act(()=>root.render(<TaskHealthList items={[task]} locale="zh" checked={[]} onCheck={()=>{}} onSelect={()=>{}} onHealth={()=>{}} onIntake={()=>{}}/>));expect(host.querySelector('.ui-table-wrap')).not.toBeNull();expect(host.querySelectorAll('thead th').length).toBe(12);expect(host.querySelector('tbody')?.textContent).toContain('发现问题 · 2');}
+ try{act(()=>root.render(<TaskHealthList items={[task]} locale="zh" checked={[]} onCheck={()=>{}} onSelect={()=>{}} onHealth={()=>{}} onIntake={()=>{}}/>));expect(host.querySelector('.ui-table-wrap')).not.toBeNull();expect(host.querySelectorAll('thead th').length).toBe(11);expect([...host.querySelectorAll('td[data-column]')].map(cell=>cell.getAttribute('data-column'))).toEqual(['title','status','activity','duration','tools','errors','tokens','cache','health']);expect(host.querySelector('.task-f3-mobile-metrics')).not.toBeNull();expect(host.querySelector('tbody')?.textContent).toContain('发现问题 · 2');}
  finally{act(()=>root.unmount());host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();}
 });

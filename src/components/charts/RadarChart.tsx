@@ -1,5 +1,5 @@
 import type { Locale } from '../../i18n.js';
-import { useComponentCopy } from '../ui/component-copy.js';
+import { useUiCopy } from '../ui/Locale.js';
 import { EmptyState } from '../ui/States.js';
 import { IconDashboard } from '../icons/index.js';
 /** REQ-119：可复用雷达图 —— 从 CompareCharts.tsx 提取，props 标准化为 N 个系列。 */
@@ -40,7 +40,7 @@ export function RadarChart({
   size = 220,
   ariaLabel = 'radar chart',
 }: RadarChartProps): React.JSX.Element {
-  const copy=useComponentCopy(locale);
+  const copy=useUiCopy(locale);
   if(!data.length)return <EmptyState icon={<IconDashboard/>} title={copy.empty}/>;
   const n = data.length;
   const pointAt = (value: number, i: number): [number, number] => {

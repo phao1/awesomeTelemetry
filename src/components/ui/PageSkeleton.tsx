@@ -1,4 +1,5 @@
-import { ta, type Locale } from '../../i18n.js';
+import { useUiTranslate } from './Locale.js';
+import { type Locale } from '../../i18n.js';
 export interface PageSkeletonProps {
   locale?: Locale;
   variant?: 'cards' | 'table';
@@ -8,6 +9,7 @@ export interface PageSkeletonProps {
 }
 /** Page-shaped loading state; no business data or layout-affecting requests. */
 export function PageSkeleton({ locale, variant = 'cards', rows = 6, compact = false }: PageSkeletonProps): React.JSX.Element {
+  const ta=useUiTranslate(locale);
   const label = locale ? locale === 'zh' ? '正在加载页面' : 'Loading page' : ta('a11y.loading');
   return <div className={`ui-page-skeleton ${compact ? 'ui-page-skeleton-compact' : ''}`} role="status" aria-live="polite" aria-label={label} aria-busy="true">
     <div aria-hidden="true">

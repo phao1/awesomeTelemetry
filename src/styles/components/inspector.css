@@ -115,7 +115,7 @@
   background: var(--attention-subtle);
   color: var(--fg-default);
   border-radius: var(--mark-radius);
-  padding: 0 1px;
+  padding: 0 calc(var(--space-1) / 4);
 }
 
 
@@ -193,7 +193,7 @@
 .session-toolbar-metric {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: calc(var(--space-1) / 4);
   min-width: 0;
 }
 

@@ -1,3 +1,4 @@
+import { Skeleton } from './ui/States.js';
 import { Button } from './ui/Button.js';
 import { Disclosure } from './ui/PageControls.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -40,7 +41,7 @@ export function NativeToolObservationsPanel({ sessionKey, identity, locale, onSe
       <Button  type="button" disabled={busy || page?.hasMore !== true} onClick={() => { if (page?.nextCursor !== null && page?.nextCursor !== undefined) { setHistory(old => [...old, cursor]); void load(page.nextCursor); } }}>{c.next}</Button>
       {busy && <Button  type="button" onClick={() => { cancel(); setBusy(false); setError('CANCELLED'); }}>{c.cancel}</Button>}
     </div>
-    {busy && <p role="status">{c.loading}</p>}
+    {busy && <div role="status"><Skeleton variant="row"/></div>}
     {error !== null && <div role="alert"><p>{error === 'TIMEOUT' ? c.timeout : error === 'CANCELLED' ? c.cancelled : c.failed + ' · ' + error}</p><Button  type="button" onClick={() => void load(cursor)}>{c.retry}</Button></div>}
     {page !== null && <>
       <p role="status">{c[page.state]} · {c.total}: {page.eventTotal} · {page.events.length === 0 ? '0' : '#' + page.events[0]!.sequence + '–#' + page.events.at(-1)!.sequence}</p>

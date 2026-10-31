@@ -1,5 +1,5 @@
 import type { Locale } from '../../i18n.js';
-import { useComponentCopy } from '../ui/component-copy.js';
+import { useUiCopy } from '../ui/Locale.js';
 import { EmptyState } from '../ui/States.js';
 import { IconDashboard } from '../icons/index.js';
 import { niceAxis } from './axis.js';
@@ -30,7 +30,7 @@ export function ComboBarLine({
   width = 520,
   height = 180,
 }: ComboBarLineProps): React.JSX.Element {
-  const copy=useComponentCopy(locale);
+  const copy=useUiCopy(locale);
   const [ref,responsiveWidth]=useChartWidth(width); width=responsiveWidth;
   const count = Math.max(bars.length, line.length);
   if (count === 0) {

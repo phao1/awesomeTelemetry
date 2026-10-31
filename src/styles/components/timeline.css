@@ -225,7 +225,7 @@
 .timecomp-seg-on {
   filter: brightness(1.2);
   outline: 1px solid var(--fg-default);
-  outline-offset: -1px;
+  outline-offset: calc(var(--space-1) * -.25);
 }
 
 .timecomp-seg-idle {
@@ -304,7 +304,7 @@
 
 .gantt-row:focus-visible {
   outline: 1px solid var(--accent-fg);
-  outline-offset: -1px;
+  outline-offset: calc(var(--space-1) * -.25);
 }
 
 .gantt-time {

@@ -1,5 +1,5 @@
 import type { Locale } from '../../i18n.js';
-import { useComponentCopy } from '../ui/component-copy.js';
+import { useUiCopy } from '../ui/Locale.js';
 import { EmptyState } from '../ui/States.js';
 import { IconDashboard } from '../icons/index.js';
 import type { KeyboardEvent } from 'react';
@@ -117,7 +117,7 @@ export function DonutChart({
   tone = 'accent',
   centerLabel,locale,
 }: DonutChartProps): React.JSX.Element {
-  const copy=useComponentCopy(locale);
+  const copy=useUiCopy(locale);
   const total = slices.reduce((sum, s) => sum + Math.max(0,s.value), 0);
   if (!total) return <EmptyState icon={<IconDashboard/>} title={copy.empty}/>;
   return (

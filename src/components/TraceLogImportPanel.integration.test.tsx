@@ -10,6 +10,7 @@ import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
 import { createServer as createViteServer } from 'vite';
 import type { LocalSessionConfig } from '../core/trace-types.js';
+import { toggleDisclosure } from './ui/test-controls.js';
 import { TraceLogImportPanel } from './TraceLogImportPanel.js';
 
 it('round-trips a real UI import through the local HTTP/worker store, lazy selected detail and byte-exact original download', async () => {
@@ -64,8 +65,8 @@ it('round-trips a real UI import through the local HTTP/worker store, lazy selec
         tool_calls: '[{"function":{"name":"NEVER_EXECUTE","arguments":"{}"}}]' },
     ] }, null, 2);
     const id = createHash('sha256').update(source).digest('hex');
-    act(() => container.querySelector<HTMLElement>('summary')!.click());
-    expect(container.querySelector('details')?.open).toBe(true);
+    toggleDisclosure(container.querySelector('.trace-import-upload')!);
+    expect(container.querySelector('.trace-import-upload button[aria-expanded]')?.getAttribute('aria-expanded')).toBe('true');
     await act(async () => {
       const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
       Object.defineProperty(input, 'files', { configurable: true, value: [new NodeFile([source], 'synthetic-ui.json')] });

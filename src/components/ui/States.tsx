@@ -1,4 +1,5 @@
-import { ta } from '../../i18n.js';
+import { useUiLocale, useUiTranslate } from './Locale.js';
+import { t, type Locale } from '../../i18n.js';
 import { useEffect, type ReactNode } from 'react';
 
 import { IconClose } from '../icons/index.js';
@@ -12,6 +13,7 @@ export interface SkeletonProps {
 
 /** REQ-006：loading 态骨架。行骨架高度 = 真实行高（--row-lg，CLS=0）。 */
 export function Skeleton({ variant = 'text', count = 1 }: SkeletonProps): React.JSX.Element {
+  const ta=useUiTranslate();
   return (
     <div
       role="status"
@@ -49,17 +51,19 @@ export interface ErrorStateProps {
   code: string;
   message: string;
   onRetry?: () => void;
+  locale?: Locale;
 }
 
 /** REQ-006：error 态 —— 错误码 + 文案 + 重试按钮；MUST NOT 静默吞错。 */
-export function ErrorState({ code, message, onRetry }: ErrorStateProps): React.JSX.Element {
+export function ErrorState({ code, message, onRetry, locale }: ErrorStateProps): React.JSX.Element {
+  const activeLocale=useUiLocale(locale);
   return (
     <div className="ui-error" role="alert">
       <span className="ui-error-code">{code}</span>
       <div className="ui-error-message">{message}</div>
       {onRetry !== undefined && (
         <Button variant="default" size="sm" onClick={onRetry}>
-          {ta('state.retry')}
+          {t('state.retry', activeLocale)}
         </Button>
       )}
     </div>
@@ -85,6 +89,7 @@ export function Toast({
   onDismiss,
   autoDismissMs = 3000,
 }: ToastProps): React.JSX.Element {
+  const ta=useUiTranslate();
   useEffect(() => {
     const timer = setTimeout(onDismiss, autoDismissMs);
     return () => clearTimeout(timer);

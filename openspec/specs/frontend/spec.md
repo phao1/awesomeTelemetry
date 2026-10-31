@@ -1186,3 +1186,19 @@ with absolute tooltips and direct nullable path evidence for missing-source badg
 Benchmark has one dropzone empty state and candidate MetricStrips. Steps show20px
 number circles, connectors and state colors; boundary stats auto-fit at180px.
 F5-owned UI copy follows the active language without bilingual parallel labels.
+
+## Phase F6 merge polish
+
+REQ-F6-001: Task rows merge named provider, genuine request count and member count
+in title metadata. All metric columns fit at >=1280 viewport with expanded sidebar;
+smaller desktop tables scroll inside the card. Below768, card rows expose selection,
+two-line title, metadata and status/activity/Token/cache/error metrics. Search owns
+one row and remaining filters share a horizontally scrollable strip.
+REQ-F6-002: Sidebar automatic breakpoint changes never overwrite an explicit saved
+preference. Request scope always offers All members, including single-member tasks;
+return-to-main is labelled. Request navigation shows only position plus a searchable
+titled selector. Comparison popup is at most560px and viewport minus32px.
+REQ-F6-003: UTC daily chart labels use localized short dates. Area/Bar/Line legends
+are keyboard-operable visibility toggles; stacking, tooltips and numeric axes use
+only visible series. Hidden series keep stable colors and can always be restored.
+Shared UI copy uses one context with reactive document-language fallback.

@@ -1,3 +1,4 @@
+import { Skeleton } from './ui/States.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
 import { Switch } from './ui/Controls.js';
@@ -86,7 +87,7 @@ export function ExperimentRecordsPanel({ sessions, locale, onClose, onCompare }:
       <Button  disabled={!snapshot || !!busy || uncertain} onClick={download}>{labels.export}</Button>
       <Button  onClick={close}>{labels.close}</Button>
     </div>
-    {busy && <p role="status">{busy === 'read' ? labels.loading : labels.writing} <Button  onClick={cancelWait}>{labels.cancel}</Button></p>}
+    {busy && <div role="status"><Skeleton variant="row"/>{busy === 'write' ? labels.writing : null} <Button  onClick={cancelWait}>{labels.cancel}</Button></div>}
     {error && <p role="alert">{labels.error} {labels[error as keyof typeof labels] ?? labels.UNAVAILABLE}</p>}
     {uncertain && <p role="alert">{labels.uncertain}</p>}
     {notice && <p role="status">{labels[notice]}</p>}

@@ -17,7 +17,7 @@ describe('stage playback and historical boundaries',()=>{
   render([event('one'),event('two',{kind:'task_status',startedAt:'2026-08-17T00:01:00Z'}),event('three',{kind:'verification',agentId:'future',startedAt:'2026-08-17T00:02:00Z'})]);
   expect(host.querySelector('[data-active-agent="a"]')).toBeTruthy();expect(host.textContent).not.toContain('未来成员');expect(host.textContent).not.toContain('已完成');expect(detail).not.toHaveBeenCalled();
   click('播放');act(()=>vi.advanceTimersByTime(1800));expect(host.querySelector('.sr-current h4')!.textContent).toBe('任务状态上报');click('暂停');act(()=>vi.advanceTimersByTime(5000));expect(host.querySelector('.sr-current h4')!.textContent).toBe('任务状态上报');
-  const range=host.querySelector('input')!;act(()=>{const setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value')!.set!;setter.call(range,'2');range.dispatchEvent(new Event('input',{bubbles:true}));range.dispatchEvent(new Event('change',{bubbles:true}));});
+  const range=host.querySelector('input[type=range]')!;act(()=>{const setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value')!.set!;setter.call(range,'2');range.dispatchEvent(new Event('input',{bubbles:true}));range.dispatchEvent(new Event('change',{bubbles:true}));});
   expect(host.querySelector('[data-active-agent="future"]')).toBeTruthy();click('上一步');expect(host.querySelector('[data-active-task="t"]')).toBeTruthy();
  });
  it('excludes unknown-clock records from autoplay and reviews them separately',()=>{
@@ -28,7 +28,7 @@ describe('stage playback and historical boundaries',()=>{
  });
  it('reads a single source body only after explicit expansion and stops timers on unmount',async()=>{
   render([event('one'),event('two',{startedAt:'2026-08-17T00:01:00Z'})]);expect(detail).not.toHaveBeenCalled();
-  await act(async()=>{const evidence=host.querySelector<HTMLDetailsElement>('.sr-evidence')!;evidence.open=true;evidence.dispatchEvent(new Event('toggle'));await Promise.resolve();});
+  await act(async()=>{const evidence=host.querySelector('.sr-evidence .ui-accordion > button') as HTMLButtonElement;evidence.click();await Promise.resolve();});
   expect(detail).toHaveBeenCalledWith('r','one','body');expect(host.textContent).toContain('completion reported');
   const pendingBeforePlayback=vi.getTimerCount();click('播放');act(()=>root.render(<div/>));expect(vi.getTimerCount()).toBe(pendingBeforePlayback);
  });

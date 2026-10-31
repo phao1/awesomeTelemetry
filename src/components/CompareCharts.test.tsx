@@ -70,7 +70,7 @@ describe('CompareCharts（建议 1）', () => {
     expect(document.querySelectorAll('svg line')).toHaveLength(0);
     expect(view.html()).toContain('Fewer than three comparable axes');
     expect(document.querySelector('.compare-profile-values')).not.toBeNull();
-    expect(document.querySelector<HTMLDetailsElement>('.compare-profile-values')?.open).toBe(true);
+    expect(document.querySelector('.compare-profile-values .ui-accordion > button')?.getAttribute('aria-expanded')).toBe('true');
     expect(view.html()).toContain('Not a quality score');
     const rows=[...document.querySelectorAll('.compare-profile-values tbody tr')];
     const writes=rows.find(row=>row.querySelector('th')?.textContent==='Writes')!;

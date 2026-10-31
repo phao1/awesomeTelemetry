@@ -1,3 +1,4 @@
+import { Button } from './ui/Button.js';
 import {
   useEffect,
   useRef,
@@ -222,7 +223,7 @@ export function SessionList({
     <aside className="rail session-rail" style={{ width }} aria-label={t('session.listLabel', locale)}>
       <div className="rail-header">
         <span className="session-rail-title"><IconSessions size={16} />{t('session.listLabel', locale)}</span>
-        {onOpenTeams !== undefined && <a href="#/team" className="btn ui-btn-sm session-team-entry"
+        {onOpenTeams !== undefined && <a href="#/team" className="ui-btn ui-btn-sm session-team-entry"
           aria-label={t('session.openTeams', locale)} title={t('session.openTeams', locale)} onClick={(event) => { event.preventDefault(); onOpenTeams(); }}>
           <IconAgents size={12} />{t('session.teams', locale)}
         </a>}
@@ -256,10 +257,10 @@ export function SessionList({
             open={providerOpen}
             onOpenChange={setProviderOpen}
             trigger={(props) => (
-              <button type="button" className="btn ui-btn-sm" {...props}>
+              <Button type="button" className="ui-btn-sm"  {...props}>
                 {t('session.provider', locale)}
                 {filterBadge(providerFilter.length)}
-              </button>
+              </Button>
             )}
           >
             <div className="session-filter-list">
@@ -287,10 +288,10 @@ export function SessionList({
             open={statusOpen}
             onOpenChange={setStatusOpen}
             trigger={(props) => (
-              <button type="button" className="btn ui-btn-sm" {...props}>
+              <Button type="button" className="ui-btn-sm"  {...props}>
                 {t('session.status', locale)}
                 {filterBadge(statusFilter.length)}
-              </button>
+              </Button>
             )}
           >
             <div className="session-filter-list">
@@ -333,9 +334,9 @@ export function SessionList({
           title={t(hasFilters ? 'session.noMatches' : 'session.noRecords', locale)}
           description={offlineSamples ? t('state.offlineSamples', locale) : t(hasFilters ? 'session.noMatchesHint' : 'session.noRecordsHint', locale)}
           action={
-            <button type="button" className="btn" onClick={hasFilters ? resetFilters : onRetry}>
+            <Button type="button"  onClick={hasFilters ? resetFilters : onRetry}>
               {t(hasFilters ? 'session.clearFilters' : 'common.refresh', locale)}
-            </button>
+            </Button>
           }
         />
       )}
@@ -463,14 +464,14 @@ export function SessionList({
           {t('session.total', locale).replace('{n}', String(total))}
         </span>
         {hasMore && (
-          <button
+          <Button
             type="button"
-            className="btn ui-btn-sm"
+            className="ui-btn-sm"
             disabled={loading}
             onClick={onLoadMore}
           >
             {loading ? t('common.loading', locale) : t('session.loadMore', locale)}
-          </button>
+          </Button>
         )}
       </div>
       <div className="rail-resize" onMouseDown={onDragStart} aria-hidden="true" />

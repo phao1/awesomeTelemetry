@@ -1,3 +1,4 @@
+import { Button } from './ui/Button.js';
 import { PageSkeleton } from './ui/PageSkeleton.js';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 const CodexCallsPanel = lazy(() => import('./CodexCallsPanel.js').then(module => ({ default: module.CodexCallsPanel })));
@@ -147,7 +148,7 @@ function PreviewConnection({ requestId, ended, available, locale, onSourceChange
       {issue !== null && <p role="alert">{copy[issue]}</p>}
       {gap && <p className="hint">{copy.gap}</p>}
       {preview.limited && <p role="status">{copy.limit}</p>}
-      {issue === 'unavailable' && !ended && available && <button type="button" className="btn" onClick={() => { setGap(true); setAttempt(value => value + 1); }}>{copy.retry}</button>}
+      {issue === 'unavailable' && !ended && available && <Button type="button"  onClick={() => { setGap(true); setAttempt(value => value + 1); }}>{copy.retry}</Button>}
       <pre className="mono" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 320, overflow: 'auto' }}>{preview.text}</pre>
     </div>
   );
@@ -173,18 +174,18 @@ export function ProxyLivePanel({ streams, locale, onOpenSession, invalidateKey =
   return (
     <section aria-label={copy.title}>
       <h3>{copy.title}</h3>
-      <button className="btn" type="button" onClick={() => setRefresh(value => value + 1)}>{locale === 'zh' ? '刷新进行中连接' : 'Refresh active connections'}</button>
+      <Button  type="button" onClick={() => setRefresh(value => value + 1)}>{locale === 'zh' ? '刷新进行中连接' : 'Refresh active connections'}</Button>
       {inventoryError && <p className="hint">{locale === 'zh' ? '进行中连接读取失败；实时通知仍保留，可显式重试。' : 'Active inventory unavailable; live notifications are retained. Refresh explicitly to retry.'}</p>}
       {entries.length === 0 && <p>{copy.empty}</p>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-1)' }}>
-        {entries.slice(0, 64).map(entry => <button type="button" className="btn" key={entry.requestId} data-stream-id={entry.requestId}
+        {entries.slice(0, 64).map(entry => <Button type="button"  key={entry.requestId} data-stream-id={entry.requestId}
           aria-pressed={entry.requestId === selectedId} disabled={entry.ended} title={entry.startedAt}
-          onClick={() => { setSelectedId(entry.requestId); setInspect(false); }}>{entry.hostname} · {entry.requestId} · {entry.ended ? copy.done : copy.active}</button>)}
+          onClick={() => { setSelectedId(entry.requestId); setInspect(false); }}>{entry.hostname} · {entry.requestId} · {entry.ended ? copy.done : copy.active}</Button>)}
       </div>
       {selectedId === null ? (entries.length > 0 && <p className="hint">{copy.choose}</p>) : <>
-        <button type="button" className="btn" onClick={() => setSelectedId(null)}>{copy.close}</button>
+        <Button type="button"  onClick={() => setSelectedId(null)}>{copy.close}</Button>
         <PreviewConnection key={selectedId} requestId={selectedId} ended={selected?.ended ?? false} available={selected !== undefined} locale={locale} onSourceChange={sourceChanged} />
-        {selectedId.startsWith('ws-') && <button className="btn" type="button" onClick={() => setInspect(value => !value)}>{locale === 'zh' ? 'Codex 调用链路' : 'Codex call chain'}</button>}
+        {selectedId.startsWith('ws-') && <Button  type="button" onClick={() => setInspect(value => !value)}>{locale === 'zh' ? 'Codex 调用链路' : 'Codex call chain'}</Button>}
         {inspect && selectedId.startsWith('ws-') && <Suspense fallback={<PageSkeleton compact />}>
           <CodexCallsPanel key={selectedId} source={{ requestId: selectedId }} locale={locale} onOpenSession={onOpenSession} invalidateKey={invalidateKey} changeKey={sourceRevision} />
         </Suspense>}

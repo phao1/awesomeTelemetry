@@ -1,3 +1,5 @@
+import { Skeleton } from './ui/States.js';
+import { Button } from './ui/Button.js';
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client.js';
 import type { CaptureMetadataCapacity, CaptureStorageStatus, ProxyRuntimeStatus } from '../core/trace-types.js';
@@ -72,11 +74,11 @@ export function CaptureCapacityPanel({ locale, runtimeStatus = null }: { locale:
   }, [busy, capacity, storage]);
   const bytes = (value: number | null): string => value === null ? '—' : value.toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US') + ' B';
   const fields = (values: ReadonlyArray<readonly [I18nKey, number | null]>): React.JSX.Element => <dl className="capture-capacity-grid">{values.map(([label, value]) => <Fragment key={label}><dt>{t(label, locale)}</dt><dd className="mono">{label === 'proxy.capacity.active' ? value : bytes(value)}</dd></Fragment>)}</dl>;
-  const state = <T,>(value: Snapshot<T>): React.JSX.Element | null => value.state === 'loading' ? <p role="status">{t('proxy.capacity.loading', locale)}</p> : value.state === 'error' ? <p role="alert">{t('proxy.capacity.error', locale)} <code>{value.code}</code></p> : null;
+  const state = <T,>(value: Snapshot<T>): React.JSX.Element | null => value.state === 'loading' ? <div role="status"><Skeleton variant="row"/></div> : value.state === 'error' ? <p role="alert">{t('proxy.capacity.error', locale)} <code>{value.code}</code></p> : null;
   const error = runtimeStatus?.diagnostics?.lastError;
   return <div className="capture-capacity-panel" aria-busy={busy}>
     <p className="hint">{t('proxy.capacity.snapshot', locale)}</p>
-    <button ref={refreshButton} type="button" className="btn" disabled={busy} onClick={() => { returnFocus.current = document.activeElement === refreshButton.current; void refresh(); }}>{t('proxy.capacity.refresh', locale)}</button>
+    <Button ref={refreshButton} type="button"  disabled={busy} onClick={() => { returnFocus.current = document.activeElement === refreshButton.current; void refresh(); }}>{t('proxy.capacity.refresh', locale)}</Button>
     {snapshotKey !== null && snapshotKey !== key && <p role="status">{t('proxy.capacity.stale', locale)}</p>}
     {(runtimeStatus?.running || runtimeStatus?.starting || runtimeStatus?.diagnostics?.pendingWrites) ? <p className="hint">{t('proxy.capacity.runtimeActive', locale)}</p> : null}
     <section aria-labelledby={id + '-originals'}>

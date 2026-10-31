@@ -20,7 +20,7 @@
 .process-lane-labels{display:flex;flex-direction:column;min-width:0;color:var(--fg-muted)}
 .process-lane-labels>span{height:1.375rem;line-height:1.375rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:var(--space-1)}
 .process-time-track{width:100%;overflow:hidden;touch-action:none;cursor:crosshair;background:var(--canvas-default);border-left:1px solid var(--border-default)}
-.process-time-track:focus-visible,.process-time-overview svg:focus-visible{outline:1px solid var(--accent-fg);outline-offset:1px}
+.process-time-track:focus-visible,.process-time-overview svg:focus-visible{outline:1px solid var(--accent-fg);outline-offset:calc(var(--space-1) / 4)}
 .process-grid{stroke:var(--border-muted);stroke-width:1px;vector-effect:non-scaling-stroke}
 .process-histogram{opacity:.24;pointer-events:none}
 .process-histogram.input,.process-exact.input{fill:var(--accent-fg)}
@@ -89,7 +89,7 @@
 .task-context-meta{gap:var(--space-1) var(--space-3);line-height:1.3}
 .task-context-meta .task-badge{padding:var(--space-1)}
 .task-scope-bar{padding:var(--space-1) var(--space-4)}
-.task-scope-bar select{padding:var(--space-1) var(--space-2)}
+.task-scope-bar select:not(.ui-select){padding:var(--space-1) var(--space-2)}
 .task-reading-toolbar{padding:0 var(--space-4);min-height:2rem}
 .task-mode-tabs button{padding:var(--space-2);min-height:2rem}
 .task-record-filters{padding:var(--space-1) var(--space-3)}
@@ -103,7 +103,7 @@
 .process-time-axis{padding-top:0;font-size:var(--text-xs)}
 .process-time-footer{min-height:1.25rem}
 .process-ledger-summary{min-height:1.75rem;padding:var(--space-1) var(--space-3)}
-.process-scope-note{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.process-scope-note{position:absolute;width:calc(var(--space-1) / 4);height:calc(var(--space-1) / 4);padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .task-related-source{font-size:var(--text-xs);line-height:1.6;padding:var(--space-2);background:var(--accent-subtle);border-left:0.125rem solid var(--accent-emphasis)}
 .task-related-source code{display:block;overflow-wrap:anywhere;font-size:var(--text-xs);color:var(--fg-muted)}
 .task-related-source button{border:0;background:none;color:var(--accent-fg);cursor:pointer;font:inherit;padding:0}
@@ -121,9 +121,9 @@
   .task-context-header{padding-top:var(--space-1);padding-bottom:var(--space-1)}
   .task-context-top>.btn{min-height:1.375rem;line-height:1.2;padding:0 var(--space-2)}
   .task-context-meta .task-badge{padding:0 var(--space-1)}
-  .task-scope-bar .btn,.task-scope-bar select,.task-reading-toolbar .btn{min-height:1.5rem;line-height:1.2;padding:var(--space-1) var(--space-2)}
+  .task-scope-bar .btn,.task-scope-bar select:not(.ui-select),.task-reading-toolbar .btn{min-height:1.5rem;line-height:1.2;padding:var(--space-1) var(--space-2)}
   .task-mode-tabs button{min-height:1.5rem;line-height:1.3;padding:var(--space-1) var(--space-2)}
-  .task-record-filters>input,.task-record-filters>.btn{min-height:1.5rem;line-height:1.3;padding:var(--space-1) var(--space-2)}
+  .task-record-filters>input:not(.ui-input):not([type=hidden]),.task-record-filters>.btn{min-height:1.5rem;line-height:1.3;padding:var(--space-1) var(--space-2)}
   .task-window-label{min-height:1.25rem;line-height:1.3;padding-top:0;padding-bottom:0}
   .process-time-navigator{line-height:1.3}
   .process-ledger-summary button{min-height:1.25rem;line-height:1.3;padding:0 var(--space-2)}

@@ -12,7 +12,7 @@ afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
 it('navigates requests and returns to whole-task with the selected request summary',async()=>{
   function Harness(){const [request,setRequest]=useState<string|undefined>(items[0]!.id);return <RequestNavigator context={context} request={request} locale="en" onSelect={setRequest}/>;}
   act(()=>root.render(<Harness/>));await settle();
-  expect(host.querySelector('[role=combobox]')!.textContent).toContain('Question 1');expect(host.querySelector('.task-f3-metrics')!.textContent).toContain('60');
+  expect(host.querySelector('[role=combobox]')!.textContent).toContain('Question 1');expect(host.querySelector('.task-f3-request-title')!.textContent).toBe('1 / 2');act(()=>host.querySelector<HTMLButtonElement>('[role=combobox]')!.click());expect(document.querySelector('.ui-combo-search input')).not.toBeNull();expect(document.querySelector('[role=listbox]')!.textContent).toContain('Question 2');act(()=>host.querySelector<HTMLButtonElement>('[role=combobox]')!.click());expect(host.querySelector('.task-f3-metrics')!.textContent).toContain('60');
   act(()=>[...host.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')==='Next')!.click());await settle();expect(host.querySelector('[role=combobox]')!.textContent).toContain('Question 2');expect(host.querySelector('.task-f3-metrics')!.textContent).toContain('120');
   act(()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Whole task')!.click());await settle();expect(host.querySelector('[role=combobox]')).toBeNull();expect(host.querySelector('.task-f3-metrics')).toBeNull();expect(fetch).toHaveBeenCalledTimes(1);
 });

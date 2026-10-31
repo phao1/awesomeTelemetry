@@ -1,3 +1,5 @@
+import { Disclosure } from './ui/PageControls.js';
+import { Button } from './ui/Button.js';
 import type {SessionDetailResponse,TraceEventSlim} from '../core/trace-types.js';
 import {t,type Locale} from '../i18n.js';
 import type {CompareResult} from './compare-types.js';
@@ -17,17 +19,17 @@ export function CompareRunEvidence({result,locale,onOpenRun,onOpenCalls}:Compare
     const errors=events.filter(event=>event.status==='error'||event.error!==null);
     const longest=events.reduce<TraceEventSlim|null>((current,event)=>Number.isFinite(event.durationMs)&&event.durationMs>0&&(current===null||event.durationMs>current.durationMs)?event:current,null);
     const partial=detail.pending||detail.hasMore||detail.eventOffset!==0||events.length<detail.eventTotal;
-    const open=(event:TraceEventSlim):React.JSX.Element=><button type="button" className="btn cmp-evidence-event"
+    const open=(event:TraceEventSlim):React.JSX.Element=><Button type="button" className="cmp-evidence-event"
       onClick={()=>onOpenRun?.(session.id,event.id)} disabled={!onOpenRun} title={event.id}>
       <span className="mono">#{event.sequence}</span><span>{event.tool??event.title??event.id}</span>
-    </button>;
+    </Button>;
     return <article className="cmp-evidence-side" key={name} aria-label={`${name} ${t('compare.evidence.scope',locale)}`}>
       <header><span className="compare-side-mark">{name}</span><h4 title={session.id}>{session.title||session.id}</h4>
-        <button type="button" className="btn ui-btn-sm" disabled={!onOpenRun} onClick={()=>onOpenRun?.(session.id)}>{t('compare.evidence.openRun',locale)}</button></header>
+        <Button type="button" className="ui-btn-sm"  disabled={!onOpenRun} onClick={()=>onOpenRun?.(session.id)}>{t('compare.evidence.openRun',locale)}</Button></header>
       <p>{session.dataSource} / {session.provider} / {session.sourceAgent} · {session.primaryModel??'—'}</p>
       <p>{t('session.metric.loaded',locale).replace('{loaded}',String(events.length)).replace('{total}',String(detail.eventTotal))}{' · '}
         <span>{t(partial?'compare.evidence.partial':'compare.evidence.complete',locale)}</span></p>
-      <details><summary>{t('compare.evidence.locators',locale).replace('{n}',String(errors.length))}</summary>
+      <Disclosure title={<>{t('compare.evidence.locators',locale).replace('{n}',String(errors.length))}</>}>
       <p className="mono">{session.id}</p>
       <p>{t('compare.evidence.durationSource',locale)}: {session.durationSource??'unknown'}</p>
       <div className="cmp-evidence-errors"><strong>{t('compare.evidence.errors',locale)} · {errors.length}</strong>
@@ -35,11 +37,11 @@ export function CompareRunEvidence({result,locale,onOpenRun,onOpenCalls}:Compare
         {errors.length>3&&<p>{t('compare.evidence.moreErrors',locale).replace('{n}',String(errors.length-3))}</p>}
       </div>
       {longest!==null&&<div className="cmp-evidence-longest"><strong>{t('investigation.longest',locale)} · {(longest.durationMs/1000).toFixed(1)}s</strong>{open(longest)}</div>}
-      </details>
+      </Disclosure>
     </article>;
   };
   return <section className="cmp-run-evidence" aria-label={t('compare.evidence.title',locale)}>
-    <header><h3>{t('compare.evidence.title',locale)}</h3>{onOpenCalls&&<button type="button" className="btn ui-btn-sm" onClick={onOpenCalls}>{t('compare.evidence.calls',locale)}</button>}</header>
+    <header><h3>{t('compare.evidence.title',locale)}</h3>{onOpenCalls&&<Button type="button" className="ui-btn-sm"  onClick={onOpenCalls}>{t('compare.evidence.calls',locale)}</Button>}</header>
     <p>{t('compare.evidence.boundary',locale)}</p>
     <div className="cmp-evidence-grid">{side('L',result.left)}{side('R',result.right)}</div>
     <p className="hint">{t('compare.evidence.interval',locale)}</p>

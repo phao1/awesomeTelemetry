@@ -116,7 +116,7 @@ describe('task process reading', () => {
     expect(calls.filter(path => path.includes('/records?')).map(path => new URL(path, 'http://localhost').searchParams.get('member'))).toEqual(['main']);
     expect(calls.filter(path => path.includes('/events/'))).toHaveLength(0);
     act(()=>host.querySelector<HTMLButtonElement>('[role=combobox][aria-label=Scope]')!.click());
-    act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=option]')].find(b=>b.textContent?.startsWith('Whole task'))!.click()); await readyTimeline();
+    act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=option]')].find(b=>b.textContent?.startsWith('All members'))!.click()); await readyTimeline();
     expect(calls.filter(path => path.includes('/events/'))).toHaveLength(0);
     expect(mark(main.id)).toBeTruthy(); expect(mark(child.id)).toBeTruthy();
     const before = metadataReads();
@@ -370,4 +370,10 @@ it('Phase B review refreshes the shared retained page after background hydration
  await act(async()=>{controller.enqueue(new TextEncoder().encode(JSON.stringify({items:[{taskId:task.id,pending:0,loaded:2,reasons:[]}],done:true})+'\n'));notify({version:1,keys:['main','child'],runIds:[]});await new Promise(r=>setTimeout(r,230));});
  expect(reads).toBe(2);expect(host.querySelector('.ui-table-wrap')).toBe(scroll);expect(host.querySelector('tbody [role=status]')).toBeNull();expect(host.querySelector('tr[data-table-row]')?.textContent).toContain('110');
  expect(host.querySelector<HTMLInputElement>('tbody input')!.checked).toBe(true);expect(vi.mocked(fetch).mock.calls.filter(([path])=>String(path)==='/api/task-home/hydrate')).toHaveLength(1);
+});
+
+it('always labels all-member scope for a single-member task and gives the return action text',async()=>{
+ const original=fetch;vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>String(input)==='/api/tasks/collected%3Amain'?json({...context,task:{...task,memberCount:1,loadedMemberCount:1},members:context.members.slice(0,1)}):original(input,init)));
+ const onRoute=vi.fn();act(()=>root.render(<TaskWorkbench locale="en" route={{...DEFAULT_TASK_ROUTE,task:task.id,member:'all'}} onRoute={onRoute} changes={{version:0,keys:[],runIds:[]}} onIntake={()=>{}} onOpenRequest={()=>{}}/>));await readyTimeline();
+ expect(host.querySelector('.task-member-select [role=combobox]')!.textContent).toContain('All members');expect(host.querySelector('.task-member-select [role=combobox]')!.textContent).not.toContain('Select…');const back=host.querySelector<HTMLButtonElement>('.task-return-main')!;expect(back.textContent).toBe('Return to main session');act(()=>back.click());expect(onRoute).toHaveBeenLastCalledWith(expect.objectContaining({member:'main'}));
 });

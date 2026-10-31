@@ -276,8 +276,9 @@
   color: var(--fg-muted);
 }
 
-.ui-input-with-icon {
-  padding-left: var(--space-5);
+.ui-input-wrap > .ui-input-with-icon {
+  padding-left: var(--space-8);
+  padding-right: var(--space-8);
 }
 
 .ui-input-wrap {
@@ -316,7 +317,7 @@
   padding: var(--space-2) var(--space-3);
   cursor: pointer;
   border-bottom: 1px solid transparent;
-  margin-bottom: -1px;
+  margin-bottom: calc(var(--space-1) * -.25);
 }
 
 .ui-tab:hover {

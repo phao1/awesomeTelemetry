@@ -1,4 +1,4 @@
-import { ta } from '../../i18n.js';
+import { useUiTranslate } from './Locale.js';
 import { useState, useRef, type InputHTMLAttributes, type RefObject } from 'react';
 
 import { IconClose, IconSearch } from '../icons/index.js';
@@ -56,6 +56,7 @@ export function SearchInput({
   inputRef,
   ...rest
 }: SearchInputProps): React.JSX.Element {
+  const ta=useUiTranslate();
   const ownRef=useRef<HTMLInputElement>(null);
   const searchRef=inputRef??ownRef;
   const [internalValue, setInternalValue] = useState(() => String(defaultValue ?? ''));

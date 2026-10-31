@@ -1,3 +1,4 @@
+import { Disclosure } from './ui/PageControls.js';
 import { useMemo } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -98,11 +99,11 @@ export function SessionVisuals({ detail, locale }: SessionVisualsProps): React.J
           ariaLabel={t('session.radar.title', locale)}
         />
         <p className="hint session-visuals-hint">{t('session.radar.criteria', locale)}</p>
-        <details className="session-radar-originals">
-          <summary>{t('session.radar.originals',locale)}</summary>
+        <Disclosure className="session-radar-originals" title={<>{t('session.radar.originals',locale)}</>}>
+
           <dl>{radar.points.map(point=><div key={point.axis}><dt>{t(point.axis === 'errorRate' ? 'session.radar.raw.errorRate' : `session.radar.axis.${point.axis}`,locale)}</dt><dd className="mono">{original(point)}</dd></div>)}</dl>
           <p className="hint">{t('session.radar.references',locale)}</p>
-        </details>
+        </Disclosure>
         {radar.omitted.length > 0 && <p className="hint" role="status">
           {t('session.radar.omitted', locale)} · {radar.omitted.map(axis => t(`session.radar.axis.${axis}`, locale)).join(', ')}
         </p>}

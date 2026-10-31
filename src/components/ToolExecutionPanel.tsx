@@ -1,3 +1,4 @@
+import { Skeleton } from './ui/States.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
 import { Disclosure } from './ui/PageControls.js';
@@ -92,7 +93,7 @@ function Investigation({ sessionKey, locale, invalidateKey = 0, onClose, onOpenR
       <span className="mono">{c.scope} · {snapshot === null ? '—' : (snapshot.events.length === 0 ? 0 : offset + 1) + '–' + (offset + snapshot.events.length) + ' / ' + snapshot.eventTotal}</span>
     </div>
     {stale && <p role="status" className="tool-notice">{c.stale}</p>}
-    {page.busy && <p role="status">{c.loading}</p>}
+    {page.busy && <div role="status"><Skeleton variant="row"/></div>}
     {page.error !== null && <div role="alert" className="tool-notice">{c.error} · {page.error === 'TIMEOUT' ? c.timeout : page.error}<Button  type="button" onClick={() => void load(offset)}>{c.retry}</Button></div>}
     {snapshot !== null && <div className="tool-layout"><aside className="tool-sidebar">
       <h3>{c.process}</h3><p className="hint">{c.partial}</p>
@@ -118,7 +119,7 @@ function Investigation({ sessionKey, locale, invalidateKey = 0, onClose, onOpenR
         <p className="hint">{c.timeHint}</p>{selected.error !== null && <p role="note" className="tool-record-error">{selected.error}</p>}
         <div className="tool-actions"><Button variant="primary" type="button" disabled={body.busy} onClick={() => readBody(false)}>{c.read}</Button><Button  type="button" disabled={!selected.hasRaw || body.busy} onClick={() => readBody(true)}>{c.raw}</Button></div>
         {snapshot.attempts.filter(attempt => attempt.matches.some(match => match.eventId === selected.id)).map(attempt => <Button  type="button" key={attempt.request.id} onClick={() => { onClose(); onOpenRequest(attempt.request.id); }}>{c.capture} #{attempt.request.id}</Button>)}
-        {body.busy && <p role="status">{c.loading}</p>}{body.error !== null && <div role="alert">{c.error} · {body.error === 'TIMEOUT' ? c.timeout : body.error}<Button  type="button" onClick={() => readBody(raw)}>{c.retry}</Button></div>}
+        {body.busy && <div role="status"><Skeleton variant="row"/></div>}{body.error !== null && <div role="alert">{c.error} · {body.error === 'TIMEOUT' ? c.timeout : body.error}<Button  type="button" onClick={() => readBody(raw)}>{c.retry}</Button></div>}
         {value !== null && <section className="tool-body" aria-label={c.selected}><div className="tool-actions"><Button  type="button" onClick={() => setFont(size => Math.max(8, size - 1))}>A−</Button><Button  type="button" onClick={() => setFont(size => Math.min(28, size + 1))}>A+</Button><Button  type="button" onClick={() => setFont(14)}>R</Button></div><p className="hint">{c.bounded}</p>
           {raw ? <><h3>Raw</h3><pre style={{ fontSize: font }}>{'raw' in value ? text(value.raw) : c.rawAbsent}</pre></> : <div className="tool-body-columns"><section><h3>{c.input}</h3><pre style={{ fontSize: font }}>{text(value.inputSummary)}</pre></section><section><h3>{c.output}</h3><pre style={{ fontSize: font }}>{text(value.outputSummary)}</pre></section></div>}
           {hasMoreText && !expandedText && <Button  type="button" onClick={() => setExpandedText(true)}>{c.more}</Button>}
