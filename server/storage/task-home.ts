@@ -7,7 +7,7 @@ import { readSummarySessions, taskMetrics } from './task-summary.js';
 export class TaskHomeChangedError extends Error { readonly code='SOURCE_CHANGED'; constructor(){super('Task metadata changed; refresh the list');} }
 const cache = new WeakMap<Database,{revision:string;promise:Promise<TaskSummary[]>}>();
 const revision=(db:Database,includePressure=false)=>`${db.pragma('data_version',{simple:true})}:${(cachedStmt(db,'SELECT total_changes() AS n').get() as {n:number}).n}:${includePressure}`;
-async function snapshot(db:Database,includePressure=false):Promise<TaskSummary[]> {
+export async function snapshot(db:Database,includePressure=false):Promise<TaskSummary[]> {
   const stamp=revision(db,includePressure), hit=cache.get(db); if(hit?.revision===stamp)return structuredClone(await hit.promise);
   const promise=(async()=>{
     const bindings=cachedStmt(db,`${TASK_BINDINGS_SQL} SELECT b.root_id,b.run_id,s.id,s.source_agent,s.title,s.provider,s.started_at,s.updated_at,s.status,s.event_count,s.detail_loaded,(EXISTS(SELECT 1 FROM scan_state ss WHERE ss.session_id=s.id) OR EXISTS(SELECT 1 FROM telemetry_sessions t WHERE t.session_id=s.id)) AS provenance,(SELECT origin FROM telemetry_sessions t WHERE t.session_id=s.id) AS telemetry_origin,(SELECT source FROM telemetry_sessions t WHERE t.session_id=s.id) AS telemetry_source FROM bindings b JOIN sessions s ON s.id=b.session_id ORDER BY b.root_id,s.id`).all() as Array<{root_id:string;run_id:string|null;id:string;source_agent:string;title:string;provider:string;started_at:string;updated_at:string;status:string;event_count:number;detail_loaded:number;provenance:number;telemetry_origin:string|null;telemetry_source:string|null}>;

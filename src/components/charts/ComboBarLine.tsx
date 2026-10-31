@@ -1,3 +1,5 @@
+import type { Locale } from '../../i18n.js';
+import { useComponentCopy } from '../ui/component-copy.js';
 import { EmptyState } from '../ui/States.js';
 import { IconDashboard } from '../icons/index.js';
 import { niceAxis } from './axis.js';
@@ -5,6 +7,7 @@ import { useChartWidth } from './CartesianChart.js';
 import type { ChartTone } from './types.js';
 
 export interface ComboBarLineProps {
+  locale?: Locale;
   /** 柱数据（主坐标轴）。 */
   bars: number[];
   /** 折线数据（独立坐标轴，避免被柱尺度压扁）。 */
@@ -18,6 +21,7 @@ export interface ComboBarLineProps {
 
 /** 柱 + 折线双轴（design-system REQ-010：A7 会话活跃曲线）。纯 SVG，无依赖。 */
 export function ComboBarLine({
+  locale,
   bars,
   line,
   labels,
@@ -26,10 +30,11 @@ export function ComboBarLine({
   width = 520,
   height = 180,
 }: ComboBarLineProps): React.JSX.Element {
+  const copy=useComponentCopy(locale);
   const [ref,responsiveWidth]=useChartWidth(width); width=responsiveWidth;
   const count = Math.max(bars.length, line.length);
   if (count === 0) {
-    return <EmptyState icon={<IconDashboard/>} title="暂无数据 / No data"/>;
+    return <EmptyState icon={<IconDashboard/>} title={copy.empty}/>;
   }
   const slot = width / count;
   const barMax = niceAxis(Math.max(0, ...bars)).max;

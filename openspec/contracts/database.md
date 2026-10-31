@@ -1583,3 +1583,10 @@ Failure reasons and the exception to global DB-size admission follow TD-006.
 Phase F1: monetary source/storage columns are retained without migration.
 No task/overview monetary aggregates or pricing estimation remain.
 team_rounds.cost_usd is a legacy nullable slot; newly derived rounds write null.
+
+## F4 activity metadata index
+Idempotent additive index, applied by the existing INDEX_SQL startup path; no
+row changes or schema rewrite. It bounds selected-member event-date aggregation.
+```sql
+CREATE INDEX IF NOT EXISTS idx_events_session_time ON events(session_id,started_at);
+```

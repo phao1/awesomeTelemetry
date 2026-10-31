@@ -1114,3 +1114,20 @@ This additive authorization supersedes the old no-new-fields restriction.
 ## Phase F2 Calm Instrument shell
 
 REQ-F2-SHELL: Supersedes header/tab/statusbar presentation in REQ-012/015/023 and older navigation prose. App.tsx remains sole global state shell. Grouped sidebar: Observe(Overview/Tasks/Compare), Evaluate(Benchmarks/Agent boundary evaluation), Configure(Data intake/Settings). Width232px, collapsed56px, persisted with guarded localStorage. Default collapsed below1280px; below768px navigation is a focus-trapped mobile drawer with header menu. Bottom contains existing live/SSE/scan/full-library counts/DB size, theme/language and Display small12/standard13/large14/reset13, driving ui-scale. No extra health polling. PageHeader sticky56px, title/breadcrumb, search⌘K, actions and scrolled border. Existing page internals, legacy redirect state, shortcuts, lazy reads and trajectory/conversation behavior remain. Hidden #/ui-kit is a lazy demonstration gallery; #/settings opens existing settings dialog. New foundation token values and components follow docs/design/ui-design-system.md §1–4.
+
+## Phase F4
+REQ-F4-001: Overview uses design §7.1, six StatCards, UTC daily charts and server-owned coverage. Agent-specific widgets remain in an Agent perspective tab, without role/sidebar/disclosure navigation. Unknown data is never zero-filled. F4 overview URL parameters persist filters.
+REQ-F4-002: Comparison uses design §7.4, visible searchable paged MultiCombobox selectors, request Selects, swap, recent/export menus, verdict cards, unknown Accordion, health pill tabs and existing evidence links. TC comparability guards remain unchanged. Tool intervals remain recorded observations.
+
+REQ-F4-003 (browser review): Task pickers retain early results across an unchanged
+search debounce, reset only for changed queries, restore on cleared search, and
+show skeleton options while reading. Routes close owned popovers. Numeric metric
+columns align right with exact hover/compact Token text; row labels have no fill.
+Token composition uses two normalized horizontal fixed-color component bars plus
+four component rows (A/B/delta/ratio), preserving comparability guards and cache
+meters. One process card owns selectors/coverage pills; conventions/investigation
+are Accordions, timelines use A/B subcards. No duplicated Token rings; failure
+rankings use BarList. Shared select/chart copy follows locale independently of
+UiKit; null dates break lines, isolated points show values, bars cap40SVG units.
+Selected chips may retain off-page labels in the option registry, but hidden
+registry entries never appear as search results or crowd out the paged list.

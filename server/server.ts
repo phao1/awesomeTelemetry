@@ -1,3 +1,4 @@
+import { overviewDashboard } from './storage/overview-dashboard.js';
 import { taskRequests, TaskRequestChangedError } from './storage/task-requests.js';
 import { TelemetryReceiver } from './telemetry/receiver.js';
 import { TelemetryError } from './telemetry/mapping.js';
@@ -1806,7 +1807,11 @@ export function createAgentObservabilityServer(
     sendJson(res, 200, await fridaRuntime.stop(), _req);
   });
 
-  router.register('GET','/api/task-kpis',async(req,res)=>sendJson(res,200,await taskKpis(db,await localSettings.alerts()),req));
+  router.register('GET','/api/task-kpis',async(req,res)=>{
+    const query=new URL(req.url!,'http://localhost').searchParams;
+    const thresholds=await localSettings.alerts();
+    sendJson(res,200,query.get('overview')==='1'?await overviewDashboard(db,thresholds,query.get('range')??'7d',query.get('provider')??''):await taskKpis(db,thresholds),req);
+  });
   router.register('GET','/api/config/alert-thresholds',async(req,res)=>sendJson(res,200,await localSettings.alerts(),req));
   router.register('PUT','/api/config/alert-thresholds',async(req,res)=>sendJson(res,200,await localSettings.saveAlerts(await readSettingsBody(req)),req));
   router.register('GET', '/api/config/providers', (_req, res) => {

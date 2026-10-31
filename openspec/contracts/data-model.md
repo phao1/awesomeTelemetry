@@ -3580,3 +3580,38 @@ discard them, while new PUT bodies reject them. No monetary rule can trigger.
 
 F1-005 CaptureComparisonViewModel removes its legacy always-null cost object
 and cost_unknown warning; no monetary inference/presentation is emitted.
+
+## Phase F4 overview projection
+
+F4-001: The following read-only types live in src/core/overview-types.ts. TaskKpis and TaskSummary retain their existing definitions.
+```ts
+import type { TaskKpis, TaskSummary } from './task-types.js';
+export type OverviewRange = '24h' | '7d' | '30d' | 'all';
+export interface OverviewPoint extends TaskKpis {
+  day: string;
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  cacheWrite: number | null;
+}
+export interface OverviewSnapshot {
+  range: OverviewRange;
+  provider: string;
+  generatedAt: string;
+  current: OverviewPoint;
+  previous: OverviewPoint | null;
+  daily: OverviewPoint[];
+  providers: Array<{ label: string; value: number }>;
+  models: Array<{ label: string; value: number }>;
+  tools: Array<{ tool: string; failures: number; results: number }>;
+  alerts: TaskSummary[];
+  criteria: Record<'zh' | 'en', string>;
+}
+```
+Daily activity buckets use UTC event dates plus last-activity metadata; each metric snapshot is assigned once to last activity. F4-004 below defines continuous calendar/week slots and activity-intersection membership. Unknown/partial counters remain null/coverage as in TaskKpis. Cache write is summed only when every bound member is loaded and has a positive persisted cache-write counter; legacy default zero is unavailable. Never infer cache write by subtracting overlapping counters.
+
+F4-004 supersedes the original start-day assignment: daily OverviewPoint.day remains ISO8601 UTC midnight (UTC Monday for weekly
+buckets). OverviewSnapshot.daily is a continuous date/week sequence. Its tasks
+counts retained event-day or last-activity roots; remaining metrics describe current
+whole-task snapshots assigned once to last activity, as specified in api F4-004.
+Empty slots use0 count/Token bars, null ratios. Populated unknowns remain null.

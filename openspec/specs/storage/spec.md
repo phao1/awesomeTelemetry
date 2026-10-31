@@ -368,3 +368,12 @@ source absence/notifications, retained-page refresh and direct settings focus.
 
 Phase E: implement task-requests.md TR-001–005 and task-health.md TH-009.
 This additive authorization supersedes the old no-new-fields restriction.
+
+REQ-F4-001: Overview reuses root-task snapshot and member indexed metadata queries; indexed UTC event-day activity and last-activity metric snapshot assignment, weighted cache rate, known terminal result denominator, threshold alerts, reliable prior periods only. Bounded revision/threshold/minute cache, yielded batches, no body/hydration; F4-001..003 contracts apply.
+
+REQ-F4-002 (browser review): Follow api F4-004 activity-intersection membership,
+continuous calendar/week slots and indexed per-member event-date activity counts.
+Snapshot metric assignment is explicit server-owned copy and never multiplies
+lifetime counters across activity dates; historical metric deltas stay unavailable.
+Existing NFR budgets apply;500-task cold/warm tests and indexed plan assertions
+cover the added projection, with cache/source-revision isolation unchanged.

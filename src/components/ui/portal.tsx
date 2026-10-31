@@ -54,6 +54,7 @@ export function Floating({anchor,children,onClose,placement='bottom',className='
       if(!element.isConnected||!visible){closed=true;close.current();return;}
       setPosition(positionLayer(rect,layer.getBoundingClientRect(),viewport,placement));
     };
+    const routeChanged=()=>close.current();window.addEventListener('hashchange',routeChanged);window.addEventListener('popstate',routeChanged);
     update(); window.addEventListener('resize',update);window.addEventListener('scroll',update,true);
     const down=(e:MouseEvent)=>{if(!ref.current?.contains(e.target as Node)&&!anchor.current?.contains(e.target as Node))close.current();};
     document.addEventListener('mousedown',down);
@@ -61,7 +62,7 @@ export function Floating({anchor,children,onClose,placement='bottom',className='
     if(anchor.current)observer?.observe(anchor.current);
     if(ref.current)observer?.observe(ref.current);
     const remove=trap?pushOverlay(()=>close.current()):()=>undefined;
-    return ()=>{observer?.disconnect();remove();document.removeEventListener('mousedown',down);window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);};
+    return ()=>{observer?.disconnect();remove();window.removeEventListener('hashchange',routeChanged);window.removeEventListener('popstate',routeChanged);document.removeEventListener('mousedown',down);window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);};
   },[anchor,placement,trap]);
   return <Portal><div id={id} ref={ref} role={role} aria-label={label} className={`ui-floating ${className}`} style={position}>{children}</div></Portal>;
 }

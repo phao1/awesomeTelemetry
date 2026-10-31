@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { describe, expect, it, vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import type { MissionResponse } from '../core/trace-types.js';
 import {
@@ -62,286 +62,31 @@ function makeResponse(): MissionResponse {
   };
 }
 
-describe('MissionControl（REQ-027）', () => {
-  it('1 个请求渲染 meta 行、criteria 行与不可用 EmptyState', async () => {
-    const load = vi.fn(async (_range: MissionRange) => makeResponse());
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    let root: ReturnType<typeof createRoot> | undefined;
-    try {
-      act(() => {
-        root = createRoot(host);
-        root.render(<MissionControl locale="zh" load={load} />);
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-      expect(load).toHaveBeenCalledTimes(1);
-      const text = host.textContent ?? '';
-      expect(text).toContain('20'); // displayed count excludes monetary-only costEfficiency
-      expect(text).toContain('events.tool 按调用数聚合 TOP 10'); // 8.7：criteria 经 i18n 字典渲染
-      expect(text).toContain('该指标当前不可用'); // unavailable EmptyState
-      // User amendment: all 20 non-monetary widgets remain grouped and visible.
-      expect(host.querySelectorAll('.mission-widget').length).toBe(20);
-      expect(host.querySelector('#widget-costEfficiency')).toBeNull();
-      expect(host.querySelector('.mission-chips')).toBeNull();
-      expect(host.querySelector('[role="tablist"]')).toBeNull();
-    } finally {
-      act(() => root?.unmount());
-      host.remove();
-    }
-  });
 
-  it('REQ-109：角色侧边栏渲染三组，点击平滑滚动到对应 section', async () => {
-    const load = vi.fn(async (_range: MissionRange) => makeResponse());
-    const scrollSpy = vi.fn();
-    Element.prototype.scrollIntoView = scrollSpy;
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    let root: ReturnType<typeof createRoot> | undefined;
-    try {
-      act(() => {
-        root = createRoot(host);
-        root.render(<MissionControl locale="zh" load={load} />);
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-      const items = [...host.querySelectorAll<HTMLButtonElement>('.mission-nav-item')];
-      expect(items.length).toBe(3);
-      expect(host.textContent).toContain('管理者');
-      expect(host.textContent).toContain('工程师');
-      expect(host.textContent).toContain('运维');
-      expect(host.querySelector('#mission-role-manager')).not.toBeNull();
-      act(() => items[1]!.click());
-      expect(scrollSpy).toHaveBeenCalled();
-    } finally {
-      act(() => root?.unmount());
-      host.remove();
-    }
-  });
-
-  it('REQ-109：`[` 键折叠/展开侧边栏', async () => {
-    const load = vi.fn(async (_range: MissionRange) => makeResponse());
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    let root: ReturnType<typeof createRoot> | undefined;
-    try {
-      act(() => {
-        root = createRoot(host);
-        root.render(<MissionControl locale="zh" load={load} />);
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-      expect(host.querySelector('.mission-nav-list')).not.toBeNull();
-      act(() => {
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: '[' }));
-      });
-      expect(host.querySelector('.mission-nav-list')).toBeNull();
-      act(() => {
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: '[' }));
-      });
-      expect(host.querySelector('.mission-nav-list')).not.toBeNull();
-    } finally {
-      act(() => root?.unmount());
-      host.remove();
-    }
-  });
-
-  it('REQ-109：滚动后当前可见角色高亮', async () => {
-    const load = vi.fn(async (_range: MissionRange) => makeResponse());
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    let root: ReturnType<typeof createRoot> | undefined;
-    try {
-      act(() => {
-        root = createRoot(host);
-        root.render(<MissionControl locale="zh" load={load} />);
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-      const main = host.querySelector('.mission-view') as HTMLElement;
-      const tops: Record<string, number> = {
-        'mission-role-manager': 0,
-        'mission-role-engineer': 400,
-        'mission-role-ops': 800,
-      };
-      for (const [id, top] of Object.entries(tops)) {
-        const el = host.querySelector(`#${id}`)!;
-        Object.defineProperty(el, 'offsetTop', { configurable: true, value: top });
-      }
-      main.scrollTop = 300;
-      act(() => {
-        main.dispatchEvent(new Event('scroll'));
-      });
-      const active = host.querySelector('.mission-nav-item-on');
-      expect(active?.textContent).toContain('工程师');
-    } finally {
-      act(() => root?.unmount());
-      host.remove();
-    }
-  });
-
-  it('切换 range 触发一次新请求（3 次切换 = 3 次 fetch）', async () => {
-    const load = vi.fn(async (_range: MissionRange) => makeResponse());
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    let root: ReturnType<typeof createRoot> | undefined;
-    try {
-      act(() => {
-        root = createRoot(host);
-        root.render(<MissionControl locale="zh" load={load} />);
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-      const buttons = [...host.querySelectorAll<HTMLButtonElement>('.mission-range .btn')];
-      act(() => buttons[1]!.click());
-      await act(async () => {
-        await Promise.resolve();
-      });
-      expect(load).toHaveBeenCalledTimes(2);
-      expect(load).toHaveBeenLastCalledWith('30d');
-    } finally {
-      act(() => root?.unmount());
-      host.remove();
-    }
-  });
-
-  it('models retain Token components for known/unknown prices without money or pricing coverage', async () => {
-    const base = makeResponse();
-    const withModels: MissionResponse = {
-      ...base,
-      usage: {
-        ...base.usage,
-        toolTop: {
-          id: 'toolTop',
-          criteria: 'mission.criteria.toolTop',
-          available: true,
-          unavailableReason: null,
-          data: [],
-        },
-      },
-      quality: {
-        ...base.quality,
-        models: {
-          id: 'models',
-          criteria: 'mission.criteria.models',
-          available: true,
-          unavailableReason: null,
-          data: [
-            { model: 'glm-4-plus', calls: 3, input: 100, output: 50, cacheRead: 0, cacheWrite: 0,  },
-            { model: 'claude-opus-4-8', calls: 1, input: 100, output: 50, cacheRead: 0, cacheWrite: 0,  },
-          ],
-        },
-      },
-    };
-    const load = vi.fn(async (_range: MissionRange) => withModels);
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    let root: ReturnType<typeof createRoot> | undefined;
-    try {
-      act(() => {
-        root = createRoot(host);
-        root.render(<MissionControl locale="zh" load={load} />);
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-      // REQ-117：models widget 不再需要切 B 标签页，角色分组下直接可见
-      const text = host.textContent ?? '';
-      expect(text).toContain('glm-4-plus');
-      expect(host.querySelector('#widget-models')?.textContent).toContain('输入 100');
-      expect(host.querySelector('#widget-models')?.textContent).toContain('输出 50');
-      expect(text).not.toMatch(/[$¥￥€£]\s*\d/);
-      expect(host.querySelector('#widget-costEfficiency')).toBeNull();
-      expect(load).toHaveBeenCalledTimes(1);
-    } finally {
-      act(() => root?.unmount());
-      host.remove();
-    }
-  });
+it('reads one aggregate, retains unique widgets as cards and removes role/sidebar/disclosure navigation',async()=>{
+ const load=vi.fn(async(_range:MissionRange)=>makeResponse()),host=document.createElement('div'),root=createRoot(host);document.body.append(host);
+ try{await act(async()=>root.render(<MissionControl locale="zh" load={load}/>));expect(load).toHaveBeenCalledOnce();expect(host.querySelectorAll('.mission-widget')).toHaveLength(17);expect(host.querySelector('.mission-nav')).toBeNull();expect(host.querySelector('.mission-role-section')).toBeNull();expect(host.querySelector('details')).toBeNull();expect(host.textContent).toContain('该指标当前不可用');expect(host.querySelector('#widget-closure')).not.toBeNull();expect(host.querySelector('#widget-activity')).not.toBeNull();expect(host.querySelector('#widget-toolTop')).toBeNull();
+ const info=host.querySelector<HTMLButtonElement>('#widget-closure button')!;act(()=>info.focus());await act(async()=>new Promise(resolve=>setTimeout(resolve,320)));expect(document.querySelector('[role=tooltip]')?.textContent).toBeTruthy();
+ }finally{act(()=>root.unmount());host.remove();}
 });
-
-describe('REQ-117 导航去冗余', () => {
-  it('A/B/C 标签页彻底移除，角色分组是唯一导航', async () => {
-    const load = vi.fn(async (_range: MissionRange) => makeResponse());
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    let root: ReturnType<typeof createRoot> | undefined;
-    try {
-      act(() => {
-        root = createRoot(host);
-        root.render(<MissionControl locale="zh" load={load} />);
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-      expect(host.querySelector('.mission-chips')).toBeNull();
-      expect(host.querySelectorAll('[role="tab"]').length).toBe(0);
-      expect(host.querySelectorAll('.mission-nav-item').length).toBe(3);
-      // 默认选中「管理者」
-      const active = host.querySelector('.mission-nav-item-on');
-      expect(active?.textContent).toContain('管理者');
-      // 三个角色 section 全部存在
-      for (const role of ['manager', 'engineer', 'ops']) {
-        expect(host.querySelector(`#mission-role-${role}`)).not.toBeNull();
-      }
-    } finally {
-      act(() => root?.unmount());
-      host.remove();
-    }
-  });
-
-  it('redirectLegacyMissionHash：#mission-a|b|c → #mission-role-<role>，其余返回 null', () => {
-    expect(redirectLegacyMissionHash('#mission-a')).toBe('#mission-role-manager');
-    expect(redirectLegacyMissionHash('#mission-b')).toBe('#mission-role-engineer');
-    expect(redirectLegacyMissionHash('#mission-c')).toBe('#mission-role-ops');
-    expect(redirectLegacyMissionHash('#/mission?range=7d')).toBeNull();
-    // 已经是角色锚点时不再改写
-    expect(redirectLegacyMissionHash('#mission-role-ops')).toBeNull();
-    expect(LEGACY_SECTION_ROLE.a).toBe('manager');
-  });
-
-  it('挂载时把旧锚点重定向到角色锚点并高亮该角色', async () => {
-    history.replaceState(null, '', '#mission-c');
-    const load = vi.fn(async (_range: MissionRange) => makeResponse());
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    let root: ReturnType<typeof createRoot> | undefined;
-    try {
-      act(() => {
-        root = createRoot(host);
-        root.render(<MissionControl locale="zh" load={load} />);
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-      expect(window.location.hash).toBe('#mission-role-ops');
-      expect(host.querySelector('.mission-nav-item-on')?.textContent).toContain('运维');
-    } finally {
-      act(() => root?.unmount());
-      host.remove();
-      history.replaceState(null, '', '#');
-    }
-  });
-});
-
-it('Phase B overview range restores controlled hash state and reports range changes to the App shell',async()=>{
+it('range changes read once and controlled hash range remains compatible',async()=>{
  const load=vi.fn(async(_range:MissionRange)=>makeResponse()),onRangeChange=vi.fn(),host=document.createElement('div'),root=createRoot(host);
- try{
-  await act(async()=>{root.render(<MissionControl locale="en" load={load} initialRange="7d" onRangeChange={onRangeChange}/>);await Promise.resolve();});
-  await act(async()=>{host.querySelectorAll<HTMLButtonElement>('.mission-range button')[1]!.click();await Promise.resolve();});expect(onRangeChange).toHaveBeenCalledWith('30d');expect(load).toHaveBeenLastCalledWith('30d');
-  await act(async()=>{root.render(<MissionControl locale="en" load={load} initialRange="all" onRangeChange={onRangeChange}/>);await Promise.resolve();});expect(load).toHaveBeenLastCalledWith('all');
+ try{await act(async()=>root.render(<MissionControl locale="en" load={load} initialRange="7d" onRangeChange={onRangeChange}/>));await act(async()=>host.querySelectorAll<HTMLButtonElement>('[role=tab]')[1]!.click());expect(onRangeChange).toHaveBeenCalledWith('30d');expect(load).toHaveBeenLastCalledWith('30d');expect(load).toHaveBeenCalledTimes(2);
+ await act(async()=>root.render(<MissionControl locale="en" load={load} initialRange="all"/>));expect(load).toHaveBeenLastCalledWith('all');
  }finally{act(()=>root.unmount());}
 });
-
-it('renders daily cache hit with one decimal and partial member coverage',async()=>{
- const response=makeResponse();response.quality.tokenTrend={id:'tokenTrend',criteria:'daily cache',available:true,unavailableReason:null,data:[{day:'2026-10-31',sessions:2,input:60,output:20,cacheRead:30,cacheWrite:10,cacheHitRate:0.3,cacheKnownMembers:1,cacheTotalMembers:2,errorEvents:0,successRate:null}]};
- const host=document.createElement('div'),root=createRoot(host);
- try{await act(async()=>{root.render(<MissionControl locale="en" load={async()=>response}/>);await Promise.resolve();});
- expect(host.querySelector('[aria-label="Daily cache hit rate"]')?.textContent).toContain('30.0% · Partial (1/2 members)');
+it('retains multi-model raw component evidence, closure and measured drift as distinct Agent cards without money',async()=>{
+ const response=makeResponse();response.quality.models={id:'models',criteria:'raw model attribution',available:true,unavailableReason:null,data:[{model:'glm-4-plus',calls:3,input:100,output:50,cacheRead:30,cacheWrite:10}]};response.quality.drift={id:'drift',criteria:'wall clock p95',available:true,unavailableReason:null,data:[{day:'2026-11-01',sessions:1,input:100,output:50,cacheRead:30,cacheWrite:10,cacheHitRate:0.3,cacheKnownMembers:1,cacheTotalMembers:1,errorEvents:0,successRate:1,e2eP95Ms:200}]};
+ const host=document.createElement('div'),root=createRoot(host);try{await act(async()=>root.render(<MissionControl locale="zh" load={async()=>response}/>));expect(host.querySelector('#widget-models')?.textContent).toContain('glm-4-plus');expect(host.querySelector('#widget-models')?.textContent).toContain('输入 100');expect(host.querySelector('#widget-drift svg[role=img]')?.getAttribute('aria-label')).toBe('任务墙钟 P95');expect(host.textContent).not.toMatch(/[$¥￥€£]\s*\d/);expect(host.querySelector('#widget-costEfficiency')).toBeNull();}finally{act(()=>root.unmount());}
+});
+it('marks SSE invalidation stale, refreshes explicitly, and retries error without polling',async()=>{
+ let fail=true;const load=vi.fn(async(_range:MissionRange)=>{if(fail)throw new Error('offline');return makeResponse();}),host=document.createElement('div'),root=createRoot(host);const log=vi.spyOn(console,'error').mockImplementation(()=>undefined);
+ try{await act(async()=>root.render(<MissionControl locale="en" load={load}/>));expect(host.querySelector('[role=alert]')).not.toBeNull();fail=false;await act(async()=>host.querySelector<HTMLButtonElement>('.ui-error button')!.click());expect(host.querySelectorAll('.mission-widget')).toHaveLength(17);await act(async()=>root.render(<MissionControl locale="en" load={load} invalidateKey={1}/>));expect(load).toHaveBeenCalledTimes(2);expect(host.textContent).toContain('changed');
+ await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='Refresh')!.click());expect(load).toHaveBeenCalledTimes(3);
+ }finally{act(()=>root.unmount());log.mockRestore();}
+});
+it('ignores late results from a retired range and retains legacy hash mapping utility',async()=>{
+ let finish:((value:MissionResponse)=>void)|undefined;const load=vi.fn((range:MissionRange)=>range==='7d'?new Promise<MissionResponse>(resolve=>{finish=resolve;}):Promise.resolve({...makeResponse(),meta:{...makeResponse().meta,generatedAt:'2026-11-01T00:00:00.000Z'}}));const host=document.createElement('div'),root=createRoot(host);
+ try{await act(async()=>root.render(<MissionControl locale="en" load={load}/>));await act(async()=>root.render(<MissionControl locale="en" load={load} initialRange="all"/>));await act(async()=>finish!(makeResponse()));expect(host.textContent).toContain('2026-11-01');expect(host.textContent).not.toContain('2026-08-05');expect(redirectLegacyMissionHash('#mission-a')).toBe('#mission-role-manager');expect(redirectLegacyMissionHash('#mission-b')).toBe('#mission-role-engineer');expect(redirectLegacyMissionHash('#mission-c')).toBe('#mission-role-ops');expect(redirectLegacyMissionHash('#/overview')).toBeNull();expect(LEGACY_SECTION_ROLE.a).toBe('manager');
  }finally{act(()=>root.unmount());}
 });

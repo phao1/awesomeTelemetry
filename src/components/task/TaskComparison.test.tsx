@@ -6,18 +6,20 @@ import { expect, it } from 'vitest';
 import { ComparisonMetricTable } from './TaskComparison.js';
 import { comparisonRow } from '../../core/task-comparison.js';
 import { readFileSync } from 'node:fs';
-it('collapses only all-unknown rows, displays median alone and exposes samples via details', () => {
-  const host = document.createElement('div'), root = createRoot(host);
+it('collapses only all-unknown rows, displays median alone and exposes samples on hover', async () => {
+  const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
   try {
     act(() => root.render(<ComparisonMetricTable locale="zh" rows={[comparisonRow('known', 'known', 'ms', [1, 9, 2], [4]), comparisonRow('one', 'one side', '', [null], [3]), comparisonRow('unknown', 'unknown row', '', [null], [null])]} />));
-    const unknown = host.querySelector('details.task-compare-unknown')!;
-    expect(unknown.getAttribute('open')).toBeNull(); expect(unknown.querySelector('summary')!.textContent).toBe('未知指标（1）');
+    const unknown = host.querySelector('.task-compare-unknown .ui-accordion')!;
+    expect(unknown.querySelector('button')!.getAttribute('aria-expanded')).toBe('false'); expect(unknown.querySelector('button')!.textContent).toBe('未知指标（1）'); expect(host.textContent).not.toContain('unknown row'); act(()=>unknown.querySelector('button')!.click()); expect(host.textContent).toContain('unknown row');
     expect(host.querySelector('tbody')!.querySelectorAll('tr')).toHaveLength(2);
-    expect(host.querySelector('tbody td summary')!.textContent).toBe('2 ms');
-    expect(host.querySelector('tbody td summary')!.getAttribute('title')).toBe('2 ms');
-    expect(host.querySelector('tbody td details')!.textContent).toContain('n=3 · 均值 4');
+    expect(host.querySelector('tbody td span[tabindex]')!.textContent).toBe('2 ms');
+    expect(host.querySelector('tbody td span[tabindex]')!.getAttribute('title')).toBe('2 ms');
+    const cell=host.querySelector<HTMLElement>('tbody td span[tabindex]')!; act(()=>cell.focus());
+    await act(async()=>new Promise(resolve=>setTimeout(resolve,320)));
+    const tooltip=document.querySelector('[role=tooltip]')!.textContent;expect(tooltip).toContain('n=3 · 均值 4');expect(tooltip).toContain('1 ms–9 ms');expect(tooltip).toContain('CV');
     expect(host.textContent).toContain('不可比');
-  } finally { act(() => root.unmount()); }
+  } finally { act(() => root.unmount()); host.remove(); }
 });
 it('keeps375-width selectors and conclusions in intrinsic single columns and table overflow local', () => {
   const css = readFileSync('src/styles/components/task-comparison.css', 'utf8');
@@ -54,11 +56,11 @@ it('reads standard health reports only on explicit action, sequentially, and pre
     await act(async () => root.render(<TaskComparison route={route} onRoute={() => {}} locale="zh" onLocate={() => {}} />));
     await vi.waitFor(() => expect(host.querySelector('.task-compare-conclusions')).not.toBeNull());
     expect(paths.some(p => p.includes('health-reports'))).toBe(false);
-    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === '为两侧生成/读取标准健康报告')!.click());
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find(b => b.getAttribute('aria-label') === '为两侧生成/读取标准健康报告')!.click());
     await vi.waitFor(() => expect(bodies).toHaveLength(2));
     await act(async () => { await Promise.resolve(); });
     expect(maxActive).toBe(1); expect(bodies).toEqual([{ mode: 'standard', member: 'all' }, { mode: 'standard', member: 'all' }]);
-    expect(host.textContent).toContain('仍存在的问题');
+    expect(host.textContent).toContain('仍存在 (2)'); act(()=>[...host.querySelectorAll<HTMLButtonElement>('[role=tab]')].find(b=>b.textContent==='仍存在 (2)')!.click()); expect(host.querySelectorAll('.task-compare-table tbody tr').length).toBeGreaterThan(1);
     const count = paths.length;
     await act(async () => root.render(<TaskComparison route={route} onRoute={() => {}} locale="en" onLocate={() => {}} />));
     expect(paths).toHaveLength(count); expect(host.textContent).toContain('Persisting');
@@ -84,7 +86,7 @@ it('retires a pending health group when URL selection changes and suppresses lat
   try {
     await act(async () => root.render(<TaskComparison route={route} onRoute={() => {}} locale="en" onLocate={() => {}} />));
     await vi.waitFor(() => expect(host.querySelector('.task-compare-conclusions')).not.toBeNull());
-    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Generate / read standard health reports for both sides')!.click());
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find(b => b.getAttribute('aria-label') === 'Generate / read standard health reports for both sides')!.click());
     await vi.waitFor(() => expect(finish).toBeDefined());
     await act(async () => root.render(<TaskComparison route={{ ...route, compareA: ['imported:new'] }} onRoute={() => {}} locale="en" onLocate={() => {}} />));
     expect((healthSignal as unknown as AbortSignal).aborted).toBe(true);
@@ -123,8 +125,8 @@ it('hides system/bookkeeping rows by default, restores them without IO and prese
 it('formats table values and deltas readably while keeping exact values on hover',()=>{
  const host=document.createElement('div'),root=createRoot(host);
  try{act(()=>root.render(<ComparisonMetricTable locale="zh" rows={[comparisonRow('duration','时长','ms',[1000],[1203344364]),comparisonRow('rate','失败率','%',[0],[17.5417]),comparisonRow('tokens','Token','',[1000],[1234567])]} />));
- const rows=host.querySelectorAll('tbody tr');expect(rows[0]!.textContent).toContain('+13.9 天');expect(rows[1]!.textContent).toContain('17.5%');expect(rows[2]!.textContent).toContain('1,234,567');
- expect(rows[0]!.querySelectorAll('td')[2]!.title).toBe('1203343364 ms');expect(rows[1]!.querySelector('summary')!.title).toBe('0 %');
+ const rows=host.querySelectorAll('tbody tr');expect(rows[0]!.textContent).toContain('+13.9 天');expect(rows[1]!.textContent).toContain('17.5%');expect(rows[2]!.textContent).toContain('1.2M');expect(rows[2]!.querySelectorAll('td')[1]!.querySelector('span[tabindex]')!.getAttribute('title')).toBe('1234567');
+ expect(rows[0]!.querySelectorAll('td')[2]!.title).toBe('1203343364 ms');expect(rows[1]!.querySelector<HTMLElement>('td span[tabindex]')!.title).toBe('0 %');
  expect(rows[2]!.querySelectorAll('td')[3]!.textContent).toBe('1,234.57×');
  }finally{act(()=>root.unmount());}
 });
@@ -137,6 +139,9 @@ it('sends request references to the process comparison API and labels the root-p
    act(()=>root.render(<ComparisonProcess a={task('left')} b={task('right')} requestA="request:left:event:p1" requestB="request:right:event:p2" locale="en" scope="requests" onLocate={()=>{}}/>));
    await act(async()=>{for(let n=0;n<20;n++)await Promise.resolve();});
    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body))).toEqual({leftKey:'left',rightKey:'right',leftRequest:'request:left:event:p1',rightRequest:'request:right:event:p2'});
-   expect(host.textContent).toContain('Request window');expect(host.textContent).toContain('loaded root-session page only');
+   act(()=>[...host.querySelectorAll<HTMLButtonElement>('.ui-accordion > button')].find(b=>b.textContent==='Calculation basis')!.click());expect(host.textContent).toContain('Request window');expect(host.textContent).toContain('loaded root-session page only');
  }finally{act(()=>root.unmount());vi.unstubAllGlobals();}
+});
+it('keeps numeric alignment local, token values compact and metric row headers unfilled',()=>{
+ const css=readFileSync('src/styles/components/task-comparison.css','utf8');expect(css).toContain('.comparison-metric-table td:nth-child(n+2):nth-child(-n+5)');expect(css).toContain('text-align: right; font-variant-numeric: tabular-nums');expect(css).toContain('.task-compare-table tbody th { background: transparent; }');
 });

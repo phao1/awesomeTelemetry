@@ -1,0 +1,2 @@
+.ui-stacked-meter { display: flex; width: 100%; height: var(--space-2); border-radius: var(--radius-full); overflow: hidden; background: var(--canvas-subtle); }
+.ui-stacked-meter > span { display: block; height: 100%; }
