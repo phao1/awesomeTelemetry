@@ -3542,3 +3542,10 @@ export interface TaskHydrationFrame { items: TaskHydrationProgress[]; done: bool
 export interface LocalSettingsTarget { section: 'model-pricing' | 'alert-thresholds'; model?: string }
 
 ```
+
+## Phase C task comparison projection
+
+See task-comparison.md TC-002. No persisted schema changes.
+```ts
+export interface TaskComparisonSnapshot { a: TaskSummary[]; b: TaskSummary[] }
+```

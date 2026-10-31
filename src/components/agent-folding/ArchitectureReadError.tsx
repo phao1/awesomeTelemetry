@@ -2,7 +2,8 @@ import { ApiError } from '../../api/client.js';
 import type { Locale } from '../../i18n.js';
 export function ArchitectureReadError({ error, locale, retry }: { error: unknown; locale: Locale; retry: () => void }) {
   const zh = locale === 'zh', details = error instanceof ApiError ? error.details : undefined;
-  const reason = details?.reason ?? (error === 'READ_TIMEOUT' ? 'TIMEOUT' : 'UNEXPECTED');
+  const codeReason=error instanceof ApiError?({SOURCE_CHANGED:'SOURCE_CHANGED',SESSION_NOT_FOUND:'NO_MATCH',HEALTH_SOURCE_CHANGED:'SOURCE_CHANGED',HEALTH_BUSY:'BUSY',BUSY:'BUSY',HEALTH_TIMEOUT:'TIMEOUT',HEALTH_INPUT_LIMIT:'TOO_LARGE'} as Record<string,string>)[error.code]:undefined;
+  const reason = details?.reason ?? codeReason ?? (error === 'READ_TIMEOUT' ? 'TIMEOUT' : 'UNEXPECTED');
   const text = {
     SOURCE_CHANGED: zh ? '读取期间本地记录发生变化，请重试。' : 'Local records changed during reading. Retry.',
     UNINDEXED: zh ? '委派记录尚未索引。请打开该任务的执行轨迹加载详情，然后重试架构读取。' : 'Delegation records are not indexed. Open the task execution trajectory to load details, then retry Architecture.',

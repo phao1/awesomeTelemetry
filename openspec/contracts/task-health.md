@@ -696,3 +696,9 @@ P2 additionally tests plan-linked §15.1 counterexamples: fully overlapping tool
 attempts/one logical call, all2000 records despite opened200, interval/window
 intersection, fake deep references, fact-number tampering and prompt injection.
 These tests are future runtime work, not P0 .ts edits.
+
+## Phase C comparison consumer
+
+TC-004 in task-comparison.md defines client-only comparison of standard saved
+reports. Existing exact reuse key and single-job guard are unchanged. No deep
+analysis or new stored report format is introduced by the comparison action.

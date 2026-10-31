@@ -152,3 +152,6 @@ export interface TaskHydrationProgress {
 }
 export interface TaskHydrationFrame { items: TaskHydrationProgress[]; done: boolean }
 export interface LocalSettingsTarget { section: 'model-pricing' | 'alert-thresholds'; model?: string }
+
+/** TC-002: the same metadata projection as the Phase B task home. */
+export interface TaskComparisonSnapshot { a: TaskSummary[]; b: TaskSummary[] }

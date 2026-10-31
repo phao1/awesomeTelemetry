@@ -105,6 +105,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
     const pairs: Array<{ leftKey: string; rightKey: string }> = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (path === '/api/task-comparison') { const selection=JSON.parse(String(init?.body)) as {a:string[];b:string[]};return apiResponse({a:selection.a.map(id=>TASK_FIXTURES.find(t=>t.id===id)),b:selection.b.map(id=>TASK_FIXTURES.find(t=>t.id===id))}); }
       if (path === '/api/compare') { pairs.push(JSON.parse(String(init?.body)) as { leftKey: string; rightKey: string });return new Promise<never>(() => undefined); }
       const body = path.includes('/agent-overview') ? { rows: [group('Group A'), group(matching ? 'Group B' : 'Not loaded')], stamp: '2026-10-18T00:00:00.000Z', cached: false }
         : path.includes('/sessions?') ? { items: indexed, total: indexed.length, hasMore: false, nextCursor: null } : { groups: [] };
@@ -112,7 +113,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
     }));
     const { container, unmount } = renderAppWithUnmount();
     try {
-      await act(async () => { await Promise.resolve();history.replaceState(null, '', '#/compare?left=s-3&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/CompareBoard.js'); });
+      await act(async () => { await Promise.resolve();history.replaceState(null, '', '#/compare?left=s-3&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/task/TaskComparison.js'); });
       await act(async () => { for (let i = 0; i < 30 && pairs.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 10)); });
       expect(pairs).toEqual([{ leftKey: 's-3', rightKey: 's-2' }]);
       await openAgentGroup(container);
@@ -121,11 +122,11 @@ describe('WB-007 lazy Agent overview entry',()=>{
       const boxes = container.querySelectorAll<HTMLInputElement>('.overview tbody input');
       act(() => boxes[0]!.click());act(() => boxes[1]!.click());
       await act(async () => { container.querySelector<HTMLButtonElement>('.compare-float-btn')!.click();await Promise.resolve(); });
-      expect(window.location.hash).toContain('left=s-1');
+      expect(window.location.hash).toContain('a=collected%3As-1');
       if (matching) {
         expect(pairs).toEqual([{ leftKey: 's-3', rightKey: 's-2' }, { leftKey: 's-1', rightKey: 's-2' }]);
       } else {
-        expect(pairs).toHaveLength(1);expect(window.location.hash).not.toContain('right=');
+        expect(pairs).toHaveLength(1);expect(window.location.hash).not.toContain('b=');
         expect(container.querySelector('.compare-float-btn')).toBeNull();
       }
     } finally {
@@ -242,7 +243,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
       await act(async()=>{for(let i=0;i<30&&!paths.some(path=>path.includes('/agent-overview'));i++)await new Promise(resolve=>setTimeout(resolve,10));});
       expect(paths.filter(path=>path.includes('/agent-overview'))).toHaveLength(1);
       expect(paths.filter(path=>/\/sessions\/[^?]/.test(path))).toHaveLength(0);
-      expect(container.querySelectorAll('.task-primary-nav button')).toHaveLength(6);
+      expect(container.querySelectorAll('.task-primary-nav button')).toHaveLength(7);
     } finally {unmount();}
   });
 });
@@ -331,6 +332,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       const path=String(input);
       if(path.startsWith('/api/tasks/collected%3As-1/records?')) return Promise.resolve({ok:true,text:async()=>JSON.stringify({context:{task:{id:'collected:s-1',origin:'collected',provenanceKnown:true,rootSessionKey:'s-1',runId:null,title:'Fix build',provider:'codex',startedAt:'2026-10-17T00:00:00.000Z',updatedAt:'2026-10-17T00:00:00.000Z',recordedStatus:'error',memberCount:1,eventCount:6000,loadedMemberCount:1},members:[{id:'main',name:'Codex',role:'main',sessionKey:'s-1',parentId:null,detailLoaded:true,eventCount:6000}],importSession:null,warnings:[]},items:[{id:'s-1:event:beyond-first-page',memberId:'main',memberName:'Codex',sessionKey:'s-1',event:target,importedTurn:null}],total:6000,offset:2960,limit:200,hasMore:true,hasPrevious:true,window:'fixed-window',warnings:[]})} as Response);
       if(path==='/api/tasks/collected%3As-1') return Promise.resolve({ok:true,text:async()=>JSON.stringify({task:{id:'collected:s-1',origin:'collected',provenanceKnown:true,rootSessionKey:'s-1',runId:null,title:'Fix build',provider:'codex',startedAt:'2026-10-17T00:00:00.000Z',updatedAt:'2026-10-17T00:00:00.000Z',recordedStatus:'error',memberCount:1,eventCount:6000,loadedMemberCount:1},members:[{id:'main',name:'Codex',role:'main',sessionKey:'s-1',parentId:null,detailLoaded:true,eventCount:6000}],importSession:null,warnings:[]})} as Response);
+      if(path==='/api/task-comparison')return Promise.resolve(apiResponse({a:[TASK_FIXTURES[0]],b:[TASK_FIXTURES[1]]}));
       if(path==='/api/compare')return Promise.resolve({ok:true,text:async()=>JSON.stringify(pair)}as Response);
       if(path.includes('/api/session-groups'))return Promise.resolve({ok:true,text:async()=>JSON.stringify({groups:[]})}as Response);
       if(path.includes('/api/sessions/s-1?'))return Promise.resolve({ok:true,text:async()=>JSON.stringify(selected)}as Response);
@@ -339,7 +341,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     vi.stubGlobal('fetch',fetcher);recordCache.clear();eventDetailCache.clear();recordCache.set('s-1:slim',cached);
     const {container,unmount}=renderAppWithUnmount();
     try {
-      await act(async()=>{history.replaceState(null,'','#/compare?left=s-1&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/CompareBoard.js');});
+      await act(async()=>{history.replaceState(null,'','#/compare?left=s-1&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/task/TaskComparison.js');});
       await act(async()=>{for(let i=0;i<30&&!container.querySelector('.cmp-run-evidence');i++)await new Promise(resolve=>setTimeout(resolve,10));});
       const left=container.querySelector('.cmp-evidence-side')!;
       act(()=>left.querySelector('summary')!.click());
@@ -389,7 +391,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
 
   it('WB-002: the Tasks-scoped Team link reaches existing runs while global navigation stays at six views', async () => {
     installTaskApi();const original=fetch;vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).includes('/api/team-runs')?Promise.resolve(apiResponse({items:[],total:0,hasMore:false,nextCursor:null})):original(input,init)));
-    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);expect(container.querySelectorAll('.task-primary-nav button')).toHaveLength(6);expect(container.querySelector('.task-primary-nav details')).toBeNull();expect(vi.mocked(fetch).mock.calls.some(([i])=>String(i).includes('/api/team-runs'))).toBe(false);await navigateHash('#/team');await act(async()=>{await import('./components/team/TeamShell.js');});await act(async()=>{await new Promise(r=>setTimeout(r,350));});expect(container.querySelector('.team-shell')).not.toBeNull();expect(window.location.hash).toMatch(/^#\/team/);expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/api/team-runs'))).toHaveLength(1);expect(vi.mocked(fetch).mock.calls.some(([i])=>/\/api\/team-runs\/[^/?]+/.test(String(i)))).toBe(false);}finally{unmount();}
+    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);expect(container.querySelectorAll('.task-primary-nav button')).toHaveLength(7);expect(container.querySelector('.task-primary-nav details')).toBeNull();expect(vi.mocked(fetch).mock.calls.some(([i])=>String(i).includes('/api/team-runs'))).toBe(false);await navigateHash('#/team');await act(async()=>{await import('./components/team/TeamShell.js');});await act(async()=>{await new Promise(r=>setTimeout(r,350));});expect(container.querySelector('.team-shell')).not.toBeNull();expect(window.location.hash).toMatch(/^#\/team/);expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/api/team-runs'))).toHaveLength(1);expect(vi.mocked(fetch).mock.calls.some(([i])=>/\/api\/team-runs\/[^/?]+/.test(String(i)))).toBe(false);}finally{unmount();}
   });
 
   it('WB-001: visible global search opens the real lazy palette without detail fan-out and restores focus', async () => {
@@ -462,33 +464,19 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       expect(container.textContent).not.toContain('STALE EPOCH TITLE');expect(recordCache.get('s-1:slim')).toBeUndefined();expect(container.querySelector('.task-context-header')).toBeNull();
     }finally{unmount();}
   });
-  it('1.1 启动后直接切 compare：两个选择器各含全部 3 个会话', async () => {
-    const container = renderApp();
-    await act(async () => {
-      // 会话列表首帧拉取带 250ms 防抖（服务端过滤），等它完成
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    });
-
-    const compareTab = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('对比'),
-    );
-    expect(compareTab).toBeDefined();
-    await act(async () => {
-      compareTab!.click();
-      await import('./components/CompareBoard.js');
-    });
-
-    // REQ-019：MUST NOT 用原生 select（7.1）——选择器是 Popover 搜索按钮
-    expect(container.querySelectorAll('select')).toHaveLength(0);
-    const pickers = Array.from(container.querySelectorAll('.compare-picker'));
-    expect(pickers).toHaveLength(2);
-    act(() => (pickers[0] as HTMLButtonElement).click());
-    const items = Array.from(container.querySelectorAll('.compare-picker-item'));
-    expect(items.length).toBe(3);
-    const titles = items.map((el) => el.textContent ?? '');
-    expect(titles.some((t) => t.includes('fix build'))).toBe(true);
-    expect(titles.some((t) => t.includes('refactor api'))).toBe(true);
-    expect(titles.some((t) => t.includes('debug login'))).toBe(true);
+  it('Phase C direct comparison entry loads populated baseline and improvement task pickers', async () => {
+    installTaskApi();const container=renderApp();
+    await readyTasks(container);
+    const tab=[...container.querySelectorAll<HTMLButtonElement>('.task-primary-nav button')].find(b=>b.textContent==='对比')!;
+    expect(tab).toBeDefined();
+    await act(async()=>{tab.click();await import('./components/task/TaskComparison.js');});
+    await vi.waitFor(()=>expect(container.querySelectorAll('.task-compare-options label')).toHaveLength(6));
+    expect(container.querySelectorAll('.task-compare-picker')).toHaveLength(2);
+    for(const picker of container.querySelectorAll('.task-compare-picker')){
+      expect(picker.textContent).toContain('fix build');expect(picker.textContent).toContain('refactor api');expect(picker.textContent).toContain('debug login');
+    }
+    expect(container.textContent).toContain('各选择 1–40 个任务');
+    expect(vi.mocked(fetch).mock.calls.some(([path])=>String(path)==='/api/compare'||String(path)==='/api/task-comparison')).toBe(false);
   });
 
   it('REQ-023：/api/health 只请求一次，不轮询', async () => {
@@ -523,7 +511,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
 });
 
 describe('Compare 端到端（UI-TASKS 2 回归）', () => {
-  it('真实 API 形状（speed 含 null）：切对比 → 选左右会话 → verdict/speed/charts 渲染且不崩溃', async () => {
+  it('Phase C real API shapes with unknown speed: task selectors, conclusions and reused process views remain readable', async () => {
     const speedWithNulls = {
       ttftMs: null, tps: null, tpotMs: null, e2eMs: 5000, turnGapMedianMs: null,
       pureInferenceMs: null, avgLlmResponseLatencyMs: null, avgLlmDurationMs: null,
@@ -588,9 +576,14 @@ describe('Compare 端到端（UI-TASKS 2 回归）', () => {
       ], 3000, 'refactor api'),
       speed: { left: { ...speedWithNulls, e2eMs: 5000 }, right: { ...speedWithNulls, e2eMs: 3000 } },
     };
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const json = (body: unknown) => ({ ok: true, text: async () => JSON.stringify(body) });
+      if(url==='/api/task-comparison'){
+        const selection=JSON.parse(String(init?.body)) as {a:string[];b:string[]};
+        return json({a:selection.a.map(id=>TASK_FIXTURES.find(t=>t.id===id)),b:selection.b.map(id=>TASK_FIXTURES.find(t=>t.id===id))});
+      }
+      if(url.startsWith('/api/tasks?'))return taskResponse(url);
       if (url.includes('/api/compare')) {
         return json(comparePayload);
       }
@@ -615,47 +608,19 @@ describe('Compare 端到端（UI-TASKS 2 回归）', () => {
     expect(compareTab).toBeDefined();
     await act(async () => {
       compareTab!.click();
-      await import('./components/CompareBoard.js');
+      await import('./components/task/TaskComparison.js');
     });
 
-    act(() => {
-      (container.querySelectorAll('.compare-picker')[0] as HTMLButtonElement).click();
-    });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
-    const leftItems = container.querySelectorAll('.compare-picker-item');
-    expect(leftItems.length).toBeGreaterThan(0);
-    act(() => {
-      (leftItems[0] as HTMLButtonElement).click();
-    });
-
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
-    act(() => {
-      (container.querySelectorAll('.compare-picker')[1] as HTMLButtonElement).click();
-    });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
-    const rightItems = container.querySelectorAll('.compare-picker-item');
-    act(() => {
-      (rightItems[1] as HTMLButtonElement).click();
-    });
-
-    await act(async () => {
-      for (let i = 0; i < 20; i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-        if (container.querySelector('.compare-verdict') !== null) {
-          break;
-        }
-      }
-    });
-
-    expect(container.querySelector('.compare-verdict')).not.toBeNull();
-    expect(container.querySelector('.compare-speed-grid')).not.toBeNull();
-    expect(container.querySelector('.compare-charts')).not.toBeNull();
+    await vi.waitFor(()=>expect(container.querySelectorAll('.task-compare-options input')).toHaveLength(6));
+    act(()=>container.querySelectorAll<HTMLInputElement>('.task-compare-options input')[0]!.click());
+    act(()=>container.querySelectorAll<HTMLInputElement>('.task-compare-options input')[4]!.click());
+    await vi.waitFor(()=>expect(container.querySelector('.compare-timelines')).not.toBeNull());
+    expect(container.querySelector('.task-compare-conclusions')).not.toBeNull();
+    expect(container.querySelector('.compare-tools')).not.toBeNull();
+    expect(container.querySelector('.compare-token-usage')).not.toBeNull();
+    expect(container.textContent).toContain('单样本，不能证明因果');
+    expect(window.location.hash).toContain('a=collected%3As-1');expect(window.location.hash).toContain('b=collected%3As-2');
+    expect(fetchMock.mock.calls.filter(([path])=>String(path)==='/api/compare')).toHaveLength(1);
     expect(container.textContent).not.toContain('COMPARE_FAILED');
     expect(container.textContent).not.toContain('NaN');
     expect(container.querySelector('.ui-error-boundary')).toBeNull();
@@ -867,4 +832,47 @@ it.each(['price','threshold','overview-threshold'])('Phase B review: %s opens an
   expect(requests.some(r=>r.method==='PUT'||r.method==='POST')).toBe(false);
   expect(requests.filter(r=>r.path==='/api/config/providers')).toHaveLength(1);
  }finally{unmount();}
+});
+
+describe('Phase C first-paint deep links',()=>{
+ it.each([
+  ['#/compare?a=collected%3As-1&a=collected%3As-3&b=collected%3As-2&pa=collected%3As-3&pb=collected%3As-2',['collected:s-1','collected:s-3'],['collected:s-2'],'collected:s-3','collected:s-2',false],
+  ['#/compare?compareImport=1',[],[],null,null,true],
+  ['#/compare?left=s-1&right=s-2',['collected:s-1'],['collected:s-2'],null,null,false],
+  ['#/task?a=collected%3As-1&b=collected%3As-2',['collected:s-1'],['collected:s-2'],null,null,false],
+ ] as const)('preserves initial selection and refresh without a hashchange: %s',async(hash,a,b,pa,pb,imported)=>{
+  const groups:Array<{a:string[];b:string[]}> = [],pairs:Array<{leftKey:string;rightKey:string}>=[];
+  vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+   const path=String(input);
+   if(path==='/api/task-comparison'){
+    const group=JSON.parse(String(init?.body)) as {a:string[];b:string[]};groups.push(group);
+    return apiResponse({a:group.a.map(id=>TASK_FIXTURES.find(t=>t.id===id)),b:group.b.map(id=>TASK_FIXTURES.find(t=>t.id===id))});
+   }
+   if(path==='/api/compare'){pairs.push(JSON.parse(String(init?.body)) as typeof pairs[number]);return apiResponse(makeResult());}
+   return taskResponse(path);
+  }));
+  history.replaceState(null,'',hash);
+  // The module was imported before the deep link was installed. Mount and a
+  // remount emulate direct entry + refresh; never dispatch hashchange here.
+  const writes=vi.spyOn(history,'replaceState');
+  for(let refresh=0;refresh<2;refresh++){
+   const {container,unmount}=renderAppWithUnmount();
+   try{
+    await act(async()=>{await import('./components/task/TaskComparison.js');});
+    await vi.waitFor(()=>expect(container.querySelectorAll('.task-compare-picker')).toHaveLength(2));
+    const q=new URLSearchParams(window.location.hash.split('?')[1]);
+    expect(window.location.hash.startsWith('#/compare')).toBe(true);
+    expect(q.getAll('a')).toEqual(a);expect(q.getAll('b')).toEqual(b);expect(q.get('pa')).toBe(pa);expect(q.get('pb')).toBe(pb);
+    expect(q.get('compareImport')).toBe(imported?'1':null);
+    expect(container.querySelectorAll('legend')[0]?.textContent).toContain(`(${a.length}/40)`);
+    expect(container.querySelectorAll('legend')[1]?.textContent).toContain(`(${b.length}/40)`);
+    if(a.length)await vi.waitFor(()=>expect(groups.length).toBeGreaterThan(refresh));
+    if(pa)await vi.waitFor(()=>expect(pairs.at(-1)).toEqual({leftKey:'s-3',rightKey:'s-2'}));
+   }finally{unmount();}
+  }
+  for(const [, ,url] of writes.mock.calls){
+   const q=new URLSearchParams(String(url).split('?')[1]);expect(q.getAll('a')).toEqual(a);expect(q.getAll('b')).toEqual(b);
+   if(pa){expect(q.get('pa')).toBe(pa);expect(q.get('pb')).toBe(pb);}if(imported)expect(q.get('compareImport')).toBe('1');
+  }
+ });
 });

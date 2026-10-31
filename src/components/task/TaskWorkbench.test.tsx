@@ -337,9 +337,9 @@ it('Phase B home shares one page, A/B checks and server sorting/filtering with t
   act(()=>host.querySelector<HTMLInputElement>('.task-health-row input')!.click());
   expect(host.querySelector<HTMLInputElement>('.architecture-select')!.checked).toBe(true);
   expect(host.querySelector<HTMLInputElement>('.task-health-row input')!.checked).toBe(true);
-  act(()=>[...host.querySelectorAll<HTMLButtonElement>('.task-home-toolbar button')].find(b=>b.textContent==='Set as A')!.click());
+  act(()=>[...host.querySelectorAll<HTMLButtonElement>('.task-home-toolbar button')].find(b=>b.textContent==='Set as Baseline')!.click());
   expect(host.querySelector<HTMLInputElement>('.architecture-select')!.checked).toBe(false);
-  expect(host.querySelector('.task-home-toolbar small')?.textContent).toBe('A 1 / B 0');
+  expect(host.querySelector('.task-home-toolbar small')?.textContent).toBe('Baseline 1 / Improvement 0');
   act(()=>{const sort=host.querySelector<HTMLSelectElement>('[aria-label="Health list sort"]')!;sort.value='tokens';sort.dispatchEvent(new Event('change',{bubbles:true}));});await settle();
   expect(calls.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(2);expect(calls.at(-1)).toContain('sort=tokens');
   act(()=>{const filter=host.querySelector<HTMLSelectElement>('[aria-label="Health list filter"]')!;filter.value='alerts';filter.dispatchEvent(new Event('change',{bubbles:true}));});await settle();

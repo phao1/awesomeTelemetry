@@ -1,3 +1,4 @@
+import { taskComparisonSnapshot } from './storage/task-home.js';
 import { constants as fsConstants } from 'node:fs';
 import { TaskHomeHydrator, HomeHydrationBusy } from './watch/task-home-hydrator.js';
 import { taskHomeMembers } from './storage/task-home-members.js';
@@ -621,6 +622,18 @@ export function createAgentObservabilityServer(
     if (!/^\d+$/.test(value)) throw new HttpError(400, 'BAD_REQUEST', 'Invalid task pagination');
     return Number(value);
   };
+  router.register('POST', '/api/task-comparison', async (req,res) => {
+    res.setHeader('cache-control','no-store');
+    if(parseQuery(req).size||!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']??''))throw new HttpError(400,'BAD_REQUEST','Comparison requires JSON without query parameters');
+    let body:{a:string[];b:string[]};
+    try{body=parseHealthJson(await readBody(req,128*1024)) as typeof body;}catch{throw new HttpError(400,'BAD_REQUEST','Invalid comparison JSON');}
+    if(!body||typeof body!=='object'||Object.keys(body).sort().join()!=='a,b'||[body.a,body.b].some(group=>!Array.isArray(group)||group.length<1||group.length>40||group.some(id=>typeof id!=='string'||id.length>1024||!/^(collected|imported):[^\s]+$/.test(id)))||new Set([...body.a,...body.b]).size!==body.a.length+body.b.length)throw new HttpError(400,'BAD_REQUEST','Select disjoint groups of 1..40 tasks');
+    await localSettings.prices();
+    const result=await taskComparisonSnapshot(db,body.a,body.b,await localSettings.alerts());
+    await healthSummaryWarmup;
+    for(const task of [...result.a,...result.b])task.latestHealth=await healthStore.summary(task.id);
+    res.setHeader('cache-control','no-store');sendJson(res,200,result,req);
+  });
   router.register('GET', '/api/tasks', async (req, res) => {
     const query = parseQuery(req), origin = query.get('origin') ?? 'collected';
     if (origin !== 'collected' && origin !== 'imported') throw new HttpError(400, 'BAD_REQUEST', 'Invalid task origin');
@@ -2323,7 +2336,7 @@ export function createAgentObservabilityServer(
     }
     const handler = (async () => {
       try {
-        if (pathname.startsWith('/api/task-home/') || pathname.startsWith('/api/config/model-pricing') || pathname.startsWith('/api/config/alert-thresholds') || pathname === '/api/task-kpis' || pathname.startsWith('/api/agent-folding/') || pathname.startsWith('/api/team-experiments/') || pathname.startsWith('/api/benchmarks/') || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
+        if (pathname === '/api/task-comparison' || pathname.startsWith('/api/task-home/') || pathname.startsWith('/api/config/model-pricing') || pathname.startsWith('/api/config/alert-thresholds') || pathname === '/api/task-kpis' || pathname.startsWith('/api/agent-folding/') || pathname.startsWith('/api/team-experiments/') || pathname.startsWith('/api/benchmarks/') || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring' || pathname === '/api/events' || pathname.startsWith('/api/hooks/') || pathname.startsWith('/api/proxy/') || pathname.startsWith('/api/frida/') || pathname === '/api/trace-imports' || pathname.startsWith('/api/trace-imports/') || pathname === '/api/experiment-records' || pathname.startsWith('/api/experiment-records/') || pathname === '/api/ca-cert' || /^\/api\/sessions\/[^/]+\/(?:identities|capture-links|execution|parents|family|tool-observations|trace-export|linked-trace-export)$/.test(pathname)) {
           if (pathname.startsWith('/api/config/') || pathname === '/api/task-kpis' || pathname.startsWith('/api/tasks') || pathname === '/api/monitoring') res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/hooks/')) res.setHeader('cache-control', 'no-store');
           if (pathname.startsWith('/api/frida/')) res.setHeader('cache-control', 'no-store');

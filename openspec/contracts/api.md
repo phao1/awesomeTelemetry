@@ -1755,3 +1755,9 @@ Settings opens, expands, scrolls and focuses the requested section while retaini
 existing unsaved-draft protection. Desktop column labels occur only in headers;
 narrow cards may use row labels. These amendments supersede only the prior blanket
 no-hydration rule for the independent, cancellable background page lease.
+
+## Phase C unified comparison
+
+POST /api/task-comparison follows [task-comparison.md](task-comparison.md)
+TC-002, reusing Phase B task summary projection. Native session references resolve
+in a batched task-binding query, never a browser per-session lookup.

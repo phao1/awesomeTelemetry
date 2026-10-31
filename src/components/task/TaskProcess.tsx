@@ -1,3 +1,4 @@
+import { isSystemRecord } from '../../core/system-records.js';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { TaskSummaryBar } from './TaskSummaryBar.js';
 import { ArchitectureReadError } from '../agent-folding/ArchitectureReadError.js';
@@ -21,10 +22,7 @@ const stamp = (value: string | null, locale: Locale) => value && Number.isFinite
 const recordTitle = (record: TaskRecord) => record.event ? record.event.title || record.event.tool || record.event.kind : record.importedTurn?.turnId ?? `${record.importedTurn?.model ?? 'TraceLog'} · #${record.importedTurn?.sequence ?? ''}`;
 const recordTime = (record: TaskRecord) => record.event?.startedAt ?? record.importedTurn?.requestTime ?? null;
 const hasError = (record: TaskRecord) => record.event?.status === 'error' || record.importedTurn?.isError === true;
-const isBookkeeping = (record: TaskRecord) => {
-  const event = record.event;
-  return Boolean(event && !event.hasInput && !event.hasOutput && (event.kind === 'system' || ['system', 'token_count', 'item_completed', 'task_started', 'task_complete', 'task_completed', 'thread_settings_applied', 'turn_context', 'world_state'].includes(event.title) || event.kind === 'reasoning' && (!event.title || event.title === 'reasoning')));
-};
+
 
 export function TaskProcess({ context, route, onRoute, locale, changes, onRefreshContext, onOpenRequest, onNotice, diagnosisInvalidateKey }: {
   context: TaskContext; route: TaskRoute; onRoute: (route: TaskRoute) => void; locale: Locale; changes: TaskChanges;
@@ -90,7 +88,7 @@ export function TaskProcess({ context, route, onRoute, locale, changes, onRefres
 
   useEffect(() => { pageRef.current = new Set(page?.items.map(item => item.id)); }, [page]);
   const selected = page?.items.find(item => item.id === route.event) ?? (savedRecord?.id === route.event ? savedRecord : null);
-  const baseReaderRecords = useMemo(() => (page?.items ?? []).filter(item => showSystem || !isBookkeeping(item)), [page, showSystem]);
+  const baseReaderRecords = useMemo(() => (page?.items ?? []).filter(item => showSystem || !isSystemRecord(item.event)), [page, showSystem]);
   const readerRecords = useMemo(() => !route.event || baseReaderRecords.some(item => item.id === route.event) ? baseReaderRecords : (page?.items ?? []).filter(item => baseReaderRecords.some(visible => visible.id === item.id) || item.id === route.event), [baseReaderRecords, page, route.event]);
   const visibleRecordIds = useMemo(() => new Set(readerRecords.map(item => item.id)), [readerRecords]);
   const visible = useMemo(() => (page?.items ?? []).filter(item => {

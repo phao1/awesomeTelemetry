@@ -3,7 +3,7 @@ import { OverviewKpis } from './components/task/OverviewKpis.js';
 import type { TaskChanges } from './components/task/TaskWorkbench.js';
 const TaskWorkbench=lazy(()=>import('./components/task/TaskWorkbench.js').then(m=>({default:m.TaskWorkbench})));
 import { DataIntake } from './components/task/DataIntake.js';
-import { parseTaskRoute, serializeTaskRoute, type TaskRoute } from './task-route.js';
+import { parseTaskRoute, serializeTaskRoute, serializeComparisonRoute, type TaskRoute } from './task-route.js';
 import { copy as taskCopy } from './components/task/copy.js';
 import {
   lazy,
@@ -50,7 +50,7 @@ const AgentCollabReplay=lazy(()=>import('./components/AgentCollabReplay.js').the
 const AgentOverview = lazy(() => import('./components/AgentOverview.js').then(module => ({ default: module.AgentOverview })));
 const BenchmarkCenter = lazy(() => import('./components/benchmark/BenchmarkCenter.js').then(module => ({ default: module.BenchmarkCenter })));
 const TeamExperimentCenter = lazy(() => import('./components/team-experiment/TeamExperimentCenter.js').then(module => ({ default: module.TeamExperimentCenter })));
-const CompareBoard = lazy(() => import('./components/CompareBoard.js').then(module => ({ default: module.CompareBoard })));
+const TaskComparison = lazy(() => import('./components/task/TaskComparison.js').then(module => ({ default: module.TaskComparison })));
 const ProxyView = lazy(() => import('./components/ProxyView.js').then(module => ({ default: module.ProxyView })));
 import type { LiveStreamEntry } from './components/ProxyLivePanel.js';
 const ProxyLivePanel = lazy(() => import('./components/ProxyLivePanel.js').then(module => ({ default: module.ProxyLivePanel })));
@@ -103,9 +103,6 @@ import {
 
 /** --ui-scale 的基准字号：fontPx 等于它时缩放为 1（同 tokens.css §3.1 的 --text-base）。 */
 const BASE_FONT_PX = 13;
-/** 首帧 hash 在模块加载时解析一次：避免 state→hash 写入 effect 先把它覆盖掉。 */
-const INITIAL_CANONICAL_HASH = canonicalHash(window.location.hash);
-const INITIAL_HASH = parseHash(INITIAL_CANONICAL_HASH);
 const isTeamHash = (hash: string): boolean => /^#\/team(?:[/?]|$)/.test(hash);
 
 interface PaletteModule {
@@ -114,22 +111,30 @@ interface PaletteModule {
 
 /** REQ-001：五视图 shell，App.tsx 是唯一 stateful shell。 */
 export default function App() {
-  // §7.3：team 视图与既有五视图平行；AppView 不含 'team'，故本地扩展
-  const isInitialTeam = isTeamHash(window.location.hash);
-  const [view, setView] = useState<AppView | 'team'>(() =>
-    canonicalHash(window.location.hash) === '' || canonicalHash(window.location.hash) === '#' || canonicalHash(window.location.hash).startsWith('#/task') || (isInitialTeam && window.location.hash.includes('runId=')) || (window.location.hash.startsWith('#/session?') && parseTaskRoute(window.location.hash).task !== null) ? 'task' : isInitialTeam ? 'team' : (parseHash(canonicalHash(window.location.hash))?.view ?? 'task') as AppView | 'team',
-  );
+  // One mount-owned snapshot feeds every initial state. Reading live location
+  // from separate initializers (or caching it at module import) lets a prior
+  // mount/effect's hash write erase deep-link selection during startup/retry.
+  const [initialLocation] = useState(() => {
+    const raw = window.location.hash, canonical = canonicalHash(raw);
+    return { raw, canonical, hash: parseHash(canonical), task: parseTaskRoute(canonical) };
+  });
+  const INITIAL_HASH = initialLocation.hash;
 
-  const [taskRoute, setTaskRoute] = useState<TaskRoute>(() => parseTaskRoute(canonicalHash(window.location.hash)));
+  // §7.3：team 视图与既有五视图平行；AppView 不含 'team'，故本地扩展
+  const isInitialTeam = isTeamHash(initialLocation.raw);
+  const [view, setView] = useState<AppView | 'team'>(() =>
+    initialLocation.canonical === '' || initialLocation.canonical === '#' || initialLocation.canonical.startsWith('#/task') || (isInitialTeam && initialLocation.raw.includes('runId=')) ? 'task' : isInitialTeam ? 'team' : INITIAL_HASH?.view ?? 'task',
+  );
+  const [taskRoute, setTaskRoute] = useState<TaskRoute>(() => initialLocation.task);
   const [taskChanges, setTaskChanges] = useState<TaskChanges>({ version: 0, keys: [], runIds: [] });
   const [settingsTarget,setSettingsTarget]=useState<LocalSettingsTarget>();
   const openSettingsTarget=useCallback((target:LocalSettingsTarget)=>{setSettingsTarget(target);setSettingsOpen(true);},[]);
   const [settingsRevision,setSettingsRevision]=useState(0);
   const [agentsExpanded,setAgentsExpanded]=useState(false);
-  const [intakeChannel, setIntakeChannel] = useState<'native' | 'proxy' | 'cdp' | 'frida' | 'import'>(()=>parseHash(canonicalHash(window.location.hash))?.channel??'native');
+  const [intakeChannel, setIntakeChannel] = useState<'native' | 'proxy' | 'cdp' | 'frida' | 'import'>(()=>INITIAL_HASH?.channel??'native');
 
   const [teamHash, setTeamHash] = useState<TeamHashState>(() =>
-    isInitialTeam ? parseTeamHash(window.location.hash.replace(/^#\/team\/?/, '')) : DEFAULT_TEAM_HASH,
+    isInitialTeam ? parseTeamHash(initialLocation.raw.replace(/^#\/team\/?/, '')) : DEFAULT_TEAM_HASH,
   );
   /** §7.8 team_runs_changed SSE 失效计数（只标失效不轮询）。 */
   const [teamInvalidateKey, setTeamInvalidateKey] = useState(0);
@@ -603,6 +608,7 @@ export default function App() {
       const rightKey = pick(right, sourceAgents[1]);
       setCompareLeft(leftKey ?? '');
       setCompareRight(rightKey ?? '');
+      setTaskRoute(old=>({...old,compareA:leftKey?['collected:'+leftKey]:undefined,compareB:rightKey?['collected:'+rightKey]:undefined}));
       switchView('compare');
     },
     [sessions, switchView],
@@ -694,6 +700,7 @@ export default function App() {
 
   // REQ-024（D3）：状态变 → 写 hash（replaceState 不触发 hashchange，避免循环）
   useEffect(() => {
+    if (view === 'compare') { history.replaceState(null,'',serializeComparisonRoute(taskRoute)); return; }
     if (view === 'task') { history.replaceState(null, '', serializeTaskRoute({...taskRoute,homeProvider:providerFilter[0]})); return; }
     // §7.3 team 视图用独立 hash 序列化（与既有 session/agent/compare/... 分开）
     if (view === 'team') {
@@ -720,6 +727,7 @@ export default function App() {
   useEffect(() => {
     const onHashChange = (): void => {
       const hash=canonicalHash(window.location.hash);
+      if(hash.startsWith('#/compare')){setTaskRoute(parseTaskRoute(hash));switchView('compare');return;}
       if (window.location.hash === '#/team') { switchView('team'); setTeamHash(DEFAULT_TEAM_HASH); return; }
       if (hash.startsWith('#/task') || isTeamHash(window.location.hash) || (window.location.hash.startsWith('#/session?') && parseTaskRoute(window.location.hash).task !== null)) {
         const route=parseTaskRoute(hash);setTaskRoute(route);setProviderFilter(route.homeProvider?[route.homeProvider]:[]);switchView('task');return;
@@ -794,7 +802,7 @@ export default function App() {
         <LiveIndicator connected={live} locale={locale} />
       </AppHeader>
       <nav className="task-primary-nav" aria-label={locale==='zh'?'主导航':'Primary navigation'}><div>
-        {([['overview',locale==='zh'?'概览':'Overview'],['task',taskCopy(locale).tasks],['benchmark',locale==='zh'?'评测中心':'Benchmarks'],['team-experiment',t('view.team-experiment',locale)],['intake',taskCopy(locale).intake]] as const).map(([id,label])=><button type="button" key={id} aria-current={view===id?'page':undefined} onClick={()=>{if(id==='task')setTaskRoute({...taskRoute,task:null,health:undefined,event:null});switchView(id);}}>{label}</button>)}
+        {([['overview',locale==='zh'?'概览':'Overview'],['task',taskCopy(locale).tasks],['compare',locale==='zh'?'对比':'Compare'],['benchmark',locale==='zh'?'评测中心':'Benchmarks'],['team-experiment',t('view.team-experiment',locale)],['intake',taskCopy(locale).intake]] as const).map(([id,label])=><button type="button" key={id} aria-current={view===id?'page':undefined} onClick={()=>{if(id==='task')setTaskRoute({...taskRoute,task:null,health:undefined,event:null,compareImport:undefined,overview:undefined});switchView(id);}}>{label}</button>)}
         <button type="button" onClick={()=>setSettingsOpen(true)}>{taskCopy(locale).settings}</button>
       </div></nav>
       {paletteLoadError && <div className="workbench-error" role="alert">
@@ -1049,21 +1057,8 @@ export default function App() {
         <div className="view-body">
           <main className="main">
             <Suspense fallback={<p role="status">{t('common.loading', locale)}</p>}>
-            <CompareBoard
-              sessions={sessions}
-              sessionsLoading={sessionsLoading}
-              locale={locale}
-              leftKey={compareLeft}
-              rightKey={compareRight}
-              onLeftChange={setCompareLeft}
-              onRightChange={setCompareRight}
-              onOpenRun={(key,eventId)=>{
-                setTaskRoute({ ...taskRoute, task: 'collected:' + key, origin: 'collected', member: 'main', event: eventId === undefined ? null : key + ':event:' + eventId }); switchView('task');
-                if(eventId!==undefined){setFocusEventId(eventId);setFocusEventRequest(value=>value+1);}
-              }}
-              onOpenCalls={()=>switchView('proxy')}
-              onBrowseRuns={()=>{setSessionQ('');setSessionRange('all');setProviderFilter([]);setStatusFilter([]);switchView('session');}}
-            />
+            <TaskComparison locale={locale} route={taskRoute} onRoute={setTaskRoute} invalidateKey={taskChanges.version}
+              onLocate={(task,event)=>{setTaskRoute({...taskRoute,task,origin:task.startsWith('imported:')?'imported':'collected',member:'all',mode:'trajectory',event:event??null,health:undefined,q:undefined,from:undefined,to:undefined,errors:undefined,compareImport:undefined});switchView('task');}} />
             </Suspense>
           </main>
         </div>
@@ -1159,6 +1154,7 @@ export default function App() {
               // REQ-111：直接进对比视图，会话 key 来自共享 store（不发额外请求）。
               setCompareLeft(action.left);
               setCompareRight(action.right);
+              setTaskRoute(old=>({...old,compareA:action.left?['collected:'+action.left]:undefined,compareB:action.right?['collected:'+action.right]:undefined}));
               switchView('compare');
             } else if (action.type === 'goto') {
               // REQ-112：定位到目标事件所在的回合（focusEventId 驱动 TrajectoryPane 展开滚动）。

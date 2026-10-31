@@ -90,3 +90,16 @@ it('withdraws the page queue when the response disconnects before background adm
  await new Promise<void>(resolve=>setImmediate(resolve));await new Promise<void>(resolve=>setImmediate(resolve));
  expect(response.body).toContain('"pending":1');expect(db.prepare('SELECT COUNT(1) AS n FROM sessions').get()).toEqual({n:1});expect(db.prepare('SELECT COUNT(1) AS n FROM scan_state').get()).toEqual({n:0});
 });
+
+it('Phase C comparison reuses Phase B summary, validates bounded disjoint JSON and keeps local guards',async()=>{
+ db.prepare(`INSERT INTO sessions(id,provider,source_agent,source_path,started_at,updated_at,detail_loaded) VALUES('other','codex','Codex','/never-read-other',?,?,1)`).run(new Date().toISOString(),new Date().toISOString());
+ const value={a:['collected:s'],b:['collected:other']};
+ const result=await call('/api/task-comparison','POST',value);expect(result.status).toBe(200);expect(result.headers['cache-control']).toBe('no-store');
+ const home=await call('/api/tasks?summary=1');expect((result.body.a as Array<unknown>)[0]).toEqual((home.body.items as Array<{id:string}>).find(t=>t.id==='collected:s'));
+ expect(result.text).not.toMatch(/inputSummary|outputSummary|"raw"|never-read/);
+ for(const invalid of [{a:[],b:['collected:s']},{...value,b:['collected:s']},{...value,c:1},{...value,a:Array.from({length:41},(_,i)=>'collected:'+i)},'{"a":["collected:s"],"a":[],"b":["collected:other"]}',null]){
+  const response=await call('/api/task-comparison','POST',invalid);expect(response.status).toBe(400);expect(response.body.error).toMatchObject({code:'BAD_REQUEST'});
+ }
+ expect((await call('/api/task-comparison','POST',{...value,a:['collected:missing']})).status).toBe(404);
+ expect((await call('/api/task-comparison','POST',value,{origin:'https://attacker.example'})).status).toBe(400);
+});

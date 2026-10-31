@@ -1105,3 +1105,12 @@ remain metadata-only. Reuse native scanners with global concurrency2, shared
 pending jobs and page cancellation; preserve missing-file rows. No per-session
 fetches/SSE or parser replacement. Adjacent tests cover queue/admission/cancel/
 source absence/notifications, retained-page refresh and direct settings focus.
+
+## Phase C unified task comparison
+
+User-authorized Phase C supersedes legacy compare entry/monetary removal copy
+for this page: costs follow Phase B by currency/source/coverage. Implement
+contracts/task-comparison.md TC-001..006 as REQ-035..040 respectively. Primary
+navigation is Overview / Tasks / Compare / Benchmarks / Agent boundary evaluation /
+Data intake / Settings. Existing A/B actions read Baseline / Improvement and keep
+URL selection. Imported evaluation transfer remains explicitly temporary.

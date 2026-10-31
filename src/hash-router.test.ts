@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseHash, serializeHash } from './hash-router.js';
+import { canonicalHash, parseHash, serializeHash } from './hash-router.js';
 
 describe('REQ-024 hash 路由', () => {
   it('序列化/解析往返：sessions 带 key/phase/provider', () => {
@@ -99,4 +99,9 @@ describe('Phase B canonical entry paths',()=>{
     expect(parseHash(serializeHash({view:'intake',channel:'frida'}))).toEqual({view:'intake',channel:'frida'});
     expect(parseHash('#/overview?range=7d')).toEqual({view:'overview',range:'7d'});
   });
+});
+
+it('Phase C redirects legacy architecture groups while retaining source evidence navigation',()=>{
+ expect(canonicalHash('#/task?a=collected%3Aa&b=collected%3Ab')).toBe('#/compare?a=collected%3Aa&b=collected%3Ab');
+ expect(canonicalHash('#/task?task=collected%3Aa&event=a%3Aevent%3Ae&a=collected%3Aa&b=collected%3Ab')).toBe('#/task?task=collected%3Aa&event=a%3Aevent%3Ae&a=collected%3Aa&b=collected%3Ab');
 });

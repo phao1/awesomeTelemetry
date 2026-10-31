@@ -65,3 +65,13 @@ it('keeps partial member usage and reported currencies identical to selected con
  expect(list).toMatchObject({correctedTotal:110,costs:{known:1,total:3},toolCalls:null,errors:null});expect(list.correctedTotal).toBe(context.correctedTotal);expect(list.costs).toEqual(context.costs);
  expect(list.coverage!.correctedTotal).toMatchObject({known:1,total:3});expect(list.coverage!.correctedTotal.missing).toHaveLength(1);expect(context.coverage!.correctedTotal.missing).toHaveLength(2);
 });
+it('Phase C resolves child sessions to root tasks in one batch and reuses the Phase B summary unchanged',async()=>{
+ const {taskComparisonSnapshot}=await import('./task-home.js');seed(3);
+ const when=new Date().toISOString();db.prepare('INSERT INTO team_runs(id,provider,native_run_id,updated_at,stamp) VALUES(?,?,?,?,?)').run('run','codex','native-root',when,when);
+ const insert=db.prepare('INSERT INTO team_agents(id,run_id,native_id,display_name,role_class,session_keys_json) VALUES(?,?,?,?,?,?)');
+ insert.run('root','run','native-root','Main','leader','["s0"]');insert.run('child','run','child','Ada','subagent','["s1"]');
+ const result=await taskComparisonSnapshot(db,['collected:s1'],['collected:s2'],DEFAULT_ALERT_THRESHOLDS);
+ expect(result.a[0]!.id).toBe('collected:s0');expect(result.a[0]!.metrics).toEqual((await listTaskHome(db,{},DEFAULT_ALERT_THRESHOLDS)).items.find(t=>t.id==='collected:s0')!.metrics);
+ await expect(taskComparisonSnapshot(db,['collected:s0'],['collected:s1'],DEFAULT_ALERT_THRESHOLDS)).rejects.toThrow('distinct root tasks');
+ await expect(taskComparisonSnapshot(db,['collected:missing'],['collected:s2'],DEFAULT_ALERT_THRESHOLDS)).rejects.toThrow('Task not found');
+});

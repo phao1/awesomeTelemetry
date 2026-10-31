@@ -10,7 +10,11 @@ export const architectureApi = {
   preview: (pack: FoldingReviewPack, signal?: AbortSignal) => fetchJson<FoldingReviewPreview>('/agent-folding/review/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(pack), signal }),
   review: (preview: FoldingReviewPreview, signal?: AbortSignal) => fetchJson<FoldingReviewResult>('/agent-folding/review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(preview), signal }),
   scope: async (scope: FoldingNativeScope, signal?: AbortSignal) => validateFoldingProject(await fetchJson<FoldingProject>('/agent-folding/scope', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(scope), signal })),
-  compare: (a: string[], b: string[], signal?: AbortSignal) => fetchJson<{ a: FoldingMetricRun[]; b: FoldingMetricRun[] }>('/agent-folding/compare', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ a, b }), signal }),
+  compare: async (a: string[], b: string[], signal?: AbortSignal) => {
+    const result=await fetchJson<{ a: FoldingMetricRun[]; b: FoldingMetricRun[] }>('/agent-folding/compare', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ a, b }), signal });
+    if(!result||!Array.isArray(result.a)||!Array.isArray(result.b)||result.a.length!==a.length||result.b.length!==b.length||[...result.a,...result.b].some(r=>!r.run||!r.labels||!r.architecture||!Array.isArray(r.limitations)))throw new Error('INVALID_COMPARISON');
+    return result;
+  },
 };
 export function downloadArchitecture(name: string, content: string, type = 'text/plain') {
   const url = URL.createObjectURL(new Blob([content], { type })), a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -26,5 +30,5 @@ export function readArchitectureFile(file: File): Promise<string> {
 
 export function transferArchitectureReport(report: BenchmarkReport | TeamExperimentReport) {
   const text = JSON.stringify(report); parseArchitectureTransfer(text);
-  sessionStorage.setItem('agent-architecture-comparison', text); window.location.hash = '#/task?compareImport=1';
+  sessionStorage.setItem('agent-architecture-comparison', text); window.location.hash = '#/compare?compareImport=1';
 }

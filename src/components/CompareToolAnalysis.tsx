@@ -16,7 +16,7 @@ interface ToolRow {
   rDur: number;
 }
 
-function collectTools(leftEvents: TraceEventSlim[], rightEvents: TraceEventSlim[]): ToolRow[] {
+function collectTools(leftEvents: TraceEventSlim[], rightEvents: TraceEventSlim[], limit: number | null): ToolRow[] {
   const map = new Map<string, ToolRow>();
   const bump = (events: TraceEventSlim[], side: 'l' | 'r'): void => {
     for (const e of events) {
@@ -52,7 +52,7 @@ function collectTools(leftEvents: TraceEventSlim[], rightEvents: TraceEventSlim[
   bump(rightEvents, 'r');
   return [...map.values()]
     .sort((a, b) => b.lc + b.rc - (a.lc + a.rc))
-    .slice(0, 15);
+    .slice(0, limit ?? map.size);
 }
 
 const fmtRate = (fails: number, calls: number): string =>
@@ -64,13 +64,15 @@ const fmtAvg = (total: number, calls: number): string =>
 export function CompareToolAnalysis({
   result,
   locale,
+  maxTools = 15,
 }: {
   result: CompareResult;
   locale: Locale;
+  maxTools?: number | null;
 }): React.JSX.Element {
   const leftEvents = result.left.events as TraceEventSlim[];
   const rightEvents = result.right.events as TraceEventSlim[];
-  const rows = useMemo(() => collectTools(leftEvents, rightEvents), [leftEvents, rightEvents]);
+  const rows = useMemo(() => collectTools(leftEvents, rightEvents, maxTools), [leftEvents, rightEvents, maxTools]);
   const errors = useMemo(
     () => errorDistribution(leftEvents, rightEvents),
     [leftEvents, rightEvents],
@@ -83,11 +85,11 @@ export function CompareToolAnalysis({
       <table className="ui-table ui-table-compact">
         <thead>
           <tr>
-            <th>{t('session.provider', locale)}</th>
+            <th>{locale === 'zh' ? '工具' : 'Tool'}</th>
             <th style={{ textAlign: 'right' }}>{t('compare.toolCall', locale)} L</th>
             <th style={{ textAlign: 'right' }}>{t('compare.toolCall', locale)} R</th>
-            <th style={{ textAlign: 'right' }}>{t('compare.toolFailRate', locale)} L</th>
-            <th style={{ textAlign: 'right' }}>{t('compare.toolFailRate', locale)} R</th>
+            <th style={{ textAlign: 'right' }}>{t('compare.toolFailRate', locale)} L (n / %)</th>
+            <th style={{ textAlign: 'right' }}>{t('compare.toolFailRate', locale)} R (n / %)</th>
             <th style={{ textAlign: 'right' }}>{t('compare.toolAvgDur', locale)} L</th>
             <th style={{ textAlign: 'right' }}>{t('compare.toolAvgDur', locale)} R</th>
           </tr>
@@ -109,10 +111,10 @@ export function CompareToolAnalysis({
                 </div>
               </td>
               <td className="mono" style={{ textAlign: 'right', color: row.lf > 0 ? 'var(--danger-fg)' : undefined }}>
-                {fmtRate(row.lf, row.lc)}
+                {row.lf} / {fmtRate(row.lf, row.lc)}
               </td>
               <td className="mono" style={{ textAlign: 'right', color: row.rf > 0 ? 'var(--danger-fg)' : undefined }}>
-                {fmtRate(row.rf, row.rc)}
+                {row.rf} / {fmtRate(row.rf, row.rc)}
               </td>
               <td className="mono" style={{ textAlign: 'right' }}>{fmtAvg(row.lDur, row.lc)}</td>
               <td className="mono" style={{ textAlign: 'right' }}>{fmtAvg(row.rDur, row.rc)}</td>
