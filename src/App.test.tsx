@@ -43,12 +43,16 @@ const THREE_SESSIONS = [
 
 
 async function navigateHash(hash:string){await act(async()=>{history.replaceState(null,'',hash);window.dispatchEvent(new Event('hashchange'));await new Promise(resolve=>setTimeout(resolve,10));});}
-async function openAgentGroup(container:HTMLElement){await navigateHash('#/overview');await act(async()=>{const group=container.querySelector<HTMLDetailsElement>('.overview-agents')!;expect(group).not.toBeNull();group.open=true;group.dispatchEvent(new Event('toggle'));await import('./components/AgentOverview.js');});}
+async function openAgentGroup(container:HTMLElement){await navigateHash('#/overview');await act(async()=>{const tab=[...container.querySelectorAll<HTMLButtonElement>('[role=tab]')].find(b=>b.textContent==='Agent 视角')!;expect(tab).toBeDefined();tab.click();await import('./components/AgentOverview.js');});}
+
 const TASK_FIXTURES=THREE_SESSIONS.map(session=>({id:'collected:'+session.id,origin:'collected' as const,provenanceKnown:true,rootSessionKey:session.id,runId:null,title:session.title,provider:session.provider,startedAt:session.startedAt,updatedAt:session.updatedAt,recordedStatus:session.status,memberCount:1,eventCount:2,loadedMemberCount:1}));
+const OVERVIEW_POINT={day:'2026-11-01T00:00:00.000Z',tasks:3,statusKnownTasks:3,toolKnownTasks:3,failedTasks:0,failurePct:0,toolFailurePct:0,tokens:null,tokenKnownTasks:0,cacheHitRate:null,cacheKnownMembers:0,cacheTotalMembers:3,alerts:0,input:null,output:null,cacheRead:null,cacheWrite:null};
+const OVERVIEW_FIXTURE={range:'7d',provider:'',generatedAt:OVERVIEW_POINT.day,current:OVERVIEW_POINT,previous:null,daily:[],providers:[],models:[],tools:[],alerts:[],criteria:{zh:'任务口径',en:'Task basis'}};
 function taskContext(id:string){const task=TASK_FIXTURES.find(t=>t.id===id)??TASK_FIXTURES[0]!;return {task,members:[{id:task.rootSessionKey,name:task.provider,role:'main',sessionKey:task.rootSessionKey,parentId:null,detailLoaded:true,eventCount:2}],importSession:null,warnings:[]};}
 function taskPage(id:string){const context=taskContext(id),key=context.task.rootSessionKey;return {context,items:[1,2].map(sequence=>({id:key+':event:shared-'+sequence,memberId:key,memberName:context.task.provider,sessionKey:key,event:{...makeEvent(makeMessage('shared-'+sequence,sequence,{kind:'llm',role:'assistant',title:'Result '+sequence,hasInput:false,hasOutput:true})),sessionId:key},importedTurn:null})),total:2,offset:0,limit:200,hasMore:false,hasPrevious:false,window:'fixed',warnings:[]};}
 const apiResponse=(value:unknown)=>({ok:true,status:200,text:async()=>JSON.stringify(value)}) as Response;
 function taskResponse(path:string):Response {
+ if(path.startsWith('/api/task-kpis'))return apiResponse(OVERVIEW_FIXTURE);
  if(path.startsWith('/api/tasks?'))return apiResponse({items:TASK_FIXTURES,total:3,offset:0,limit:50,hasMore:false});
  const taskMatch=/\/api\/tasks\/([^/?]+)/.exec(path);const id=taskMatch?decodeURIComponent(taskMatch[1]!):TASK_FIXTURES[0]!.id;
  if(path.includes('/records?'))return apiResponse(taskPage(id));
@@ -343,6 +347,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     try {
       await act(async()=>{history.replaceState(null,'','#/compare?left=s-1&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/task/TaskComparison.js');});
       await act(async()=>{for(let i=0;i<30&&!container.querySelector('.cmp-run-evidence');i++)await new Promise(resolve=>setTimeout(resolve,10));});
+      act(()=>[...container.querySelectorAll<HTMLButtonElement>('.ui-accordion > button')].find(b=>b.textContent==='调查入口')!.click());
       const left=container.querySelector('.cmp-evidence-side')!;
       act(()=>left.querySelector('summary')!.click());
       await act(async()=>{left.querySelector<HTMLButtonElement>('.cmp-evidence-errors button')!.click();for(let i=0;i<10;i++)await Promise.resolve();});
@@ -470,12 +475,16 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     const tab=[...container.querySelectorAll<HTMLButtonElement>('.app-sidebar nav button')].find(b=>b.textContent==='对比')!;
     expect(tab).toBeDefined();
     await act(async()=>{tab.click();await import('./components/task/TaskComparison.js');});
-    await vi.waitFor(()=>expect(container.querySelectorAll('.task-compare-options label')).toHaveLength(6));
+    await vi.waitFor(()=>expect(container.querySelectorAll('.task-compare-picker [role=combobox]')).toHaveLength(2));
     expect(container.querySelectorAll('.task-compare-picker')).toHaveLength(2);
     for(const picker of container.querySelectorAll('.task-compare-picker')){
-      expect(picker.textContent).toContain('fix build');expect(picker.textContent).toContain('refactor api');expect(picker.textContent).toContain('debug login');
+      expect(picker.querySelector('details')).toBeNull();
+      act(()=>picker.querySelector<HTMLElement>('[role=combobox]')!.click());
+      await vi.waitFor(()=>expect(document.querySelectorAll('[role=option]')).toHaveLength(3));
+      expect(document.querySelector('[role=listbox]')!.textContent).toContain('fix build');expect(document.querySelector('[role=listbox]')!.textContent).toContain('refactor api');expect(document.querySelector('[role=listbox]')!.textContent).toContain('debug login');
+      act(()=>document.activeElement!.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
     }
-    expect(container.textContent).toContain('各选择 1–40 个任务');
+    expect(container.textContent).toContain('每侧选择 1–40 个任务');
     expect(vi.mocked(fetch).mock.calls.some(([path])=>String(path)==='/api/compare'||String(path)==='/api/task-comparison')).toBe(false);
   });
 
@@ -611,13 +620,19 @@ describe('Compare 端到端（UI-TASKS 2 回归）', () => {
       await import('./components/task/TaskComparison.js');
     });
 
-    await vi.waitFor(()=>expect(container.querySelectorAll('.task-compare-options input')).toHaveLength(6));
-    act(()=>container.querySelectorAll<HTMLInputElement>('.task-compare-options input')[0]!.click());
-    act(()=>container.querySelectorAll<HTMLInputElement>('.task-compare-options input')[4]!.click());
+    await vi.waitFor(()=>expect(container.querySelectorAll('.task-compare-picker [role=combobox]')).toHaveLength(2));
+    act(()=>container.querySelectorAll<HTMLElement>('.task-compare-picker [role=combobox]')[0]!.click());
+    await vi.waitFor(()=>expect(document.querySelectorAll('[role=option]')).toHaveLength(3));
+    act(()=>document.querySelectorAll<HTMLButtonElement>('[role=option]')[0]!.click());
+    act(()=>document.activeElement!.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    act(()=>container.querySelectorAll<HTMLElement>('.task-compare-picker .ui-multi-trigger')[1]!.click());
+    await vi.waitFor(()=>expect(document.querySelectorAll('[role=option]')).toHaveLength(3));
+    act(()=>document.querySelectorAll<HTMLButtonElement>('[role=option]')[1]!.click());
+    act(()=>document.activeElement!.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
     await vi.waitFor(()=>expect(container.querySelector('.compare-timelines')).not.toBeNull());
     expect(container.querySelector('.task-compare-conclusions')).not.toBeNull();
     expect(container.querySelector('.compare-tools')).not.toBeNull();
-    expect(container.querySelector('.compare-token-usage')).not.toBeNull();
+    expect(container.querySelector('.compare-token-usage')).toBeNull();expect(container.querySelectorAll('.compare-token-table tbody tr')).toHaveLength(4);expect([...container.querySelectorAll('.ui-card-header h2')].filter(n=>n.textContent==='过程对照')).toHaveLength(1);expect(container.querySelectorAll('.compare-timelines > .ui-card')).toHaveLength(2);
     expect(container.textContent).toContain('单样本，不能证明因果');
     expect(window.location.hash).toContain('a=collected%3As-1');expect(window.location.hash).toContain('b=collected%3As-2');
     expect(fetchMock.mock.calls.filter(([path])=>String(path)==='/api/compare')).toHaveLength(1);
@@ -809,7 +824,7 @@ it.each(['threshold','overview-threshold'])('Phase B review: %s opens and focuse
   const path=String(input);requests.push({path,method:init?.method??'GET'});
   if(path==='/api/config/providers')return apiResponse({providers:Object.fromEntries(PROVIDER_KEYS.map(key=>[key,{key,enabled:true,path:'/fixture/'+key,label:key,sourceKind:'jsonl',watchStrategy:'chokidar',pollIntervalMs:0}])),traeKeyPath:null,prewarmRecent:0});
   if(path==='/api/config/alert-thresholds')return apiResponse(DEFAULT_ALERT_THRESHOLDS);
-  if(path==='/api/task-kpis')return apiResponse({tasks:3,statusKnownTasks:3,toolKnownTasks:3,failedTasks:0,failurePct:0,toolFailurePct:0,tokens:null,tokenKnownTasks:0,cacheHitRate:null,cacheKnownMembers:0,cacheTotalMembers:3,alerts:0});
+  if(path.startsWith('/api/task-kpis'))return apiResponse(OVERVIEW_FIXTURE);
   if(path.startsWith('/api/mission'))return apiResponse({meta:{range:'7d',generatedAt:'2026-10-31T00:00:00Z',tz:0,widgetCount:0,durationMs:0,stamp:'2026-10-31T00:00:00Z',cached:false},usage:{},quality:{},health:{}});
   if(path.startsWith('/api/tasks?'))return apiResponse({items:TASK_FIXTURES.map(t=>({...t,metrics:{durationMs:1000,toolCalls:1,errors:0,input:10,output:20,cacheRead:1,correctedTotal:31,promptInput:11,cacheHitRate:1/11,models:['test-model']}})),total:3,offset:0,limit:50,hasMore:false});
   return taskResponse(path);
@@ -818,9 +833,9 @@ it.each(['threshold','overview-threshold'])('Phase B review: %s opens and focuse
  try{
   await readyTasks(container);
   if(entry==='overview-threshold')await navigateHash('#/overview');
-  const selector=entry==='overview-threshold'?'.overview-threshold-link':'.page-actions button';
+  const selector=entry==='overview-threshold'?'[aria-label=配置阈值]':'.page-actions button';
   let button:HTMLButtonElement|undefined;
-  for(let i=0;i<100&&!button;i++){button=[...container.querySelectorAll<HTMLButtonElement>(selector)].find(b=>b.textContent===(entry==='overview-threshold'?'配置阈值':'健康阈值'));if(!button)await act(async()=>{await new Promise(r=>setTimeout(r,10));});}
+  for(let i=0;i<100&&!button;i++){button=[...container.querySelectorAll<HTMLButtonElement>(selector)].find(b=>entry==='overview-threshold'?(b.textContent==='配置阈值'||b.getAttribute('aria-label')==='配置阈值'):b.textContent==='健康阈值');if(!button)await act(async()=>{await new Promise(r=>setTimeout(r,10));});}
   expect(button).toBeDefined();act(()=>button!.click());
   const section='alert-thresholds';
   for(let i=0;i<100&&!container.querySelector('#settings-'+section+' input');i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});
@@ -864,8 +879,8 @@ describe('Phase C first-paint deep links',()=>{
     expect(window.location.hash.startsWith('#/compare')).toBe(true);
     expect(q.getAll('a')).toEqual(a);expect(q.getAll('b')).toEqual(b);expect(q.get('pa')).toBe(pa);expect(q.get('pb')).toBe(pb);
     expect(q.get('compareImport')).toBe(imported?'1':null);
-    expect(container.querySelectorAll('legend')[0]?.textContent).toContain(`(${a.length}/40)`);
-    expect(container.querySelectorAll('legend')[1]?.textContent).toContain(`(${b.length}/40)`);
+    expect(container.querySelectorAll('.task-compare-picker .ui-card-header')[0]?.textContent).toContain(`${a.length}/40`);
+    expect(container.querySelectorAll('.task-compare-picker .ui-card-header')[1]?.textContent).toContain(`${b.length}/40`);
     if(a.length)await vi.waitFor(()=>expect(groups.length).toBeGreaterThan(refresh));
     if(pa)await vi.waitFor(()=>expect(pairs.at(-1)).toEqual({leftKey:'s-3',rightKey:'s-2'}));
    }finally{unmount();}

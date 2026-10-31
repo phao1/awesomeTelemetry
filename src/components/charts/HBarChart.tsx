@@ -1,9 +1,12 @@
+import type { Locale } from '../../i18n.js';
+import { useComponentCopy } from '../ui/component-copy.js';
 import { EmptyState } from '../ui/States.js';
 import { IconList } from '../icons/index.js';
 import { useChartWidth } from './CartesianChart.js';
 import type { ChartSlice, ChartTone } from './types.js';
 
 export interface HBarChartProps {
+  locale?: Locale;
   rows: ChartSlice[];
   /** 缺省 = 最大值；传入可让多图共用同一尺度。 */
   max?: number;
@@ -17,6 +20,7 @@ export interface HBarChartProps {
 
 /** 排行 → 横向条形图（design-system REQ-010）。纯 SVG，无依赖。 */
 export function HBarChart({
+  locale,
   rows,
   max,
   tone: _tone = 'accent',
@@ -25,9 +29,10 @@ export function HBarChart({
   rowHeight = 24,
   labelWidth = 140,
 }: HBarChartProps): React.JSX.Element {
+  const copy=useComponentCopy(locale);
   const [ref,responsiveWidth]=useChartWidth(width);
   width=responsiveWidth;
-  if(!rows.length)return <EmptyState icon={<IconList/>} title="暂无数据 / No data"/>;
+  if(!rows.length)return <EmptyState icon={<IconList/>} title={copy.empty}/>;
   const peak = max ?? Math.max(0, ...rows.map((r) => r.value), 1);
   const barMax = Math.max(0, width - labelWidth - 42);
   return (

@@ -1,3 +1,5 @@
+import type { Locale } from '../../i18n.js';
+import { useComponentCopy } from './component-copy.js';
 import { useState, type ReactNode, type HTMLAttributes } from 'react';
 import { Badge, type BadgeTone } from './Badge.js';
 import { Tooltip } from './Overlay.js';
@@ -23,7 +25,8 @@ export function KeyValue({items}:{items:{label:string;value:ReactNode}[]}):React
 export const DescriptionList=KeyValue;
 export function Meter({value,max=100,label,tone='accent',threshold}:{value:number;max?:number;label:string;tone?:BadgeTone;threshold?:number}):React.JSX.Element {const pct=Math.max(0,Math.min(100,max>0?value/max*100:0));return <div role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={max} aria-valuenow={Math.max(0,Math.min(max,value))} className="ui-meter"><span style={{width:`${pct}%`,background:`var(--${threshold!==undefined&&value<threshold?'attention':tone}-emphasis)`}}/></div>;}
 export const ProgressBar=Meter;
-export function CopyField({value,label,secret=false}:{value:string;label:string;secret?:boolean}):React.JSX.Element {
+export function CopyField({value,label,secret=false,locale}:{value:string;label:string;secret?:boolean;locale?:Locale}):React.JSX.Element {
+ const copy=useComponentCopy(locale);
  const [shown,setShown]=useState(!secret),[copied,setCopied]=useState(false),[error,setError]=useState(false);
- return <div className="ui-copy-field"><input aria-label={label} readOnly type={shown?'text':'password'} value={value}/>{secret&&<IconButton label={shown?'Hide / 隐藏':'Show / 显示'} icon={shown?<IconEyeOff/>:<IconEye/>} onClick={()=>setShown(!shown)}/>}<IconButton label="Copy / 复制" icon={copied?<IconCheck/>:<IconCopy/>} onClick={()=>{void navigator.clipboard.writeText(value).then(()=>{setCopied(true);setError(false);}).catch((err:unknown)=>{console.error('[copy]',err);setError(true);});}}/>{copied&&<Toast title="Copied / 已复制" onDismiss={()=>setCopied(false)}/ >}{error&&<Toast tone="error" title="Copy failed / 复制失败" onDismiss={()=>setError(false)}/>}</div>;
+ return <div className="ui-copy-field"><input aria-label={label} readOnly type={shown?'text':'password'} value={value}/>{secret&&<IconButton label={shown?copy.hide:copy.show} icon={shown?<IconEyeOff/>:<IconEye/>} onClick={()=>setShown(!shown)}/>}<IconButton label={copy.copy} icon={copied?<IconCheck/>:<IconCopy/>} onClick={()=>{void navigator.clipboard.writeText(value).then(()=>{setCopied(true);setError(false);}).catch((err:unknown)=>{console.error('[copy]',err);setError(true);});}}/>{copied&&<Toast title={copy.copied} onDismiss={()=>setCopied(false)}/ >}{error&&<Toast tone="error" title={copy.copyFailed} onDismiss={()=>setError(false)}/>}</div>;
 }

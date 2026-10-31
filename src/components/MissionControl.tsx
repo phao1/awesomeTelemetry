@@ -1,6 +1,13 @@
+import { agentMetricLabel } from './task/overview-agent-copy.js';
+import { LineChart } from './charts/LineChart.js';
+import { Card, CardBody, CardHeader } from './ui/Display.js';
+import { Tooltip } from './ui/Overlay.js';
+import { Button, IconButton } from './ui/Button.js';
+import { SegmentedControl } from './ui/Controls.js';
+import { IconInfo, IconRefresh } from './icons/index.js';
 import { PageSkeleton } from './ui/PageSkeleton.js';
 import { fmtDur } from '../core/session-findings.js';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t, ZH, type I18nKey } from '../i18n.js';
@@ -96,13 +103,13 @@ function fmtPct(v: number | null): string {
 }
 
 /** 通用小表格：把扁平对象渲染成 label/value 行（B 区数值 widget 用）。 */
-function KeyValueTable({ data }: { data: Record<string, unknown> }): React.JSX.Element {
+function KeyValueTable({ data, locale = 'en' }: { data: Record<string, unknown>; locale?: Locale }): React.JSX.Element {
   const rows = Object.entries(data).filter(([, v]) => v !== null && v !== undefined);
   return (
     <div className="mission-kv">
       {rows.map(([key, value]) => (
         <div className="mission-kv-row" key={key}>
-          <span className="mission-kv-key">{key}</span>
+          <span className="mission-kv-key">{agentMetricLabel(key,locale)}</span>
           <span className="mission-kv-value mono">
             {typeof value === 'number' ? fmtNum(value) : String(value)}
           </span>
@@ -188,7 +195,7 @@ function WidgetData({
               {t('mission.alert.scanState', locale)}
             </div>
           )}
-          <KeyValueTable
+          <KeyValueTable locale={locale}
             data={{
               scanState: c.scanStateRows,
               schema: c.schemaVersion,
@@ -208,8 +215,11 @@ function WidgetData({
         </div>
       );
     }
-    case 'tokenTrend':
     case 'drift': {
+      const points=(data as MissionDayPoint[]).filter(p=>p.e2eP95Ms!=null);
+      return points.length?<LineChart label={locale==='zh'?'任务墙钟 P95':'Task wall-clock P95'} labels={points.map(p=>p.day.slice(5))} series={[{label:'P95',points:points.map(p=>p.e2eP95Ms!)}]}/>:<EmptyState icon="—" title="—" description={locale==='zh'?'缺少可靠时长分位':'Reliable duration quantiles unavailable'}/>;
+    }
+    case 'tokenTrend': {
       const points = data as MissionDayPoint[];
       if (points === null || points.length === 0) {
         return <EmptyState icon="—" title={t('state.empty', locale)} description="" />;
@@ -234,7 +244,7 @@ function WidgetData({
       const cp = data as NonNullable<MissionQuality['contextPressure']['data']>;
       return (
         <>
-          <KeyValueTable data={{ peak: fmtPct(cp.peakPct), p50: fmtPct(cp.p50Pct), p95: fmtPct(cp.p95Pct), over80: cp.over80Pct, over95: cp.over95Pct, compactions: cp.compactions, saved: cp.savedTokens, window: cp.windowSource }} />
+          <KeyValueTable locale={locale} data={{ peak: fmtPct(cp.peakPct), p50: fmtPct(cp.p50Pct), p95: fmtPct(cp.p95Pct), over80: cp.over80Pct, over95: cp.over95Pct, compactions: cp.compactions, saved: cp.savedTokens, window: cp.windowSource }} />
           <Histogram buckets={cp.histogram.map((h) => ({ label: h.name, value: h.count }))} />
         </>
       );
@@ -242,7 +252,7 @@ function WidgetData({
     case 'closure': {
       const c = data as NonNullable<MissionQuality['closure']['data']>;
       return (
-        <KeyValueTable
+        <KeyValueTable locale={locale}
           data={{
             success: fmtPct(c.successRate),
             ok: c.ok,
@@ -259,7 +269,7 @@ function WidgetData({
     case 'parallelism': {
       const p = data as NonNullable<MissionQuality['parallelism']['data']>;
       return (
-        <KeyValueTable
+        <KeyValueTable locale={locale}
           data={{
             sessions: p.sessions,
             avgRatio: p.avgRatio === null ? '—' : p.avgRatio.toFixed(2),
@@ -273,7 +283,7 @@ function WidgetData({
       const d = data as NonNullable<MissionHealth['dualChannel']['data']>;
       return (
         <>
-          <KeyValueTable
+          <KeyValueTable locale={locale}
             data={{
               scan: d.scanSessions,
               proxy: d.proxyRequests,
@@ -342,7 +352,7 @@ function WidgetData({
     case 'promptHabits': {
       const p = data as NonNullable<MissionUsage['promptHabits']['data']>;
       return (
-        <KeyValueTable
+        <KeyValueTable locale={locale}
           data={{
             n: p.n,
             p50: p.p50,
@@ -360,7 +370,7 @@ function WidgetData({
         return <NamedCountList rows={data as Array<{ name: string; count: number }>} />;
       }
       if (typeof data === 'object') {
-        return <KeyValueTable data={data as Record<string, unknown>} />;
+        return <KeyValueTable locale={locale} data={data as Record<string, unknown>} />;
       }
       return <span className="mono">{String(data)}</span>;
   }
@@ -390,15 +400,8 @@ function WidgetPanel({
   // 正文改用一句人话，完整口径收进「计算口径」折叠层，两边信息都不丢。
   const summaryKey = `mission.summary.${id}` as I18nKey;
   return (
-    <section className="mission-widget" id={`widget-${id}`}>
-      <h3 className="mission-widget-title">{titleKey in ZH ? t(titleKey, locale) : id}</h3>
-      {summaryKey in ZH && <p className="mission-summary">{t(summaryKey, locale)}</p>}
-      {criteriaText !== '' && (
-        <details className="mission-criteria-disclosure">
-          <summary>{t('mission.criteriaLabel', locale)}</summary>
-          <div className="mission-criteria">{criteriaText}</div>
-        </details>
-      )}
+    <Card className="mission-widget" id={`widget-${id}`}>
+      <CardHeader title={titleKey in ZH ? t(titleKey, locale) : id} description={summaryKey in ZH ? t(summaryKey, locale) : undefined} actions={<Tooltip label={criteriaText}><IconButton label={t('mission.criteriaLabel', locale)} icon={<IconInfo/>}/></Tooltip>}/><CardBody>
       {widget.available && widget.data !== null ? (
         <div className="mission-widget-body">
           <WidgetData id={id} data={widget.data} locale={locale} />
@@ -410,7 +413,7 @@ function WidgetPanel({
           description={reason ?? ''}
         />
       )}
-    </section>
+    </CardBody></Card>
   );
 }
 
@@ -433,25 +436,7 @@ export function MissionControl({
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [stale, setStale] = useState(false);
-  const [navCollapsed, setNavCollapsed] = useState(false);
-  const [activeRole, setActiveRole] = useState<MissionRole | null>('manager');
   useEffect(()=>{setRange(initialRange);},[initialRange]);
-  const mainRef = useRef<HTMLElement | null>(null);
-  const initialScrollDone = useRef(false);
-
-  // REQ-109：`[` 键折叠/展开侧边栏（不劫持输入框）。
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      const tag = (e.target as HTMLElement | null)?.tagName ?? '';
-      if (e.key !== '[' || tag === 'INPUT' || tag === 'TEXTAREA') {
-        return;
-      }
-      setNavCollapsed((prev) => !prev);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
   useEffect(() => {
     let current=true;
     setResponse(null);
@@ -486,139 +471,11 @@ export function MissionControl({
     }
     return entries(response.usage, response.quality, response.health);
   }, [response]);
-  // REQ-117：不再按 A/B/C 切片，全部 widget 一次性按角色分组呈现。
-  const byRole = useMemo(
-    () =>
-      ROLE_ORDER.map((role) => ({
-        role,
-        widgets: allWidgets.filter((entry) => ROLE_GROUPS[role].includes(entry.id)),
-      })).filter((group) => group.widgets.length > 0),
-    [allWidgets],
-  );
-
-  const onScroll = (): void => {
-    const el = mainRef.current;
-    if (el === null) {
-      return;
-    }
-    let current: MissionRole | null = null;
-    for (const group of byRole) {
-      const node = el.querySelector<HTMLElement>(`#mission-role-${group.role}`);
-      if (node !== null && node.offsetTop - 120 <= el.scrollTop) {
-        current = group.role;
-      }
-    }
-    setActiveRole(current);
-  };
-
-  const scrollToRole = (role: MissionRole): void => {
-    document.getElementById(`mission-role-${role}`)?.scrollIntoView?.({ behavior: 'smooth' });
-  };
-
-  // REQ-117：旧 A/B/C 标签页锚点重定向到角色分组锚点，并定位到该分组。
-  useEffect(() => {
-    const rewritten = redirectLegacyMissionHash(window.location.hash);
-    if (rewritten === null) {
-      return;
-    }
-    history.replaceState(null, '', rewritten);
-    const role = /#mission-role-(\w+)/.exec(rewritten)?.[1] as MissionRole | undefined;
-    if (role !== undefined) {
-      setActiveRole(role);
-    }
-  }, []);
-
-  // REQ-117：数据就绪后默认定位到当前角色（缺省「管理者」），只做一次。
-  useEffect(() => {
-    if (response === null || initialScrollDone.current) {
-      return;
-    }
-    initialScrollDone.current = true;
-    scrollToRole(activeRole ?? 'manager');
-  }, [response, activeRole]);
-
-  return (
-    <main
-      className={`main mission-view ${navCollapsed ? 'mission-nav-collapsed' : ''}`}
-      ref={(node) => {
-        mainRef.current = node;
-      }}
-      onScroll={onScroll}
-    >
-      <div className="mission-layout">
-        <aside className="mission-nav" aria-label={t('mission.nav.title', locale)}>
-          <button
-            type="button"
-            className="mission-nav-toggle"
-            aria-expanded={!navCollapsed}
-            onClick={() => setNavCollapsed((prev) => !prev)}
-            title={t('mission.nav.collapse', locale)}
-          >
-            {t('mission.nav.title', locale)}
-          </button>
-          {!navCollapsed && (
-            <nav className="mission-nav-list">
-              {byRole.map(({ role }) => (
-                <button
-                  key={role}
-                  type="button"
-                  className={`mission-nav-item ${activeRole === role ? 'mission-nav-item-on' : ''}`}
-                  onClick={() => scrollToRole(role)}
-                >
-                  <span className="mission-nav-dot" aria-hidden="true" />
-                  {t(`mission.role.${role}`, locale)}
-                  <span className="mono mission-nav-count">{ROLE_GROUPS[role].length}</span>
-                </button>
-              ))}
-            </nav>
-          )}
-        </aside>
-        <div className="mission-main">
-          <div className="mission-toolbar">
-        <div className="mission-range">
-          {(['7d', '30d', 'all'] as const).map((r) => (
-            <button
-              key={r}
-              type="button"
-              className={`btn ${range === r ? 'btn-active' : ''}`}
-              onClick={() => {setRange(r);onRangeChange?.(r);}}
-            >
-              {t(`mission.range.${r}`, locale)}
-            </button>
-          ))}
-        </div>
-        <button type="button" className="btn" onClick={() => setRetryKey((k) => k + 1)}>
-          {t('common.refresh', locale)}
-        </button>
-        {meta !== null && (
-          <span className="mission-meta mono">
-            {t('mission.meta', locale)
-              .replace('{time}', meta.generatedAt.slice(11, 19))
-              .replace('{widgets}', String(byRole.reduce((sum,group)=>sum+group.widgets.length,0)))
-              .replace('{ms}', String(meta.durationMs))
-              .replace('{cached}', meta.cached ? t('mission.cached', locale) : t('mission.fresh', locale))}
-            {stale ? ` · ${t('mission.stale', locale)}` : ''}
-          </span>
-        )}
-          </div>
-
-          {error !== null && (
-            <ErrorState code="MISSION_LOAD_FAILED" message={error} onRetry={() => setRetryKey((k) => k + 1)} />
-          )}
-          {response === null && error === null && <PageSkeleton locale={locale} />}
-          {response !== null &&
-            byRole.map(({ role, widgets }) => (
-              <section key={role} id={`mission-role-${role}`} className="mission-role-section" data-role={role}>
-                <h3 className="mission-role-title">{t(`mission.role.${role}`, locale)}</h3>
-                <div className="mission-grid">
-                  {widgets.map(({ id, widget }) => (
-                    <WidgetPanel key={id} id={id} widget={widget} locale={locale} />
-                  ))}
-                </div>
-              </section>
-            ))}
-        </div>
-      </div>
-    </main>
-  );
+  const uniqueWidgets=allWidgets.filter(w=>!['toolFailure','tokenTrend','toolTop'].includes(w.id));
+  return <div className="mission-view">
+    <div className="architecture-toolbar"><SegmentedControl activeId={range} onChange={value=>{setRange(value as MissionRange);onRangeChange?.(value as MissionRange);}} items={(['7d','30d','all'] as const).map(id=>({id,label:t(`mission.range.${id}`,locale)}))}/><Button icon={<IconRefresh/>} onClick={()=>setRetryKey(k=>k+1)}>{t('common.refresh',locale)}</Button>{stale&&<span>{t('mission.stale',locale)}</span>}{meta&&<span className="ui-muted">{meta.generatedAt.slice(0,16).replace('T',' ')} UTC</span>}</div>
+    {error&&<ErrorState code="MISSION_LOAD_FAILED" message={error} onRetry={()=>setRetryKey(k=>k+1)}/>}
+    {!response&&!error&&<PageSkeleton locale={locale}/>}
+    <div className="overview-chart-grid">{uniqueWidgets.map(({id,widget})=><WidgetPanel key={id} id={id} widget={widget} locale={locale}/>)}</div>
+  </div>;
 }

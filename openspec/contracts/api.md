@@ -1791,3 +1791,25 @@ known-session coverage; partial daily/cache-card values show n/m members.
 Task URLs add `filters=alerts,errors,failed,toolFailures` (intersection; legacy single `filter` remains readable). `page` is zero-based, `size` is 10,25,50 (default 50). Provider, origin, q, range, sort and direction remain shareable. No new payload or body reads.
 
 F3 summary pages include optional `requestCount: number | null`: count genuine, timestamp-valid, monotonic root user-prompt boundaries under TR-001; null for unloaded roots and imports. Count from one batched metadata query per snapshot, without bodies or per-row browser reads.
+
+## Phase F4 overview
+F4-002: GET /api/task-kpis?overview=1&range=24h|7d|30d|all&provider=<label> returns OverviewSnapshot. Existing no-query TaskKpis behavior is unchanged. Range defaults7d; provider defaults empty (all), max128chars. Invalid range400 ApiError. Collected root tasks only; activity-intersection membership and continuous UTC calendar/week buckets follow F4-004 below. All has no previous period. Previous activity-count window has identical elapsed width; historical metric snapshots remain unavailable. Models include only single-model tasks with complete corrected Token coverage (multi-model attribution unavailable). Tools count retained terminal result observations, using the same output/end and status guard as task-home; no execution claim. Alerts are newest8 matching threshold tasks with metadata and metrics only. Provider choices include all collected providers; value counts follow the active window/provider. Criteria is server owned. No monetary data.
+F4-003: #/overview accepts overviewRange=24h|7d|30d|all, overviewProvider=<label>, overviewTab=overview|agent. Existing range remains compatible. Reads use the revision-cached/yielded task snapshot, cached statements/indexed member lookups, no hydration or body reads; final source-change check409. Cache at most8 combinations/DB, revision+thresholds+rolling UTC minute.
+
+### F4 browser review amendment
+F4-004 supersedes F4-002 start-only membership and sparse-day behavior. Collected
+root tasks are selected when their known activity interval [startedAt,updatedAt]
+intersects the requested range; an unknown start uses the known last activity.
+7d/30d use7/30 consecutive UTC calendar dates including today (end=generatedAt);
+24h remains rolling. Previous activity count uses an adjacent equal-duration
+window; historical Token/status/health snapshots are not reconstructed and their
+previous-period values/coverage remain unavailable. All has no previous period.
+Daily task activity counts distinct roots per retained event UTC date plus the
+last-activity metadata date. Indexed (session_id,started_at) reads only metadata,
+never bodies. Token, cache, tool failure, task outcome and alert series are whole
+current task snapshots assigned ONCE to last-activity date, not event-day increments
+or historical outcome observations; disclose this distinction in server-owned ⓘ.
+Zero-task calendar slots have0 counts/Token bars and null ratios; missing counters
+on populated slots remain null. All spans first-to-last activity date, uses UTC
+Monday weeks beyond60dates. Tool ranking/model attribution retain current whole-task
+snapshot scope. No sum over active days may multiply task lifetime counters.

@@ -115,3 +115,9 @@ it('serves indexed requests, request-filtered records and request comparison met
  expect((await call('/api/task-comparison','POST',{a:['collected:s'],b:['collected:s'],ar:items[0]!.id,br:items[0]!.id})).status).toBe(400);
  expect((await call('/api/tasks/collected%3As/records?request=foreign')).status).toBe(400);
 });
+it('F4 overview extension returns daily metadata and validates filters under the existing local guards',async()=>{
+ const beforeRead=new Date(Date.now()-1000).toISOString();db.prepare("UPDATE sessions SET started_at=?,updated_at=? WHERE id='s'").run(beforeRead,beforeRead);
+ const response=await call('/api/task-kpis?overview=1&range=24h&provider=codex');expect(response.status).toBe(200);expect(response.headers['cache-control']).toBe('no-store');expect(response.body.current).toMatchObject({tasks:1,tokens:110,toolFailurePct:100});expect(response.body.daily).toHaveLength(2);expect(response.body.criteria).toHaveProperty('zh');expect(response.text).not.toMatch(/inputSummary|outputSummary|"raw"|never-read/);
+ const invalid=await call('/api/task-kpis?overview=1&range=99d');expect(invalid.status).toBe(400);expect(invalid.body.error).toMatchObject({code:'BAD_REQUEST'});
+ expect((await call('/api/task-kpis?overview=1','GET',undefined,{origin:'https://example.com'})).status).toBe(400);
+});

@@ -1,3 +1,4 @@
+import { BarList } from './charts/BarList.js';
 import { useMemo } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -78,7 +79,7 @@ export function CompareToolAnalysis({
     [leftEvents, rightEvents],
   );
   const max = Math.max(1, ...rows.map((r) => Math.max(r.lc, r.rc)));
-  const errorMax = Math.max(1, ...errors.map((e) => Math.max(e.lf, e.rf)));
+
 
   return (
     <div className="compare-tools">
@@ -86,12 +87,13 @@ export function CompareToolAnalysis({
         <thead>
           <tr>
             <th>{locale === 'zh' ? '工具' : 'Tool'}</th>
-            <th style={{ textAlign: 'right' }}>{t('compare.toolCall', locale)} L</th>
-            <th style={{ textAlign: 'right' }}>{t('compare.toolCall', locale)} R</th>
-            <th style={{ textAlign: 'right' }}>{t('compare.toolFailRate', locale)} L (n / %)</th>
-            <th style={{ textAlign: 'right' }}>{t('compare.toolFailRate', locale)} R (n / %)</th>
-            <th style={{ textAlign: 'right' }}>{t('compare.toolAvgDur', locale)} L</th>
-            <th style={{ textAlign: 'right' }}>{t('compare.toolAvgDur', locale)} R</th>
+            <th style={{ textAlign: 'right' }}>{t('compare.toolCall', locale)} A</th>
+            <th style={{ textAlign: 'right' }}>{t('compare.toolCall', locale)} B</th>
+            <th>Δ</th>
+            <th style={{ textAlign: 'right' }}>{t('compare.toolFailRate', locale)} A (n / %)</th>
+            <th style={{ textAlign: 'right' }}>{t('compare.toolFailRate', locale)} B (n / %)</th>
+            <th style={{ textAlign: 'right' }}>{t('compare.toolAvgDur', locale)} A</th>
+            <th style={{ textAlign: 'right' }}>{t('compare.toolAvgDur', locale)} B</th>
           </tr>
         </thead>
         <tbody>
@@ -101,15 +103,16 @@ export function CompareToolAnalysis({
               <td className="mono" style={{ textAlign: 'right' }}>
                 {row.lc}
                 <div className="ui-bar-meter" style={{ marginTop: 'var(--space-1)' }}>
-                  <div className="ui-bar-meter-fill" style={{ width: `${(row.lc / max) * 100}%`, background: 'var(--accent-emphasis)' }} />
+                  <div className="ui-bar-meter-fill" style={{ width: `${(row.lc / max) * 100}%`, background: 'var(--compare-a)' }} />
                 </div>
               </td>
               <td className="mono" style={{ textAlign: 'right' }}>
                 {row.rc}
                 <div className="ui-bar-meter" style={{ marginTop: 'var(--space-1)' }}>
-                  <div className="ui-bar-meter-fill" style={{ width: `${(row.rc / max) * 100}%`, background: 'var(--attention-emphasis)' }} />
+                  <div className="ui-bar-meter-fill" style={{ width: `${(row.rc / max) * 100}%`, background: 'var(--compare-b)' }} />
                 </div>
               </td>
+              <td className="mono">{row.rc-row.lc>0?'+':''}{row.rc-row.lc}</td>
               <td className="mono" style={{ textAlign: 'right', color: row.lf > 0 ? 'var(--danger-fg)' : undefined }}>
                 {row.lf} / {fmtRate(row.lf, row.lc)}
               </td>
@@ -125,22 +128,8 @@ export function CompareToolAnalysis({
       {errors.length > 0 && (
         <section className="compare-err-dist" aria-label={t('compare.toolErrorDist', locale)}>
           <h4>{t('compare.toolErrorDist', locale)}</h4>
-          <div className="compare-dist">
-            {errors.map((row) => (
-              <div key={row.tool} className="compare-dist-row">
-                <span className="mono compare-dist-label">{row.tool}</span>
-                <div className="compare-dist-bars">
-                  <div className="ui-bar-meter">
-                    <div className="ui-bar-meter-fill" style={{ width: `${(row.lf / errorMax) * 100}%`, background: 'var(--danger-emphasis)' }} />
-                  </div>
-                  <div className="ui-bar-meter">
-                    <div className="ui-bar-meter-fill" style={{ width: `${(row.rf / errorMax) * 100}%`, background: 'var(--attention-emphasis)' }} />
-                  </div>
-                </div>
-                <span className="mono compare-dist-count">{row.lf} / {row.rf}</span>
-              </div>
-            ))}
-          </div>
+          <BarList locale={locale} label={t('compare.toolErrorDist',locale)} items={errors.flatMap(row=>[{label:`${row.tool} · A`,value:row.lf,color:'var(--compare-a)'},{label:`${row.tool} · B`,value:row.rf,color:'var(--compare-b)'}]).filter(row=>row.value>0)}/>
+
         </section>
       )}
     </div>

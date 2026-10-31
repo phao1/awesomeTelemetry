@@ -134,7 +134,7 @@ export default function App() {
   const [settingsTarget,setSettingsTarget]=useState<LocalSettingsTarget>();
   const openSettingsTarget=useCallback((target:LocalSettingsTarget)=>{setSettingsTarget(target);setSettingsOpen(true);},[]);
   const [settingsRevision,setSettingsRevision]=useState(0);
-  const [agentsExpanded,setAgentsExpanded]=useState(false);
+
   const [intakeChannel, setIntakeChannel] = useState<'native' | 'proxy' | 'cdp' | 'frida' | 'import'>(()=>INITIAL_HASH?.channel??'native');
 
   const [teamHash, setTeamHash] = useState<TeamHashState>(() =>
@@ -727,7 +727,12 @@ export default function App() {
       ...(view === 'mission'||view==='overview' ? { range: missionRange } : {}),
       ...(view==='intake'?{channel:intakeChannel}:{}),
     };
-    history.replaceState(null, '', serializeHash(state));
+    const nextHash=serializeHash(state);
+    if(view==='overview'){
+      const current=new URLSearchParams(window.location.hash.split('?')[1]),next=new URLSearchParams(nextHash.split('?')[1]);
+      for(const key of ['overviewRange','overviewProvider','overviewTab'])if(current.has(key))next.set(key,current.get(key)!);
+      history.replaceState(null,'',nextHash.split('?')[0]+'?'+next);
+    }else history.replaceState(null, '', nextHash);
   }, [view, selectedKey, providerFilter, statusFilter, sessionQ, sessionRange, selectedTurn, compareLeft, compareRight, missionRange, teamHash, taskRoute, intakeChannel]);
 
   // REQ-024：hashchange → 解析并应用（脏 hash 回落默认视图，不抛错）
@@ -805,7 +810,7 @@ export default function App() {
         <LanguageToggle locale={locale} onChange={setLocale}/>
       </AppSidebar>
       <div className="app-workspace">
-      {view !== 'task' && <PageHeader title={view==='ui-kit'?'UI Kit':view==='settings'?taskCopy(locale).settings:view==='overview'?(locale==='zh'?'概览':'Overview'):view==='compare'?(locale==='zh'?'对比':'Compare'):view==='intake'?taskCopy(locale).intake:view==='benchmark'?(locale==='zh'?'评测中心':'Benchmarks'):t(`view.${view}` as Parameters<typeof t>[0],locale)} locale={locale} onSearch={openPalette} onMenu={()=>setMobileNav(true)}/>}
+      {view!=='task'&&view!=='overview'&&view!=='compare'&&<PageHeader title={view==='ui-kit'?'UI Kit':view==='settings'?taskCopy(locale).settings:view==='intake'?taskCopy(locale).intake:view==='benchmark'?(locale==='zh'?'评测中心':'Benchmarks'):t(`view.${view}` as Parameters<typeof t>[0],locale)} locale={locale} onSearch={openPalette} onMenu={()=>setMobileNav(true)}/> }
       {view==='ui-kit'&&<Suspense fallback={<PageSkeleton locale={locale} />}><UiKit locale={locale} theme={theme}/></Suspense>}
       {paletteLoadError && <div className="workbench-error" role="alert">
         <span>{t('workbench.searchUnavailable', locale)}</span>
@@ -1059,7 +1064,7 @@ export default function App() {
         <div className="view-body">
           <main className="main">
             <Suspense fallback={<PageSkeleton locale={locale} />}>
-            <TaskComparison locale={locale} route={taskRoute} onRoute={setTaskRoute} invalidateKey={taskChanges.version}
+            <TaskComparison onMenu={()=>setMobileNav(true)} onSearch={openPalette} locale={locale} route={taskRoute} onRoute={setTaskRoute} invalidateKey={taskChanges.version}
               onLocate={(task,event,request)=>{setTaskRoute({...taskRoute,task,request,origin:task.startsWith('imported:')?'imported':'collected',member:'all',mode:'trajectory',event:event??null,health:undefined,q:undefined,from:undefined,to:undefined,errors:undefined,compareImport:undefined});switchView('task');}} />
             </Suspense>
           </main>
@@ -1095,15 +1100,12 @@ export default function App() {
       {(view === 'mission'||view==='overview') && (
         <div className="view-body">
           <div className="overview-workspace">
-          <OverviewKpis onConfigureThresholds={()=>openSettingsTarget({section:'alert-thresholds'})} locale={locale} invalidateKey={missionInvalidateKey+taskChanges.version} onNavigate={patch=>{setTaskRoute({...parseTaskRoute('#/task'),...patch,task:null,homeRange:'7d'});setProviderFilter([]);switchView('task');}}/>
-          <details className="overview-agents" onToggle={e=>setAgentsExpanded(e.currentTarget.open)}><summary>{locale==='zh'?'Agent 概览':'Agent overview'}</summary>{agentsExpanded&&<AgentOverview locale={locale} sessions={sessions} onCompareProviders={startCompare} onBrowseSessions={provider=>{setProviderFilter(provider?[provider]:[]);setTaskRoute({...taskRoute,task:null});switchView('task');}} onSelectSession={key=>{setTaskRoute({...taskRoute,task:'collected:'+key,origin:'collected',member:'main',event:null});switchView('task');}}/>}</details>
-<Suspense fallback={<PageSkeleton locale={locale} />}>
-          <MissionControl key={settingsRevision}
-            locale={locale}
-            initialRange={missionRange}
-            onRangeChange={setMissionRange}
-            invalidateKey={missionInvalidateKey}
-          /></Suspense>
+          <OverviewKpis onSearch={openPalette} onMenu={()=>setMobileNav(true)} onConfigureThresholds={()=>openSettingsTarget({section:'alert-thresholds'})} locale={locale} invalidateKey={missionInvalidateKey+taskChanges.version} onNavigate={patch=>{setTaskRoute({...parseTaskRoute('#/task'),...patch});setProviderFilter(patch.homeProvider?[patch.homeProvider]:[]);switchView('task');}}>
+            <Suspense fallback={<PageSkeleton locale={locale}/>}>
+              <AgentOverview locale={locale} sessions={sessions} onCompareProviders={startCompare} onBrowseSessions={provider=>{setProviderFilter(provider?[provider]:[]);setTaskRoute({...taskRoute,task:null});switchView('task');}} onSelectSession={key=>{setTaskRoute({...taskRoute,task:'collected:'+key,origin:'collected',member:'main',event:null});switchView('task');}}/>
+              <MissionControl key={settingsRevision} locale={locale} initialRange={missionRange} onRangeChange={setMissionRange} invalidateKey={missionInvalidateKey}/>
+            </Suspense>
+          </OverviewKpis>
           </div>
         </div>
       )}

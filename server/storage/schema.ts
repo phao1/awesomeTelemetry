@@ -608,6 +608,7 @@ CREATE INDEX IF NOT EXISTS idx_events_task_results ON events(session_id,kind,sta
 CREATE INDEX IF NOT EXISTS idx_events_task_context ON events(session_id,kind,model,tokens_json);
 CREATE INDEX IF NOT EXISTS idx_events_task_tools ON events(session_id,kind,input_len);
 CREATE INDEX IF NOT EXISTS idx_events_task_errors ON events(session_id,status);
+CREATE INDEX IF NOT EXISTS idx_events_session_time ON events(session_id,started_at);
 CREATE INDEX IF NOT EXISTS idx_events_session_seq    ON events(session_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_events_session_phase  ON events(session_id, phase);
 CREATE INDEX IF NOT EXISTS idx_events_kind           ON events(kind);

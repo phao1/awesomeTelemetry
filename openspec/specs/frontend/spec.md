@@ -1120,3 +1120,20 @@ REQ-F3-LIST: docs/design/ui-design-system.md §7.2 supersedes the Phase B sideba
 REQ-F3-DETAIL: §7.3 supersedes the old detail header/summary/tab presentation. Task breadcrumbs, adjacent-page-task navigation, copy feedback, a guarded persistent hidden-by-default task panel, request segmentation/search, nine-item MetricStrip with unknown/partial coverage, underline tabs, raw-event DataTable and architecture cards retain source provenance and lazy evidence ownership. Execution trajectory and conversation internals and their interactions remain unchanged.
 
 REQ-F3-HEALTH: The existing explicit health operations use an accessible right Sheet with scope/generation, severity counts, coverage Meter, complete finding/evidence actions, and collapsed report metadata. Over-limit tasks expose request choices directly. Cancellation, deadlines, stale-source suppression, deep preview/confirmation and saved reports retain their existing contracts. No new collection, polling or per-row body reads.
+
+## Phase F4
+REQ-F4-001: Overview uses design §7.1, six StatCards, UTC daily charts and server-owned coverage. Agent-specific widgets remain in an Agent perspective tab, without role/sidebar/disclosure navigation. Unknown data is never zero-filled. F4 overview URL parameters persist filters.
+REQ-F4-002: Comparison uses design §7.4, visible searchable paged MultiCombobox selectors, request Selects, swap, recent/export menus, verdict cards, unknown Accordion, health pill tabs and existing evidence links. TC comparability guards remain unchanged. Tool intervals remain recorded observations.
+
+REQ-F4-003 (browser review): Task pickers retain early results across an unchanged
+search debounce, reset only for changed queries, restore on cleared search, and
+show skeleton options while reading. Routes close owned popovers. Numeric metric
+columns align right with exact hover/compact Token text; row labels have no fill.
+Token composition uses two normalized horizontal fixed-color component bars plus
+four component rows (A/B/delta/ratio), preserving comparability guards and cache
+meters. One process card owns selectors/coverage pills; conventions/investigation
+are Accordions, timelines use A/B subcards. No duplicated Token rings; failure
+rankings use BarList. Shared select/chart copy follows locale independently of
+UiKit; null dates break lines, isolated points show values, bars cap40SVG units.
+Selected chips may retain off-page labels in the option registry, but hidden
+registry entries never appear as search results or crowd out the paged list.

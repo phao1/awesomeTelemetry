@@ -1,3 +1,5 @@
+import type { Locale } from '../../i18n.js';
+import { useComponentCopy } from '../ui/component-copy.js';
 import { EmptyState } from '../ui/States.js';
 import { IconDashboard } from '../icons/index.js';
 /** REQ-119：可复用雷达图 —— 从 CompareCharts.tsx 提取，props 标准化为 N 个系列。 */
@@ -10,6 +12,7 @@ export interface RadarAxis {
 }
 
 export interface RadarChartProps {
+  locale?: Locale;
   data: RadarAxis[];
   /** 每个系列的描边色（token 变量字符串，如 `var(--accent-fg)`）。 */
   colors: string[];
@@ -30,13 +33,15 @@ const RINGS = [0.25, 0.5, 0.75, 1];
  * 归一化由调用方完成 —— 组件只负责几何与绘制，颜色全部来自 token 变量。
  */
 export function RadarChart({
+  locale,
   data,
   colors,
   fills,
   size = 220,
   ariaLabel = 'radar chart',
 }: RadarChartProps): React.JSX.Element {
-  if(!data.length)return <EmptyState icon={<IconDashboard/>} title="暂无数据 / No data"/>;
+  const copy=useComponentCopy(locale);
+  if(!data.length)return <EmptyState icon={<IconDashboard/>} title={copy.empty}/>;
   const n = data.length;
   const pointAt = (value: number, i: number): [number, number] => {
     const angle = (Math.PI * 2 * i) / n - Math.PI / 2;

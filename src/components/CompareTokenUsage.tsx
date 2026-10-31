@@ -31,7 +31,7 @@ export function CompareTokenUsage({usage,estimates,locale,visual='rings',pending
   const sides={left:view('left'),right:view('right')};
   const fmt=(value:number|null):string=>value===null?'—':value.toLocaleString(locale);
   const mark=(side:Side):'L'|'R'=>side==='left'?'L':'R';
-  const ring=(side:Side,radius:number):React.JSX.Element|null=>sides[side].drawable?<DonutRing
+  const ring=(side:Side,radius:number):React.JSX.Element|null=>sides[side].drawable?<DonutRing gap={0}
     slices={PARTS.map(part=>({label:part,value:sides[side].values[part]!,tone:TONES[part]}))}
     cx={120} cy={110} r={radius} thickness={12} total={sides[side].total!}
     ariaLabelPrefix={mark(side)} segmentClassName="compare-chart-donut-seg"
