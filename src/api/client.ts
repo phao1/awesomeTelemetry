@@ -402,7 +402,7 @@ export const api = {
       body: JSON.stringify({ provider, force }),
     });
   },
-  compare(leftKey: string, rightKey: string, signal?: AbortSignal): Promise<{
+  compare(leftKey: string, rightKey: string, signal?: AbortSignal, requests?: {leftRequest?:string;rightRequest?:string}): Promise<{
     left: SessionDetailResponse;
     right: SessionDetailResponse;
     speed: { left: SpeedMetrics; right: SpeedMetrics };
@@ -410,7 +410,7 @@ export const api = {
     return fetchJson('/compare', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ leftKey, rightKey }),
+      body: JSON.stringify({ leftKey, rightKey,...requests }),
       signal,
     });
   },

@@ -1,3 +1,5 @@
+import { Disclosure } from './ui/PageControls.js';
+import { Button } from './ui/Button.js';
 import { scanTimingReason, scanTimingValue } from '../core/scan-timing.js';
 import type { ScanTimingMetric } from '../core/scan-timing.js';
 import { useId, useMemo, useRef, useState } from 'react';
@@ -581,7 +583,7 @@ export function CompareKPI({
     const item=group.find(entry=>entry.key===expanded&&entry.drill===true);
     return item===undefined?null:<section className="compare-kpi-expanded" id={panelId} aria-label={`${item.label} · ${t('compare.kpiDrill',locale)}`}
       onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closeDetails();}}}>
-      <header><strong>{item.label}</strong><button type="button" className="btn ui-btn-sm" onClick={closeDetails}>{t('common.close',locale)}</button></header>
+      <header><strong>{item.label}</strong><Button type="button" className="ui-btn-sm"  onClick={closeDetails}>{t('common.close',locale)}</Button></header>
       <KpiDrilldown item={item} result={result} locale={locale} onOpenRun={onOpenRun}/>
     </section>;
   };
@@ -593,10 +595,10 @@ export function CompareKPI({
         {(la.unknownStatuses > 0 || ra.unknownStatuses > 0) && <p role="status">{t('compare.activity.unknownStatuses',locale)} · L {la.unknownStatuses} / R {ra.unknownStatuses}</p>}
       </div>
       <div className="compare-kpis compare-kpi-primary">{items.slice(0,6).map(renderItem)}{expandedPanel(items.slice(0,6))}</div>
-      <details className="compare-kpi-more">
-        <summary>{t('compare.activity.more',locale)} · {items.length - 6}</summary>
+      <Disclosure className="compare-kpi-more" title={<>{t('compare.activity.more',locale)} · {items.length - 6}</>}>
+
         <div className="compare-kpis">{items.slice(6).map(renderItem)}{expandedPanel(items.slice(6))}</div>
-      </details>
+      </Disclosure>
     </section>
   );
 }

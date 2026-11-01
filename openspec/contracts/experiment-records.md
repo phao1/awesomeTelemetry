@@ -97,3 +97,6 @@ Lists render20 records/page; run selector searches parent's loaded metadata with
 at most50 matches. Explicit JSON download exports the loaded manual snapshot only;
 no cloud upload. New UI copy is local bilingual dictionary due to file whitelist.
 No fee/performance/soak workflows, automatic scoring, experiment runner or scheduling.
+
+Phase F1: monetary UI/report fields and alert rules are removed; raw evidence
+remains stored faithfully. Token/cacheHitRate follows data-model F1-001/002.

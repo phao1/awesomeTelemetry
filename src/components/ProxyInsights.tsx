@@ -1,3 +1,4 @@
+import { Button } from './ui/Button.js';
 import { useMemo } from 'react';
 
 import type { ProxyProtocolAnalysis } from '../core/trace-types.js';
@@ -9,7 +10,7 @@ export function ProxyInsights({ analysis, locale, onInspect }: {
   analysis: ProxyProtocolAnalysis; locale: Locale; onInspect: (key: string) => void;
 }) {
   const insights = useMemo(() => deriveProxyInsights(analysis), [analysis]);
-  const evidence = (key: string, path: string) => <button className="btn" type="button" onClick={() => onInspect(key)} aria-label={t('proxy.insights.inspect', locale) + ': ' + path}><code>{path}</code></button>;
+  const evidence = (key: string, path: string) => <Button  type="button" onClick={() => onInspect(key)} aria-label={t('proxy.insights.inspect', locale) + ': ' + path}><code>{path}</code></Button>;
   return (
     <section aria-label={t('proxy.insights.title', locale)}>
       <h3>{t('proxy.insights.title', locale)}</h3>

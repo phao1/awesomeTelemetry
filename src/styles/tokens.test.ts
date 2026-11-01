@@ -154,7 +154,7 @@ describe('Design Tokens 契约断言（design-tokens.md §9）', () => {
       const canvas = get('--canvas-default');
       expect(contrast(get('--fg-default'), canvas), `${theme} fg-default`).toBeGreaterThanOrEqual(12);
       expect(contrast(get('--fg-muted'), canvas), `${theme} fg-muted`).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(get('--fg-subtle'), canvas), `${theme} fg-subtle`).toBeGreaterThanOrEqual(3);
+      expect(contrast(get('--fg-subtle'), canvas), `${theme} fg-subtle`).toBeGreaterThanOrEqual(4.5);
       for (const group of ['accent', 'success', 'attention', 'danger', 'done', 'neutral']) {
         expect(contrast(get(`--${group}-fg`), canvas), `${theme} ${group}-fg`).toBeGreaterThanOrEqual(4.5);
         expect(
@@ -201,29 +201,12 @@ describe('Design Tokens 契约断言（design-tokens.md §9）', () => {
     expect(base).toContain('transition-duration: 0ms');
   });
 
-  it('T6: 小字号（xs/sm）文本不得使用 --fg-subtle（AA 4.5:1 回归，senior-frontend）', () => {
-    // --fg-subtle 在 canvas-default 上仅约 4.12:1，达不到 AA 4.5:1；
-    // 小字号文本必须用 --fg-muted。例外：JSON null 字面量（inspector-text 文档指定）
-    // 与纯装饰箭头（finding-arrow，无字号声明）。
-    const allowlist = new Set(['.inspector-json-null', '.finding-arrow']);
-    const offenders: string[] = [];
-    for (const path of cssFiles()) {
-      const source = readFileSync(path, 'utf8');
-      const blocks = source.split('}');
-      for (const block of blocks) {
-        if (!block.includes('color: var(--fg-subtle)')) {
-          continue;
-        }
-        if (!/(font-size|line-height): var\(--text-(xs|sm)\)/.test(block)) {
-          continue;
-        }
-        const selector = block.split('{')[0]?.trim() ?? '';
-        if ([...allowlist].some((name) => selector.includes(name))) {
-          continue;
-        }
-        offenders.push(`${relative(stylesDir, path)} :: ${selector}`);
-      }
+  it('F2: required layout/chart token values exist in both themes', () => {
+    for (const block of blocks) {
+      for (const key of ['control-height-lg','sidebar-width','sidebar-width-collapsed','page-header-height','page-gutter','table-row-height','table-row-height-dense','radius-xl','shadow-xs','compare-a','compare-b','token-input','token-output','token-cache-read','token-cache-write',...Array.from({length:8},(_,i)=>`chart-${i+1}`)]) expect(block.tokens.has(`--${key}`),key).toBe(true);
+      expect(block.tokens.get('--control-height-md')).toBe('32px');
+      expect(block.tokens.get('--sidebar-width')).toBe('232px');
+      expect(block.tokens.get('--sidebar-width-collapsed')).toBe('56px');
     }
-    expect(offenders).toEqual([]);
   });
 });

@@ -216,7 +216,7 @@ describe('REQ-009 Agent Overview 服务端聚合', () => {
     expect(codex?.tokenInput).toBe(10);
     expect(codex?.tokenOutput).toBe(20);
     expect(codex?.tokenTotal).toBe(30);
-    expect(codex?.costUsd).toBeCloseTo(0.05);
+    expect(codex).not.toHaveProperty('costUsd');
     expect(codex?.avgWallClockMs).toBeCloseTo(3000);
     expect(codex?.avgToolDurationMs).toBeCloseTo(100);
     expect(codex?.errorRate).toBeCloseTo(1 / 3);

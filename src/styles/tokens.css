@@ -9,44 +9,44 @@
   /* §1 主题：未显式选择时跟随系统，无偏好按 dark；:root 即 dark 值 */
 
   /* §2.1 Canvas（背景层级，由深到浅） */
-  --canvas-inset: #010409;
-  --canvas-default: #0d1117;
-  --canvas-subtle: #161b22;
-  --canvas-raised: #1c2128;
-  --canvas-overlay: #21262d;
-  --canvas-overlay-fg: #e6edf3;
+  --canvas-inset: #09090b;
+  --canvas-default: #111113;
+  --canvas-subtle: #1a1a1e;
+  --canvas-raised: #141417;
+  --canvas-overlay: #1a1a1e;
+  --canvas-overlay-fg: #f4f4f5;
 
   /* §2.2 Border */
-  --border-default: #30363d;
-  --border-muted: #21262d;
-  --border-strong: #6e7681;
+  --border-default: #27272a;
+  --border-muted: #1f1f23;
+  --border-strong: #3f3f46;
 
   /* §2.3 Foreground */
-  --fg-default: #e6edf3;
-  --fg-muted: #8b949e;
-  --fg-subtle: #6e7681;
+  --fg-default: #f4f4f5;
+  --fg-muted: #a1a1aa;
+  --fg-subtle: #8b8b94;
   --fg-on-emphasis: #ffffff;
 
   /* §2.4 语义色（-fg / -emphasis / -subtle） */
   /* B6（calibrate-tokens §9）：品牌色 teal，取值直接来自契约表（WCAG 实测
      --accent-fg dark #2dd4bf 对比 10.17、light #0f766e 对比 5.47；
      --accent-emphasis 白字其上 5.47；--phase-implement / --seg-model 不动） */
-  --accent-fg: #2dd4bf;
-  --accent-emphasis: #0f766e;
-  --accent-subtle: rgba(45, 212, 191, 0.15);
-  --success-fg: #3fb950;
+  --accent-fg: #a5b4fc;
+  --accent-emphasis: #5850ec;
+  --accent-subtle: rgba(129,140,248,0.14);
+  --success-fg: #4ade80;
   --success-emphasis: #238636;
   --success-subtle: rgba(46, 160, 67, 0.15);
-  --attention-fg: #d29922;
+  --attention-fg: #fbbf24;
   --attention-emphasis: #9e6a03;
   --attention-subtle: rgba(187, 128, 9, 0.15);
-  --danger-fg: #f85149;
+  --danger-fg: #f87171;
   --danger-emphasis: #da3633;
   --danger-subtle: rgba(248, 81, 73, 0.15);
-  --done-fg: #ab7df8;
+  --done-fg: #c4b5fd;
   --done-emphasis: #8957e5;
   --done-subtle: rgba(163, 113, 247, 0.15);
-  --neutral-fg: #8b949e;
+  --neutral-fg: #a1a1aa;
   --neutral-emphasis: #6e7681;
   --neutral-subtle: rgba(110, 118, 129, 0.15);
 
@@ -114,10 +114,8 @@
   --provider-workbuddy-subtle: rgba(139, 148, 158, 0.15);
 
   /* §3 字体 */
-  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
-    "PingFang SC", "Microsoft YaHei", Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-    "Liberation Mono", "Courier New", monospace;
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   /* §3.1 字号刻度（size / line-height）
      全刻度乘 --ui-scale：头部 A− / A+ 从此对整个界面生效，
@@ -127,11 +125,11 @@
   --text-xs: calc(12px * var(--ui-scale));
   --leading-xs: calc(16px * var(--ui-scale));
   --text-sm: calc(12px * var(--ui-scale));
-  --leading-sm: calc(18px * var(--ui-scale));
+  --leading-sm: calc(16px * var(--ui-scale));
   --text-base: calc(13px * var(--ui-scale));
   --leading-base: calc(20px * var(--ui-scale));
   --text-md: calc(14px * var(--ui-scale));
-  --leading-md: calc(21px * var(--ui-scale));
+  --leading-md: calc(20px * var(--ui-scale));
   --text-lg: calc(16px * var(--ui-scale));
   --leading-lg: calc(24px * var(--ui-scale));
   --text-xl: calc(20px * var(--ui-scale));
@@ -157,9 +155,9 @@
   --space-10: 40px;
 
   /* §4.2 圆角 */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
   --radius-full: 999px;
 
   /* §4.3 固定尺寸（布局骨架，虚拟滚动 itemHeight 输入，必须为常量） */
@@ -173,9 +171,9 @@
   --row-lg: 44px;
 
   /* §5 阴影（只用于浮层：popover/dropdown/modal/toast/command palette） */
-  --shadow-sm: 0 1px 0 rgba(1, 4, 9, 0.2);
-  --shadow-md: 0 8px 24px rgba(1, 4, 9, 0.6);
-  --shadow-lg: 0 16px 32px rgba(1, 4, 9, 0.85);
+  --shadow-sm: 0 1px 3px rgba(16,24,40,0.4), 0 1px 2px rgba(16,24,40,0.35);
+  --shadow-md: 0 12px 24px -6px rgba(16,24,40,0.6), 0 2px 6px rgba(16,24,40,0.4);
+  --shadow-lg: 0 24px 48px -12px rgba(16,24,40,0.8);
 
   /* §5.1 层叠顺序 */
   --z-sticky: 10;
@@ -205,8 +203,8 @@
   --modal-width-sm: 320px;
   --modal-width-md: 480px;
   --modal-width-lg: 720px;
-  --control-height-sm: 24px;
-  --control-height-md: 28px;
+  --control-height-sm: 28px;
+  --control-height-md: 32px;
   --toast-max-width: 320px;
   --compare-timeline-height: 320px;
   --dot-size: 8px;
@@ -222,47 +220,84 @@
   --dims-card-min: 280px;
   --chart-min: 260px;
   --speed-card-min: 240px;
+  /* Task health table: desktop columns and bounded scroll viewport. */
+  --task-health-list-min-width: 1060px;
+  --task-health-scroll-min-height: 240px;
+  --radius-xl: 16px;
+  --control-height-lg: 36px;
+  --sidebar-width: 232px;
+  --sidebar-width-collapsed: 56px;
+  --page-header-height: 56px;
+  --page-gutter: 24px;
+  --table-row-height: 40px;
+  --table-control-width: 40px;
+  --table-row-height-dense: 32px;
+  --chart-height: 220px;
+  --sparkline-height: 32px;
+  --stat-sparkline-height: 40px;
+  --tooltip-width: 280px;
+  --sheet-width: 640px;
+  --content-max-width: 1600px;
+  --text-3xl: calc(28px * var(--ui-scale));
+  --chart-axis: var(--fg-subtle);
+  --token-input: var(--chart-1);
+  --token-output: var(--chart-2);
+  --token-cache-read: var(--chart-5);
+  --token-cache-write: var(--chart-6);
+  --tooltip-delay: 300ms;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  --chart-1: #818cf8;
+  --chart-2: #2dd4bf;
+  --chart-3: #fbbf24;
+  --chart-4: #f472b6;
+  --chart-5: #38bdf8;
+  --chart-6: #a78bfa;
+  --chart-7: #a3e635;
+  --chart-8: #94a3b8;
+  --chart-grid: #1f1f23;
+  --compare-a: #94a3b8;
+  --compare-b: #818cf8;
+  --shadow-xs: 0 1px 2px rgba(16,24,40,0.35);
 }
-
 [data-theme="light"] {
   /* §2.1 */
-  --canvas-inset: #f6f8fa;
+  --canvas-inset: #f6f7f9;
   --canvas-default: #ffffff;
-  --canvas-subtle: #f6f8fa;
+  --canvas-subtle: #f3f4f6;
   --canvas-raised: #ffffff;
   --canvas-overlay: #ffffff;
-  --canvas-overlay-fg: #1f2328;
+  --canvas-overlay-fg: #111827;
 
   /* §2.2 */
-  --border-default: #d1d9e0;
-  --border-muted: #e4e8ec;
-  --border-strong: #8c959f;
+  --border-default: #e5e7eb;
+  --border-muted: #eef0f3;
+  --border-strong: #d1d5db;
 
   /* §2.3 */
-  --fg-default: #1f2328;
-  --fg-muted: #59636e;
-  --fg-subtle: #818b98;
+  --fg-default: #111827;
+  --fg-muted: #4b5563;
+  --fg-subtle: #6b7280;
   --fg-on-emphasis: #ffffff;
 
   /* §2.4 */
-  --accent-fg: #0f766e;
-  --accent-emphasis: #0f766e;
-  --accent-subtle: rgba(15, 118, 110, 0.1);
-  --success-fg: #1a7f37;
-  --success-emphasis: #1f883d;
-  --success-subtle: rgba(26, 127, 55, 0.1);
-  --attention-fg: #9a6700;
-  --attention-emphasis: #9e6a03;
-  --attention-subtle: rgba(154, 103, 0, 0.1);
-  --danger-fg: #d1242f;
-  --danger-emphasis: #cf222e;
-  --danger-subtle: rgba(209, 36, 47, 0.1);
-  --done-fg: #8250df;
-  --done-emphasis: #8250df;
-  --done-subtle: rgba(130, 80, 223, 0.1);
-  --neutral-fg: #59636e;
-  --neutral-emphasis: #6e7681;
-  --neutral-subtle: rgba(89, 99, 110, 0.1);
+  --accent-fg: #4f46e5;
+  --accent-emphasis: #4f46e5;
+  --accent-subtle: rgba(79,70,229,0.08);
+  --success-fg: #15803d;
+  --success-emphasis: #15803d;
+  --success-subtle: rgba(22,163,74,0.10);
+  --attention-fg: #b45309;
+  --attention-emphasis: #b45309;
+  --attention-subtle: rgba(217,119,6,0.10);
+  --danger-fg: #dc2626;
+  --danger-emphasis: #dc2626;
+  --danger-subtle: rgba(220,38,38,0.08);
+  --done-fg: #7c3aed;
+  --done-emphasis: #7c3aed;
+  --done-subtle: rgba(124,58,237,0.08);
+  --neutral-fg: #4b5563;
+  --neutral-emphasis: #6b7280;
+  --neutral-subtle: rgba(107,114,128,0.10);
 
   /* §2.8 */
   --role-system-fg: #d1242f;
@@ -327,21 +362,19 @@
   --provider-workbuddy-subtle: rgba(89, 99, 110, 0.1);
 
   /* §3 字体（与主题无关，键必须存在） */
-  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
-    "PingFang SC", "Microsoft YaHei", Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-    "Liberation Mono", "Courier New", monospace;
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   /* §3.1 */
   --ui-scale: 1;
   --text-xs: calc(12px * var(--ui-scale));
   --leading-xs: calc(16px * var(--ui-scale));
   --text-sm: calc(12px * var(--ui-scale));
-  --leading-sm: calc(18px * var(--ui-scale));
+  --leading-sm: calc(16px * var(--ui-scale));
   --text-base: calc(13px * var(--ui-scale));
   --leading-base: calc(20px * var(--ui-scale));
   --text-md: calc(14px * var(--ui-scale));
-  --leading-md: calc(21px * var(--ui-scale));
+  --leading-md: calc(20px * var(--ui-scale));
   --text-lg: calc(16px * var(--ui-scale));
   --leading-lg: calc(24px * var(--ui-scale));
   --text-xl: calc(20px * var(--ui-scale));
@@ -367,9 +400,9 @@
   --space-10: 40px;
 
   /* §4.2 */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
   --radius-full: 999px;
 
   /* §4.3 */
@@ -383,9 +416,9 @@
   --row-lg: 44px;
 
   /* §5 */
-  --shadow-sm: 0 1px 0 rgba(31, 35, 40, 0.04);
-  --shadow-md: 0 8px 24px rgba(66, 74, 83, 0.12);
-  --shadow-lg: 0 16px 32px rgba(66, 74, 83, 0.2);
+  --shadow-sm: 0 1px 3px rgba(16,24,40,0.08), 0 1px 2px rgba(16,24,40,0.04);
+  --shadow-md: 0 12px 24px -6px rgba(16,24,40,0.12), 0 2px 6px rgba(16,24,40,0.06);
+  --shadow-lg: 0 24px 48px -12px rgba(16,24,40,0.24);
 
   /* §5.1 */
   --z-sticky: 10;
@@ -415,8 +448,8 @@
   --modal-width-sm: 320px;
   --modal-width-md: 480px;
   --modal-width-lg: 720px;
-  --control-height-sm: 24px;
-  --control-height-md: 28px;
+  --control-height-sm: 28px;
+  --control-height-md: 32px;
   --toast-max-width: 320px;
   --compare-timeline-height: 320px;
   --dot-size: 8px;
@@ -432,4 +465,42 @@
   --dims-card-min: 280px;
   --chart-min: 260px;
   --speed-card-min: 240px;
+  /* Task health table: desktop columns and bounded scroll viewport. */
+  --task-health-list-min-width: 1060px;
+  --task-health-scroll-min-height: 240px;
+  --radius-xl: 16px;
+  --control-height-lg: 36px;
+  --sidebar-width: 232px;
+  --sidebar-width-collapsed: 56px;
+  --page-header-height: 56px;
+  --page-gutter: 24px;
+  --table-row-height: 40px;
+  --table-control-width: 40px;
+  --table-row-height-dense: 32px;
+  --chart-height: 220px;
+  --sparkline-height: 32px;
+  --stat-sparkline-height: 40px;
+  --tooltip-width: 280px;
+  --sheet-width: 640px;
+  --content-max-width: 1600px;
+  --text-3xl: calc(28px * var(--ui-scale));
+  --chart-axis: var(--fg-subtle);
+  --token-input: var(--chart-1);
+  --token-output: var(--chart-2);
+  --token-cache-read: var(--chart-5);
+  --token-cache-write: var(--chart-6);
+  --tooltip-delay: 300ms;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  --chart-1: #6366f1;
+  --chart-2: #14b8a6;
+  --chart-3: #f59e0b;
+  --chart-4: #ec4899;
+  --chart-5: #0ea5e9;
+  --chart-6: #8b5cf6;
+  --chart-7: #84cc16;
+  --chart-8: #64748b;
+  --chart-grid: #eef0f3;
+  --compare-a: #64748b;
+  --compare-b: #4f46e5;
+  --shadow-xs: 0 1px 2px rgba(16,24,40,0.05);
 }

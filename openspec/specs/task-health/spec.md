@@ -136,3 +136,13 @@ insufficient samples say 未校准. A contrary result blocks further work.
 G4.1, G4.4, G4.5, G4.6; G8.1; G9.1, G9.2; G10.5;
 G11.1, G11.3, G11.6, G11.9, G11.10, G11.15, G11.18;
 G12.1, G12.2, G12.4; G13.1–G13.6 (task health additions).
+
+
+Phase A presentation amendment: public-projection limitations use
+`partial_public_projection`, mapped in zh/en along with old saved English prose.
+Unknown codes remain readable; no rule-version change because calculations are
+unchanged. Empty deep rejected sections are omitted from UI and MD/HTML exports.
+
+
+Phase E: implement task-requests.md TR-001–005 and task-health.md TH-009.
+This additive authorization supersedes the old no-new-fields restriction.

@@ -35,7 +35,7 @@ async function click(container: Element, text: string) {
 }
 function input(container: Element, index: number, value: string) {
   act(() => {
-    const field = container.querySelectorAll('input')[index]!;
+    const field = container.querySelectorAll('input:not([type=hidden])')[index]!;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, value);
     field.dispatchEvent(new Event('input', { bubbles: true }));
   });
@@ -54,7 +54,7 @@ afterEach(() => {
 describe('explicit OTLP export browser workflow', () => {
   it('does not read on mount, disclosure, locale change or invalidation', () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); const f = render();
-    act(() => f.container.querySelector('summary')!.click());
+    act(() => f.container.querySelector<HTMLButtonElement>('.ui-accordion > button')!.click());
     act(() => f.root.render(<LinkedTraceExportPanel {...f.props} locale="zh" invalidateKey={1} />));
     expect(fetcher).not.toHaveBeenCalled(); expect(f.container.textContent).toContain('不上传'); expect(f.container.textContent).toContain('观测点');
   });
@@ -66,16 +66,16 @@ describe('explicit OTLP export browser workflow', () => {
     expect(f.container.textContent).toContain('Partial retained native metadata'); expect(f.container.textContent).toContain('saving is not confirmed');
     expect(document.querySelector('a')).toBeNull();
     await click(f.container, 'Select next native page'); expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(f.container.querySelector('input')!.value).toBe('1'); expect(revokeUrl).toHaveBeenCalledWith('blob:synthetic-export');
+    expect(f.container.querySelector<HTMLInputElement>('input:not([type=hidden])')!.value).toBe('1'); expect(revokeUrl).toHaveBeenCalledWith('blob:synthetic-export');
     expect(f.container.textContent).not.toContain('Download requested');
   });
   it('requires canonical bounded page input and does not send an invalid request', () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); const f = render();
     for (const value of ['-1', '01', '1e2', '1000001', '']) {
-      input(f.container, 0, value); expect(f.container.querySelector('button')!.disabled).toBe(true); expect(f.container.querySelector('[role=alert]')).not.toBeNull();
+      input(f.container, 0, value); expect(f.container.querySelector<HTMLButtonElement>('.linked-trace-export-actions button')!.disabled).toBe(true); expect(f.container.querySelector('[role=alert]')).not.toBeNull();
     }
-    input(f.container, 0, '0'); input(f.container, 1, '201'); expect(f.container.querySelector('button')!.disabled).toBe(true);
-    input(f.container, 1, '1'); expect(f.container.querySelector('button')!.disabled).toBe(false); expect(fetcher).not.toHaveBeenCalled();
+    input(f.container, 0, '0'); input(f.container, 1, '201'); expect(f.container.querySelector<HTMLButtonElement>('.linked-trace-export-actions button')!.disabled).toBe(true);
+    input(f.container, 1, '1'); expect(f.container.querySelector<HTMLButtonElement>('.linked-trace-export-actions button')!.disabled).toBe(false); expect(fetcher).not.toHaveBeenCalled();
   });
   it('shows safe error codes with explicit retry and clears stale errors on success', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'SESSION_NOT_FOUND', message: 'SECRET INTERNAL TEXT' } }), { status: 404, headers: { 'content-type': 'application/json' } }))
@@ -97,7 +97,7 @@ describe('explicit OTLP export browser workflow', () => {
     vi.useFakeTimers(); let resolve!: (value: Response) => void;
     const promise = new Promise<Response>(done => { resolve = done; }); vi.stubGlobal('fetch', vi.fn(() => promise)); const f = render();
     await click(f.container, 'Download linked OTLP JSON'); await act(async () => { vi.advanceTimersByTime(10_000); });
-    expect(f.container.textContent).toContain('exceeded 10 seconds'); expect(f.container.querySelector('button')!.disabled).toBe(false);
+    expect(f.container.textContent).toContain('exceeded 10 seconds'); expect(f.container.querySelector<HTMLButtonElement>('.linked-trace-export-actions button')!.disabled).toBe(false);
     await act(async () => { resolve(response()); await promise; }); expect(download).not.toHaveBeenCalled();
   });
   it.each(['session', 'invalidation', 'range', 'unmount'])('revokes pending ownership on %s change', async change => {
@@ -145,7 +145,7 @@ describe('explicit OTLP export browser workflow', () => {
     await click(f.container, 'Download linked OTLP JSON'); expect(download).toHaveBeenCalledTimes(1);
     expect(f.container.textContent).toContain('Partial capture coverage'); expect(f.container.textContent).toContain('identity_not_collected');
     await click(f.container, 'Select next capture page'); expect(fetcher).toHaveBeenCalledTimes(1);
-    expect([...f.container.querySelectorAll('input')].map(i => i.value)).toEqual(['0', '100', '8']);
+    expect([...f.container.querySelectorAll<HTMLInputElement>('input:not([type=hidden])')].map(i => i.value)).toEqual(['0', '100', '8']);
     await click(f.container, 'Download linked OTLP JSON');
     expect(fetcher).toHaveBeenCalledTimes(2); // Response still describes first page: owner/range validator must reject it.
     expect(f.container.textContent).toContain('INVALID_EXPORT'); expect(download).toHaveBeenCalledTimes(1);
@@ -153,7 +153,7 @@ describe('explicit OTLP export browser workflow', () => {
   it('validates safe cursor input and aborts ownership when the capture cursor changes', async () => {
     let resolve!: (value: Response) => void; const promise = new Promise<Response>(done => { resolve = done; });
     const fetcher = vi.fn(() => promise); vi.stubGlobal('fetch', fetcher); const f = render();
-    for (const text of ['0', '-1', '01', '1e2', '9007199254740992']) { input(f.container, 2, text); expect(f.container.querySelector('button')!.disabled).toBe(true); }
+    for (const text of ['0', '-1', '01', '1e2', '9007199254740992']) { input(f.container, 2, text); expect(f.container.querySelector<HTMLButtonElement>('.linked-trace-export-actions button')!.disabled).toBe(true); }
     input(f.container, 2, ''); await click(f.container, 'Download linked OTLP JSON'); input(f.container, 2, '5');
     await act(async () => { resolve(response()); await promise; }); expect(download).not.toHaveBeenCalled();
   });

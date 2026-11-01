@@ -10,5 +10,5 @@
 .linked-trace-export-panel p { margin: var(--space-2) 0; }
 .linked-trace-export-range, .linked-trace-export-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin: var(--space-2) 0; }
 .linked-trace-export-range label { display: flex; gap: var(--space-2); align-items: center; }
-.linked-trace-export-range input { width: 12ch; min-width: 0; color: var(--fg-default); background: var(--canvas-inset); border: 1px solid var(--border-default); padding: var(--space-1) var(--space-2); }
+.linked-trace-export-range input:not(.ui-input):not([type=hidden]) { width: 12ch; min-width: 0; color: var(--fg-default); background: var(--canvas-inset); border: 1px solid var(--border-default); padding: var(--space-1) var(--space-2); }
 .linked-trace-export-panel :focus-visible { box-shadow: var(--focus-ring); }

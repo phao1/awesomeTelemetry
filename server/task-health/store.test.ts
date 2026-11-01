@@ -13,7 +13,7 @@ async function report(): Promise<HealthReport> { const i = JSON.parse(await read
 const taskDir = (r: HealthReport) => join(dir, 'task-health-reports', createHash('sha256').update(r.taskId).digest('hex'));
 it('atomically saves report and metadata-only index and reuses exact versions/scope/thresholds', async () => {
   const store = createHealthReportStore(dir), r = await report(); await store.save(r);
-  expect(JSON.parse(await readFile(join(taskDir(r), 'index.json'), 'utf8'))).toEqual({ items: [{ id: r.id, generatedAt: r.generatedAt, mode: 'standard', revision: r.revision, expired: false, reportId: null }] });
+  expect(JSON.parse(await readFile(join(taskDir(r), 'index.json'), 'utf8'))).toEqual({ items: [{ id: r.id, generatedAt: r.generatedAt, mode: 'standard', revision: r.revision, expired: false, reportId: null,scope:r.scope,severity:{warning:r.findings.filter(f=>f.severity==='warning').length,notice:r.findings.filter(f=>f.severity==='notice').length,info:r.findings.filter(f=>f.severity==='info').length} }] });
   expect(await store.get(r.id)).toEqual(r); expect(await store.bytes(r.id)).toBe(JSON.stringify(r));
   expect(await store.reusable(r.taskId, r.revision, r.scope, r.thresholds)).toEqual(r);
   expect(await store.reusable(r.taskId, r.revision, { ...r.scope, member: 'main' }, r.thresholds)).toBeNull();
@@ -62,9 +62,39 @@ it('reads legacy rejected items and validates new rejection diagnostics and prom
   const store = createHealthReportStore(dir), parent = await report(); await store.save(parent);
   const deep: DeepHealthReport = { version: 1, id: randomUUID(), reportId: parent.id, taskId: parent.taskId, generatedAt: parent.generatedAt, digest: 'a'.repeat(64), provider: 'openai-compatible', model: 'fixture', promptVersion: 1, timing: 'model_judged', status: 'rejected', valueMoments: [], necessity: [], causes: [], experiments: [], rejected: [{ section: 'causes', index: 0, reason: 'Numeric claim outside fact table; not adopted.' }], analysis: { inputTokens: null, outputTokens: null, durationMs: 10 }, limitations: [] };
   await store.saveDeep(deep); expect(await store.get(deep.id)).toEqual(deep);
+  const history=(await store.list(parent.taskId,parent.revision)).items.find(item=>item.id===deep.id)!;expect(history.scope).toEqual(parent.scope);expect(history.severity).toEqual({warning:parent.findings.filter(f=>f.severity==='warning').length,notice:parent.findings.filter(f=>f.severity==='notice').length,info:parent.findings.filter(f=>f.severity==='info').length});
   const modern: DeepHealthReport = { ...deep, id: randomUUID(), promptVersion: 2, rejected: [{ ...deep.rejected[0]!, token: '两次', excerpt: '出现两次长等待' }] };
   await store.saveDeep(modern); expect(await store.get(modern.id)).toEqual(modern);
   for (const rejected of [[{ ...modern.rejected[0]!, excerpt: 'x'.repeat(161) }], [{ ...modern.rejected[0]!, token: 123 }]]) {
     await expect(store.saveDeep({ ...modern, id: randomUUID(), rejected } as DeepHealthReport)).rejects.toMatchObject({ code: 'HEALTH_STORAGE_FAILED' });
   }
+});
+
+it('projects the latest saved standard conclusion without returning report bodies and reconciles legacy indexes at startup',async()=>{
+ const store=createHealthReportStore(dir),ordinary=await report();await store.save(ordinary);
+ const summary=await store.summary(ordinary.taskId);expect(summary).toMatchObject({id:ordinary.id,revision:ordinary.revision,generatedAt:ordinary.generatedAt,issues:ordinary.findings.length});
+ expect(JSON.stringify(summary)).not.toContain('metrics');expect(JSON.stringify(summary)).not.toContain('evidence');
+ expect(await store.summary('collected:absent')).toBeNull();
+ await rm(join(dir,'task-health-summaries'),{recursive:true,force:true});
+ const reopened=createHealthReportStore(dir);await reopened.warmSummaries();expect(await reopened.summary(ordinary.taskId)).toEqual(summary);expect(await reopened.get(ordinary.id)).toEqual(ordinary);
+});
+it('keeps request reuse keys isolated and never promotes request health to whole-task summary',async()=>{
+  const store=createHealthReportStore(dir),base=await report();
+  const first={...base,scope:{...base.scope,request:'request:root:event:a'}};
+  await store.save(first);
+  expect(await store.reusable(first.taskId,first.revision,first.scope,first.thresholds)).toEqual(first);
+  expect(await store.reusable(first.taskId,first.revision,{...first.scope,request:'request:root:event:b'},first.thresholds)).toBeNull();
+  expect(await store.reusable(base.taskId,base.revision,base.scope,base.thresholds)).toBeNull();
+  expect(await store.summary(base.taskId)).toBeNull();
+  const whole={...base,id:randomUUID()};await store.save(whole);expect((await store.summary(base.taskId))!.id).toBe(whole.id);
+  const second={...base,id:randomUUID(),generatedAt:'2026-10-31T00:00:00.000Z',scope:{...base.scope,request:'request:root:event:b'}};
+  await store.save(second);expect((await store.summary(base.taskId))!.id).toBe(whole.id);expect((await store.list(base.taskId,base.revision)).items).toHaveLength(3);
+});
+it('regenerates calc3 reports after the genuine-input correction while preserving old saved reports',async()=>{
+  const store=createHealthReportStore(dir),current=await report(),old={...current,id:randomUUID(),calcVersion:3};
+  expect(current.calcVersion).toBe(4);await store.save(old);
+  expect(await store.reusable(old.taskId,old.revision,old.scope,old.thresholds)).toBeNull();
+  expect((await store.get(old.id) as HealthReport).calcVersion).toBe(3);
+  await store.save(current);expect(await store.reusable(current.taskId,current.revision,current.scope,current.thresholds)).toEqual(current);
+  expect((await store.list(current.taskId,current.revision)).items).toHaveLength(2);
 });

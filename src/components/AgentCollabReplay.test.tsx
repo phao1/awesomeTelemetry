@@ -208,8 +208,8 @@ function makeMetrics(): TeamMetrics {
     },
     cost: {
       totalInputTokens: v, totalOutputTokens: v, totalReasoningTokens: v,
-      totalCacheReadTokens: v, totalCacheWriteTokens: v, totalCostUsd: v,
-      costCurrency: null, coordinationTokens: v, costGini: v,
+      totalCacheReadTokens: v, totalCacheWriteTokens: v,
+      coordinationTokens: v,
     },
     collaboration: {
       directRatio: v, leaderMediatedRatio: v, responseLatencyMedianMs: v,
@@ -613,7 +613,7 @@ describe('AgentCollabReplay §7.1', () => {
     mockListActivities.mockResolvedValue({ items: [makeActivity('one', { taskId: 't1' }), makeActivity('two', { taskId: 't2' })], hasMore: false, nextCursor: null, total: 2 });
     const container = render(<AgentCollabReplay sessionKey="readable-team" locale="zh" />);
     await flush();
-    expect((container.querySelector('.collab-secondary') as HTMLDetailsElement).open).toBe(false);
+    expect(container.querySelector('.collab-secondary .ui-accordion > button')!.getAttribute('aria-expanded')).toBe('false');
     act(() => (container.querySelector('.tw-member') as HTMLButtonElement).click());
     expect(container.querySelector('.collab-node-selected')).not.toBeNull();
     expect(container.querySelector('.tw-detail')!.textContent).toContain('Agent a1');

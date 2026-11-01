@@ -153,3 +153,60 @@ describe('DSH-style task process ledger', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+it('merges a complete exact pair with preview, failure, elapsed time and separate evidence actions', async () => {
+  const p = page([call, result]);
+  p.items = [{ ...call, toolInputPreview: 'node script.js' }, { ...result, event: { ...result.event!, status: 'error', startedAt: new Date(Date.parse(call.event!.startedAt!) + 1200).toISOString() } }];
+  p.structure!.records.forEach(f => { f.relatedRecordIds = [call.id, result.id]; });
+  render(p); await settle();
+  expect(rows()).toHaveLength(1); expect(host.textContent).toContain('node script.js'); expect(host.textContent).toContain('1200 ms'); expect(host.textContent).toContain('Failed'); expect(host.querySelector('.is-error')).not.toBeNull();
+  const evidence = host.querySelectorAll<HTMLButtonElement>('.process-pair-evidence button'); expect(evidence).toHaveLength(2);
+  expect(host.querySelector('.process-record-evidence')).toBeNull();
+  expect([...host.querySelectorAll('.process-record-line')].flatMap(row => row.textContent!.match(/[↗↙]/g) ?? [])).toEqual(['↗', '↙']);
+  act(() => evidence[0]!.click()); expect(select).toHaveBeenLastCalledWith(p.items[0]);
+  act(() => evidence[1]!.click()); expect(select).toHaveBeenLastCalledWith(p.items[1]);
+  const disclosure = [...host.querySelectorAll<HTMLButtonElement>('.process-disclosure')].find(b => b.getAttribute('aria-label')?.includes('Record information:'))!;
+  act(() => disclosure.click()); await settle();
+  expect(host.querySelectorAll('.process-record-metadata button')).toHaveLength(2); expect(fetch).not.toHaveBeenCalled();
+  act(() => { expect(handle.current!.locate(call.id)).toBe(true); }); await settle();
+  expect(rows().some(r => r.dataset.recordId === call.id)).toBe(true);
+});
+it('preserves separate evidence when pairing is ambiguous or a partner is off-page', async () => {
+  const p = page([call, result]); p.structure!.records.forEach(f => { f.pairing = 'ambiguous'; });
+  render(p); await settle(); expect(rows()).toHaveLength(2); expect(host.querySelector('.process-pair-evidence')).toBeNull();
+  render(page([call, result])); await settle(); expect(rows()).toHaveLength(2);
+});
+it('labels an input-only tool as unfinished and keeps an unknown duration unknown', async () => {
+  render(page([call])); await settle();
+  expect(host.querySelector('.process-tool-status')!.textContent).toBe('Unfinished');
+  expect(host.querySelector('.process-tool-duration')!.textContent).toBe('Unknown');
+});
+
+const telemetryTool = (status: 'success' | 'error', durationMs: number | null = 800): TaskRecord => item('otel-tool', 1, {
+  kind:'tool',tool:'search',title:'execute_tool search',status,durationMs:durationMs??0,hasInput:false,hasOutput:false,
+  telemetry:{source:'OpenTelemetry',traceId:'a'.repeat(32),spanId:'b'.repeat(16),parentSpanId:null,group:'s',name:'execute_tool search',kind:'tool',operation:'execute_tool',agentName:'planner',agentId:null,toolName:'search',toolCallId:null,userId:null,model:null,
+    start:'2026-11-01T00:00:00.000Z',end:durationMs===null?null:'2026-11-01T00:00:00.800Z',durationMs,status,error:null,usage:{input:null,output:null,total:null,cacheRead:null,cacheWrite:null,reasoning:null}}
+});
+it.each(['success','error'] as const)('shows a complete OTel tool span without waiting for a separate return: %s',async status=>{
+  const record=telemetryTool(status);render(page([record]));await settle();
+  expect(rows()).toHaveLength(1);expect(host.querySelector('.process-tool-status')!.textContent).toBe(status==='success'?'Success':'Failed');
+  expect(host.querySelector('.process-tool-duration')!.textContent).toBe('800 ms');expect(host.textContent).not.toContain('Unfinished');
+  expect(host.querySelector('.process-pair-evidence')).toBeNull();expect(fetch).not.toHaveBeenCalled();
+});
+it('keeps reported zero distinct from unknown telemetry duration',async()=>{
+  render(page([telemetryTool('success',0)]));await settle();expect(host.querySelector('.process-tool-duration')!.textContent).toBe('0 ms');expect(host.querySelector('.process-tool-status')!.textContent).toBe('Success');
+  const unknown=telemetryTool('success',null);unknown.event!.hasOutput=true;render({...page([unknown]),window:'unknown-duration'});await settle();
+  expect(host.querySelector('.process-tool-duration')!.textContent).toBe('Unknown');expect(host.querySelector('.process-tool-status')!.textContent).toBe('Success');
+});
+it('renders standalone output-bearing tool records and keeps native input-only records unfinished',async()=>{
+  const complete=item('complete',1,{kind:'tool',tool:'search',status:'success',durationMs:800,hasInput:false,hasOutput:true});
+  render(page([complete]));await settle();expect(host.querySelector('.process-tool-status')!.textContent).toBe('Success');expect(host.querySelector('.process-tool-duration')!.textContent).toBe('800 ms');
+  const native={...call,event:{...call.event!,status:'success' as const,durationMs:800}};
+  render({...page([native]),window:'native-input-only'});await settle();expect(host.querySelector('.process-tool-status')!.textContent).toBe('Unfinished');expect(host.querySelector('.process-tool-duration')!.textContent).toBe('Unknown');
+});
+it('does not finish a nonterminal OTel span or let an off-page native return override pairing rules',async()=>{
+  const running=telemetryTool('success');running.event!.status='running';
+  render(page([running]));await settle();expect(host.querySelector('.process-tool-status')!.textContent).toBe('Unfinished');expect(host.querySelector('.process-tool-duration')!.textContent).toBe('Unknown');
+  const p=page([result]);p.items[0]={...result,event:{...result.event!,durationMs:800,status:'success'}};
+  render({...p,window:'off-page-native'});await settle();expect(host.querySelector('.process-tool-duration')!.textContent).toBe('Unknown');expect(host.querySelector('.process-original-link')).not.toBeNull();
+});

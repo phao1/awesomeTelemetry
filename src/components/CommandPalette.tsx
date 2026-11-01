@@ -1,10 +1,16 @@
+import { EmptyState } from './ui/States.js';
+import { IconSearch } from './icons/index.js';
+import { Kbd } from './ui/Misc.js';
+import '../styles/components/command-palette.css';
+import { Button } from './ui/Button.js';
 import { copy as taskCopy } from './task/copy.js';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type {
   ProviderKey,
+  SessionProviderKey,
   SessionIndexEntry,
   TraceEventSlim,
 } from '../core/trace-types.js';
@@ -53,7 +59,7 @@ interface Command {
   /** 执行入口。禁用行不带 run。 */
   run?: () => void;
   /** 会话 / provider 行的字母章。 */
-  provider?: ProviderKey;
+  provider?: SessionProviderKey;
   disabled?: boolean;
   checked?: boolean;
 }
@@ -95,6 +101,8 @@ export function CommandPalette({
   view = 'session',
   providerFilter = [],
 }: CommandPaletteProps): React.JSX.Element {
+  const listId=useId();
+  const [active,setActive]=useState(0);
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   /** REQ-111：`/compare` 二段式 —— 点动作后进入会话挑选模式。 */
@@ -177,10 +185,10 @@ export function CommandPalette({
 
     const navCommands: Command[] =
       prefix === null || prefix === 'nav'
-        ? (['task', 'intake', 'agent', 'compare', 'proxy', 'frida', 'mission'] as const)
+        ? (['overview', 'task', 'benchmark', 'team-experiment', 'intake', 'compare'] as const)
             .map((target) => ({
               id: `view-${target}`,
-              label: target === 'task' ? taskCopy(locale).tasks : target === 'intake' ? taskCopy(locale).intake : t(`view.${target}`, locale),
+              label: target === 'overview' ? (locale==='zh'?'概览':'Overview') : target === 'benchmark' ? (locale==='zh'?'评测中心':'Benchmarks') : target === 'task' ? taskCopy(locale).tasks : target === 'intake' ? taskCopy(locale).intake : t(`view.${target}`, locale),
               hint: 'nav',
               category: 'nav' as const,
               run: () => run({ type: 'view', view: target }),
@@ -338,40 +346,60 @@ export function CommandPalette({
     comparePick,
   ]);
 
+  const results=useMemo(()=>{
+    const headings:Record<PaletteCategory,string>={session:locale==='zh'?'任务':'Tasks',nav:locale==='zh'?'页面':'Pages',action:locale==='zh'?'操作':'Actions',advanced:locale==='zh'?'高级操作':'Advanced actions',goto:locale==='zh'?'事件':'Events',filter:locale==='zh'?'工具':'Providers',compare:locale==='zh'?'对比':'Compare'};
+    return commands.flatMap((command,index)=>index===0||commands[index-1]?.category!==command.category?[{...command,id:'heading-'+command.category,label:headings[command.category],heading:true,disabled:true},command]:[command]) as Array<Command & {heading?:boolean}>;
+  },[commands,locale]);
+  useEffect(()=>{setActive(Math.max(0,results.findIndex(item=>!item.disabled)));const scroller=document.getElementById(listId)?.querySelector<HTMLElement>('.palette-results');if(scroller){scroller.scrollTop=0;scroller.dispatchEvent(new Event('scroll'));}},[search,comparePicking,results.length,listId]);
+  const keyboard=(event:React.KeyboardEvent)=>{
+    if(event.nativeEvent.isComposing||!['ArrowDown','ArrowUp','Enter','Home','End'].includes(event.key))return;
+    event.preventDefault();
+    if(event.key==='Enter'){if(!results[active]?.disabled)results[active]?.run?.();return;}
+    const enabled=results.map((item,index)=>item.disabled?-1:index).filter(index=>index>=0);
+    if(!enabled.length)return;
+    const position=enabled.indexOf(active), next=event.key==='Home'?enabled[0]!:event.key==='End'?enabled.at(-1)!:enabled[(position+(event.key==='ArrowDown'?1:-1)+enabled.length)%enabled.length]!;
+    setActive(next);
+    const scroller=document.getElementById(listId)?.querySelector<HTMLElement>('.palette-results');
+    if(scroller){scroller.scrollTop=Math.max(0,next*40-scroller.clientHeight/2);scroller.dispatchEvent(new Event('scroll'));}
+  };
   return (
     <Modal title={t('palette.title', locale)} onClose={onClose} size="md" initialFocusRef={searchRef}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+      <div className="command-palette" onKeyDown={keyboard}>
         {comparePicking ? (
           <div className="palette-mode-head">
             <span>
               {t('palette.compare.pick', locale).replace('{n}', String(comparePick.length))}
             </span>
-            <button
+            <Button
               type="button"
-              className="btn ui-btn-sm"
+              size="sm"
               onClick={() => {
                 setComparePicking(false);
                 setComparePick([]);
               }}
             >
               {t('common.cancel', locale)}
-            </button>
+            </Button>
           </div>
         ) : (
           <SearchInput
             inputRef={searchRef}
+            role="combobox" aria-label={t('palette.searchPlaceholder',locale)} aria-expanded="true" aria-controls={listId} aria-activedescendant={results[active]?`${listId}-${active}`:undefined}
             placeholder={t('palette.searchPlaceholder', locale)}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         )}
-        <div style={{ height: '50vh' }}>
-          <VirtualList
-            items={commands}
-            rowHeight={32}
+        <div id={listId} role="listbox" aria-label={locale==='zh'?'搜索结果':'Search results'} className="palette-viewport">
+          {!results.length?<EmptyState icon={<IconSearch/>} title={locale==='zh'?'没有匹配结果':'No matching results'}/>:<VirtualList
+            items={results}
+            className="palette-results"
+            rowHeight={40}
             getKey={(command) => command.id}
-            renderRow={(command) => (
-              <button
+            renderRow={(command,index) => command.heading ? <div className="palette-group-title">{command.label}</div> : (
+              <Button
+                id={`${listId}-${index}`} role="option" aria-selected={active===index} variant="ghost"
+                onMouseEnter={()=>setActive(index)}
                 type="button"
                 className={`palette-row ${command.checked === true ? 'palette-row-on' : ''}`}
                 disabled={command.disabled === true}
@@ -389,10 +417,10 @@ export function CommandPalette({
                   </span>
                 )}
                 <span className="palette-row-label">{command.label}</span>
-                <span className="mono palette-row-hint">{command.hint}</span>
-              </button>
+                <span className="palette-row-hint"><Kbd>{command.hint==='nav'?'↵':command.hint==='act'?'↵':command.hint}</Kbd></span>
+              </Button>
             )}
-          />
+          />}
         </div>
         <p className="mono palette-prefix-hint">{t('palette.prefixHint', locale)}</p>
       </div>

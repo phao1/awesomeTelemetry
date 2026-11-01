@@ -10,6 +10,7 @@ import { expect, it, vi } from 'vitest';
 import { createServer as createViteServer } from 'vite';
 import type { LocalSessionConfig, MonitorConnectionProfile, ProxyRequestListItem, ProxyRuntimeStatus } from '../core/trace-types.js';
 import { t, type I18nKey } from '../i18n.js';
+import { chooseOption, selectedValue } from './ui/test-controls.js';
 import { MonitorSetupPanel } from './MonitorSetupPanel.js';
 
 it('persists a real isolated recipe, generates pinned inert commands, starts only a local listener and verifies one synthetic self-test', async () => {
@@ -44,17 +45,21 @@ it('persists a real isolated recipe, generates pinned inert commands, starts onl
       for (let pass = 0; pass < 10; pass += 1) { await act(async () => { await Promise.all([...pending]); });if (pending.size === 0) return; }
       throw new Error('Repeated recipe IO without an explicit user action');
     };
-    const button = (key: I18nKey): HTMLButtonElement => {
-      const label = t(key, 'en'), found = [...container.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === label);expect(found, label).toBeDefined();return found!;
+    const button = (key: I18nKey, scope: Element = container): HTMLButtonElement => {
+      const label = t(key, 'en'), found = [...scope.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === label);expect(found, label).toBeDefined();return found!;
     };
     const edit = (input: HTMLInputElement, value: string): void => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);input.dispatchEvent(new Event('input', { bubbles: true })); };
     await act(async () => root.render(<MonitorSetupPanel locale="en" initialAgent="codex" onStatus={value => statuses.push(value)} onOpenCapture={id => opened.push(id)} />));await settle();
     expect(calls.map(call => call.path)).toEqual(['/api/proxy/profiles']);expect(container.textContent).toContain(t('monitor.flow.empty', 'en'));
-    act(() => edit(container.querySelector<HTMLInputElement>('input')!, 'ISOLATED_RECIPE_ONLY'));
-    act(() => edit(container.querySelector<HTMLInputElement>('[placeholder="/absolute/project/path"]')!, directory));
-    act(() => edit(container.querySelector<HTMLInputElement>('input[type="number"]')!, String(proxyPort)));
+    const named = <T extends Element>(selector: string, key: I18nKey): T => {
+      const found = [...container.querySelectorAll<T>(selector)].find(node => node.getAttribute('aria-label') === t(key, 'en'));
+      expect(found, t(key, 'en')).toBeDefined();return found!;
+    };
+    act(() => edit(named<HTMLInputElement>('input', 'monitor.label'), 'ISOLATED_RECIPE_ONLY'));
+    act(() => edit(named<HTMLInputElement>('input', 'monitor.project'), directory));
+    act(() => edit(named<HTMLInputElement>('input[type=number]', 'monitor.port'), String(proxyPort)));
     await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));await settle();
-    const id = container.querySelector<HTMLSelectElement>('select')!.value;expect(id).toMatch(/^[a-f0-9-]{36}$/);
+    const id = selectedValue(named('[role=combobox]', 'monitor.savedProfiles'));expect(id).toMatch(/^[a-f0-9-]{36}$/);
     const stored = JSON.parse(await readFile(join(directory, 'monitor-profiles.json'), 'utf8')) as { profiles: MonitorConnectionProfile[] };
     expect(stored.profiles).toHaveLength(1);expect(stored.profiles[0]).toMatchObject({ id, label: 'ISOLATED_RECIPE_ONLY', agent: 'codex', revision: 1, projectDirectory: directory, proxyPort });
     expect(calls.filter(call => call.path === '/api/proxy/profiles' && call.method === 'GET')).toHaveLength(1);
@@ -62,8 +67,8 @@ it('persists a real isolated recipe, generates pinned inert commands, starts onl
     const command = container.querySelector<HTMLTextAreaElement>('textarea')!.value;
     expect(command).toContain("'launch'");expect(command).toContain(id);expect(command).toContain("'--revision' '1'");
     expect(statuses).toHaveLength(0);expect((await nativeFetch(origin + '/api/proxy/status').then(value => value.json()) as ProxyRuntimeStatus).running).toBe(false);
-    const shell = container.querySelector<HTMLSelectElement>('.monitor-command select')!;
-    act(() => { shell.value = 'powershell';shell.dispatchEvent(new Event('change', { bubbles: true })); });
+    const shell = named('[role=combobox]', 'monitor.shell');
+    chooseOption(shell, 'powershell');
     expect(container.querySelector<HTMLTextAreaElement>('textarea')!.value).toContain('& ');expect(calls.filter(call => call.path.endsWith('/plan'))).toHaveLength(1);
     await act(async () => button('monitor.startListener').click());await settle();
     expect(statuses.at(-1)?.running).toBe(true);expect(statuses.at(-1)?.port).toBe(proxyPort);
@@ -80,7 +85,8 @@ it('persists a real isolated recipe, generates pinned inert commands, starts onl
     // delete the separately retained synthetic capture/original evidence.
     expect((await nativeFetch(origin + '/api/proxy/stop', { method: 'POST' })).status).toBe(200);
     await act(async () => button('monitor.delete').click());expect(calls.some(call => call.method === 'DELETE')).toBe(false);
-    await act(async () => button('common.confirm').click());await settle();
+    const confirmation = document.body.querySelector('[role="dialog"]');expect(confirmation).not.toBeNull();
+    await act(async () => button('common.confirm', confirmation!).click());await settle();
     expect((JSON.parse(await readFile(join(directory, 'monitor-profiles.json'), 'utf8')) as { profiles: unknown[] }).profiles).toHaveLength(0);
     expect((await nativeFetch(origin + `/api/proxy/requests/${opened[0]}/body/request`)).status).toBe(200);
     expect(calls.filter(call => call.method === 'POST').map(call => call.path)).toEqual(['/api/proxy/profiles', `/api/proxy/profiles/${id}/start`, `/api/proxy/profiles/${id}/self-test`]);

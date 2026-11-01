@@ -1,3 +1,6 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Disclosure } from './ui/PageControls.js';
 import { useEffect, useRef, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import type { CdpDevCaptureDetail, CdpDevCapturePage, CdpDevStatus, CdpDevTarget } from '../core/trace-types.js';
@@ -70,11 +73,11 @@ function Workspace({ locale }: { locale: Locale }) {
   return <section aria-label={c.title}>
     <p className="hint">{c.scope}</p><p className="hint">{c.memory}</p>
     <div className="capture-toolbar">
-      <label>{c.port}<input className="ui-input capture-port" inputMode="numeric" value={port} disabled={pending || status?.state === 'running'} onChange={event => setPort(event.target.value)} aria-invalid={!validPort} /></label>
-      <button type="button" className="btn" disabled={pending || status?.state !== 'idle' || uncertain || !validPort} onClick={() => command('start')}>{c.start}</button>
-      <button type="button" className="btn" disabled={pending || !status || status.state === 'idle' || uncertain} onClick={() => command('stop')}>{c.stop}</button>
-      <button type="button" className="btn" disabled={pending} onClick={refresh}>{c.refresh}</button>
-      {pending && <button type="button" className="btn" onClick={cancel}>{c.cancel}</button>}
+      <label>{c.port}<Input className="ui-input capture-port" inputMode="numeric" value={port} disabled={pending || status?.state === 'running'} onChange={event => setPort(event.target.value)} aria-invalid={!validPort} /></label>
+      <Button type="button"  disabled={pending || status?.state !== 'idle' || uncertain || !validPort} onClick={() => command('start')}>{c.start}</Button>
+      <Button type="button"  disabled={pending || !status || status.state === 'idle' || uncertain} onClick={() => command('stop')}>{c.stop}</Button>
+      <Button type="button"  disabled={pending} onClick={refresh}>{c.refresh}</Button>
+      {pending && <Button type="button"  onClick={cancel}>{c.cancel}</Button>}
     </div>
     {!validPort && <p role="alert">{c.invalid}</p>}
     <p role="status">{status ? c[status.state] : c.unknown}</p>
@@ -84,12 +87,12 @@ function Workspace({ locale }: { locale: Locale }) {
     {targets.map(target => <p key={target.id} className="mono">{target.title} · {target.id} · {target.url}</p>)}
     {page && <><p>{c.records}: {page.items.length} · {c.bytes}: {page.totalBytes} · {c.rejected}: {page.rejectedCount} · {c.issue}: {page.lastIssue ?? '—'}</p>
       <p className="hint">{c.hint}</p>{page.items.length === 0 && <p>{c.empty}</p>}
-      {page.items.map(item => <div key={item.id} className="capture-toolbar"><button type="button" className="btn mono" disabled={pending} onClick={() => select(item.id)}>#{item.id} · {item.url}</button><span>{item.bodyBytes} B · {item.capturedAt}</span></div>)}
+      {page.items.map(item => <div key={item.id} className="capture-toolbar"><Button type="button" className="ui-btn mono" disabled={pending} onClick={() => select(item.id)}>#{item.id} · {item.url}</Button><span>{item.bodyBytes} B · {item.capturedAt}</span></div>)}
     </>}
     <Drawer open={selected !== null} title={c.response + ' #' + selected} onClose={closeDetail} width={700}>
-      <button type="button" className="btn" onClick={closeDetail}>{c.close}</button>
+      <Button type="button"  onClick={closeDetail}>{c.close}</Button>
       {pending && <p role="status">{c.pending}</p>}
-      {error && <p role="alert">{c.error} <code>{error}</code><button type="button" className="btn" disabled={pending} onClick={() => selected !== null && select(selected)}>{c.refresh}</button></p>}
+      {error && <p role="alert">{c.error} <code>{error}</code><Button type="button"  disabled={pending} onClick={() => selected !== null && select(selected)}>{c.refresh}</Button></p>}
       {detail && <><p className="mono">{detail.url}</p><p>{c.time}: {detail.capturedAt} · {c.bytes}: {detail.bodyBytes}</p>
         <CaptureBodyText key={detail.id} value={detail.body} locale={locale} /></>}
     </Drawer>
@@ -98,7 +101,7 @@ function Workspace({ locale }: { locale: Locale }) {
 
 export function CdpPanel({ locale }: { locale: Locale }) {
   const [open, setOpen] = useState(false);
-  return <details className="capture-run" onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary>{COPY[locale].title}</summary>{open && <Workspace locale={locale} />}
-  </details>;
+  return <Disclosure className="capture-run" onOpenChange={open => setOpen(open)} title={<>{COPY[locale].title}</>}>
+    {open && <Workspace locale={locale} />}
+  </Disclosure>;
 }

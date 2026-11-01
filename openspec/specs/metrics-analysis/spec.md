@@ -210,24 +210,12 @@ exactly; a derived value is worse than 0 when any rule is skipped:
 - **AND** the choice MUST follow the actual parse path, never a per-provider
   hardcode
 
-### REQ-013: Model pricing & cost estimation (add-mission-control)
-`src/core/pricing.ts` SHALL expose `ModelPrice` / `computeCostUsd(tokens,
-model)` / `lookupContextWindow(model)`. Every built-in price MUST carry a
-`source` (URL or doc name + fetch date); model ids are normalized by
-`normalizeModelId()` before lookup. Unknown models return
-`{ costUsd: 0, costSource: 'unknown' }`.
-
-#### Scenario: unknown model renders dash, never $0.0000
-- **GIVEN** a model not present in any pricing layer
-- **WHEN** computing cost
-- **THEN** the result is `{ costUsd: 0, costSource: 'unknown' }`
-- **AND** UI tests assert the rendered cell is `—`, NOT `$0.0000`
-
-#### Scenario: context window comes from the pricing table
-- **GIVEN** `lookupContextWindow(model)` for a known model
-- **THEN** it returns the model's `contextWindow` from the pricing table
-- **AND** for an unknown model it returns `null` — hardcoding 200k is
-  forbidden (glm / deepseek windows differ)
+### REQ-013: Token/cache accounting (Phase F1)
+Pricing estimation and model-price configuration are removed. Context windows use
+independent sourced metadata; unknown models have no guessed window. Cache hit
+rate follows data-model F1-002, with per-call/member prompt normalization before
+weighted summation. Confirmed unreported writes count as zero. Unknown counters
+and zero denominators remain unknown; partial member coverage is explicit.
 
 ### REQ-014: Error text classification (add-mission-control)
 `classifyErrorText(error)` SHALL normalize free-text `events.error` into a
@@ -264,3 +252,7 @@ must pass through the desensitization engine before classification.
 - G11.11 (new): after persisting four-dimension metrics, any algorithm change
   must bump `METRICS_CALC_VERSION`, otherwise stale dirty data stays in the DB
   unnoticed
+
+## Phase B (2026-10-31)
+
+REQ-PHASE-B: Task summaries use shared Token and cache-hit accounting under data-model F1-001/002. Context pressure keeps the Mission convention with independent model context metadata.

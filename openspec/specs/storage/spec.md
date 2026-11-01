@@ -323,3 +323,57 @@ SQLite and body-free metadata with indexed exact session/agent/tool filtering.
 Metadata/save notifications follow completed original+commit only. Native scan
 jumps require unique complete exact declared session identity; never mutate
 native sources or infer execution, retries, charges or child sessions.
+
+
+### REQ-024: Phase A task context metrics
+
+Task context metrics aggregate <=100 member session rows and indexed counts,
+without source hydration or full event/body scans. Counts describe input records
+(kind=tool,input_len>0) and error records (status=error), not proven executions.
+Use schema22 covering indexes; cache up to32 task summaries per database by
+data_version + total_changes. An unchanged revision skips aggregation/counts.
+Incomplete members yield null counts/duration. Token metrics sum available
+trusted members independently; TaskMetrics.coverage records per-field known/total
+counts and missing IDs/names/reasons. No trusted members means null, never0.
+Unloaded member counters are unconfirmed and excluded; a retained primary_model
+is independently usable metadata. Missing models never erase known model names.
+
+Wall clock is earliest start to latest start+declared duration; overlap is not added.
+Imports use only TraceLogSession endpoints/model; its schema has no token
+fields, so counters remain null. Native input is adapter-normalized uncached input
+(Codex subtracts cache subsets; Claude already excludes cache). Legacy default-zero
+usage is unknown. Sum correctedUsage only for proven inclusion conventions and
+reported cache-write values; confirmed unreported Codex cache writes count as0
+via correctedUsage.cacheWriteReported=false. This exception applies only to Codex
+zero cache writes; other providers keep unknown reporting unknown. Model/version-
+dependent reasoning inclusion stays null and is excluded from partial totals.
+Costs require all-member reported USD provenance; never estimate.
+
+Task-record previews use only bounded substrings on the selected <=200-row page
+under api.md's explicit preview exception; never return body fields or read sources.
+
+## Phase B (2026-10-31)
+
+REQ-PHASE-B: Revision-cached batched task summaries reuse Phase A computations with covering indexed counts. Full-scope Token/cache-hit sorting and filtering precede <=50-row pagination. No monetary calculation or response fields. Cache hit uses paired weighted per-member sums with partial coverage under data-model F1-002.
+
+## Phase B review (2026-11-01)
+
+REQ-PHASE-B-REVIEW: Implement api.md's page-owned hydration lease, loaded/unknown
+reasons and threshold deep links and responsive label density. List GETs
+remain metadata-only. Reuse native scanners with global concurrency2, shared
+pending jobs and page cancellation; preserve missing-file rows. No per-session
+fetches/SSE or parser replacement. Adjacent tests cover queue/admission/cancel/
+source absence/notifications, retained-page refresh and direct settings focus.
+
+
+Phase E: implement task-requests.md TR-001–005 and task-health.md TH-009.
+This additive authorization supersedes the old no-new-fields restriction.
+
+REQ-F4-001: Overview reuses root-task snapshot and member indexed metadata queries; indexed UTC event-day activity and last-activity metric snapshot assignment, weighted cache rate, known terminal result denominator, threshold alerts, reliable prior periods only. Bounded revision/threshold/minute cache, yielded batches, no body/hydration; F4-001..003 contracts apply.
+
+REQ-F4-002 (browser review): Follow api F4-004 activity-intersection membership,
+continuous calendar/week slots and indexed per-member event-date activity counts.
+Snapshot metric assignment is explicit server-owned copy and never multiplies
+lifetime counters across activity dates; historical metric deltas stay unavailable.
+Existing NFR budgets apply;500-task cold/warm tests and indexed plan assertions
+cover the added projection, with cache/source-revision isolation unchanged.

@@ -1,3 +1,4 @@
+import { Button } from './ui/Button.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import type { LinkedExecutionPage, TraceEvent, TraceEventSlim } from '../core/trace-types.js';
@@ -9,7 +10,7 @@ import { CaptureTimingPanel } from './CaptureTimingPanel.js';
 const timingCopy = {
   en: { title: 'Native and proxy timing', native: 'Normalized log duration', declaration: 'Session declaration',
     hint: 'This is the retained session declaration, not provenance for each event. Per-event measurement provenance is unknown. Zero does not prove a measured zero; it can also mean an absent endpoint or no derived interval.',
-    separate: 'Values are independent observations, not proof of the same call or measured tool execution. No cross-clock subtraction, speed ratio or billing deduction is made.',
+    separate: 'Values are independent observations, not proof of the same call or measured tool execution. No cross-clock subtraction, speed ratio deduction is made.',
     select: 'Select a native event to show its normalized log duration beside the selected capture.', derived: 'derived', measured: 'measured', unknown: 'unknown' },
   zh: { title: '原生与代理时序', native: '规范化日志时长', declaration: '会话来源声明',
     hint: '此处仅为保留的会话级声明，不是每条事件的测量证明；逐事件测量来源未知。0 不证明实测为零，也可能表示缺少结束点或没有推导区间。',
@@ -38,13 +39,13 @@ function NativeEvents({ events, locale, onSelect }: {
     aria-label={t('trace.execution.events', locale)} style={{ height: 320, overflow: 'auto' }}>
     <div style={{ height: range.totalHeight, position: 'relative' }}>
       <div style={{ transform: `translateY(${range.offsetY}px)` }}>
-        {events.slice(range.startIndex, range.endIndex).map(event => <button key={event.id}
-          type="button" className="btn mono" data-execution-event={event.id}
+        {events.slice(range.startIndex, range.endIndex).map(event => <Button key={event.id}
+          type="button" className="mono"  data-execution-event={event.id}
           title={`${event.startedAt ?? '—'} · ${event.turnKey ?? '—'} · ${event.title}`}
           style={{ display: 'block', width: '100%', height: 32, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           onClick={() => onSelect(event)}>
           #{event.sequence} · {event.kind} · {event.title} · {event.durationMs === null ? '—' : `${event.durationMs} ms`}
-        </button>)}
+        </Button>)}
       </div>
     </div>
   </div>;
@@ -148,7 +149,7 @@ function Execution({ sessionKey, locale, onOpenRequest, invalidateKey = 0 }: Pro
   return <section aria-label={t('trace.execution.title', locale)}>
     <h3>{t('trace.execution.title', locale)}</h3>
     <p className="hint">{t('trace.execution.hint', locale)}</p>
-    <button className="btn" type="button" disabled={busy} onClick={() => void load()}>{t('trace.execution.refresh', locale)}</button>
+    <Button  type="button" disabled={busy} onClick={() => void load()}>{t('trace.execution.refresh', locale)}</Button>
     {stale && <p role="status">{t('trace.links.stale', locale)}</p>}
     {busy && <Skeleton count={2} />}
     {error !== null && <ErrorState code="EXECUTION_FAILED" message={error === 'EXECUTION_TIMEOUT' ? t('trace.execution.timeout', locale) : error} onRetry={() => void load(params)} />}
@@ -158,7 +159,7 @@ function Execution({ sessionKey, locale, onOpenRequest, invalidateKey = 0 }: Pro
       <p className="hint">{t('trace.execution.nativeHint', locale)}</p>
       <p className="hint">{copy.declaration}: {copy[shown.sessionDurationSource]} · {copy.hint}</p>
       {shown.events.length === 0 ? <p>{t('trace.execution.noEvents', locale)}</p> : <NativeEvents key={shown.eventOffset} events={shown.events} locale={locale} onSelect={event => void openEvent(event)} />}
-      {shown.eventsHasMore && <button className="btn" type="button" onClick={() => void load({ ...params, eventOffset: shown.eventOffset + shown.events.length })}>{t('trace.execution.nextEvents', locale)}</button>}
+      {shown.eventsHasMore && <Button  type="button" onClick={() => void load({ ...params, eventOffset: shown.eventOffset + shown.events.length })}>{t('trace.execution.nextEvents', locale)}</Button>}
       {selected !== null && <section aria-label={t('trace.execution.detail', locale)}>
         <h4>{selected.title}</h4>
         <p className="mono">{selected.id} · {selected.kind} · {selected.status} · {selected.startedAt ?? '—'}</p>
@@ -171,12 +172,12 @@ function Execution({ sessionKey, locale, onOpenRequest, invalidateKey = 0 }: Pro
       <h4>{t('trace.execution.captures', locale)} · {shown.attempts.length}</h4>
       {shown.attempts.length === 0 && <p>{t('trace.links.empty', locale)}</p>}
       {shown.attempts.map(item => <div key={item.association.id}>
-        <button className="btn mono" type="button" onClick={() => onOpenRequest(item.request.id)}>#{item.request.id} · {item.request.model ?? '—'} · {item.request.hostname}</button>
-        <button className="btn" type="button" aria-expanded={attemptId === item.request.id} onClick={() => setAttemptId(attemptId === item.request.id ? null : item.request.id)}>
+        <Button className="mono"  type="button" onClick={() => onOpenRequest(item.request.id)}>#{item.request.id} · {item.request.model ?? '—'} · {item.request.hostname}</Button>
+        <Button  type="button" aria-expanded={attemptId === item.request.id} onClick={() => setAttemptId(attemptId === item.request.id ? null : item.request.id)}>
           {t(item.association.state === 'direct' ? 'trace.links.direct' : 'trace.links.confirmed', locale)} · {t('trace.execution.matches', locale)}: {item.matches.length}
-        </button>
+        </Button>
       </div>)}
-      {shown.capturesHasMore && shown.nextCaptureCursor !== null && <button className="btn" type="button" onClick={() => void load({ ...params, captureCursor: shown.nextCaptureCursor! })}>{t('trace.execution.nextCaptures', locale)}</button>}
+      {shown.capturesHasMore && shown.nextCaptureCursor !== null && <Button  type="button" onClick={() => void load({ ...params, captureCursor: shown.nextCaptureCursor! })}>{t('trace.execution.nextCaptures', locale)}</Button>}
       {attempt !== undefined && <section aria-label={t('trace.execution.matches', locale)}>
         <p className="hint mono">{attempt.association.reason} · {attempt.association.evidenceIds.join(', ') || '—'}</p>
         <p className="hint">{t('trace.execution.matchHint', locale)}</p>

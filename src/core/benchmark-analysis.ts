@@ -15,6 +15,17 @@ export const METRIC_LABELS = {
 } as const;
 export type BenchmarkMetric = keyof typeof METRIC_LABELS;
 export type BenchmarkMetrics = Record<BenchmarkMetric, number | null>;
+/** F1-002: cacheHitRate = Σ cacheRead / Σ promptInput. Normalize each call/member
+ * before summing; confirmed unreported writes are zero.
+ * Input that includes cache is already the complete prompt. Output/reasoning do not gate cache hit. */
+export function promptUsage(u: Pick<BenchmarkUsage, 'input' | 'cacheRead' | 'cacheWrite' | 'cacheWriteReported' | 'inputIncludesCache'>): { promptInput: number | null; cacheHitRate: number | null } {
+  const valid = (n: number | null) => n !== null && Number.isSafeInteger(n) && n >= 0;
+  const write = u.cacheWriteReported === false ? 0 : u.cacheWrite;
+  if (!valid(u.input) || !valid(u.cacheRead) || typeof u.inputIncludesCache !== 'boolean' || (!u.inputIncludesCache && !valid(write))) return { promptInput: null, cacheHitRate: null };
+  const promptInput = u.input! + (u.inputIncludesCache ? 0 : u.cacheRead! + write!);
+  if (!Number.isSafeInteger(promptInput) || promptInput <= 0 || u.cacheRead! > promptInput) return { promptInput: null, cacheHitRate: null };
+  return { promptInput, cacheHitRate: u.cacheRead! / promptInput };
+}
 export function correctedUsage(u: BenchmarkUsage): { total: number | null; hit: number | null } {
   const { input, output, reasoning, cacheRead, inputIncludesCache, outputIncludesReasoning } = u;
   const cacheWrite = u.cacheWriteReported === false ? 0 : u.cacheWrite;
@@ -22,7 +33,7 @@ export function correctedUsage(u: BenchmarkUsage): { total: number | null; hit: 
   if ((inputIncludesCache && cacheRead + cacheWrite > input) || (outputIncludesReasoning && reasoning !== null && reasoning > output)) return { total: null, hit: null };
   const allInput = input + (inputIncludesCache ? 0 : cacheRead + cacheWrite);
   const total = allInput + output + (outputIncludesReasoning ? 0 : reasoning!);
-  return { total: Number.isSafeInteger(total) ? total : null, hit: allInput > 0 ? cacheRead / allInput * 100 : null };
+  return { total: Number.isSafeInteger(total) ? total : null, hit: promptUsage(u).cacheHitRate === null ? null : promptUsage(u).cacheHitRate! * 100 };
 }
 export function runSuccess(run: BenchmarkRun, expectedTests: number): boolean | null {
   if (run.status !== 'completed') return false;
@@ -46,7 +57,7 @@ export function benchmarkMetrics(run: BenchmarkRun, expectedTests: number): Benc
   for (const key of ['input', 'output', 'reasoning', 'cacheRead', 'cacheWrite'] as const) m[key] = u[key];
   m.cacheWrite = u.cacheWriteReported === false ? 0 : u.cacheWrite;
   m.cache = u.cacheRead !== null && m.cacheWrite !== null ? u.cacheRead + m.cacheWrite : null;
-  m.tokens = normalized.total; m.cacheHit = normalized.hit;
+  m.tokens = normalized.total; m.cacheHit = promptUsage(u).cacheHitRate === null ? null : promptUsage(u).cacheHitRate! * 100;
   const models = telemetry.spans.filter(s => s.kind === 'model'), tools = telemetry.spans.filter(s => s.kind === 'tool');
   m.modelCalls = models.length; m.toolCalls = tools.length;
   for (const [spans, avg, total] of [[models, 'modelAvg', 'modelSum'], [tools, 'toolAvg', 'toolSum']] as const) {

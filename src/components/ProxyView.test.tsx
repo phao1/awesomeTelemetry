@@ -1,3 +1,4 @@
+import { selectedValue, optionsText } from './ui/test-controls.js';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -27,13 +28,13 @@ it('opens TraceLog imports lazily from Proxy without loading source bodies or st
   try {
     await act(async () => { root.render(<ProxyView locale="en" />); await import('./TraceLogImportPanel.js'); });
     expect(fetcher.mock.calls.filter(([url]) => url.includes('/trace-imports'))).toHaveLength(0);
-    await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Import TraceLog')!.click(); });
-    await vi.waitFor(() => expect(container.textContent).toContain('No imported logs'));
+    await act(async () => { [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === 'Import TraceLog')!.click(); });
+    await vi.waitFor(() => expect(container.ownerDocument.body.textContent).toContain('No imported logs'));
     expect(fetcher.mock.calls.filter(([url]) => url.includes('/trace-imports'))).toHaveLength(1);
-    expect(container.querySelector('[role="dialog"]')?.classList.contains('trace-import-drawer')).toBe(true);
-    expect(container.querySelector('.trace-import-layout')).not.toBeNull();
-    expect(container.querySelector('.trace-import-upload')?.hasAttribute('open')).toBe(false);
-    expect(container.querySelector('input[type="file"]')).not.toBeNull();
+    expect(container.ownerDocument.body.querySelector('[role="dialog"]')?.classList.contains('trace-import-drawer')).toBe(true);
+    expect(container.ownerDocument.body.querySelector('.trace-import-layout')).not.toBeNull();
+    expect(container.ownerDocument.body.querySelector('.trace-import-upload')?.hasAttribute('open')).toBe(false);
+    expect(container.ownerDocument.body.querySelector('input[type="file"]')).not.toBeNull();
     expect(fetcher.mock.calls.some(([url]) => /\/(source|start)$/.test(url))).toBe(false);
   } finally { act(() => root.unmount()); container.remove(); }
 });
@@ -102,7 +103,7 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
     const fetcher = vi.fn(async (url: string, init?: RequestInit) => url.endsWith('/reparse') ? jsonResponse(init?.method === 'POST' ? result : initial) : base(url, init));
     vi.stubGlobal('fetch', fetcher);
     const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
-    const button = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === label)!;
+    const button = (label: string) => [...container.ownerDocument.body.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === label)!;
     try {
       await act(async () => { root.render(<ProxyView locale="en" focusedRequestId={1} />); await import('./CaptureReparseControl.js'); });
       await vi.waitFor(() => expect(button('Offline reparse')).toBeDefined());
@@ -111,14 +112,14 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
       expect(fetcher.mock.calls.filter(([url]) => url.endsWith('/reparse'))).toHaveLength(1);
       for (let iteration = 0; iteration < 2; iteration += 1) {
         await act(async () => button('Reparse retained originals').click());
-        expect(container.textContent).toContain('REPARSED_LATEST_MODEL');
-        expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Protocol Analysis');
+        expect(container.ownerDocument.body.textContent).toContain('REPARSED_LATEST_MODEL');
+        expect(container.ownerDocument.body.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Protocol Analysis');
       }
       expect(fetcher.mock.calls.filter(([url, init]) => url.endsWith('/reparse') && init?.method === 'POST')).toHaveLength(2);
       expect(fetcher.mock.calls.some(([url]) => url.endsWith('/analysis'))).toBe(false);
       const before = fetcher.mock.calls.length;
       await act(async () => root.render(<ProxyView locale="zh" focusedRequestId={1} />));
-      expect(container.textContent).toContain('REPARSED_LATEST_MODEL'); expect(fetcher).toHaveBeenCalledTimes(before);
+      expect(container.ownerDocument.body.textContent).toContain('REPARSED_LATEST_MODEL'); expect(fetcher).toHaveBeenCalledTimes(before);
     } finally { act(() => root.unmount()); }
   });
 
@@ -134,7 +135,7 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
     });
     vi.stubGlobal('fetch', fetcher);
     const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
-    const button = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === label)!;
+    const button = (label: string) => [...container.ownerDocument.body.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === label)!;
     try {
       await act(async () => { root.render(<ProxyView locale="en" focusedRequestId={1} />); await import('./CaptureReparseControl.js'); });
       await vi.waitFor(() => expect(button('Offline reparse')).toBeDefined());
@@ -143,12 +144,12 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
       await act(async () => button('Protocol Analysis').click());
       expect(analysisSignal?.aborted).toBe(false);
       await act(async () => finishPost(jsonResponse(result)));
-      expect(container.textContent).toContain('REPARSED_LATEST_MODEL'); expect(analysisSignal?.aborted).toBe(true);
+      expect(container.ownerDocument.body.textContent).toContain('REPARSED_LATEST_MODEL'); expect(analysisSignal?.aborted).toBe(true);
       await act(async () => finishRead(jsonResponse({ ...result.analysis, model: 'LATE_OLD_ANALYSIS' })));
-      expect(container.textContent).toContain('REPARSED_LATEST_MODEL'); expect(container.textContent).not.toContain('LATE_OLD_ANALYSIS');
+      expect(container.ownerDocument.body.textContent).toContain('REPARSED_LATEST_MODEL'); expect(container.ownerDocument.body.textContent).not.toContain('LATE_OLD_ANALYSIS');
       const before = fetcher.mock.calls.length;
       await act(async () => root.render(<ProxyView locale="en" focusedRequestId={1} traceInvalidateKey={1} />));
-      expect(container.textContent).not.toContain('REPARSED_LATEST_MODEL'); expect(fetcher).toHaveBeenCalledTimes(before);
+      expect(container.ownerDocument.body.textContent).not.toContain('REPARSED_LATEST_MODEL'); expect(fetcher).toHaveBeenCalledTimes(before);
     } finally { act(() => root.unmount()); }
   });
   it('confirmed body deletion hides a pending reparse and rejects its late analysis in the shared detail', async () => {
@@ -160,7 +161,7 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
     const fetcher = vi.fn(async (url: string, init?: RequestInit) => url.endsWith('/reparse') ? init?.method === 'POST' ? new Promise<Response>(resolve => { finish = resolve; }) : jsonResponse(initial) : base(url, init));
     vi.stubGlobal('fetch', fetcher);
     const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
-    const button = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === label)!;
+    const button = (label: string) => [...container.ownerDocument.body.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === label)!;
     try {
       await act(async () => { root.render(<ProxyView locale="en" focusedRequestId={1} />); await import('./CaptureReparseControl.js'); });
       await vi.waitFor(() => expect(button('Offline reparse')).toBeDefined());
@@ -171,7 +172,7 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
       expect(button('Offline reparse').disabled).toBe(true);
       const before = fetcher.mock.calls.length;
       await act(async () => finish(jsonResponse(result)));
-      expect(container.textContent).not.toContain('REPARSED_LATEST_MODEL'); expect(fetcher).toHaveBeenCalledTimes(before);
+      expect(container.ownerDocument.body.textContent).not.toContain('REPARSED_LATEST_MODEL'); expect(fetcher).toHaveBeenCalledTimes(before);
       expect(fetcher.mock.calls.some(([url]) => url.endsWith('/analysis'))).toBe(false);
     } finally { act(() => root.unmount()); }
   });
@@ -198,16 +199,16 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
     try {
       await act(async () => root.render(<ProxyView locale="zh" />));
       expect(fetcher.mock.calls.map(([url]) => url).sort()).toEqual(['/api/proxy/requests?limit=50', '/api/proxy/status']);
-      await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === '监控能力与接入')!.click(); await import('./MonitorCapabilitiesPanel.js'); });
-      await vi.waitFor(() => expect([...container.querySelectorAll('button')].some(button => button.textContent === '配置 codex')).toBe(true));
+      await act(async () => { [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === '监控能力与接入')!.click(); await import('./MonitorCapabilitiesPanel.js'); });
+      await vi.waitFor(() => expect([...container.ownerDocument.body.querySelectorAll('button')].some(button => button.textContent === '配置 codex')).toBe(true));
       expect(fetcher.mock.calls.filter(([url]) => url === '/api/proxy/capabilities')).toHaveLength(1);
-      await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === '配置 codex')!.click(); await import('./MonitorSetupPanel.js'); });
-      await vi.waitFor(() => expect(container.querySelector('.monitor-setup select')).not.toBeNull());
-      expect(container.querySelectorAll<HTMLSelectElement>('.monitor-setup select')[0]!.value).toBe('');
-      expect(container.querySelectorAll<HTMLSelectElement>('.monitor-setup select')[1]!.value).toBe('codex');
-      expect(container.querySelector<HTMLInputElement>('.monitor-setup input')!.value).toBe('');
-      expect(container.querySelector<HTMLInputElement>('[placeholder="/absolute/project/path"]')!.value).toBe('');
-      expect(container.textContent).toContain('Existing user recipe');
+      await act(async () => { [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === '配置 codex')!.click(); await import('./MonitorSetupPanel.js'); });
+      await vi.waitFor(() => expect(container.ownerDocument.body.querySelector('.monitor-setup [role=combobox]')).not.toBeNull());
+      expect(selectedValue(container.ownerDocument.body.querySelectorAll<HTMLSelectElement>('.monitor-setup [role=combobox]')[0]!)).toBe('');
+      expect(selectedValue(container.ownerDocument.body.querySelectorAll<HTMLSelectElement>('.monitor-setup [role=combobox]')[1]!)).toBe('codex');
+      expect(container.ownerDocument.body.querySelector<HTMLInputElement>('.monitor-setup input:not([type=hidden])')!.value).toBe('');
+      expect(container.ownerDocument.body.querySelector<HTMLInputElement>('[placeholder="/absolute/project/path"]')!.value).toBe('');
+      expect(optionsText(container.ownerDocument.body.querySelector('.monitor-setup [role=combobox]')!)).toContain('Existing user recipe');
       expect(fetcher.mock.calls.filter(([url]) => url === '/api/proxy/profiles')).toHaveLength(1);
       expect(fetcher.mock.calls).toHaveLength(4);
       expect(fetcher.mock.calls.every(([, init]) => init?.method === undefined)).toBe(true);
@@ -229,10 +230,10 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
     try {
       await act(async () => root.render(<ProxyView locale="en" focusedRequestId={1} />));
       const initial = fetcher.mock.calls.length;
-      await act(async () => { [...container.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === 'Call comparison')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await import('./CaptureComparisonPanel.js'); });
-      const panel = container.querySelector<HTMLElement>('[aria-label="Selected capture comparison"]')!;
+      await act(async () => { [...container.ownerDocument.body.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === 'Call comparison')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await import('./CaptureComparisonPanel.js'); });
+      const panel = container.ownerDocument.body.querySelector<HTMLElement>('[aria-label="Selected capture comparison"]')!;
       expect(panel).not.toBeNull(); expect(fetcher).toHaveBeenCalledTimes(initial);
-      const input = panel.querySelector<HTMLInputElement>('input')!;
+      const input = panel.querySelector<HTMLInputElement>('input:not([type=hidden])')!;
       await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '2'); input.dispatchEvent(new Event('input', { bubbles: true })); });
       await act(async () => { panel.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
       expect(fetcher).toHaveBeenCalledTimes(initial + 1);
@@ -270,7 +271,7 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
     throw new Error('Unexpected automatic read: ' + url);
   });
   const exportButton = (container: HTMLElement): HTMLButtonElement => {
-    const button = [...container.querySelectorAll('button')].find(element => element.textContent === 'Export evidence JSON');
+    const button = [...container.ownerDocument.body.querySelectorAll('button')].find(element => element.textContent === 'Export evidence JSON');
     if (button === undefined) throw new Error('Missing explicit evidence export control');
     return button;
   };
@@ -287,16 +288,16 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
     const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
     try {
       await act(async () => root.render(<ProxyView locale={locale} focusedRequestId={1} />));
-      expect(container.textContent).toContain(locale === 'en' ? 'not one model call' : '不是单次模型调用');
-      expect(container.textContent).toContain('2 / 16; 1000 / 1000');
-      expect(container.querySelector('script')).toBeNull(); expect(container.textContent).toContain('<script>inert</script>');
-      const tabs = [...container.querySelectorAll('[role="tab"]')].map(item => item.textContent);
+      expect(container.ownerDocument.body.textContent).toContain(locale === 'en' ? 'not one model call' : '不是单次模型调用');
+      expect(container.ownerDocument.body.textContent).toContain('2 / 16; 1000 / 1000');
+      expect(container.ownerDocument.body.querySelector('script')).toBeNull(); expect(container.ownerDocument.body.textContent).toContain('<script>inert</script>');
+      const tabs = [...container.ownerDocument.body.querySelectorAll('[role="tab"]')].map(item => item.textContent);
       expect(tabs).not.toContain(locale === 'en' ? 'Protocol Analysis' : '协议分析');
-      expect(container.textContent).not.toContain(locale === 'en' ? 'Offline reparse' : '离线重解析');
-      expect(container.querySelector('a[href="/api/proxy/requests/1/body/request"]')?.textContent).toContain('AWSP1');
+      expect(container.ownerDocument.body.textContent).not.toContain(locale === 'en' ? 'Offline reparse' : '离线重解析');
+      expect(container.ownerDocument.body.querySelector('a[href="/api/proxy/requests/1/body/request"]')?.textContent).toContain('AWSP1');
       const reads = fetcher.mock.calls.length;
-      await act(async () => [...container.querySelectorAll('[role="tab"]')].find(item => item.textContent === 'Response')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-      expect(container.textContent).toContain('OK 中文'); expect(fetcher.mock.calls).toHaveLength(reads);
+      await act(async () => [...container.ownerDocument.body.querySelectorAll('[role="tab"]')].find(item => item.textContent === 'Response')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      expect(container.ownerDocument.body.textContent).toContain('OK 中文'); expect(fetcher.mock.calls).toHaveLength(reads);
       expect(fetcher.mock.calls.some(([url]) => /\/(analysis|reparse|comparison)$/.test(url) || url.includes('/body/'))).toBe(false);
     } finally { act(() => root.unmount()); }
   });
@@ -309,10 +310,10 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
     const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
     try {
       await act(async () => root.render(<ProxyView locale="en" focusedRequestId={1} />));
-      expect(container.querySelector('[aria-label="Proxy-observed timing"]')).toBeNull();
+      expect(container.ownerDocument.body.querySelector('[aria-label="Proxy-observed timing"]')).toBeNull();
       const reads = fetcher.mock.calls.length;
-      await act(async () => { [...container.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === 'Timing')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await import('./CaptureTimingPanel.js'); });
-      const panel = container.querySelector('[aria-label="Proxy-observed timing"]')!;
+      await act(async () => { [...container.ownerDocument.body.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === 'Timing')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await import('./CaptureTimingPanel.js'); });
+      const panel = container.ownerDocument.body.querySelector('[aria-label="Proxy-observed timing"]')!;
       expect(panel).not.toBeNull();
       if (kind === 'legacy') {
         expect(panel.textContent).toContain('Legacy timing is unknown');
@@ -348,7 +349,7 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
       expect(clicks).toEqual([{ href: 'blob:selected-evidence', filename: 'capture-1.json' }]);
       expect(JSON.parse(await blobs[0]!.text()).capture.transport.timing).toEqual(observedTiming);
       expect(fetcher.mock.calls.some(([url, init]) => url.endsWith('/analysis') || url.includes('/body/') || init?.method === 'POST')).toBe(false);
-      expect(container.textContent).toContain('Download requested');
+      expect(container.ownerDocument.body.textContent).toContain('Download requested');
     } finally { act(() => root.unmount()); anchorClick.mockRestore(); }
     expect(revoke).toHaveBeenCalledWith('blob:selected-evidence');
   });
@@ -365,7 +366,7 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
       expect(fetcher.mock.calls.some(([url]) => url.includes('/export'))).toBe(false);
       await act(async () => finish(jsonResponse(null)));
       expect(exportButton(container).disabled).toBe(false);
-      expect(container.textContent).not.toContain('Metadata-only export:');
+      expect(container.ownerDocument.body.textContent).not.toContain('Metadata-only export:');
       expect(fetcher.mock.calls.some(([url]) => url.includes('/export') || url.endsWith('/analysis'))).toBe(false);
     } finally { act(() => root.unmount()); }
   });
@@ -389,20 +390,20 @@ describe('selected capture timing and explicit evidence-export wiring', () => {
     try {
       await act(async () => { root.render(<ProxyView locale="en" focusedRequestId={1} />); await import('./CaptureExportControl.js'); });
       expect(exportButton(container).disabled).toBe(false);
-      expect(container.textContent).toContain('Metadata-only export:');
-      expect(container.textContent).not.toContain('{"messages":[]}');
+      expect(container.ownerDocument.body.textContent).toContain('Metadata-only export:');
+      expect(container.ownerDocument.body.textContent).not.toContain('{"messages":[]}');
       expect(fetcher.mock.calls.some(([url]) => url.includes('/export'))).toBe(false);
       await act(async () => exportButton(container).click());
       expect(fetcher.mock.calls.filter(([url]) => url.includes('/export')).map(([url]) => url)).toEqual(['/api/proxy/requests/1/export?mode=metadata']);
       expect(createObjectURL).toHaveBeenCalledTimes(1); expect(anchorClick).toHaveBeenCalledTimes(1);
       expect(fetcher.mock.calls.some(([url, init]) => url.endsWith('/analysis') || url.includes('/body/') || init?.method === 'POST')).toBe(false);
       if (state === 'unknown') {
-        const refresh = container.querySelector('.original-deletion-control button:last-child') as HTMLButtonElement;
+        const refresh = container.ownerDocument.body.querySelector('.original-deletion-control button:last-child') as HTMLButtonElement;
         await act(async () => refresh.click());
         expect(availabilityReads).toBe(2);
         expect(exportButton(container).disabled).toBe(false);
-        expect(container.textContent).not.toContain('Metadata-only export:');
-        expect(container.textContent).toContain('{"messages":[]}');
+        expect(container.ownerDocument.body.textContent).not.toContain('Metadata-only export:');
+        expect(container.ownerDocument.body.textContent).toContain('{"messages":[]}');
         expect(fetcher.mock.calls.filter(([url]) => url.includes('/export'))).toHaveLength(1);
         await act(async () => exportButton(container).click());
         expect(fetcher.mock.calls.filter(([url]) => url.includes('/export')).map(([url]) => url)).toEqual([
@@ -434,16 +435,16 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
     try {
       await act(async () => root.render(<ProxyView locale={locale} focusedRequestId={1} />));
-      await act(async () => { [...container.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === (locale === 'zh' ? '协议分析' : 'Protocol Analysis'))!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await import('./ProxyInsights.js'); });
+      await act(async () => { [...container.ownerDocument.body.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === (locale === 'zh' ? '协议分析' : 'Protocol Analysis'))!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await import('./ProxyInsights.js'); });
       const label = (locale === 'zh' ? '查看证据' : 'Inspect evidence') + ': messages[0].content[0].is_error';
-      await vi.waitFor(() => expect(container.querySelector('[aria-label="' + label + '"]')).not.toBeNull());
+      await vi.waitFor(() => expect(container.ownerDocument.body.querySelector('[aria-label="' + label + '"]')).not.toBeNull());
       const before = fetcher.mock.calls.length;
-      act(() => (container.querySelector('[aria-label="' + label + '"]') as HTMLButtonElement).click());
-      const item = container.querySelector('[data-analysis-evidence="item-0"]') as HTMLDetailsElement;
-      expect(item.open).toBe(true); expect(document.activeElement).toBe(item);
+      act(() => (container.ownerDocument.body.querySelector('[aria-label="' + label + '"]') as HTMLButtonElement).click());
+      const item = container.ownerDocument.body.querySelector('[data-analysis-evidence="item-0"]') as HTMLDetailsElement;
+      expect(item.querySelector('button')!.getAttribute('aria-expanded')).toBe('true'); await vi.waitFor(()=>expect(document.activeElement).toBe(item));
       expect(item.textContent).toContain('messages[0].content[0].is_error = true');
       expect(item.querySelector('pre')?.textContent).toBe('ENOENT');
-      expect(container.textContent).toContain('completed');
+      expect(container.ownerDocument.body.textContent).toContain('completed');
       expect(fetcher).toHaveBeenCalledTimes(before);
     } finally { act(() => root.unmount()); }
   });
@@ -468,22 +469,22 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
     try {
       await act(async () => root.render(<ProxyView locale="en" focusedRequestId={1} />));
-      await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Protocol Analysis')!.click(); });
+      await act(async () => { [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === 'Protocol Analysis')!.click(); });
       const before = fetcher.mock.calls.length;
       await vi.waitFor(async () => {
         await act(async () => { await Promise.resolve(); });
-        expect(container.textContent).toContain('40.0%');
+        expect(container.ownerDocument.body.textContent).toContain('40.0%');
       });
-      const inspect = async (path: string) => act(async () => { (container.querySelector('[aria-label="Inspect evidence: ' + path + '"]') as HTMLButtonElement).click(); });
+      const inspect = async (path: string) => act(async () => { (container.ownerDocument.body.querySelector('[aria-label="Inspect evidence: ' + path + '"]') as HTMLButtonElement).click(); });
       await inspect('analysis.usage.snapshots');
-      expect((container.querySelector('[data-analysis-evidence="usage"]') as HTMLDetailsElement).open).toBe(true);
+      expect(container.ownerDocument.body.querySelector('[data-analysis-evidence="usage"] button')!.getAttribute('aria-expanded')).toBe('true');
       await inspect('tools[0]');
-      const declaration = container.querySelector('[data-analysis-evidence="declaration-0"]')!;
-      expect(declaration.closest('details')?.open).toBe(true); expect(document.activeElement).toBe(declaration);
-      expect(container.querySelector('[data-analysis-evidence="item-54"]')).toBeNull();
+      const declaration = container.ownerDocument.body.querySelector('[data-analysis-evidence="declaration-0"]')!;
+      expect(declaration.closest('.ui-accordion')?.querySelector('button')?.getAttribute('aria-expanded')==='true').toBe(true); await vi.waitFor(()=>expect(document.activeElement).toBe(declaration));
+      expect(container.ownerDocument.body.querySelector('[data-analysis-evidence="item-54"]')).toBeNull();
       await inspect('messages[54]');
-      const result = container.querySelector('[data-analysis-evidence="item-54"]') as HTMLDetailsElement;
-      expect(result.open).toBe(true); expect(document.activeElement).toBe(result);
+      const result = container.ownerDocument.body.querySelector('[data-analysis-evidence="item-54"]') as HTMLDetailsElement;
+      expect(result.querySelector('button')!.getAttribute('aria-expanded')).toBe('true'); await vi.waitFor(()=>expect(document.activeElement).toBe(result));
       expect(result.textContent).toContain('reported failure');
       expect(fetcher).toHaveBeenCalledTimes(before);
       expect(fetcher.mock.calls.filter(([url]) => url.endsWith('/analysis'))).toHaveLength(1);
@@ -512,14 +513,14 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
     try {
       await act(async () => root.render(<ProxyView locale="zh" focusedRequestId={1} />));
-      const click = async (text: string) => act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === text)!.click(); });
+      const click = async (text: string) => act(async () => { [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === text)!.click(); });
       if (endpoint === 'analysis') { expect(reads).toBe(0); await click('协议分析'); }
-      expect(container.textContent).toContain('synthetic local read failed'); expect(reads).toBe(1);
-      const retry = container.querySelector('[role="alert"] button') as HTMLButtonElement | null;
+      expect(container.ownerDocument.body.textContent).toContain('synthetic local read failed'); expect(reads).toBe(1);
+      const retry = container.ownerDocument.body.querySelector('[role="alert"] button') as HTMLButtonElement | null;
       expect(retry).not.toBeNull();
       await act(async () => { retry!.click(); });
-      expect(reads).toBe(2); expect(container.textContent).not.toContain('synthetic local read failed');
-      if (endpoint === 'analysis') expect(container.textContent).toContain('retried-analysis');
+      expect(reads).toBe(2); expect(container.ownerDocument.body.textContent).not.toContain('synthetic local read failed');
+      if (endpoint === 'analysis') expect(container.ownerDocument.body.textContent).toContain('retried-analysis');
       expect(fetcher.mock.calls.some(([url, init]) => url.includes('/body/') || init?.method === 'POST')).toBe(false);
       await act(async () => root.render(<ProxyView locale="en" focusedRequestId={1} />));
       expect(reads).toBe(2); expect(signals).toHaveLength(2);
@@ -543,13 +544,13 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     try {
       vi.useFakeTimers();
       await act(async () => root.render(<ProxyView locale="zh" focusedRequestId={1} />));
-      if (endpoint === 'analysis') await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === '协议分析')!.click(); });
+      if (endpoint === 'analysis') await act(async () => { [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === '协议分析')!.click(); });
       await act(async () => { await vi.advanceTimersByTimeAsync(5001); });
       expect(signal?.aborted).toBe(true);
-      expect(container.querySelector('[role="alert"]')?.textContent).toContain('5 秒');
-      expect(container.querySelector('[role="alert"] button')).not.toBeNull();
+      expect(container.ownerDocument.body.querySelector('[role="alert"]')?.textContent).toContain('5 秒');
+      expect(container.ownerDocument.body.querySelector('[role="alert"] button')).not.toBeNull();
       await act(async () => { complete(jsonResponse({ model: 'STALE_AFTER_TIMEOUT', responseHeaders: { 'x-late': 'STALE_AFTER_TIMEOUT' } })); await late; });
-      expect(container.textContent).not.toContain('STALE_AFTER_TIMEOUT');
+      expect(container.ownerDocument.body.textContent).not.toContain('STALE_AFTER_TIMEOUT');
     } finally { act(() => root.unmount()); vi.useRealTimers(); }
   });
 
@@ -566,16 +567,16 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     const capacityCalls = () => fetcher.mock.calls.filter(([url]) => url.endsWith('/capacity') || url.endsWith('/storage'));
     try {
       await act(async () => root.render(<ProxyView locale="en" />)); expect(capacityCalls()).toHaveLength(0);
-      const trigger = [...container.querySelectorAll('button')].find(button => button.textContent === 'Capture capacity')!;
+      const trigger = [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === 'Capture capacity')!;
       await act(async () => { trigger.focus(); trigger.click(); await new Promise(resolve => setTimeout(resolve, 0)); });
       // Flush the real lazy-module import; no component/API logic is mocked.
       await act(async () => { await import('./CaptureCapacityPanel.js'); });
-      expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Capture capacity'); expect(capacityCalls()).toHaveLength(2);
-      expect(container.textContent).toContain('Remaining quota (not free disk)');
-      const refresh = [...container.querySelectorAll('button')].find(button => button.textContent === 'Refresh capacity snapshot')!;
+      expect(container.ownerDocument.body.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Capture capacity'); expect(capacityCalls()).toHaveLength(2);
+      expect(container.ownerDocument.body.textContent).toContain('Remaining quota (not free disk)');
+      const refresh = [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === 'Refresh capacity snapshot')!;
       await act(async () => refresh.click()); expect(capacityCalls()).toHaveLength(4);
       act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
-      expect(container.querySelector('[role="dialog"]')).toBeNull(); expect(document.activeElement).toBe(trigger);
+      expect(container.ownerDocument.body.querySelector('[role="dialog"]')).toBeNull(); expect(document.activeElement).toBe(trigger);
       expect(fetcher).toHaveBeenCalledTimes(6);
     } finally { act(() => root.unmount()); }
   });
@@ -588,12 +589,12 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     }); vi.stubGlobal('fetch', fetcher); const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
     try {
       await act(async () => root.render(<ProxyView locale="en" />));
-      await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Capture capacity')!.click(); await import('./CaptureCapacityPanel.js'); });
+      await act(async () => { [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === 'Capture capacity')!.click(); await import('./CaptureCapacityPanel.js'); });
       const before = fetcher.mock.calls.length;
-      const refresh = [...container.querySelectorAll('button')].find(button => button.textContent === 'Refresh capacity snapshot')!;
+      const refresh = [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === 'Refresh capacity snapshot')!;
       refresh.focus();
       await act(async () => root.render(<ProxyView locale="en" liveStatus={{ running: true, starting: false, port: 8888 }} />));
-      expect(container.textContent).toContain('snapshot may be stale'); expect(fetcher).toHaveBeenCalledTimes(before); expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+      expect(container.ownerDocument.body.textContent).toContain('snapshot may be stale'); expect(fetcher).toHaveBeenCalledTimes(before); expect(container.ownerDocument.body.querySelectorAll('[role="dialog"]')).toHaveLength(1);
       expect(document.activeElement).toBe(refresh);
     } finally { act(() => root.unmount()); }
   });
@@ -613,23 +614,23 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
       return jsonResponse({ running: false, starting: false, port: null, requestCount: 1, startedAt: null });
     }); vi.stubGlobal('fetch', fetchMock);
     const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
-    const press = (name: string) => { const button = [...container.querySelectorAll<HTMLElement>('button,[role="tab"]')].find(element => element.textContent === name); if (button === undefined) throw new Error('Missing control: ' + name); button.click(); };
+    const press = (name: string) => { const button = [...container.ownerDocument.body.querySelectorAll<HTMLElement>('button,[role="tab"]')].find(element => element.textContent === name); if (button === undefined) throw new Error('Missing control: ' + name); button.click(); };
     try {
       await act(async () => { root.render(<ProxyView locale="zh" />); });
-      await act(async () => { (container.querySelector('.proxy-table-row') as HTMLElement).click(); });
-      expect(container.textContent).toContain('cached-body-secret'); expect(container.querySelector('a[download]')).not.toBeNull();
-      await act(async () => press('上下文差异')); expect(container.textContent).toContain('cached-diff-secret');
+      await act(async () => { (container.ownerDocument.body.querySelector('.proxy-table-row') as HTMLElement).click(); });
+      expect(container.ownerDocument.body.textContent).toContain('cached-body-secret'); expect(container.ownerDocument.body.querySelector('a[download]')).not.toBeNull();
+      await act(async () => press('上下文差异')); expect(container.ownerDocument.body.textContent).toContain('cached-diff-secret');
       await act(async () => press('协议分析')); expect(finishAnalysis).toBeDefined();
-      act(() => press('删除此请求正文')); act(() => (container.querySelector('.original-deletion-control input') as HTMLInputElement).click());
-      await act(async () => press('确认删除正文')); expect(container.textContent).not.toContain('cached-diff-secret'); expect(container.querySelector('a[download]')).toBeNull();
+      act(() => press('删除此请求正文')); act(() => (container.ownerDocument.body.querySelector('.original-deletion-control input') as HTMLInputElement).click());
+      await act(async () => press('确认删除正文')); expect(container.ownerDocument.body.textContent).not.toContain('cached-diff-secret'); expect(container.ownerDocument.body.querySelector('a[download]')).toBeNull();
       await act(async () => { finishAnalysis(jsonResponse({ parserVersion: 1, requestFormat: 'anthropic_messages', model: null, responseId: null, state: 'completed', stopReason: null, system: 'late-analysis-secret', declarations: [], errors: [], items: [], unknownEvents: 0, completeness: { complete: true, omittedCount: 0, reasons: [] }, usage: { inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, reasoningTokens: null, nativeTotalTokens: null, totalTokens: null, accounting: 'anthropic_separate_cache', snapshots: [] } })); });
-      expect(container.textContent).not.toContain('late-analysis-secret');
-      act(() => press('Request')); expect(container.textContent).not.toContain('cached-body-secret');
+      expect(container.ownerDocument.body.textContent).not.toContain('late-analysis-secret');
+      act(() => press('Request')); expect(container.ownerDocument.body.textContent).not.toContain('cached-body-secret');
       act(() => press('上下文差异')); expect(fetchMock.mock.calls.filter(([url]) => url.includes('/context-diff'))).toHaveLength(1);
-      act(() => press('Headers')); expect(container.textContent).toContain('retained-header');
-      act(() => (container.querySelector('.ui-drawer-header button') as HTMLButtonElement).click());
-      await act(async () => (container.querySelector('.proxy-table-row') as HTMLElement).click());
-      expect(container.textContent).not.toContain('cached-body-secret'); expect(container.querySelector('a[download]')).toBeNull();
+      act(() => press('Headers')); expect(container.ownerDocument.body.textContent).toContain('retained-header');
+      act(() => (container.ownerDocument.body.querySelector('.ui-drawer-header button') as HTMLButtonElement).click());
+      await act(async () => (container.ownerDocument.body.querySelector('.proxy-table-row') as HTMLElement).click());
+      expect(container.ownerDocument.body.textContent).not.toContain('cached-body-secret'); expect(container.ownerDocument.body.querySelector('a[download]')).toBeNull();
     } finally { await act(async () => root.unmount()); }
   });
   it('never flashes a stale body while deletion status is loading or confirms an existing deletion', async () => {
@@ -645,10 +646,10 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
     try {
       await act(async () => root.render(<ProxyView locale="zh" />));
-      await act(async () => (container.querySelector('.proxy-table-row') as HTMLElement).click());
-      expect(container.textContent).not.toContain('stale-body-never-render');
+      await act(async () => (container.ownerDocument.body.querySelector('.proxy-table-row') as HTMLElement).click());
+      expect(container.ownerDocument.body.textContent).not.toContain('stale-body-never-render');
       await act(async () => finish(jsonResponse({ id: 'job-1', proxyId: 1, requestId: 'req-1', state: 'failed', error: 'CAPTURE_STORE_BUSY', createdAt: '2026-10-16T00:00:00.000Z', updatedAt: '2026-10-16T00:00:00.000Z', completedAt: null })));
-      expect(container.textContent).not.toContain('stale-body-never-render'); expect(container.textContent).toContain('文件清理失败');
+      expect(container.ownerDocument.body.textContent).not.toContain('stale-body-never-render'); expect(container.ownerDocument.body.textContent).toContain('文件清理失败');
     } finally { await act(async () => root.unmount()); }
   });
   it.each(['completed', 'http_error', 'network_error', 'timeout', 'cancelled', 'interrupted'] as const)('shows independent %s transport evidence without relabelling processing/original retention', async state => {
@@ -668,12 +669,12 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     vi.stubGlobal('fetch', fetchMock);
     const container = render(<ProxyView locale="zh" />);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-    await act(async () => { container.querySelector('tbody tr')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 0)); });
-    expect(container.textContent).toContain('观测到的网络终态'); expect(container.textContent).toContain('实际上游状态码');
-    expect(container.textContent).toContain('解析任务已执行'); expect(container.textContent).toContain('原文已完整保存');
-    if (code !== null) expect(container.textContent).toContain(code);
-    else expect(container.textContent).toContain('不代表协议或 Agent 成功');
-    expect(container.querySelector('a[download]')?.getAttribute('href')).toBe('/api/proxy/requests/1/body/request');
+    await act(async () => { container.ownerDocument.body.querySelector('tbody tr')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(container.ownerDocument.body.textContent).toContain('观测到的网络终态'); expect(container.ownerDocument.body.textContent).toContain('实际上游状态码');
+    expect(container.ownerDocument.body.textContent).toContain('解析任务已执行'); expect(container.ownerDocument.body.textContent).toContain('原文已完整保存');
+    if (code !== null) expect(container.ownerDocument.body.textContent).toContain(code);
+    else expect(container.ownerDocument.body.textContent).toContain('不代表协议或 Agent 成功');
+    expect(container.ownerDocument.body.querySelector('a[download]')?.getAttribute('href')).toBe('/api/proxy/requests/1/body/request');
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/body/'))).toBe(false);
   });
   it('distinguishes waiting, capture and draining from idle without a polling request', async () => {
@@ -693,28 +694,28 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);
     await act(async () => { root.render(<ProxyView locale="zh" />); });
-    expect(container.textContent).toContain('等待流量');
-    expect(container.textContent).toContain('Agent 接入尚未验证');
-    expect(container.textContent).toContain('全局资源');
-    expect(container.textContent).toContain('32768/33554432');
-    expect(container.textContent).toContain('4 / 5 / 6');
-    expect(container.textContent).not.toContain('正在采集');
+    expect(container.ownerDocument.body.textContent).toContain('等待流量');
+    expect(container.ownerDocument.body.textContent).toContain('Agent 接入尚未验证');
+    expect(container.ownerDocument.body.textContent).toContain('全局资源');
+    expect(container.ownerDocument.body.textContent).toContain('32768/33554432');
+    expect(container.ownerDocument.body.textContent).toContain('4 / 5 / 6');
+    expect(container.ownerDocument.body.textContent).not.toContain('正在采集');
     const requests = fetchMock.mock.calls.length;
     await act(async () => root.render(<ProxyView locale="zh" liveStatus={{ running: true, starting: false, port: 7779, diagnostics: { ...diagnostics, phase: 'capturing', observedRequests: 1, activeRequests: 1 } }} />));
-    expect(container.textContent).toContain('正在采集');
-    expect(container.textContent).not.toContain('代理已在运行，等待流量');
+    expect(container.ownerDocument.body.textContent).toContain('正在采集');
+    expect(container.ownerDocument.body.textContent).not.toContain('代理已在运行，等待流量');
     await act(async () => root.render(<ProxyView locale="zh" liveStatus={{ running: true, starting: false, port: 7779, error: 'CAPTURE_PROCESSING_QUEUE_FULL', diagnostics: { ...diagnostics, phase: 'degraded', observedRequests: 1, captureErrors: 1, lastError: 'CAPTURE_PROCESSING_QUEUE_FULL' } }} />));
-    expect(container.textContent).toContain('CAPTURE_PROCESSING_QUEUE_FULL');
-    expect(container.textContent).not.toContain('PROXY_LOAD_FAILED');
+    expect(container.ownerDocument.body.textContent).toContain('CAPTURE_PROCESSING_QUEUE_FULL');
+    expect(container.ownerDocument.body.textContent).not.toContain('PROXY_LOAD_FAILED');
     await act(async () => root.render(<ProxyView locale="zh" liveStatus={{ running: false, starting: false, port: 7779, diagnostics: { ...diagnostics, phase: 'stopping', cleanupPending: true, activeRequests: 1 } }} />));
-    expect(container.textContent).toContain('等待连接关闭和原文落盘');
-    expect(container.textContent).not.toContain('代理未运行');
-    const stop = [...container.querySelectorAll('button')].find(button => button.textContent === '停止代理')!;
+    expect(container.ownerDocument.body.textContent).toContain('等待连接关闭和原文落盘');
+    expect(container.ownerDocument.body.textContent).not.toContain('代理未运行');
+    const stop = [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === '停止代理')!;
     expect(stop.disabled).toBe(true);
-    expect([...container.querySelectorAll('button')].filter(button => button.textContent === '启动代理').every(button => button.disabled)).toBe(true);
+    expect([...container.ownerDocument.body.querySelectorAll('button')].filter(button => button.textContent === '启动代理').every(button => button.disabled)).toBe(true);
     await act(async () => root.render(<ProxyView locale="zh" liveStatus={{ running: false, starting: false, port: 7779, diagnostics: { ...diagnostics, phase: 'failed', cleanupPending: true, lastError: 'PROXY_STOP_FAILED' } }} />));
-    expect(container.textContent).toContain('PROXY_STOP_FAILED');
-    expect([...container.querySelectorAll('button')].find(button => button.textContent === '停止代理')!.disabled).toBe(false);
+    expect(container.ownerDocument.body.textContent).toContain('PROXY_STOP_FAILED');
+    expect([...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === '停止代理')!.disabled).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(requests);
     await act(async () => root.unmount());
   });
@@ -733,10 +734,10 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     const root = createRoot(container);
     await act(async () => { root.render(<ProxyView locale="zh" focusedRequestId={1} />); });
     await act(async () => { root.render(<ProxyView locale="zh" focusedRequestId={2} />); });
-    expect(container.textContent).toContain('new-focus.test');
+    expect(container.ownerDocument.body.textContent).toContain('new-focus.test');
     await act(async () => { resolveOld(jsonResponse({ ...fullRequest(1), url: 'https://old-focus.test/v1/messages' })); await delayed; });
-    expect(container.textContent).toContain('new-focus.test');
-    expect(container.textContent).not.toContain('old-focus.test');
+    expect(container.ownerDocument.body.textContent).toContain('new-focus.test');
+    expect(container.ownerDocument.body.textContent).not.toContain('old-focus.test');
     await act(async () => { root.unmount(); });
   });
   it('does not lose committed live rows or status when the initial snapshot resolves late', async () => {
@@ -752,8 +753,8 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
       root.render(<ProxyView locale="zh" liveStatus={{ running: true, starting: false, port: 7779 }} liveUpdates={[{ id: 7, hostname: item.hostname, item, requestCount: 1 }]} />);
     });
     await act(async () => { resolveList!(jsonResponse({ items: [], hasMore: false, nextCursor: null })); await delayedList; });
-    expect(container.textContent).toContain('late-live-row.test');
-    expect(container.textContent).toContain('代理运行中');
+    expect(container.ownerDocument.body.textContent).toContain('late-live-row.test');
+    expect(container.ownerDocument.body.textContent).toContain('代理运行中');
     await act(async () => { root.unmount(); });
   });
   it('does not resurrect cleared rows from the bounded parent live buffer', async () => {
@@ -769,12 +770,12 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     await act(async () => { root.render(<ProxyView locale="zh" liveUpdates={[oldUpdate]} />); });
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     const calls = fetcher.mock.calls.length;
-    await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === '清空当前列表')!.click(); });
-    expect(fetcher).toHaveBeenCalledTimes(calls);expect(container.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.textContent).not.toContain('cleared-row.test');
+    await act(async () => { [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === '清空当前列表')!.click(); });
+    expect(fetcher).toHaveBeenCalledTimes(calls);expect(container.ownerDocument.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.ownerDocument.body.textContent).not.toContain('cleared-row.test');
     await act(async () => { root.render(<ProxyView locale="zh" liveUpdates={[oldUpdate, { id: 2, hostname: newItem.hostname, item: newItem, requestCount: 1 }]} />); });
-    expect(container.textContent).not.toContain('cleared-row.test');
-    expect(container.textContent).toContain('new-live-row.test');
+    expect(container.ownerDocument.body.textContent).not.toContain('cleared-row.test');
+    expect(container.ownerDocument.body.textContent).toContain('new-live-row.test');
     expect(fetcher.mock.calls.every(([, init]) => init?.method === undefined)).toBe(true);
     await act(async () => { root.unmount(); });
   });
@@ -799,27 +800,27 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     const container = render(<ProxyView locale="zh" />);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     await act(async () => {
-      container.querySelector('tbody tr')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.ownerDocument.body.querySelector('tbody tr')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await new Promise(resolve => setTimeout(resolve, 0));
     });
     expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/analysis'))).toHaveLength(0);
     await act(async () => {
-      [...container.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === '协议分析')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      [...container.ownerDocument.body.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === '协议分析')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await new Promise(resolve => setTimeout(resolve, 0));
     });
-    expect(container.textContent).toContain('openai_subsets');
-    expect(container.textContent).toContain('response:interrupted');
+    expect(container.ownerDocument.body.textContent).toContain('openai_subsets');
+    expect(container.ownerDocument.body.textContent).toContain('response:interrupted');
     // Keep the52 protocol disclosures bounded. Workbench maintenance/tools
     // disclosures are separate and cannot satisfy the protocol assertion.
-    expect(container.querySelector('.capture-protocol-analysis')!.querySelectorAll('summary').length).toBe(52);
-    expect(container.querySelectorAll('.capture-tools, .capture-maintenance')).toHaveLength(2);
-    expect(container.querySelector('img')).toBeNull();
-    expect(container.textContent).not.toContain('shell-54');
+    expect(container.ownerDocument.body.querySelector('.capture-protocol-analysis')!.querySelectorAll('.ui-accordion > button').length).toBe(52);
+    expect(container.ownerDocument.body.querySelectorAll('.capture-tools, .capture-maintenance')).toHaveLength(2);
+    expect(container.ownerDocument.body.querySelector('img')).toBeNull();
+    expect(container.ownerDocument.body.textContent).not.toContain('shell-54');
     await act(async () => {
-      [...container.querySelectorAll('button')].find(button => button.textContent === '下一页')!.click();
+      [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === '下一页')!.click();
     });
-    expect(container.textContent).toContain('shell-54');
-    expect(container.querySelector('.capture-protocol-analysis')!.querySelectorAll('summary').length).toBe(7);
+    expect(container.ownerDocument.body.textContent).toContain('shell-54');
+    expect(container.ownerDocument.body.querySelector('.capture-protocol-analysis')!.querySelectorAll('.ui-accordion > button').length).toBe(7);
     expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/analysis'))).toHaveLength(1);
   });
   it.each(['ok', 'decode_error', 'resource_limit'] as const)('shows %s decoded-view provenance separately from unchanged original downloads', async status => {
@@ -837,18 +838,18 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     vi.stubGlobal('fetch', fetchMock);
     const container = render(<ProxyView locale="zh" />);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-    await act(async () => { container.querySelector('tbody tr')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 0)); });
-    expect(container.textContent).toContain('正文是有界解码视图');
-    expect(container.textContent).toContain('原始编码字节');
-    expect(container.textContent).toContain('原文已完整保存');
-    expect(container.textContent).toContain('未纳入语义预览的字节'); expect(container.textContent).toContain('3 / 5');
+    await act(async () => { container.ownerDocument.body.querySelector('tbody tr')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(container.ownerDocument.body.textContent).toContain('正文是有界解码视图');
+    expect(container.ownerDocument.body.textContent).toContain('原始编码字节');
+    expect(container.ownerDocument.body.textContent).toContain('原文已完整保存');
+    expect(container.ownerDocument.body.textContent).toContain('未纳入语义预览的字节'); expect(container.ownerDocument.body.textContent).toContain('3 / 5');
     if (status === 'resource_limit') {
-      expect(container.textContent).toContain('全局预览预算不足'); expect(container.textContent).toContain('CAPTURE_PREVIEW_BUDGET_EXCEEDED');
+      expect(container.ownerDocument.body.textContent).toContain('全局预览预算不足'); expect(container.ownerDocument.body.textContent).toContain('CAPTURE_PREVIEW_BUDGET_EXCEEDED');
     }
     if (status === 'decode_error') {
-      expect(container.textContent).toContain('编码或流帧解码不完整'); expect(container.textContent).toContain('INVALID_UTF8');
+      expect(container.ownerDocument.body.textContent).toContain('编码或流帧解码不完整'); expect(container.ownerDocument.body.textContent).toContain('INVALID_UTF8');
     }
-    expect(container.querySelector('a[download]')?.getAttribute('href')).toBe('/api/proxy/requests/1/body/request');
+    expect(container.ownerDocument.body.querySelector('a[download]')?.getAttribute('href')).toBe('/api/proxy/requests/1/body/request');
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/body/'))).toBe(false);
   });
   it('shows original completeness, bounded preview and a direct download without fetching the file', async () => {
@@ -869,23 +870,23 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     const container = render(<ProxyView locale="zh" />);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     await act(async () => {
-      container.querySelector('tbody tr')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.ownerDocument.body.querySelector('tbody tr')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await new Promise(resolve => setTimeout(resolve, 0));
     });
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-    expect(container.textContent).toContain('原文已完整保存');
-    expect(container.textContent).toContain('解析队列已满');
-    expect(container.textContent).toContain('不等于 Agent 失败或原文丢失');
-    expect(container.textContent).toContain('CAPTURE_PROCESSING_QUEUE_FULL');
-    expect(container.textContent).toContain('此处仅展示预览');
-    const link = container.querySelector('a[download]');
+    expect(container.ownerDocument.body.textContent).toContain('原文已完整保存');
+    expect(container.ownerDocument.body.textContent).toContain('解析队列已满');
+    expect(container.ownerDocument.body.textContent).toContain('不等于 Agent 失败或原文丢失');
+    expect(container.ownerDocument.body.textContent).toContain('CAPTURE_PROCESSING_QUEUE_FULL');
+    expect(container.ownerDocument.body.textContent).toContain('此处仅展示预览');
+    const link = container.ownerDocument.body.querySelector('a[download]');
     expect(link?.getAttribute('href')).toBe('/api/proxy/requests/1/body/request');
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/body/'))).toBe(false);
     await act(async () => {
-      [...container.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === 'Headers')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      [...container.ownerDocument.body.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === 'Headers')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    expect(container.textContent).toContain('one=original');
-    expect(container.textContent).toContain('two=original');
+    expect(container.ownerDocument.body.textContent).toContain('one=original');
+    expect(container.ownerDocument.body.textContent).toContain('two=original');
   });
 
   it('applies committed live rows and running status without refetching the list', async () => {
@@ -902,9 +903,9 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     await act(async () => {
       root.render(<ProxyView locale="zh" liveStatus={{ running: true, starting: false, port: 8888 }} liveUpdates={[{ id: 7, hostname: item.hostname, item, requestCount: 1 }]} />);
     });
-    expect(container.textContent).toContain('代理运行中');
-    expect(container.textContent).toContain('api.example.com');
-    expect(container.textContent).toContain('1 req');
+    expect(container.ownerDocument.body.textContent).toContain('代理运行中');
+    expect(container.ownerDocument.body.textContent).toContain('api.example.com');
+    expect(container.ownerDocument.body.textContent).toContain('1 req');
     expect(fetchMock).toHaveBeenCalledTimes(calls);
     act(() => root.unmount());
   });
@@ -925,9 +926,9 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(container.textContent).toContain('代理未运行');
-    expect(container.textContent).toContain('启动代理');
-    expect(container.textContent).toContain('下载 CA 证书');
+    expect(container.ownerDocument.body.textContent).toContain('代理未运行');
+    expect(container.ownerDocument.body.textContent).toContain('启动代理');
+    expect(container.ownerDocument.body.textContent).toContain('下载 CA 证书');
   });
 
   it('Frida 空历史不推断缺安装或平台就绪，保留明确实验性限制', async () => {
@@ -947,12 +948,12 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(container.textContent).toContain('当前返回的历史记录为空');
-    expect(container.textContent).toContain('此页不会检查安装、平台适配或注入权限');
-    expect(container.textContent).toContain('采集持久化尚未闭环');
-    expect(container.textContent).not.toContain('Frida 未安装或未找到 Trae 目标进程');
-    expect(container.querySelector<HTMLInputElement>('[data-frida-ack]')?.checked).toBe(false);
-    expect([...container.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='启动 Frida')?.disabled).toBe(true);
+    expect(container.ownerDocument.body.textContent).toContain('当前返回的历史记录为空');
+    expect(container.ownerDocument.body.textContent).toContain('此页不会检查安装、平台适配或注入权限');
+    expect(container.ownerDocument.body.textContent).toContain('采集持久化尚未闭环');
+    expect(container.ownerDocument.body.textContent).not.toContain('Frida 未安装或未找到 Trae 目标进程');
+    expect(container.ownerDocument.body.querySelector<HTMLInputElement>('[data-frida-ack]')?.checked).toBe(false);
+    expect([...container.ownerDocument.body.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='启动 Frida')?.disabled).toBe(true);
   });
 
   it('§7.2 懒加载：打开抽屉在 Request tab 时零 diff 请求；首次激活 Context Diff 只发一次；离开再回不重发', async () => {
@@ -1060,7 +1061,7 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     // 打开请求详情抽屉（Request tab）→ 尚无异义 diff 请求。
-    const row = container.querySelector('.proxy-table-row');
+    const row = container.ownerDocument.body.querySelector('.proxy-table-row');
     expect(row).not.toBeNull();
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
     const callsBeforeDetail = fetchMock.mock.calls.filter((call) => String(call[0]).includes('context-diff')).length;
@@ -1075,7 +1076,7 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     let diffCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes('context-diff')).length;
     expect(diffCalls).toBe(0);
     // 切换到 Context Diff tab → 恰好一次。
-    const contextTab = [...container.querySelectorAll('[role="tab"]')].find((tab) =>
+    const contextTab = [...container.ownerDocument.body.querySelectorAll('[role="tab"]')].find((tab) =>
       (tab.textContent ?? '').includes('上下文差异'),
     );
     expect(contextTab).not.toBeUndefined();
@@ -1088,13 +1089,13 @@ describe('REQ-020/021 代理与 Frida 视图', () => {
     diffCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes('context-diff')).length;
     expect(diffCalls).toBe(1);
     // 切回 Request 再回 Context Diff → 缓存命中，仍 1 次。
-    const requestTab = [...container.querySelectorAll('[role="tab"]')].find((tab) =>
+    const requestTab = [...container.ownerDocument.body.querySelectorAll('[role="tab"]')].find((tab) =>
       (tab.textContent ?? '').includes('Request'),
     );
     await act(async () => {
       (requestTab as HTMLButtonElement).click();
     });
-    const contextTab2 = [...container.querySelectorAll('[role="tab"]')].find((tab) =>
+    const contextTab2 = [...container.ownerDocument.body.querySelectorAll('[role="tab"]')].find((tab) =>
       (tab.textContent ?? '').includes('上下文差异'),
     );
     await act(async () => {

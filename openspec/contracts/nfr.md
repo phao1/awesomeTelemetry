@@ -878,3 +878,42 @@ execution enforces wall/call/request-output/input-character/tool-batch limits
 and measured nested-token budget; post-response charges are not invoice caps.
 No existing storage/forwarding/event-loop hard budget is waived. Full source and
 provenance/decision bounds: [agent-folding.md](agent-folding.md) AF-001..005.
+
+## Phase B bounded health home
+
+summary pages<=50; one client request shared by rail and home. Session metadata
+projection and covering numeric event counts only; no native/body/source hydration.
+Cache snapshot by SQLite data_version+total_changes and config revision; unchanged
+snapshot skips aggregation/counts. Yield between batches of <=25 tasks; cold50
+summary projection target<200ms on synthetic fixtures, warm<50ms, loop p99<50ms.
+Global sort/filter uses the revision snapshot, never per-page sort presented as global.
+Report summary reads<=4KiB/task, at most50 concurrent bounded async reads/page,
+cached until save/history reconciliation. No saved report generation or full reads.
+
+## Phase B review page hydration bounds
+
+The summary GET's prior cold/warm, tier, event-loop and forwarding budgets remain.
+An independent page lease owns at most50tasks/100members each, global2 jobs,
+4 leases/5000 jobs and120s TTL, yielding before admission and between jobs.
+Only task-level initial/terminal metadata is streamed (<=512KiB total), no bodies,
+per-session SSE or repeated retries. Abort removes queued work immediately;
+shutdown awaits actual admitted parsers. Reuse existing parser budgets, no startup
+prewarm. Frontend cancels old scope and ignores late frames, retains metadata
+through own coalesced refreshes, caps reads to one/3s while warming plus final.
+
+## Phase D intake budgets
+
+[telemetry-intake.md](telemetry-intake.md) TD-006 adds bounded worker parsing,
+request/retention quotas and shared serialized WAL admission. Telemetry's own
+20000 spans/32MiB normalized JSON/256 tasks quota excludes native scan/capture data;
+it does not enforce a total DB-size gate. Native DBs exceeding180MB must remain
+eligible. WAL8MB admission/one nonblocking checkpoint reserves20MB WAL headroom.
+This explicit Phase D exception changes no capture gate or existing performance
+measurement requirement; large native stores are not newly certified. Full bounds
+and differentiated refusal codes are in TD-006.
+
+
+## Phase E requests
+
+Request DTOs, indexed projection budgets and additive routes/filters follow
+[task-requests.md](task-requests.md) TR-001–005. Existing routes remain compatible.

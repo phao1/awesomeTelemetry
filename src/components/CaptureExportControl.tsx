@@ -1,3 +1,4 @@
+import { Button } from './ui/Button.js';
 import { useLayoutEffect, useRef, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -99,8 +100,8 @@ function ExportAction({ id, locale, blocked, metadataOnly }: { id: number; local
     {pending && <p role="status">{copy.pending}</p>}
     {downloaded && <p role="status">{copy.downloaded}</p>}
     {error !== null && <p role="alert">{error === 'EXPORT_TIMEOUT' ? copy.timeout : error === 'INVALID_EXPORT' || error === 'CAPTURE_EXPORT_LIMIT' ? copy.invalid : copy.failed} <code>{error}</code></p>}
-    <button type="button" className="btn" disabled={blocked || pending} onClick={() => void download()}>{copy.action}</button>
-    {pending && <button type="button" className="btn" onClick={() => { invalidate(); setPending(false); }}>{copy.cancel}</button>}
+    <Button type="button"  disabled={blocked || pending} onClick={() => void download()}>{copy.action}</Button>
+    {pending && <Button type="button"  onClick={() => { invalidate(); setPending(false); }}>{copy.cancel}</Button>}
   </section>;
 }
 

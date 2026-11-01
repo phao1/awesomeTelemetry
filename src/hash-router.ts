@@ -1,3 +1,5 @@
+import { isSettingsSection, type SettingsSection } from './settings-route.js';
+import { parseTaskRoute, serializeComparisonRoute } from './task-route.js';
 /**
  * REQ-024：手写 hash 解析/序列化（≤60 行，不引路由库）。
  * D3：hash 是状态的唯一表示，状态变 → 写 hash，hashchange → 解析并应用。
@@ -5,13 +7,15 @@
 
 import type { SessionRange } from './core/trace-types.js';
 
-export const HASH_VIEWS = ['session', 'agent', 'compare', 'proxy', 'frida', 'mission', 'task', 'intake', 'benchmark', 'team-experiment'] as const;
+export const HASH_VIEWS = ['ui-kit', 'settings', 'overview', 'session', 'agent', 'compare', 'proxy', 'frida', 'mission', 'task', 'intake', 'benchmark', 'team-experiment'] as const;
 
 /** 色带宽度模式（add-trajectory-inspector D10/D18）。 */
 export type RibbonMode = 'time' | 'token';
 
 export interface HashState {
+  section?: SettingsSection;
   view: (typeof HASH_VIEWS)[number];
+  channel?: 'native' | 'proxy' | 'cdp' | 'frida' | 'import';
   key?: string;
   phase?: string[];
   provider?: string[];
@@ -68,7 +72,9 @@ export function parseHash(hash: string): HashState | null {
     const range =
       rangeRaw === '7d' || rangeRaw === '30d' || rangeRaw === 'all' ? rangeRaw : undefined;
     return {
+      ...(['native','proxy','cdp','frida','import'].includes(params.get('channel')??'')?{channel:params.get('channel') as HashState['channel']}:{}),
       view: view as HashState['view'],
+      ...(view==='settings'&&isSettingsSection(params.get('section'))?{section:params.get('section') as SettingsSection}:{}),
       ...(key !== null ? { key } : {}),
       ...(phase !== undefined ? { phase } : {}),
       ...(provider !== undefined ? { provider } : {}),
@@ -88,6 +94,8 @@ export function parseHash(hash: string): HashState | null {
 
 export function serializeHash(state: HashState): string {
   const params = new URLSearchParams();
+  if(state.view==='settings'&&state.section&&state.section!=='general')params.set('section',state.section);
+  if(state.channel)params.set('channel',state.channel);
   if (state.key !== undefined) {
     params.set('key', state.key);
   }
@@ -123,4 +131,14 @@ export function serializeHash(state: HashState): string {
   }
   const query = params.toString();
   return `#/${state.view}${query === '' ? '' : `?${query}`}`;
+}
+
+/** Canonicalize only entry paths. All explicit native evidence locators survive. */
+export function canonicalHash(hash: string): string {
+  const [path,search='']=hash.replace(/^#\/?/,'').split('?'),q=new URLSearchParams(search);
+  if(['proxy','frida','cdp'].includes(path??'')){q.set('channel',path!);return '#/intake?'+q.toString();}
+  if(path==='task'&&(q.get('compareImport')==='1'||!q.has('task')&&!q.has('key')&&q.has('a')&&q.has('b')))return serializeComparisonRoute(parseTaskRoute(hash));
+  if(path==='mission'||path==='agent'||path==='agents')return '#/overview'+(search?'?'+search:'');
+  if(path==='session'||path==='sessions')return '#/task'+(search?'?'+search:'');
+  return hash;
 }

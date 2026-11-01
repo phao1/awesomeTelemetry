@@ -1,5 +1,5 @@
 import { describe,expect,it } from 'vitest';
-import { deriveTaskProcess,flattenTaskProcess,fitTimeRange,isProcessGroup,processInterval,zoomTimeRange,type ProcessGroup } from './task-process.js';
+import { deriveTaskProcess,flattenTaskProcess,fitTimeRange,isProcessGroup,processInterval,singleToolOutcome,zoomTimeRange,type ProcessGroup } from './task-process.js';
 import type { TaskRecord,TaskRecordPage,TaskNativeRef } from './task-types.js';
 import type { TraceEventSlim } from './trace-types.js';
 const native=(kind:TaskNativeRef['kind'],value:string):TaskNativeRef=>({namespace:'agent:codex',kind,value,scope:'s'});
@@ -52,6 +52,19 @@ describe('evidence-based task process',()=>{
     const value=page([a,b]);value.hasPrevious=true;value.structure={records:[],warnings:[],leading:[{memberId:'agent',recordId:'s:event:prior',sequence:1,title:'Original input',startedAt:a.event!.startedAt}]};
     const groups=deriveTaskProcess(value);expect(groups).toHaveLength(2);expect(groups.find(group=>group.memberId==='agent')).toMatchObject({basis:'continued',title:'Original input',partial:true});
     expect(groups.every(group=>new Set(group.records.map(record=>record.memberId)).size===1)).toBe(true);
+  });
+  it.each(['success','error'] as const)('uses a standalone completed tool record itself: %s',status=>{
+    const record=item('complete-tool',1,{hasOutput:true,durationMs:800,status});
+    expect(singleToolOutcome(record)).toEqual({status,durationMs:800});
+    const tool=walk(deriveTaskProcess(page([record]))).find(group=>group.kind==='tool');
+    expect(tool).toMatchObject({result:status,records:[record]});
+  });
+  it('does not complete native input-only observations or replace an explicit partner with a single-record outcome',()=>{
+    const record=item('native-call',1,{hasInput:true,hasOutput:false,status:'success',durationMs:800});
+    expect(singleToolOutcome(record)).toBeNull();
+    record.event!.hasOutput=true;
+    expect(singleToolOutcome(record,{records:[record],related:[record.id,'off-page-result']})).toBeNull();
+    expect(singleToolOutcome(record,{records:[record,item('partner',2)],related:[]})).toBeNull();
   });
   it('supports explicit folding while preserving selection and original identity',()=>{
     const record=item('a',1,{kind:'llm',tool:null}),groups=deriveTaskProcess(page([record])),all=walk(groups);

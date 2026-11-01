@@ -32,7 +32,7 @@ function render(locale: 'en' | 'zh' = 'en') {
   act(() => root.render(<SessionFamilyPanel {...props} />));
   return { container, root, props, close, openSession, openRequest };
 }
-const click = async (container: Element, text: string) => { await act(async () => { const button = [...container.querySelectorAll('button')].find(node => node.textContent?.includes(text)); expect(button, text).toBeDefined(); button!.click(); }); await flush(); };
+const click = async (container: Element, text: string) => { await act(async () => { const button = [...container.ownerDocument.body.querySelectorAll('button')].find(node => node.textContent?.includes(text)); expect(button, text).toBeDefined(); button!.click(); }); await flush(); };
 
 describe('family drawer user journey', () => {
   it('loads one family, expands only a selected branch, then reads attempts and one event body on explicit actions', async () => {
@@ -40,19 +40,19 @@ describe('family drawer user journey', () => {
       : url.includes('/execution') ? execution() : url.includes('/child/family') ? family('child', ['grandchild']) : family()));
     vi.stubGlobal('fetch', fetchMock); const f = render(); await flush();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/root/family']);
-    expect(f.container.textContent).not.toContain('Synthetic grandchild');
-    await act(async () => { f.container.querySelector<HTMLButtonElement>('[aria-label="Expand children Synthetic child"]')!.click(); }); await flush();
-    expect(f.container.textContent).toContain('Synthetic grandchild'); expect(fetchMock).toHaveBeenCalledTimes(2);
-    await act(async () => { f.container.querySelector<HTMLButtonElement>('[data-family-session="child"] .family-node-select')!.click(); }); await flush();
+    expect(f.container.ownerDocument.body.textContent).not.toContain('Synthetic grandchild');
+    await act(async () => { f.container.ownerDocument.body.querySelector<HTMLButtonElement>('[aria-label="Expand children Synthetic child"]')!.click(); }); await flush();
+    expect(f.container.ownerDocument.body.textContent).toContain('Synthetic grandchild'); expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => { f.container.ownerDocument.body.querySelector<HTMLButtonElement>('[data-family-session="child"] .family-node-select')!.click(); }); await flush();
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await click(f.container, 'Events & attempts');
     expect(fetchMock.mock.calls[2]![0]).toBe('/api/sessions/child/execution?eventLimit=20&captureLimit=20');
-    expect(f.container.textContent).toContain('Retry relation: unknown');
+    expect(f.container.ownerDocument.body.textContent).toContain('Retry relation: unknown');
     await click(f.container, '#1 · Inspect attempt');
-    expect(f.container.textContent).toContain('Network failure'); expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(f.container.ownerDocument.body.textContent).toContain('Network failure'); expect(fetchMock).toHaveBeenCalledTimes(3);
     await click(f.container, 'Read event details');
     expect(fetchMock.mock.calls[3]![0]).toContain('/api/sessions/child/events/event-1');
-    expect(f.container.textContent).toContain('<img src=x onerror=alert(1)>'); expect(f.container.querySelector('img')).toBeNull();
+    expect(f.container.ownerDocument.body.textContent).toContain('<img src=x onerror=alert(1)>'); expect(f.container.ownerDocument.body.querySelector('img')).toBeNull();
     await click(f.container, 'Open capture Trace'); expect(f.openRequest).toHaveBeenCalledExactlyOnceWith(1); expect(f.close).toHaveBeenCalledOnce();
   });
 
@@ -66,16 +66,16 @@ describe('family drawer user journey', () => {
 
   it('shows a complete empty/unknown flow rather than inventing a root or retry', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => response(url.includes('/execution') ? execution('root', true) : family('root', []))));
-    const f = render('zh'); await flush(); expect(f.container.textContent).toContain('没有声明不代表这是根会话');
-    await click(f.container, '执行与尝试'); expect(f.container.textContent).toContain('没有已确认关联的网络尝试'); expect(f.container.textContent).toContain('重试关系：未知');
+    const f = render('zh'); await flush(); expect(f.container.ownerDocument.body.textContent).toContain('没有声明不代表这是根会话');
+    await click(f.container, '执行与尝试'); expect(f.container.ownerDocument.body.textContent).toContain('没有已确认关联的网络尝试'); expect(f.container.ownerDocument.body.textContent).toContain('重试关系：未知');
   });
 
   it('marks invalidated conclusions stale without auto-refetch and refreshes explicitly', async () => {
     const fetchMock = vi.fn(async () => response(family())); vi.stubGlobal('fetch', fetchMock);
     const f = render(); await flush();
     act(() => f.root.render(<SessionFamilyPanel {...f.props} invalidateKey={1} />));
-    expect(f.container.textContent).toContain('Old conclusions are hidden'); expect(f.container.textContent).not.toContain('Synthetic child'); expect(fetchMock).toHaveBeenCalledTimes(1);
-    await click(f.container, 'Refresh relations'); expect(fetchMock).toHaveBeenCalledTimes(2); expect(f.container.textContent).toContain('Synthetic child');
+    expect(f.container.ownerDocument.body.textContent).toContain('Old conclusions are hidden'); expect(f.container.ownerDocument.body.textContent).not.toContain('Synthetic child'); expect(fetchMock).toHaveBeenCalledTimes(1);
+    await click(f.container, 'Refresh relations'); expect(fetchMock).toHaveBeenCalledTimes(2); expect(f.container.ownerDocument.body.textContent).toContain('Synthetic child');
   });
 
   it('does not let a late source read replace a newly selected owner', async () => {
@@ -86,24 +86,24 @@ describe('family drawer user journey', () => {
     vi.stubGlobal('fetch', fetchMock); const f = render();
     act(() => f.root.render(<SessionFamilyPanel {...f.props} sessionKey="other" />)); await flush();
     await act(async () => { resolveOld(response(family())); await delayed; });
-    expect(f.container.textContent).not.toContain('Synthetic root'); expect(f.container.textContent).toContain('Synthetic other');
+    expect(f.container.ownerDocument.body.textContent).not.toContain('Synthetic root'); expect(f.container.ownerDocument.body.textContent).toContain('Synthetic other');
     const options = fetchMock.mock.calls[0] as unknown[]; expect(options[0]).toContain('/root/');
   });
 
   it('returns from a failed local read through an explicit retry only', async () => {
     const fetchMock = vi.fn().mockRejectedValueOnce(new Error('SYNTHETIC_READ_FAILED')).mockResolvedValue(response(family()));
     vi.stubGlobal('fetch', fetchMock); const f = render(); await flush();
-    expect(f.container.textContent).toContain('SYNTHETIC_READ_FAILED'); expect(fetchMock).toHaveBeenCalledTimes(1);
-    await click(f.container, 'Retry local read'); expect(fetchMock).toHaveBeenCalledTimes(2); expect(f.container.textContent).toContain('Synthetic child');
+    expect(f.container.ownerDocument.body.textContent).toContain('SYNTHETIC_READ_FAILED'); expect(fetchMock).toHaveBeenCalledTimes(1);
+    await click(f.container, 'Retry local read'); expect(fetchMock).toHaveBeenCalledTimes(2); expect(f.container.ownerDocument.body.textContent).toContain('Synthetic child');
   });
 
   it('times out an unresponsive read and suppresses its late result', async () => {
     vi.useFakeTimers(); let resolveOld!: (value: Response) => void;
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { resolveOld = resolve; })));
     const f = render(); await act(async () => { vi.advanceTimersByTime(5000); });
-    expect(f.container.textContent).toContain('exceeded 5 seconds');
+    expect(f.container.ownerDocument.body.textContent).toContain('exceeded 5 seconds');
     await act(async () => { resolveOld(response(family())); });
-    expect(f.container.textContent).not.toContain('Synthetic child');
+    expect(f.container.ownerDocument.body.textContent).not.toContain('Synthetic child');
   });
 
   it('aborts its owned request on unmount', async () => {

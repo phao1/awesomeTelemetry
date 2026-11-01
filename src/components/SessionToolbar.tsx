@@ -1,3 +1,5 @@
+import { Disclosure } from './ui/PageControls.js';
+import { Button } from './ui/Button.js';
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -260,9 +262,9 @@ export function SessionToolbar({
             </span>
           </div>
         </div>
-        <button type="button" className="btn session-toolbar-prompt" onClick={onPromptContext}>
+        <Button type="button" className="session-toolbar-prompt"  onClick={onPromptContext}>
           {t('prompt.open', locale)}
-        </button>
+        </Button>
         <DropdownMenu
           open={menuOpen}
           onOpenChange={setMenuOpen}
@@ -280,13 +282,13 @@ export function SessionToolbar({
         />
       </header>
       <section className="session-metric-criteria">
-        <details>
-          <summary>{t('session.metric.scope',locale)} · {t('session.metric.loaded',locale).replace('{loaded}',String(events.length)).replace('{total}',String(eventTotal))}</summary>
+        <Disclosure title={<>{t('session.metric.scope',locale)} · {t('session.metric.loaded',locale).replace('{loaded}',String(events.length)).replace('{total}',String(eventTotal))}</>}>
+
           <p>{t('session.metric.verificationFormula',locale)}: <span className="mono">{metrics.verifyEvents} / {metrics.stepCount}</span></p>
           <p>{t('session.metric.errorFormula',locale)}: <span className="mono">{metrics.errorSteps} / {metrics.stepCount}</span></p>
           <p>{t('session.metric.steps',locale)}</p>
           <p>{t('session.metric.unknownStatuses',locale).replace('{n}',String(metrics.unknownStatuses))}</p>
-        </details>
+        </Disclosure>
         {(hasMore || events.length < eventTotal || metrics.stepCount === 0) && <p role="status">{t(hasMore || events.length < eventTotal ? 'session.metric.partial' : 'session.metric.noSteps',locale)}</p>}
       </section>
       <ScanTimingCriteria left={session} partial={hasMore || events.length < eventTotal} locale={locale} compact />

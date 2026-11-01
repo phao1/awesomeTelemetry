@@ -1252,10 +1252,7 @@ const EMPTY_TEAM_METRICS: TeamMetrics = {
     totalReasoningTokens: unavailableMetric(),
     totalCacheReadTokens: unavailableMetric(),
     totalCacheWriteTokens: unavailableMetric(),
-    totalCostUsd: unavailableMetric(),
-    costCurrency: null,
     coordinationTokens: unavailableMetric(),
-    costGini: unavailableMetric(),
   },
   collaboration: {
     directRatio: unavailableMetric(),

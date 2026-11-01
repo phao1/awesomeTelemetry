@@ -103,7 +103,7 @@ using Node native fetch, plus an external driver adapter using the existing
 isolated Git/argv/independent-evaluator infrastructure. No new SDK dependency.
 No model/tool execution on page load, import, analysis, export or replay. Browser
 runs only the fixed offline fixture. Real execution is CLI-only, explicit
---execute and --allow-paid for Anthropic, after a concrete plan/token estimate.
+--execute and --allow-model-calls for Anthropic, after a concrete plan/token estimate.
 Credentials stay in the process environment; status reveals configured booleans,
 never key values. Current model name is explicit, not inferred from old logs.
 No live API is claimed tested without a real authorized request.
@@ -112,8 +112,8 @@ One stable graph intervention per experiment; each case gets fresh backend /
 isolated driver workspace. Keep each completed trial and an atomic partial
 report when cancelled. Stop owned process groups/requests; no auto retry. Per-case
 wall deadline, call cap, max output/request, input chars/request, tool batch cap
-and measured token budget include nested agents. Token budget charged after a
-response cannot guarantee an exact maximum bill; show this limitation. Parallel
+and measured token budget include nested agents. Token usage is recorded after a
+response; show this timing limitation without monetary estimates. Parallel
 read-only tools are bounded; writes require a runtime gate and execute in order.
 The fictional fixture writes only its in-memory backend; external writes are
 explicit driver scope. Direct tool precondition/permission/policy tests must
@@ -201,12 +201,12 @@ investigation remain deferred. Each stage still has its own checks and commit.
 working directory, inclusive ISO UTC `from`/`to`, or `taskIds` (1..40 unique collected
 root task IDs). Filters intersect. Missing filters mean all retained collected
 roots, bounded at 40; excess is an explicit error, never a silent partial sample.
-`createNativeScopeCollector(db).collect(scope, signal?)` returns FoldingProject;
+`createNativeScopeCollector(db, {ensureDetail?, byteLimit?}?).collect(scope, signal?)` returns FoldingProject;
 `close()` drops its cache. No execution, model calls, new tables or HTTP routes.
 Scope builder lives in server/agent-folding/native-scope.ts with adjacent tests.
 
 Read retained task membership and source locations, then stream existing local
-JSONL on explicit collection. At most 32MiB of source bytes per collection;
+JSONL on explicit collection. At most 512MiB of unique file bytes per owned job (deduplicated by dev+ino across scope/metric reads and A/B groups);
 existing project limits also apply. Cancellation and source changes fail the read.
 Cache at most 8 scopes, keyed by canonical scope, database data_version plus
 connection total_changes and source size/mtime. Never silently reuse a stale read.
@@ -308,7 +308,7 @@ score:number,perCase:Record<string,number>,latency_s,model_calls,in_tokens,out_t
 (number|null). Scores are task-weighted; other means are row-weighted.
 Missing grades/nonfinite grades and no common cases fail explicitly. Actions
 compare sorted names per repetition, independent of full-argument diagnostics.
-No cost is shown without explicit prices.
+Only Token and cache-hit metrics are shown.
 
 `kitEstimate(results,{tasks?,reps?,heavy?,only?}?)` returns
 {tasks,reps,covered,rows,input:{low,high,likely},output:{low,high,likely}};
@@ -409,16 +409,23 @@ quality scanner/scope makes those rows incomparable. Confound dimensions are the
 eight identifiers in r4 §4; missing metadata is a limitation, never sameness.
 Per-case flips require verdict.cases in every run; otherwise explicitly unknown.
 
-Report order: quality, responsibilities, chains, process/timing, tokens/cost,
+Report order: quality, responsibilities, chains, process/timing, tokens/cache hit rate,
 per-run details. HTML reuses compare-report.ts's new shared static shell;
 Markdown/HTML/CSV escape all user text (CSV also spreadsheet-formula prefixes).
-No session body, prompt or generated answer in reports. No price => no cost.
+No session body, prompt or generated answer in reports. No monetary presentation.
 
 `collectFoldingMetricRun(db, taskId, project, signal?)` reads only existing members
 and bounded source metadata, returns FoldingMetricRun for root+all linked children.
-No new SQL table. Explicit columns, cached statements, <=2000 model/tool spans
-per task; exceeding bound is an explicit error. Raw JSONL is streamed up to32MiB
-per task. Claude usage is last snapshot per message.id; Codex cumulative totals
+No new SQL table. Explicit columns, cached statements. Up to 2000 model/tool
+spans per task are returned. Above that bound, omit the entire span array,
+retain full-source usage and exact call counts, mark telemetry incomplete and
+leave timing metrics unknown with an explicit omission limitation. Never compute
+metrics from a truncated prefix. Raw JSONL shares the 512MiB per-owned-job byte
+budget (test-injectable), charged once per dev+ino using the full opened file
+size (and any observed growth). Repeated reads never double-charge; TOO_LARGE
+details.bytes is the deduplicated file-byte total accounted by the job. Bytes
+count before a cheap substring prefilter and
+JSON parsing. Existing 30s deadline and 8MiB response bounds remain. Claude usage is last snapshot per message.id; Codex cumulative totals
 use the last token_count snapshot. Missing fields stay null. Measured source
 inclusion flags come from P0; counts remain unavailable when source evidence is
 missing, not guessed from legacy zero counters. Original per-event duration
@@ -528,3 +535,56 @@ non-executing semantic review is the sole P7 browser model-call exception. The U
 shows the configured model, outbound evidence and a manual submit control; opening
 an audit or preview never calls a model. No automatic retries. Claims are model
 opinions supported only by supplied IDs, not verified facts; no quality upgrade.
+
+### Native source degradation and actionable failures
+
+Missing or unreadable JSONL (including roots) has a stable `missing` fingerprint;
+readability/size/mtime/inode and DB revisions are checked before and after reads.
+Appearance, disappearance or growth invalidates results. Missing members use
+indexed delegation tool events, exact tool_call identities and declared member
+parentId; only unique child matches are confirmed. Unknown role definitions stay
+unknown; summaries are never parsed to infer them. Ambiguous delegations retain
+incomplete evidence and traffic, without an indexed confirmed boundary.
+
+For metrics, missing members use sessions.token_* and indexed tool events,
+deduplicated by exact tool_call identity where retained. Indexed input is fresh
+input excluding cache, for both providers. Legacy zero counters cannot establish
+reported zero: these fields remain null, including unknown reasoning/cache flags.
+The source limitation identifies indexed values and telemetry.complete=false.
+Full retained usage may remain available when telemetry is incomplete; this does
+not certify timing or model call completeness.
+
+No direct/confirmed capture association => no linked-execution event pagination.
+When associated session metadata exceeds 20000 events, skip timing promotion,
+keep native observed spans and explain the limit. This is not a source failure.
+FoldingSourceError carries SOURCE_CHANGED / UNINDEXED / TOO_LARGE / NO_MATCH /
+INVALID_SOURCE with static messages and optional counts/limit, mapped by api.md.
+
+The optional ensureDetail(sessionKey, signal?) dependency reuses REQ-015 for
+readable members with detail_loaded=0 before capturing the database revision.
+Refresh task context after loading (including any newly linked members). Attempt
+at most once per member per collection. Missing originals and loader failures
+retain partial results with limitations; cancellation retires the read even if a
+loader ignores its signal. CLI callers omitting this dependency remain readonly.
+The browser supplies the existing server ensureDetail implementation, not a new
+parser. No background enumeration/capture/model execution is started.
+
+A native delegation without an indexed event no longer throws UNINDEXED: retain
+traffic and incomplete evidence with native.eventId=null, do not create its
+confirmed boundary, and state the unindexed count and instruction to open the
+task execution trajectory to load details and retry. UNINDEXED remains a reserved
+typed failure reason with that same accurate UI guidance.
+
+When usage inputIncludesCache conventions differ, normalize each member to
+fresh input before summing: included input subtracts cacheRead and cacheWrite
+(or zero only when cacheWriteReported=false). Missing/invalid required values
+make that member input null; the aggregate convention is false. Uniform
+conventions keep existing values/flags unchanged. Retained native usage remains
+visible even when details are incomplete, accompanied by an explicit limitation.
+
+Phase F1: monetary UI/report fields and alert rules are removed; raw evidence
+remains stored faithfully. Token/cacheHitRate follows data-model F1-001/002.
+
+Phase F1 CLI presentation uses --allow-model-calls for explicit model execution
+consent. --allow-paid remains a backward-compatible alias with identical guards;
+no run is started by viewing/exporting a plan.

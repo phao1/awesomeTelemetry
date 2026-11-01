@@ -5,7 +5,7 @@ export type CaptureComparisonReason = 'missing_value' | 'invalid_value' | 'clock
 export type CaptureComparisonWarningCode = 'model_mismatch' | 'model_unknown' | 'protocol_mismatch' | 'protocol_unknown' | 'accounting_mismatch' | 'accounting_unknown'
   | 'processing_mismatch' | 'processing_unknown' | 'processing_incomplete' | 'retention_mismatch' | 'retention_unknown' | 'retention_incomplete'
   | 'analysis_mismatch' | 'analysis_incomplete' | 'analysis_unavailable' | 'completeness_mismatch' | 'measurement_mismatch' | 'timing_unavailable' | 'timing_incomplete'
-  | 'original_deleted' | 'task_tool_parameters_quality_unproven' | 'natural_comparison_not_causal' | 'cost_unknown';
+  | 'original_deleted' | 'task_tool_parameters_quality_unproven' | 'natural_comparison_not_causal';
 
 const TIMING_IDS = ['responseHeadersMs', 'firstBodyByteMs', 'firstContentMs', 'completedMs'] as const;
 const USAGE_IDS = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'reasoningTokens', 'nativeTotalTokens', 'totalTokens'] as const;
@@ -28,7 +28,6 @@ export interface CaptureComparisonViewModel {
   timings: CaptureComparisonMetricRow[];
   usage: CaptureComparisonMetricRow[];
   warnings: CaptureComparisonWarning[];
-  cost: { base: null; target: null; delta: null; reason: 'not_estimated' };
 }
 
 function number(value: unknown): number | null {
@@ -147,6 +146,5 @@ export function buildCaptureComparison(response: CaptureComparisonResponse): Cap
   const usage = USAGE_IDS.map(id => row(id, 'tokens', left?.usage[id], right?.usage[id], commonUsageReasons, 'analysis.usage'));
   warn('task_tool_parameters_quality_unproven', ['base', 'target'], ['task/tool/parameter/result quality equivalence is not established by capture metadata']);
   warn('natural_comparison_not_causal', ['base', 'target'], ['observed target-minus-base differences are not a controlled experiment, speedup, retry or charge identity']);
-  warn('cost_unknown', ['base', 'target'], ['cost not estimated; missing price/billing identity is not free']);
-  return { timings, usage, warnings: [...warnings.values()], cost: { base: null, target: null, delta: null, reason: 'not_estimated' } };
+  return { timings, usage, warnings: [...warnings.values()] };
 }

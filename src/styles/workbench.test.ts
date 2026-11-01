@@ -15,7 +15,7 @@ describe('workbench interaction style boundaries', () => {
     expect(css).toMatch(/\.capture-workbench\s*\{[^}]*min-height:\s*0[^}]*overflow:\s*auto/);
     expect(css).toMatch(/\.capture-request-scroll\s*\{[^}]*overflow:\s*auto[^}]*min-width:\s*0/);
     expect(css).toMatch(/\.capture-request-table td\s*\{[^}]*height:\s*var\(--row-sm\)[^}]*white-space:\s*nowrap/);
-    expect(css).toMatch(/\.capture-request-open\s*\{[^}]*height:\s*calc\(var\(--row-sm\) - 1px\)/);
+    expect(css).toMatch(/\.capture-request-open\s*\{[^}]*height:\s*calc\(var\(--row-sm\) - calc\(var\(--space-1\) \/ 4\)\)/);
     expect(css).toMatch(/\.capture-body-content\s*\{[^}]*overflow-wrap:\s*anywhere[^}]*overflow:\s*auto[^}]*max-height:\s*60vh/);
     expect(css).toMatch(/\.capture-detail-resize\s*\{[^}]*cursor:\s*col-resize/);
   });

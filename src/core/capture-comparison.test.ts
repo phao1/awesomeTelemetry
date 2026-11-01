@@ -33,7 +33,7 @@ describe('explicit capture comparison display model', () => {
     ]);
     expect(model.timings[0]!.baseSource).toBe('base.evidence.transport.timing.responseHeadersMs');
     expect(model.timings[0]!.targetSource).toBe('target.evidence.transport.timing.responseHeadersMs');
-    expect(model.cost).toEqual({ base: null, target: null, delta: null, reason: 'not_estimated' });
+    expect(model).not.toHaveProperty('cost');
   });
   it('preserves zero offsets and zero token counters while keeping missing counters unknown', () => {
     const input = fixture(); Object.assign(timing(input.base), { responseHeadersMs: 0, firstBodyByteMs: 0, firstContentMs: 0 });
@@ -169,8 +169,8 @@ describe('explicit capture comparison display model', () => {
     timing(input.target).firstContentKind = 'tool_arguments';
     const model = buildCaptureComparison(input); const codes = model.warnings.map(warning => warning.code);
     for (const code of ['model_mismatch', 'protocol_mismatch', 'processing_mismatch', 'retention_mismatch', 'analysis_mismatch', 'completeness_mismatch', 'measurement_mismatch',
-      'task_tool_parameters_quality_unproven', 'natural_comparison_not_causal', 'cost_unknown']) expect(codes).toContain(code);
-    expect(model.cost.base).toBeNull(); expect(model.cost.target).toBeNull();
+      'task_tool_parameters_quality_unproven', 'natural_comparison_not_causal']) expect(codes).toContain(code);
+    expect(model).not.toHaveProperty('cost'); expect(codes).not.toContain('cost_unknown');
     expect(model).not.toHaveProperty('speedup'); expect(model).not.toHaveProperty('verdict'); expect(model).not.toHaveProperty('costTotal');
   });
   it('is deterministic, immutable, pure and carries bounded metadata paths rather than observed content', () => {

@@ -21,7 +21,7 @@ Grafana trade-offs:
 | **Dark first** | follow the system by default; dark when no preference | light by default, harsh at night |
 | **Neutral grays carry structure** | hierarchy via canvas lightness difference + 1px borders | color everywhere, colorful cards |
 | **Color expresses semantics only** | color = phase / status / diff, not decoration | brand color covering the UI |
-| **Borders over shadows** | flat; shadows only for overlays (popover/modal) | stacked card shadows |
+| **Borders over shadows** | shadow-xs/sm for cards and selected blocks; shadow-md/lg for overlays | stacked card shadows |
 | **Density is respect** | maximize per-screen information; monospace carries IDs and numbers | huge whitespace, huge radius, huge cards |
 | **Color never carries information alone** | color always paired with an icon or text | only color dots distinguishing the 6 phases |
 
@@ -56,28 +56,28 @@ Grafana trade-offs:
 
 | Token | Dark | Light | Use |
 |-------|------|-------|-----|
-| `--canvas-inset` | `#010409` | `#f6f8fa` | scroll-container bottoms, code block bottoms |
-| `--canvas-default` | `#0d1117` | `#ffffff` | app main background |
-| `--canvas-subtle` | `#161b22` | `#f6f8fa` | sidebar, secondary panels, table headers |
-| `--canvas-raised` | `#1c2128` | `#ffffff` | cards, row hover |
-| `--canvas-overlay` | `#21262d` | `#ffffff` | overlays: menus / popovers / modals |
-| `--canvas-overlay-fg` | `#e6edf3` | `#1f2328` | text on overlay surfaces (Compare Hero gradient) |
+| `--canvas-inset` | `#09090b` | `#f6f7f9` | scroll-container bottoms, code block bottoms |
+| `--canvas-default` | `#111113` | `#ffffff` | app main background |
+| `--canvas-subtle` | `#1a1a1e` | `#f3f4f6` | sidebar, secondary panels, table headers |
+| `--canvas-raised` | `#141417` | `#ffffff` | cards, row hover |
+| `--canvas-overlay` | `#1a1a1e` | `#ffffff` | overlays: menus / popovers / modals |
+| `--canvas-overlay-fg` | `#f4f4f5` | `#111827` | text on overlay surfaces (Compare Hero gradient) |
 
 ### 2.2 Border
 
 | Token | Dark | Light | Use |
 |-------|------|-------|-----|
-| `--border-default` | `#30363d` | `#d1d9e0` | regular dividers, inputs |
-| `--border-muted` | `#21262d` | `#e4e8ec` | in-row list dividers (weaker) |
-| `--border-strong` | `#6e7681` | `#8c959f` | hover state, emphasis border before focus |
+| `--border-default` | `#27272a` | `#e5e7eb` | regular dividers, inputs |
+| `--border-muted` | `#1f1f23` | `#eef0f3` | in-row list dividers (weaker) |
+| `--border-strong` | `#3f3f46` | `#d1d5db` | hover state, emphasis border before focus |
 
 ### 2.3 Foreground
 
 | Token | Dark | Light | Use |
 |-------|------|-------|-----|
-| `--fg-default` | `#e6edf3` | `#1f2328` | body text |
-| `--fg-muted` | `#8b949e` | `#59636e` | secondary text, labels |
-| `--fg-subtle` | `#6e7681` | `#818b98` | placeholders, disabled state |
+| `--fg-default` | `#f4f4f5` | `#111827` | body text |
+| `--fg-muted` | `#a1a1aa` | `#4b5563` | secondary text, labels |
+| `--fg-subtle` | `#8b8b94` | `#6b7280` | placeholders, disabled state |
 | `--fg-on-emphasis` | `#ffffff` | `#ffffff` | text on solid emphasis backgrounds |
 
 ### 2.4 Semantic colors
@@ -87,12 +87,12 @@ Each group has three tiers: `-fg` (text/icon), `-emphasis` (solid background),
 
 | Group | Token prefix | Dark fg / emphasis / subtle | Light fg / emphasis / subtle | Semantics |
 |-------|--------------|------------------------------|-------------------------------|-----------|
-| accent | `--accent-` | `#2dd4bf` / `#0f766e` / `rgba(45,212,191,.15)` | `#0f766e` / `#0f766e` / `rgba(15,118,110,.1)` | selection, links, primary buttons (AwesomeTelemetry brand teal, calibrated in change calibrate-tokens-and-compare-report §9) |
-| success | `--success-` | `#3fb950` / `#238636` / `rgba(46,160,67,.15)` | `#1a7f37` / `#1f883d` / `rgba(26,127,55,.1)` | success, verification passed |
-| attention | `--attention-` | `#d29922` / `#9e6a03` / `rgba(187,128,9,.15)` | `#9a6700` / `#bf8700` / `rgba(154,103,0,.1)` | warning, in progress |
-| danger | `--danger-` | `#f85149` / `#da3633` / `rgba(248,81,73,.15)` | `#d1242f` / `#cf222e` / `rgba(209,36,47,.1)` | error, failure |
-| done | `--done-` | `#ab7df8` / `#8957e5` / `rgba(163,113,247,.15)` | `#8250df` / `#8250df` / `rgba(130,80,223,.1)` | completed, archived |
-| neutral | `--neutral-` | `#8b949e` / `#6e7681` / `rgba(110,118,129,.15)` | `#59636e` / `#6e7681` / `rgba(89,99,110,.1)` | unknown, empty |
+| accent | `--accent-` | `#a5b4fc` / `#5850ec` / `rgba(129,140,248,0.14)` | `#4f46e5` / `#4f46e5` / `rgba(79,70,229,0.08)` | selection, focus, links (indigo); primary uses inverse neutral |
+| success | `--success-` | `#4ade80` / `#238636` / `rgba(46, 160, 67, 0.15)` | `#15803d` / `#15803d` / `rgba(22,163,74,0.10)` | success |
+| attention | `--attention-` | `#fbbf24` / `#9e6a03` / `rgba(187, 128, 9, 0.15)` | `#b45309` / `#b45309` / `rgba(217,119,6,0.10)` | warning |
+| danger | `--danger-` | `#f87171` / `#da3633` / `rgba(248, 81, 73, 0.15)` | `#dc2626` / `#dc2626` / `rgba(220,38,38,0.08)` | failure |
+| done | `--done-` | `#c4b5fd` / `#8957e5` / `rgba(163, 113, 247, 0.15)` | `#7c3aed` / `#7c3aed` / `rgba(124,58,237,0.08)` | complete |
+| neutral | `--neutral-` | `#a1a1aa` / `#6e7681` / `rgba(110, 118, 129, 0.15)` | `#4b5563` / `#6b7280` / `rgba(107,114,128,0.10)` | unknown |
 
 **status → semantic color mapping** (`TraceSession.status` /
 `TraceEvent.status`):
@@ -101,7 +101,7 @@ Each group has three tiers: `-fg` (text/icon), `-emphasis` (solid background),
 |--------|-------|------|
 | `success` | success | `check-circle` |
 | `error` | danger | `x-circle` |
-| `running` | attention | `dot-fill` (pulse animation) |
+| `running` | accent | `dot-fill` (pulse animation) |
 | `pending` | neutral | `clock` |
 | `cancelled` | neutral | `skip` |
 
@@ -151,7 +151,7 @@ uppercase letter.
 |-------------|------------------|-------|
 | `--fg-default` on `--canvas-default` | >= 12:1 | body text |
 | `--fg-muted` on `--canvas-default` | >= 4.5:1 | WCAG AA body |
-| `--fg-subtle` on `--canvas-default` | >= 3:1 | WCAG AA large text / non-text |
+| `--fg-subtle` on `--canvas-default` | >= 4.5:1 | WCAG AA small text |
 | any `*-fg` on `--canvas-default` | >= 4.5:1 | semantic text |
 | any phase color on `--canvas-default` | >= 3:1 | non-text graphics |
 | `--fg-on-emphasis` on any `*-emphasis` | >= 4.5:1 | solid buttons |
@@ -199,37 +199,20 @@ trajectory surface uses the accent group (`--accent-`), never the danger group
 
 ## 3. Typography
 
-```css
---font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
-           "PingFang SC", "Microsoft YaHei", Helvetica, Arial, sans-serif;
---font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-             "Liberation Mono", "Courier New", monospace;
-```
+Local-first font stacks (no bundled or remote fonts):
 
-CJK families must be in the stack (UI is zh/en bilingual), and MUST NOT load
-any webfont (offline-capable, zero network requests).
+```css
+--font-ui: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+--font-mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+```
 
 ### 3.1 Font size scale
 
-| Token | size / line-height | Use |
-|-------|--------------------|-----|
-| `--text-xs` | 11px / 16px | badges, status bar, table corner labels |
-| `--text-sm` | 12px / 18px | list secondary rows, meta, mono IDs |
-| `--text-base` | 13px / 20px | **default body** (dev-tool density) |
-| `--text-md` | 14px / 21px | emphasized body, buttons |
-| `--text-lg` | 16px / 24px | panel titles |
-| `--text-xl` | 20px / 28px | session titles |
-| `--text-2xl` | 24px / 32px | KPI numbers |
+All sizes multiply ui-scale. xs12/16, sm12/16, base13/20, md14/20, lg16/24, xl20/28, 2xl24/32, 3xl28/36. Weights400/500/600. Numeric data uses tabular-nums.
 
-Only three weights: `--weight-normal: 400`, `--weight-medium: 500`,
-`--weight-semibold: 600`.
+### 3.2 User adjustment
 
-### 3.2 User font-size adjustment (existing REQ-012)
-
-A- / A+ / R only apply to **long-text areas** (inspector body, transcript,
-report), range 8-28px, injected via `--user-font-size`.
-MUST NOT affect chrome (toolbars, sidebar, status bar) — otherwise the layout
-falls apart.
+Sidebar Display menu: small12, standard13, large14, reset13. Global ui-scale uses13 as denominator. Existing long-text controls remain available in evidence readers. No A-/A+/R in global header.
 
 ---
 
@@ -242,9 +225,10 @@ falls apart.
 
 ### 4.2 Radius
 
-`--radius-sm: 4px` (badges, tags)
-`--radius-md: 6px` (**default**: buttons, inputs, cards)
-`--radius-lg: 8px` (modals, popovers)
+`--radius-sm: 6px` (controls, badges)
+`--radius-md: 8px` (small cards, popovers)
+`--radius-lg: 12px` (cards)
+`--radius-xl: 16px` (dialogs)
 `--radius-full: 999px` (pills, status dots)
 
 ### 4.3 Fixed sizes (layout skeleton)
@@ -259,6 +243,8 @@ falls apart.
 | `--row-sm` | `28px` | event rows, compact table rows |
 | `--row-md` | `32px` | regular table rows |
 | `--row-lg` | `44px` | session list rows (two-line dense) |
+| `--task-health-list-min-width` | `1060px` | desktop task health table; narrow cards override to zero |
+| `--task-health-scroll-min-height` | `240px` | task health list minimum scroll viewport |
 
 > `--row-sm` / `--row-lg` are the `itemHeight` inputs for virtual scrolling
 > and **must be constants** — they must not vary with content, or
@@ -270,12 +256,11 @@ falls apart.
 
 | Token | Dark | Light |
 |-------|------|-------|
-| `--shadow-sm` | `0 1px 0 rgba(1,4,9,.2)` | `0 1px 0 rgba(31,35,40,.04)` |
-| `--shadow-md` | `0 8px 24px rgba(1,4,9,.6)` | `0 8px 24px rgba(66,74,83,.12)` |
-| `--shadow-lg` | `0 16px 32px rgba(1,4,9,.85)` | `0 16px 32px rgba(66,74,83,.2)` |
+| `--shadow-sm` | `0 1px 3px rgba(16,24,40,0.4), 0 1px 2px rgba(16,24,40,0.35)` | `0 1px 3px rgba(16,24,40,0.08), 0 1px 2px rgba(16,24,40,0.04)` |
+| `--shadow-md` | `0 12px 24px -6px rgba(16,24,40,0.6), 0 2px 6px rgba(16,24,40,0.4)` | `0 12px 24px -6px rgba(16,24,40,0.12), 0 2px 6px rgba(16,24,40,0.06)` |
+| `--shadow-lg` | `0 24px 48px -12px rgba(16,24,40,0.8)` | `0 24px 48px -12px rgba(16,24,40,0.24)` |
 
-Shadows are **only** allowed for: popover, dropdown, modal, toast, command
-palette. List rows, cards, and panels always use `--border-default` borders.
+shadow-xs/sm are allowed on cards and selected blocks. shadow-md/lg are reserved for overlays. Virtual rows never use shadows. All surfaces retain border-default borders.
 
 ### 5.1 Stacking order
 
@@ -322,13 +307,13 @@ palette. List rows, cards, and panels always use `--border-default` borders.
 
 - **Zero dependencies**: hand-written inline SVG, no icon library
   (`project.md` §2 dependency constraints).
-- Grid 16×16, `viewBox="0 0 16 16"`, `fill="currentColor"`, default
+- Grid 16×16, `viewBox="0 0 16 16"`, `fill="none"`, `stroke="currentColor"`, stroke-width1.5, round caps/joins, default
   `width/height = 16`.
 - Allowed sizes: 12 / 16 / 20 / 24; any other size is a violation.
 - Color **only** inherits `currentColor`; SVG MUST NOT hard-code colors.
 - Every icon MUST have `aria-hidden="true"` (decorative) or
   `role="img" + <title>` (independently meaningful).
-- Single icon path data <= 512 bytes; full set <= 12KB (uncompressed).
+- Single icon path data <= 512 bytes; full icon source <=12KiB uncompressed; expanded rendered SVG audit <=32KiB (includes repeated accessible wrappers).
 
 Icon list and naming: `specs/design-system/spec.md` REQ-004.
 
@@ -347,3 +332,88 @@ The following assertions MUST be in CI (`src/styles/tokens.test.ts`):
 | T5 | the 6 phase colors are pairwise ΔE > 15 (CIE76), ensuring distinguishability |
 | T6 | the icon-set export names match the REQ-004 list **item for item**, no more no less |
 | T7 | every icon SVG contains `viewBox="0 0 16 16"` and no `fill="#` / `stroke="#` |
+
+## F2 Calm Instrument amendment (authoritative; supersedes earlier numeric prose)
+
+System theme remains the default. Primary buttons use fg-default on canvas-default inversely. All small text, including fg-subtle, meets AA 4.5:1 on its surface. Semantic emphasis backgrounds retain white-text AA; success/attention emphasis therefore use darker values than their decorative chart colors. Virtual row-sm/md/lg are unchanged. Sidebar controls replace header controls; copy actions emit Toast. Shadows xs/sm are allowed on cards and selected segments, md/lg only on overlays.
+
+| Token | Dark | Light |
+|---|---|---|
+| `--canvas-inset` | `#09090b` | `#f6f7f9` |
+| `--canvas-default` | `#111113` | `#ffffff` |
+| `--canvas-subtle` | `#1a1a1e` | `#f3f4f6` |
+| `--canvas-raised` | `#141417` | `#ffffff` |
+| `--canvas-overlay` | `#1a1a1e` | `#ffffff` |
+| `--canvas-overlay-fg` | `#f4f4f5` | `#111827` |
+| `--border-default` | `#27272a` | `#e5e7eb` |
+| `--border-muted` | `#1f1f23` | `#eef0f3` |
+| `--border-strong` | `#3f3f46` | `#d1d5db` |
+| `--fg-default` | `#f4f4f5` | `#111827` |
+| `--fg-muted` | `#a1a1aa` | `#4b5563` |
+| `--fg-subtle` | `#8b8b94` | `#6b7280` |
+| `--accent-fg` | `#a5b4fc` | `#4f46e5` |
+| `--accent-emphasis` | `#5850ec` | `#4f46e5` |
+| `--accent-subtle` | `rgba(129,140,248,0.14)` | `rgba(79,70,229,0.08)` |
+| `--success-fg` | `#4ade80` | `#15803d` |
+| `--attention-fg` | `#fbbf24` | `#b45309` |
+| `--danger-fg` | `#f87171` | `#dc2626` |
+| `--done-fg` | `#c4b5fd` | `#7c3aed` |
+| `--neutral-fg` | `#a1a1aa` | `#4b5563` |
+| `--font-ui` | `"Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif` | `"Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif` |
+| `--font-mono` | `"JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace` | `"JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace` |
+| `--radius-sm` | `6px` | `6px` |
+| `--radius-md` | `8px` | `8px` |
+| `--radius-lg` | `12px` | `12px` |
+| `--radius-xl` | `16px` | `16px` |
+| `--control-height-sm` | `28px` | `28px` |
+| `--control-height-md` | `32px` | `32px` |
+| `--control-height-lg` | `36px` | `36px` |
+| `--sidebar-width` | `232px` | `232px` |
+| `--sidebar-width-collapsed` | `56px` | `56px` |
+| `--page-header-height` | `56px` | `56px` |
+| `--page-gutter` | `24px` | `24px` |
+| `--table-row-height` | `40px` | `40px` |
+| `--table-row-height-dense` | `32px` | `32px` |
+| `--chart-height` | `220px` | `220px` |
+| `--sparkline-height` | `32px` | `32px` |
+| `--tooltip-width` | `280px` | `280px` |
+| `--sheet-width` | `640px` | `640px` |
+| `--content-max-width` | `1600px` | `1600px` |
+| `--text-3xl` | `calc(28px * var(--ui-scale))` | `calc(28px * var(--ui-scale))` |
+| `--leading-md` | `calc(20px * var(--ui-scale))` | `calc(20px * var(--ui-scale))` |
+| `--leading-sm` | `calc(16px * var(--ui-scale))` | `calc(16px * var(--ui-scale))` |
+| `--chart-axis` | `var(--fg-subtle)` | `var(--fg-subtle)` |
+| `--token-input` | `var(--chart-1)` | `var(--chart-1)` |
+| `--token-output` | `var(--chart-2)` | `var(--chart-2)` |
+| `--token-cache-read` | `var(--chart-5)` | `var(--chart-5)` |
+| `--token-cache-write` | `var(--chart-6)` | `var(--chart-6)` |
+| `--tooltip-delay` | `300ms` | `300ms` |
+| `--chart-1` | `#818cf8` | `#6366f1` |
+| `--chart-2` | `#2dd4bf` | `#14b8a6` |
+| `--chart-3` | `#fbbf24` | `#f59e0b` |
+| `--chart-4` | `#f472b6` | `#ec4899` |
+| `--chart-5` | `#38bdf8` | `#0ea5e9` |
+| `--chart-6` | `#a78bfa` | `#8b5cf6` |
+| `--chart-7` | `#a3e635` | `#84cc16` |
+| `--chart-8` | `#94a3b8` | `#64748b` |
+| `--chart-grid` | `#1f1f23` | `#eef0f3` |
+| `--compare-a` | `#94a3b8` | `#64748b` |
+| `--compare-b` | `#818cf8` | `#4f46e5` |
+| `--shadow-xs` | `0 1px 2px rgba(16,24,40,0.35)` | `0 1px 2px rgba(16,24,40,0.05)` |
+| `--shadow-sm` | `0 1px 3px rgba(16,24,40,0.4), 0 1px 2px rgba(16,24,40,0.35)` | `0 1px 3px rgba(16,24,40,0.08), 0 1px 2px rgba(16,24,40,0.04)` |
+| `--shadow-md` | `0 12px 24px -6px rgba(16,24,40,0.6), 0 2px 6px rgba(16,24,40,0.4)` | `0 12px 24px -6px rgba(16,24,40,0.12), 0 2px 6px rgba(16,24,40,0.06)` |
+| `--shadow-lg` | `0 24px 48px -12px rgba(16,24,40,0.8)` | `0 24px 48px -12px rgba(16,24,40,0.24)` |
+
+### F2 canonical icons (T6/T7)
+
+`IconSessions`, `IconAgents`, `IconCompare`, `IconProxy`, `IconFrida`, `IconSidebar`, `IconPanel`, `IconCommand`, `IconUnderstand`, `IconPlan`, `IconImplement`, `IconDebug`, `IconVerify`, `IconReport`, `IconSuccess`, `IconError`, `IconRunning`, `IconPending`, `IconCancelled`, `IconWarning`, `IconMessage`, `IconTool`, `IconFile`, `IconTerminal`, `IconThought`, `IconSystem`, `IconSpeed`, `IconAccuracy`, `IconStability`, `IconCost`, `IconSearch`, `IconFilter`, `IconRefresh`, `IconCopy`, `IconDownload`, `IconExternalLink`, `IconTrash`, `IconClose`, `IconChevronRight`, `IconChevronDown`, `IconKebab`, `IconPlus`, `IconGear`, `IconGlobe`, `IconSun`, `IconMoon`, `IconDeviceDesktop`, `IconContrast`, `IconDashboard`, `IconList`, `IconGitCompare`, `IconFlask`, `IconNetwork`, `IconPlug`, `IconSettings`, `IconChevronUp`, `IconChevronLeft`, `IconCheck`, `IconX`, `IconMinus`, `IconMoreHorizontal`, `IconUpload`, `IconAlertTriangle`, `IconAlertCircle`, `IconCheckCircle`, `IconXCircle`, `IconInfo`, `IconClock`, `IconHourglass`, `IconCpu`, `IconDatabase`, `IconZap`, `IconUser`, `IconBot`, `IconUsers`, `IconWrench`, `IconFileText`, `IconEye`, `IconEyeOff`, `IconLanguages`, `IconPanelLeft`, `IconArrowUp`, `IconArrowDown`, `IconTrendingUp`, `IconTrendingDown`, `IconPlay`, `IconPause`, `IconSparkles`, `IconLayers`, `IconMessageSquare`, `IconGitBranch`.
+
+This list supersedes earlier counts. All icons: viewBox0 0 16 16, stroke1.5 currentColor, round caps/joins, fill none; icon source budget12KiB, expanded rendered SVG audit32KiB. No currency glyph.
+
+### F2 review tokens and formatting
+
+--stat-sparkline-height:40px and --table-control-width:40px in both themes.
+StatCard uses fluid SVG width with its40px height; inline sparklines retain32px.
+Token compact values retain one decimal and strip trailing .0:292.7K,53.3M,1.2B,12K.
+Anchored floating surfaces are opaque canvas-overlay with border-default/shadow-md,
+above sticky chrome; the shared tooltip uses that surface with fg-default text.

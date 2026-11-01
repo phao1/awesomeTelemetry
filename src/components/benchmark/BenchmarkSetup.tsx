@@ -1,3 +1,6 @@
+import { Button } from '../ui/Button.js';
+import { Input } from '../ui/Input.js';
+import { OptionSelect } from '../ui/PageControls.js';
 import { useEffect, useRef, useState } from 'react';
 import type { Locale } from '../../i18n.js';
 import { fetchJson } from '../../api/client.js';
@@ -37,19 +40,19 @@ export function BenchmarkSetup({ locale, onReport }: { locale: Locale; onReport:
     <ol className="benchmark-steps"><li>{text('固定任务', 'Fix task')}</li><li>{text('配置组合', 'Configure variants')}</li><li>{text('执行与验收', 'Run and evaluate')}</li><li>{text('对比与定位', 'Compare and inspect')}</li></ol>
     <p>{text('示例任务：实现加法函数，使用 3 个固定用例独立验收。第 1、3…组写入正确实现，第 2、4…组故意保留缺陷，用于展示诊断。产品和模型是示例标签，不调用真实 GUI 或模型。', 'Example task: implement addition, independently checked by 3 fixed tests. Odd-numbered variants write a correct implementation; even-numbered variants intentionally retain defects to exercise diagnosis. Product/model names are labels; no real GUI or model is invoked.')}</p>
     <fieldset disabled={running}><legend>{text('实验设置', 'Experiment settings')}</legend><div className="benchmark-form-grid">
-      <label>{text('实验名称', 'Experiment name')}<input value={input.name} maxLength={120} onChange={e => setInput({ ...input, name: e.target.value })}/></label>
-      <label>{text('每组重复次数', 'Repetitions per variant')}<select value={input.repetitions} onChange={e => setInput({ ...input, repetitions: Number(e.target.value) })}>{[1, 2, 3, 5, 10].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
+      <label>{text('实验名称', 'Experiment name')}<Input value={input.name} maxLength={120} onChange={e => setInput({ ...input, name: e.target.value })}/></label>
+      <label>{text('每组重复次数', 'Repetitions per variant')}<OptionSelect value={input.repetitions} onChange={e => setInput({ ...input, repetitions: Number(e.target.value) })}>{[1, 2, 3, 5, 10].map(n => <option key={n} value={n}>{n}</option>)}</OptionSelect></label>
     </div>
     {input.variants.map((v, i) => <div className="benchmark-variant-form" key={i}>
       <strong>{text('组合', 'Variant')} {i + 1}</strong>
-      <label>{text('产品', 'Product')} {i + 1}<input value={v.product} maxLength={120} onChange={e => setInput({ ...input, variants: input.variants.map((item, index) => index === i ? { ...item, product: e.target.value } : item) })}/></label>
-      <label>{text('模型', 'Model')} {i + 1}<input value={v.model} maxLength={120} onChange={e => setInput({ ...input, variants: input.variants.map((item, index) => index === i ? { ...item, model: e.target.value } : item) })}/></label>
-      <button className="btn" disabled={input.variants.length === 1} onClick={() => setInput({ ...input, variants: input.variants.filter((_, index) => i !== index) })}>{text('移除', 'Remove')}</button>
+      <label>{text('产品', 'Product')} {i + 1}<Input value={v.product} maxLength={120} onChange={e => setInput({ ...input, variants: input.variants.map((item, index) => index === i ? { ...item, product: e.target.value } : item) })}/></label>
+      <label>{text('模型', 'Model')} {i + 1}<Input value={v.model} maxLength={120} onChange={e => setInput({ ...input, variants: input.variants.map((item, index) => index === i ? { ...item, model: e.target.value } : item) })}/></label>
+      <Button  disabled={input.variants.length === 1} onClick={() => setInput({ ...input, variants: input.variants.filter((_, index) => i !== index) })}>{text('移除', 'Remove')}</Button>
     </div>)}
-    <button className="btn" disabled={input.variants.length >= 8} onClick={() => setInput({ ...input, variants: [...input.variants, { product: 'Qoder GUI', model: input.variants[0]?.model ?? '示例模型 A' }] })}>{text('添加工具 / 模型组合', 'Add tool / model variant')}</button>
+    <Button  disabled={input.variants.length >= 8} onClick={() => setInput({ ...input, variants: [...input.variants, { product: 'Qoder GUI', model: input.variants[0]?.model ?? '示例模型 A' }] })}>{text('添加工具 / 模型组合', 'Add tool / model variant')}</Button>
     </fieldset>
-    <div className="benchmark-run-action"><button className="btn" disabled={running} onClick={start}>{running ? text('正在执行示例…', 'Running example…') : text(`运行示例评测（${input.variants.length * input.repetitions} 次）`, `Run example benchmark (${input.variants.length * input.repetitions} trials)`)}</button>
-      {running && <button className="btn" onClick={stop}>{text('取消', 'Cancel')}</button>}
+    <div className="benchmark-run-action"><Button  disabled={running} onClick={start}>{running ? text('正在执行示例…', 'Running example…') : text(`运行示例评测（${input.variants.length * input.repetitions} 次）`, `Run example benchmark (${input.variants.length * input.repetitions} trials)`)}</Button>
+      {running && <Button  onClick={stop}>{text('取消', 'Cancel')}</Button>}
       <span>{text('独立工作区 → 实际文件修改 → 独立验收 → 自动报告', 'Isolated workspaces → real file edits → independent tests → automatic report')}</span>
     </div>
     {running && <p role="status">{text('正在本地准备工作区、依次执行各组合并验收；不调用模型。完成后自动显示结果。', 'Preparing local workspaces, executing variants and running independent tests. No model calls. Results appear on completion.')}</p>}

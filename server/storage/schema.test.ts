@@ -232,8 +232,8 @@ describe('REQ-023 additive schema18 analysis summary', () => {
       const index = db.prepare("SELECT sql,rootpage FROM sqlite_master WHERE name='idx_trace_identities_native'").get();
       const capture = db.prepare('SELECT id,request_id,request_body,response_body FROM proxy_requests').all();
       initSchema(db);
-      expect(SCHEMA_VERSION).toBe(21);
-      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '21' });
+      expect(SCHEMA_VERSION).toBe(24);
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '24' });
       expect((db.prepare('PRAGMA table_info(proxy_capture_analysis)').all() as Array<{ name: string }>).map(row => row.name)).toEqual(['proxy_id', 'parser_version', 'metric_version', 'source_fingerprint', 'parsed_at', 'request_format', 'state', 'usage_json', 'completeness_json']);
       expect(db.prepare('SELECT COUNT(*) AS n FROM proxy_capture_analysis').get()).toEqual({ n: 0 });
       initSchema(db); initSchema(db);
@@ -252,7 +252,7 @@ describe('REQ-023 additive schema18 analysis summary', () => {
       expect(db.prepare('SELECT request_body,response_body FROM proxy_requests WHERE id=1').get()).toEqual({ request_body: 'kept-request', response_body: 'kept-response' });
       db.exec('DROP TRIGGER reject_v18'); initSchema(db);
       expect(db.prepare('SELECT COUNT(*) AS n FROM proxy_capture_analysis').get()).toEqual({ n: 0 });
-      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '21' });
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '24' });
     } finally { db.close(); }
   });
 });
@@ -1082,7 +1082,7 @@ describe('schema21 additive official hook observations', () => {
       const native = db.prepare('SELECT id,provider,source_path FROM sessions').all();
       const index = db.prepare("SELECT rootpage,sql FROM sqlite_master WHERE name='idx_trace_identities_native'").get();
       initSchema(db);
-      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '21' });
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '24' });
       const columns = (db.prepare('PRAGMA table_info(claude_hook_events)').all() as Array<{ name: string }>).map(row => row.name);
       expect(columns).toEqual(['id','received_at','event_name','native_session_id','agent_id','agent_type','tool_use_id','tool_name','native_duration_ms','payload_bytes','payload_ref']);
       db.prepare('INSERT INTO claude_hook_events(received_at,event_name,native_session_id,payload_bytes,payload_ref) VALUES(?,?,?,?,?)').run('2026-10-20T00:00:00.000Z', 'Stop', 'native21', 0, '{}');
@@ -1104,7 +1104,7 @@ describe('schema20 reverse native parent index', () => {
       initSchema(db);
       const index = db.prepare("SELECT rootpage,sql FROM sqlite_master WHERE name='idx_trace_identities_parent'").get();
       expect(index).toMatchObject({ sql: expect.stringContaining("WHERE kind='parent_session'") });
-      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '21' });
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '24' });
       initSchema(db); expect(db.prepare("SELECT rootpage,sql FROM sqlite_master WHERE name='idx_trace_identities_parent'").get()).toEqual(index);
       expect(db.prepare("SELECT id FROM sessions WHERE id='preserved'").get()).toEqual({ id: 'preserved' });
     } finally { db.close(); }
@@ -1117,7 +1117,22 @@ describe('schema20 reverse native parent index', () => {
       expect(db.prepare("SELECT name FROM sqlite_master WHERE name='idx_trace_identities_parent'").get()).toBeUndefined();
       expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '19' });
       db.exec('DROP TRIGGER reject_family20'); initSchema(db);
+      expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '24' });
+    } finally { db.close(); }
+  });
+});
+
+describe('Phase A schema22 summary indexes', () => {
+  it('upgrades21 with covering indexes, preserves records and rolls back version on failure', () => {
+    const db = new Database(':memory:');
+    try {
+      initSchema(db);
+      db.exec("DROP INDEX idx_events_task_tools; DROP INDEX idx_events_task_errors; UPDATE _meta SET value='21' WHERE key='schema_version'; CREATE TRIGGER reject_summary_version BEFORE UPDATE ON _meta WHEN NEW.key='schema_version' AND NEW.value='22' BEGIN SELECT RAISE(ABORT,'summary-version-failure'); END;");
+      expect(() => initSchema(db)).toThrow('summary-version-failure');
+      expect(db.prepare("SELECT name FROM sqlite_master WHERE name IN ('idx_events_task_tools','idx_events_task_errors')").all()).toEqual([]);
       expect(db.prepare("SELECT value FROM _meta WHERE key='schema_version'").get()).toEqual({ value: '21' });
+      db.exec('DROP TRIGGER reject_summary_version'); initSchema(db); initSchema(db);
+      expect(db.prepare("SELECT name FROM sqlite_master WHERE name IN ('idx_events_task_tools','idx_events_task_errors') ORDER BY name").all()).toEqual([{ name: 'idx_events_task_errors' }, { name: 'idx_events_task_tools' }]);
     } finally { db.close(); }
   });
 });

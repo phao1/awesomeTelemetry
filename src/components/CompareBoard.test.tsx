@@ -133,7 +133,7 @@ describe('CompareBoard 壳（REQ-019 / 可用性）', () => {
       act(()=>trigger.click());const input=document.querySelector<HTMLInputElement>('[aria-label="L Search loaded runs, provider or ID"]')!;
       expect(document.activeElement).toBe(input);
       act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'SYNTHETIC_NO_MATCH');input.dispatchEvent(new Event('input',{bubbles:true}));});
-      expect(view.html()).toContain('No matching loaded run');
+      expect(document.querySelector('.ui-popover-card')!.innerHTML).toContain('No matching loaded run');
       act(()=>document.querySelector<HTMLButtonElement>('.ui-input-clear button')!.click());expect(document.activeElement).toBe(input);
       act(()=>document.querySelector<HTMLButtonElement>('.compare-picker-item')!.click());expect(select).toHaveBeenCalledExactlyOnceWith('scope-1');
       expect(document.activeElement).toBe(trigger);

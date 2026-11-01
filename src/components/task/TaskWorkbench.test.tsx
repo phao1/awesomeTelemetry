@@ -115,8 +115,8 @@ describe('task process reading', () => {
     mount(); await readyTimeline();
     expect(calls.filter(path => path.includes('/records?')).map(path => new URL(path, 'http://localhost').searchParams.get('member'))).toEqual(['main']);
     expect(calls.filter(path => path.includes('/events/'))).toHaveLength(0);
-    const scope = host.querySelector<HTMLSelectElement>('select[aria-label=Scope]')!;
-    act(() => { scope.value = 'all'; scope.dispatchEvent(new Event('change', { bubbles: true })); }); await readyTimeline();
+    act(()=>host.querySelector<HTMLButtonElement>('[role=combobox][aria-label=Scope]')!.click());
+    act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=option]')].find(b=>b.textContent?.startsWith('All members'))!.click()); await readyTimeline();
     expect(calls.filter(path => path.includes('/events/'))).toHaveLength(0);
     expect(mark(main.id)).toBeTruthy(); expect(mark(child.id)).toBeTruthy();
     const before = metadataReads();
@@ -214,8 +214,8 @@ describe('task process reading', () => {
   });
   it('loads the selected member at the server and can return to the original main record', async () => {
     mount(); await settle(); act(() => button('Main result').click()); await readyEvidence('MAIN_OUTPUT');
-    const select = host.querySelector<HTMLSelectElement>('select[aria-label=Scope]')!;
-    act(() => { select.value = 'child-agent'; select.dispatchEvent(new Event('change', { bubbles: true })); }); await settle();
+    act(()=>host.querySelector<HTMLButtonElement>('[role=combobox][aria-label=Scope]')!.click());
+    act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=option]')].find(b=>b.textContent==='Researcher')!.click()); await settle();
     expect(calls.some(path => path.includes('member=child-agent'))).toBe(true);
     expect(host.querySelector('.task-record-scroll')?.textContent).toContain('Child failure');
     expect(host.querySelector('.task-evidence')).toBeNull();
@@ -255,7 +255,7 @@ describe('task context restoration', () => {
     act(() => button('Back to latest').click()); await settle();
     expect(current?.from).toBeUndefined(); expect(current?.to).toBeUndefined();
     expect(current?.q).toBe('Main'); expect(current?.errors).toBe(true);
-    act(() => button('Imported').click()); await settle();
+    act(() => button('Tasks').click()); await settle(); act(() => button('Imported').click()); await settle();
     expect(current?.task).toBeNull(); expect(current?.q).toBeUndefined(); expect(current?.errors).toBeUndefined();
   });
   it('opens a legacy child session directly in its member scope instead of loading the root history', async () => {
@@ -308,4 +308,72 @@ describe('real task architecture analysis', () => {
     act(() => invalidate(1)); await settle(); expect(host.textContent).not.toContain('Bounded actual task analysis');
     expect(calls.filter(path => path.includes('/events/'))).toHaveLength(0); expect(calls.every(path => !path.includes('/start'))).toBe(true);
   });
+});
+
+it.each([
+  ['SOURCE_CHANGED', 'Local records changed', '读取期间本地记录发生变化'],
+  ['UNINDEXED', 'execution trajectory to load details', '执行轨迹加载详情'],
+  ['TOO_LARGE', 'Select fewer', '减少任务数量'],
+  ['NO_MATCH', 'collected root tasks', '已采集根任务'],
+] as const)('localizes architecture tab failure %s without raw server text', async (reason, en, zh) => {
+  const original = fetch;
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith('/agent-folding/scope')
+    ? Promise.resolve({ ok: false, status: 422, text: async () => JSON.stringify({ error: { code: 'BAD_REQUEST', message: 'SECRET_SERVER_ENGLISH', details: { reason } } }) } as Response)
+    : original(input, init)));
+  for (const locale of ['en', 'zh'] as const) {
+    act(() => root.render(<TaskWorkbench locale={locale} route={{ ...DEFAULT_TASK_ROUTE, task: task.id, mode: 'architecture' }} onRoute={() => {}} changes={{ version: 0, keys: [], runIds: [] }} onIntake={() => {}} onOpenRequest={() => {}} />));
+    await settle();
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(locale === 'zh' ? zh : en);
+    expect(host.textContent).not.toContain('SECRET_SERVER_ENGLISH');
+  }
+});
+
+it('Phase B home shares one page, A/B checks and server sorting/filtering with the sidebar',async()=>{
+  function Home(){const [route,onRoute]=useState<TaskRoute>(DEFAULT_TASK_ROUTE);return <TaskWorkbench locale="en" route={route} onRoute={onRoute} changes={{version:0,keys:[],runIds:[]}} onIntake={()=>{}} onOpenRequest={()=>{}}/>;}
+  act(()=>root.render(<Home/>));
+  await vi.waitFor(async()=>{await settle();expect(host.querySelector('.task-health-list')).not.toBeNull();});
+  expect(calls.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(1);
+  expect(calls.find(path=>path.startsWith('/api/tasks?'))).toContain('summary=1');
+  act(()=>host.querySelector<HTMLInputElement>('tbody input')!.click());
+  expect(host.querySelector('.task-sidebar')).toBeNull();
+  expect(host.querySelector<HTMLInputElement>('tbody input')!.checked).toBe(true);
+  act(()=>button('Set as Baseline').click());
+  expect(host.querySelector<HTMLInputElement>('tbody input')!.checked).toBe(false);
+  act(()=>host.querySelector<HTMLButtonElement>('[role=combobox][aria-label=Sort]')!.click());
+  act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=option]')].find(b=>b.textContent==='Token')!.click());await settle();
+  expect(calls.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(2);expect(calls.at(-1)).toContain('sort=tokens');
+  act(()=>button('Filter').click());act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='With alerts')!.click());await settle();
+  expect(calls.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(3);expect(calls.at(-1)).toContain('alerts=1');
+  expect(calls.some(path=>path.includes('/events/')||path.includes('/health-reports'))).toBe(false);
+});
+it('Phase B health entry selects the same task and opens its drawer without generating a report',async()=>{
+ let selected:TaskRoute|undefined;
+ function Home(){const [route,onRoute]=useState<TaskRoute>(DEFAULT_TASK_ROUTE);selected=route;return <TaskWorkbench locale="en" route={route} onRoute={onRoute} changes={{version:0,keys:[],runIds:[]}} onIntake={()=>{}} onOpenRequest={()=>{}}/>;}
+ act(()=>root.render(<Home/>));await vi.waitFor(async()=>{await settle();expect(host.querySelector('.task-health-list')).not.toBeNull();});
+ act(()=>[...host.querySelectorAll<HTMLButtonElement>('tbody button')].find(b=>b.getAttribute('aria-label')==='Health monitoring')!.click());
+ await readyTimeline();expect(selected).toMatchObject({task:task.id,member:'all',health:'new'});expect(document.querySelector('#task-health-drawer')).not.toBeNull();
+ expect(vi.mocked(fetch).mock.calls.some(([,init])=>init?.method==='POST')).toBe(false);
+});
+
+it('Phase B review refreshes the shared retained page after background hydration and SSE without restarting the lease or losing checks',async()=>{
+ const original=fetch;let controller!:ReadableStreamDefaultController<Uint8Array>,reads=0;
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+  const path=String(input);
+  if(path==='/api/task-home/hydrate')return new Response(new ReadableStream<Uint8Array>({start(value){controller=value;}}));
+  if(path.startsWith('/api/tasks?')){reads++;return json({items:[{...task,loadedMemberCount:reads>1?2:0,metrics:reads>1?{durationMs:2000,toolCalls:8,errors:1,input:60,output:20,cacheRead:30,correctedTotal:110,promptInput:90,cacheHitRate:1/3,models:[]}:undefined}],total:1,offset:0,limit:50,hasMore:false});}
+  return original(input,init);
+ }));
+ let notify!:(changes:TaskChanges)=>void;
+ function Home(){const [route,onRoute]=useState<TaskRoute>(DEFAULT_TASK_ROUTE),[changes,setChanges]=useState<TaskChanges>({version:0,keys:[],runIds:[]});notify=setChanges;return <TaskWorkbench locale="en" route={route} onRoute={onRoute} changes={changes} onIntake={()=>{}} onOpenRequest={()=>{}}/>;}
+ act(()=>root.render(<Home/>));await vi.waitFor(async()=>{await settle();expect(host.querySelector('tbody [role=status]')).not.toBeNull();});
+ const scroll=host.querySelector('.ui-table-wrap');act(()=>host.querySelector<HTMLInputElement>('tbody input')!.click());
+ await act(async()=>{controller.enqueue(new TextEncoder().encode(JSON.stringify({items:[{taskId:task.id,pending:0,loaded:2,reasons:[]}],done:true})+'\n'));notify({version:1,keys:['main','child'],runIds:[]});await new Promise(r=>setTimeout(r,230));});
+ expect(reads).toBe(2);expect(host.querySelector('.ui-table-wrap')).toBe(scroll);expect(host.querySelector('tbody [role=status]')).toBeNull();expect(host.querySelector('tr[data-table-row]')?.textContent).toContain('110');
+ expect(host.querySelector<HTMLInputElement>('tbody input')!.checked).toBe(true);expect(vi.mocked(fetch).mock.calls.filter(([path])=>String(path)==='/api/task-home/hydrate')).toHaveLength(1);
+});
+
+it('always labels all-member scope for a single-member task and gives the return action text',async()=>{
+ const original=fetch;vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>String(input)==='/api/tasks/collected%3Amain'?json({...context,task:{...task,memberCount:1,loadedMemberCount:1},members:context.members.slice(0,1)}):original(input,init)));
+ const onRoute=vi.fn();act(()=>root.render(<TaskWorkbench locale="en" route={{...DEFAULT_TASK_ROUTE,task:task.id,member:'all'}} onRoute={onRoute} changes={{version:0,keys:[],runIds:[]}} onIntake={()=>{}} onOpenRequest={()=>{}}/>));await readyTimeline();
+ expect(host.querySelector('.task-member-select [role=combobox]')!.textContent).toContain('All members');expect(host.querySelector('.task-member-select [role=combobox]')!.textContent).not.toContain('Select…');const back=host.querySelector<HTMLButtonElement>('.task-return-main')!;expect(back.textContent).toBe('Return to main session');act(()=>back.click());expect(onRoute).toHaveBeenLastCalledWith(expect.objectContaining({member:'main'}));
 });

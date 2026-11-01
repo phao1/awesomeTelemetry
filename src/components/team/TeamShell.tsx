@@ -1,3 +1,7 @@
+import { Button } from '../ui/Button.js';
+import { Input } from '../ui/Input.js';
+import { Switch } from '../ui/Controls.js';
+import { Disclosure } from '../ui/PageControls.js';
 /**
  * add-agent-team-observability §7.3 / §7.4 / §7.8 / §7.10 / §7.11 —
  * TeamShell：七视图 shell + App-owned cache + SSE patch + layout + 六状态。
@@ -110,7 +114,7 @@ function TeamSummaryHeader({
         <span>{s.counts.rounds} {t('team.rounds', locale)}</span>
         <span>{s.counts.artifacts} {t('team.artifacts', locale)}</span>
       </div>
-      <details><summary>{t('team.completenessLabel', locale)}</summary>
+      <Disclosure  title={<>{t('team.completenessLabel', locale)}</>}>
       <div className="team-summary-provenance">
         <span className="mono">{s.nativeRunId}</span>
         <span>
@@ -130,7 +134,7 @@ function TeamSummaryHeader({
           </span>
         ))}
       </div>
-      </details>
+      </Disclosure>
       {snapshot.anomalies.length > 0 && (
         <div className="team-summary-anomalies" role="alert">
           {snapshot.anomalies.map((anomaly, idx) => (
@@ -419,14 +423,14 @@ function LedgerPanel({
           })}
         </div>
         {hasMore && (
-          <button
+          <Button
             type="button"
             className="team-load-more"
             onClick={onLoadMore}
             disabled={loadingMore}
           >
             {loadingMore ? t('state.loading', locale) : t('session.loadMore', locale)}
-          </button>
+          </Button>
         )}
       </PanelStateWrapper>
     </div>
@@ -490,20 +494,20 @@ function InspectorPanel({
       {selection.kind === 'activity' && (
         <div className="team-inspector-body">
           <div className="team-inspector-body-actions">
-            <button
+            <Button
               type="button"
-              className="btn ui-btn-sm"
+              size="sm"
               onClick={() => onLoadBody(selection.id, 'body')}
             >
               {t('team.loadBody', locale)}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="btn ui-btn-sm"
+              size="sm"
               onClick={() => onLoadBody(selection.id, 'raw')}
             >
               {t('team.loadRaw', locale)}
-            </button>
+            </Button>
           </div>
           <PanelStateWrapper
             state={bodyState}
@@ -590,7 +594,7 @@ function ComparePanel({
       <div className="team-compare-selectors">
         <div className="team-compare-selector">
           <label className="team-compare-label">{t('team.compareLeft', locale)}</label>
-          <input
+          <Input
             type="text"
             className="ui-input ui-btn-md"
             value={compareLeft ?? ''}
@@ -600,7 +604,7 @@ function ComparePanel({
         </div>
         <div className="team-compare-selector">
           <label className="team-compare-label">{t('team.compareRight', locale)}</label>
-          <input
+          <Input
             type="text"
             className="ui-input ui-btn-md"
             value={compareRight ?? ''}
@@ -608,22 +612,16 @@ function ComparePanel({
             placeholder={t('team.compareRunIdPlaceholder', locale)}
           />
         </div>
-        <label className="team-compare-manual">
-          <input
-            type="checkbox"
-            checked={compareManualBasis}
-            onChange={onToggleManualBasis}
-          />
-          {t('team.compareManualBasis', locale)}
-        </label>
-        <button
+        <div className="team-compare-manual"><Switch checked={compareManualBasis}
+            onChange={onToggleManualBasis} label={<>{t('team.compareManualBasis', locale)}</>}/></div>
+        <Button
           type="button"
-          className="btn"
+
           onClick={onRunCompare}
           disabled={compareLeft === null || compareRight === null || compareLeft === compareRight}
         >
           {t('team.compareRun', locale)}
-        </button>
+        </Button>
       </div>
       <PanelStateWrapper
         state={compareState}
@@ -1120,7 +1118,7 @@ export function TeamShell({
 
   return (
     <div className={`team-shell${mobileRunsOpen ? ' team-mobile-runs-open' : ''}`}>
-      <button type="button" className="team-mobile-runs-toggle" aria-expanded={mobileRunsOpen} onClick={() => setMobileRunsOpen(value => !value)}>{mobileRunsOpen ? (locale === 'zh' ? '返回当前团队' : 'Back to current team') : (locale === 'zh' ? '切换团队运行' : 'Choose team run')}</button>
+      <Button type="button" className="team-mobile-runs-toggle" aria-expanded={mobileRunsOpen} onClick={() => setMobileRunsOpen(value => !value)}>{mobileRunsOpen ? (locale === 'zh' ? '返回当前团队' : 'Back to current team') : (locale === 'zh' ? '切换团队运行' : 'Choose team run')}</Button>
       <TeamRunList
         items={runs}
         selectedId={runId}
@@ -1185,14 +1183,14 @@ export function TeamShell({
                     {panel === 'topology' && (
                       <>
                       <TeamWorkbench snapshot={snapshot} selection={selection} onSelect={handleSelect} locale={locale} />
-                      <details className="collab-secondary"><summary>{locale === 'zh' ? '原有结构列表' : 'Original structure list'}</summary>
+                      <Disclosure className="collab-secondary" title={<>{locale === 'zh' ? '原有结构列表' : 'Original structure list'}</>}>
                       <TopologyPanel
                         snapshot={snapshot}
                         selection={selection}
                         onSelect={handleSelect}
                         locale={locale}
                       />
-                      </details>
+                      </Disclosure>
                       </>
                     )}
                     {panel === 'tasks' && (
@@ -1207,7 +1205,7 @@ export function TeamShell({
                       <>
                         {activitiesError && <ErrorState code="TEAM_ACTIVITY_FAILED" message={activitiesError} onRetry={() => { void loadActivities('first'); }} />}
                         <StageReplay snapshot={snapshot} activities={activities} coverage={activitiesLoading ? 'unavailable' : activitiesHasMore ? 'partial' : activitiesError ? 'unavailable' : 'complete'} onSelect={handleSelect} locale={locale} />
-                        {activitiesHasMore && <button type="button" disabled={activitiesLoading} onClick={() => { void loadActivities('next'); }}>{locale === 'zh' ? '加载更早活动' : 'Load earlier activities'}</button>}
+                        {activitiesHasMore && <Button type="button" disabled={activitiesLoading} onClick={() => { void loadActivities('next'); }}>{locale === 'zh' ? '加载更早活动' : 'Load earlier activities'}</Button>}
                       </>
                     )}
                     {panel === 'communication' && (
@@ -1267,13 +1265,13 @@ export function TeamShell({
                     </div>
                   )}
                   <div className="team-run-actions">
-                    <button
+                    <Button
                       type="button"
-                      className="btn ui-btn-sm"
+                      size="sm"
                       onClick={() => void handleDeleteRun(runId)}
                     >
                       {t('team.deleteRun', locale)}
-                    </button>
+                    </Button>
                   </div>
                 </>
               )}

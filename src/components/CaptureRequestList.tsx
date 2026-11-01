@@ -1,3 +1,7 @@
+import { Skeleton } from './ui/States.js';
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { OptionSelect } from './ui/PageControls.js';
 import { useDeferredValue, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ProxyRequestListItem } from '../core/trace-types.js';
 import { t, type Locale } from '../i18n.js';
@@ -35,10 +39,10 @@ function RequestRows({ items, selected, locale, onOpen }: Pick<CaptureRequestLis
         {items.slice(range.startIndex, range.endIndex).map(item => <tr key={item.id} className={'proxy-table-row' + (selected === item.id ? ' capture-request-selected' : '')}
           aria-selected={selected === item.id} onClick={() => onOpen(item.id)}>
           <td><Badge tone="neutral">{item.method}</Badge></td>
-          <td className="capture-target-cell"><button type="button" className="capture-request-open" title={item.url}
+          <td className="capture-target-cell"><Button type="button" className="capture-request-open" title={item.url}
             aria-label={t('capture.inspectRequest', locale) + ' #' + item.id + ' · ' + item.method + ' ' + item.url}>
             <strong>{item.hostname}</strong><span className="mono">{item.url}</span><span className="mono">#{item.id}</span>
-          </button></td>
+          </Button></td>
           <td className="capture-model-cell" title={(item.model ?? '—') + ' · ' + item.requestFormat}><span>{item.model ?? '—'}</span><span className="mono">{item.requestFormat}</span></td>
           <td><Badge tone={statusTone(item.responseStatus)}>{item.responseStatus ?? '—'}</Badge></td>
           <td className="mono" title={t('capture.durationBasis', locale)}>{item.durationMs === null ? '—' : Math.round(item.durationMs).toLocaleString() + 'ms'}</td>
@@ -66,22 +70,22 @@ export function CaptureRequestList({ items, selected, pending, error, hasMore, l
   }, [items, method, status, deferred]);
   return <section className="capture-requests" aria-label={t('capture.savedRequests', locale)}>
     <div className="capture-toolbar"><h3>{t('capture.savedRequests', locale)}</h3><span className="mono">{filtered.length} / {items.length}</span>
-      <button ref={refreshButton} type="button" className="btn ui-btn-sm" disabled={pending} onClick={onRefresh}>{t('capture.refreshList', locale)}</button>
-      {onClear !== undefined && <button type="button" className="btn ui-btn-sm" disabled={items.length === 0} onClick={() => { onClear();setClearActivation(value => value + 1); }} title={t('capture.clearHint', locale)}>{t('proxy.clear', locale)}</button>}
-      {pending && <button type="button" className="btn ui-btn-sm" onClick={onCancel}>{t('capture.cancelWaiting', locale)}</button>}</div>
+      <Button ref={refreshButton} type="button" size="sm" disabled={pending} onClick={onRefresh}>{t('capture.refreshList', locale)}</Button>
+      {onClear !== undefined && <Button type="button" size="sm" disabled={items.length === 0} onClick={() => { onClear();setClearActivation(value => value + 1); }} title={t('capture.clearHint', locale)}>{t('proxy.clear', locale)}</Button>}
+      {pending && <Button type="button" size="sm" onClick={onCancel}>{t('capture.cancelWaiting', locale)}</Button>}</div>
     {cleared && <p className="hint" role="status">{t('capture.listCleared', locale)}</p>}
     <p className="hint">{t('capture.loadedScope', locale)}</p>
     <div className="capture-filters">
-      <label>{t('capture.search', locale)}<input className="ui-input" type="search" value={query} onChange={event => setQuery(event.target.value)} /></label>
-      <label>{t('proxy.method', locale)}<select className="ui-select" value={method} onChange={event => setMethod(event.target.value)}><option value="">{t('capture.all', locale)}</option>{methods.map(value => <option key={value}>{value}</option>)}</select></label>
-      <label>{t('proxy.statusCode', locale)}<select className="ui-select" value={status} onChange={event => setStatus(event.target.value)}><option value="">{t('capture.all', locale)}</option>{['1xx', '2xx', '3xx', '4xx', '5xx'].map(value => <option key={value}>{value}</option>)}<option value="unknown">{t('capture.unknownStatus', locale)}</option></select></label>
-      {(query !== '' || method !== '' || status !== '') && <button type="button" className="btn ui-btn-sm" onClick={() => { setQuery('');setMethod('');setStatus(''); }}>{t('capture.resetFilters', locale)}</button>}
+      <label>{t('capture.search', locale)}<Input className="ui-input" type="search" value={query} onChange={event => setQuery(event.target.value)} /></label>
+      <label>{t('proxy.method', locale)}<OptionSelect className="ui-select" value={method} onChange={event => setMethod(event.target.value)}><option value="">{t('capture.all', locale)}</option>{methods.map(value => <option key={value}>{value}</option>)}</OptionSelect></label>
+      <label>{t('proxy.statusCode', locale)}<OptionSelect className="ui-select" value={status} onChange={event => setStatus(event.target.value)}><option value="">{t('capture.all', locale)}</option>{['1xx', '2xx', '3xx', '4xx', '5xx'].map(value => <option key={value}>{value}</option>)}<option value="unknown">{t('capture.unknownStatus', locale)}</option></OptionSelect></label>
+      {(query !== '' || method !== '' || status !== '') && <Button type="button" size="sm" onClick={() => { setQuery('');setMethod('');setStatus(''); }}>{t('capture.resetFilters', locale)}</Button>}
     </div>
     {query !== deferred && <p className="hint" role="status">{t('capture.filtering', locale)}</p>}
-    {error !== null && <div className="ui-error" role="alert"><code>PROXY_LIST_FAILED</code><p>{error}</p><button type="button" className="btn" disabled={pending} onClick={onRetry}>{t('common.retry', locale)}</button></div>}
-    {pending && <p className="hint" role="status">{t('common.loading', locale)}</p>}
+    {error !== null && <div className="ui-error" role="alert"><code>PROXY_LIST_FAILED</code><p>{error}</p><Button type="button"  disabled={pending} onClick={onRetry}>{t('common.retry', locale)}</Button></div>}
+    {pending && <Skeleton variant="row" count={6}/>}
     {!pending && error === null && filtered.length === 0 && !(cleared && items.length === 0) && <p className="hint">{t(items.length === 0 ? 'capture.noSavedRequests' : 'capture.noFilterMatch', locale)}</p>}
     {filtered.length > 0 && <RequestRows key={JSON.stringify([deferred, method, status])} items={filtered} selected={selected} locale={locale} onOpen={onOpen} />}
-    {hasMore && <button type="button" className="btn capture-more" disabled={pending} onClick={onLoadMore}>{t('capture.loadMore', locale)}</button>}
+    {hasMore && <Button type="button" className="ui-btn capture-more" disabled={pending} onClick={onLoadMore}>{t('capture.loadMore', locale)}</Button>}
   </section>;
 }

@@ -1,3 +1,4 @@
+import { Disclosure } from './ui/PageControls.js';
 import { ta } from '../i18n.js';
 import { useState } from 'react';
 
@@ -68,11 +69,11 @@ export function RadarChart({
       size={220}
       ariaLabel={t('compare.profile.title', locale)}
     />:<p>{t('compare.profile.tooFew',locale)}</p>}
-    <details className="compare-profile-values" open={available.length<3}><summary>{t('compare.profile.values',locale)} · L / R</summary>
+    <Disclosure className="compare-profile-values" open={available.length<3} title={<>{t('compare.profile.values',locale)} · L / R</>}>
       <table className="ui-table ui-table-compact"><thead><tr><th scope="col">{t('compare.profile.metric',locale)}</th><th scope="col">L</th><th scope="col">R</th><th scope="col">{t('compare.profile.scale',locale)}</th></tr></thead>
         <tbody>{axes.map(axis=><tr key={axis.label}><th scope="row">{axis.label}</th><td className="mono">{fmt(axis.lv,axis.unit)}</td><td className="mono">{fmt(axis.rv,axis.unit)}</td><td className="mono">{axis.reason===null?fmt(axis.max,axis.unit):'—'}</td></tr>)}</tbody>
       </table>
-    </details>
+    </Disclosure>
   </>);
 }
 

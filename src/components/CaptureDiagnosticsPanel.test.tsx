@@ -25,7 +25,7 @@ let fetcher: ReturnType<typeof vi.fn>;
 const openRequest = vi.fn();
 const render = async (data = fixture(), locale: 'en' | 'zh' = 'en') => act(async () => root.render(<CaptureDiagnosticsPanel data={data} locale={locale} onOpenRequest={openRequest} />));
 const setThreshold = async (value: string) => act(async () => {
-  const input = container.querySelector('input')!;
+  const input = container.querySelector<HTMLInputElement>('input:not([type=hidden])')!;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
   input.dispatchEvent(new Event('input', { bubbles: true }));
 });
@@ -37,7 +37,7 @@ afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlo
 
 describe('local selected-pair diagnostics', () => {
   it('uses the visible default threshold and real pure derivation, with at most five source-linked findings and no IO', async () => {
-    await render(); expect(container.querySelector('input')?.value).toBe('10000');
+    await render(); expect(container.querySelector<HTMLInputElement>('input:not([type=hidden])')?.value).toBe('10000');
     expect(container.querySelector('[data-effective-threshold]')?.textContent).toContain('10000 ms');
     expect(container.querySelectorAll('[data-diagnostic-finding]')).toHaveLength(5);
     expect(container.querySelectorAll('[data-diagnostic-finding="slow_network"]')).toHaveLength(2);
@@ -60,7 +60,7 @@ describe('local selected-pair diagnostics', () => {
   });
   it.each(['', '0', '-1', '1.1', '1e3', '3600001', '9007199254740992', 'NaN'])('hides findings and declares no active threshold rather than silently using a fallback for %j', async input => {
     await render(); await setThreshold(input);
-    expect(container.querySelector('input')?.getAttribute('aria-invalid')).toBe('true');
+    expect(container.querySelector<HTMLInputElement>('input:not([type=hidden])')?.getAttribute('aria-invalid')).toBe('true');
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('1–3600000');
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('no fallback');
     expect(container.querySelector('[data-effective-threshold]')?.textContent).toContain('none');
@@ -88,12 +88,12 @@ describe('local selected-pair diagnostics', () => {
   it('shows exact source paths/values and safe original-capture callbacks while escaping observed identity text', async () => {
     const data = fixture(); data.base.request.requestId = '<img src=x onerror=alert(1)>'; await render(data);
     const first = container.querySelector('[data-diagnostic-finding="slow_network"]')!;
-    const details = first.querySelector('details')!; expect(details.open).toBe(false);
-    act(() => { details.open = true; });
+    const details = first.querySelector<HTMLButtonElement>('.ui-accordion > button')!; expect(details.getAttribute('aria-expanded')).toBe('false');
+    act(() => { details.click(); });
     expect(first.textContent).toContain('base.evidence.transport.timing.completedMs'); expect(first.textContent).toContain('12000');
     expect(container.textContent).toContain('a'.repeat(64)); expect(container.textContent).toContain('base.evidence.request.bytes');
     expect(container.textContent).toContain('<img src=x onerror=alert(1)>'); expect(container.querySelector('img')).toBeNull();
-    act(() => (first.querySelector('button') as HTMLButtonElement).click()); expect(openRequest).toHaveBeenLastCalledWith(1);
+    act(() => [...first.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='Open base capture #1')!.click()); expect(openRequest).toHaveBeenLastCalledWith(1);
     const target = [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Open target capture #2')!;
     act(() => target.click()); expect(openRequest).toHaveBeenLastCalledWith(2); expect(fetcher).not.toHaveBeenCalled();
   });
@@ -106,7 +106,7 @@ describe('local selected-pair diagnostics', () => {
   });
   it('switches language without losing the active threshold or requesting evidence', async () => {
     const data = fixture(); await render(data); await setThreshold('12000'); await render(data, 'zh');
-    expect(container.querySelector('input')?.value).toBe('12000'); expect(container.textContent).toContain('当前生效阈值');
+    expect(container.querySelector<HTMLInputElement>('input:not([type=hidden])')?.value).toBe('12000'); expect(container.textContent).toContain('当前生效阈值');
     expect(container.textContent).toContain('推导提示'); expect(container.textContent).toContain('不证明');
     expect(container.querySelectorAll('[data-diagnostic-finding="slow_first_content"]')).toHaveLength(0); expect(fetcher).not.toHaveBeenCalled();
   });

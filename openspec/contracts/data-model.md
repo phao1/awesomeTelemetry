@@ -1063,7 +1063,7 @@ Diagnostics are optional only for legacy consumers/fixtures; the current server 
   the adapter is ISO).
 - All optional fields use `?:`, **not `| undefined`**, and `undefined` must be
   converted to `null` before writing to the DB.
-- All amounts are USD, `number`, preserving original precision without rounding.
+- Raw monetary evidence preserves its original unit and precision; no derived monetary totals.
 - All token counts are `number`, non-negative integers.
 - Field naming: camelCase on the TypeScript side, snake_case on the SQLite
   side; the mapping happens in the storage layer and never leaks to the API.
@@ -1178,13 +1178,10 @@ export type SourceKind = 'jsonl' | 'json' | 'sqlite' | 'sqlcipher' | 'otel';
 ### 1.1 Cost & duration provenance (add-mission-control)
 
 ```ts
-/**
- * 成本来源。add-mission-control §1 P0-C：
- * - reported：厂商直接给出金额（workbuddy credit）
- * - estimated：由 pricing.ts 按 model 定价表估算
- * - unknown：模型未知或定价表无此模型 → UI 必须渲染 `—`，禁止显示 $0.0000
- */
+/** Retained source provenance only; legacy estimated values are never recalculated or displayed. */
 export type CostSource = 'reported' | 'estimated' | 'unknown';
+/** Original source unit retained for evidence fidelity only. */
+export type PriceCurrency = 'USD' | 'CNY';
 
 /**
  * 事件时长来源。add-mission-control §1 P0-A：
@@ -1213,7 +1210,7 @@ export type TurnKeySource =
 
 ---
 
-## 2. Tokens & cost
+## 2. Tokens and retained source evidence
 
 ```ts
 export interface TokenUsage {
@@ -1680,8 +1677,7 @@ export interface MissionModelRow {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  costUsd: number;
-  costSource: CostSource;
+
 }
 
 export interface MissionDayPoint {
@@ -1691,7 +1687,9 @@ export interface MissionDayPoint {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  costUsd: number;
+  cacheHitRate: number | null;
+  cacheKnownMembers: number;
+  cacheTotalMembers: number;
   errorEvents: number;
   successRate: number | null;
   /** B11 漂移专用：当日 E2E p95（wall-clock 分位数）。 */
@@ -1728,16 +1726,6 @@ export interface MissionQuality {
     e2eP99Ms: number | null;
     turnsP50: number;
     repairSessions: number;
-  }>;
-  costEfficiency: MissionWidget<{
-    totalUsd: number;
-    perTurnUsd: number | null;
-    perOkToolUsd: number | null;
-    perSessionUsd: number | null;
-    turns: number;
-    tools: number;
-    pricedSessions: number;
-    unpricedSessions: number;
   }>;
   toolFailure: MissionWidget<Array<{ tool: string; rate: number; errors: number; attempts: number }>>;
   tokenTrend: MissionWidget<MissionDayPoint[]>;
@@ -1821,8 +1809,6 @@ export interface MissionHealth {
     title: string;
     provider: ProviderKey;
     tokenTotal: number;
-    costUsd: number;
-    costSource: CostSource;
   }>>;
 }
 
@@ -1966,7 +1952,9 @@ export interface AgentOverviewRow {
   tokenInput: number;
   tokenOutput: number;
   tokenTotal: number;
-  costUsd: number;
+  cacheHitRate: number | null;
+  cacheKnownMembers: number;
+  cacheTotalMembers: number;
   avgWallClockMs: number;
   latestUpdatedAt: string;
   avgToolDurationMs: number | null;
@@ -2857,7 +2845,7 @@ export interface TeamActivitySlim {
 }
 
 /**
- * per-agent round。`aggregates` 里 tokens/cost 可用性独立，unavailable 为 null
+ * per-agent round。`aggregates` 里 tokens 可用性独立，unavailable 为 null；旧 monetary slot 始终 null
  * 而非 0（design D8 / capability spec）。round 边界优先级见
  * `TeamRoundSegmentationSource`。
  */
@@ -2965,11 +2953,7 @@ export interface TeamCostMetrics {
   totalReasoningTokens: TeamMetricValue;
   totalCacheReadTokens: TeamMetricValue;
   totalCacheWriteTokens: TeamMetricValue;
-  totalCostUsd: TeamMetricValue;
-  /** cost 不可观测（Codex）时为 null；禁止显示 $0.0000（evidence §9.3）。 */
-  costCurrency: PriceCurrency | null;
   coordinationTokens: TeamMetricValue;
-  costGini: TeamMetricValue;
 }
 
 export interface TeamCollaborationMetrics {
@@ -3139,7 +3123,7 @@ expectTypeOf<Pick<TeamActivitySlim, 'id' | 'runId'>>().toEqualTypeOf<{ id: strin
 
 // nullable 可用性：cost 不可观测必须能表达 null（禁止 0 冒充）
 expectTypeOf<Pick<TeamRunSummary, 'costCurrency'>>().toEqualTypeOf<{ costCurrency: PriceCurrency | null }>();
-expectTypeOf<Pick<TeamCostMetrics, 'costCurrency'>>().toEqualTypeOf<{ costCurrency: PriceCurrency | null }>();
+
 expectTypeOf<Pick<TeamMetricValue, 'value'>>().toEqualTypeOf<{ value: number | null }>();
 ```
 
@@ -3246,6 +3230,8 @@ import type { ProviderKey, TraceEventSlim, TraceLogSession, TraceLogTurn, TraceS
 /** Task identity is a read projection; native IDs and evidence remain unchanged. */
 export type TaskOrigin = 'collected' | 'imported';
 export interface TaskSummary {
+  /** Genuine root request boundaries; null when details are unavailable. */
+  requestCount?: number | null;
   id: string;
   origin: TaskOrigin;
   provenanceKnown: boolean;
@@ -3269,9 +3255,32 @@ export interface TaskMember {
   detailLoaded: boolean;
   eventCount: number;
 }
+export type TaskMetricKey = 'input' | 'output' | 'cacheRead' | 'correctedTotal' | 'promptInput' | 'cacheHitRate' | 'models';
+export interface TaskMetricCoverage {
+  known: number;
+  total: number;
+  missing: Array<{ memberId: string; name: string; reason: 'session_unavailable' | 'detail_not_loaded' | 'not_reported' | 'accounting_unknown' }>;
+}
+export interface TaskMetrics {
+  durationMs: number | null;
+  toolCalls: number | null;
+  errors: number | null;
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  correctedTotal: number | null;
+  promptInput: number | null;
+  cacheHitRate: number | null;
+  models: string[];
+  toolResults?: number | null;
+  toolFailures?: number | null;
+  contextPressurePct?: number | null;
+  coverage?: Record<TaskMetricKey, TaskMetricCoverage>;
+}
 export interface TaskContext {
   task: TaskSummary;
   members: TaskMember[];
+  metrics?: TaskMetrics;
   importSession: TraceLogSession | null;
   warnings: string[];
 }
@@ -3289,6 +3298,7 @@ export interface TaskRecord {
   sessionKey: string | null;
   event: TraceEventSlim | null;
   importedTurn: TraceLogTurn | null;
+  toolInputPreview?: string;
 }
 export interface TaskRecordPage {
   context: TaskContext;
@@ -3361,3 +3371,273 @@ protocol identities use child scope. Normal root rows retain existing semantics.
 Conflicting sidechain IDs/parent IDs or missing child ID produce incomplete
 identity evidence; never assign the parent's session identity to the child.
 Parser version advances to 3 for Claude. Scanner storage keys remain path-based.
+
+## Phase B task health home (2026-10-31)
+
+The following supersedes Phase A monetary restrictions. Canonical task types:
+```ts
+import type { ProviderKey, TraceEventSlim, TraceLogSession, TraceLogTurn, TraceStatus } from './trace-types.js';
+
+/** Task identity is a read projection; native IDs and evidence remain unchanged. */
+export type TaskOrigin = 'collected' | 'imported';
+export interface TaskSummary {
+  /** Genuine root request boundaries; null when details are unavailable. */
+  requestCount?: number | null;
+  id: string;
+  origin: TaskOrigin;
+  provenanceKnown: boolean;
+  rootSessionKey: string | null;
+  runId: string | null;
+  title: string;
+  provider: string;
+  startedAt: string | null;
+  updatedAt: string;
+  recordedStatus: string;
+  memberCount: number;
+  eventCount: number;
+  loadedMemberCount: number;
+  metrics?: TaskMetrics;
+  latestHealth?: TaskHealthSummary | null;
+  alerts?: TaskAlert[];
+}
+export interface TaskMember {
+  id: string;
+  name: string;
+  role: string;
+  sessionKey: string | null;
+  parentId: string | null;
+  detailLoaded: boolean;
+  eventCount: number;
+}
+export type TaskMetricKey = 'input' | 'output' | 'cacheRead' | 'correctedTotal' | 'promptInput' | 'cacheHitRate' | 'models';
+export interface TaskMetricCoverage {
+  known: number;
+  total: number;
+  missing: Array<{ memberId: string; name: string; reason: 'session_unavailable' | 'detail_not_loaded' | 'not_reported' | 'accounting_unknown' }>;
+}
+export interface TaskMetrics {
+  durationMs: number | null;
+  toolCalls: number | null;
+  errors: number | null;
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  correctedTotal: number | null;
+  promptInput: number | null;
+  cacheHitRate: number | null;
+  models: string[];
+  toolResults?: number | null;
+  toolFailures?: number | null;
+  contextPressurePct?: number | null;
+  coverage?: Record<TaskMetricKey, TaskMetricCoverage>;
+}
+export interface TaskContext {
+  task: TaskSummary;
+  members: TaskMember[];
+  metrics?: TaskMetrics;
+  importSession: TraceLogSession | null;
+  warnings: string[];
+}
+export interface TaskPage {
+  items: TaskSummary[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+}
+export interface TaskRecord {
+  id: string;
+  memberId: string;
+  memberName: string;
+  sessionKey: string | null;
+  event: TraceEventSlim | null;
+  importedTurn: TraceLogTurn | null;
+  toolInputPreview?: string;
+}
+export interface TaskRecordPage {
+  context: TaskContext;
+  items: TaskRecord[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  hasPrevious: boolean;
+  /** Session sequence ceilings make subsequent pages independent of live appends. */
+  window: string;
+  warnings: string[];
+  /** Optional indexed native facts; semantic grouping remains client-only. */
+  structure?: TaskStructure;
+}
+export type TaskSort = 'activity' | 'time' | 'duration' | 'errors' | 'tokens' | 'cacheHitRate';
+export interface TaskListQuery { failed?: boolean; toolFailures?: boolean; summary?: boolean; sort?: TaskSort; direction?: 'asc' | 'desc'; alerts?: boolean; errors?: boolean; origin?: TaskOrigin; q?: string; provider?: ProviderKey; range?: 'today' | '7d' | '30d' | 'all'; offset?: number; limit?: number }
+export interface TaskRecordQuery { member?: string; q?: string; status?: TraceStatus; offset?: number; limit?: number; window?: string; anchor?: string; from?: string; to?: string; structure?: boolean }
+
+/** A retained, scoped identity, never an ID inferred from a title or timestamp. */
+export interface TaskNativeRef { namespace: string; kind: 'turn' | 'request' | 'response' | 'tool_call'; value: string; scope: string }
+export interface TaskRecordStructure {
+  recordId: string;
+  round: TaskNativeRef | null;
+  attempt: TaskNativeRef | null;
+  tool: TaskNativeRef | null;
+  pairing: 'exact' | 'unavailable' | 'ambiguous' | 'incomplete';
+  /** Exact same-ID retained observations, including off-page links; max12. */
+  relatedRecordIds: string[];
+}
+export interface TaskRoundSeed { memberId: string; recordId: string; sequence: number; title: string; startedAt: string }
+export interface TaskStructure { records: TaskRecordStructure[]; leading: TaskRoundSeed[]; warnings: string[] }
+/** Histogram counts retained event STARTS, not executions or time shares. */
+export interface TaskTimeBin { index: number; input: number; model: number; tool: number; other: number; errors: number }
+export interface TaskTimeline {
+  taskId: string;
+  member: string;
+  window: string;
+  from: string | null;
+  to: string | null;
+  bins: number;
+  total: number;
+  untimed: number;
+  lanes: Array<{ memberId: string; name: string; total: number; bins: TaskTimeBin[] }>;
+  coverage: { loadedMembers: number; totalMembers: number };
+}
+
+export interface TaskHealthSummary {
+  id: string; generatedAt: string; revision: string;
+  conclusion: 'findings' | 'not_observed' | 'insufficient'; issues: number;
+  scope?: { member: string; from: string | null; to: string | null };
+}
+export interface TaskAlert { rule: keyof AlertThresholds; threshold: number; actual: number }
+export interface AlertThresholds {
+  errors: number | null; toolFailurePct: number | null; durationMs: number | null;
+  tokens: number | null; contextPressurePct: number | null;
+}
+export interface TaskKpis {
+  tasks: number; statusKnownTasks: number; toolKnownTasks: number; failedTasks: number; failurePct: number | null;
+  toolFailurePct: number | null; tokens: number | null; tokenKnownTasks: number;
+  cacheHitRate: number | null; cacheKnownMembers: number; cacheTotalMembers: number; alerts: number;
+}
+
+export type TaskHydrationReason = 'source_missing' | 'source_unreadable' | 'parse_failed' | 'member_unavailable' | 'cancelled' | 'request_failed';
+export interface TaskHydrationProgress {
+  taskId: string;
+  pending: number;
+  loaded: number;
+  reasons: TaskHydrationReason[];
+}
+export interface TaskHydrationFrame { items: TaskHydrationProgress[]; done: boolean }
+export interface LocalSettingsTarget { section: 'alert-thresholds' }
+
+```
+
+## Phase C task comparison projection
+
+See task-comparison.md TC-002. No persisted schema changes.
+```ts
+export interface TaskComparisonSnapshot { a: TaskSummary[]; b: TaskSummary[] }
+```
+
+## Phase D telemetry intake
+
+The additive SessionProviderKey and canonical telemetry DTOs follow
+[telemetry-intake.md](telemetry-intake.md) TD-001..006 and src/core/telemetry-types.ts.
+
+
+## Phase E requests
+
+Request DTOs, indexed projection budgets and additive routes/filters follow
+[task-requests.md](task-requests.md) TR-001–005. Existing routes remain compatible.
+
+## Phase F1 Token/cache presentation (2026-11-01)
+
+F1-001 Supersedes every older monetary presentation/estimation requirement in
+this contract and lower-priority specs. TaskMetrics, task summaries/home/request
+lists and TaskKpis have no monetary fields. No monetary alert rule, threshold,
+configuration, sorting or report/UI output remains. Raw captured monetary fields
+and their storage/provenance types remain evidence only; OTLP/trace originals
+remain faithful. Legacy Team/Mission raw metric types do not authorize displaying
+monetary values. Pricing estimation and configuration are removed. Context windows
+retain the existing sourced model metadata in context-windows.ts, independently
+of removed prices; unknown models stay unknown.
+
+F1-002 cacheHitRate is a nullable fraction (0..1), displayed as a percentage with
+one decimal. cacheHitRate = Σ cacheRead / Σ promptInput. Normalize EACH model
+call/member with existing benchmark correctedUsage / FoldingMetricRun accounting
+BEFORE summation: inputIncludesCache=true => promptInput=input; false =>
+promptInput=input+cacheRead+cacheWrite. Confirmed unreported cache writes count
+as0. Unknown cacheRead/input/convention or required write counter, invalid
+counters or zero denominator => unknown. This metric does not require output
+or reasoning counters. Partial results use only compatible known members for
+BOTH numerator and denominator, with Phase A n/m member coverage; never average
+percentages or sum incompatible input conventions. TaskMetrics adds promptInput
+and cacheHitRate, and coverage keys for both. TaskKpis adds cacheHitRate,
+cacheKnownMembers/cacheTotalMembers over the same paired member observations.
+Comparisons require complete coverage and the existing Token comparability guard;
+cache hit is higher-is-better, never proof of quality. Request metrics use the
+same convention. Legacy sort=cost/currency URL parameters are ignored and removed
+on canonical serialization. No new schema or dependencies.
+
+F1-004 TeamCostMetrics retains its historical name for Token metrics only:
+remove totalCostUsd/costCurrency/costGini; TEAM_METRICS_CALC_VERSION=2 invalidates
+stored derived summaries. TeamRoundAggregates.costUsd is a legacy storage slot
+and always null. Captured TeamActivity monetary attributes remain originals.
+Legacy saved alert configuration may contain retired costUSD/costCNY keys; reads
+discard them, while new PUT bodies reject them. No monetary rule can trigger.
+
+F1-005 CaptureComparisonViewModel removes its legacy always-null cost object
+and cost_unknown warning; no monetary inference/presentation is emitted.
+
+## Phase F4 overview projection
+
+F4-001: The following read-only types live in src/core/overview-types.ts. TaskKpis and TaskSummary retain their existing definitions.
+```ts
+import type { TaskKpis, TaskSummary } from './task-types.js';
+export type OverviewRange = '24h' | '7d' | '30d' | 'all';
+export interface OverviewPoint extends TaskKpis {
+  day: string;
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  cacheWrite: number | null;
+}
+export interface OverviewSnapshot {
+  range: OverviewRange;
+  provider: string;
+  generatedAt: string;
+  current: OverviewPoint;
+  previous: OverviewPoint | null;
+  daily: OverviewPoint[];
+  providers: Array<{ label: string; value: number }>;
+  models: Array<{ label: string; value: number }>;
+  tools: Array<{ tool: string; failures: number; results: number }>;
+  alerts: TaskSummary[];
+  criteria: Record<'zh' | 'en', string>;
+}
+```
+Daily activity buckets use UTC event dates plus last-activity metadata; each metric snapshot is assigned once to last activity. F4-004 below defines continuous calendar/week slots and activity-intersection membership. Unknown/partial counters remain null/coverage as in TaskKpis. Cache write is summed only when every bound member is loaded and has a positive persisted cache-write counter; legacy default zero is unavailable. Never infer cache write by subtracting overlapping counters.
+
+F4-004 supersedes the original start-day assignment: daily OverviewPoint.day remains ISO8601 UTC midnight (UTC Monday for weekly
+buckets). OverviewSnapshot.daily is a continuous date/week sequence. Its tasks
+counts retained event-day or last-activity roots; remaining metrics describe current
+whole-task snapshots assigned once to last activity, as specified in api F4-004.
+Empty slots use0 count/Token bars, null ratios. Populated unknowns remain null.
+
+## F5 review: settings navigation and provider path evidence
+
+```ts
+export type SettingsSection = 'general' | 'appearance' | 'health' | 'alert-thresholds' | 'storage' | 'about';
+export interface ProviderStatusResponse {
+  providers: Array<{
+    key: ProviderKey;
+    enabled: boolean;
+    sessionCount: number;
+    lastScanAt: string | null;
+    ready: boolean;
+    blockedBy: string | null;
+    pathExists: boolean | null;
+  }>;
+}
+```
+
+`pathExists` is direct, bounded asynchronous access evidence for the configured
+scanner path (a directory or database file). False means ENOENT/ENOTDIR only;
+permissions, IO failure and the1s local deadline yield null, never a missing-path
+claim. No session bodies, source file contents or per-session reads are needed.

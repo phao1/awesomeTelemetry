@@ -99,3 +99,15 @@ it('preserves optional independent verdict source/labels/case results and reject
   expect(validateBenchmarkTelemetry(telemetry).usage.cacheWriteReported).toBe(false);
   expect(() => validateBenchmarkTelemetry({ ...telemetry, usage: { ...telemetry.usage, cacheWriteReported: 'false' } })).toThrow();
 });
+
+it('normalizes prompt input independently per call and does not require output/reasoning',async()=>{
+ const {promptUsage}=await import('./benchmark-analysis.js');
+ const inclusive={input:100,cacheRead:30,cacheWrite:null,cacheWriteReported:false,inputIncludesCache:true};
+ const exclusive={input:60,cacheRead:30,cacheWrite:10,cacheWriteReported:true,inputIncludesCache:false};
+ expect(promptUsage(inclusive)).toEqual({promptInput:100,cacheHitRate:0.3});
+ expect(promptUsage(exclusive)).toEqual({promptInput:100,cacheHitRate:0.3});
+ expect(promptUsage({...exclusive,cacheWrite:null,cacheWriteReported:false})).toEqual({promptInput:90,cacheHitRate:1/3});
+ for(const patch of [{cacheRead:null},{input:null},{inputIncludesCache:null},{cacheWrite:null},{input:0,cacheRead:0,cacheWrite:0},{input:-1}])expect(promptUsage({...exclusive,...patch}).cacheHitRate).toBeNull();
+ expect(promptUsage({...inclusive,cacheRead:0}).cacheHitRate).toBe(0);
+ expect(promptUsage({...inclusive,cacheRead:101}).cacheHitRate).toBeNull();
+});

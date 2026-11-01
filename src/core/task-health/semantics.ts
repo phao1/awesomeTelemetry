@@ -1,7 +1,7 @@
-import type { DurationSource, ProviderKey } from '../trace-types.js';
+import type { DurationSource, SessionProviderKey } from '../trace-types.js';
 import type { TimestampSemantics } from './types.js';
 /** Session declaration only; individual native endpoints must still be verified. */
-export function timestampSemantics(provider: ProviderKey | null, durationSource: DurationSource): TimestampSemantics {
+export function timestampSemantics(provider: SessionProviderKey | null, durationSource: DurationSource): TimestampSemantics {
     if (provider === null)
         return 'interval';
     if (['codex', 'claude', 'codeagent'].includes(provider))

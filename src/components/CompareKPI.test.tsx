@@ -95,9 +95,9 @@ describe('CompareKPI（建议 7 drill-down）', () => {
   it('WB-006: exposes six primary summaries and keeps additional activity metrics in a labelled closed disclosure', () => {
     const view=mount(<CompareKPI result={makeResult()} locale="en"/>);
     expect(document.querySelectorAll('.compare-kpi-primary > .compare-kpi-cell')).toHaveLength(6);
-    const details=document.querySelector<HTMLDetailsElement>('.compare-kpi-more')!;
-    expect(details).not.toBeNull();expect(details.open).toBe(false);
-    expect(details.querySelector('summary')?.textContent).toContain('More recorded activity');
+    const details=document.querySelector<HTMLElement>('.compare-kpi-more')!;
+    expect(details).not.toBeNull();expect(details.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
+    expect(details.querySelector('.ui-accordion > button')?.textContent).toContain('More recorded activity');
     expect(details.querySelectorAll('.compare-kpi-cell').length).toBeGreaterThan(0);
     view.unmount();
   });

@@ -177,21 +177,21 @@ export function RequestContextDiffPanel({
     <div className="context-diff" data-testid="context-diff-panel">
       <div className="context-diff-toolbar">
         <span className="context-diff-font" role="group" aria-label="context diff font">
-          <button type="button" className="btn ui-btn-sm" onClick={() => adjustFont(-2)} aria-label={t('common.fontSmall', locale)}>
+          <Button type="button" className="ui-btn-sm"  onClick={() => adjustFont(-2)} aria-label={t('common.fontSmall', locale)}>
             {t('common.fontSmall', locale)}
-          </button>
-          <button type="button" className="btn ui-btn-sm" onClick={() => adjustFont(2)} aria-label={t('common.fontLarge', locale)}>
+          </Button>
+          <Button type="button" className="ui-btn-sm"  onClick={() => adjustFont(2)} aria-label={t('common.fontLarge', locale)}>
             {t('common.fontLarge', locale)}
-          </button>
-          <button type="button" className="btn ui-btn-sm" onClick={() => setFontPx(BASE_FONT_PX)} aria-label={t('common.fontReset', locale)}>
+          </Button>
+          <Button type="button" className="ui-btn-sm"  onClick={() => setFontPx(BASE_FONT_PX)} aria-label={t('common.fontReset', locale)}>
             {t('common.fontReset', locale)}
-          </button>
+          </Button>
         </span>
       </div>
 
       {stale && <div role="status">
         <p className="hint">{t('trace.links.stale', locale)}</p>
-        <button className="btn" type="button" onClick={retry}>{t('common.refresh', locale)}</button>
+        <Button  type="button" onClick={retry}>{t('common.refresh', locale)}</Button>
       </div>}
 
       {!stale && <div className="context-diff-body" style={{ fontSize: fontPx }}>
@@ -199,6 +199,7 @@ export function RequestContextDiffPanel({
 
         {status === 'error' && (
           <ErrorState
+            locale={locale}
             code={errorCode ?? 'INTERNAL_ERROR'}
             message={errorMessage ?? '—'}
             onRetry={retry}
@@ -665,9 +666,9 @@ function ContextBasePicker({
           }}
           aria-label={t('proxy.contextDiff.basePicker.placeholder', locale)}
         />
-        <button type="button" className="btn ui-btn-sm" onClick={submitId}>
+        <Button type="button" className="ui-btn-sm"  onClick={submitId}>
           {t('proxy.contextDiff.basePicker.submit', locale)}
-        </button>
+        </Button>
       </div>
     </div>
   );

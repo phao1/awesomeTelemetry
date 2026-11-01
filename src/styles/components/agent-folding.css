@@ -7,7 +7,7 @@
 .agent-folding-workbench summary { cursor: pointer; font-weight: var(--weight-semibold); padding-block: var(--space-2); }
 .agent-folding-workbench :is(button, input, select, textarea, summary, a):focus-visible { outline: calc(var(--space-1) / 2) solid var(--accent-fg); outline-offset: calc(var(--space-1) / 2); }
 .agent-folding-workbench label { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
-.agent-folding-workbench :is(input:not([type=file]), select, textarea) { border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-default); color: var(--fg-default); font: inherit; padding: var(--space-2); min-width: 0; }
+.agent-folding-workbench :is(input:not(.ui-input):not([type=hidden]):not([type=file]), select:not(.ui-select), textarea) { border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--canvas-default); color: var(--fg-default); font: inherit; padding: var(--space-2); min-width: 0; }
 .agent-folding-workbench pre { white-space: pre-wrap; overflow-wrap: anywhere; font: var(--text-sm)/1.6 var(--font-mono); padding: var(--space-3); background: var(--canvas-inset); max-height: 28rem; overflow: auto; }
 .agent-folding-workbench code { overflow-wrap: anywhere; font-size: var(--text-sm); }
 .af-heading, .af-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
@@ -78,3 +78,25 @@
 .af-new-case textarea { width: 100%; resize: vertical; }
 .af-new-case label { margin-block: var(--space-2); }
 .af-external label { flex: 1; min-width: min(18rem, 100%); }
+
+/* Phase F5: boundary evaluation uses the shared page and disclosure surfaces. */
+.agent-folding-workbench { padding: var(--page-gutter); display: flex; flex-direction: column; gap: var(--space-4); }
+.agent-folding-workbench > * { min-width: 0; flex-shrink: 0; }
+.agent-folding-workbench .page-header { position: static; padding: 0; }
+.agent-folding-workbench .ui-accordion { background: var(--canvas-raised); border-radius: var(--radius-lg); box-shadow: var(--shadow-xs); }
+.agent-folding-workbench .af-own-system, .agent-folding-workbench .af-smoke, .agent-folding-workbench .af-advanced { border: 0; padding: 0; }
+.agent-folding-workbench .ui-card { min-width: 0; }
+.agent-folding-workbench .ui-table th { background: var(--canvas-subtle); color: var(--fg-muted); }
+.agent-folding-workbench .ui-table :is(th,td) { white-space: nowrap; height: var(--table-row-height); }
+.agent-folding-workbench .af-inventory .ui-table td { white-space: normal; }
+.agent-folding-workbench .ui-table tr:hover { background: var(--canvas-subtle); }
+.agent-folding-workbench .ui-steps { overflow-x: auto; flex-wrap: nowrap; }
+.agent-folding-workbench .ui-steps li { flex-shrink: 0; white-space: nowrap; }
+.agent-folding-workbench .af-event.ui-btn { white-space: normal; height: auto; }
+.agent-folding-workbench .f5-stats { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,calc(var(--space-5) * 9)),1fr)); gap: var(--space-4); }
+.agent-folding-workbench .ui-check-label { flex-direction: row; align-items: center; }
+@media (max-width: 48em) { .agent-folding-workbench .page-header { height: auto; flex-wrap: wrap; gap: var(--space-3); } .agent-folding-workbench .page-actions { flex-wrap: wrap; } }
+.agent-folding-workbench input.ui-switch { padding: calc(var(--space-1) / 2); }
+
+.agent-folding-workbench { padding-top: 0; }
+.agent-folding-workbench > .page-header { position: sticky; top: 0; padding-block: var(--space-2); padding-inline: 0; }

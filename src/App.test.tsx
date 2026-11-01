@@ -1,10 +1,11 @@
+import { DEFAULT_ALERT_THRESHOLDS } from './core/task-alerts.js';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionIndexEntry } from './core/trace-types.js';
 import {PROVIDER_KEYS} from './core/trace-types.js';
-import type { SessionDetailResponse, TraceEvent, TraceEventSlim, TraceSession } from './core/trace-types.js';
+import type { SessionDetailResponse, TraceEvent } from './core/trace-types.js';
 import App from './App.js';
 import { recordCache, eventDetailCache } from './cache/caches.js';
 import { LAYOUT_KEYS } from './layout.js';
@@ -40,6 +41,31 @@ const THREE_SESSIONS = [
   session('s-3', 'codex', 'debug login'),
 ];
 
+
+async function navigateHash(hash:string){await act(async()=>{history.replaceState(null,'',hash);window.dispatchEvent(new Event('hashchange'));await new Promise(resolve=>setTimeout(resolve,10));});}
+async function openAgentGroup(container:HTMLElement){await navigateHash('#/overview');await act(async()=>{const tab=[...container.querySelectorAll<HTMLButtonElement>('[role=tab]')].find(b=>b.textContent==='Agent 视角')!;expect(tab).toBeDefined();tab.click();await import('./components/AgentOverview.js');});}
+
+const TASK_FIXTURES=THREE_SESSIONS.map(session=>({id:'collected:'+session.id,origin:'collected' as const,provenanceKnown:true,rootSessionKey:session.id,runId:null,title:session.title,provider:session.provider,startedAt:session.startedAt,updatedAt:session.updatedAt,recordedStatus:session.status,memberCount:1,eventCount:2,loadedMemberCount:1}));
+const OVERVIEW_POINT={day:'2026-11-01T00:00:00.000Z',tasks:3,statusKnownTasks:3,toolKnownTasks:3,failedTasks:0,failurePct:0,toolFailurePct:0,tokens:null,tokenKnownTasks:0,cacheHitRate:null,cacheKnownMembers:0,cacheTotalMembers:3,alerts:0,input:null,output:null,cacheRead:null,cacheWrite:null};
+const OVERVIEW_FIXTURE={range:'7d',provider:'',generatedAt:OVERVIEW_POINT.day,current:OVERVIEW_POINT,previous:null,daily:[],providers:[],models:[],tools:[],alerts:[],criteria:{zh:'任务口径',en:'Task basis'}};
+function taskContext(id:string){const task=TASK_FIXTURES.find(t=>t.id===id)??TASK_FIXTURES[0]!;return {task,members:[{id:task.rootSessionKey,name:task.provider,role:'main',sessionKey:task.rootSessionKey,parentId:null,detailLoaded:true,eventCount:2}],importSession:null,warnings:[]};}
+function taskPage(id:string){const context=taskContext(id),key=context.task.rootSessionKey;return {context,items:[1,2].map(sequence=>({id:key+':event:shared-'+sequence,memberId:key,memberName:context.task.provider,sessionKey:key,event:{...makeEvent(makeMessage('shared-'+sequence,sequence,{kind:'llm',role:'assistant',title:'Result '+sequence,hasInput:false,hasOutput:true})),sessionId:key},importedTurn:null})),total:2,offset:0,limit:200,hasMore:false,hasPrevious:false,window:'fixed',warnings:[]};}
+const apiResponse=(value:unknown)=>({ok:true,status:200,text:async()=>JSON.stringify(value)}) as Response;
+function taskResponse(path:string):Response {
+ if(path.startsWith('/api/task-kpis'))return apiResponse(OVERVIEW_FIXTURE);
+ if(path.startsWith('/api/tasks?'))return apiResponse({items:TASK_FIXTURES,total:3,offset:0,limit:50,hasMore:false});
+ const taskMatch=/\/api\/tasks\/([^/?]+)/.exec(path);const id=taskMatch?decodeURIComponent(taskMatch[1]!):TASK_FIXTURES[0]!.id;
+ if(path.includes('/records?'))return apiResponse(taskPage(id));
+ if(path.includes('/timeline?')){const q=new URL(path,'http://localhost').searchParams;return apiResponse({taskId:id,member:q.get('member'),window:q.get('window'),bins:160,total:2,untimed:0,lanes:[],from:null,to:null,coverage:{loadedMembers:1,totalMembers:1}});}
+ if(taskMatch)return apiResponse(taskContext(id));
+ if(path.includes('/events/'))return apiResponse({...taskPage(id).items[0]!.event,inputSummary:'input',outputSummary:'SELECTED PUBLIC OUTPUT'});
+ if(path.includes('/sessions?'))return apiResponse({items:THREE_SESSIONS,total:3,hasMore:false,nextCursor:null});
+ if(path.includes('/session-groups'))return apiResponse({groups:[]});
+ return apiResponse({});
+}
+function installTaskApi(){vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>taskResponse(String(input))));}
+async function readyTasks(container:HTMLElement){for(let i=0;i<100&&container.querySelectorAll('.task-health-title').length!==3;i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});expect(container.querySelectorAll('.task-health-title')).toHaveLength(3);}
+
 describe('WB-007 lazy Agent overview entry',()=>{
   it('loads capture metadata only on entry and active sources only on explicit live expansion, never row bodies', async () => {
     const previousUrl = window.location.href;
@@ -55,12 +81,13 @@ describe('WB-007 lazy Agent overview entry',()=>{
     const { container, unmount } = renderAppWithUnmount();
     try {
       await act(async () => { await Promise.resolve(); });expect(paths.filter(path => path.includes('/proxy/'))).toHaveLength(0);
-      const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(node => /^(代理|Proxy)$/.test(node.textContent ?? ''))!;
-      expect(tab).toBeDefined();act(() => tab.click());
+      const tab = container.querySelector<HTMLButtonElement>('.app-sidebar nav [aria-label=数据接入]')!;
+      expect(tab).toBeDefined();await navigateHash('#/proxy');
       await act(async () => { await import('./components/ProxyView.js');await Promise.resolve(); });
       expect(paths.filter(path => path.includes('/proxy/')).sort()).toEqual(['/api/proxy/requests?limit=50', '/api/proxy/status']);
-      const live = container.querySelector<HTMLDetailsElement>('.capture-live')!;expect(live.open).toBe(false);
-      await act(async () => { live.open = true;live.dispatchEvent(new Event('toggle'));await import('./components/ProxyLivePanel.js'); });
+      await vi.waitFor(()=>expect(container.querySelector('.capture-live')).not.toBeNull());
+      const live = container.querySelector('.capture-live')!;expect(live.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
+      await act(async () => { live.querySelector<HTMLButtonElement>('button')!.click();await import('./components/ProxyLivePanel.js'); });
       expect(paths.filter(path => path.endsWith('/proxy/live'))).toHaveLength(1);
       expect(paths.some(path => /\/requests\/\d+/.test(path))).toBe(false);
       expect(EventSourceStub.instances).toHaveLength(1); // The shared shell SSE only; no selected-body subscription.
@@ -82,6 +109,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
     const pairs: Array<{ leftKey: string; rightKey: string }> = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (path === '/api/task-comparison') { const selection=JSON.parse(String(init?.body)) as {a:string[];b:string[]};return apiResponse({a:selection.a.map(id=>TASK_FIXTURES.find(t=>t.id===id)),b:selection.b.map(id=>TASK_FIXTURES.find(t=>t.id===id))}); }
       if (path === '/api/compare') { pairs.push(JSON.parse(String(init?.body)) as { leftKey: string; rightKey: string });return new Promise<never>(() => undefined); }
       const body = path.includes('/agent-overview') ? { rows: [group('Group A'), group(matching ? 'Group B' : 'Not loaded')], stamp: '2026-10-18T00:00:00.000Z', cached: false }
         : path.includes('/sessions?') ? { items: indexed, total: indexed.length, hasMore: false, nextCursor: null } : { groups: [] };
@@ -89,19 +117,20 @@ describe('WB-007 lazy Agent overview entry',()=>{
     }));
     const { container, unmount } = renderAppWithUnmount();
     try {
-      await act(async () => { await Promise.resolve();history.replaceState(null, '', '#/compare?left=s-3&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/CompareBoard.js'); });
+      await act(async () => { await Promise.resolve();history.replaceState(null, '', '#/compare?left=s-3&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/task/TaskComparison.js'); });
       await act(async () => { for (let i = 0; i < 30 && pairs.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 10)); });
       expect(pairs).toEqual([{ leftKey: 's-3', rightKey: 's-2' }]);
-      act(() => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button => /Agent 概览|Agent Overview/.test(button.textContent ?? ''))!.click());
+      await openAgentGroup(container);
       await act(async () => { for (let i = 0; i < 30 && !container.querySelector('.overview tbody input'); i++) await new Promise(resolve => setTimeout(resolve, 10)); });
+      await act(async()=>{await new Promise(resolve=>setTimeout(resolve,350));});
       const boxes = container.querySelectorAll<HTMLInputElement>('.overview tbody input');
       act(() => boxes[0]!.click());act(() => boxes[1]!.click());
       await act(async () => { container.querySelector<HTMLButtonElement>('.compare-float-btn')!.click();await Promise.resolve(); });
-      expect(window.location.hash).toContain('left=s-1');
+      expect(window.location.hash).toContain('a=collected%3As-1');
       if (matching) {
         expect(pairs).toEqual([{ leftKey: 's-3', rightKey: 's-2' }, { leftKey: 's-1', rightKey: 's-2' }]);
       } else {
-        expect(pairs).toHaveLength(1);expect(window.location.hash).not.toContain('right=');
+        expect(pairs).toHaveLength(1);expect(window.location.hash).not.toContain('b=');
         expect(container.querySelector('.compare-float-btn')).toBeNull();
       }
     } finally {
@@ -109,7 +138,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
       if (previousMode === null) localStorage.removeItem('awesome-telemetry.agentViewMode');else localStorage.setItem('awesome-telemetry.agentViewMode', previousMode);
     }
   });
-  it('lazy settings remains a closable dialog, reads config once on opening and never saves on close',async()=>{
+  it('legacy settings entry navigates to a full page, reads config once and never saves when leaving',async()=>{
     const paths:Array<{path:string;method:string}>=[];vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
       const path=String(input);paths.push({path,method:init?.method??'GET'});
       const body=path.endsWith('/config/providers')?{providers:Object.fromEntries(PROVIDER_KEYS.map(key=>[key,{key,enabled:true,path:'/synthetic/'+key,label:key,sourceKind:'jsonl',watchStrategy:'chokidar',pollIntervalMs:0}])),traeKeyPath:null,prewarmRecent:0}
@@ -119,9 +148,8 @@ describe('WB-007 lazy Agent overview entry',()=>{
     try {
       await act(async()=>{await Promise.resolve();});expect(paths.some(item=>item.path.endsWith('/config/providers'))).toBe(false);
       const trigger=[...container.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='设置')!;act(()=>{trigger.focus();trigger.click();});
-      await act(async()=>{for(let i=0;i<30&&!container.querySelector('[data-provider-path]');i++)await new Promise(resolve=>setTimeout(resolve,10));});
-      expect(container.querySelector('[role="dialog"]')).not.toBeNull();expect(container.querySelector('[data-provider-path="codex"]')).not.toBeNull();
-      act(()=>container.querySelector<HTMLButtonElement>('[role="dialog"] [aria-label="关闭"]')!.click());expect(container.querySelector('[role="dialog"]')).toBeNull();expect(document.activeElement).toBe(trigger);
+      await act(async()=>{for(let i=0;i<30&&!container.querySelector('.settings-page');i++)await new Promise(resolve=>setTimeout(resolve,10));});
+      expect(window.location.hash).toBe('#/settings');expect(container.querySelector('.settings-page')).not.toBeNull();expect(container.querySelector('[role="dialog"]')).toBeNull();act(()=>[...container.querySelectorAll<HTMLButtonElement>('.settings-nav button')].find(button=>button.textContent==='数据与存储')!.click());expect(window.location.hash).toBe('#/settings?section=storage');expect(container.querySelector('[data-provider-path="codex"]')).not.toBeNull();await navigateHash('#/task');expect(container.querySelector('.settings-page')).toBeNull();
       expect(paths.filter(item=>item.path.endsWith('/config/providers'))).toEqual([{path:'/api/config/providers',method:'GET'}]);
     } finally {unmount();}
   });
@@ -135,10 +163,10 @@ describe('WB-007 lazy Agent overview entry',()=>{
     }));const {container,unmount}=renderAppWithUnmount();
     try {
       await act(async()=>{await Promise.resolve();});expect(paths.filter(path=>path.includes('/frida/'))).toHaveLength(0);
-      const tab=[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>button.textContent==='Frida')!;act(()=>tab.click());
+      await navigateHash('#/frida');
       await act(async()=>{for(let i=0;i<30&&!paths.some(path=>path.endsWith('/frida/status'));i++)await new Promise(resolve=>setTimeout(resolve,10));});
       expect(paths.filter(path=>path.includes('/frida/')).sort()).toEqual(['/api/frida/captures','/api/frida/status']);
-      expect(container.querySelector('[data-frida-ack]')).not.toBeNull();expect(container.querySelector('[role="tablist"]')).not.toBeNull();
+      expect(container.querySelector('[data-frida-ack]')).not.toBeNull();expect(container.querySelector('.intake-grid')).not.toBeNull();
     } finally {unmount();}
   });
   it('retains bounded unique Frida save notifications with zero hidden reads and opens only the selected text',async()=>{
@@ -162,7 +190,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
         for(const listener of es.listeners.get('frida_capture')??[])listener({data:'{broken'});
       });
       expect(paths.filter(path=>path.includes('/frida/'))).toHaveLength(0);
-      act(()=>[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>button.textContent==='Frida')!.click());
+      await navigateHash('#/frida');
       await act(async()=>{await import('./components/FridaView.js');for(let i=0;i<30&&!container.querySelector('[aria-label="新保存捕获通知"]');i++)await new Promise(resolve=>setTimeout(resolve,10));});
       const buttons=container.querySelectorAll<HTMLButtonElement>('[aria-label="新保存捕获通知"] button');
       expect([...buttons].map(item=>item.textContent)).toEqual(Array.from({length:20},(_,i)=>'#'+(45+i)));
@@ -186,7 +214,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
       return {ok:true,text:async()=>JSON.stringify(body)};
     }));const {container,unmount}=renderAppWithUnmount();
     try {
-      act(()=>[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>button.textContent==='Frida')!.click());
+      await navigateHash('#/frida');
       await act(async()=>{await import('./components/FridaView.js');for(let i=0;i<30&&!container.querySelector('[data-frida-ack]');i++)await new Promise(resolve=>setTimeout(resolve,10));});
       act(()=>{EventSourceStub.instances[0]!.emit('frida_capture',{id:9});EventSourceStub.instances[0]!.emit('frida_status',{running:true,pid:12});});
       act(()=>container.querySelector<HTMLButtonElement>('[aria-label="打开新保存捕获 #9"]')!.click());
@@ -214,12 +242,11 @@ describe('WB-007 lazy Agent overview entry',()=>{
     try {
       await act(async()=>{await Promise.resolve();});
       expect(paths.filter(path=>path.includes('/agent-overview'))).toHaveLength(0);
-      const tab=[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button=>/Agent 概览|Agent Overview/.test(button.textContent??''))!;
-      expect(tab).toBeDefined();act(()=>tab.click());
+      await openAgentGroup(container);
       await act(async()=>{for(let i=0;i<30&&!paths.some(path=>path.includes('/agent-overview'));i++)await new Promise(resolve=>setTimeout(resolve,10));});
       expect(paths.filter(path=>path.includes('/agent-overview'))).toHaveLength(1);
       expect(paths.filter(path=>/\/sessions\/[^?]/.test(path))).toHaveLength(0);
-      expect(container.querySelector('[role="tablist"]')).not.toBeNull();
+      expect(container.querySelectorAll('.app-sidebar nav button')).toHaveLength(7);
     } finally {unmount();}
   });
 });
@@ -258,7 +285,7 @@ function renderApp(): HTMLDivElement {
   const root = createRoot(container);
   appRoots.add(root);
   act(() => { root.render(<App />); });
-  return container;
+  return document.body as unknown as HTMLDivElement;
 }
 
 /** team 测试专用：返回 container + unmount，确保组件正确卸载避免 hash 残留。 */
@@ -270,10 +297,14 @@ function renderAppWithUnmount(): { container: HTMLDivElement; unmount: () => voi
   act(() => {
     root.render(<App />);
   });
-  return { container, unmount: () => act(() => { root.unmount(); appRoots.delete(root); }) };
+  return { container:document.body as unknown as HTMLDivElement, unmount: () => act(() => { root.unmount(); appRoots.delete(root); }) };
 }
 
 beforeEach(() => {
+  vi.spyOn(HTMLElement.prototype,'offsetHeight','get').mockReturnValue(600);
+  vi.spyOn(HTMLElement.prototype,'clientHeight','get').mockReturnValue(600);
+  vi.spyOn(HTMLElement.prototype,'offsetWidth','get').mockReturnValue(1200);
+  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockReturnValue({x:0,y:0,top:0,left:0,right:1200,bottom:600,width:1200,height:600,toJSON(){}});
   history.replaceState(null, '', '#/session');
   EventSourceStub.instances.length = 0;
   vi.stubGlobal('fetch', vi.fn(async () => ({
@@ -287,6 +318,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => { for (const root of appRoots) root.unmount(); appRoots.clear(); });
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   document.body.innerHTML = '';
 });
 
@@ -303,6 +335,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       const path=String(input);
       if(path.startsWith('/api/tasks/collected%3As-1/records?')) return Promise.resolve({ok:true,text:async()=>JSON.stringify({context:{task:{id:'collected:s-1',origin:'collected',provenanceKnown:true,rootSessionKey:'s-1',runId:null,title:'Fix build',provider:'codex',startedAt:'2026-10-17T00:00:00.000Z',updatedAt:'2026-10-17T00:00:00.000Z',recordedStatus:'error',memberCount:1,eventCount:6000,loadedMemberCount:1},members:[{id:'main',name:'Codex',role:'main',sessionKey:'s-1',parentId:null,detailLoaded:true,eventCount:6000}],importSession:null,warnings:[]},items:[{id:'s-1:event:beyond-first-page',memberId:'main',memberName:'Codex',sessionKey:'s-1',event:target,importedTurn:null}],total:6000,offset:2960,limit:200,hasMore:true,hasPrevious:true,window:'fixed-window',warnings:[]})} as Response);
       if(path==='/api/tasks/collected%3As-1') return Promise.resolve({ok:true,text:async()=>JSON.stringify({task:{id:'collected:s-1',origin:'collected',provenanceKnown:true,rootSessionKey:'s-1',runId:null,title:'Fix build',provider:'codex',startedAt:'2026-10-17T00:00:00.000Z',updatedAt:'2026-10-17T00:00:00.000Z',recordedStatus:'error',memberCount:1,eventCount:6000,loadedMemberCount:1},members:[{id:'main',name:'Codex',role:'main',sessionKey:'s-1',parentId:null,detailLoaded:true,eventCount:6000}],importSession:null,warnings:[]})} as Response);
+      if(path==='/api/task-comparison')return Promise.resolve(apiResponse({a:[TASK_FIXTURES[0]],b:[TASK_FIXTURES[1]]}));
       if(path==='/api/compare')return Promise.resolve({ok:true,text:async()=>JSON.stringify(pair)}as Response);
       if(path.includes('/api/session-groups'))return Promise.resolve({ok:true,text:async()=>JSON.stringify({groups:[]})}as Response);
       if(path.includes('/api/sessions/s-1?'))return Promise.resolve({ok:true,text:async()=>JSON.stringify(selected)}as Response);
@@ -311,11 +344,13 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     vi.stubGlobal('fetch',fetcher);recordCache.clear();eventDetailCache.clear();recordCache.set('s-1:slim',cached);
     const {container,unmount}=renderAppWithUnmount();
     try {
-      await act(async()=>{history.replaceState(null,'','#/compare?left=s-1&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/CompareBoard.js');});
+      await act(async()=>{history.replaceState(null,'','#/compare?left=s-1&right=s-2');window.dispatchEvent(new Event('hashchange'));await import('./components/task/TaskComparison.js');});
       await act(async()=>{for(let i=0;i<30&&!container.querySelector('.cmp-run-evidence');i++)await new Promise(resolve=>setTimeout(resolve,10));});
+      act(()=>[...container.querySelectorAll<HTMLButtonElement>('.ui-accordion > button')].find(b=>b.textContent==='调查入口')!.click());
       const left=container.querySelector('.cmp-evidence-side')!;
-      act(()=>left.querySelector('summary')!.click());
+      act(()=>left.querySelector<HTMLButtonElement>('.ui-accordion > button')!.click());
       await act(async()=>{left.querySelector<HTMLButtonElement>('.cmp-evidence-errors button')!.click();for(let i=0;i<10;i++)await Promise.resolve();});
+      for(let i=0;i<100&&!container.querySelector('.task-evidence')?.textContent?.includes('SYNTHETIC_SELECTED_ERROR');i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});
       expect(fetcher.mock.calls.filter(([path])=>String(path).includes('/api/tasks/collected%3As-1/records?')&&String(path).includes('anchor=s-1%3Aevent%3Abeyond-first-page'))).toHaveLength(1);
       expect(fetcher.mock.calls.some(([path])=>String(path).includes('limit=5000'))).toBe(false);
       expect(window.location.hash).toContain('task=collected%3As-1');
@@ -324,113 +359,43 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     } finally {unmount();recordCache.clear();eventDetailCache.clear();history.replaceState(null,'',previousUrl);}
   });
   it('WB-002: switching runs clears the previous Turn and event focus, even when event IDs repeat', async () => {
-    const previousUrl=window.location.href;
-    const detailFor=(id:string):SessionDetailResponse=>({session:makeSession(id,{eventCount:2}),
-      events:[1,2].map(sequence=>({...makeEvent(makeMessage(`shared-${sequence}`,sequence,{role:'assistant',kind:'llm',tool:null,hasInput:false,hasOutput:false,hasRaw:false})),sessionId:id})),
-      mode:'slim',eventTotal:2,eventOffset:0,eventLimit:2000,hasMore:false,pending:false});
-    const original=fetch;
-    vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>{
-      const path=String(input);
-      if(path.includes('/api/session-groups')) return Promise.resolve({ok:true,text:async()=>JSON.stringify({groups:[]})} as Response);
-      if(path.includes('/api/sessions/s-1?')||path.includes('/api/sessions/s-2?')) return Promise.resolve({ok:true,text:async()=>JSON.stringify(detailFor(path.includes('s-1?')?'s-1':'s-2'))} as Response);
-      return original(input,init);
-    }));
-    recordCache.clear(); eventDetailCache.clear();
-    const {container,unmount}=renderAppWithUnmount();
-    try {
-      await act(async()=>{await new Promise(resolve=>setTimeout(resolve,350));});
-      await act(async()=>{(container.querySelectorAll('.session-row')[0] as HTMLElement).click();await Promise.resolve();});
-      await act(async()=>{(container.querySelector('.app-header-search') as HTMLButtonElement).click();await import('./components/CommandPalette.js');});
-      const input=container.querySelector('[role="dialog"] input') as HTMLInputElement;
-      act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'/goto 2');input.dispatchEvent(new Event('input',{bubbles:true}));});
-      await act(async()=>{(container.querySelector('.palette-row') as HTMLButtonElement).click();await Promise.resolve();});
-      expect(container.querySelector('.record-inspector')).not.toBeNull();
-      expect(window.location.hash).toContain('turn=2');
-      act(()=>(container.querySelector('[aria-label="关闭记录证据"]') as HTMLButtonElement).click());
-      await act(async()=>{(container.querySelector('.app-header-search') as HTMLButtonElement).click();await Promise.resolve();});
-      const repeat=container.querySelector('[role="dialog"] input') as HTMLInputElement;
-      act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(repeat,'/goto 2');repeat.dispatchEvent(new Event('input',{bubbles:true}));});
-      await act(async()=>{(container.querySelector('.palette-row') as HTMLButtonElement).click();await Promise.resolve();});
-      expect(container.querySelector('.record-inspector')).not.toBeNull();
-      await act(async()=>{(container.querySelectorAll('.session-row')[1] as HTMLElement).click();await Promise.resolve();});
-      expect(container.querySelector('.session-toolbar-id')?.textContent).toBe('s-2');
-      expect(container.querySelector('.record-inspector')).toBeNull();
-      expect(container.querySelector('.turn-row-on')).toBeNull();
-      expect(window.location.hash).not.toContain('turn=');
-    } finally {unmount();history.replaceState(null,'',previousUrl);}
+    installTaskApi();const {container,unmount}=renderAppWithUnmount();try{
+      await readyTasks(container);act(()=>container.querySelector<HTMLButtonElement>('.task-health-title')!.click());
+      await vi.waitFor(()=>expect(container.querySelectorAll('.process-record-button')).toHaveLength(2));
+      act(()=>container.querySelector<HTMLButtonElement>('.process-record-button')!.click());await vi.waitFor(()=>expect(container.querySelector('.task-evidence')).not.toBeNull());
+      expect(window.location.hash).toContain('event=s-1%3Aevent%3Ashared-1');
+      await navigateHash('#/task?task=collected%3As-2');await vi.waitFor(()=>expect(container.querySelector('.task-context-header')?.textContent).toContain('refactor api'));
+      expect(container.querySelector('.task-evidence')).toBeNull();expect(window.location.hash).not.toContain('event=');expect(container.querySelector('.process-record-on')).toBeNull();
+    }finally{unmount();}
   });
   it('WB-002: first paint is loading, not an empty successful list', () => {
-    const { container, unmount } = renderAppWithUnmount();
-    try {
-      expect(container.querySelector('.rail .ui-empty')).toBeNull();
-      expect(container.querySelector('.rail [role="status"]')).not.toBeNull();
-    } finally { unmount(); }
+    const {container,unmount}=renderAppWithUnmount();try{expect(container.querySelector('.task-sidebar .task-empty')).toBeNull();expect(container.querySelector('[role="status"]')).not.toBeNull();expect(container.querySelector('.task-empty')).toBeNull();}finally{unmount();}
   });
 
-  it('WB-002: slash can reopen a collapsed list and focus its search field', () => {
-    const previous = localStorage.getItem(LAYOUT_KEYS.railCollapsed);
-    localStorage.setItem(LAYOUT_KEYS.railCollapsed, 'true');
-    const { container, unmount } = renderAppWithUnmount();
-    try {
-      expect(container.querySelector('.session-filters input')).toBeNull();
-      act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })));
-      expect(document.activeElement).toBe(container.querySelector('.session-filters input'));
-      expect(container.querySelector('.session-filters input')).not.toBeNull();
-    } finally {
-      unmount();
-      if (previous === null) localStorage.removeItem(LAYOUT_KEYS.railCollapsed);
-      else localStorage.setItem(LAYOUT_KEYS.railCollapsed, previous);
-    }
+  it('WB-002: legacy rail collapse cannot hide the task table and slash focuses its search', async () => {
+    const previous=localStorage.getItem(LAYOUT_KEYS.railCollapsed);localStorage.setItem(LAYOUT_KEYS.railCollapsed,'true');
+    const {container,unmount}=renderAppWithUnmount();try{
+      expect(container.querySelector('.task-sidebar')).toBeNull();expect(container.querySelector('.task-f3-toolbar input[type=search]')).not.toBeNull();
+      await act(async()=>{document.dispatchEvent(new KeyboardEvent('keydown',{key:'/',bubbles:true,cancelable:true}));await new Promise(r=>setTimeout(r,10));});
+      expect(container.querySelector('.task-sidebar')).toBeNull();expect(document.activeElement).toBe(container.querySelector('.task-f3-toolbar input[type=search]'));
+    }finally{unmount();if(previous===null)localStorage.removeItem(LAYOUT_KEYS.railCollapsed);else localStorage.setItem(LAYOUT_KEYS.railCollapsed,previous);}
   });
 
   it('WB-002: a late old search response cannot replace a newer result or its URL scope', async () => {
-    type Result = { ok: boolean; text: () => Promise<string> };
-    const result = (items: SessionIndexEntry[]): Result => ({ ok: true, text: async () => JSON.stringify({ items, total: items.length, hasMore: false, nextCursor: null }) });
-    let finishOld: ((value: Result) => void) | undefined;
-    vi.stubGlobal('fetch', vi.fn((input: unknown) => {
-      const path = String(input);
-      if (path.includes('/api/sessions?') && !path.includes('q=')) return new Promise<Result>(resolve => { finishOld = resolve; });
-      if (path.includes('/api/sessions?') && path.includes('q=LATEST')) return Promise.resolve(result([{ ...THREE_SESSIONS[1]!, title: 'LATEST query result' }]));
-      return Promise.resolve({ ok: true, text: async () => '{}' });
-    }));
-    const { container, unmount } = renderAppWithUnmount();
-    try {
-      await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
-      expect(finishOld).toBeDefined();
-      const search = container.querySelector('.session-filters input') as HTMLInputElement;
-      act(() => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'LATEST');
-        search.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-      await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
-      expect(container.querySelector('.session-row-title')?.textContent).toBe('LATEST query result');
-      await act(async () => { finishOld!(result([{ ...THREE_SESSIONS[0]!, title: 'STALE initial query' }])); });
-      expect(container.textContent).not.toContain('STALE initial query');
-      expect(container.querySelector('.session-row-title')?.textContent).toBe('LATEST query result');
-      expect(window.location.hash).toContain('q=LATEST');
-      expect(container.querySelector('[role="listbox"]')?.getAttribute('aria-busy')).toBe('false');
-    } finally { unmount(); }
+    let finishOld:((response:Response)=>void)|undefined;
+    vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{const path=String(input);if(path.startsWith('/api/tasks?')){if(!path.includes('q='))return new Promise<Response>(r=>{finishOld=r;});return apiResponse({items:[{...TASK_FIXTURES[1],title:'LATEST query result'}],total:1,offset:0,limit:50,hasMore:false});}return taskResponse(path);}));
+    const {container,unmount}=renderAppWithUnmount();try{
+      await act(async()=>{await new Promise(r=>setTimeout(r,10));});expect(finishOld).toBeDefined();
+      act(()=>{const search=container.querySelector<HTMLInputElement>('.task-f3-toolbar input[type=search]')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'LATEST');search.dispatchEvent(new Event('input',{bubbles:true}));});
+      await vi.waitFor(()=>expect(container.querySelector('.task-health-title')?.textContent).toContain('LATEST query result'));
+      await act(async()=>finishOld!(apiResponse({items:[{...TASK_FIXTURES[0],title:'STALE initial query'}],total:1,offset:0,limit:50,hasMore:false})));
+      expect(container.textContent).not.toContain('STALE initial query');expect(container.querySelector('.task-health-title')?.textContent).toContain('LATEST query result');expect(window.location.hash).toContain('q=LATEST');expect(container.querySelector('table')!.getAttribute('aria-busy')).toBeNull();
+    }finally{unmount();}
   });
 
   it('WB-002: the Tasks-scoped Team link reaches existing runs while global navigation stays at six views', async () => {
-    const previousUrl = window.location.href;
-    const originalFetch = fetch;
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input).includes('/api/team-runs')
-      ? Promise.resolve({ ok: true, text: async () => JSON.stringify({ items: [], total: 0, hasMore: false, nextCursor: null }) } as Response)
-      : originalFetch(input, init)));
-    const { container, unmount } = renderAppWithUnmount();
-    try {
-      const entry = container.querySelector('.rail a[href="#/team"]') as HTMLAnchorElement;
-      expect(entry).not.toBeNull();
-      expect(container.querySelectorAll('.view-tabs [role="tab"]')).toHaveLength(6);
-      expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/api/team-runs'))).toHaveLength(0);
-      await act(async () => { entry.click(); await import('./components/team/TeamShell.js'); });
-      expect(container.querySelector('.team-shell')).not.toBeNull();
-      expect(window.location.hash).toMatch(/^#\/team/);
-      await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
-      expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/api/team-runs'))).toHaveLength(1);
-      expect(vi.mocked(fetch).mock.calls.some(([input]) => /\/api\/team-runs\/[^/?]+/.test(String(input)))).toBe(false);
-    } finally { unmount(); history.replaceState(null, '', previousUrl); }
+    installTaskApi();const original=fetch;vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).includes('/api/team-runs')?Promise.resolve(apiResponse({items:[],total:0,hasMore:false,nextCursor:null})):original(input,init)));
+    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);expect(container.querySelectorAll('.app-sidebar nav button')).toHaveLength(7);expect(container.querySelector('.app-sidebar nav details')).toBeNull();expect(vi.mocked(fetch).mock.calls.some(([i])=>String(i).includes('/api/team-runs'))).toBe(false);await navigateHash('#/team');await act(async()=>{await import('./components/team/TeamShell.js');});await act(async()=>{await new Promise(r=>setTimeout(r,350));});expect(container.querySelector('.team-shell')).not.toBeNull();expect(window.location.hash).toMatch(/^#\/team/);expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/api/team-runs'))).toHaveLength(1);expect(vi.mocked(fetch).mock.calls.some(([i])=>/\/api\/team-runs\/[^/?]+/.test(String(i)))).toBe(false);}finally{unmount();}
   });
 
   it('WB-001: visible global search opens the real lazy palette without detail fan-out and restores focus', async () => {
@@ -438,7 +403,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
     try {
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
       const before = vi.mocked(fetch).mock.calls.length;
-      const trigger = container.querySelector('.app-header-search') as HTMLButtonElement;
+      const trigger = container.querySelector('.page-search') as HTMLButtonElement;
       expect(trigger).not.toBeNull();
       await act(async () => {
         trigger.focus(); trigger.click();
@@ -468,7 +433,8 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       });
       expect(recordCache.size).toBe(0); expect(eventDetailCache.size).toBe(0);
       const paths = vi.mocked(fetch).mock.calls.slice(before).map(call => String(call[0]));
-      expect(paths).toHaveLength(1);
+      expect(paths).toHaveLength(2);
+      expect(paths.filter(path=>path.startsWith('/api/tasks?'))).toHaveLength(1);
       expect(paths[0]).toContain('/api/sessions?');
       expect(paths[0]).toContain('limit=50');
       expect(paths[0]).not.toContain('/events/');
@@ -493,65 +459,36 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
   });
 
   it('late pre-reset detail and key patches cannot restore old caches or overwrite the new metadata snapshot', async () => {
-    const response = (value: unknown) => ({ ok: true, text: async () => JSON.stringify(value) });
-    type Result = ReturnType<typeof response>;
-    let finishPatch: ((result: Result) => void) | undefined;
-    let finishDetail: ((result: Result) => void) | undefined;
-    recordCache.clear();
-    vi.stubGlobal('fetch', vi.fn((input: unknown) => {
-      const path = String(input);
-      if (path.includes('keys=')) return new Promise<Result>(resolve => { finishPatch = resolve; });
-      if (path.includes('/api/sessions/s-1?')) return new Promise<Result>(resolve => { finishDetail = resolve; });
-      if (path.includes('/api/sessions?')) return Promise.resolve(response({ items: THREE_SESSIONS, total: 3, hasMore: false, nextCursor: null }));
-      return Promise.resolve(response({}));
-    }));
-    const { container, unmount } = renderAppWithUnmount();
-    try {
-      await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
-      act(() => (container.querySelector('.session-row') as HTMLElement).click());
-      act(() => EventSourceStub.instances[0]!.emit('sessions_changed', { keys: ['s-1'], count: 1 }, 'old:1'));
-      expect(finishPatch).toBeDefined(); expect(finishDetail).toBeDefined();
-      await act(async () => EventSourceStub.instances[0]!.emit('connected', { resume: 'reset' }, 'old:1'));
-      await act(async () => {
-        finishPatch!(response({ items: [{ ...THREE_SESSIONS[0], title: 'STALE EPOCH TITLE' }], hasMore: false, nextCursor: null }));
-        finishDetail!(response({ session: { id: 's-1' }, events: [], hasMore: false }));
-      });
-      expect(container.textContent).not.toContain('STALE EPOCH TITLE');
-      expect(recordCache.get('s-1:slim')).toBeUndefined();
-      expect(container.querySelector('.session-toolbar')).toBeNull();
-    } finally { unmount(); }
+    let finishPatch:((response:Response)=>void)|undefined;let finishDetail:((response:Response)=>void)|undefined;
+    vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{const path=String(input);if(path.includes('keys='))return new Promise<Response>(r=>{finishPatch=r;});if(path==='/api/tasks/collected%3As-1')return new Promise<Response>(r=>{finishDetail=r;});return taskResponse(path);}));
+    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);act(()=>container.querySelector<HTMLButtonElement>('.task-health-title')!.click());act(()=>EventSourceStub.instances[0]!.emit('sessions_changed',{keys:['s-1'],count:1},'old:1'));expect(finishPatch).toBeDefined();expect(finishDetail).toBeDefined();
+      await act(async()=>EventSourceStub.instances[0]!.emit('connected',{resume:'reset'},'old:1'));
+      await navigateHash('#/task');await readyTasks(container);
+      await act(async()=>{finishPatch!(apiResponse({items:[{...THREE_SESSIONS[0],title:'STALE EPOCH TITLE'}],hasMore:false,nextCursor:null}));finishDetail!(apiResponse({...taskContext('collected:s-1'),task:{...TASK_FIXTURES[0],title:'STALE EPOCH TITLE'}}));});
+      expect(container.textContent).not.toContain('STALE EPOCH TITLE');expect(recordCache.get('s-1:slim')).toBeUndefined();expect(container.querySelector('.task-context-header')).toBeNull();
+    }finally{unmount();}
   });
-  it('1.1 启动后直接切 compare：两个选择器各含全部 3 个会话', async () => {
-    const container = renderApp();
-    await act(async () => {
-      // 会话列表首帧拉取带 250ms 防抖（服务端过滤），等它完成
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    });
-
-    const compareTab = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('对比'),
-    );
-    expect(compareTab).toBeDefined();
-    await act(async () => {
-      compareTab!.click();
-      await import('./components/CompareBoard.js');
-    });
-
-    // REQ-019：MUST NOT 用原生 select（7.1）——选择器是 Popover 搜索按钮
-    expect(container.querySelectorAll('select')).toHaveLength(0);
-    const pickers = Array.from(container.querySelectorAll('.compare-picker'));
-    expect(pickers).toHaveLength(2);
-    act(() => (pickers[0] as HTMLButtonElement).click());
-    const items = Array.from(container.querySelectorAll('.compare-picker-item'));
-    expect(items.length).toBe(3);
-    const titles = items.map((el) => el.textContent ?? '');
-    expect(titles.some((t) => t.includes('fix build'))).toBe(true);
-    expect(titles.some((t) => t.includes('refactor api'))).toBe(true);
-    expect(titles.some((t) => t.includes('debug login'))).toBe(true);
+  it('Phase C direct comparison entry loads populated baseline and improvement task pickers', async () => {
+    installTaskApi();const container=renderApp();
+    await readyTasks(container);
+    const tab=[...container.querySelectorAll<HTMLButtonElement>('.app-sidebar nav button')].find(b=>b.textContent==='对比')!;
+    expect(tab).toBeDefined();
+    await act(async()=>{tab.click();await import('./components/task/TaskComparison.js');});
+    await vi.waitFor(()=>expect(container.querySelectorAll('.task-compare-picker [role=combobox]')).toHaveLength(2));
+    expect(container.querySelectorAll('.task-compare-picker')).toHaveLength(2);
+    for(const picker of container.querySelectorAll('.task-compare-picker')){
+      expect(picker.querySelector('details')).toBeNull();
+      act(()=>picker.querySelector<HTMLElement>('[role=combobox]')!.click());
+      await vi.waitFor(()=>expect(document.querySelectorAll('[role=option]')).toHaveLength(3));
+      expect(document.querySelector('[role=listbox]')!.textContent).toContain('fix build');expect(document.querySelector('[role=listbox]')!.textContent).toContain('refactor api');expect(document.querySelector('[role=listbox]')!.textContent).toContain('debug login');
+      act(()=>document.activeElement!.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    }
+    expect(container.textContent).toContain('每侧选择 1–40 个任务');
+    expect(vi.mocked(fetch).mock.calls.some(([path])=>String(path)==='/api/compare'||String(path)==='/api/task-comparison')).toBe(false);
   });
 
   it('REQ-023：/api/health 只请求一次，不轮询', async () => {
-    const container = renderApp();
+    renderApp();
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -563,185 +500,26 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
       String(call[0]).includes('/api/health'),
     );
     expect(healthCalls).toHaveLength(1);
-    container.remove();
+
   });
 
   it('会话视图 IA：粘性工具条 + findings 折叠 + turn 表面（统计条 + 色带 + 回合列表）', async () => {
-    const sessionDetail: SessionDetailResponse = {
-      session: {
-        id: 's-1',
-        provider: 'codex',
-        sourceAgent: 'Codex',
-        title: 'fix build',
-        startedAt: '2026-08-05T00:00:00.000Z',
-        updatedAt: '2026-08-05T00:01:00.000Z',
-        status: 'success',
-        cwd: '/tmp',
-        messageCount: 2,
-        eventCount: 2,
-        tokenUsage: {
-          input: 10, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 2, netInput: 7, total: 38,
-        },
-        costUsd: 0.01,
-        systemPrompt: null,
-        dataSource: 'scan',
-        sourcePath: '/tmp/s-1.jsonl',
-        totalDurationMs: 1000,
-        isSubagent: false,
-      } satisfies TraceSession,
-      events: [
-        {
-          id: 'e1', sessionId: 's-1', sequence: 1, turnKey: null, kind: 'llm', phase: 'implement',
-          title: 'step one', startedAt: '2026-08-05T00:00:00.000Z', durationMs: 100,
-          status: 'success', actor: 'assistant', tool: null, tokens: null, error: null,
-          hasInput: true, hasOutput: false, hasRaw: false,
-        },
-        {
-          id: 'e2', sessionId: 's-1', sequence: 2, turnKey: null, kind: 'llm', phase: 'debug',
-          title: 'step two', startedAt: '2026-08-05T00:00:05.000Z', durationMs: 50,
-          status: 'error', actor: 'assistant', tool: null, tokens: null, error: 'boom',
-          hasInput: false, hasOutput: true, hasRaw: false,
-        },
-      ] satisfies TraceEventSlim[],
-      mode: 'slim',
-      eventTotal: 2,
-      eventOffset: 0,
-      eventLimit: 2,
-      hasMore: false,
-      pending: false,
-    };
-    const okJson = (body: unknown): Response =>
-      ({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify(body),
-      }) as unknown as Response;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.includes('/api/session-groups')) {
-          return okJson({ groups: [] });
-        }
-        if (url.includes('/api/sessions/s-1/events/')) {
-          return okJson({ ...sessionDetail.events[0], inputSummary: null, outputSummary: 'step one' });
-        }
-        if (url.includes('/api/sessions/s-1/team-run')) {
-          return okJson({ runIds: [] });
-        }
-        if (url.includes('/api/sessions/s-1/capture-links')) {
-          return okJson({ sessionKey: 's-1', items: [], confirmedCount: 0, candidateCount: 0, nextCursor: null, hasMore: false });
-        }
-        if (url.includes('/api/sessions/s-1/parents')) {
-          return okJson({ sessionKey: 's-1', items: [{ identity: { id: 'a'.repeat(64), source: 'scan', sourceKey: 's-1', namespace: 'agent:codex', kind: 'parent_session', value: 'parent-native', scope: 'child-native', eventId: null, sourcePath: 'session_meta.payload.parent_thread_id' },
-            state: 'resolved', matches: [{ id: 's-2', provider: 'claude', sourceAgent: 'Claude', title: 'Synthetic resolved owner', startedAt: '2026-08-02T00:00:00.000Z' }], matchesTruncated: false }],
-            nextCursor: null, hasMore: false, completeness: { complete: true, omittedCount: 0, reasons: [] } });
-        }
-        if (url.includes('/api/sessions/s-1')) {
-          return okJson(sessionDetail);
-        }
-        if (url.includes('/api/sessions?')) {
-          return okJson({ items: THREE_SESSIONS, nextCursor: null, hasMore: false, total: 3 });
-        }
-        if (url.includes('/api/health')) {
-          return okJson({ ok: true, dbSizeBytes: 1, walSizeBytes: 1 });
-        }
-        return okJson({});
-      }),
-    );
-
-    const container = renderApp();
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    });
-    const rows = Array.from(container.querySelectorAll('.session-row'));
-    expect(rows.length).toBe(3);
-    act(() => (rows[0] as HTMLElement).click());
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-
-    expect(container.querySelector('.session-toolbar')).not.toBeNull();
-    expect(container.querySelector('.session-toolbar-title')?.textContent).toContain('fix build');
-    expect(container.querySelector('.session-findings-panel')).not.toBeNull();
-    // 单行等宽回合导航；统计与分析在正文下方按需展开。
-    expect(container.querySelector('.gantt-wrap')).toBeNull();
-    expect(container.querySelector('.timeline-phase-axis')).toBeNull();
-    expect(container.querySelector('.trajectory-pane')).not.toBeNull();
-    expect(container.querySelector('.trajectory-statbar')).not.toBeNull();
-    expect(container.querySelectorAll('.trajectory-overview')).toHaveLength(1);
-    expect(container.querySelector('.trajectory-overview .session-signals')).toBeNull();
-    expect(container.querySelector('.turn-navigation')).toBeNull();
-    expect(container.querySelector('.session-summary')).toBeNull();
-    expect(container.querySelector('.turn-ribbon')).toBeNull();
-    expect(container.querySelector('.turn-navigator')).not.toBeNull();
-    expect(container.querySelector('.turn-list')).not.toBeNull();
-    // llm_boundary：两个 llm 事件 → 两个回合行
-    expect(container.querySelectorAll('.turn-row').length).toBe(2);
-    // 点击第一行展开 → 消息卡出现（assistant 卡）
-    act(() => {
-      (container.querySelector('.turn-row') as HTMLButtonElement).click();
-    });
-    expect(container.querySelectorAll('.message-card').length).toBeGreaterThan(0);
-    expect(container.querySelector('.message-card-role-assistant')).not.toBeNull();
-
-    // D16：detail 打开 = slim；不逐回合/逐消息拉取
-    const fetchMock = vi.mocked(fetch);
-    const detailCalls = fetchMock.mock.calls.filter((call) => {
-      const url = String(call[0]);
-      return url.includes('/api/sessions/s-1') && !url.includes('events/') && !url.includes('team-run');
-    });
-    expect(detailCalls).toHaveLength(1);
-
-    const callsBeforeLinks = fetchMock.mock.calls.length;
-    await act(async () => {
-      EventSourceStub.instances.at(-1)?.emit('trace_links_changed', { sessionKeys: ['s-1'], proxyIds: [1], truncated: false });
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-    expect(fetchMock.mock.calls).toHaveLength(callsBeforeLinks);
-    expect(container.querySelectorAll('.turn-row')).toHaveLength(2);
-
-    // Another native owner can make the open child's exact parent ambiguous.
-    // Invalidate locally before the batched index read; never re-read parents.
-    await act(async () => {
-      const details = [...container.querySelectorAll('details')].find(node => node.querySelector('summary')?.textContent === '关联 Trace')!;
-      details.open = true; details.dispatchEvent(new Event('toggle', { bubbles: true }));
-    });
-    await act(async () => { [...container.querySelectorAll('button')].find(node => node.textContent === '原生父会话引用')!.click(); await import('./components/NativeSessionParentsPanel.js'); });
-    await act(async () => { container.querySelector<HTMLButtonElement>('[data-native-parent-reference]')!.click(); });
-    expect(container.textContent).toContain('Synthetic resolved owner');
-    const parentReads = fetchMock.mock.calls.filter(([input]) => String(input).includes('/parents')).length;
-    expect(parentReads).toBe(1);
-    await act(async () => {
-      EventSourceStub.instances.at(-1)!.emit('sessions_changed', { keys: ['s-2'], count: 1 });
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-    expect(container.textContent).toContain('父级依据已变化');
-    expect(container.textContent).not.toContain('Synthetic resolved owner');
-    expect([...container.querySelectorAll('button')].some(node => node.textContent === '打开已解析父级会话')).toBe(false);
-    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/parents'))).toHaveLength(1);
-
-    sessionDetail.events.push({
-      id: 'e3', sessionId: 's-1', sequence: 3, turnKey: null, kind: 'llm', phase: 'implement',
-      title: 'live update', startedAt: '2026-08-05T00:00:06.000Z', durationMs: 10,
-      status: 'success', actor: 'assistant', tool: null, tokens: null, error: null,
-      hasInput: false, hasOutput: true, hasRaw: false,
-      inputSummary: null, outputSummary: 'live update',
-    });
-    sessionDetail.eventTotal = 3;
-    sessionDetail.session.eventCount = 3;
-    await act(async () => {
-      EventSourceStub.instances.at(-1)?.emit('sessions_changed', { keys: ['s-1'], count: 1 });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    // SSE 后 detail 刷新 → 第三个回合行出现
-    expect(container.querySelectorAll('.turn-row').length).toBe(3);
-    container.remove();
+    installTaskApi();const {container,unmount}=renderAppWithUnmount();try{
+      await readyTasks(container);act(()=>container.querySelector<HTMLButtonElement>('.task-health-title')!.click());await vi.waitFor(()=>expect(container.querySelectorAll('.process-record-button')).toHaveLength(2));
+      expect(container.querySelector('.task-context-header')).not.toBeNull();expect(container.querySelector('.task-f3-metrics')).not.toBeNull();expect(container.querySelector('.task-time-sticky')).not.toBeNull();expect(container.querySelector('.task-timeline-track')).not.toBeNull();
+      const before=vi.mocked(fetch).mock.calls.length;await act(async()=>EventSourceStub.instances[0]!.emit('trace_links_changed',{sessionKeys:['s-1'],proxyIds:[1],truncated:false}));
+      expect(vi.mocked(fetch).mock.calls).toHaveLength(before);expect(container.querySelectorAll('.process-record-button')).toHaveLength(2);
+      const recordsBefore=vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/records?')).length;
+      await act(async()=>EventSourceStub.instances[0]!.emit('sessions_changed',{keys:['s-1'],count:1}));
+      expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/records?'))).toHaveLength(recordsBefore);expect(container.textContent).toContain('有新记录');expect(container.querySelectorAll('.process-record-button')).toHaveLength(2);
+      act(()=>container.querySelector<HTMLButtonElement>('.process-record-button')!.click());await vi.waitFor(()=>expect(container.textContent).toContain('SELECTED PUBLIC OUTPUT'));
+      expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/events/'))).toHaveLength(1);
+    }finally{unmount();}
   });
 });
 
 describe('Compare 端到端（UI-TASKS 2 回归）', () => {
-  it('真实 API 形状（speed 含 null）：切对比 → 选左右会话 → verdict/speed/charts 渲染且不崩溃', async () => {
+  it('Phase C real API shapes with unknown speed: task selectors, conclusions and reused process views remain readable', async () => {
     const speedWithNulls = {
       ttftMs: null, tps: null, tpotMs: null, e2eMs: 5000, turnGapMedianMs: null,
       pureInferenceMs: null, avgLlmResponseLatencyMs: null, avgLlmDurationMs: null,
@@ -806,9 +584,14 @@ describe('Compare 端到端（UI-TASKS 2 回归）', () => {
       ], 3000, 'refactor api'),
       speed: { left: { ...speedWithNulls, e2eMs: 5000 }, right: { ...speedWithNulls, e2eMs: 3000 } },
     };
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const json = (body: unknown) => ({ ok: true, text: async () => JSON.stringify(body) });
+      if(url==='/api/task-comparison'){
+        const selection=JSON.parse(String(init?.body)) as {a:string[];b:string[]};
+        return json({a:selection.a.map(id=>TASK_FIXTURES.find(t=>t.id===id)),b:selection.b.map(id=>TASK_FIXTURES.find(t=>t.id===id))});
+      }
+      if(url.startsWith('/api/tasks?'))return taskResponse(url);
       if (url.includes('/api/compare')) {
         return json(comparePayload);
       }
@@ -833,51 +616,29 @@ describe('Compare 端到端（UI-TASKS 2 回归）', () => {
     expect(compareTab).toBeDefined();
     await act(async () => {
       compareTab!.click();
-      await import('./components/CompareBoard.js');
+      await import('./components/task/TaskComparison.js');
     });
 
-    act(() => {
-      (container.querySelectorAll('.compare-picker')[0] as HTMLButtonElement).click();
-    });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
-    const leftItems = container.querySelectorAll('.compare-picker-item');
-    expect(leftItems.length).toBeGreaterThan(0);
-    act(() => {
-      (leftItems[0] as HTMLButtonElement).click();
-    });
-
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
-    act(() => {
-      (container.querySelectorAll('.compare-picker')[1] as HTMLButtonElement).click();
-    });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
-    const rightItems = container.querySelectorAll('.compare-picker-item');
-    act(() => {
-      (rightItems[1] as HTMLButtonElement).click();
-    });
-
-    await act(async () => {
-      for (let i = 0; i < 20; i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-        if (container.querySelector('.compare-verdict') !== null) {
-          break;
-        }
-      }
-    });
-
-    expect(container.querySelector('.compare-verdict')).not.toBeNull();
-    expect(container.querySelector('.compare-speed-grid')).not.toBeNull();
-    expect(container.querySelector('.compare-charts')).not.toBeNull();
+    await vi.waitFor(()=>expect(container.querySelectorAll('.task-compare-picker [role=combobox]')).toHaveLength(2));
+    act(()=>container.querySelectorAll<HTMLElement>('.task-compare-picker [role=combobox]')[0]!.click());
+    await vi.waitFor(()=>expect(document.querySelectorAll('[role=option]')).toHaveLength(3));
+    act(()=>document.querySelectorAll<HTMLButtonElement>('[role=option]')[0]!.click());
+    act(()=>document.activeElement!.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    act(()=>container.querySelectorAll<HTMLElement>('.task-compare-picker .ui-multi-trigger')[1]!.click());
+    await vi.waitFor(()=>expect(document.querySelectorAll('[role=option]')).toHaveLength(3));
+    act(()=>document.querySelectorAll<HTMLButtonElement>('[role=option]')[1]!.click());
+    act(()=>document.activeElement!.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    await vi.waitFor(()=>expect(container.querySelector('.compare-timelines')).not.toBeNull());
+    expect(container.querySelector('.task-compare-conclusions')).not.toBeNull();
+    expect(container.querySelector('.compare-tools')).not.toBeNull();
+    expect(container.querySelector('.compare-token-usage')).toBeNull();expect(container.querySelectorAll('.compare-token-table tbody tr')).toHaveLength(4);expect([...container.querySelectorAll('.ui-card-header h2')].filter(n=>n.textContent==='过程对照')).toHaveLength(1);expect(container.querySelectorAll('.compare-timelines > .ui-card')).toHaveLength(2);
+    expect(container.textContent).toContain('单样本，不能证明因果');
+    expect(window.location.hash).toContain('a=collected%3As-1');expect(window.location.hash).toContain('b=collected%3As-2');
+    expect(fetchMock.mock.calls.filter(([path])=>String(path)==='/api/compare')).toHaveLength(1);
     expect(container.textContent).not.toContain('COMPARE_FAILED');
     expect(container.textContent).not.toContain('NaN');
     expect(container.querySelector('.ui-error-boundary')).toBeNull();
-    container.remove();
+
   });
 });
 
@@ -1043,56 +804,118 @@ describe('team 视图入口 + URL restore + SSE（§7.3 / §7.8）', () => {
 
 describe('Trajectory event pagination', () => {
   it('appends slim pages, prevents duplicate requests, and retries without losing loaded turns', async () => {
-    const event = (sequence: number): TraceEventSlim => ({
-      id: `paged-${sequence}`, sessionId: 'page-only', sequence, turnKey: `turn-${sequence}`,
-      kind: 'llm', phase: 'implement', title: `page ${sequence}`,
-      startedAt: '2026-08-05T00:00:00.000Z', durationMs: 10,
-      status: 'success', actor: 'assistant', tool: null, tokens: null, error: null,
-      hasInput: false, hasOutput: true, hasRaw: false,
-    });
-    const first: SessionDetailResponse = {
-      session: {
-        ...THREE_SESSIONS[0]!, id: 'page-only', systemPrompt: null, isSubagent: false,
-        tokenUsage: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, netInput: 0, total: 0 },
-        totalDurationMs: 30,
-      },
-      events: [event(1)], mode: 'slim', eventTotal: 2, eventOffset: 0,
-      eventLimit: 1, hasMore: true, pending: false,
-    };
-    const json = (body: unknown): Response => ({ ok: true, status: 200, text: async () => JSON.stringify(body) }) as Response;
-    let attempts = 0;
-    let finish: ((response: Response) => void) | undefined;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/api/sessions/page-only?')) {
-        if (!url.includes('offset=')) return json(first);
-        attempts += 1;
-        if (attempts === 1) throw new Error('temporary page failure');
-        return new Promise<Response>((resolve) => { finish = resolve; });
-      }
-      if (url.includes('/api/sessions?')) return json({ items: [{ ...THREE_SESSIONS[0]!, id: 'page-only' }], hasMore: false, total: 1, nextCursor: null });
-      if (url.includes('/api/session-groups')) return json({ groups: [] });
-      if (url.includes('/api/health')) return json({ ok: true, dbSizeBytes: 1, walSizeBytes: 1 });
-      return json({});
-    }));
-    const { container, unmount } = renderAppWithUnmount();
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
-    act(() => (container.querySelector('.session-row') as HTMLElement).click());
-    await act(async () => { await Promise.resolve(); });
-    const more = (): HTMLButtonElement => container.querySelector('.turn-list-banner button')!;
-    expect(container.querySelectorAll('.turn-row')).toHaveLength(1);
-    await act(async () => { more().click(); });
-    expect(container.querySelector('.turn-list-banner')?.textContent).toContain('temporary page failure');
-    expect(container.querySelectorAll('.turn-row')).toHaveLength(1);
-    await act(async () => { more().click(); more().click(); });
-    expect(attempts).toBe(2);
-    expect(more().disabled).toBe(true);
-    await act(async () => { finish!(json({ ...first, events: [event(2)], eventOffset: 1, hasMore: false })); });
-    expect(container.querySelectorAll('.turn-row')).toHaveLength(2);
-    expect(container.querySelector('.turn-list-banner')).toBeNull();
-    const pages = vi.mocked(fetch).mock.calls.map((call) => String(call[0])).filter((url) => url.includes('offset='));
-    expect(pages).toHaveLength(2);
-    expect(pages.every((url) => url.includes('mode=slim') && url.includes('offset=1') && url.includes('limit=2000'))).toBe(true);
-    unmount();
+    let attempts=0,finish:((response:Response)=>void)|undefined;
+    vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{const path=String(input);if(path.includes('/records?')){const q=new URL(path,'http://localhost').searchParams,base=taskPage('collected:s-1');if(q.get('offset')==='1'){attempts++;if(attempts===1)throw new Error('temporary page failure');return new Promise<Response>(r=>{finish=r;});}return apiResponse({...base,items:[base.items[0]],limit:1,hasMore:true});}return taskResponse(path);}));
+    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);act(()=>container.querySelector<HTMLButtonElement>('.task-health-title')!.click());await vi.waitFor(()=>expect(container.querySelectorAll('.process-record-button')).toHaveLength(1));
+      const next=()=>container.querySelector<HTMLButtonElement>('.task-page-controls [aria-label="更新记录"]')!;
+      await act(async()=>{next().click();});expect(container.textContent).toContain('temporary page failure');
+      const retry=[...container.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='重试读取')!;await act(async()=>{retry.click();retry.click();});expect(attempts).toBe(2);
+      await act(async()=>finish!(apiResponse({...taskPage('collected:s-1'),items:[taskPage('collected:s-1').items[1]],offset:1,hasPrevious:true})));
+      expect(container.querySelectorAll('.process-record-button')).toHaveLength(1);expect(container.textContent).toContain('Result 2');expect(container.textContent).not.toContain('temporary page failure');
+      const pages=vi.mocked(fetch).mock.calls.map(([i])=>String(i)).filter(path=>path.includes('/records?')&&path.includes('offset=1'));expect(pages).toHaveLength(2);expect(pages.every(path=>path.includes('limit=200')&&path.includes('window=fixed'))).toBe(true);
+    }finally{unmount();}
   });
+});
+
+it.each(['threshold','overview-threshold'])('Phase B review: %s opens and focuses its settings section without saving',async entry=>{
+ const requests:Array<{path:string;method:string}>=[];
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+  const path=String(input);requests.push({path,method:init?.method??'GET'});
+  if(path==='/api/config/providers')return apiResponse({providers:Object.fromEntries(PROVIDER_KEYS.map(key=>[key,{key,enabled:true,path:'/fixture/'+key,label:key,sourceKind:'jsonl',watchStrategy:'chokidar',pollIntervalMs:0}])),traeKeyPath:null,prewarmRecent:0});
+  if(path==='/api/config/alert-thresholds')return apiResponse(DEFAULT_ALERT_THRESHOLDS);
+  if(path.startsWith('/api/task-kpis'))return apiResponse(OVERVIEW_FIXTURE);
+  if(path.startsWith('/api/mission'))return apiResponse({meta:{range:'7d',generatedAt:'2026-10-31T00:00:00Z',tz:0,widgetCount:0,durationMs:0,stamp:'2026-10-31T00:00:00Z',cached:false},usage:{},quality:{},health:{}});
+  if(path.startsWith('/api/tasks?'))return apiResponse({items:TASK_FIXTURES.map(t=>({...t,metrics:{durationMs:1000,toolCalls:1,errors:0,input:10,output:20,cacheRead:1,correctedTotal:31,promptInput:11,cacheHitRate:1/11,models:['test-model']}})),total:3,offset:0,limit:50,hasMore:false});
+  return taskResponse(path);
+ }));
+ const {container,unmount}=renderAppWithUnmount();
+ try{
+  await readyTasks(container);
+  if(entry==='overview-threshold')await navigateHash('#/overview');
+  const selector=entry==='overview-threshold'?'[aria-label=配置阈值]':'.page-actions button';
+  let button:HTMLButtonElement|undefined;
+  for(let i=0;i<100&&!button;i++){button=[...container.querySelectorAll<HTMLButtonElement>(selector)].find(b=>entry==='overview-threshold'?(b.textContent==='配置阈值'||b.getAttribute('aria-label')==='配置阈值'):b.textContent==='健康阈值');if(!button)await act(async()=>{await new Promise(r=>setTimeout(r,10));});}
+  expect(button).toBeDefined();act(()=>button!.click());
+  const section='alert-thresholds';
+  for(let i=0;i<100&&!container.querySelector('#settings-'+section+' input');i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});
+  await act(async()=>{await new Promise(r=>setTimeout(r,30));});
+  const input=container.querySelector<HTMLInputElement>('#settings-'+section+' input')!;expect(input).not.toBeNull();expect(document.activeElement).toBe(input);
+  expect(window.location.hash).toBe('#/settings?section=alert-thresholds');expect(container.querySelector('.settings-nav [aria-current=page]')!.textContent).toBe('告警阈值');
+  expect(requests.some(r=>r.path.includes('model-pricing'))).toBe(false);
+  expect(container.querySelector('.task-price-link')).toBeNull();
+  expect(requests.some(r=>r.method==='PUT'||r.method==='POST')).toBe(false);
+  expect(requests.filter(r=>r.path==='/api/config/providers')).toHaveLength(1);
+ }finally{unmount();}
+});
+
+describe('Phase C first-paint deep links',()=>{
+ it.each([
+  ['#/compare?a=collected%3As-1&a=collected%3As-3&b=collected%3As-2&pa=collected%3As-3&pb=collected%3As-2',['collected:s-1','collected:s-3'],['collected:s-2'],'collected:s-3','collected:s-2',false],
+  ['#/compare?compareImport=1',[],[],null,null,true],
+  ['#/compare?left=s-1&right=s-2',['collected:s-1'],['collected:s-2'],null,null,false],
+  ['#/task?a=collected%3As-1&b=collected%3As-2',['collected:s-1'],['collected:s-2'],null,null,false],
+ ] as const)('preserves initial selection and refresh without a hashchange: %s',async(hash,a,b,pa,pb,imported)=>{
+  const groups:Array<{a:string[];b:string[]}> = [],pairs:Array<{leftKey:string;rightKey:string}>=[];
+  vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+   const path=String(input);
+   if(path==='/api/task-comparison'){
+    const group=JSON.parse(String(init?.body)) as {a:string[];b:string[]};groups.push(group);
+    return apiResponse({a:group.a.map(id=>TASK_FIXTURES.find(t=>t.id===id)),b:group.b.map(id=>TASK_FIXTURES.find(t=>t.id===id))});
+   }
+   if(path==='/api/compare'){pairs.push(JSON.parse(String(init?.body)) as typeof pairs[number]);return apiResponse(makeResult());}
+   return taskResponse(path);
+  }));
+  history.replaceState(null,'',hash);
+  // The module was imported before the deep link was installed. Mount and a
+  // remount emulate direct entry + refresh; never dispatch hashchange here.
+  const writes=vi.spyOn(history,'replaceState');
+  for(let refresh=0;refresh<2;refresh++){
+   const {container,unmount}=renderAppWithUnmount();
+   try{
+    await act(async()=>{await import('./components/task/TaskComparison.js');});
+    await vi.waitFor(()=>expect(container.querySelectorAll('.task-compare-picker')).toHaveLength(2));
+    const q=new URLSearchParams(window.location.hash.split('?')[1]);
+    expect(window.location.hash.startsWith('#/compare')).toBe(true);
+    expect(q.getAll('a')).toEqual(a);expect(q.getAll('b')).toEqual(b);expect(q.get('pa')).toBe(pa);expect(q.get('pb')).toBe(pb);
+    expect(q.get('compareImport')).toBe(imported?'1':null);
+    expect(container.querySelectorAll('.task-compare-picker .ui-card-header')[0]?.textContent).toContain(`${a.length}/40`);
+    expect(container.querySelectorAll('.task-compare-picker .ui-card-header')[1]?.textContent).toContain(`${b.length}/40`);
+    if(a.length)await vi.waitFor(()=>expect(groups.length).toBeGreaterThan(refresh));
+    if(pa)await vi.waitFor(()=>expect(pairs.at(-1)).toEqual({leftKey:'s-3',rightKey:'s-2'}));
+   }finally{unmount();}
+  }
+  for(const [, ,url] of writes.mock.calls){
+   const q=new URLSearchParams(String(url).split('?')[1]);expect(q.getAll('a')).toEqual(a);expect(q.getAll('b')).toEqual(b);
+   if(pa){expect(q.get('pa')).toBe(pa);expect(q.get('pb')).toBe(pb);}if(imported)expect(q.get('compareImport')).toBe('1');
+  }
+ });
+});
+
+it('Phase F5: settings and sidebar display share one persisted font size',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{
+  const path=String(input);
+  if(path==='/api/config/providers')return apiResponse({providers:Object.fromEntries(PROVIDER_KEYS.map(key=>[key,{key,enabled:true,path:'/fixture/'+key,label:key,sourceKind:'jsonl',watchStrategy:'chokidar',pollIntervalMs:0}])),traeKeyPath:null,prewarmRecent:0});
+  return taskResponse(path);
+ }));
+ const {container,unmount}=renderAppWithUnmount();
+ const find=(text:string)=>[...container.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent===text)!;
+ try{
+  await readyTasks(container);
+  act(()=>container.querySelector<HTMLButtonElement>('.app-sidebar nav [aria-label="设置"]')!.click());
+  await vi.waitFor(()=>expect(find('外观')).toBeDefined());act(()=>find('外观').click());
+  act(()=>find('大').click());expect(localStorage.getItem(LAYOUT_KEYS.fontSize)).toBe('14');expect(document.documentElement.style.getPropertyValue('--ui-scale')).toBe(String(14/13));
+  await navigateHash('#/task');
+  act(()=>container.querySelector<HTMLButtonElement>('.sidebar-controls [aria-label="显示"]')!.click());
+  act(()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(button=>button.textContent==='小')!.click());
+  expect(localStorage.getItem(LAYOUT_KEYS.fontSize)).toBe('12');
+  act(()=>container.querySelector<HTMLButtonElement>('.app-sidebar nav [aria-label="设置"]')!.click());
+  await vi.waitFor(()=>expect(find('外观')).toBeDefined());act(()=>find('外观').click());
+  expect(find('小').getAttribute('aria-selected')).toBe('true');
+ }finally{unmount();localStorage.removeItem(LAYOUT_KEYS.fontSize);}
+});
+
+it('Phase F5 review: direct settings links and section navigation preserve draft state without opening a dialog',async()=>{
+ let reads=0;vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{const path=String(input);if(path==='/api/config/providers'){reads++;return apiResponse({providers:Object.fromEntries(PROVIDER_KEYS.map(key=>[key,{key,enabled:true,path:'/fixture/'+key,label:key,sourceKind:'jsonl',watchStrategy:'chokidar',pollIntervalMs:0}])),traeKeyPath:null,prewarmRecent:0});}return taskResponse(path);}));
+ history.replaceState(null,'','#/settings?section=storage');const {container,unmount}=renderAppWithUnmount();
+ try{await vi.waitFor(()=>expect(container.querySelector('[data-provider-path=codex]')).not.toBeNull());expect(container.querySelector('[role=dialog]')).toBeNull();const input=container.querySelector<HTMLInputElement>('[data-provider-path=codex]')!;act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'/changed');input.dispatchEvent(new Event('input',{bubbles:true}));});await navigateHash('#/settings?section=about');expect(container.querySelector('.settings-savebar')).not.toBeNull();await navigateHash('#/settings?section=storage');expect(container.querySelector<HTMLInputElement>('[data-provider-path=codex]')!.value).toBe('/changed');await navigateHash('#/settings?section=invalid');expect(window.location.hash).toBe('#/settings');expect(container.querySelector('.settings-nav [aria-current=page]')!.textContent).toBe('常规');expect(reads).toBe(1);}finally{unmount();}
 });

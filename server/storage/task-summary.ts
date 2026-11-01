@@ -1,0 +1,115 @@
+import type { Database } from 'better-sqlite3';
+import type { TaskContext, TaskMetrics, TaskMetricKey } from '../../src/core/task-types.js';
+import { lookupContextWindow } from '../../src/core/context-windows.js';
+import { correctedUsage, promptUsage } from '../../src/core/benchmark-analysis.js';
+import { cachedStmt } from './stmt-cache.js';
+export type SummarySession = { telemetry_usage?: ReturnType<typeof telemetryUsage>;  id: string; provider: string; started_at: string; total_duration_ms: number; duration_source: string; detail_loaded: number; token_input: number; token_output: number; token_cache_read: number; token_cache_write: number; primary_model: string | null; tools: number; errors: number; results: number; failures: number; pressure: number | null };
+const cache = new WeakMap<Database, Map<string, { revision: string; value: TaskMetrics }>>();
+const known = (n: number) => Number.isSafeInteger(n) && n > 0 ? n : null;
+const sum = (values: Array<number | null>): number | null => values.length && values.every(v => v !== null) && Number.isSafeInteger(values.reduce<number>((n, v) => n + (v ?? 0), 0)) ? values.reduce<number>((n, v) => n + v!, 0) : null;
+/** Session counters are normalized by adapters: input excludes cache, Codex output includes reasoning.
+ * Legacy zero defaults cannot establish that a counter was reported. */
+function telemetryUsage(values: Array<{usage: Record<string,number|null>;kind:string}>) {
+  const models=values.filter(s=>s.kind==='llm');
+  const count=(key:string):number|null=>models.every(s=>s.usage[key]!==null && s.usage[key]!==undefined)?models.reduce((n,s)=>n+s.usage[key]!,0):null;
+  const input=count('input'), cacheRead=count('cacheRead');
+  return {input,output:count('output'),cacheRead,total:count('total'),...promptUsage({input,cacheRead,cacheWrite:null,cacheWriteReported:null,inputIncludesCache:null})};
+}
+export function sessionUsage(row: Pick<SummarySession, 'provider' | 'token_input' | 'token_output' | 'token_cache_read' | 'token_cache_write' | 'telemetry_usage'>, reported?: Set<string>) {
+  if(row.provider==='opentelemetry')return row.telemetry_usage??{input:null,output:null,cacheRead:null,total:null,promptInput:null,cacheHitRate:null};
+  const counter=(key:string,n:number)=>reported ? reported.has(key) ? n : null : known(n);
+  const input = counter('input',row.token_input), output = counter('output',row.token_output), cacheRead = counter('cacheRead',row.token_cache_read);
+  const convention = ['codex', 'claude', 'codeagent', 'workbuddy'].includes(row.provider);
+  const cacheWriteReported = reported?.has('cacheWrite') || row.token_cache_write > 0 ? true : row.provider === 'codex' && row.token_cache_write === 0 ? false : null;
+  const prompt = promptUsage({input,cacheRead,cacheWrite:counter('cacheWrite',row.token_cache_write),cacheWriteReported,inputIncludesCache:convention ? false : null});
+  return { input, output, cacheRead, ...prompt, total: convention ? correctedUsage({ input, output, cacheRead, cacheWrite: counter('cacheWrite',row.token_cache_write), reasoning: null, inputIncludesCache: false, outputIncludesReasoning: true, cacheWriteReported }).total : null };
+}
+export const SESSION_METRIC_COLS = 's.id,s.provider,s.started_at,s.total_duration_ms,s.duration_source,s.detail_loaded,s.token_input,s.token_output,s.token_cache_read,s.token_cache_write,s.primary_model';
+/** Correlated counts stay on covering indexes; body columns are never acquired. */
+export function readSummarySessions(db: Database, keys: string[], includePressure = false): SummarySession[] {
+  const rows = cachedStmt(db, `SELECT ${SESSION_METRIC_COLS},
+    (SELECT COUNT(1) FROM events e WHERE e.session_id=s.id AND e.kind='tool' AND (e.input_len>0 OR s.provider='opentelemetry')) AS tools,
+    (SELECT COUNT(1) FROM events e WHERE e.session_id=s.id AND e.status='error') AS errors,
+    (SELECT COUNT(1) FROM events e INDEXED BY idx_events_task_results WHERE e.session_id=s.id AND e.kind='tool' AND (e.output_len>0 OR (s.provider='opentelemetry' AND EXISTS(SELECT 1 FROM telemetry_spans t WHERE t.id=e.id AND json_type(t.metadata_json,'$.end')='text'))) AND e.status IN ('success','error')) AS results,
+    (SELECT COUNT(1) FROM events e INDEXED BY idx_events_task_results WHERE e.session_id=s.id AND e.kind='tool' AND (e.output_len>0 OR (s.provider='opentelemetry' AND EXISTS(SELECT 1 FROM telemetry_spans t WHERE t.id=e.id AND json_type(t.metadata_json,'$.end')='text'))) AND e.status='error') AS failures
+    FROM sessions s WHERE s.id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(keys)) as SummarySession[];
+  const telemetryKeys=rows.filter(r=>r.provider==='opentelemetry').map(r=>r.id);
+  if(telemetryKeys.length){
+    const spans=cachedStmt(db, `SELECT e.session_id,json_extract(t.metadata_json,'$.usage') AS usage,json_extract(t.metadata_json,'$.kind') AS kind FROM events e JOIN telemetry_spans t ON t.id=e.id WHERE e.session_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(telemetryKeys)) as {session_id:string;usage:string;kind:string}[];
+    for(const row of rows)if(row.provider==='opentelemetry')row.telemetry_usage=telemetryUsage(spans.filter(s=>s.session_id===row.id).map(s=>({usage:JSON.parse(s.usage) as Record<string,number|null>,kind:s.kind})));
+  }
+  if(!includePressure)return rows.map(row=>({...row,pressure:null}));
+  const context = cachedStmt(db, `SELECT session_id,model,MAX(COALESCE(json_extract(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.input'),0)+COALESCE(json_extract(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.cacheRead'),0)+COALESCE(json_extract(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.cacheWrite'),0)) AS n
+    FROM events INDEXED BY idx_events_task_context WHERE session_id IN (SELECT value FROM json_each(?)) AND kind='llm' AND model IS NOT NULL AND tokens_json IS NOT NULL
+    AND (json_type(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.input') IN ('integer','real') OR json_type(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.cacheRead') IN ('integer','real') OR json_type(CASE WHEN json_valid(tokens_json) THEN tokens_json ELSE '{}' END,'$.cacheWrite') IN ('integer','real')) GROUP BY session_id,model`).all(JSON.stringify(keys)) as Array<{session_id:string;model:string;n:number}>;
+  const pressure = new Map<string, number>();
+  for (const r of context) { if(telemetryKeys.includes(r.session_id))continue; const window = lookupContextWindow(r.model); if (window && Number.isFinite(r.n) && r.n >= 0) pressure.set(r.session_id, Math.max(pressure.get(r.session_id) ?? 0, 100*r.n/window)); }
+  return rows.map(row => ({ ...row, pressure: pressure.get(row.id) ?? null }));
+}
+export function taskMetrics(db: Database, context: TaskContext, supplied?: SummarySession[]): TaskMetrics {
+  const revision = supplied ? '' : String(db.pragma('data_version', { simple: true })) + ':' + (cachedStmt(db, 'SELECT total_changes() AS n').get() as { n: number }).n;
+  let entries = cache.get(db); if (!entries) { entries = new Map(); cache.set(db, entries); }
+  const hit = entries.get(context.task.id); if (!supplied && hit?.revision === revision) return structuredClone(hit.value);
+  const value: TaskMetrics = { durationMs: null, toolCalls: null, errors: null, input: null, output: null, cacheRead: null, correctedTotal: null, promptInput: null, cacheHitRate: null, models: [] };
+  if (context.importSession) {
+    const s = context.importSession, start = Date.parse(s.startedAt ?? ''), end = Date.parse(s.endedAt ?? '');
+    value.durationMs = Number.isFinite(start) && Number.isFinite(end) && end >= start ? end - start : null;
+    value.models = s.model ? [s.model] : [];
+  } else {
+    const keys = JSON.stringify(context.members.flatMap(m => m.sessionKey ? [m.sessionKey] : []));
+    const rows = supplied ?? readSummarySessions(db, JSON.parse(keys) as string[]);
+    const complete = rows.length === context.task.memberCount && rows.every(r => r.detail_loaded === 1);
+    const byKey = new Map(rows.map(row => [row.id, row]));
+    const members = context.members.map(member => {
+      const row = member.sessionKey ? byKey.get(member.sessionKey) : undefined;
+      return { member, row, usage: row?.detail_loaded === 1 ? sessionUsage(row) : null };
+    });
+    const metricKeys: TaskMetricKey[] = ['input', 'output', 'cacheRead', 'correctedTotal', 'promptInput', 'cacheHitRate', 'models'];
+    const coverage = {} as NonNullable<TaskMetrics['coverage']>;
+    for (const key of metricKeys) {
+      const metric = key === 'correctedTotal' ? 'total' : key;
+      const knownValues: number[] = [];
+      const missing: typeof coverage[typeof key]['missing'] = [];
+      const models: string[] = [];
+      for (const { member, row, usage } of members) {
+        const observed = metric === 'models' ? row?.primary_model || null : usage?.[metric] ?? null;
+        if (observed === null) {
+          const reason = !row ? 'session_unavailable' : key !== 'models' && row.detail_loaded !== 1 ? 'detail_not_loaded' : key === 'correctedTotal' && !['codex', 'claude', 'codeagent', 'workbuddy'].includes(row.provider) ? 'accounting_unknown' : 'not_reported';
+          missing.push({ memberId: member.id, name: member.name, reason });
+        } else if (typeof observed === 'number') knownValues.push(observed);
+        else models.push(observed);
+      }
+      coverage[key] = { known: key === 'models' ? models.length : knownValues.length, total: context.task.memberCount, missing };
+      if (key === 'models') value.models = [...new Set(models)];
+      else if (key === 'cacheHitRate') {
+        const eligible=members.flatMap(m=>m.usage?.promptInput!=null&&m.usage.cacheHitRate!=null?[m.usage]:[]);
+        const denominator=sum(eligible.map(u=>u.promptInput));
+        value.cacheHitRate=denominator ? eligible.reduce((n,u)=>n+u.cacheRead!,0)/denominator : null;
+      } else value[key] = sum(knownValues);
+    }
+    value.coverage = coverage;
+    if (complete) {
+      value.toolCalls = rows.reduce((n,r) => n+r.tools,0); value.errors = rows.reduce((n,r) => n+r.errors,0);
+      value.toolResults = rows.reduce((n,r) => n+r.results,0); value.toolFailures = rows.reduce((n,r) => n+r.failures,0);
+      const starts = rows.map(r => Date.parse(r.started_at));
+      if (starts.every(Number.isFinite) && rows.every(r => ['measured', 'derived'].includes(r.duration_source) && r.total_duration_ms >= 0)) value.durationMs = Math.max(...rows.map((r, i) => starts[i]! + r.total_duration_ms)) - Math.min(...starts);
+    }
+    const pressures=rows.flatMap(r=>r.pressure===null?[]:[r.pressure]);
+    value.contextPressurePct=pressures.length ? Math.max(...pressures) : null;
+  }
+  if(supplied)return value;
+  if (entries.size >= 32) entries.delete(entries.keys().next().value!);
+  entries.set(context.task.id, { revision, value }); return structuredClone(value);
+}
+
+const cacheFunctions = new WeakSet<Database>();
+/** SQL aggregation reuses the same per-member normalization as task summaries. */
+export function registerCacheUsage(db: Database): void {
+  if(cacheFunctions.has(db))return;
+  db.function('cache_prompt_input',{deterministic:true},(provider,loaded,input,read,write)=>{
+    if(loaded!==1)return null;
+    return sessionUsage({provider:String(provider),token_input:Number(input),token_output:0,token_cache_read:Number(read),token_cache_write:Number(write)}).promptInput;
+  });
+  cacheFunctions.add(db);
+}
+export const CACHE_PROMPT_SQL='cache_prompt_input(provider,detail_loaded,token_input,token_cache_read,token_cache_write)';

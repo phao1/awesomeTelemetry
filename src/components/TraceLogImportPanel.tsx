@@ -1,3 +1,7 @@
+import { Button } from './ui/Button.js';
+import { Disclosure } from './ui/PageControls.js';
+import { Dropzone } from './ui/Dropzone.js';
+import { Skeleton } from './ui/States.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client.js';
 import type { TraceLogImportResult, TraceLogPage, TraceLogSession, TraceLogTurn, TraceLogTurnDetail } from '../core/trace-types.js';
@@ -77,7 +81,7 @@ function previewText(text: string): { text: string; truncated: boolean } {
 }
 
 function ReadState({ loading, error, locale }: { loading: boolean; error: string | null; locale: Locale }): React.JSX.Element | null {
-  if (loading) return <p role="status" className="hint">{t('common.loading', locale)}</p>;
+  if (loading) return <Skeleton variant="row" count={3}/>;
   if (error !== null) return <p role="alert"><span className="mono">{error}</span> · {t('traceImport.readError', locale)}</p>;
   return null;
 }
@@ -88,9 +92,9 @@ function Pager({ offset, count, more, maxOffset, name, onChange, locale }: {
 }): React.JSX.Element {
   const atLimit = more && offset + 20 > maxOffset;
   return <nav className="trace-import-pager" aria-label={name}>
-    <button type="button" className="btn" disabled={offset === 0} onClick={() => onChange(Math.max(0, offset - 20))}>{t('traceImport.previous', locale)}</button>
+    <Button type="button"  disabled={offset === 0} onClick={() => onChange(Math.max(0, offset - 20))}>{t('traceImport.previous', locale)}</Button>
     <span className="mono">{count === 0 ? '0' : `${offset + 1}–${offset + count}`}</span>
-    <button type="button" className="btn" disabled={!more || atLimit} onClick={() => onChange(offset + 20)}>{t('traceImport.next', locale)}</button>
+    <Button type="button"  disabled={!more || atLimit} onClick={() => onChange(offset + 20)}>{t('traceImport.next', locale)}</Button>
     {atLimit && <span className="hint">{t('traceImport.pageLimit', locale)}</span>}
   </nav>;
 }
@@ -161,54 +165,54 @@ export function TraceLogImportPanel({ locale, stopped }: { locale: Locale; stopp
   return <section className="trace-import-workbench" aria-label={t('traceImport.title', locale)}>
     <div className="trace-import-intro"><strong>{t('traceImport.offline', locale)}</strong><p className="hint">{t('traceImport.flow', locale)}</p></div>
     {!stopped && <p role="status" className="hint">{t('traceImport.stop', locale)}</p>}
-    <details className="admin-surface trace-import-upload"><summary>{t('traceImport.newFile', locale)} <span className="hint">.json / .gz / .tgz</span></summary>
+    <Disclosure className="admin-surface trace-import-upload" title={<>{t('traceImport.newFile', locale)}<span className="hint">.json / .gz / .tgz</span></>}>
       <p>{t('traceImport.scope', locale)}</p><p className="hint">{t('traceImport.limits', locale)}</p>
-      <label className="trace-import-file">{t('traceImport.file', locale)}<input type="file" accept=".json,.gz,.tgz,.tar.gz" disabled={uploading} onChange={event => { setFile(event.currentTarget.files?.[0] ?? null); setActionError(null); setResult(null); }} /></label>
+      <Dropzone label={t('traceImport.file',locale)} accept=".json,.gz,.tgz,.tar.gz" disabled={uploading} onFile={value=>{setFile(value??null);setActionError(null);setResult(null);}}/>
       {file !== null && <p className="mono hint">{file.name} · {file.size.toLocaleString(locale)} B</p>}
-      <div className="admin-toolbar"><button type="button" className="btn ui-btn-primary" disabled={file === null || !stopped || uploading || needsRecovery} onClick={() => void doImport()}>{t('traceImport.upload', locale)}</button>
-        {uploading && <button type="button" className="btn" onClick={() => { if (upload.current !== null) stopWaiting(upload.current); }}>{t('traceImport.cancel', locale)}</button>}
+      <div className="admin-toolbar"><Button type="button" variant="primary" disabled={file === null || !stopped || uploading || needsRecovery} onClick={() => void doImport()}>{t('traceImport.upload', locale)}</Button>
+        {uploading && <Button type="button"  onClick={() => { if (upload.current !== null) stopWaiting(upload.current); }}>{t('traceImport.cancel', locale)}</Button>}
       </div><p className="hint">{t('traceImport.cancelHint', locale)}</p>
-    </details>
-    {uploading && <p role="status">{t('traceImport.uploading', locale)}</p>}
+    </Disclosure>
+    {uploading && <Skeleton variant="row" count={2}/>}
     {needsRecovery && <p role="alert">{t('traceImport.uncertain', locale)}</p>}
     {actionError !== null && <p role="alert">{actionError}: {t('traceImport.error', locale)}</p>}
     {result !== null && <p role="status">{t('traceImport.success', locale)}: {result.items.filter(item => item.state === 'imported').length} / {result.items.filter(item => item.state === 'duplicate').length} / {result.ignoredEntries}</p>}
     <div className="trace-import-layout">
       <section className="trace-import-sessions" aria-label={t('traceImport.sessions', locale)}>
-        <div className="admin-section-heading"><h3>{t('traceImport.sessions', locale)}</h3><button type="button" className="btn" disabled={sessions.loading || uploading} onClick={sessions.retry}>{t('traceImport.refresh', locale)}</button></div>
+        <div className="admin-section-heading"><h3>{t('traceImport.sessions', locale)}</h3><Button type="button"  disabled={sessions.loading || uploading} onClick={sessions.retry}>{t('traceImport.refresh', locale)}</Button></div>
         <ReadState loading={sessions.loading} error={sessions.error} locale={locale}/>
         {sessions.value?.items.length === 0 && <p className="hint">{t('traceImport.empty', locale)}</p>}
         <div className="trace-import-session-list">{sessions.value?.items.map(session => <div key={session.id} className="trace-import-session" data-selected={selectedId === session.id}>
-          <button type="button" className="trace-import-choice" aria-pressed={selectedId === session.id} onClick={() => select(session)}>{session.title || session.fileName}</button>
+          <Button type="button" className="trace-import-choice" aria-pressed={selectedId === session.id} onClick={() => select(session)}>{session.title || session.fileName}</Button>
           <span className="hint">{session.ideType ?? '—'} · {session.model ?? '—'} · {session.turnCount} {t('traceImport.turns', locale)}</span><time className="hint">{session.startedAt ?? '—'}</time>
         </div>)}</div>
         {sessions.value !== null && <Pager offset={sessionOffset} count={sessions.value.items.length} more={sessions.value.hasMore} maxOffset={1024} name={t('traceImport.sessionPages', locale)} onChange={setSessionOffset} locale={locale}/>}
       </section>
       <section className="trace-import-investigation" aria-label={t('traceImport.selected', locale)}>
         {selected === null ? <div className="trace-import-empty"><h3>{t('traceImport.selectSession', locale)}</h3><p className="hint">{t('traceImport.selectHint', locale)}</p></div> : <>
-          <header className="admin-section-heading"><h3>{selected.title || selected.fileName}</h3><a className="btn" href={`/api/trace-imports/${selected.id}/source`} download>{t('traceImport.source', locale)}</a></header>
-          <details className="trace-import-provenance"><summary>{t('traceImport.provenance', locale)}</summary><dl>
+          <header className="admin-section-heading"><h3>{selected.title || selected.fileName}</h3><a  href={`/api/trace-imports/${selected.id}/source`} download>{t('traceImport.source', locale)}</a></header>
+          <Disclosure className="trace-import-provenance" title={<>{t('traceImport.provenance', locale)}</>}><dl>
             <div><dt>{t('traceImport.nativeId', locale)}</dt><dd>{selected.nativeSessionId ?? '—'}</dd></div>
             <div><dt>{t('traceImport.file', locale)}</dt><dd>{selected.sourceMember ?? selected.fileName}</dd></div>
             <div><dt>SHA256</dt><dd className="mono">{selected.id}</dd></div>
             <div><dt>{t('traceImport.importedAt', locale)}</dt><dd>{selected.importedAt} · {selected.source.bytes.toLocaleString(locale)} B</dd></div>
-          </dl><p className="hint">{t('traceImport.reported', locale)}</p></details>
-          <div className="admin-section-heading"><h4>{t('traceImport.turns', locale)}</h4><button type="button" className="btn" disabled={turns.loading} onClick={turns.retry}>{t(turns.error === null ? 'traceImport.refreshTurns' : 'traceImport.retryTurns', locale)}</button></div>
+          </dl><p className="hint">{t('traceImport.reported', locale)}</p></Disclosure>
+          <div className="admin-section-heading"><h4>{t('traceImport.turns', locale)}</h4><Button type="button"  disabled={turns.loading} onClick={turns.retry}>{t(turns.error === null ? 'traceImport.refreshTurns' : 'traceImport.retryTurns', locale)}</Button></div>
           <ReadState loading={turns.loading} error={turns.error} locale={locale}/>
           {turns.value?.items.length === 0 && <p className="hint">{t('traceImport.noTurns', locale)}</p>}
-          <div className="trace-import-turn-list">{turns.value?.items.map(item => <button key={item.sequence} type="button" className="trace-import-choice" aria-pressed={sequence === item.sequence} onClick={() => chooseTurn(item)}>
+          <div className="trace-import-turn-list">{turns.value?.items.map(item => <Button key={item.sequence} type="button" className="trace-import-choice" aria-pressed={sequence === item.sequence} onClick={() => chooseTurn(item)}>
             #{item.turnNumber ?? item.sequence + 1} · {item.model ?? '—'} · {item.requestTime ?? '—'}<span className="hint">{t(item.isError === null ? 'traceImport.unknownStatus' : item.isError ? 'traceImport.reportedError' : 'traceImport.noReportedError', locale)} · {t(item.hasOutput ? 'traceImport.hasOutput' : 'traceImport.noOutput', locale)}</span>
-          </button>)}</div>
+          </Button>)}</div>
           {turns.value !== null && <Pager offset={turnOffset} count={turns.value.items.length} more={turns.value.hasMore} maxOffset={2000} name={t('traceImport.turnPages', locale)} onChange={n => { setTurnOffset(n); setTurn(null); }} locale={locale}/>}
           {turn === null ? <p className="trace-import-empty hint">{t('traceImport.selectTurn', locale)}</p> : <section className="trace-import-evidence" aria-label={t('traceImport.selectedTurn', locale)}>
-            <div className="admin-section-heading"><h4>#{turn.turnNumber ?? turn.sequence + 1} · {turn.turnId ?? '—'}</h4><button type="button" className="btn" disabled={detail.loading} onClick={detail.retry}>{t(detail.error === null ? 'traceImport.refreshTurn' : 'traceImport.retryTurn', locale)}</button></div>
-            <details><summary>{t('traceImport.reportedMetrics', locale)}</summary><p className="hint">{t('traceImport.reported', locale)}</p><pre>{JSON.stringify(turn.reported, null, 2)}</pre></details>
+            <div className="admin-section-heading"><h4>#{turn.turnNumber ?? turn.sequence + 1} · {turn.turnId ?? '—'}</h4><Button type="button"  disabled={detail.loading} onClick={detail.retry}>{t(detail.error === null ? 'traceImport.refreshTurn' : 'traceImport.retryTurn', locale)}</Button></div>
+            <Disclosure  title={<>{t('traceImport.reportedMetrics', locale)}</>}><p className="hint">{t('traceImport.reported', locale)}</p><pre>{JSON.stringify(turn.reported, null, 2)}</pre></Disclosure>
             <div className="trace-import-fields" role="group" aria-label={t('traceImport.fields', locale)}><Tabs items={fields.map(name => ({ id: name, label: label(name) }))} activeId={field} onChange={name => { setField(name as Field); setExpanded(false); }}/></div>
             <ReadState loading={detail.loading} error={detail.error} locale={locale}/>
             {detail.value !== null && <div role="tabpanel" aria-label={label(field)}>
-              <div className="admin-toolbar"><button type="button" className="btn" aria-label={t('traceImport.fontDecrease', locale)} disabled={font === 8} onClick={() => setFont(n => Math.max(8, n - 1))}>A−</button><button type="button" className="btn" aria-label={t('traceImport.fontIncrease', locale)} disabled={font === 28} onClick={() => setFont(n => Math.min(28, n + 1))}>A+</button><button type="button" className="btn" aria-label={t('traceImport.fontReset', locale)} onClick={() => setFont(13)}>R</button></div>
+              <div className="admin-toolbar"><Button type="button"  aria-label={t('traceImport.fontDecrease', locale)} disabled={font === 8} onClick={() => setFont(n => Math.max(8, n - 1))}>A−</Button><Button type="button"  aria-label={t('traceImport.fontIncrease', locale)} disabled={font === 28} onClick={() => setFont(n => Math.min(28, n + 1))}>A+</Button><Button type="button"  aria-label={t('traceImport.fontReset', locale)} onClick={() => setFont(13)}>R</Button></div>
               {raw === null ? <p className="hint">{t(field === 'output' ? 'traceImport.missingOutput' : 'traceImport.missing', locale)}</p> : <>
-                {preview?.truncated && <p className="hint">{t(expanded ? 'traceImport.fullField' : 'traceImport.preview', locale)} <button type="button" className="btn" onClick={() => setExpanded(value => !value)}>{t(expanded ? 'traceImport.collapse' : 'traceImport.expand', locale)}</button></p>}
+                {preview?.truncated && <p className="hint">{t(expanded ? 'traceImport.fullField' : 'traceImport.preview', locale)} <Button type="button"  onClick={() => setExpanded(value => !value)}>{t(expanded ? 'traceImport.collapse' : 'traceImport.expand', locale)}</Button></p>}
                 <pre className="trace-import-body" style={{ fontSize: font }}>{expanded ? raw : preview?.text}</pre>
               </>}
             </div>}

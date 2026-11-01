@@ -219,7 +219,8 @@ describe('AF-004 explicit bounded planning estimates', () => {
     const project = fixture(); project.trials.forEach(trial => { trial.byAgent = { specialist: { calls: 100, inputTokens: 999_999, outputTokens: 999_999 } }; });
     const estimate = estimateFoldingPlan(plan(), project);
     expect(estimate).toMatchObject({ cases: 2, repetitions: 3, variants: 2, modelCalls: 24, inputTokens: 12_000, outputTokens: 1200, basis: 'measured_baseline' });
-    expect(estimate.limitations.join(' ')).toContain('cannot guarantee an exact maximum bill');
+    expect(estimate.limitations.join(' ')).toContain('Token usage is measured after responses');
+    expect(estimate.limitations.join(' ')).not.toMatch(/price|bill|cost/i);
   });
   it('keeps missing or wrong-model baselines unknown instead of returning zero estimates', () => {
     expect(estimateFoldingPlan(plan())).toMatchObject({ inputTokens: null, outputTokens: null, modelCalls: null, basis: 'unknown' });

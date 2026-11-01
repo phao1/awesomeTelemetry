@@ -78,7 +78,7 @@ describe('actionable monitoring capability matrix', () => {
     vi.useFakeTimers(); let resolve!: (value: Response) => void; const delayed = new Promise<Response>(done => { resolve = done; });
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>().mockImplementationOnce(() => delayed).mockResolvedValue(response(report()));
     vi.stubGlobal('fetch', fetchMock); const { container } = render();
-    expect(container.querySelector('[role="status"]')?.textContent).toContain('Loading');
+    expect(container.querySelector('[role="status"] .ui-skeleton-row')).not.toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(fetchMock.mock.calls[0]![1]?.signal?.aborted).toBe(true); expect(container.querySelector('[role="alert"]')?.textContent).toContain('5 seconds');
     await act(async () => { resolve(response(report())); await delayed; }); expect(container.querySelector('[data-capability-agent]')).toBeNull();
@@ -107,7 +107,7 @@ describe('actionable monitoring capability matrix', () => {
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>().mockResolvedValueOnce(response(report())).mockImplementationOnce(() => delayed);
     vi.stubGlobal('fetch', fetchMock); const { container } = render(); await flush();
     act(() => button(container, 'Refresh capabilities').click());
-    expect(container.querySelector('[data-capability-agent]')).toBeNull(); expect(container.querySelector('[role="status"]')?.textContent).toContain('Loading');
+    expect(container.querySelector('[data-capability-agent]')).toBeNull(); expect(container.querySelector('[role="status"] .ui-skeleton-row')).not.toBeNull();
     expect(button(container, 'Refresh capabilities').disabled).toBe(true);
     act(() => button(container, 'Refresh capabilities').click()); expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => { resolve(response(report())); await delayed; }); await flush();

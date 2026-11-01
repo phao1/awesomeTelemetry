@@ -1,3 +1,4 @@
+import { Button } from './ui/Button.js';
 import type { SessionIndexEntry } from '../core/trace-types.js';
 import { t, type Locale } from '../i18n.js';
 import { IconAgents, IconChevronRight, IconProxy, IconSearch, IconSessions } from './icons/index.js';
@@ -25,9 +26,9 @@ export function SessionStart({ locale, recent, loading, filtered = false, offlin
         <span className="session-start-eyebrow"><IconSessions size={16} />{t('session.start.eyebrow', locale)}</span>
         <h1 id="session-start-title">{t('session.start.title', locale)}</h1>
         <p>{t('session.selectHint', locale)}</p>
-        <button type="button" className="btn session-start-search" onClick={onSearch}>
+        <Button type="button" className="session-start-search"  onClick={onSearch}>
           <IconSearch size={16} />{t('session.start.search', locale)}<kbd>⌘ K / Ctrl K</kbd>
-        </button>
+        </Button>
       </header>
       <div className="session-start-options">
         <button type="button" className="session-start-action session-start-primary" disabled={loading && recent === null}

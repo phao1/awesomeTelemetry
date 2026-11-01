@@ -168,7 +168,7 @@
 .agent-hierarchy {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: calc(var(--space-1) / 4);
   max-height: 60vh;
   overflow-y: auto;
 }
@@ -249,7 +249,7 @@
   display: inline-flex;
   flex-direction: row;
   align-items: baseline;
-  gap: 1px;
+  gap: calc(var(--space-1) / 4);
   min-width: 0;
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border-muted);
@@ -316,7 +316,7 @@
 
 .turn-ribbon-segment:focus-visible {
   outline: 1px solid var(--accent-fg);
-  outline-offset: -1px;
+  outline-offset: calc(var(--space-1) * -.25);
 }
 
 .turn-ribbon-segment-active {
@@ -401,7 +401,7 @@
 
 .turn-row:focus-visible {
   outline: 1px solid var(--accent-fg);
-  outline-offset: -1px;
+  outline-offset: calc(var(--space-1) * -.25);
 }
 
 .turn-row-index {

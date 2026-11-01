@@ -312,7 +312,7 @@
 
 .session-row-cursor {
   outline: 1px solid var(--accent-fg);
-  outline-offset: -1px;
+  outline-offset: calc(var(--space-1) * -.25);
 }
 
 /* ---- 会话诊断卡（L1，§3.1） ---- */
@@ -403,7 +403,7 @@ button.finding-row:hover {
   flex: 0 0 auto;
   width: var(--dot-size);
   height: var(--dot-size);
-  margin-top: calc(var(--space-1) + 1px);
+  margin-top: calc(var(--space-1) + calc(var(--space-1) / 4));
   border-radius: var(--radius-full);
 }
 
@@ -797,7 +797,7 @@ button.finding-row:hover {
 .tool-sidebar { padding: var(--space-4); border-right: 1px solid var(--border-muted); background: var(--canvas-subtle); overflow: auto; }
 .tool-sidebar h3, .tool-detail h3 { margin: var(--space-3) 0; font-size: var(--text-md); }
 .tool-filters { display: grid; gap: var(--space-2); }
-.tool-filters input, .tool-filters select { width: 100%; min-height: var(--row-md); background: var(--canvas-default); color: var(--fg-default); border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: var(--space-2); font-size: var(--text-base); }
+.tool-filters input:not(.ui-input):not([type=hidden]), .tool-filters select:not(.ui-select) { width: 100%; min-height: var(--row-md); background: var(--canvas-default); color: var(--fg-default); border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: var(--space-2); font-size: var(--text-base); }
 .tool-process { border-top: 1px solid var(--border-muted); border-bottom: 1px solid var(--border-muted); }
 .tool-process-row { display: grid; grid-template-columns: 2.5rem 3.5rem minmax(0, 1fr) 1rem; align-items: center; gap: var(--space-2); width: 100%; height: var(--row-lg); border: 0; border-bottom: 1px solid var(--border-muted); background: transparent; text-align: left; color: var(--fg-default); cursor: pointer; font-size: var(--text-base); }
 .tool-process-row > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

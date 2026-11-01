@@ -14,3 +14,5 @@
 @import './components/workbench.css';
 @import './components/trace-export.css';
 @import './components/native-tool-observations.css';
+
+@import './components/foundation.css';

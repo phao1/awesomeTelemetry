@@ -32,7 +32,7 @@ import { cachedStmt } from './stmt-cache.js';
  * CREATE INDEX IF NOT EXISTS），失败抛带重建指引的错误，禁止静默 catch。
  * v9（2026-08-11 校准审计）：**只增不改**——sessions 增列 cost_currency。
  * 定价表此前只认 USD，国内网关按 CNY/token 计费的模型（deepseek 等）压根录不进来，
- * cost_usd 只能恒为 0；加币种后价格原样录入，展示端据此渲染 ¥ 而不是 $。
+ * 旧字段保留源数据单位；Phase F1 不再计算或展示金额。
  * 单条幂等 ADD COLUMN，默认 'USD'，历史行语义不变，不触发重扫。
  * v10（add-agent-team-observability D11）：**只增不改**——新增 13 张 team 主表 +
  * team_message_recipients（收件人归一化 junction）+ team_run_sessions（session
@@ -42,7 +42,32 @@ import { cachedStmt } from './stmt-cache.js';
  * team 表族内部 FK 级联；session 删除只清 junction 链接不清 team，team 删除只删
  * team-owned 行绝不删 session。
  */
-export const SCHEMA_VERSION = 21;
+export const SCHEMA_VERSION = 24;
+const TELEMETRY_SCHEMA_SQL = `CREATE TABLE IF NOT EXISTS telemetry_quota (
+  id INTEGER PRIMARY KEY CHECK(id=1),
+  span_count INTEGER NOT NULL,
+  bytes INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO telemetry_quota(id,span_count,bytes) VALUES(1,0,0);
+CREATE TABLE IF NOT EXISTS telemetry_spans (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  trace_key TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  span_json TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_telemetry_spans_group ON telemetry_spans(group_id,id);
+CREATE INDEX IF NOT EXISTS idx_telemetry_spans_trace ON telemetry_spans(trace_key,id);
+CREATE TABLE IF NOT EXISTS telemetry_sessions (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  root_id TEXT NOT NULL,
+  parent_id TEXT,
+  source TEXT NOT NULL,
+  origin TEXT NOT NULL,
+  warnings_json TEXT NOT NULL DEFAULT '[]'
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_telemetry_sessions_root ON telemetry_sessions(root_id,session_id);
+`;
 
 // contracts/database.md §3 表定义，逐字采用。
 export const SCHEMA_SQL = `
@@ -579,6 +604,11 @@ CREATE INDEX IF NOT EXISTS idx_claude_hooks_session ON claude_hook_events(native
 CREATE INDEX IF NOT EXISTS idx_claude_hooks_tool ON claude_hook_events(native_session_id,tool_use_id,agent_id,id DESC);
 CREATE INDEX IF NOT EXISTS idx_trace_identities_parent ON trace_identities(namespace, value, source_id, id) WHERE kind='parent_session';
 CREATE INDEX IF NOT EXISTS idx_trace_log_imported ON trace_log_imports(imported_at DESC,id);
+CREATE INDEX IF NOT EXISTS idx_events_task_results ON events(session_id,kind,status,output_len);
+CREATE INDEX IF NOT EXISTS idx_events_task_context ON events(session_id,kind,model,tokens_json);
+CREATE INDEX IF NOT EXISTS idx_events_task_tools ON events(session_id,kind,input_len);
+CREATE INDEX IF NOT EXISTS idx_events_task_errors ON events(session_id,status);
+CREATE INDEX IF NOT EXISTS idx_events_session_time ON events(session_id,started_at);
 CREATE INDEX IF NOT EXISTS idx_events_session_seq    ON events(session_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_events_session_phase  ON events(session_id, phase);
 CREATE INDEX IF NOT EXISTS idx_events_kind           ON events(kind);
@@ -1175,6 +1205,13 @@ export function migrateSchema(db: Database, fromVersion: number): void {
     db.exec("CREATE INDEX IF NOT EXISTS idx_trace_identities_parent ON trace_identities(namespace, value, source_id, id) WHERE kind='parent_session';");
     cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('20');
   })();
+  if (fromVersion < 22) db.transaction(() => {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_events_task_tools ON events(session_id,kind,input_len); CREATE INDEX IF NOT EXISTS idx_events_task_errors ON events(session_id,status)');
+    cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('22');
+  })();
+  if (fromVersion < 23) db.transaction(()=>{db.exec(`CREATE INDEX IF NOT EXISTS idx_events_task_results ON events(session_id,kind,status,output_len);
+CREATE INDEX IF NOT EXISTS idx_events_task_context ON events(session_id,kind,model,tokens_json);`);cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('23');})();
+  if (fromVersion < 24) db.transaction(() => { db.exec(TELEMETRY_SCHEMA_SQL); cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('24'); })();
   cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
 }
 
@@ -1188,6 +1225,7 @@ export function initSchema(db: Database): void {
   if (Number.isFinite(current) && current < SCHEMA_VERSION) {
     migrateSchema(db, current);
   }
+  db.exec(TELEMETRY_SCHEMA_SQL);
   ensureEventsContentHash(db);
   db.exec(INDEX_SQL); // §4 全部 CREATE INDEX IF NOT EXISTS
   cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));

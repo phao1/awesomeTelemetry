@@ -1,3 +1,5 @@
+import { Button } from './ui/Button.js';
+import { Card, CardBody, CardHeader, Pill } from './ui/Display.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Locale } from '../i18n.js';
@@ -380,12 +382,12 @@ function CompareEventPanel({
               </section>
             )}
             <div className="inspector-actions">
-              <button type="button" className="btn" onClick={() => onOpenTranscript(event)}>
+              <Button type="button"  onClick={() => onOpenTranscript(event)}>
                 {t('transcript.title', locale)}
-              </button>
-              <button type="button" className="btn" onClick={() => onOpenTokens(event)}>
+              </Button>
+              <Button type="button"  onClick={() => onOpenTokens(event)}>
                 {t('token.title', locale)}
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -477,16 +479,7 @@ export function CompareTimeline({
     const pages = pageCount(events);
     const current = Math.min(page[side], pages - 1);
     return (
-      <div className="compare-timeline" data-side={side}>
-        <h4>
-          <span
-            className="compare-side-mark"
-            style={{ color: side === 'left' ? 'var(--accent-fg)' : 'var(--attention-fg)' }}
-          >
-            {side === 'left' ? 'L' : 'R'}
-          </span>
-          {' '}{name}
-        </h4>
+      <Card className="compare-timeline" data-side={side}><CardHeader title={<>{side==='left'?'A':'B'} · {name}</>}/><CardBody>
         <CompareMiniTimeline
           events={shown}
           total={total}
@@ -497,11 +490,11 @@ export function CompareTimeline({
           onSelectEvent={(event) => setSelected({ side, event })}
         />
         <footer className="compare-timeline-foot">
-          <span className="mono compare-timeline-count">
+          <span className="mono compare-timeline-count"><Pill>
             {t('compare.timeline.showing', locale)
               .replace('{x}', String(shown.length))
               .replace('{y}', String(Math.max(total, events.length)))}
-          </span>
+          </Pill></span>
           {paged && pages > 1 && (
             <span className="compare-timeline-pager">
               <button
@@ -530,7 +523,7 @@ export function CompareTimeline({
             </span>
           )}
         </footer>
-      </div>
+      </CardBody></Card>
     );
   };
 

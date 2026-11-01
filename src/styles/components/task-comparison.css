@@ -1,0 +1,50 @@
+.task-comparison { min-width: 0; width: 100%; overflow-wrap: anywhere; }
+.task-comparison section { min-width: 0; margin-block: var(--space-4); }
+.task-compare-selectors { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-6) * 12)), 1fr)); gap: var(--space-3); }
+.task-compare-selectors > *, .task-compare-picker { min-width: 0; }
+.task-compare-selectors label { display: flex; flex-direction: column; gap: var(--space-2); }
+.task-compare-picker { border: 1px solid var(--border-default); padding: var(--space-3); }
+.task-compare-picker > input, .task-compare-selectors select { width: 100%; min-width: 0; }
+.task-compare-selected { padding: 0; list-style: none; }
+.task-compare-selected li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.task-compare-options { max-height: calc(var(--row-lg) * 6); overflow-y: auto; }
+.task-compare-options label { flex-direction: row; align-items: flex-start; margin-block: var(--space-2); }
+.task-compare-conclusions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-5) * 11)), 1fr)); gap: var(--space-2); }
+.task-compare-conclusions p { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); margin: 0; background: var(--canvas-subtle); }
+.task-compare-conclusions [data-verdict="better"] strong { color: var(--success-fg); }
+.task-compare-conclusions [data-verdict="worse"] strong { color: var(--danger-fg); }
+.task-compare-table { min-width: 0; max-width: 100%; overflow-x: auto; }
+.task-compare-table table { width: 100%; }
+.task-compare-table th, .task-compare-table td { min-width: calc(var(--space-6) * 4); padding: var(--space-2); }
+.task-compare-unknown { margin-block: var(--space-3); }
+.task-comparison .compare-timelines { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-6) * 12)), 1fr)); }
+.task-comparison .compare-timeline { min-width: 0; }
+
+.task-compare-content { padding: var(--page-gutter); min-width: 0; display: grid; gap: var(--space-4); }
+.task-compare-selection { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-width: 0; }
+.task-compare-selection > .task-compare-picker { flex: 1 1 calc(var(--space-6) * 16); min-width: 0; }
+.task-comparison .task-compare-picker { padding: 0; border-radius: var(--radius-lg); border-inline-start: var(--space-1) solid var(--compare-a); }
+.task-comparison .compare-side-b { border-inline-start-color: var(--compare-b); }
+.compare-request-picker { margin-block-start: var(--space-3); }
+.task-comparison .page-header { height: auto; min-height: var(--page-header-height); flex-wrap: wrap; padding-block: var(--space-3); gap: var(--space-3); }
+.task-comparison .page-actions { flex-wrap: wrap; }
+.task-compare-table td { font-variant-numeric: tabular-nums; }
+.task-compare-conclusions { margin-block-start: var(--space-4); }
+.task-comparison .compare-timeline:first-child { border-block-start: var(--space-1) solid var(--compare-a); }
+.task-comparison .compare-timeline:last-child { border-block-start: var(--space-1) solid var(--compare-b); }
+.task-comparison .ui-card-header { flex-wrap: wrap; }
+.task-comparison .ui-card-header .ui-btn { white-space: nowrap; }
+.task-comparison .compare-tools th { white-space: nowrap; }
+
+.task-comparison section.ui-card { margin-block: 0; }
+.app-workspace > .view-body:has(.task-comparison), .main:has(> .task-comparison) { padding: 0; }
+.comparison-metric-table th:nth-child(n+2):nth-child(-n+5), .comparison-metric-table td:nth-child(n+2):nth-child(-n+5), .compare-token-table th:not(:first-child), .compare-token-table td { text-align: right; font-variant-numeric: tabular-nums; }
+.task-compare-table tbody th { background: transparent; }
+.compare-process-body { min-width: 0; display: grid; gap: var(--space-3); }
+.compare-process-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.compare-token-stacks { display: grid; gap: var(--space-3); margin-block: var(--space-3); }
+.compare-token-stacks > div { display: flex; align-items: center; gap: var(--space-3); }
+.compare-token-stack { height: var(--space-5); }
+.compare-token-stack > span:focus-visible { outline: var(--focus-ring); }
+.compare-token-dot { display: inline-block; width: var(--space-2); height: var(--space-2); margin-inline-end: var(--space-2); border-radius: var(--radius-full); }
+.compare-token-table { margin-block: var(--space-4); }

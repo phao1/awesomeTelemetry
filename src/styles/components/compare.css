@@ -421,7 +421,7 @@
   left: 50%;
   top: 0;
   bottom: 0;
-  width: 1px;
+  width: calc(var(--space-1) / 4);
   background: var(--border-strong);
 }
 

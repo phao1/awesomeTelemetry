@@ -1,3 +1,24 @@
+# Phase B additive schema23 (2026-10-31)
+Covering result-count and LLM numeric-context indexes; no body acquisition.
+```sql
+CREATE INDEX IF NOT EXISTS idx_events_task_results ON events(session_id,kind,status,output_len);
+CREATE INDEX IF NOT EXISTS idx_events_task_context ON events(session_id,kind,model,tokens_json);
+```
+
+# Phase A additive schema22 (2026-10-31)
+
+Current SCHEMA_VERSION=22. Add only the following covering indexes. Upgrade21→22
+creates both indexes and writes version22 atomically; no row rewriting, source
+reparse, scanner reset or destructive migration. initSchema remains idempotent.
+These indexes bound task-summary COUNT queries to selected session/kind or status
+metadata, avoiding body pages. Two narrow indexes add write/storage overhead;
+the coordinator runs perf:check outside the sandbox before integration.
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_events_task_tools ON events(session_id,kind,input_len);
+CREATE INDEX IF NOT EXISTS idx_events_task_errors ON events(session_id,status);
+```
+
 # Contract: Database
 
 ## v21 local Claude hook observations
@@ -684,8 +705,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 > v9 column (pre-existing 2026-08-11 cost_currency calibration audit):
 > - `cost_currency` ∈ `USD | CNY` (`PriceCurrency` in `contracts/data-model.md`
 >   §12.4), default `USD`. The field name `cost_usd` is retained only to avoid
->   renaming the column; domestic gateways (DeepSeek etc.) price in CNY and the
->   display MUST render `¥` vs `$` by this value. This change is additive-only
+>   renaming the column; original source units remain faithful. Phase F1 removes monetary
+>   display and estimation; these columns are retained evidence only. This change is additive-only
 >   and recorded here so the contract matches the already-shipped
 >   `server/storage/schema.ts`; the team migration below is therefore **v10**,
 >   not v9.
@@ -1504,3 +1525,68 @@ This admission gate avoids materializing old graphs then bulk deleting them on
 the HTTP thread. Startup retention of already committed rows stays separate;
 full capacity/manual deletion and sustained WAL admission remain7.3 work.
 When more than1000 rows are deleted, trigger one checkpointWal as before.
+
+## Phase D additive schema v24
+
+v23→24 creates the following tables/indexes and updates version atomically. No
+backfill, source rewrites or scan-state reset. Fresh initialization includes them.
+telemetry_spans stores only normalized redacted bounded previews, never originals;
+metadata lists must not select span_json. Explicit column constants:
+TELEMETRY_SPAN_COLS='id,group_id,trace_key,metadata_json,span_json';
+TELEMETRY_SESSION_COLS='session_id,root_id,parent_id,source,origin,warnings_json'.
+
+```sql
+CREATE TABLE IF NOT EXISTS telemetry_quota (
+  id INTEGER PRIMARY KEY CHECK(id=1),
+  span_count INTEGER NOT NULL,
+  bytes INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO telemetry_quota(id,span_count,bytes) VALUES(1,0,0);
+CREATE TABLE IF NOT EXISTS telemetry_spans (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  trace_key TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  span_json TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_telemetry_spans_group ON telemetry_spans(group_id,id);
+CREATE INDEX IF NOT EXISTS idx_telemetry_spans_trace ON telemetry_spans(trace_key,id);
+CREATE TABLE IF NOT EXISTS telemetry_sessions (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  root_id TEXT NOT NULL,
+  parent_id TEXT,
+  source TEXT NOT NULL,
+  origin TEXT NOT NULL,
+  warnings_json TEXT NOT NULL DEFAULT '[]'
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_telemetry_sessions_root ON telemetry_sessions(root_id,session_id);
+```
+
+telemetry_quota counters update atomically with span differential inserts/updates;
+no all-body SUM on ingestion. metadata_json is TelemetryMetadata with no previews.
+All source/trace/group lookups use the declared indexes. SessionProviderKey changes
+no SQL enum constraint and never creates a tenth scanner.
+
+telemetry_sessions.warnings_json contains static unresolved/cycle/depth reason codes;
+cycles do not create Agent membership edges, and independent Agent roots have no
+fabricated parent member.
+
+Phase D telemetry capacity correction (no DDL/version change): telemetry_quota
+span_count is the count of unique retained telemetry_spans rows; bytes is their
+UTF-8 span_json byte total, excluding native/capture rows and duplicate projections.
+Defaults20000 spans/33554432 bytes, updated differentially in the same transaction.
+The shared serialized WAL-only admission checks fresh stamps and WAL8MB, with at
+most one zero-wait checkpoint and at most three snapshots. It does not inspect
+combined database size; the existing capture-only combined180MB gate is unchanged.
+Failure reasons and the exception to global DB-size admission follow TD-006.
+
+Phase F1: monetary source/storage columns are retained without migration.
+No task/overview monetary aggregates or pricing estimation remain.
+team_rounds.cost_usd is a legacy nullable slot; newly derived rounds write null.
+
+## F4 activity metadata index
+Idempotent additive index, applied by the existing INDEX_SQL startup path; no
+row changes or schema rewrite. It bounds selected-member event-date aggregation.
+```sql
+CREATE INDEX IF NOT EXISTS idx_events_session_time ON events(session_id,started_at);
+```

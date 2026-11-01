@@ -56,7 +56,7 @@ describe('SessionToolbar evidence metrics (WB-003)', () => {
       const criteria=document.querySelector('.session-metric-criteria');
       expect(criteria?.textContent).toContain('1 / 3');
       expect(criteria?.textContent).toContain(locale==='zh'?'不等于正确率':'not answer accuracy');
-      expect(criteria?.querySelector('details')?.open).toBe(false);
+      expect(criteria?.querySelector('.ui-accordion > button')?.getAttribute('aria-expanded')).toBe('false');
       expect(fetcher).not.toHaveBeenCalled();
     } finally {unmount();fetcher.mockRestore();}
   });

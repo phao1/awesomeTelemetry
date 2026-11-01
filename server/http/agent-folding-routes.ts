@@ -1,3 +1,4 @@
+import { FoldingSourceError } from '../agent-folding/source.js';
 import { previewFoldingReview, runFoldingReview } from '../agent-folding/review.js';
 import { validateFoldingNativeScope } from '../agent-folding/native-scope.js';
 import type { IncomingMessage } from 'node:http';
@@ -46,11 +47,19 @@ export function registerAgentFoldingRoutes(router: Router, directory: string, op
     if (closed || (readOnly ? reads.size >= 4 : active !== null)) { sendApiError(res, 409, 'BAD_REQUEST', 'An owned boundary job is active or the server is closing.', { reason: 'BUSY' }, req); return; }
     const controller = new AbortController(); if (readOnly) reads.add(controller); else active = controller;
     const cancel = () => controller.abort(); res.once('close', cancel); const timer = setTimeout(cancel, deadline); timer.unref();
-    try { const report = await job(controller.signal); if (controller.signal.aborted) throw new Error('Cancelled.'); if (Buffer.byteLength(JSON.stringify(report)) > 8 * 1024 * 1024) throw new Error('Report too large'); sendJson(res, 200, report, req); }
+    try { const report = await job(controller.signal); if (controller.signal.aborted) throw new Error('Cancelled.'); if (Buffer.byteLength(JSON.stringify(report)) > 8 * 1024 * 1024) throw new FoldingSourceError('TOO_LARGE', 'Report too large', { bytes: Buffer.byteLength(JSON.stringify(report)), limit: 8 * 1024 * 1024 }); sendJson(res, 200, report, req); }
     catch (error) {
       if (!res.destroyed) {
-        if (error instanceof TaskReadError) sendApiError(res, error.code === 'SESSION_NOT_FOUND' ? 404 : 400, error.code, error.message, undefined, req);
-        else sendApiError(res, 503, 'INTERNAL_ERROR', 'Owned boundary job stopped; completed trial artifacts may remain locally.', undefined, req);
+        if (controller.signal.aborted) sendApiError(res, 408, 'BAD_REQUEST', 'Architecture read deadline exceeded.', { reason: 'TIMEOUT' }, req);
+        else if (error instanceof TaskReadError) sendApiError(res, error.code === 'SESSION_NOT_FOUND' ? 404 : 400, error.code, error.message, { reason: 'NO_MATCH' }, req);
+        else if (error instanceof FoldingSourceError) {
+          const status = { SOURCE_CHANGED: 409, UNINDEXED: 422, TOO_LARGE: 413, NO_MATCH: 422, INVALID_SOURCE: 422 }[error.reason];
+          sendApiError(res, status, 'BAD_REQUEST', error.message, { ...error.details, reason: error.reason }, req);
+        } else {
+          const name = error instanceof Error ? error.constructor.name : 'Error';
+          console.error('[agent-folding]', /^[A-Za-z]+Error$/.test(name) ? name : 'Error', 'UNEXPECTED');
+          sendApiError(res, 503, 'INTERNAL_ERROR', 'Architecture read failed.', { reason: 'UNEXPECTED' }, req);
+        }
       }
     }
     finally { clearTimeout(timer); res.off('close', cancel); reads.delete(controller); if (active === controller) active = null; }

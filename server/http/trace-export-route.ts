@@ -1,3 +1,5 @@
+import { telemetrySpans } from '../storage/telemetry.js';
+import { exportTelemetry } from '../telemetry/export.js';
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Database } from 'better-sqlite3';
@@ -54,6 +56,10 @@ export function handleTraceExport(req: IncomingMessage, res: ServerResponse, db:
   const limit = Number(query.get('limit') ?? 100);
   if (offset > TRACE_EXPORT_MAX_OFFSET || limit < 1 || limit > TRACE_EXPORT_MAX_EVENTS) return badRequest();
   try {
+    if(sessionKey.startsWith('otel:')){
+      const encoded=JSON.stringify(exportTelemetry(telemetrySpans(db,sessionKey),offset,limit));
+      sendCompressedOrPlain(res,200,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','content-disposition':'attachment; filename="telemetry.otlp.json"'},Buffer.from(encoded),req);return;
+    }
     const page = readTraceExportPage(db, sessionKey, offset, limit);
     if (page === null) return sendApiError(res, 404, 'SESSION_NOT_FOUND', 'Native scan session not found', undefined, req);
     const ids = traceExportIds(sessionKey);

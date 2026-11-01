@@ -3,9 +3,13 @@ import type { ReactNode } from 'react';
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import { IconAgents, IconCompare, IconFrida, IconProxy, IconSearch, IconSessions, IconStability } from './icons/index.js';
+import { formatCount, formatTokens } from '../core/format.js';
+import { Button } from './ui/Button.js';
+import { Tooltip } from './ui/Overlay.js';
+import { IconRefresh } from './icons/index.js';
 import { Tabs } from './ui/Tabs.js';
 
-export type AppView = 'session' | 'agent' | 'compare' | 'proxy' | 'frida' | 'mission' | 'task' | 'intake' | 'benchmark' | 'team-experiment';
+export type AppView = 'ui-kit' | 'settings' | 'overview' | 'session' | 'agent' | 'compare' | 'proxy' | 'frida' | 'mission' | 'task' | 'intake' | 'benchmark' | 'team-experiment';
 
 export interface AppHeaderProps {
   locale: Locale;
@@ -40,7 +44,7 @@ export function AppHeader({ locale, onSearch, children }: AppHeaderProps): React
 }
 
 export interface ViewTabsProps {
-  active: Exclude<AppView, 'task' | 'intake' | 'benchmark' | 'team-experiment'>;
+  active: Exclude<AppView, 'overview' | 'task' | 'intake' | 'benchmark' | 'team-experiment' | 'ui-kit' | 'settings'>;
   onChange: (view: AppView) => void;
   locale: Locale;
 }
@@ -89,26 +93,15 @@ export function StatusBar({
   offlineSamples,
   onScan,
 }: StatusBarProps): React.JSX.Element {
-  const fmtBytes = (bytes: number | null): string =>
-    bytes === null ? '—' : bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)}MB` : `${(bytes / 1024).toFixed(1)}KB`;
-  return (
-    <footer className="statusbar" style={{ height: 'var(--statusbar-height)' }}>
-      <span className={`status-dot ${live ? 'status-dot-live' : 'status-dot-dead'}`} aria-hidden="true" />
-      <span role="status" aria-live="polite">{live ? t('live.connected', locale) : t('live.disconnected', locale)}</span>
-      <span className="statusbar-sep" aria-hidden="true" />
-      <span>{sessionCount.toLocaleString()} {t('workbench.sessions', locale)} · {eventCount.toLocaleString()} {t('workbench.events', locale)}</span>
-      <span className="statusbar-sep" aria-hidden="true" />
-      <button type="button" className="statusbar-scan" onClick={onScan} disabled={scanning} aria-busy={scanning}
-        title={lastScanAt ?? t('workbench.scanReady', locale)}>
-        {scanning ? t('state.loading', locale) : lastScanAt === null ? t('workbench.scanReady', locale) : `${t('workbench.lastScan', locale)} ${new Date(lastScanAt).toLocaleTimeString()}`}
-      </button>
-      <span className="statusbar-sep" aria-hidden="true" />
-      <span>
-        db {fmtBytes(dbSizeBytes)} · wal {fmtBytes(walSizeBytes)}
-      </span>
-      <span className="spacer" />
-      <span className="mono workbench-source">{offlineSamples ? 'offline samples' : t('workbench.nativeIndex', locale)}</span>
-      <span className="mono">v0.1.0</span>
-    </footer>
-  );
+  const fmtBytes = (bytes: number | null): string => bytes === null ? '—' : bytes >= 1024 * 1024 ? `${Number((bytes / 1024 / 1024).toFixed(1))} MB` : `${Number((bytes / 1024).toFixed(1))} KB`;
+  const connection=live?t('live.connected',locale):t('live.disconnected',locale);
+  const summary=`${formatCount(sessionCount,locale)} ${t('workbench.sessions',locale)} · ${formatTokens(eventCount)} ${t('workbench.events',locale)} · ${fmtBytes(dbSizeBytes)}`;
+  const source=offlineSamples?'offline samples':t('workbench.nativeIndex',locale);
+  const details=`${source} · ${formatCount(eventCount,locale)} ${t('workbench.events',locale)} · DB ${fmtBytes(dbSizeBytes)} · WAL ${fmtBytes(walSizeBytes)}`;
+  const scan=t('workbench.scanReady',locale);
+  return <footer className="statusbar">
+    <div className="statusbar-live" role="status" aria-live="polite" aria-label={connection} title={connection}><span className={`status-dot ${live?'status-dot-live':'status-dot-dead'}`} aria-hidden="true"/><span className="statusbar-live-label">{connection}</span></div>
+    <Tooltip label={details}><span className="statusbar-summary num" title={details}>{summary}</span></Tooltip>
+    <Tooltip label={lastScanAt?`${scan} · ${lastScanAt}`:scan}><Button variant="ghost" className="statusbar-scan" icon={<IconRefresh/>} loading={scanning} disabled={offlineSamples} onClick={onScan} aria-label={scan}><span className="statusbar-scan-label">{scan}</span></Button></Tooltip>
+  </footer>;
 }

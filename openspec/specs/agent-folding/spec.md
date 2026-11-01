@@ -20,3 +20,9 @@ monitoring/proxy/Frida disabled. No paid run or generalization falsely claimed.
 
 Read gotchas G4.1/G4.4/G4.6,G7.1/G7.2/G7.3/G7.6,G11.1/G11.6/G11.9,
 G12.1/G12.2/G12.4/G12.6 and existing team-experiment/benchmark contracts.
+
+
+Phase A presentation amendment: unknown native definitions keep existing identity
+hashes and merge criteria. Their display/export names use a uniquely linked task
+member with role-unknown marking, otherwise numbered unknown Agents. Navigation
+uses Agent 边界评测 / Agent boundary evaluation. Comparison UI respects locale.

@@ -73,3 +73,35 @@ it('clips tools at a new user boundary and leaves late results as pairing contex
     expect(s.reasons).toContain('cross_turn_interval_clipped'); expect(s.rounds.at(-1)?.readyMs).toBe(3621000);
     expect(s.rounds).toHaveLength(4);
 });
+it('d01f injections/replies and repeated goal continuations do not create user-turn round resets',async()=>{
+  const {D01F_USER_MESSAGES,D01F_QUESTION_POSITIONS}=await import('../__fixtures__/user-prompts.js');
+  const i=fixture(),prompt=structuredClone(i.records[0]!),model=structuredClone(i.records[1]!);
+  i.records=[];const at=(n:number)=>new Date(Date.parse(i.t0)+n*1000).toISOString();
+  for(const [index,text] of D01F_USER_MESSAGES.entries()){
+    const n=index+1,r=structuredClone(prompt);r.recordId='main:event:u'+n;r.event!.id='u'+n;r.event!.sequence=n*2;r.event!.startedAt=at(n*2);r.event!.title=text.split('\n')[0]!;i.records.push(r);
+    if(D01F_QUESTION_POSITIONS.includes(n)){const m=structuredClone(model);m.recordId='main:event:m'+n;m.event!.id='m'+n;m.event!.sequence=n*2+1;m.event!.startedAt=at(n*2+1);m.event!.turnKey='same-opaque-key';i.records.push(m);}
+  }
+  for(let n=100;n<175;n++){const r=structuredClone(prompt);r.recordId='goal'+n;r.event!.sequence=n;r.event!.startedAt=at(n*100);r.event!.title='<codex_internal_context source="goal">automatic continuation</codex_internal_context>';i.records.push(r);}
+  const s=buildSnapshot(i);expect(s.rounds).toHaveLength(8);expect(s.rounds.map(r=>r.readyMs)).toEqual(D01F_QUESTION_POSITIONS.map(n=>n*2000));
+  expect(s.bounds![1]).toBe(30000);expect(s.memberWaits.every(w=>w.recordIds.every(id=>!id.startsWith('goal')))).toBe(true);
+});
+it('question reply ends an explicit requested wait inside the same user turn and restarts readiness',()=>{
+  const i=fixture('g8-multiturn');
+  i.records=i.records.slice(0,4);i.records[3]!.native.requestsUserInput=true;i.records[3]!.event!.turnKey='opaque';
+  const reply=structuredClone(i.records[0]!),resume=structuredClone(i.records[3]!),goal=structuredClone(i.records[0]!);
+  reply.recordId='main:event:reply';reply.event!.id='reply';reply.event!.sequence=5;reply.event!.startedAt='2026-10-30T00:00:20.000Z';reply.event!.title='<send_user_message_question_reply>yes</send_user_message_question_reply>';
+  resume.recordId='main:event:resumed';resume.event!.id='resumed';resume.event!.sequence=6;resume.event!.startedAt='2026-10-30T00:00:25.000Z';resume.native.requestsUserInput=null;
+  goal.recordId='goal';goal.event!.sequence=7;goal.event!.startedAt='2026-11-30T00:00:00.000Z';goal.event!.title='<codex_internal_context source="goal">continue</codex_internal_context>';
+  i.records.push(reply,resume,goal);const before=JSON.stringify(i),s=buildSnapshot(i);
+  expect(s.memberWaits).toEqual([{memberId:'main',component:'requested',intervalMs:[15000,20000],recordIds:['main:event:e4','main:event:reply']}]);
+  expect(s.rounds.map(r=>r.id)).toEqual(['main:r1','opaque','opaque@main:event:reply']);expect(s.rounds.map(r=>r.readyMs)).toEqual([0,13000,20000]);
+  expect(s.bounds).toEqual([0,25000]);expect(s.spans.filter(r=>r.kind==='model').some(r=>r.startMs!<20000&&r.endMs!>15000)).toBe(false);
+  expect(report(i).partition?.userWait).toBe(5000);expect(JSON.stringify(i)).toBe(before);
+  i.records[3]!.native.requestsUserInput=null;expect(buildSnapshot(i).memberWaits).toEqual([]);
+});
+it('goal context cannot end an explicit requested wait before the real answer',()=>{
+  const i=fixture('g8-multiturn');i.records[3]!.native.requestsUserInput=true;
+  const goal=structuredClone(i.records[7]!);goal.recordId='goal';goal.event!.id='goal';goal.event!.startedAt='2026-10-30T00:10:00.000Z';goal.event!.title='<codex_internal_context source="goal">continue</codex_internal_context>';
+  i.records.splice(4,0,goal);i.records.forEach((r,index)=>r.event!.sequence=index);
+  expect(buildSnapshot(i).memberWaits).toEqual([{memberId:'main',component:'requested',intervalMs:[15000,3616000],recordIds:['main:event:e4','main:event:e8']}]);
+});

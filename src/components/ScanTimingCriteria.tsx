@@ -1,3 +1,4 @@
+import { Disclosure } from './ui/PageControls.js';
 import type { Locale } from '../i18n.js';
 import { t } from '../i18n.js';
 import type { TraceSession } from '../core/trace-types.js';
@@ -15,7 +16,7 @@ export function ScanTimingCriteria({ left, right, partial, locale, compact = fal
       {right !== undefined && <>; R · {right.dataSource}/{right.provider}/{right.sourceAgent} · {source(right)}</>}</p>
     <p>{t('scan.timing.scope', locale)}</p>
     <p>{t('scan.timing.wallClock', locale)} {t('scan.timing.nonCausal', locale)}</p>
-    <details><summary>{t('scan.timing.formulas', locale)}</summary><p>{t('scan.timing.formulaText', locale)}</p></details>
+    <Disclosure title={<>{t('scan.timing.formulas', locale)}</>}><p>{t('scan.timing.formulaText', locale)}</p></Disclosure>
   </>;
   return <section className={`hint scan-timing-criteria ${compact ? 'scan-timing-compact' : ''}`} aria-label={t('scan.timing.title', locale)}>
     {compact ? <>
@@ -23,7 +24,7 @@ export function ScanTimingCriteria({ left, right, partial, locale, compact = fal
         <span>{left.dataSource}/{left.provider} · {source(left)}</span>
         <span>{t('scan.timing.compactScope', locale)}</span>
       </div>
-      <details><summary>{t('scan.timing.details', locale)}</summary>{explanation}</details>
+      <Disclosure title={<>{t('scan.timing.details', locale)}</>}>{explanation}</Disclosure>
     </> : <><strong>{t('scan.timing.title', locale)}</strong>{explanation}</>}
     {partial === true && <p role="status">{t('scan.timing.partial', locale)}</p>}
   </section>;

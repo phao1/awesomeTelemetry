@@ -61,9 +61,7 @@ export const DIMENSION_METRIC_IDS: Readonly<Record<TeamMetricDimension, readonly
     'totalReasoningTokens',
     'totalCacheReadTokens',
     'totalCacheWriteTokens',
-    'totalCostUsd',
     'coordinationTokens',
-    'costGini',
   ],
   collaboration: [
     'directRatio',
@@ -111,9 +109,6 @@ function flattenMetrics(metrics: TeamMetrics): Map<string, TeamMetricValue> {
     map.set(key, value as TeamMetricValue);
   }
   for (const [key, value] of Object.entries(metrics.cost)) {
-    if (key === 'costCurrency') {
-      continue;
-    }
     map.set(key, value as TeamMetricValue);
   }
   for (const [key, value] of Object.entries(metrics.collaboration)) {

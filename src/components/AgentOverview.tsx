@@ -1,12 +1,19 @@
+import { StackedMeter } from './ui/StackedMeter.js';
+import { Button } from './ui/Button.js';
+import { Checkbox } from './ui/Controls.js';
+import { Accordion, Card, CardBody, StatCard } from './ui/Display.js';
+import { Sparkline } from './charts/Sparkline.js';
+import { formatTokens } from '../core/format.js';
+import { PageSkeleton } from './ui/PageSkeleton.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { t, type Locale, type I18nKey } from '../i18n.js';
 import type { AgentOverviewRow, ProviderKey, SessionIndexEntry, TracePhase } from '../core/trace-types.js';
 import { TRACE_PHASES } from '../core/trace-types.js';
 import { api, ApiError, type AgentOverviewResponse } from '../api/client.js';
-import { EmptyState, Skeleton } from './ui/States.js';
+import { EmptyState } from './ui/States.js';
 import { Table, type TableColumn } from './ui/Table.js';
-import { BarMeter, MetricCard, Sparkline } from './ui/Misc.js';
+import { BarMeter } from './ui/Misc.js';
 import { ProviderBadge } from './ui/Badge.js';
 import { IconAgents, IconCompare, IconCost, IconMessage, IconSessions } from './icons/index.js';
 import { fmtDur } from '../core/session-findings.js';
@@ -38,16 +45,12 @@ function PhaseStackBar({ durations, locale }: { durations: Record<TracePhase, nu
   if (total <= 0) return <div className="agent-phase-stack agent-phase-stack-empty" aria-hidden="true" />;
   const description = TRACE_PHASES.filter(phase => durations[phase] > 0)
     .map(phase => t(`phase.${phase}`, locale) + ': ' + fmtDur(durations[phase])).join(' · ');
-  return <div className="agent-phase-stack" role="img" aria-label={t('agent.phaseDist', locale) + ': ' + description}>
-    {TRACE_PHASES.filter(phase => durations[phase] > 0).map(phase => <div key={phase} className="agent-phase-stack-seg"
-      style={{ width: (durations[phase] / total) * 100 + '%', background: 'var(--phase-' + phase + ')' }}
-      title={t(`phase.${phase}`, locale) + ' · ' + fmtDur(durations[phase])} />)}
-  </div>;
+  return <StackedMeter className="agent-phase-stack" segmentClassName="agent-phase-stack-seg" label={t('agent.phaseDist',locale)+': '+description} parts={TRACE_PHASES.map(phase=>({label:t(`phase.${phase}`,locale)+' · '+fmtDur(durations[phase]),value:durations[phase],color:'var(--phase-'+phase+')'}))}/>;
+
 }
 
 function PhaseDetails({ row, locale }: { row: AgentOverviewRow; locale: Locale }): React.JSX.Element {
-  return <details className="agent-card-phases">
-    <summary>{t('agent.phaseBreakdown', locale)}</summary>
+  return <div className="agent-card-phases"><Accordion title={t('agent.phaseBreakdown', locale)}>
     <p className="hint">{t('agent.phaseBasis', locale)}</p>
     <ul className="agent-card-phase-list">
       {TRACE_PHASES.map(phase => <li key={phase}>
@@ -55,7 +58,7 @@ function PhaseDetails({ row, locale }: { row: AgentOverviewRow; locale: Locale }
         <span>{t(`phase.${phase}`, locale)}</span><span className="mono">{fmtDur(row.durationByPhase[phase])}</span>
       </li>)}
     </ul>
-  </details>;
+  </Accordion></div>;
 }
 
 function RecentSessions({ row, recent, locale, onSelectSession, onBrowseSessions }: {
@@ -66,14 +69,14 @@ function RecentSessions({ row, recent, locale, onSelectSession, onBrowseSessions
     <h3>{t('agent.recentLoaded', locale)} · {recent.length} / {fmtNum(row.sessionCount)}</h3>
     <p className="hint">{t('agent.indexScope', locale)}</p>
     {recent.length === 0 ? <p className="hint">{t('agent.noLoadedMatch', locale)}</p> : recent.map(session =>
-      <button key={session.id} type="button" className="overview-expand-row" disabled={onSelectSession === undefined}
+      <Button key={session.id} type="button" className="overview-expand-row" disabled={onSelectSession === undefined}
         onClick={() => onSelectSession?.(session.id)}>
         <span className="overview-session-title">{session.title || session.id}<span className="mono hint">{session.id}</span></span>
         <time className="mono hint" dateTime={session.startedAt}>{session.startedAt.slice(0, 16).replace('T', ' ')} UTC</time>
         <span className="mono">{fmtNum(session.eventCount)} {t('agent.events', locale)}</span>
-      </button>)}
-    {onBrowseSessions !== undefined && <button type="button" className="btn ui-btn-sm"
-      onClick={() => onBrowseSessions(row.provider)}>{t('agent.browseProvider', locale)} · {row.provider}</button>}
+      </Button>)}
+    {onBrowseSessions !== undefined && <Button type="button" className="ui-btn ui-btn-sm"
+      onClick={() => onBrowseSessions(row.provider === 'opentelemetry' ? undefined : row.provider)}>{t('agent.browseProvider', locale)} · {row.provider}</Button>}
   </div>;
 }
 
@@ -146,11 +149,11 @@ export function AgentOverview({ locale, load, sessions = [], onSelectSession, on
   const renderRecent = (row: AgentOverviewRow): React.JSX.Element => <RecentSessions row={row} recent={recent(row)} locale={locale}
     onSelectSession={onSelectSession} onBrowseSessions={onBrowseSessions} />;
   const ratio = (value: number | null): React.JSX.Element => <span className="agent-number-meter">
-    <span className="mono">{pct(value)}</span>{value !== null && <BarMeter value={value} max={1} tone="neutral" />}
+    <span className="mono">{pct(value)}</span>{value !== null && <BarMeter value={value} max={1} />}
   </span>;
 
   const columns: Array<TableColumn<AgentOverviewRow>> = [
-    { key: 'compare', label: t('agent.selectColumn', locale), render: row => <input type="checkbox" aria-label={selectionName(row)}
+    { key: 'compare', label: t('agent.selectColumn', locale), render: row => <Checkbox aria-label={selectionName(row)}
       checked={compareSelection.includes(overviewGroupKey(row))} onChange={() => toggleCompare(overviewGroupKey(row))} /> },
     { key: 'provider', label: t('session.provider', locale), sortable: true, render: row => <div className="agent-provider-cell">
       <span><ProviderBadge provider={row.provider} locale={locale} /> <strong>{name(row)}</strong></span>
@@ -164,63 +167,63 @@ export function AgentOverview({ locale, load, sessions = [], onSelectSession, on
         buckets.set(day, (buckets.get(day) ?? 0) + session.eventCount);
       }
       return <span className="agent-number-meter"><span className="mono">{fmtNum(row.eventCount)}</span>
-        {buckets.size > 1 && <span title={t('agent.sparkScope', locale)}><Sparkline points={[...buckets.values()]} width={64} height={16} label={t('agent.sparkScope', locale)} /></span>}
+        {buckets.size > 1 && <span title={t('agent.sparkScope', locale)}><Sparkline series={[{color:'var(--chart-1)',label:t('agent.sparkScope',locale),points:[...buckets.values()].map(value=>({value}))}]} width={64} height={16}/></span>}
       </span>;
     } },
     { key: 'tokenTotal', label: t('agent.tokens', locale), sortable: true, align: 'right', render: row => <span className="agent-number-meter">
-      <span className="mono">{fmtNum(row.tokenTotal)}</span><BarMeter value={row.tokenTotal} max={maxTokens} tone="neutral" />
+      <span className="mono">{fmtNum(row.tokenTotal)}</span><BarMeter value={row.tokenTotal} max={maxTokens} />
     </span> },
+    {key:'cacheHitRate',label:locale==='zh'?'缓存命中':'Cache hit',sortable:true,align:'right',render:row=><span>{row.cacheHitRate==null?'—':(row.cacheHitRate*100).toFixed(1)+'%'}{row.cacheKnownMembers<row.cacheTotalMembers?` · ${locale==='zh'?'部分':'Partial'} (${row.cacheKnownMembers}/${row.cacheTotalMembers} ${locale==='zh'?'成员':'members'})`:''}</span>},
     { key: 'verificationCoverage', label: t('agent.verification', locale), sortable: true, align: 'right', render: row => ratio(row.verificationCoverage) },
     { key: 'errorRate', label: t('agent.errorRate', locale), sortable: true, align: 'right', render: row => ratio(row.errorRate) },
     { key: 'debugEntryRate', label: t('agent.debugRate', locale), sortable: true, align: 'right', render: row => <span className="mono">{pct(row.debugEntryRate)}</span> },
     { key: 'avgToolDurationMs', label: t('agent.toolDuration', locale), sortable: true, align: 'right', render: row => <span className="mono">{duration(row.avgToolDurationMs)}</span> },
   ];
 
-  const retry = <button type="button" className="btn ui-btn-sm" onClick={() => setRetryKey(key => key + 1)}>{t('common.retry', locale)}</button>;
+  const retry = <Button type="button" className="ui-btn ui-btn-sm" onClick={() => setRetryKey(key => key + 1)}>{t('common.retry', locale)}</Button>;
   if (error !== null) return <section className="overview"><div className="ui-error" role="alert">
     <code>{error.code}</code><p>{t(error.key, locale)}</p>{error.detail !== undefined && <p>{error.detail}</p>}{retry}
   </div></section>;
   if (snapshot === null) return <section className="overview" aria-label={t('view.agent', locale)}>
-    <Skeleton variant="row" count={8} /><button type="button" className="btn ui-btn-sm" onClick={() => cancelRead.current?.()}>{t('agent.cancelWaiting', locale)}</button>
+    <PageSkeleton locale={locale} variant="table" /><Button type="button" className="ui-btn ui-btn-sm" onClick={() => cancelRead.current?.()}>{t('agent.cancelWaiting', locale)}</Button>
   </section>;
   if (rows.length === 0) return <section className="overview"><EmptyState icon={<IconAgents />} title={t('agent.emptyTitle', locale)}
     description={t('agent.emptyDescription', locale)} action={<div className="agent-toolbar">{retry}{onBrowseSessions !== undefined &&
-      <button type="button" className="btn ui-btn-sm" onClick={() => onBrowseSessions()}>{t('agent.browseSessions', locale)}</button>}</div>} /></section>;
+      <Button type="button" className="ui-btn ui-btn-sm" onClick={() => onBrowseSessions()}>{t('agent.browseSessions', locale)}</Button>}</div>} /></section>;
 
   return <section className={'overview overview-' + viewMode} aria-label={t('view.agent', locale)}>
     <header className="agent-overview-header">
       <div><h2>{t('view.agent', locale)}</h2><p className="hint">{t('agent.scope', locale)}</p></div>
-      <button type="button" className="btn ui-btn-sm" onClick={() => { setSnapshot(null); setRetryKey(key => key + 1); }}>{t('common.refresh', locale)}</button>
+      <Button type="button" className="ui-btn ui-btn-sm" onClick={() => { setSnapshot(null); setRetryKey(key => key + 1); }}>{t('common.refresh', locale)}</Button>
     </header>
     <div className="overview-kpis">
-      <MetricCard icon={<IconSessions />} label={t('agent.sessions', locale)} value={fmtNum(totals.sessions)} tone="neutral" />
-      <MetricCard icon={<IconAgents />} label={t('agent.groups', locale)} value={fmtNum(totals.groups)} tone="neutral" />
-      <MetricCard icon={<IconMessage />} label={t('agent.events', locale)} value={fmtNum(totals.events)} tone="neutral" />
-      <MetricCard icon={<IconCost />} label={t('agent.tokens', locale)} value={fmtNum(totals.tokens)} tone="neutral" />
+      <StatCard icon={<IconSessions />} label={t('agent.sessions', locale)} value={fmtNum(totals.sessions)} />
+      <StatCard icon={<IconAgents />} label={t('agent.groups', locale)} value={fmtNum(totals.groups)} />
+      <StatCard icon={<IconMessage />} label={t('agent.events', locale)} value={fmtNum(totals.events)} />
+      <StatCard icon={<IconCost />} label={t('agent.tokens', locale)} value={formatTokens(totals.tokens)} />
     </div>
-    <details className="agent-methodology">
-      <summary>{t('agent.methodology', locale)}</summary>
+    <div className="agent-methodology"><Accordion title={t('agent.methodology', locale)}>
       <ul>{(['agent.groupBasis', 'agent.ratioBasis', 'agent.toolBasis', 'agent.phaseBasis', 'agent.qualityLimit'] as const).map(key => <li key={key}>{t(key, locale)}</li>)}</ul>
-    </details>
+    </Accordion></div>
     <div className="agent-toolbar">
       <div className="agent-view-toggle" role="group" aria-label={t('agent.viewMode', locale)}>
-        {(['table', 'cards'] as const).map(mode => <button key={mode} type="button" className={'timeline-chip' + (viewMode === mode ? ' timeline-chip-on' : '')}
-          aria-pressed={viewMode === mode} onClick={() => setViewMode(mode)}>{t(mode === 'table' ? 'agent.viewTable' : 'agent.viewCards', locale)}</button>)}
+        {(['table', 'cards'] as const).map(mode => <Button key={mode} type="button" className={'timeline-chip' + (viewMode === mode ? ' timeline-chip-on' : '')}
+          aria-pressed={viewMode === mode} onClick={() => setViewMode(mode)}>{t(mode === 'table' ? 'agent.viewTable' : 'agent.viewCards', locale)}</Button>)}
       </div>
-      {(['avgToolDurationMs', 'tokenTotal', 'errorRate', 'verificationCoverage'] as const).map((key, index) => <button key={key} type="button"
+      {(['avgToolDurationMs', 'tokenTotal', 'errorRate', 'verificationCoverage'] as const).map((key, index) => <Button key={key} type="button"
         className={'timeline-chip' + (sort?.key === key ? ' timeline-chip-on' : '')} aria-pressed={sort?.key === key}
         onClick={() => setSort({ key, direction: key === 'tokenTotal' || key === 'verificationCoverage' ? 'desc' : 'asc' })}>
         {t((['agent.sortDuration', 'agent.sortTokens', 'agent.sortError', 'agent.sortVerify'] as const)[index]!, locale)}
-      </button>)}
-      {sort !== null && <button type="button" className="btn ui-btn-sm" onClick={() => setSort(null)}>{t('agent.resetSort', locale)}</button>}
+      </Button>)}
+      {sort !== null && <Button type="button" className="ui-btn ui-btn-sm" onClick={() => setSort(null)}>{t('agent.resetSort', locale)}</Button>}
       <span className="hint agent-freshness">{t(snapshot.cached ? 'agent.cached' : 'agent.fresh', locale)} · {t('agent.sourceStamp', locale)} <time dateTime={snapshot.stamp}>{snapshot.stamp}</time></span>
     </div>
     <div className="agent-toolbar">
       <p className="hint">{t('agent.selectHint', locale)} · {compareSelection.length}/2 · {t('agent.compareBasis', locale)}</p>
-      {compareSelection.length === 2 && onCompareProviders !== undefined && <button type="button" className="btn compare-float-btn" onClick={() => {
+      {compareSelection.length === 2 && onCompareProviders !== undefined && <Button type="button" className="ui-btn compare-float-btn" onClick={() => {
         const pair = compareSelection.map(key => rows.find(row => overviewGroupKey(row) === key));
-        if (pair[0] !== undefined && pair[1] !== undefined) onCompareProviders(pair[0].provider, pair[1].provider, [pair[0].sourceAgent, pair[1].sourceAgent]);
-      }}><IconCompare />{t('agent.compareSelected', locale)}</button>}
+        if (pair[0] !== undefined && pair[1] !== undefined && pair[0].provider !== 'opentelemetry' && pair[1].provider !== 'opentelemetry') onCompareProviders(pair[0].provider, pair[1].provider, [pair[0].sourceAgent, pair[1].sourceAgent]);
+      }}><IconCompare />{t('agent.compareSelected', locale)}</Button>}
     </div>
     {viewMode === 'table' ? <div className="agent-table-region" role="region" tabIndex={0} aria-label={t('agent.tableLabel', locale)}>
       <p className="hint">{t('agent.tableLabel', locale)}</p>
@@ -235,12 +238,12 @@ export function AgentOverview({ locale, load, sessions = [], onSelectSession, on
       {sortedRows.map(row => {
         const key = overviewGroupKey(row);
         const metrics = [
-          [t('agent.sessions', locale), fmtNum(row.sessionCount)], [t('agent.tokens', locale), fmtNum(row.tokenTotal)],
+          [t('agent.sessions', locale), fmtNum(row.sessionCount)], [t('agent.tokens', locale), fmtNum(row.tokenTotal)], [locale==='zh'?'缓存命中':'Cache hit',row.cacheHitRate==null?'—':(row.cacheHitRate*100).toFixed(1)+'%'+(row.cacheKnownMembers<row.cacheTotalMembers?` · ${locale==='zh'?'部分':'Partial'} (${row.cacheKnownMembers}/${row.cacheTotalMembers} ${locale==='zh'?'成员':'members'})`:'')],
           [t('agent.events', locale), fmtNum(row.eventCount)], [t('agent.avgDuration', locale), duration(row.avgWallClockMs)],
           [t('agent.verification', locale), pct(row.verificationCoverage)], [t('agent.errorRate', locale), pct(row.errorRate)],
         ];
-        return <article key={key} className={'agent-card' + (compareSelection.includes(key) ? ' agent-card-on' : '')}>
-          <header className="agent-card-head"><input type="checkbox" className="agent-card-compare" aria-label={selectionName(row)}
+        return <Card key={key} className={'agent-card' + (compareSelection.includes(key) ? ' agent-card-on' : '')}>
+          <CardBody><header className="agent-card-head"><Checkbox className="agent-card-compare" aria-label={selectionName(row)}
             checked={compareSelection.includes(key)} onChange={() => toggleCompare(key)} /><ProviderBadge provider={row.provider} locale={locale} />
             <h3 className="agent-card-name">{name(row)}</h3><span className="mono agent-card-provider">{row.provider}</span>
           </header>
@@ -250,9 +253,9 @@ export function AgentOverview({ locale, load, sessions = [], onSelectSession, on
             <span>{t('agent.debugRate', locale)}: {pct(row.debugEntryRate)}</span>
             <span>{t('agent.tokenParts', locale)}: {fmtNum(row.tokenInput)} / {fmtNum(row.tokenOutput)}</span></div>
           <PhaseDetails row={row} locale={locale} />
-          <button type="button" className="btn ui-btn-sm" aria-expanded={expanded === key} onClick={() => toggleExpand(key)}>{expandName(row)}</button>
+          <Button type="button" className="ui-btn ui-btn-sm" aria-expanded={expanded === key} onClick={() => toggleExpand(key)}>{expandName(row)}</Button>
           {expanded === key && renderRecent(row)}
-        </article>;
+        </CardBody></Card>;
       })}
     </div>}
   </section>;

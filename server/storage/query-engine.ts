@@ -1,3 +1,4 @@
+import { attachTelemetry } from './telemetry.js';
 import type { Database } from 'better-sqlite3';
 
 import type {
@@ -576,6 +577,7 @@ export function getEventDetail(
     return null;
   }
   const event = mapEvent(row, true) as TraceEvent;
+  attachTelemetry(db, [event]);
   if (!includeRaw) {
     return event;
   }

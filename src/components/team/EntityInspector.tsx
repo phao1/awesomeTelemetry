@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button.js';
 /**
  * add-agent-team-observability §8.7 / §8.8 / §8.13 / §8.14 —
  * EntityInspector：实体检查器组件。
@@ -521,20 +522,20 @@ export function EntityInspector({
       {selection.kind === 'activity' && (
         <div className="team-inspector-body">
           <div className="team-inspector-body-actions">
-            <button
+            <Button
               type="button"
-              className="btn ui-btn-sm"
+              className="ui-btn-sm"
               onClick={() => handleLoadBody('body')}
             >
               {tt(TT.loadBody, locale)}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="btn ui-btn-sm"
+              className="ui-btn-sm"
               onClick={() => handleLoadBody('raw')}
             >
               {tt(TT.loadRaw, locale)}
-            </button>
+            </Button>
           </div>
           <BodyDetail
             bodyDetail={bodyDetail}

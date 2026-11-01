@@ -3,8 +3,7 @@
 .health-drawer h2{font-size:var(--text-lg);margin:0;flex:1;min-width:0}.health-drawer h3{font-size:var(--text-md)}.health-drawer h4{font-size:inherit}
 .health-drawer button,.health-drawer a,.health-drawer select{max-width:100%;white-space:normal;overflow-wrap:anywhere}.health-drawer label{display:flex;flex-wrap:wrap;gap:var(--space-2)}
 .health-drawer :is(button,a,select,summary):focus-visible{box-shadow:var(--focus-ring)}
-.health-report{font-size:var(--user-font-size);line-height:1.6}.health-report section{margin-block:var(--space-4)}
-.health-report table{width:100%;table-layout:fixed;border-collapse:collapse}.health-report th,.health-report td{padding:var(--space-2);border:1px solid var(--border-default);text-align:start;vertical-align:top;overflow-wrap:anywhere}
+.health-report{font-size:var(--text-base);line-height:1.6}.health-report section{margin-block:var(--space-4)}
 .health-report dl{margin:var(--space-2) 0}.health-report dd{margin-inline-start:var(--space-3)}.health-report details{margin-block:var(--space-2)}
 .health-card{border:1px solid var(--border-default);border-radius:var(--radius-md);padding:var(--space-3);background:var(--canvas-subtle)}
 .health-card h4{margin-top:0}.health-report p,.health-report li{overflow-wrap:anywhere}.health-report ul{padding-inline-start:var(--space-5)}
@@ -13,3 +12,39 @@
 @media(max-width:48rem){.health-drawer{position:fixed;inset:0;width:100%;border:0}.task-context-header:has([aria-controls="task-health-drawer"]){flex-wrap:wrap}}
 
 .health-toolbar{font-size:var(--text-base)}.health-metric-key{color:var(--fg-muted);font-size:var(--text-sm)}
+/* F3 report sheet: overlay ownership and focus management are supplied by Sheet. */
+.health-drawer.ui-drawer{position:fixed;inset:0 0 0 auto;width:min(calc(var(--space-10) * 16),100vw);max-width:100vw;padding:0;z-index:var(--z-modal);background:var(--canvas-overlay);box-shadow:var(--shadow-lg);overflow:hidden}
+.health-drawer .ui-drawer-header{position:sticky;top:0;background:var(--canvas-overlay);z-index:var(--z-sticky)}
+.health-drawer .ui-drawer-body{overflow:auto;padding:var(--space-4);min-width:0}
+.health-drawer :is(button,a,select){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+.health-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(calc(var(--space-10) * 3),1fr));gap:var(--space-3);margin-block:var(--space-3)}
+.health-report .health-finding{margin-block:var(--space-3);background:var(--canvas-raised)}
+.health-report .ui-card-header{align-items:start}
+.health-report .ui-card-header h2{font-size:var(--text-sm)}
+.health-report .ui-key-value dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.health-report .ui-accordion{margin-block:var(--space-3)}
+.health-report .ui-card-body{font-variant-numeric:tabular-nums}
+.health-request-list{display:flex;flex-direction:column;align-items:stretch;max-height:calc(var(--space-10) * 5);overflow:auto;margin-block:var(--space-3)}
+.health-request-list button{justify-content:start}
+.health-sheet-controls{position:sticky;top:0;display:flex;align-items:center;gap:var(--space-2);justify-content:space-between;background:var(--canvas-overlay);padding-block:var(--space-3);z-index:var(--z-sticky)}
+.health-sheet-controls>.ui-choice{min-width:0}
+/* Review: preparation is one compact row, independent of report severity KPIs. */
+.health-preparation{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin-block:var(--space-3);font-size:var(--text-xs);color:var(--fg-muted)}
+.health-preparation>.ui-meter{width:calc(var(--space-10) * 2);flex-shrink:0}
+.health-preparation>span:first-child{white-space:nowrap}
+.health-sheet-controls{flex-wrap:wrap;justify-content:flex-start}
+.health-sheet-controls>.ui-choice{flex:1}
+.health-history-list{list-style:none;padding:0!important;display:grid;gap:var(--space-2)}
+.health-history-list>li>.ui-btn{width:100%;height:auto;display:flex;align-items:flex-start;flex-direction:column;gap:var(--space-2);padding:var(--space-3);text-align:left;white-space:normal}
+.health-history-list>li>.ui-btn[aria-current=true]{background:var(--accent-subtle)}
+.health-history-title{white-space:nowrap;text-overflow:ellipsis;overflow:hidden;max-width:100%;font-variant-numeric:tabular-nums}
+.health-history-meta{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);width:100%;min-width:0;flex-wrap:wrap;font-size:var(--text-xs);color:var(--fg-muted)}
+.health-history-meta>span:first-child{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.health-history-severity{display:flex;gap:var(--space-1);align-items:center}
+.health-severity-warning .ui-stat-value{color:var(--danger-fg)}
+.health-severity-warning>.ui-card{background:var(--danger-subtle)}
+.health-severity-notice .ui-stat-value{color:var(--attention-fg)}
+.health-severity-notice>.ui-card{background:var(--attention-subtle)}
+.health-severity-info .ui-stat-value{color:var(--neutral-fg)}
+.health-severity-info>.ui-card{background:var(--neutral-subtle)}
+.health-report>.ui-callout,.health-report section>.ui-callout{margin-block:var(--space-3)}

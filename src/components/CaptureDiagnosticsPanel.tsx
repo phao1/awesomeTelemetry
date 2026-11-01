@@ -1,3 +1,6 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Disclosure } from './ui/PageControls.js';
 import { useId, useMemo, useState } from 'react';
 import { deriveCaptureDiagnostics } from '../core/capture-diagnostics.js';
 import type { CaptureDiagnosticFinding } from '../core/capture-diagnostics.js';
@@ -17,7 +20,7 @@ const COPY = {
     fact: 'Observed facts', factScope: 'Only retained metadata in this selected comparison is used: proxy timing offsets and encoded original request SHA256/byte references. No original file is reread or verified here.',
     derived: 'Derived finding', findings: 'Threshold-derived observations and encoded-request candidates', sources: 'Expand exact source evidence', baseOpen: 'Open base capture', targetOpen: 'Open target capture',
     scope: 'Slow is an observed proxy offset at or above the visible threshold, not pure model inference. Missing or invalid timing remains unknown, not zero or evidence of a fast call.',
-    repeatScope: 'Matching encoded-body metadata does not prove headers, credentials, decoded semantics, retries, duplicate charges or correctness are equal. These are distinct retained records, not a new billing identity.',
+    repeatScope: 'Matching encoded-body metadata does not prove headers, credentials, decoded semantics, retries or correctness are equal. These are distinct retained records, not a new request identity.',
     same: 'Candidate: matching complete encoded request SHA256 and bytes at the same endpoint/protocol.',
     different: 'Encoded request evidence does not match. Retry status remains unknown; different bodies do not prove there was no retry.',
     unavailable: 'Unknown: matching encoded request evidence is unavailable when refs are missing, deleted or incomplete, or endpoint/protocol evidence is insufficient.',
@@ -34,7 +37,7 @@ const COPY = {
     fact: '观测事实', factScope: '仅使用当前选定组合中保留的元数据：代理时序偏移、编码请求原文的 SHA256 与字节数引用；此处不重新读取或验证原文文件。',
     derived: '推导提示', findings: '阈值推导观测与编码请求重复候选', sources: '展开精确来源证据', baseOpen: '打开基线抓包', targetOpen: '打开目标抓包',
     scope: '慢仅表示代理观测偏移达到当前可见阈值，不是模型纯推理耗时。缺失或无效时序仍未知，不补零，也不证明调用很快。',
-    repeatScope: '编码正文元数据相同，不证明 headers、凭据、解码后语义、重试、重复费用或正确率相同；两条记录保持独立，不产生新的计费身份。',
+    repeatScope: '编码正文元数据相同，不证明 headers、凭据、解码后语义、重试或正确率相同；两条记录保持独立，不产生新的请求身份。',
     same: '候选：同一端点及协议下，完整编码请求原文的 SHA256 与字节数相同。',
     different: '编码请求证据不匹配。是否重试仍未知；正文不同不证明没有重试。',
     unavailable: '未知：引用缺失、已删除、不完整或端点及协议证据不足，不能建立编码请求重复候选。',
@@ -58,7 +61,7 @@ export function CaptureDiagnosticsPanel({ data, locale, onOpenRequest }: Props):
   const advice = (finding: CaptureDiagnosticFinding): string => finding.code === 'slow_network' ? copy.networkAdvice : finding.code === 'slow_first_content' ? copy.contentAdvice : copy.repeatAdvice;
   return <section aria-label={copy.title}>
     <h3>{copy.title}</h3>
-    <label>{copy.threshold} <input type="text" inputMode="numeric" value={input} aria-invalid={threshold === null} aria-describedby={threshold === null ? errorId : undefined} onChange={event => setInput(event.target.value)} /></label>
+    <label>{copy.threshold} <Input type="text" inputMode="numeric" value={input} aria-invalid={threshold === null} aria-describedby={threshold === null ? errorId : undefined} onChange={event => setInput(event.target.value)} /></label>
     <p className="hint">{copy.validRange}</p>
     <p role="status" data-effective-threshold>{copy.effective}: {model === null ? copy.none : `${model.thresholdMs} ms`}</p>
     {threshold === null && <p id={errorId} role="alert">{copy.invalid}</p>}
@@ -68,11 +71,11 @@ export function CaptureDiagnosticsPanel({ data, locale, onOpenRequest }: Props):
       <h4>{copy.findings}</h4>
       {model.findings.length === 0 ? <p role="status">{copy.empty}</p> : <ol>{model.findings.slice(0, 5).map((finding, index) => <li key={`${finding.code}:${index}`} data-diagnostic-finding={finding.code}>
         <p>{copy.derived}: {copy[finding.code]}</p>
-        <details><summary>{copy.sources}</summary><ul>{finding.evidence.map((evidence, evidenceIndex) => <li key={`${evidence.side}:${evidence.path}:${evidenceIndex}`} style={{ overflowWrap: 'anywhere' }}>
+        <Disclosure  title={<>{copy.sources}</>}><ul>{finding.evidence.map((evidence, evidenceIndex) => <li key={`${evidence.side}:${evidence.path}:${evidenceIndex}`} style={{ overflowWrap: 'anywhere' }}>
           <code>{evidence.path}</code> = <code>{evidence.value}</code>
           <p className="mono">{data[evidence.side].request.requestId}</p>
-          <button className="btn" type="button" onClick={() => onOpenRequest(evidence.requestId)}>{evidence.side === 'base' ? copy.baseOpen : copy.targetOpen} #{evidence.requestId}</button>
-        </li>)}</ul></details>
+          <Button  type="button" onClick={() => onOpenRequest(evidence.requestId)}>{evidence.side === 'base' ? copy.baseOpen : copy.targetOpen} #{evidence.requestId}</Button>
+        </li>)}</ul></Disclosure>
         <p className="hint">{copy.suggestion}: {advice(finding)}</p>
       </li>)}</ol>}
     </>}

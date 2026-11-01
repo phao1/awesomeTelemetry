@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button.js';
 /**
  * add-agent-team-observability §9.1–9.9 —
  * TeamCompareView：两 run 比较视图（独立组件，被 TeamShell compare panel 复用）。
@@ -697,15 +698,15 @@ export function TeamCompareView({
           />
           {t('team.compareManualBasis', locale)}
         </label>
-        <button
+        <Button
           type="button"
-          className="btn team-compare-view-run-btn"
+          className="team-compare-view-run-btn"
           onClick={onRunCompare}
           disabled={!canCompare}
           aria-disabled={!canCompare}
         >
           {t('team.compareRun', locale)}
-        </button>
+        </Button>
       </div>
       {sameId && (
         <p className="team-compare-view-same-id" role="alert">

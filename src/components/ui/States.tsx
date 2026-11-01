@@ -1,7 +1,9 @@
-import { ta } from '../../i18n.js';
+import { useUiLocale, useUiTranslate } from './Locale.js';
+import { t, type Locale } from '../../i18n.js';
 import { useEffect, type ReactNode } from 'react';
 
 import { IconClose } from '../icons/index.js';
+import { Portal } from './portal.js';
 import { Button } from './Button.js';
 
 export interface SkeletonProps {
@@ -11,6 +13,7 @@ export interface SkeletonProps {
 
 /** REQ-006：loading 态骨架。行骨架高度 = 真实行高（--row-lg，CLS=0）。 */
 export function Skeleton({ variant = 'text', count = 1 }: SkeletonProps): React.JSX.Element {
+  const ta=useUiTranslate();
   return (
     <div
       role="status"
@@ -48,17 +51,19 @@ export interface ErrorStateProps {
   code: string;
   message: string;
   onRetry?: () => void;
+  locale?: Locale;
 }
 
 /** REQ-006：error 态 —— 错误码 + 文案 + 重试按钮；MUST NOT 静默吞错。 */
-export function ErrorState({ code, message, onRetry }: ErrorStateProps): React.JSX.Element {
+export function ErrorState({ code, message, onRetry, locale }: ErrorStateProps): React.JSX.Element {
+  const activeLocale=useUiLocale(locale);
   return (
     <div className="ui-error" role="alert">
       <span className="ui-error-code">{code}</span>
       <div className="ui-error-message">{message}</div>
       {onRetry !== undefined && (
         <Button variant="default" size="sm" onClick={onRetry}>
-          retry
+          {t('state.retry', activeLocale)}
         </Button>
       )}
     </div>
@@ -72,25 +77,26 @@ export interface ToastProps {
   title: string;
   message?: string;
   onDismiss: () => void;
-  /** REQ-007：自动消失 4s */
+  /** REQ-007：自动消失 3s */
   autoDismissMs?: number;
 }
 
-/** REQ-007：Toast。4s 自动消失，可堆叠（容器 .ui-toast-stack）。 */
+/** REQ-007：Toast。3s 自动消失，可堆叠（容器 .ui-toast-stack）。 */
 export function Toast({
   tone = 'info',
   title,
   message,
   onDismiss,
-  autoDismissMs = 4000,
+  autoDismissMs = 3000,
 }: ToastProps): React.JSX.Element {
+  const ta=useUiTranslate();
   useEffect(() => {
     const timer = setTimeout(onDismiss, autoDismissMs);
     return () => clearTimeout(timer);
   }, [autoDismissMs, onDismiss]);
 
   return (
-    <div className={`ui-toast ui-toast-${tone}`} role="status" aria-live="polite">
+    <Portal region="toasts"><div className={`ui-toast ui-toast-${tone}`} role="status" aria-live="polite">
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 'var(--weight-medium)' }}>{title}</div>
         {message !== undefined && <div style={{ color: 'var(--fg-muted)' }}>{message}</div>}
@@ -98,6 +104,6 @@ export function Toast({
       <button type="button" className="ui-icon-btn ui-btn-sm" aria-label={ta('a11y.dismiss')} onClick={onDismiss}>
         <IconClose size={12} />
       </button>
-    </div>
+    </div></Portal>
   );
 }

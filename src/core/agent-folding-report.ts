@@ -14,12 +14,12 @@ export function buildFoldingComparisonReport(a: FoldingMetricRun[], b: FoldingMe
   sections.push({ title: '2 · 职责去向', headers: ['状态'], rows: [['未知：指标汇总不证明职责已被替代；请检查边界证据及独立验证。']] });
   sections.push({ title: '3 · 调用链', headers, rows: [...metricRows('chains'), ['评测覆盖的生产链', '未知', '未知', '不可比', '不可比', '需导入覆盖该生产范围的基线评测；关联完整度不等于调用链覆盖']] });
   sections.push({ title: '4 · 过程与时延', headers, rows: metricRows('process') });
-  sections.push({ title: '5 · Token 与开销', headers, rows: metricRows('tokens') });
+  sections.push({ title: '5 · Token 与缓存命中率', headers, rows: metricRows('tokens') });
   const keys = Object.keys(foldingRunMetrics(a[0]!)) as Array<keyof ReturnType<typeof foldingRunMetrics>>;
   sections.push({ title: '6 · 逐次明细', headers: ['组', '运行', '产品模式', '环境', '模型', '执行机', '原表合并缓存', '原表总量（口径未核实）', '原表命中率（含写入）', ...keys], rows: [...a.map(r => ['A', r] as const), ...b.map(r => ['B', r] as const)].map(([g, r]) => [g, r.id, r.labels.productMode ?? '未知', r.labels.environment ?? '未知', r.labels.model ?? '未知', r.labels.host ?? '未知', n(r.recorded?.cacheCombined ?? null), n(r.recorded?.reportedTokens ?? null), n(r.recorded?.reportedCacheHit ?? null), ...keys.map(k => n(foldingRunMetrics(r)[k]))]) });
   const title = 'Agent 架构对比报告';
   const conclusion = report.confounded ? `有混杂：${report.changes.join('、')}` : '描述性对比；不能据此证明单一改动的因果收益';
-  const notes = [conclusion, report.regressions === null ? '无法判断有没有用例从通过变失败' : `逐用例回归：${report.regressions.join('、') || '未观察到'}`, ...report.limitations, '未设置单价，不显示费用。'];
+  const notes = [conclusion, report.regressions === null ? '无法判断有没有用例从通过变失败' : `逐用例回归：${report.regressions.join('、') || '未观察到'}`, ...report.limitations];
   let result: string;
   if (format === 'html') result = buildComparisonShell(title, `<h1>${html(title)}</h1>${notes.map(x => `<p>${html(x)}</p>`).join('')}${sections.map(s => `<h2>${html(s.title)}</h2><table><thead><tr>${s.headers.map(h => `<th>${html(h)}</th>`).join('')}</tr></thead><tbody>${s.rows.map(r => `<tr>${r.map(c => `<td>${html(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`).join('')}`);
   else if (format === 'markdown') result = `# ${title}\n\n${notes.map(x => md(x)).join('\n\n')}\n\n` + sections.map(s => `## ${s.title}\n\n| ${s.headers.map(md).join(' | ')} |\n| ${s.headers.map(() => '---').join(' | ')} |\n${s.rows.map(r => `| ${r.map(md).join(' | ')} |`).join('\n')}`).join('\n\n');

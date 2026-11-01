@@ -15,9 +15,9 @@ const rows: AgentOverviewRow[] = [
     eventCount: 10,
     tokenInput: 100,
     tokenOutput: 50,
-    tokenTotal: 150,
-    costUsd: 0.02,
-    pricedSessionCount: 2,
+    cacheHitRate:null,cacheKnownMembers:0,cacheTotalMembers:0,tokenTotal: 150,
+
+
     avgWallClockMs: 1000,
     latestUpdatedAt: '2026-08-01T00:00:00.000Z',
     avgToolDurationMs: 100,
@@ -72,7 +72,7 @@ describe('WB-003 Agent overview evidence and ownership', () => {
     try {
       await act(async () => { await Promise.resolve(); });
       expect(container.querySelector('tbody')?.textContent).toContain('150.0%');
-      expect(container.textContent).toContain('Bars stop at100%; raw values above that remain visible');
+      act(()=>container.querySelector<HTMLButtonElement>('.agent-methodology button')!.click()); expect(container.textContent).toContain('Bars stop at100%; raw values above that remain visible');
       act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Cards')!.click());
       expect(container.querySelector('.agent-card')?.textContent).toContain('150.0%');
     } finally { unmount(); }
@@ -92,11 +92,11 @@ describe('WB-003 Agent overview evidence and ownership', () => {
     const { unmount } = mount(<AgentOverview locale="en" load={async () => ({ rows: [rows[0]!, { ...rows[0]!, sourceAgent: 'Other', sessionCount: 98, errorRate: null, verificationCoverage: null }], stamp: '2026-10-18T00:00:00.000Z', cached: true })} />);
     try {
       await act(async () => { await Promise.resolve(); });
-      const summaries = [...document.querySelectorAll('.overview-kpis .ui-metric-card')].map(el => el.textContent);
+      const summaries = [...document.querySelectorAll('.overview-kpis .ui-card')].map(el => el.textContent);
       expect(summaries).toEqual(expect.arrayContaining([expect.stringContaining('100'), expect.stringContaining('2')]));
       expect(document.body.textContent).not.toMatch(/tool\/s|Fastest|Most stable|faster than|Accuracy|Stability/);
       expect(document.body.textContent).toContain('All-history scan');
-      expect(document.body.textContent).toContain('eligible');
+      act(()=>document.querySelector<HTMLButtonElement>('.agent-methodology button')!.click()); expect(document.body.textContent).toContain('eligible');
     } finally { unmount(); }
   });
   it('times out an abort-ignoring loader, aborts ownership and cannot restore a late success until explicit retry', async () => {
@@ -134,7 +134,7 @@ describe('WB-003 Agent overview evidence and ownership', () => {
 
 describe('REQ-003 Agent 视图', () => {
   it('shows tokens in both table/cards without money totals, columns or pricing coverage',async()=>{
-    const {unmount}=mount(<AgentOverview locale="en" load={async()=>({rows:[{...rows[0]!,costUsd:456789.1234}],stamp:'s1',cached:false})}/>);
+    const {unmount}=mount(<AgentOverview locale="en" load={async()=>({rows:[{...rows[0]!,}],stamp:'s1',cached:false})}/>);
     try {
       await act(async()=>{await Promise.resolve();});expect(document.body.textContent).not.toMatch(/[$¥￥€£]\s*\d/);
       expect([...document.querySelectorAll('th')].map(el=>el.textContent)).not.toContain('Cost');
@@ -245,7 +245,7 @@ describe('REQ-003 Agent 视图', () => {
     unmount();
   });
 
-  it('REQ-107：卡片含 6 指标 + 堆叠 Phase 条 + 阶段分解', async () => {
+  it('REQ-107：卡片含 7 指标 + 堆叠 Phase 条 + 阶段分解', async () => {
     localStorage.setItem(AGENT_VIEW_KEY, 'cards');
     const { html, unmount } = mount(
       <AgentOverview locale="zh" load={async () => ({ rows, stamp: 's1', cached: true })} />,
@@ -254,9 +254,9 @@ describe('REQ-003 Agent 视图', () => {
       await Promise.resolve();
     });
     expect(document.querySelector('.agent-card-grid')).not.toBeNull();
-    expect(document.querySelectorAll('.agent-card-metric').length).toBe(6);
+    expect(document.querySelectorAll('.agent-card-metric').length).toBe(7);
     expect(document.querySelector('.agent-phase-stack')).not.toBeNull();
-    expect(document.querySelectorAll('.agent-card-phase-list li').length).toBe(6);
+    act(()=>document.querySelector<HTMLButtonElement>('.agent-card-phases button')!.click()); expect(document.querySelectorAll('.agent-card-phase-list li').length).toBe(6);
     expect(html()).toContain('阶段分解');
     unmount();
   });
@@ -264,8 +264,8 @@ describe('REQ-003 Agent 视图', () => {
 
 function index(id: string, sourceAgent: string, patch: Partial<SessionIndexEntry> = {}): SessionIndexEntry {
   return { id, sourceAgent, provider: 'codex', title: id, startedAt: '2026-10-18T00:00:00.000Z', updatedAt: '2026-10-18T00:00:00.000Z',
-    status: 'success', cwd: null, eventCount: 2, messageCount: 0, tokenTotal: 3, costUsd: 0, dataSource: 'scan', sourcePath: '/synthetic/session',
-    detailLoaded: false, mergeGroupId: null, hasSystemPrompt: false, tags: [], ...patch };
+    status: 'success', cwd: null, eventCount: 2, messageCount: 0, tokenTotal: 3,  dataSource: 'scan', sourcePath: '/synthetic/session',
+    detailLoaded: false, mergeGroupId: null, costUsd:0,hasSystemPrompt: false, tags: [], ...patch };
 }
 
 describe('Agent overview source-group navigation', () => {
@@ -277,12 +277,12 @@ describe('Agent overview source-group navigation', () => {
       sessions={[index('right-key', 'Codex'), index('wrong-group', 'Other'), index('wrong-source', 'Codex', { dataSource: 'proxy' })]} />);
     try {
       await act(async () => { await Promise.resolve(); });
-      act(() => container.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click());
+      act(() => container.querySelector<HTMLButtonElement>('.agent-table-region button[aria-expanded="false"]')!.click());
       const expanded = container.querySelector('.overview-expand')!;
       expect(expanded.textContent).toContain('right-key');
       expect(expanded.textContent).not.toMatch(/wrong-group|wrong-source/);
       expect(expanded.textContent).toContain('filtered/paged');
-      expect(container.querySelector('td[colspan="10"]')).not.toBeNull();
+      expect(container.querySelector('td[colspan="11"]')).not.toBeNull();
       act(() => container.querySelector<HTMLButtonElement>('.overview-expand-row')!.click());
       expect(selected).toHaveBeenCalledWith('right-key');
       act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Cards')!.click());
@@ -299,7 +299,7 @@ describe('Agent overview source-group navigation', () => {
       sessions={[index('not-a-match', 'Third')]} onCompareProviders={compare} />);
     try {
       await act(async () => { await Promise.resolve(); });
-      act(() => container.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click());
+      act(() => container.querySelector<HTMLButtonElement>('.agent-table-region button[aria-expanded="false"]')!.click());
       expect(container.querySelector('.overview-expand')?.textContent).toContain('does not mean the source has no sessions');
       const boxes = container.querySelectorAll<HTMLInputElement>('tbody input');
       expect(boxes[0]!.getAttribute('aria-label')).toContain('Codex');

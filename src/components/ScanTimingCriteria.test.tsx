@@ -12,8 +12,8 @@ describe('ScanTimingCriteria', () => {
       act(() => root.render(<ScanTimingCriteria left={makeSession('s',{durationSource:'derived'})} partial locale="zh" compact />));
       const summary=host.querySelector('.scan-timing-summary')!;
       expect(summary.textContent).toContain('derived'); expect(summary.textContent).toContain('非网络/模型实测延迟');
-      const details=host.querySelector('.scan-timing-compact > details') as HTMLDetailsElement;
-      expect(details.open).toBe(false); expect(details.textContent).toContain('pureInferenceMs');
+      const details=host.querySelector('.scan-timing-compact > div > .ui-accordion')!;
+      expect(details.querySelector('button')!.getAttribute('aria-expanded')).toBe('false'); expect(details.textContent).toContain('pureInferenceMs');
       expect(host.querySelector('.scan-timing-compact > [role="status"]')).not.toBeNull();
     } finally {act(()=>root.unmount());}
   });

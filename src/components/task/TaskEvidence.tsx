@@ -1,3 +1,6 @@
+import { Skeleton } from '../ui/States.js';
+import { Disclosure } from '../ui/PageControls.js';
+import { Button } from '../ui/Button.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client.js';
 import type { TaskContext, TaskRecord } from '../../core/task-types.js';
@@ -28,7 +31,7 @@ function EvidenceText({ value, locale, size }: { value: unknown; locale: Locale;
     if (bytes + count > 65536) break;
     bytes += count; end += character.length;
   }
-  return <><pre className="task-body-text" style={{ fontSize: size }}>{expanded ? text : text.slice(0, end)}</pre>{end < text.length && !expanded && <><p className="hint">{c.clipped}</p><button type="button" className="btn" onClick={() => setExpanded(true)}>{c.full}</button></>}</>;
+  return <><pre className="task-body-text" style={{ fontSize: size }}>{expanded ? text : text.slice(0, end)}</pre>{end < text.length && !expanded && <><p className="hint">{c.clipped}</p><Button type="button"  onClick={() => setExpanded(true)}>{c.full}</Button></>}</>;
 }
 
 /** Selecting a row is the explicit body-read action. Summary opens its useful
@@ -63,6 +66,7 @@ export function TaskEvidence({ context, record, relatedRecords = [], onSelectRel
   const body = useTaskRead(needsBody ? evidenceRecord.id + (raw ? ':raw' : ':body') : null, read, 10000);
   const paired = useTaskRead(tab === 'summary' && companion ? companion.id + ':body' : null, readCompanion, 10000);
   const event = record.event, turn = record.importedTurn, title = event?.title || `${c.sequence} ${event?.sequence ?? turn?.sequence ?? ''}`;
+  const boundary=event?.telemetry?(locale==='zh'?'遥测来源报告值；内容为脱敏、有界预览，未保存原文。':'Telemetry source-reported values; content is a redacted bounded preview, originals were not retained.'):context.task.origin==='imported'?c.importedBoundary:c.rawBoundary;
   const tool = Boolean(event && ['tool', 'bash', 'file_read', 'file_write', 'test'].includes(event.kind));
   const state = event?.status ?? (turn?.isError === null ? c.statusUnknown : turn?.isError ? c.statusError : c.statusSuccess);
   const inputRead = event?.hasInput || !companion?.event?.hasInput ? body : paired;
@@ -70,7 +74,7 @@ export function TaskEvidence({ context, record, relatedRecords = [], onSelectRel
   const input = field(inputRead.value, 'input'), output = field(outputRead.value, 'output');
   const item = (label: string, value: string | number | null | undefined) => <div><dt>{label}</dt><dd>{value ?? '—'}</dd></div>;
   const boundedWidth = (value: number) => Math.max(280, Math.min(900, value, (panel.current?.parentElement?.clientWidth ?? 1000) * 0.75));
-  const errors = <>{body.error && <div role="alert"><p>{body.error}</p><button type="button" className="btn" onClick={body.retry}>{c.retry}</button></div>}{paired.error && <div role="alert"><p>{paired.error}</p><button type="button" className="btn" onClick={paired.retry}>{c.retry}</button></div>}</>;
+  const errors = <>{body.error && <div role="alert"><p>{body.error}</p><Button type="button"  onClick={body.retry}>{c.retry}</Button></div>}{paired.error && <div role="alert"><p>{paired.error}</p><Button type="button"  onClick={paired.retry}>{c.retry}</Button></div>}</>;
   return <aside ref={panel} className={`task-evidence ${wide ? 'is-wide' : ''}`} aria-label={c.inspect} style={width !== null && !wide ? { width } : undefined}>
     <div className="task-evidence-resize" role="separator" tabIndex={0} aria-orientation="vertical" aria-label={locale === 'zh' ? '调整详情宽度' : 'Resize evidence'} aria-valuemin={280} aria-valuemax={900} aria-valuenow={Math.round(width ?? 500)}
       onKeyDown={e => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return; e.preventDefault(); setWide(false); setWidth(boundedWidth(e.key === 'Home' ? 280 : e.key === 'End' ? 900 : (width ?? panel.current?.clientWidth ?? 500) + (e.key === 'ArrowLeft' ? 24 : -24))); }}
@@ -81,17 +85,17 @@ export function TaskEvidence({ context, record, relatedRecords = [], onSelectRel
     <div className="task-evidence-content" role="tabpanel">
       <div className="task-evidence-quick-meta"><span>{record.memberName}</span><span>{event?.kind ?? 'TraceLog'} · {state}</span><span className="task-text-controls"><button type="button" aria-label={locale === 'zh' ? '减小正文' : 'Decrease evidence text'} disabled={size <= 8} onClick={() => setSize(value => Math.max(8, value - 1))}>A−</button><button type="button" aria-label={locale === 'zh' ? '增大正文' : 'Increase evidence text'} disabled={size >= 28} onClick={() => setSize(value => Math.min(28, value + 1))}>A＋</button><button type="button" aria-label={locale === 'zh' ? '重置正文' : 'Reset evidence text'} onClick={() => setSize(13)}>R</button></span></div>
       {event?.error && <p className="task-evidence-error" role="alert" tabIndex={0}>{event.error}</p>}
-      {needsBody && <>{(body.loading || paired.loading) && <p role="status">{c.loading}</p>}{errors}</>}
+      {needsBody && <>{(body.loading || paired.loading) && <div role="status"><Skeleton variant="row"/></div>}{errors}</>}
       {tab === 'summary' && <>
-        {body.value && <>{(tool || event?.hasInput || event?.kind === 'user_prompt' || !event) && <section className="task-evidence-block"><h4>{tool ? locale === 'zh' ? '参数' : 'Parameters' : c.input}</h4>{inputRead.loading ? <p role="status">{c.loading}</p> : !inputRead.error && <EvidenceText key={'input:' + record.id} value={input} locale={locale} size={size} />}</section>}
-          {(tool || event?.kind !== 'user_prompt') && <section className="task-evidence-block"><h4>{tool ? locale === 'zh' ? '结果' : 'Result' : event?.kind === 'reasoning' ? locale === 'zh' ? '模型思考' : 'Model reasoning' : locale === 'zh' ? '模型输出' : 'Model output'}</h4>{outputRead.loading ? <p role="status">{c.loading}</p> : !outputRead.error && <EvidenceText key={'output:' + record.id} value={output} locale={locale} size={size} />}</section>}</>}
+        {body.value && <>{(tool || event?.hasInput || event?.kind === 'user_prompt' || !event) && <section className="task-evidence-block"><h4>{tool ? locale === 'zh' ? '参数' : 'Parameters' : c.input}</h4>{inputRead.loading ? <div role="status"><Skeleton variant="row"/></div> : !inputRead.error && <EvidenceText key={'input:' + record.id} value={input} locale={locale} size={size} />}</section>}
+          {(tool || event?.kind !== 'user_prompt') && <section className="task-evidence-block"><h4>{tool ? locale === 'zh' ? '结果' : 'Result' : event?.kind === 'reasoning' ? locale === 'zh' ? '模型思考' : 'Model reasoning' : locale === 'zh' ? '模型输出' : 'Model output'}</h4>{outputRead.loading ? <div role="status"><Skeleton variant="row"/></div> : !outputRead.error && <EvidenceText key={'output:' + record.id} value={output} locale={locale} size={size} />}</section>}</>}
         {companion && <p className="task-related-source">{locale === 'zh' ? '参数与结果来自同一原生工具身份的记录。' : 'Input and output come from records sharing the same native tool identity.'}{onSelectRelated && <button type="button" onClick={() => onSelectRelated(companion)}>{c.locate} ↗</button>}</p>}
-        <details className="task-evidence-metadata"><summary>{locale === 'zh' ? '记录信息与证据边界' : 'Record information and evidence scope'}</summary><dl>{item(c.member, record.memberName)}{item(c.sequence, event?.sequence ?? turn?.sequence)}{item(c.start, event?.startedAt ?? turn?.requestTime)}{item(c.identity, record.id)}</dl><p className="hint">{context.task.origin === 'imported' ? c.importedBoundary : c.rawBoundary}</p></details>
+        <Disclosure className="task-evidence-metadata" title={<>{locale === 'zh' ? '记录信息与证据边界' : 'Record information and evidence scope'}</>}><dl>{item(c.member, record.memberName)}{item(c.sequence, event?.sequence ?? turn?.sequence)}{item(c.start, event?.startedAt ?? turn?.requestTime)}{item(c.identity, record.id)}</dl><p className="hint">{boundary}</p></Disclosure>
       </>}
-      {tab === 'timing' && <><dl>{item(c.start, event?.startedAt ?? turn?.requestTime)}{item(c.duration, event?.durationMs ? `${event.durationMs} ms` : null)}{item(c.tokens, event?.tokens?.total)}</dl><pre>{JSON.stringify(event?.tokens ?? turn?.reported ?? {}, null, 2)}</pre><p className="hint">{locale === 'zh' ? '区间来自来源日志，可能包含调度或相邻记录间隔；不等于模型推理耗时。' : 'Intervals come from source logs and may include scheduling or gaps; they are not model inference latency.'}</p></>}
+      {tab === 'timing' && <><dl>{item(c.start, event?.startedAt ?? turn?.requestTime)}{item(c.duration, event?.durationMs ? `${event.durationMs} ms` : null)}{item(c.tokens, event?.telemetry ? event.telemetry.usage.total : event?.tokens?.total)}</dl><pre>{JSON.stringify(event?.telemetry?.usage ?? event?.tokens ?? turn?.reported ?? {}, null, 2)}</pre><p className="hint">{locale === 'zh' ? '区间来自来源日志，可能包含调度或相邻记录间隔；不等于模型推理耗时。' : 'Intervals come from source logs and may include scheduling or gaps; they are not model inference latency.'}</p></>}
       {['input', 'output', 'rawBody'].includes(tab) && <>{evidenceRecord.id !== record.id && <p className="task-related-source">{locale === 'zh' ? '同一原生工具身份的关联记录' : 'Related record with the same native tool identity'}<code>{evidenceRecord.id}</code></p>}{body.value && <EvidenceText key={evidenceRecord.id + ':' + tab} value={field(body.value, raw ? 'raw' : tab === 'input' ? 'input' : 'output')} locale={locale} size={size} />}</>}
-      {tab === 'source' && <><dl>{item(c.source, c[context.task.origin])}{item(c.provider, context.task.provider)}{item(c.occurred, context.task.startedAt)}{item(context.task.origin === 'imported' ? c.importedAt : c.received, context.task.updatedAt)}{item(c.identity, record.id)}</dl><p className="hint">{context.task.origin === 'imported' ? c.importedBoundary : c.rawBoundary}</p>{record.sessionKey && <SessionCaptureLinksPanel sessionKey={record.sessionKey} locale={locale} invalidateKey={0} onOpenSession={onOpenSession} onOpenRequest={onOpenRequest} />}</>}
+      {tab === 'source' && <>{event?.telemetry && <><p>{locale === 'zh' ? '遥测来源报告值；内容为脱敏预览，未保存原文。' : 'Telemetry source-reported values; content is a redacted preview, originals were not retained.'}</p><pre>{JSON.stringify(event.telemetry, null, 2)}</pre></>}<dl>{item(c.source, c[context.task.origin])}{item(c.provider, context.task.provider)}{item(c.occurred, context.task.startedAt)}{item(context.task.origin === 'imported' ? c.importedAt : c.received, context.task.updatedAt)}{item(c.identity, record.id)}</dl><p className="hint">{boundary}</p>{record.sessionKey && <SessionCaptureLinksPanel sessionKey={record.sessionKey} locale={locale} invalidateKey={0} onOpenSession={onOpenSession} onOpenRequest={onOpenRequest} />}</>}
     </div>
-    <footer><button type="button" className="btn" onClick={onLocate}>{c.locate} ↗</button><button type="button" className="task-evidence-network" onClick={() => setTab('source')}>{locale === 'zh' ? '网络请求对照 ↗' : 'Network evidence ↗'}</button></footer>
+    <footer><Button type="button"  onClick={onLocate}>{c.locate} ↗</Button><button type="button" className="task-evidence-network" onClick={() => setTab('source')}>{locale === 'zh' ? '网络请求对照 ↗' : 'Network evidence ↗'}</button></footer>
   </aside>;
 }

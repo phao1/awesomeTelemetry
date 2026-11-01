@@ -1,4 +1,4 @@
-import type { TracePhase, TraceStatus, ProviderKey } from '../../core/trace-types.js';
+import type { TracePhase, TraceStatus, SessionProviderKey } from '../../core/trace-types.js';
 import { t, type Locale } from '../../i18n.js';
 import {
   IconCancelled,
@@ -22,6 +22,8 @@ export interface BadgeProps {
   variant?: 'subtle' | 'solid';
   children: React.ReactNode;
   className?: string;
+  dot?: boolean;
+  icon?: React.ReactNode;
 }
 
 /** REQ-005：Badge。色见契约 §2.4 语义组。 */
@@ -29,18 +31,18 @@ export function Badge({
   tone = 'neutral',
   variant = 'subtle',
   children,
-  className,
+  className, dot=false, icon,
 }: BadgeProps): React.JSX.Element {
   const classes = ['ui-badge', `ui-badge-${tone}`, `ui-badge-${variant}`, className ?? '']
     .filter(Boolean)
     .join(' ');
-  return <span className={classes}>{children}</span>;
+  return <span className={classes}>{dot&&<span className="ui-badge-dot"/>}{icon}{children}</span>;
 }
 
 const STATUS_TONE: Record<TraceStatus, BadgeTone> = {
   success: 'success',
   error: 'danger',
-  running: 'attention',
+  running: 'accent',
   cancelled: 'neutral',
   unknown: 'neutral',
 };
@@ -102,7 +104,7 @@ export function PhaseBadge({ phase, locale }: PhaseBadgeProps): React.JSX.Elemen
   );
 }
 
-const PROVIDER_LETTER: Record<ProviderKey, string> = {
+const PROVIDER_LETTER: Record<SessionProviderKey, string> = {
   claude: 'C',
   codex: 'X',
   opencode: 'O',
@@ -111,29 +113,30 @@ const PROVIDER_LETTER: Record<ProviderKey, string> = {
   codeagent2: '2',
   trae: 'T',
   qoder: 'Q',
+  opentelemetry: 'O',
   workbuddy: 'W',
 };
 
 export interface ProviderBadgeProps {
-  provider: ProviderKey;
+  provider: SessionProviderKey;
   showLabel?: boolean;
   locale: Locale;
 }
 
 /** REQ-005：ProviderBadge 字母章（契约 §2.6）。底为 -subtle，字为 provider 色。 */
 export function ProviderBadge({ provider, showLabel = false, locale }: ProviderBadgeProps): React.JSX.Element {
-  const label = t(`provider.${provider}`, locale);
+  const label = provider === 'opentelemetry' ? 'OpenTelemetry' : t(`provider.${provider}`, locale);
   const badge = (
     <span
       className="ui-provider-badge"
       style={{
-        color: `var(--provider-${provider})`,
-        background: `var(--provider-${provider}-subtle)`,
+        color: provider === 'opentelemetry' ? 'var(--fg-default)' : `var(--provider-${provider})`,
+        background: 'var(--canvas-subtle)',
       }}
       aria-label={showLabel ? label : undefined}
       role={showLabel ? 'img' : undefined}
     >
-      {PROVIDER_LETTER[provider]}
+      <span className="ui-color-dot" style={{background:provider==='opentelemetry'?'var(--fg-muted)':`var(--provider-${provider})`}}/><span className="ui-provider-letter">{PROVIDER_LETTER[provider]}</span>
     </span>
   );
   if (!showLabel) {

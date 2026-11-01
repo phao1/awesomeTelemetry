@@ -1,16 +1,18 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { DropdownMenu } from './Overlay.js';
 
+const roots: ReturnType<typeof createRoot>[] = [];
+afterEach(()=>{act(()=>{for(const root of roots.splice(0))root.unmount();});document.body.replaceChildren();});
 function render(node: React.JSX.Element): HTMLDivElement {
   const container = document.createElement('div');
   document.body.appendChild(container);
   act(() => {
-    createRoot(container).render(node);
+    const root=createRoot(container); roots.push(root); root.render(node);
   });
-  return container;
+  return document.body as unknown as HTMLDivElement;
 }
 
 describe('REQ-005 浮层交互', () => {
@@ -56,7 +58,7 @@ describe('REQ-005 浮层交互', () => {
 
   it('点外部关闭', () => {
     let open = true;
-    const container = render(
+    render(
       <DropdownMenu
         open={open}
         onOpenChange={(next) => {
@@ -70,6 +72,6 @@ describe('REQ-005 浮层交互', () => {
       document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     });
     expect(open).toBe(false);
-    container.remove();
+
   });
 });

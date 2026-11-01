@@ -1,3 +1,5 @@
+import { Skeleton } from './ui/States.js';
+import { Button } from './ui/Button.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import type { FridaCapture } from '../core/trace-types.js';
@@ -32,14 +34,14 @@ export function FridaCaptureInspector({ id, locale, onClose }: { id: number; loc
   return <Drawer open title={(zh ? 'Frida 捕获 #' : 'Frida capture #') + id} onClose={onClose} width={width} className="frida-capture-inspector">
     <p className="hint">{zh ? '已保存的观测原文；不证明工具执行、Trae 版本兼容或完整真机捕获。' : 'Saved observation text; not proof of tool execution, Trae compatibility or complete device capture.'}</p>
     <label className="frida-capture-width">{zh ? '宽度' : 'Width'}<input type="range" aria-label={zh ? '详情宽度' : 'Inspector width'} min={320} max={1000} value={width} onChange={event => setWidth(Number(event.target.value))}/></label>
-    {loading && <div role="status">{zh ? '读取中…' : 'Loading…'} <button type="button" className="btn" onClick={() => { cancel(); setLoading(false); setError('FRIDA_READ_CANCELLED'); }}>{zh ? '取消读取' : 'Cancel read'}</button></div>}
+    {loading && <div role="status"><Skeleton variant="row"/> <Button type="button"  onClick={() => { cancel(); setLoading(false); setError('FRIDA_READ_CANCELLED'); }}>{zh ? '取消读取' : 'Cancel read'}</Button></div>}
     {error && <div role="alert"><code>{error}</code><p>{zh ? '本次读取未完成，可显式重试。' : 'This read did not complete. Retry explicitly.'}</p></div>}
-    {!loading && <button type="button" className="btn" onClick={() => void read()}>{zh ? '重试 / 刷新' : 'Retry / refresh'}</button>}
+    {!loading && <Button type="button"  onClick={() => void read()}>{zh ? '重试 / 刷新' : 'Retry / refresh'}</Button>}
     {current && <><dl className="frida-capture-meta"><dt>PID</dt><dd>{current.pid}</dd><dt>{zh ? '时间' : 'Time'}</dt><dd>{current.capturedAt}</dd><dt>{zh ? '模型' : 'Model'}</dt><dd>{current.model ?? '—'}</dd><dt>{zh ? '原生会话' : 'Native session'}</dt><dd>{current.sessionId ?? '—'}</dd><dt>{zh ? '本地捕获批次' : 'Local capture run'}</dt><dd>{current.captureSessionId ?? '—'}</dd><dt>{zh ? '类型' : 'Type'}</dt><dd>{current.captureType}</dd><dt>{zh ? '消息数' : 'Message count'}</dt><dd>{current.messageCount ?? '—'}</dd></dl>
-      <div className="frida-capture-toolbar"><button type="button" className="btn" aria-label={zh ? '减小字体' : 'Smaller text'} disabled={font <= 8} onClick={() => setFont(value => Math.max(8, value - 1))}>A−</button><button type="button" className="btn" aria-label={zh ? '增大字体' : 'Larger text'} disabled={font >= 28} onClick={() => setFont(value => Math.min(28, value + 1))}>A+</button><button type="button" className="btn" aria-label={zh ? '重置字体' : 'Reset text'} onClick={() => setFont(12)}>R</button><span>{font}px</span></div>
+      <div className="frida-capture-toolbar"><Button type="button"  aria-label={zh ? '减小字体' : 'Smaller text'} disabled={font <= 8} onClick={() => setFont(value => Math.max(8, value - 1))}>A−</Button><Button type="button"  aria-label={zh ? '增大字体' : 'Larger text'} disabled={font >= 28} onClick={() => setFont(value => Math.min(28, value + 1))}>A+</Button><Button type="button"  aria-label={zh ? '重置字体' : 'Reset text'} onClick={() => setFont(12)}>R</Button><span>{font}px</span></div>
       <p className="hint">{zh ? 'JSON 原文；初始最多显示 64 KiB。未知值保留为空。' : 'Original JSON; initially at most 64 KiB. Unknown values remain null.'}</p>
       <pre className="frida-capture-json" style={{ fontSize: font }}>{text}</pre>
-      {!expanded && text.length < current.jsonData.length && <button type="button" className="btn" onClick={() => setExpanded(true)}>{zh ? '展开已保存的完整 JSON' : 'Expand full retained JSON'}</button>}
+      {!expanded && text.length < current.jsonData.length && <Button type="button"  onClick={() => setExpanded(true)}>{zh ? '展开已保存的完整 JSON' : 'Expand full retained JSON'}</Button>}
     </>}
   </Drawer>;
 }

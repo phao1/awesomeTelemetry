@@ -1,3 +1,4 @@
+import { registerCacheUsage, CACHE_PROMPT_SQL } from './task-summary.js';
 import type { Database } from 'better-sqlite3';
 
 import type {
@@ -16,10 +17,7 @@ const STEP_KINDS_SQL =
 const SESSION_AGG_SQL =
   `SELECT provider, source_agent, COUNT(*) AS session_count, SUM(event_count) AS event_count, ` +
   `SUM(token_input) AS token_input, SUM(token_output) AS token_output, SUM(token_total) AS token_total, ` +
-  `SUM(cost_usd) AS cost_usd, ` +
-  // 未收录价格的模型 costSource='unknown'，其成本恒为 0；
-  // 若一个 provider 全部会话都未定价，UI 必须显示 — 而不是 $0.000
-  `SUM(CASE WHEN cost_source <> 'unknown' THEN 1 ELSE 0 END) AS priced_session_count, ` +
+  `SUM(CASE WHEN ${CACHE_PROMPT_SQL} IS NOT NULL THEN token_cache_read ELSE 0 END)*1.0/NULLIF(SUM(${CACHE_PROMPT_SQL}),0) AS cache_hit_rate, COUNT(${CACHE_PROMPT_SQL}) AS cache_known, ` +
   `AVG(total_duration_ms) AS avg_wall_clock_ms, ` +
   `MAX(updated_at) AS latest_updated_at ` +
   `FROM sessions WHERE data_source = ? GROUP BY provider, source_agent`;
@@ -91,6 +89,7 @@ export interface AgentOverviewResult {
  * stamp 未变时直接返回缓存。
  */
 export function getAgentOverview(db: Database, dataSource: DataSource): AgentOverviewResult {
+  registerCacheUsage(db);
   const sessionRows = cachedStmt(db, SESSION_AGG_SQL).all(dataSource) as Array<
     Record<string, unknown>
   >;
@@ -141,8 +140,9 @@ export function getAgentOverview(db: Database, dataSource: DataSource): AgentOve
       tokenInput: row.token_input as number,
       tokenOutput: row.token_output as number,
       tokenTotal: row.token_total as number,
-      pricedSessionCount: row.priced_session_count as number,
-      costUsd: row.cost_usd as number,
+      cacheHitRate: row.cache_hit_rate as number | null,
+      cacheKnownMembers: row.cache_known as number,
+      cacheTotalMembers: row.session_count as number,
       avgWallClockMs: row.avg_wall_clock_ms as number,
       latestUpdatedAt: row.latest_updated_at as string,
       avgToolDurationMs: (ev?.avg_tool_duration_ms as number | null | undefined) ?? null,

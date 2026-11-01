@@ -1,3 +1,5 @@
+import { Disclosure } from './ui/PageControls.js';
+import { PageSkeleton } from './ui/PageSkeleton.js';
 /**
  * agent-collaboration-replay §2.1.3 / §3.6 — Agent 协作回放主组件。
  *
@@ -284,8 +286,8 @@ export function AgentCollabReplay({
 
   return (
     <div className="agent-collab-replay">
-      <Suspense fallback={<Skeleton />}><StageReplay snapshot={snapshot} activities={activities} coverage={activityCoverage} onSelect={setSelection} locale={locale} /></Suspense>
-      <details className="collab-secondary"><summary>{locale === 'zh' ? '当前快照 · 成员与任务概览' : 'Current snapshot · members and tasks'}</summary>
+      <Suspense fallback={<PageSkeleton compact />}><StageReplay snapshot={snapshot} activities={activities} coverage={activityCoverage} onSelect={setSelection} locale={locale} /></Suspense>
+      <Disclosure className="collab-secondary" title={<>{locale === 'zh' ? '当前快照 · 成员与任务概览' : 'Current snapshot · members and tasks'}</>}>
       <TeamWorkbench snapshot={snapshot} activities={activities} activityCoverage={activityCoverage}
         selection={selection} onSelect={next => {
           setSelection(next);
@@ -294,9 +296,9 @@ export function AgentCollabReplay({
             if (index >= 0) setTaskCursor(index);
           }
         }} locale={locale} />
-      </details>
-      <details className="collab-secondary">
-      <summary>{locale === 'zh' ? '关系图 · 辅助查看结构' : 'Relationship graph · structural reference'}</summary>
+      </Disclosure>
+      <Disclosure className="collab-secondary" title={<>{locale === 'zh' ? '关系图 · 辅助查看结构' : 'Relationship graph · structural reference'}</>}>
+
       <TopologyGraph
         agents={snapshot.agents}
         edges={snapshot.agentEdges}
@@ -307,9 +309,9 @@ export function AgentCollabReplay({
         edgeMessageCounts={edgeMessageCounts}
         locale={locale}
       />
-      </details>
-      <details className="collab-secondary">
-      <summary>{locale === 'zh' ? '逐任务执行回放 · 已加载活动' : 'Task-by-task replay · loaded activities'}</summary>
+      </Disclosure>
+      <Disclosure className="collab-secondary" title={<>{locale === 'zh' ? '逐任务执行回放 · 已加载活动' : 'Task-by-task replay · loaded activities'}</>}>
+
       <TaskReplayControls
         tasks={sortedTasks}
         cursor={safeCursor}
@@ -343,7 +345,7 @@ export function AgentCollabReplay({
           locale={locale}
         />
       )}
-      </details>
+      </Disclosure>
     </div>
   );
 }

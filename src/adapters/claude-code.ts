@@ -18,7 +18,6 @@ import {
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
-import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
 import { claudeSidechainIdentity, collectClaudeIdentities, collectNativeEventBindings, trackNativeEvent } from './native-identities.js';
 
@@ -340,7 +339,6 @@ export function normalizeClaudeSample(
   const primaryModel = pickPrimaryModel(classified);
   // Claude 的 reasoning 已含在 output 里（reasoningInTotal 未声明 → 默认口径），
   // 不叠加，否则双计。
-  const cost = computeCost(tokenUsage, primaryModel);
   const session: TraceSession = {
     id: sessionId,
     provider: 'claude',
@@ -353,15 +351,15 @@ export function normalizeClaudeSample(
     messageCount,
     eventCount: classified.length,
     tokenUsage,
-    costUsd: cost.cost,
+    costUsd: 0,
     systemPrompt: null,
     dataSource: 'scan',
     sourcePath,
     totalDurationMs: wallClockDurationMs(classified),
     isSubagent: sidechain.isSubagent,
     primaryModel,
-    costSource: cost.costSource,
-    costCurrency: cost.currency,
+    costSource: 'unknown',
+    costCurrency: 'USD',
     durationSource: 'derived',
   };
   return {

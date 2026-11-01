@@ -288,7 +288,7 @@
 
 .context-change-row-head:focus-visible {
   outline: 1px solid var(--accent-emphasis);
-  outline-offset: -1px;
+  outline-offset: calc(var(--space-1) * -.25);
 }
 
 .context-change-identity {
@@ -459,7 +459,7 @@
 
 .context-base-item:focus-visible {
   outline: 1px solid var(--accent-emphasis);
-  outline-offset: -1px;
+  outline-offset: calc(var(--space-1) * -.25);
 }
 
 .context-base-item-model {

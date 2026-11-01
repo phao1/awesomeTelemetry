@@ -706,6 +706,8 @@ interface ProviderStatusResponse {
     ready: boolean;
     /** reason code when ready=false, e.g. TRAE_KEY_MISSING */
     blockedBy: string | null;
+    /** Direct path access evidence; null means unavailable, not missing. */
+    pathExists: boolean | null;
   }>;
 }
 ```
@@ -1519,10 +1521,22 @@ POST /api/agent-folding/scope accepts FoldingNativeScope (<=64KiB) and returns
 FoldingProject. POST /api/agent-folding/compare accepts exactly {a:string[],b:string[]}
 (<=128KiB), each 1..40 unique collected root task IDs, no overlap, returns
 {a:FoldingMetricRun[],b:FoldingMetricRun[]}. Both read existing local records only,
-no capture/scan/model/evaluator execution. Existing loopback Host/Origin guard,
+no capture/background scan/model/evaluator execution. Browser collection may
+materialize already indexed readable native session details via REQ-015 before
+its consistency snapshot; failure degrades to partial evidence with null event
+locators. Existing loopback Host/Origin guard,
 no-store, ApiError apply. Scope cache is source/database revision keyed.
 Owned request cancellation/deadline=30s, max response8MiB; invalid scope/group
-is400, read failure503. No per-row frontend requests. Imported reports remain
+is400 BAD_REQUEST. Expected source failures use existing BAD_REQUEST with
+static details.reason: SOURCE_CHANGED409 (retry), UNINDEXED422 (open task execution trajectory to load details, then retry),
+TOO_LARGE413 (bytes/events/spans/tasks/agents/boundaries/evidence/traffic and
+limit when applicable), NO_MATCH422 (select collected roots from one provider),
+INVALID_SOURCE422 (check/rescan logs), TIMEOUT408 (narrow scope/retry). Missing
+tasks remain404 SESSION_NOT_FOUND with NO_MATCH reason. Unexpected failures only
+use503 INTERNAL_ERROR with UNEXPECTED reason and a server diagnostic containing
+only error class and reason, never source text. Missing/unreadable originals
+use indexed degradation, not an error. No new top-level error codes.
+No per-row frontend requests. Imported reports remain
 client-local; no source credentials/bodies are transferred in these responses.
 
 ### Architecture P7 review (manual only)
@@ -1558,9 +1572,10 @@ routes are unchanged. Viewing/history/export never starts analysis/model work.
 | POST `/api/health-reports/:reportId/deep` | JSON `{digest:string}` | saved DeepHealthReport, including rejected/partial schema-validation outcomes |
 
 HealthReportIndexItem is `{id:string,generatedAt:string,mode:'standard'|'deep',
-revision:string,expired:boolean,reportId:string|null}`; reportId is the parent
+revision:string,expired:boolean,reportId:string|null,
+scope?:HealthScope|null,severity?:{warning:number,notice:number,info:number}|null}`; reportId is the parent
 ordinary ID for deep, null for ordinary. Sort generatedAt descending, id tie-break;
-no metrics/bodies/paths. Expired compares current revision to saved revision;
+no metrics/bodies/paths. Phase F3 review adds scope and severity metadata from the saved standard report; deep rows inherit their parent standard report scope and severity, explicitly labelled as standard findings. Legacy missing metadata remains unavailable, never zero. No additional browser report reads. Expired compares current revision to saved revision;
 missing current source also expires it, with no historical report mutation.
 
 Task ID is an opaque existing getTask ID; decode once and validate using existing
@@ -1618,3 +1633,202 @@ stops. Valid model JSON that fails semantic/schema validation is saved as a
 rejected DeepHealthReport with static reasons and returned200; malformed/oversize
 transport output fails HEALTH_MODEL_FAILED/HEALTH_SIZE_LIMIT without replacing
 ordinary report. All limits, failure and cancellation paths release job ownership.
+
+
+## Phase A task readability (2026-10-31)
+
+`GET /api/tasks/:id` and record-page context add optional `metrics: TaskMetrics`
+(data-model.md). Null means no trusted values. Native token/model metrics include
+optional per-field `coverage` with known/total member counts and missing member
+IDs, names and stable reasons (`session_unavailable`, `detail_not_loaded`,
+`not_reported`, `accounting_unknown`). Available compatible members contribute
+partial sums; unknown conventions never enter corrected totals. Model lists keep
+known names even with incomplete coverage. Imports retain session-only semantics.
+Duration and indexed count completeness requirements remain unchanged.
+Summary aggregation is revision-cached (data_version + total_changes, max32 tasks
+per database), using only <=100 session rows and covering indexed event counts.
+No native-source hydration or event-body aggregation. No additional client request.
+
+TaskRecord may carry `toolInputPreview` only for kind=tool: take at most4096 input
+characters from each selected page row, apply existing redactHealthText, collapse
+whitespace and truncate to120 UTF-16 code units. This bounded preview is an
+explicit list-tier exception; inputSummary/outputSummary/raw remain absent.
+For <=200 tools, added JSON is <=29KiB with ordinary ASCII or <150KiB including
+worst-case JSON escaping. Selected evidence still loads lazily.
+
+See task-process.md Phase A, storage/frontend specs and database.md schema22.
+
+## Phase B task home and local settings (2026-10-31)
+
+GET /api/tasks accepts summary=1, limit1..50, offset0..100000, sort=activity|time|duration|errors|tokens|cacheHitRate,
+direction=asc|desc(default desc), alerts=1, errors=1. Legacy sort=cost and any currency parameter are ignored.
+Existing origin/q/provider/range filters remain. Sort and filter apply before paging;
+unknown sorts last in both directions, ID breaks ties. TaskPage items include optional
+metrics, latestHealth (null without saved projection), and structured alerts.
+GET /api/task-kpis returns TaskKpis over collected tasks started in the last7days.
+Tokens/cacheHitRate expose partial member coverage. Failed tasks are recordedStatus=error; failure percentage uses success/error task outcomes only, with statusKnownTasks coverage;
+tool failure denominator is retained terminal tool results (output_len>0 and
+status success/error); pending/input-only records are excluded. These are
+result observations, not proof of execution lifecycle or deduplicated billing.
+Context pressure uses max per-LLM (input+cacheRead+cacheWrite)/model window,
+identical to mission, with missing windows/counters unavailable.
+
+GET/PUT /api/config/alert-thresholds returns/accepts AlertThresholds, every key
+required; null disables (all defaults null); finite>=0, counts/duration/tokens
+safe integers, percentages<=100. Monetary thresholds are removed.
+Strict greater-than triggers; partial task counters/tokens and missing
+pressure never trigger. Alerts contain only rule/threshold/actual.
+
+Config IO is bounded asynchronous, serialized and atomic0600 tmp+rename in the
+user config directory. Corrupt existing files are not overwritten. Every route
+uses loopback/Host/Origin guards, no-store, foreground accounting, gzip and
+unified ApiError. Writes increment config revision and invalidate task
+and mission caches; UI explicitly refreshes after save. No native/source writes,
+external notifications, webhook or report generation.
+Saved standard report summaries are a bounded metadata projection stored at
+report save; list reads only this projection, never report bodies. Legacy report
+metadata can be reconciled when explicit history is read. Summary identifies its
+saved revision/date; never claims a historical conclusion is current.
+
+Phase B list flags also accept failed=1 (root recorded error) and toolFailures=1
+(known nonzero terminal result failures). TaskKpis includes statusKnownTasks and
+toolKnownTasks so incomplete failure denominators remain explicit. Summary lists
+cap missing-member examples at1/metric (name128chars) and model labels at3;
+known/total and all scalar sums remain unchanged, selected context retains full
+Phase A member details. Changing metadata during yielded aggregation returns409
+SOURCE_CHANGED; explicit retry obtains a new revision. Summary report scope/date/
+revision describe the saved historical analysis, not the current list window.
+Legacy report summary projection is prepared once at startup from the newest
+bounded saved standard report, never generated or requested through list work.
+
+Pressure aggregation is requested only while its local threshold is enabled;
+otherwise optional contextPressurePct stays null (not computed). The selected
+context does not acquire this unused diagnostic. Complete result counters and
+all Phase A/cache values keep their shared basis. Metadata batches use<=25 session
+keys, or one session when pressure JSON numeric projection is enabled, yielding
+between batches. No body or native-source enrichment is admitted.
+
+## Phase B review: page-owned native hydration (2026-11-01)
+
+GET /api/tasks?summary=1 remains metadata-only, with no native parsing or source IO.
+A visible collected home page MAY own one POST /api/task-home/hydrate with JSON
+{taskIds:string[]} (unique canonical collected task IDs1..50, each<=1024chars,
+body<=64KiB, no other fields/duplicates). It returns an identity-encoded
+application/x-ndjson stream of TaskHydrationFrame, metadata only. Each task emits
+an initial queued/known state and one settled state, coalesced200ms; final done=true.
+Frames<=256KiB, whole stream<=512KiB, lifetime<=120s, <=4 page owners/service and
+<=5000 queued/active members. Capacity409 BUSY; bad requests400 BAD_REQUEST, all
+pre-stream errors use ApiError. Existing loopback/Host/Origin and no-store guards
+apply. Unknown/deleted task metadata stays unavailable; native paths never return.
+
+Metadata resolution is batched, <=100 native members/task. Parsing starts only
+in scheduled background turns, at most2 jobs/service, reusing scanAndStoreDetail
+and its differential/indexed writers and existing coalesced sessions_changed.
+Check readable source asynchronously before parsing, recheck detail_loaded and
+share pending reads. Missing/unreadable sources stay retained, with stable reason;
+never invoke ensureDetail's dead-row deletion from this home workflow. A parser
+failure remains visible; no automatic retry of failed work. Cancel on page/sort/
+filter/selection/unmount or timeout: remove unstarted work; already admitted
+uncancellable parser work may finish and cache its result, but cannot enqueue
+another member for an abandoned page. Server shutdown releases all leases and
+awaits admitted work before SQLite can close. No monitoring/capture/Agent start,
+new parser, source mutation, body transport, per-session SSE or frontend N+1.
+
+The current page owns lightweight progress only; the rail/home share one retained
+metadata page through bounded refreshes. Coalesce hydration/SSE completion hints
+into at most one summary refresh/3s plus a final refresh, no polling. Known cells
+retain their values; unknown pending cells show Loading. Missing source/failed/
+unavailable cells stay Unknown with localized reasons. A refresh may explicitly
+retry; mere rerender/locale/unchanged revision does not restart a lease.
+
+Threshold links next to home alert filters and overview alert KPI open alert-thresholds.
+Settings opens, expands, scrolls and focuses the requested section while retaining
+existing unsaved-draft protection. Desktop column labels occur only in headers;
+narrow cards may use row labels. These amendments supersede only the prior blanket
+no-hydration rule for the independent, cancellable background page lease.
+
+## Phase C unified comparison
+
+POST /api/task-comparison follows [task-comparison.md](task-comparison.md)
+TC-002, reusing Phase B task summary projection. Native session references resolve
+in a batched task-binding query, never a browser per-session lookup.
+
+## Phase D local OTLP and file intake
+
+[telemetry-intake.md](telemetry-intake.md) TD-001/002/005 define POST /v1/traces,
+GET/PUT /api/telemetry and POST /api/telemetry/import. Shared loopback guards,
+foreground tracking, no-store, unified ApiError apply to all four routes.
+
+Phase D capacity correction: telemetry intake distinguishes413 TELEMETRY_QUOTA
+(retained telemetry spans/normalized bytes/tasks/members),413 TELEMETRY_WAL_LIMIT
+(WAL still>=8000000 after one nonblocking checkpoint), and503 TELEMETRY_CAPACITY
+(unavailable stat/write-stamp/queue). Total database size never blocks telemetry;
+capture capacity behavior is unchanged. See telemetry-intake.md TD-006.
+GET /api/tasks/:id/summary returns TaskSummary with metrics and nullable
+latestHealth; same task identity resolution, loopback guard/no-store/ApiError,
+no source hydration/body reads. Existing standard health report route works for
+both telemetry origins (HTTP collected; file imported).
+
+
+## Phase E requests
+
+Request DTOs, indexed projection budgets and additive routes/filters follow
+[task-requests.md](task-requests.md) TR-001–005. Existing routes remain compatible.
+
+Phase F1: data-model.md F1-001/002 defines cacheHitRate/promptInput and coverage.
+Task summaries/home/requests/KPIs and agent-overview omit all monetary fields.
+Removed model configuration routes return the normal404 ApiError.
+
+F1-003 AgentOverviewRow adds nullable fraction cacheHitRate and member coverage
+cacheKnownMembers/cacheTotalMembers. Existing Mission tokenTrend daily points add
+cacheHitRate with the same paired, per-session input normalization and unknown
+policy; MissionDayPoint removes costUsd and MissionQuality removes costEfficiency.
+MissionModelRow removes monetary fields. No additional frontend read or schema.
+
+Daily MissionDayPoint cacheKnownMembers/cacheTotalMembers carry the same
+known-session coverage; partial daily/cache-card values show n/m members.
+
+### Phase F3 task navigation and activity ordering
+`summary=1` defaults to `sort=activity&direction=desc`. Activity is TaskSummary.updatedAt (latest retained member update, or importedAt for imports); legacy `sort=time` continues to mean startedAt. Sort globally before paging; unknown values last and ID breaks ties. The table and optional task panel display the same activity timestamp with startedAt in a tooltip.
+Task URLs add `filters=alerts,errors,failed,toolFailures` (intersection; legacy single `filter` remains readable). `page` is zero-based, `size` is 10,25,50 (default 50). Provider, origin, q, range, sort and direction remain shareable. No new payload or body reads.
+
+F3 summary pages include optional `requestCount: number | null`: count genuine, timestamp-valid, monotonic root user-prompt boundaries under TR-001; null for unloaded roots and imports. Count from one batched metadata query per snapshot, without bodies or per-row browser reads.
+
+## Phase F4 overview
+F4-002: GET /api/task-kpis?overview=1&range=24h|7d|30d|all&provider=<label> returns OverviewSnapshot. Existing no-query TaskKpis behavior is unchanged. Range defaults7d; provider defaults empty (all), max128chars. Invalid range400 ApiError. Collected root tasks only; activity-intersection membership and continuous UTC calendar/week buckets follow F4-004 below. All has no previous period. Previous activity-count window has identical elapsed width; historical metric snapshots remain unavailable. Models include only single-model tasks with complete corrected Token coverage (multi-model attribution unavailable). Tools count retained terminal result observations, using the same output/end and status guard as task-home; no execution claim. Alerts are newest8 matching threshold tasks with metadata and metrics only. Provider choices include all collected providers; value counts follow the active window/provider. Criteria is server owned. No monetary data.
+F4-003: #/overview accepts overviewRange=24h|7d|30d|all, overviewProvider=<label>, overviewTab=overview|agent. Existing range remains compatible. Reads use the revision-cached/yielded task snapshot, cached statements/indexed member lookups, no hydration or body reads; final source-change check409. Cache at most8 combinations/DB, revision+thresholds+rolling UTC minute.
+
+### F4 browser review amendment
+F4-004 supersedes F4-002 start-only membership and sparse-day behavior. Collected
+root tasks are selected when their known activity interval [startedAt,updatedAt]
+intersects the requested range; an unknown start uses the known last activity.
+7d/30d use7/30 consecutive UTC calendar dates including today (end=generatedAt);
+24h remains rolling. Previous activity count uses an adjacent equal-duration
+window; historical Token/status/health snapshots are not reconstructed and their
+previous-period values/coverage remain unavailable. All has no previous period.
+Daily task activity counts distinct roots per retained event UTC date plus the
+last-activity metadata date. Indexed (session_id,started_at) reads only metadata,
+never bodies. Token, cache, tool failure, task outcome and alert series are whole
+current task snapshots assigned ONCE to last-activity date, not event-day increments
+or historical outcome observations; disclose this distinction in server-owned ⓘ.
+Zero-task calendar slots have0 counts/Token bars and null ratios; missing counters
+on populated slots remain null. All spans first-to-last activity date, uses UTC
+Monday weeks beyond60dates. Tool ranking/model attribution retain current whole-task
+snapshot scope. No sum over active days may multiply task lifetime counters.
+
+## F5 review amendment: settings route and provider status
+
+The browser settings route is `#/settings`; optional `section` is one of
+`general`, `appearance`, `health`, `alert-thresholds`, `storage`, `about`.
+Missing/invalid sections select general; serializers omit general and ignore
+section on other views. All old settings entry actions navigate to this route;
+LocalSettingsTarget.section=alert-thresholds maps to the same URL parameter.
+Section changes preserve local drafts. Existing provider/threshold PUT contracts
+and uncertain-write recovery remain unchanged. Settings is a full page, not a
+Dialog. Appearance still uses the shell's existing preference setters.
+
+GET /api/providers/status retains §2.2 fields and adds required
+`pathExists:boolean|null` per data-model F5 review. Check the nine configured
+paths concurrently with async filesystem access and a1s response deadline.
+No enabling, scanning, filesystem writes or body reads occur. The existing local
+HTTP/no-store/ApiError protections apply. Older clients may ignore this addition.

@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { checkpointWal, openReadonly, openWritable } from '../storage/db.js';
 import { CaptureBodyStore } from './body-store.js';
 import { CaptureJournal, retryCaptureCommit } from './capture-journal.js';
-import { readCaptureCapacity, withCaptureCapacity } from './capture-capacity.js';
+import { readCaptureCapacity, withCaptureCapacity, withWalCapacity } from './capture-capacity.js';
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'capture-capacity-')), path = join(directory, 'state.sqlite'), db = openWritable(path);
@@ -54,6 +54,25 @@ describe('capture-only database pressure admission', () => {
       expect(await readCaptureCapacity(f.db)).toMatchObject({ state: 'limited', reason: 'database_limit' });
       await expect(withCaptureCapacity(f.db, () => f.db.exec('DELETE FROM sessions'))).rejects.toMatchObject({ code: 'CAPTURE_METADATA_LIMIT' });
     } finally { await truncate(f.path, size); await f.close(); }
+  });
+  it('lets WAL-only admission through a large sparse DB without changing capture rejection', async () => {
+    const f=await fixture(),size=(await stat(f.path)).size;
+    try {
+      await truncate(f.path,667000000);
+      await expect(withCaptureCapacity(f.db,()=>{throw new Error('capture action must not run');})).rejects.toMatchObject({code:'CAPTURE_METADATA_LIMIT'});
+      expect(await withWalCapacity(f.db,()=>{f.db.prepare('INSERT INTO _meta(key,value) VALUES(?,?)').run('wal-only-admitted','yes');return 42;})).toBe(42);
+      expect(f.db.prepare('SELECT value FROM _meta WHERE key=?').get('wal-only-admitted')).toEqual({value:'yes'});
+      expect(await readCaptureCapacity(f.db)).toMatchObject({state:'limited',reason:'database_limit'});
+    } finally {await truncate(f.path,size);await f.close();}
+  });
+  it('WAL-only admission rejects pinned WAL then checkpoints successfully after release', async () => {
+    const f=await fixture(),reader=pinAndFill(f.db,f.path);
+    try {
+      const before=(await stat(f.path+'-wal')).size;
+      await expect(withWalCapacity(f.db,()=>{throw new Error('pinned mutation must not run');})).rejects.toMatchObject({code:'CAPTURE_METADATA_LIMIT'});
+      expect((await stat(f.path+'-wal')).size).toBe(before);expect(f.db.pragma('busy_timeout',{simple:true})).toBe(5000);
+      reader.exec('ROLLBACK');expect(await withWalCapacity(f.db,()=>42)).toBe(42);expect((await stat(f.path+'-wal')).size).toBe(0);
+    } finally {if(reader.inTransaction)reader.exec('ROLLBACK');reader.close();await f.close();}
   });
   it('bounds shared admission to64 actions, preserves order and releases a failed owner', async () => {
     const db = new Database(':memory:'), calls: number[] = [];

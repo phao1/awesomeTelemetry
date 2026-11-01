@@ -18,7 +18,6 @@ import {
   titleFromText,
   wallClockDurationMs,
 } from './helpers.js';
-import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
 import { collectCodexIdentities, collectNativeEventBindings, trackNativeEvent } from './native-identities.js';
 
@@ -807,7 +806,6 @@ export function normalizeCodexSample(
   const tokenUsage = finalTotalUsage ?? aggregateTokenUsage(classified, semantics);
   const primaryModel = pickPrimaryModel(classified);
   // codex.ts:110 已论证 reasoning ⊂ output（reasoningInTotal=false），不叠加。
-  const cost = computeCost(tokenUsage, primaryModel);
   const session: TraceSession = {
     id: sessionId,
     provider: 'codex',
@@ -820,15 +818,15 @@ export function normalizeCodexSample(
     messageCount: rows.length,
     eventCount: classified.length,
     tokenUsage,
-    costUsd: cost.cost,
+    costUsd: 0,
     systemPrompt: null,
     dataSource: 'scan',
     sourcePath,
     totalDurationMs: wallClockDurationMs(classified),
     isSubagent: false,
     primaryModel,
-    costSource: cost.costSource,
-    costCurrency: cost.currency,
+    costSource: 'unknown',
+    costCurrency: 'USD',
     durationSource: 'derived',
   };
   return {

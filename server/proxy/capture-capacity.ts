@@ -36,6 +36,16 @@ export async function readCaptureCapacity(db: Database): Promise<CaptureMetadata
   }
 }
 
+/** Telemetry is limited by its own ledger; native DB size is not its quota. */
+async function readWalCapacity(db: Database): Promise<Pick<CaptureMetadataCapacity, 'walBytes' | 'state'>> {
+  try {
+    const walBytes = db.memory ? 0 : await fileBytes(db.name + '-wal', true);
+    return { walBytes, state: walBytes >= WAL_ADMISSION ? 'limited' : 'ready' };
+  } catch {
+    return { walBytes: null, state: 'unavailable' };
+  }
+}
+
 /** Connection writes and observed foreign commits invalidate async file stats. */
 function writeStamp(db: Database): string {
   if (!db.open || db.inTransaction) throw new CaptureCapacityError('CAPTURE_METADATA_UNAVAILABLE');
@@ -54,7 +64,14 @@ function writeStamp(db: Database): string {
   } finally { if (timeout !== null) db.pragma(`busy_timeout = ${timeout}`, SIMPLE_PRAGMA); }
 }
 /** Serialize check + synchronous capture mutation across every store/listener of one DB. */
-export async function withCaptureCapacity<T>(db: Database, action: () => T): Promise<T> {
+export function withCaptureCapacity<T>(db: Database, action: () => T): Promise<T> {
+  return withCapacity(db, action, false);
+}
+/** Same serialized lane/checkpoint/stamp ownership, without capture's total DB gate. */
+export function withWalCapacity<T>(db: Database, action: () => T): Promise<T> {
+  return withCapacity(db, action, true);
+}
+async function withCapacity<T>(db: Database, action: () => T, walOnly: boolean): Promise<T> {
   if (!db.open || db.inTransaction) throw new CaptureCapacityError('CAPTURE_METADATA_UNAVAILABLE');
   let lane = lanes.get(db);
   if (lane === undefined) { lane = { tail: Promise.resolve(), count: 0 }; lanes.set(db, lane); }
@@ -63,7 +80,7 @@ export async function withCaptureCapacity<T>(db: Database, action: () => T): Pro
   const task = lane.tail.then(async () => {
     let checkpointed = false;
     for (let snapshot = 0; snapshot < 3; snapshot += 1) {
-      const before = writeStamp(db), status = await readCaptureCapacity(db);
+      const before = writeStamp(db), status = await (walOnly ? readWalCapacity(db) : readCaptureCapacity(db));
       if (writeStamp(db) !== before) continue;
       if (!checkpointed && status.walBytes !== null && status.walBytes >= CHECKPOINT_AT) {
         checkpointWal(db); checkpointed = true; continue;

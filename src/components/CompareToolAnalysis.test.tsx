@@ -83,12 +83,12 @@ describe('CompareToolAnalysis（建议 3）', () => {
     });
     const { html, unmount } = mount(<CompareToolAnalysis result={result} locale="zh" />);
     expect(html()).toContain('失败原因分布');
-    const rows = Array.from(document.querySelectorAll('.compare-err-dist .compare-dist-row'));
+    const rows = Array.from(document.querySelectorAll('.compare-err-dist .chart-bar-list > div'));
     expect(rows.length).toBe(2);
     expect(rows[0]?.textContent).toContain('Bash');
-    expect(rows[0]?.textContent).toContain('2 / 0');
+    expect(rows[0]?.textContent).toContain('A2');
     expect(rows[1]?.textContent).toContain('Read');
-    expect(rows[1]?.textContent).toContain('0 / 1');
+    expect(rows[1]?.textContent).toContain('B1');
     unmount();
   });
 
@@ -101,4 +101,20 @@ describe('CompareToolAnalysis（建议 3）', () => {
     expect(html()).toContain('ui-table');
     unmount();
   });
+});
+
+it('Phase C can inspect every tool while legacy default remains top15; shows exact failure counts beside rates',()=>{
+ const result=makeResult({left:{...makeResult().left,events:Array.from({length:18},(_,i)=>makeEvent({id:'tool-'+i,tool:'tool-'+i,status:'error'}))},right:{...makeResult().right,events:[]}});
+ let mounted=mount(<CompareToolAnalysis result={result} locale="en"/>);
+ expect(document.querySelectorAll('.compare-tools tbody tr')).toHaveLength(15);mounted.unmount();
+ mounted=mount(<CompareToolAnalysis result={result} locale="en" maxTools={null}/>);
+ expect(document.querySelectorAll('.compare-tools tbody tr')).toHaveLength(18);
+ expect(document.querySelector('.compare-tools tbody tr')!.textContent).toContain('1 / 100%');mounted.unmount();
+});
+
+it('labels the first tool column as Tool / 工具 instead of Provider',()=>{
+ let view=mount(<CompareToolAnalysis result={makeResult()} locale="en"/>);
+ expect(document.querySelector('.compare-tools th')!.textContent).toBe('Tool');view.unmount();
+ view=mount(<CompareToolAnalysis result={makeResult()} locale="zh"/>);
+ expect(document.querySelector('.compare-tools th')!.textContent).toBe('工具');view.unmount();
 });

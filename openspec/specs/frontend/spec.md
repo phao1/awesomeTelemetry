@@ -79,15 +79,11 @@ information-dense, keyboard-reachable, semantically restrained.
 
 ## Requirements
 
-User-directed presentation amendment (2026-10-18, supersedes legacy cost/currency
-columns in REQ-017/018/019/027): omit all monetary summaries, currency badges,
-price coverage, money trends/rankings, monetary deltas and generated HTML-report
-amounts. Show Token/cache/call evidence instead; do not equate lower token usage
-with quality or a monetary saving. Hide the monetary-only Mission costEfficiency
-widget and money parts of mixed model/Team views. Team token rows remain readable
-without totalCostUsd/costGini or money-derived verdicts. Backend schemas, API
-payloads, raw evidence and explicit original downloads remain unchanged and
-faithful; this is presentation removal, not deletion/redaction of captured data.
+Phase F1 supersedes all older monetary presentation instructions. Delete monetary
+widgets, settings, sorting, report/export fields and estimates. Task summary,
+home/rail, requests, overview and comparison show Token and one-decimal cache-hit
+percentages under data-model F1-001/002, with explicit unknown/partial coverage.
+Legacy query parameters are ignored and dropped on URL canonicalization.
 
 ### REQ-034: WebSocket connection transcript inspection
 Selected WS capture SHALL label connection scope, observed message counts,
@@ -391,7 +387,7 @@ Four segments top to bottom:
   | Speed | `IconSpeed` | TTFT / TPS | end-to-end duration |
   | Accuracy | `IconAccuracy` | verificationCoverage | whether tests ran |
   | Stability | `IconStability` | errorRate | whether debug was entered |
-  | Cost | `IconCost` | tokenTotal | costUsd · tokensPerStep |
+  | Tokens | `IconCost` | tokenTotal | tokensPerStep |
 
   `null` values display `—` with a tooltip explaining why; MUST NOT show `0`
   as a stand-in.
@@ -566,8 +562,7 @@ Normalize available raw values by the larger side value without a lower-better
 inversion, disclose raw side values and scales, omit partial/missing axes rather
 than zero-filling, and use the raw-value disclosure without a plot when fewer
 than three comparable axes remain. Do not infer test success or model latency
-from title patterns, record intervals or plot area. Existing pricing/currency
-contract-gap resolution and remaining detailed comparison audit stay separate.
+from title patterns, record intervals or plot area. Remaining detailed comparison audit stays separate.
 
 Token rings and speed-panel stacks SHALL share one presentation of the five
 recorded components (input/output/reasoning/cacheRead/cacheWrite) and native
@@ -908,11 +903,10 @@ area (NOT three columns) with A/B/C section chip navigation:
 - **AND** no `sessions.map(s => fetch(...))` pattern exists anywhere in the
   mission components
 
-#### Scenario: pricing gap renders dash
-- **GIVEN** sessions whose `cost_source = 'unknown'`
-- **WHEN** the cost widgets render
-- **THEN** those sessions show `—` and are excluded from `$/turn` numerator
-  and denominator
+#### Scenario: missing cache counters stay unknown
+- **GIVEN** a task with missing cacheRead or complete prompt-input counters
+- **WHEN** its cache-hit metric renders
+- **THEN** it shows Unknown, while compatible known members retain partial coverage
 
 ---
 
@@ -1060,3 +1054,151 @@ stale-result suppression, accessible controls and explicit history refresh.
 Counts are observations, log intervals are not measured inference, and model
 output cannot imply tool/round completion. No viewing interaction starts
 monitoring, proxy capture, CDP, Frida or an upstream Agent.
+
+
+### REQ-035: Phase A task summary and readable tool rows
+
+Task detail displays a summary under its title: localized recorded status, local
+start time, wall-clock duration, members/events/tool-input/error observations,
+normalized input/output/cache-read and corrected total tokens, cache hit rate
+and model. Every field exposes its basis; unknown is localized, never fabricated0.
+Complete multiple-model coverage shows “多个 / Multiple” with names on hover.
+Partial token values show known sums and “部分（n/m 成员） / Partial (n/m members)”,
+with missing member names and reasons on hover. Partial models list known names
+with the same coverage indicator; only entirely missing values show unknown.
+Wrap at375px. Narrow tool rows use measured multi-line grids with bounded text
+tracks, keeping preview, status and a single ↗/↙ evidence pair reachable.
+No monetary fields are shown or calculated; cache hit follows data-model F1-002.
+
+Implement task-process.md TP-006 merged rows with existing navigation/virtualization.
+Health projection limitations use a stable localized code, including legacy English
+reports; empty deep rejected sections disappear from UI and MD/HTML exports.
+Unknown architecture definitions use a known member with role-unknown marking,
+otherwise numbered unknown Agents; IDs, merge logic and field meaning stay intact.
+Navigation and command palette name the entry Agent 边界评测 / Agent boundary
+evaluation. Comparison UI states and source actions respect locale.
+
+## Phase B (2026-10-31)
+
+REQ-PHASE-B: Task home shares the rail page, task selection and A/B selection. Dense health rows show Phase A metrics, partial coverage, saved report conclusion/date and structured alert tooltip. Time/duration/errors/tokens/cache-hit sorting and provider/range/errors/alerts filters. Health entry selects the task and opens its existing drawer. Primary navigation Overview/Tasks/Benchmarks/Agent boundary evaluation/Data intake/Settings; overview retains mission widgets, role anchors and Agent overview group, with clickable last7day KPIs. Old hashes canonicalize preserving evidence locators; compare remains reachable from Tasks. Settings provides explicit threshold editing with validation, owned cancellation and errors; save refreshes displayed thresholds.
+
+Phase B task process is lazy in adjacent TaskProcess.tsx; all selected reading
+state remains task-scoped under the same App shell. Overview and legacy evidence
+surfaces load on their entries. Initial/preloaded JS remains<=200000B gzip;
+health-list controls and paging remain available on narrow screens with one
+shared provider/range/query/selection state. Configuration saves explicitly
+reload pricing-dependent overview widgets, ordinary SSE only marks them stale.
+
+## Phase B review (2026-11-01)
+
+REQ-PHASE-B-REVIEW: Implement api.md's page-owned hydration lease, loaded/unknown
+reasons and threshold deep links and responsive label density. List GETs
+remain metadata-only. Reuse native scanners with global concurrency2, shared
+pending jobs and page cancellation; preserve missing-file rows. No per-session
+fetches/SSE or parser replacement. Adjacent tests cover queue/admission/cancel/
+source absence/notifications, retained-page refresh and direct settings focus.
+
+## Phase C unified task comparison
+
+User-authorized Phase C supersedes legacy compare entry/monetary removal copy
+for this page: cache hit follows data-model F1-002. Implement
+contracts/task-comparison.md TC-001..006 as REQ-035..040 respectively. Primary
+navigation is Overview / Tasks / Compare / Benchmarks / Agent boundary evaluation /
+Data intake / Settings. Existing A/B actions read Baseline / Improvement and keep
+URL selection. Imported evaluation transfer remains explicitly temporary.
+
+
+Phase E: implement task-requests.md TR-001–005 and task-health.md TH-009.
+This additive authorization supersedes the old no-new-fields restriction.
+
+## Phase F2 Calm Instrument shell
+
+REQ-F2-SHELL: Supersedes header/tab/statusbar presentation in REQ-012/015/023 and older navigation prose. App.tsx remains sole global state shell. Grouped sidebar: Observe(Overview/Tasks/Compare), Evaluate(Benchmarks/Agent boundary evaluation), Configure(Data intake/Settings). Width232px, collapsed56px, persisted with guarded localStorage. Default collapsed below1280px; below768px navigation is a focus-trapped mobile drawer with header menu. Bottom contains existing live/SSE/scan/full-library counts/DB size, theme/language and Display small12/standard13/large14/reset13, driving ui-scale. No extra health polling. PageHeader sticky56px, title/breadcrumb, search⌘K, actions and scrolled border. Existing page internals, legacy redirect state, shortcuts, lazy reads and trajectory/conversation behavior remain. Hidden #/ui-kit is a lazy demonstration gallery; #/settings opens existing settings dialog. New foundation token values and components follow docs/design/ui-design-system.md §1–4.
+
+REQ-F3-LIST: docs/design/ui-design-system.md §7.2 supersedes the Phase B sidebar/row presentation. The task home is one full-width, bounded DataTable with URL-owned search, source, provider, range, intersected filters, sorting and pagination. Activity uses the same updatedAt value in the global server ordering and the displayed relative time; legacy time ordering remains startedAt. Selection exposes baseline/improvement/compare actions. Request metadata loads only on expansion, with genuine boundary counts from a batched server projection.
+
+REQ-F3-DETAIL: §7.3 supersedes the old detail header/summary/tab presentation. Task breadcrumbs, adjacent-page-task navigation, copy feedback, a guarded persistent hidden-by-default task panel, request segmentation/search, nine-item MetricStrip with unknown/partial coverage, underline tabs, raw-event DataTable and architecture cards retain source provenance and lazy evidence ownership. Execution trajectory and conversation internals and their interactions remain unchanged.
+
+REQ-F3-HEALTH: The existing explicit health operations use an accessible right Sheet with scope/generation, severity counts, coverage Meter, complete finding/evidence actions, and collapsed report metadata. Over-limit tasks expose request choices directly. Cancellation, deadlines, stale-source suppression, deep preview/confirmation and saved reports retain their existing contracts. No new collection, polling or per-row body reads.
+
+## Phase F4
+REQ-F4-001: Overview uses design §7.1, six StatCards, UTC daily charts and server-owned coverage. Agent-specific widgets remain in an Agent perspective tab, without role/sidebar/disclosure navigation. Unknown data is never zero-filled. F4 overview URL parameters persist filters.
+REQ-F4-002: Comparison uses design §7.4, visible searchable paged MultiCombobox selectors, request Selects, swap, recent/export menus, verdict cards, unknown Accordion, health pill tabs and existing evidence links. TC comparability guards remain unchanged. Tool intervals remain recorded observations.
+
+REQ-F4-003 (browser review): Task pickers retain early results across an unchanged
+search debounce, reset only for changed queries, restore on cleared search, and
+show skeleton options while reading. Routes close owned popovers. Numeric metric
+columns align right with exact hover/compact Token text; row labels have no fill.
+Token composition uses two normalized horizontal fixed-color component bars plus
+four component rows (A/B/delta/ratio), preserving comparability guards and cache
+meters. One process card owns selectors/coverage pills; conventions/investigation
+are Accordions, timelines use A/B subcards. No duplicated Token rings; failure
+rankings use BarList. Shared select/chart copy follows locale independently of
+UiKit; null dates break lines, isolated points show values, bars cap40SVG units.
+Selected chips may retain off-page labels in the option registry, but hidden
+registry entries never appear as search results or crowd out the paged list.
+
+## Phase F5 presentation amendment
+
+REQ-F5-001: Benchmark center uses PageHeader, button-triggered hidden JSON input,
+local report dropzone, bounded in-memory report list (20 per mounted visit),
+stat cards, pass-rate and token BarLists, and shared evidence tables. Existing
+validation, export fidelity, cancellation, unknown metrics and source links stand.
+
+REQ-F5-002: Agent boundary evaluation's actual page implementation is
+agent-folding/AgentFoldingWorkbench, mounted by TeamExperimentCenter. It uses
+five Steps, library disclosures, a searchable retained-task picker and shared
+cards/tables. Own-agent, offline-smoke and advanced sections remain explicit;
+no page load or UI migration starts a model, capture or fixture execution.
+
+REQ-F5-003: Intake shows native/OTel/file cards and collapsed advanced channels;
+existing proxy/frida hash redirects remain. Provider counts, scan times and path evidence reuse
+the existing providers/status aggregate, never per-session fetches.
+Unknown status stays unknown. OTel uses its existing TD-002 explicit off/on token
+rotation, one-time in-memory secret and CopyField. Vendor import history is
+bounded to20 successful operations for the mounted visit; retained TraceLog
+history uses the existing paginated endpoint. No durable vendor-history API is
+invented. Hidden native file inputs remain the browser file-selection boundary.
+
+REQ-F5-004: Settings uses the full-page #/settings route and presents six sections:
+general/appearance/health/alerts/storage/about. Appearance receives the shell's
+existing theme, locale and font state/setters, including the sidebar Display
+menu's same font setter. No parallel preference store. Successful explicit
+provider/threshold saves and immediate appearance updates show Toast feedback.
+Provider and alert save ownership, dirty-close and uncertain-outcome guards stand.
+
+REQ-F5-005: The command palette retains bounded virtual results and existing
+prefix/actions while adding grouped rows, active-descendant semantics and
+ArrowUp/Down/Home/End/Enter selection. Existing Dialog Escape/focus trap remains.
+Compound OptionSelect/Disclosure/MarkupTable and hidden-file/dropzone primitives
+live in the UI library; compatibility disclosures preserve mounted content unless
+the caller explicitly gates a lazy read, matching previous native-details ownership.
+
+### F5 browser review corrections
+
+This supersedes REQ-F5-004's modal entry: use full-page #/settings with a200px
+subnavigation and section parameter per api.md F5 review. Labels and hints are
+left of controls. A sticky content save bar appears only for dirty/busy drafts;
+explicit discard restores baselines, saves retain ownership/uncertain-outcome
+protection and show Toast. Appearance remains immediate and shares shell state.
+Intake uses its own title/description, named provider badges, relative scan times
+with absolute tooltips and direct nullable path evidence for missing-source badges.
+Benchmark has one dropzone empty state and candidate MetricStrips. Steps show20px
+number circles, connectors and state colors; boundary stats auto-fit at180px.
+F5-owned UI copy follows the active language without bilingual parallel labels.
+
+## Phase F6 merge polish
+
+REQ-F6-001: Task rows merge named provider, genuine request count and member count
+in title metadata. All metric columns fit at >=1280 viewport with expanded sidebar;
+smaller desktop tables scroll inside the card. Below768, card rows expose selection,
+two-line title, metadata and status/activity/Token/cache/error metrics. Search owns
+one row and remaining filters share a horizontally scrollable strip.
+REQ-F6-002: Sidebar automatic breakpoint changes never overwrite an explicit saved
+preference. Request scope always offers All members, including single-member tasks;
+return-to-main is labelled. Request navigation shows only position plus a searchable
+titled selector. Comparison popup is at most560px and viewport minus32px.
+REQ-F6-003: UTC daily chart labels use localized short dates. Area/Bar/Line legends
+are keyboard-operable visibility toggles; stacking, tooltips and numeric axes use
+only visible series. Hidden series keep stable colors and can always be restored.
+Shared UI copy uses one context with reactive document-language fallback.

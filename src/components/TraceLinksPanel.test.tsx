@@ -28,28 +28,28 @@ function identityPage(proxyId = 1): TraceIdentityPage {
     completeness: { complete: true, omittedCount: 0, reasons: [] }, nextCursor: null, hasMore: false };
 }
 function button(container: Element, text: string): HTMLButtonElement {
-  return [...container.querySelectorAll('button')].find(button => button.textContent === text && !button.disabled)!;
+  return [...container.ownerDocument.body.querySelectorAll('button')].find(button => button.textContent === text && !button.disabled)!;
 }
 
 describe('linked trace metadata UI', () => {
   it('opens cross-source export only for eligible scan sessions, without fetching until explicit download', async () => {
     const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
     const props = { sessionKey: 'native-session', locale: 'zh' as const, onOpenRequest: vi.fn() };
-    const f = render(<SessionCaptureLinksPanel {...props} />); expect(f.container.textContent).not.toContain('跨来源 Trace 导出');
+    const f = render(<SessionCaptureLinksPanel {...props} />); expect(f.container.ownerDocument.body.textContent).not.toContain('跨来源 Trace 导出');
     act(() => f.root.render(<SessionCaptureLinksPanel {...props} traceExportEnabled />));
     await act(async () => { button(f.container, '跨来源 Trace 导出').click(); await import('./LinkedTraceExportPanel.js'); }); await flush();
-    expect(f.container.textContent).toContain('下载关联 OTLP JSON'); expect(fetchMock).not.toHaveBeenCalled();
+    expect(f.container.ownerDocument.body.textContent).toContain('下载关联 OTLP JSON'); expect(fetchMock).not.toHaveBeenCalled();
     act(() => f.root.render(<SessionCaptureLinksPanel {...props} traceExportEnabled={false} />));
-    expect(f.container.querySelector('.linked-trace-export-panel')).toBeNull(); expect(fetchMock).not.toHaveBeenCalled();
+    expect(f.container.ownerDocument.body.querySelector('.linked-trace-export-panel')).toBeNull(); expect(fetchMock).not.toHaveBeenCalled();
   });
   it('keeps scan export eligibility explicit and opening the independent export panel performs no fetch', async () => {
     const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
     const props = { sessionKey: 'native-session', locale: 'zh' as const, onOpenRequest: vi.fn() };
-    const f = render(<SessionCaptureLinksPanel {...props} />); expect(f.container.textContent).not.toContain('标准 Trace 导出');
+    const f = render(<SessionCaptureLinksPanel {...props} />); expect(f.container.ownerDocument.body.textContent).not.toContain('标准 Trace 导出');
     act(() => f.root.render(<SessionCaptureLinksPanel {...props} traceExportEnabled />));
     await act(async () => { button(f.container, '标准 Trace 导出').click(); await import('./TraceExportPanel.js'); }); await flush();
-    expect(f.container.textContent).toContain('下载 OTLP JSON'); expect(fetchMock).not.toHaveBeenCalled();
-    act(() => f.root.render(<SessionCaptureLinksPanel {...props} traceExportEnabled={false} />)); expect(f.container.querySelector('.trace-export-panel')).toBeNull(); expect(fetchMock).not.toHaveBeenCalled();
+    expect(f.container.ownerDocument.body.textContent).toContain('下载 OTLP JSON'); expect(fetchMock).not.toHaveBeenCalled();
+    act(() => f.root.render(<SessionCaptureLinksPanel {...props} traceExportEnabled={false} />)); expect(f.container.ownerDocument.body.querySelector('.trace-export-panel')).toBeNull(); expect(fetchMock).not.toHaveBeenCalled();
   });
   it('opens the standalone tool investigation with one metadata page and no collapsed association reads', async () => {
     const fetchMock = vi.fn(async (url: string) => {
@@ -61,8 +61,8 @@ describe('linked trace metadata UI', () => {
     const { container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} />);
     expect(fetchMock).not.toHaveBeenCalled(); const entry = button(container, '工具执行调查台 →'); entry.focus();
     await act(async () => { entry.click(); await import('./ToolExecutionPanel.js'); }); await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(1); expect(container.textContent).toContain('没有保留事件');
-    act(() => container.querySelector<HTMLButtonElement>('.ui-drawer-header .ui-icon-btn')!.click());
+    expect(fetchMock).toHaveBeenCalledTimes(1); expect(container.ownerDocument.body.textContent).toContain('没有保留事件');
+    act(() => container.ownerDocument.body.querySelector<HTMLButtonElement>('.ui-drawer-header .ui-icon-btn')!.click());
     expect(document.activeElement).toBe(entry); expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -75,9 +75,9 @@ describe('linked trace metadata UI', () => {
     const { container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} />);
     expect(fetchMock).not.toHaveBeenCalled(); const entry = button(container, 'Agent 家族与尝试 →'); entry.focus();
     await act(async () => { entry.click(); await import('./SessionFamilyPanel.js'); }); await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(1); expect(container.querySelector('[role="dialog"]')).not.toBeNull();
-    await act(async () => { container.querySelector<HTMLButtonElement>('.ui-drawer-header .ui-icon-btn')!.click(); });
-    expect(container.querySelector('[role="dialog"]')).toBeNull(); expect(document.activeElement).toBe(entry);
+    expect(fetchMock).toHaveBeenCalledTimes(1); expect(container.ownerDocument.body.querySelector('[role="dialog"]')).not.toBeNull();
+    await act(async () => { container.ownerDocument.body.querySelector<HTMLButtonElement>('.ui-drawer-header .ui-icon-btn')!.click(); });
+    expect(container.ownerDocument.body.querySelector('[role="dialog"]')).toBeNull(); expect(document.activeElement).toBe(entry);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -91,17 +91,17 @@ describe('linked trace metadata UI', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { root, container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} onOpenSession={open} />);
     expect(fetchMock).not.toHaveBeenCalled();
-    await act(async () => { const details = container.querySelector('details')!; details.open = true; details.dispatchEvent(new Event('toggle', { bubbles: true })); }); await flush();
+    await act(async () => { container.ownerDocument.body.querySelector<HTMLButtonElement>('.ui-accordion > button')!.click(); }); await flush();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/native-session/capture-links']);
     await act(async () => { button(container, '原生父会话引用').click(); await import('./NativeSessionParentsPanel.js'); }); await flush();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/native-session/capture-links', '/api/sessions/native-session/parents']);
-    await act(async () => { container.querySelector<HTMLButtonElement>('[data-native-parent-reference]')!.click(); });
-    expect(container.textContent).toContain('Synthetic parent');
+    await act(async () => { container.ownerDocument.body.querySelector<HTMLButtonElement>('[data-native-parent-reference]')!.click(); });
+    expect(container.ownerDocument.body.textContent).toContain('Synthetic parent');
     await act(async () => { button(container, '打开已解析父级会话').click(); });
     expect(open).toHaveBeenCalledExactlyOnceWith('parent-key');
     await act(async () => { root.render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} onOpenSession={open} invalidateKey={1} />); });
-    expect(container.textContent).toContain('父级依据已变化');
-    expect(container.textContent).not.toContain('Synthetic parent');
+    expect(container.ownerDocument.body.textContent).toContain('父级依据已变化');
+    expect(container.ownerDocument.body.textContent).not.toContain('Synthetic parent');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
   it('loads execution metadata only after its explicit action inside the expanded session entry', async () => {
@@ -112,14 +112,14 @@ describe('linked trace metadata UI', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={vi.fn()} />);
     expect(fetchMock).not.toHaveBeenCalled();
-    await act(async () => { const details = container.querySelector('details')!; details.open = true; details.dispatchEvent(new Event('toggle', { bubbles: true })); }); await flush();
+    await act(async () => { container.ownerDocument.body.querySelector<HTMLButtonElement>('.ui-accordion > button')!.click(); }); await flush();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/native-session/capture-links']);
     await act(async () => { button(container, '关联执行证据').click(); });
     await vi.waitFor(async () => {
       await flush();
       expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/sessions/native-session/capture-links', '/api/sessions/native-session/execution']);
     });
-    expect(container.textContent).toContain('此页没有原生事件');
+    expect(container.ownerDocument.body.textContent).toContain('此页没有原生事件');
   });
   it.each(['identities', 'decisions'])('does not attach a late %s drill-down to a newly selected proxy', async endpoint => {
     let resolveOld!: (value: Response) => void;
@@ -137,9 +137,9 @@ describe('linked trace metadata UI', () => {
       resolveOld(response(endpoint === 'identities' ? { ...identityPage(), sourceKey: 'STALE_SOURCE', items: [] } : { items: [{ sequence: 1, associationId: 'old', state: 'confirmed', note: 'STALE_NOTE', decidedAt: 'old' }], nextCursor: null, hasMore: false }));
       await delayed;
     });
-    expect(container.textContent).not.toContain('STALE_SOURCE');
-    expect(container.textContent).not.toContain('STALE_NOTE');
-    expect(container.textContent).toContain('proxy · 2');
+    expect(container.ownerDocument.body.textContent).not.toContain('STALE_SOURCE');
+    expect(container.ownerDocument.body.textContent).not.toContain('STALE_NOTE');
+    expect(container.ownerDocument.body.textContent).toContain('proxy · 2');
   });
   it('loads a session link page only after expansion, never per-request details, and marks invalidation without refetch', async () => {
     const fetchMock = vi.fn(async (input: string) => {
@@ -149,22 +149,22 @@ describe('linked trace metadata UI', () => {
     vi.stubGlobal('fetch', fetchMock); const open = vi.fn();
     const { root, container } = render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={open} />);
     await flush(); expect(fetchMock).not.toHaveBeenCalled();
-    await act(async () => { const details = container.querySelector('details')!; details.open = true; details.dispatchEvent(new Event('toggle', { bubbles: true })); });
+    await act(async () => { container.ownerDocument.body.querySelector<HTMLButtonElement>('.ui-accordion > button')!.click(); });
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/sessions/native-session/capture-links');
-    expect(container.querySelectorAll('tbody tr')).toHaveLength(50);
-    expect(container.textContent).toContain('待确认候选');
-    await act(async () => { container.querySelector('tbody button')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.ownerDocument.body.querySelectorAll('tbody tr')).toHaveLength(50);
+    expect(container.ownerDocument.body.textContent).toContain('待确认候选');
+    await act(async () => { container.ownerDocument.body.querySelector('tbody button')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(open).toHaveBeenCalledWith(1);
-    expect(container.textContent).toContain('不会把时间窗内最长的提示词复制为会话上下文');
-    const promptButtons = [...container.querySelectorAll('button')].filter(node => node.textContent?.startsWith('查看此请求的 Prompt'));
+    expect(container.ownerDocument.body.textContent).toContain('不会把时间窗内最长的提示词复制为会话上下文');
+    const promptButtons = [...container.ownerDocument.body.querySelectorAll('button')].filter(node => node.textContent?.startsWith('查看此请求的 Prompt'));
     expect(promptButtons).toHaveLength(1);
     await act(async () => { promptButtons[0]!.click(); });
     expect(open.mock.calls).toEqual([[1], [1]]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await act(async () => { root.render(<SessionCaptureLinksPanel sessionKey="native-session" locale="zh" onOpenRequest={open} invalidateKey={1} />); });
-    expect(container.textContent).toContain('关联证据有更新');
+    expect(container.ownerDocument.body.textContent).toContain('关联证据有更新');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it('loads exactly two metadata endpoints for a proxy and confirms/revokes a candidate with explicit user actions', async () => {
@@ -184,9 +184,9 @@ describe('linked trace metadata UI', () => {
     const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')!;
     expect(put[0]).toBe('/api/proxy/requests/1/trace-links/native-session');
     expect(JSON.parse(String(put[1]?.body))).toEqual({ state: 'confirmed', note: null });
-    expect(container.textContent).toContain('人工确认');
+    expect(container.ownerDocument.body.textContent).toContain('人工确认');
     await act(async () => { button(container, '解除关联').click(); }); await flush();
-    expect(container.textContent).toContain('已解除');
+    expect(container.ownerDocument.body.textContent).toContain('已解除');
     expect(fetchMock.mock.calls.some(([url]) => /\/body\/|\/events\/|\/analysis/.test(url))).toBe(false);
   });
   it('reads only the explicitly chosen audit history and escapes the original note', async () => {
@@ -199,15 +199,15 @@ describe('linked trace metadata UI', () => {
     await flush(); expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => { button(container, '人工决定记录').click(); }); await flush();
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(container.textContent).toContain('<img src=x onerror=alert(1)>');
-    expect(container.querySelector('img')).toBeNull();
+    expect(container.ownerDocument.body.textContent).toContain('<img src=x onerror=alert(1)>');
+    expect(container.ownerDocument.body.querySelector('img')).toBeNull();
   });
   it('shows request errors and retries instead of leaving an infinite skeleton', async () => {
     const fetchMock = vi.fn(async () => { throw new Error('Synthetic backend failure'); });
     vi.stubGlobal('fetch', fetchMock);
     const { container } = render(<ProxyTraceLinksPanel proxyId={1} sessions={[]} locale="en" />);
     await flush();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Synthetic backend failure');
+    expect(container.ownerDocument.body.querySelector('[role="alert"]')?.textContent).toContain('Synthetic backend failure');
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => { button(container, 'Refresh links').click(); }); await flush();
     expect(fetchMock).toHaveBeenCalledTimes(4);
@@ -223,7 +223,7 @@ describe('linked trace metadata UI', () => {
     await act(async () => { root.render(<ProxyTraceLinksPanel proxyId={2} sessions={[]} locale="zh" />); });
     await flush();
     await act(async () => { resolveOld!(response({ proxyId: 1, items: [{ ...association(1), sessionKey: 'old-session' }], nextCursor: null, hasMore: false })); await delayed; });
-    expect(container.textContent).toContain('new-session');
-    expect(container.textContent).not.toContain('old-session');
+    expect(container.ownerDocument.body.textContent).toContain('new-session');
+    expect(container.ownerDocument.body.textContent).not.toContain('old-session');
   });
 });

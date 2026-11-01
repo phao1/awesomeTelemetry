@@ -1,3 +1,4 @@
+import type { TelemetryMetadata } from './telemetry-types.js';
 export type NativeIdentityKind = 'session' | 'turn' | 'message' | 'request' | 'response' | 'tool_call' | 'trace' | 'span' | 'parent_session' | 'parent_span';
 export interface NativeIdentity {
   namespace: string;
@@ -145,6 +146,9 @@ export const PROVIDER_KEYS: readonly ProviderKey[] = [
   'codeagent', 'codeagent2', 'trae', 'qoder', 'workbuddy',
 ] as const;
 
+/** Stored telemetry sources do not add a tenth native scanner. */
+export type SessionProviderKey = ProviderKey | 'opentelemetry';
+
 /** 数据来源。scan 与 proxy 在 UI 上分开展示（G7.4），不得混合。 */
 export type DataSource = 'scan' | 'proxy';
 
@@ -214,18 +218,10 @@ export interface TokenSemantics {
   reasoningInTotal?: boolean;
 }
 
-/**
- * 成本来源。add-mission-control §1 P0-C：
- * - reported：厂商直接给出金额（workbuddy credit）
- * - estimated：由 pricing.ts 按 model 定价表估算
- * - unknown：模型未知或定价表无此模型 → UI 必须渲染 `—`，**禁止显示 $0.0000**
- */
+/** Retained source provenance only; legacy estimated values are never recalculated or displayed. */
 export type CostSource = 'reported' | 'estimated' | 'unknown';
 
-/**
- * 计价币种。定价表按币种原样录入、原样展示，**不做汇率换算** ——
- * 换算需要一个没有出处又天天变的汇率，与 pricing.ts「没有出处的价格不要写」冲突。
- */
+/** Original source unit retained for evidence fidelity only. */
 export type PriceCurrency = 'USD' | 'CNY';
 
 /**
@@ -261,7 +257,7 @@ export type TurnKeySource =
 export interface SessionIndexEntry {
   /** = sessionKey(provider, id, sourcePath)，见 specs/session-scanning REQ-004。 */
   id: string;
-  provider: ProviderKey;
+  provider: SessionProviderKey;
   /** provider 的展示名，可与 provider 不同（如 CodeArts SDD 子 agent）。 */
   sourceAgent: string;
   title: string;
@@ -290,7 +286,7 @@ export interface SessionIndexEntry {
 
 export interface TraceSession {
   id: string;
-  provider: ProviderKey;
+  provider: SessionProviderKey;
   sourceAgent: string;
   title: string;
   startedAt: string;
@@ -313,11 +309,7 @@ export interface TraceSession {
   primaryModel?: string | null;
   /** costUsd 的可信度，见 CostSource。 */
   costSource?: CostSource;
-  /**
-   * costUsd 的实际币种。字段名保留 `costUsd` 只是为了不动库列名，
-   * 国内网关（DeepSeek 等）录的是 CNY 价，展示时必须按这里的币种渲染符号，
-   * 否则 ¥1.36 会被显示成 $1.36。缺省 'USD'。
-   */
+  /** Original source unit, never converted or displayed. */
   costCurrency?: PriceCurrency;
   /** 逐事件 durationMs 的来源，见 DurationSource。 */
   durationSource?: DurationSource;
@@ -404,6 +396,8 @@ export interface SessionAnnotationsUpdate {
 
 /** slim 档：Gantt 树渲染所需的全部字段，不含任何正文。 */
 export interface TraceEventSlim {
+  /** Bounded source-reported metadata; contains no input/output bodies. */
+  telemetry?: TelemetryMetadata;
   id: string;
   sessionId: string;
   /** 1-based，同 session 内唯一且连续。合并后必须重排（G10.3）。 */
@@ -654,16 +648,16 @@ export interface SpeedMetrics {
 
 /** Agent Overview 聚合行，由服务端 SQL 直接产出，见 specs/storage REQ-009。 */
 export interface AgentOverviewRow {
-  provider: ProviderKey;
+  provider: SessionProviderKey;
   sourceAgent: string;
   sessionCount: number;
   eventCount: number;
   tokenInput: number;
   tokenOutput: number;
   tokenTotal: number;
-  costUsd: number;
-  /** 其中有多少个会话的模型能查到价格。为 0 表示成本不可知，UI 显示 — 而非 $0。 */
-  pricedSessionCount: number;
+  cacheHitRate: number | null;
+  cacheKnownMembers: number;
+  cacheTotalMembers: number;
   avgWallClockMs: number;
   latestUpdatedAt: string;
   avgToolDurationMs: number | null;
@@ -1018,8 +1012,6 @@ export interface MissionModelRow {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  costUsd: number;
-  costSource: CostSource;
 }
 
 export interface MissionDayPoint {
@@ -1029,7 +1021,9 @@ export interface MissionDayPoint {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  costUsd: number;
+  cacheHitRate: number | null;
+  cacheKnownMembers: number;
+  cacheTotalMembers: number;
   errorEvents: number;
   successRate: number | null;
   /** B11 漂移专用：当日 E2E p95（wall-clock 分位数）。 */
@@ -1064,16 +1058,6 @@ export interface MissionQuality {
     e2eP99Ms: number | null;
     turnsP50: number;
     repairSessions: number;
-  }>;
-  costEfficiency: MissionWidget<{
-    totalUsd: number;
-    perTurnUsd: number | null;
-    perOkToolUsd: number | null;
-    perSessionUsd: number | null;
-    turns: number;
-    tools: number;
-    pricedSessions: number;
-    unpricedSessions: number;
   }>;
   toolFailure: MissionWidget<Array<{ tool: string; rate: number; errors: number; attempts: number }>>;
   tokenTrend: MissionWidget<MissionDayPoint[]>;
@@ -1649,11 +1633,7 @@ export interface TeamCostMetrics {
   totalReasoningTokens: TeamMetricValue;
   totalCacheReadTokens: TeamMetricValue;
   totalCacheWriteTokens: TeamMetricValue;
-  totalCostUsd: TeamMetricValue;
-  /** cost 不可观测（Codex）时为 null；禁止显示 $0.0000（evidence §9.3）。 */
-  costCurrency: PriceCurrency | null;
   coordinationTokens: TeamMetricValue;
-  costGini: TeamMetricValue;
 }
 
 export interface TeamCollaborationMetrics {
@@ -2301,4 +2281,17 @@ export interface CdpDevCapturePage {
   totalBytes: number;
   rejectedCount: number;
   lastIssue: string | null;
+}
+
+/** Provider status metadata: contracts/data-model.md F5 review. */
+export interface ProviderStatusResponse {
+  providers: Array<{
+    key: ProviderKey;
+    enabled: boolean;
+    sessionCount: number;
+    lastScanAt: string | null;
+    ready: boolean;
+    blockedBy: string | null;
+    pathExists: boolean | null;
+  }>;
 }

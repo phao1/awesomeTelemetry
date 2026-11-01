@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { TaskRecord, TaskRecordPage } from '../../core/task-types.js';
-import { deriveTaskProcess, isProcessGroup, processRecordTitle, type ProcessGroup } from '../../core/task-process.js';
+import { deriveTaskProcess, isProcessGroup, processRecordTitle, singleToolOutcome, type ProcessGroup } from '../../core/task-process.js';
 import type { Locale } from '../../i18n.js';
 import { processCopy } from './process-copy.js';
 import '../../styles/task-ledger.css';
@@ -16,6 +16,7 @@ interface LedgerRow {
   collapsedCall: boolean;
 }
 const stamp = (value: string | undefined, locale: Locale) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+const toolPair = (group: ProcessGroup) => group.kind === 'tool' && group.basis === 'native' && group.related.every(id => group.records.some(r => r.id === id)) && group.records.length === 2 && group.records.filter(r => r.event?.hasInput && !r.event.hasOutput).length === 1 && group.records.filter(r => r.event?.hasOutput && !r.event.hasInput).length === 1;
 const knownCall = (group: ProcessGroup) => group.native !== null && (group.kind === 'attempt' || group.kind === 'tool' && group.basis === 'native');
 const representative = (records: TaskRecord[]) => records.filter(item => item.event?.hasOutput || item.importedTurn?.hasOutput).at(-1) ?? records[0]!;
 const labels = {
@@ -68,7 +69,7 @@ export function ProcessLedger({ page, selected, locale, onSelect, onAnchor, onUs
         const currentStep = group.kind === 'step' ? group : step, currentCall = knownCall(group) ? group : call;
         const visible = group.records.filter(isVisibleRecord);
         if (!visible.length) return;
-        if (knownCall(group) && foldCalls && !revealed.has(group.key) && !group.records.some(item => item.id === selected)) {
+        if (knownCall(group) && (foldCalls || toolPair(group)) && !revealed.has(group.key) && !group.records.some(item => item.id === selected)) {
           output.push({ key: 'call:' + group.key, round, step: currentStep, call: group, record: representative(visible), collapsedCall: true }); return;
         }
         for (const child of group.children) {
@@ -136,22 +137,33 @@ export function ProcessLedger({ page, selected, locale, onSelect, onAnchor, onUs
       const row = rows[virtual.index]!, item = row.record, next = rows[virtual.index + 1], open = !item && next?.round.key === row.round.key && next.record !== null;
       const call = row.call, kind = item ? kindOf(item) : null, detail = item && metadata.has(item.id), stepNumber = row.step ? context.steps.get(row.step.key) : undefined;
       const offPage = call?.related.find(id => !page.items.some(item => item.id === id));
-      const input = Boolean(item?.event?.hasInput), output = Boolean(item?.event?.hasOutput || item?.importedTurn?.hasOutput), error = item?.event?.status === 'error' || item?.importedTurn?.isError;
-      return <div key={virtual.key} ref={list.measureElement} data-index={virtual.index} className={`process-stream-row ${item ? 'process-observation' : 'process-round'} ${item?.id === selected ? 'is-selected' : ''}`} style={{ position: 'absolute', width: '100%', transform: `translateY(${virtual.start - scrollMargin}px)` }}>
+      const pair = call && toolPair(call) ? call.records : null;
+      const callInput = pair?.find(r => r.event?.hasInput);
+      const callOutput = pair?.find(r => r.event?.hasOutput);
+      const pairError = pair?.some(r => r.event?.status === 'error');
+      const elapsed = callInput?.event?.startedAt && callOutput?.event?.startedAt ? Date.parse(callOutput.event.startedAt) - Date.parse(callInput.event.startedAt) : null;
+      const ownTool = item ? singleToolOutcome(item, call) : null;
+      const toolStatus = pairError || item?.event?.status === 'error' ? (locale === 'zh' ? '失败' : 'Failed') : (ownTool?.status ?? (callOutput?.event ?? (item?.event?.hasOutput ? item.event : null))?.status) === 'success' ? (locale === 'zh' ? '成功' : 'Success') : (locale === 'zh' ? '未完成' : 'Unfinished');
+      const toolDuration = pair ? elapsed : ownTool ? ownTool.durationMs : item?.event?.hasInput && item.event.hasOutput && item.event.durationMs > 0 ? item.event.durationMs : null;
+      const input = Boolean(item?.event?.hasInput), output = Boolean(item?.event?.hasOutput || item?.importedTurn?.hasOutput), error = pairError || item?.event?.status === 'error' || item?.importedTurn?.isError;
+      return <div key={virtual.key} ref={list.measureElement} data-index={virtual.index} className={`process-stream-row ${item ? 'process-observation' : 'process-round'} ${item?.id === selected ? 'is-selected' : ''} ${error ? 'is-error' : ''}`} style={{ position: 'absolute', width: '100%', transform: `translateY(${virtual.start - scrollMargin}px)` }}>
         {!item ? <div className="process-round-line"><button type="button" className="process-disclosure" aria-label={`${open ? l.collapseRound : l.expandRound} ${roundName(row.round)}`} aria-expanded={Boolean(open)} onClick={() => toggleRound(row.round, Boolean(open))}>{open ? '⌄' : '›'}</button><span className="process-round-label" title={c.scope}>{roundName(row.round)}</span><span className="process-member-chip">{row.round.memberName}</span><button type="button" className="process-round-title" onClick={() => onSelect(row.round.records.find(isVisibleRecord)!)}>{row.round.title || c.scope}</button><span className="process-record-count">{row.round.records.length}</span>{row.round.partial && <span title={c.scope}>◐</span>}</div> : <>
           <div className="process-record-line">
             <button type="button" className="process-disclosure" aria-expanded={Boolean(detail)} aria-label={`${detail ? c.fold : c.unfold} ${l.metadata}: ${processRecordTitle(item)}`} onClick={() => setMetadata(current => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })}>{detail ? '⌄' : '›'}</button>
             <span className="process-step-number" title={row.step?.basis === 'decision_key' ? `${l.localStep} ${stepNumber} · ${c.decision}` : c.noStep}>{row.step?.basis === 'decision_key' ? stepNumber : '·'}</span>
             <span className={`process-kind-chip ${kind}`}>{kind && l[kind]}</span>
-            <button type="button" className="process-record-button" data-record-id={item.id} aria-label={`${c.inspect}: ${processRecordTitle(item)}`} aria-current={item.id === selected ? 'true' : undefined} onClick={() => onSelect(item)}><span>{processRecordTitle(item)}</span></button>
+            <button type="button" className="process-record-button" data-record-id={item.id} aria-label={`${c.inspect}: ${processRecordTitle(item)}`} aria-current={item.id === selected ? 'true' : undefined} onClick={() => onSelect(item)}><span>{item.event?.tool && !processRecordTitle(item).includes(item.event.tool) ? `${item.event.tool} · ` : ''}{processRecordTitle(item)}</span></button>
+            {(callInput?.toolInputPreview ?? item.toolInputPreview) && <span className="process-tool-preview" title={callInput?.toolInputPreview ?? item.toolInputPreview}>{callInput?.toolInputPreview ?? item.toolInputPreview}</span>}
+            {kind === 'tool' && <><span className="process-tool-duration" title={ownTool && item.event?.telemetry ? locale === 'zh' ? '遥测 span 报告的耗时；不推断独立返回记录或实测网络耗时' : 'Source-reported telemetry span duration; no separate result or measured network timing inferred' : locale === 'zh' ? '同一工具身份的调用至返回日志间隔；单记录用保留日志时长，非实测执行耗时' : 'Call-to-result log interval; a single record uses retained log duration, not measured execution time'}>{toolDuration !== null && toolDuration >= 0 ? `${toolDuration} ms` : (locale === 'zh' ? '未知' : 'Unknown')}</span><span className="process-tool-status" title={ownTool ? locale === 'zh' ? '该工具记录自身报告的终态；不推断实时进程状态' : 'Terminal outcome reported by this tool record; not live process state' : locale === 'zh' ? '未完成表示本页没有成功返回证据，不推断实时进程状态' : 'Unfinished means no successful result evidence on this page; not live process state'}>{toolStatus}</span></>}
             {page.context.task.memberCount > 1 && <span className="process-member-chip" title={item.memberName}>{item.memberName}</span>}
-            <span className="process-record-evidence" title={`${input ? c.inputRecords : ''}${input && output ? ' / ' : ''}${output ? c.outputRecords : ''}`}>{input ? '↗' : ''}{output ? '↙' : ''}</span>
+            {pair && <span className="process-pair-evidence">{pair.map(r => <button type="button" key={r.id} aria-label={`${c.inspect}: ${processRecordTitle(r)}`} onClick={() => onSelect(r)}>{r.event?.hasInput ? '↗' : '↙'}</button>)}</span>}
+            {!pair && <span className="process-record-evidence" title={`${input ? c.inputRecords : ''}${input && output ? ' / ' : ''}${output ? c.outputRecords : ''}`}>{input ? '↗' : ''}{output ? '↙' : ''}</span>}
             {error && <span className="process-error-count" title={item.event?.error ?? c.errors}>!</span>}
             {row.collapsedCall && call && <button type="button" className="process-call-expand" aria-label={`${l.expandCall}: ${call.title || processRecordTitle(item)}`} onClick={() => setRevealed(current => new Set(current).add(call.key))}>{call.records.length} {l.records} ⌄</button>}
             {offPage && <button type="button" className="process-original-link" title={c.earlier} aria-label={c.earlier} onClick={() => onAnchor(offPage)}>↗</button>}
             <time>{stamp(item.event?.startedAt ?? item.importedTurn?.requestTime ?? undefined, locale)}</time>
           </div>
-          {detail && <div className="process-record-metadata"><dl><div><dt>{l.member}</dt><dd>{item.memberName}</dd></div><div><dt>{l.sequence}</dt><dd>#{item.event?.sequence ?? item.importedTurn?.sequence}</dd></div><div><dt>{c.step}</dt><dd>{row.step?.basis === 'decision_key' ? `${l.localStep} ${stepNumber} · ${c.decision}` : c.noStep}</dd></div><div><dt>{call?.kind === 'tool' ? c.tool : c.attempt}</dt><dd>{call?.native ? <>{call.basis === 'decision_key' ? c.associated : c.exact}<code>{JSON.stringify(call.native)}</code></> : l.noIdentity}</dd></div></dl><p>{c.scope}</p>{call && foldCalls && revealed.has(call.key) && <button type="button" onClick={() => setRevealed(current => { const next = new Set(current); next.delete(call.key); return next; })}>{l.collapseCall}</button>}</div>}
+          {detail && <div className="process-record-metadata">{pair && <div>{pair.map(r => <button type="button" key={r.id} onClick={() => onSelect(r)}>{r.event?.hasInput ? '↗' : '↙'} {processRecordTitle(r)}</button>)}</div>}<dl><div><dt>{l.member}</dt><dd>{item.memberName}</dd></div><div><dt>{l.sequence}</dt><dd>#{item.event?.sequence ?? item.importedTurn?.sequence}</dd></div><div><dt>{c.step}</dt><dd>{row.step?.basis === 'decision_key' ? `${l.localStep} ${stepNumber} · ${c.decision}` : c.noStep}</dd></div><div><dt>{call?.kind === 'tool' ? c.tool : c.attempt}</dt><dd>{call?.native ? <>{call.basis === 'decision_key' ? c.associated : c.exact}<code>{JSON.stringify(call.native)}</code></> : l.noIdentity}</dd></div></dl><p>{c.scope}</p>{call && (foldCalls || toolPair(call)) && revealed.has(call.key) && <button type="button" onClick={() => setRevealed(current => { const next = new Set(current); next.delete(call.key); return next; })}>{l.collapseCall}</button>}</div>}
         </>}
       </div>;
     })}</div>

@@ -20,7 +20,6 @@ import {
   toIsoFromMs,
   wallClockDurationMs,
 } from './helpers.js';
-import { computeCost } from '../core/pricing.js';
 import type { Adapter, RawSample } from './sample-loader.js';
 import { collectNativeEventBindings, collectOpencodeIdentities, trackNativeEvent } from './native-identities.js';
 
@@ -473,9 +472,6 @@ export function createOpencodeAdapter(
       const primaryModel = pickPrimaryModel(classified);
       // reasoningInTotal 为 true 时 output 字段不含 reasoning，而账单把两者合并
       // 按输出价计费（2026-08-09 CodeArts/deepseek 实测），必须叠加。
-      const cost = computeCost(tokenUsage, primaryModel, {
-        reasoningBilledAsOutput: reasoningInTotal,
-      });
       const session: TraceSession = {
         id: sessionId,
         provider: dialect.provider as ProviderKey,
@@ -488,15 +484,15 @@ export function createOpencodeAdapter(
         messageCount: messages.length,
         eventCount: classified.length,
         tokenUsage,
-        costUsd: cost.cost,
+        costUsd: 0,
         systemPrompt: null,
         dataSource: 'scan',
         sourcePath,
         totalDurationMs: wallClockDurationMs(classified),
         isSubagent: isSubagentTitle(title),
         primaryModel,
-        costSource: cost.costSource,
-        costCurrency: cost.currency,
+        costSource: 'unknown',
+        costCurrency: 'USD',
         durationSource: hasMeasured ? 'measured' : 'derived',
       };
       return {

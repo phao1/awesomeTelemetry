@@ -1,10 +1,14 @@
+import { IncomingMessage, ServerResponse } from 'node:http';
+import { Duplex } from 'node:stream';
+import type { Socket } from 'node:net';
+import { FoldingSourceError } from '../agent-folding/source.js';
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { Router } from './router.js';
 import { registerAgentFoldingRoutes } from './agent-folding-routes.js';
 import type { AgentFoldingRouteOptions } from './agent-folding-routes.js';
@@ -63,4 +67,35 @@ it('previews redacted evidence without a model and refuses unpreviewed review re
   expect(preview.digest).toMatch(/^[a-f0-9]{64}$/); expect(JSON.stringify(preview.pack)).not.toContain('abcdefghijklmnopqrstuvwxyz');
   expect((await f.post('review', { pack, digest: 'made-up' })).status).toBe(400);
   expect((await f.post('review/preview', { ...pack, endpoint: 'https://outside.invalid' })).status).toBe(400);
+});
+
+async function directPost(options: AgentFoldingRouteOptions, path: string, body: unknown) {
+  const router = new Router(), close = registerAgentFoldingRoutes(router, '/unused', options);
+  const chunks: Buffer[] = [];
+  const socket = new Duplex({ read() {}, write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); } });
+  const req = new IncomingMessage(socket as Socket); req.complete = true; req.httpVersion = '1.1'; req.method = 'POST'; req.url = '/api/agent-folding/' + path; req.headers = { 'content-type': 'application/json' };
+  const res = new ServerResponse(req); res.assignSocket(socket as Socket);
+  const finished = new Promise<void>(resolve => res.once('finish', resolve));
+  req.push(Buffer.from(JSON.stringify(body))); req.push(null);
+  try {
+    const match = router.match('POST', req.url)!;
+    await match.handler(req, res, match.params);
+    await finished;
+    return { status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString().split('\r\n\r\n')[1]!) as unknown };
+  } finally { close(); socket.destroy(); }
+}
+it.each([['SOURCE_CHANGED',409],['UNINDEXED',422],['TOO_LARGE',413],['NO_MATCH',422],['INVALID_SOURCE',422]] as const)('maps %s to a readable error envelope', async (reason, status) => {
+  const response = await directPost({ loadScope: async () => { throw new FoldingSourceError(reason, 'Safe source diagnostic', { bytes: 513, limit: 512 }); } }, 'scope', { taskIds: ['collected:root'] });
+  expect(response.status).toBe(status);
+  expect(response.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Safe source diagnostic', details: { reason, bytes: 513, limit: 512 } } });
+});
+it('returns 503 only for unexpected errors and logs no source content', async () => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const response = await directPost({ loadComparison: async () => { throw new TypeError('SECRET_USER_CONTENT'); } }, 'compare', { a: ['collected:a'], b: ['collected:b'] });
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({ error: { code: 'INTERNAL_ERROR', details: { reason: 'UNEXPECTED' } } });
+    expect(log).toHaveBeenCalledWith('[agent-folding]', 'TypeError', 'UNEXPECTED');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('SECRET');
+  } finally { log.mockRestore(); }
 });

@@ -1,3 +1,4 @@
+import { registerCacheUsage, CACHE_PROMPT_SQL } from './task-summary.js';
 import { existsSync, statSync } from 'node:fs';
 
 import type { Database } from 'better-sqlite3';
@@ -12,7 +13,7 @@ import type {
   MissionWidget,
 } from '../../src/core/trace-types.js';
 import { extractSubagentType } from '../../src/core/subagent-type.js';
-import { computeCost, lookupContextWindow } from '../../src/core/pricing.js';
+import { lookupContextWindow } from '../../src/core/context-windows.js';
 import { classifyErrorText } from '../../src/core/error-classifier.js';
 import { classifyScene } from '../../src/core/scene-classifier.js';
 import { isGenuineUserPrompt } from '../../src/core/metrics.js';
@@ -373,44 +374,6 @@ function widgetClosure(db: Database, opts: MissionOptions): MissionWidget<NonNul
   );
 }
 
-const COST_EFF_SQL =
-  `SELECT s.id AS id, s.cost_source AS cost_source, s.cost_usd AS cost_usd, ` +
-  `  s.message_count AS turns, ` +
-  `  SUM(CASE WHEN e.tool IS NOT NULL AND e.status = 'success' THEN 1 ELSE 0 END) AS ok_tools ` +
-  `FROM sessions s LEFT JOIN events e ON e.session_id = s.id ` +
-  `WHERE s.data_source = ?{{RANGE}} GROUP BY s.id`;
-
-/** B3 成本效率：unknown 成本的会话从分子分母同时剔除并公示剔除数。 */
-function widgetCostEfficiency(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['costEfficiency']['data']>> {
-  const { sql, params } = sessionWhere(opts);
-  const rows = cachedStmt(db, COST_EFF_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
-    .all(opts.dataSource, ...params.slice(1)) as Array<{
-    id: string;
-    cost_source: string;
-    cost_usd: number;
-    turns: number;
-    ok_tools: number;
-  }>;
-  const priced = rows.filter((r) => r.cost_source !== 'unknown');
-  const totalUsd = priced.reduce((sum, r) => sum + r.cost_usd, 0);
-  const turns = priced.reduce((sum, r) => sum + r.turns, 0);
-  const tools = priced.reduce((sum, r) => sum + r.ok_tools, 0);
-  return availableWidget(
-    'costEfficiency',
-    'mission.criteria.costEfficiency',
-    {
-      totalUsd,
-      perTurnUsd: turns > 0 ? totalUsd / turns : null,
-      perOkToolUsd: tools > 0 ? totalUsd / tools : null,
-      perSessionUsd: priced.length > 0 ? totalUsd / priced.length : null,
-      turns,
-      tools,
-      pricedSessions: priced.length,
-      unpricedSessions: rows.length - priced.length,
-    },
-  );
-}
-
 /** B4 工具失败率榜：分子只含 error，不含 permission reject。 */
 function widgetToolFailure(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['toolFailure']['data']>> {
   const rows = toolSql(TOOL_FAILURE_SQL, db, opts);
@@ -437,7 +400,7 @@ const TOKEN_TREND_SQL =
   `SUM(token_input) AS input, SUM(token_output) AS output, ` +
   `SUM(token_cache_read) AS cache_read, SUM(token_cache_write) AS cache_write, ` +
   `SUM(token_total) AS total, ` +
-  `SUM(CASE WHEN cost_source != 'unknown' THEN cost_usd ELSE 0 END) AS cost, ` +
+  `SUM(CASE WHEN ${CACHE_PROMPT_SQL} IS NOT NULL THEN token_cache_read ELSE 0 END)*1.0/NULLIF(SUM(${CACHE_PROMPT_SQL}),0) AS cache_hit_rate, COUNT(${CACHE_PROMPT_SQL}) AS cache_known, ` +
   `SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS error_events, ` +
   `SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS success_rate ` +
   `FROM sessions s WHERE s.data_source = ?{{RANGE}} GROUP BY day ORDER BY day`;
@@ -457,7 +420,9 @@ function widgetTokenTrend(db: Database, opts: MissionOptions): MissionWidget<Non
       output: row.output as number,
       cacheRead: row.cache_read as number,
       cacheWrite: row.cache_write as number,
-      costUsd: row.cost as number,
+      cacheHitRate: row.cache_hit_rate as number | null,
+      cacheKnownMembers: row.cache_known as number,
+      cacheTotalMembers: row.sessions as number,
       errorEvents: row.error_events as number,
       successRate: row.success_rate as number | null,
     })),
@@ -542,7 +507,7 @@ function widgetRiskyCommands(db: Database, opts: MissionOptions): MissionWidget<
 
 const DRIFT_SQL =
   `SELECT substr(s.started_at, 1, 10) AS day, s.total_duration_ms AS dur, ` +
-  `s.status AS status, s.cost_usd AS cost, s.message_count AS turns, s.cost_source AS cost_source, ` +
+  `s.status AS status, s.message_count AS turns, ` +
   `SUM(CASE WHEN e.tool IS NOT NULL AND e.status = 'error' THEN 1 ELSE 0 END) AS tool_fails ` +
   `FROM sessions s LEFT JOIN events e ON e.session_id = s.id ` +
   `WHERE s.data_source = ?{{RANGE}} GROUP BY s.id ORDER BY day`;
@@ -555,9 +520,7 @@ function widgetDrift(db: Database, opts: MissionOptions): MissionWidget<NonNulla
     day: string;
     dur: number;
     status: string;
-    cost: number;
     turns: number;
-    cost_source: string;
     tool_fails: number;
   }>;
   const byDay = new Map<string, Array<typeof rows[number]>>();
@@ -571,8 +534,6 @@ function widgetDrift(db: Database, opts: MissionOptions): MissionWidget<NonNulla
     .map(([day, list]) => {
       const ok = list.filter((r) => r.status === 'success').length;
       const durs = list.map((r) => r.dur).sort((a, b) => a - b);
-      const priced = list.filter((r) => r.cost_source !== 'unknown');
-      const cost = priced.reduce((sum, r) => sum + r.cost, 0);
       return {
         day,
         sessions: list.length,
@@ -580,7 +541,9 @@ function widgetDrift(db: Database, opts: MissionOptions): MissionWidget<NonNulla
         output: 0,
         cacheRead: 0,
         cacheWrite: 0,
-        costUsd: cost,
+        cacheHitRate: null,
+        cacheKnownMembers: 0,
+        cacheTotalMembers: list.length,
         errorEvents: list.filter((r) => r.status === 'error').length,
         successRate: list.length > 0 ? ok / list.length : null,
         e2eP95Ms: percentile(durs, 95),
@@ -617,7 +580,7 @@ function contextTokens(tokensJson: string): { input: number; output: number; cac
   }
 }
 
-/** B12 上下文压力：窗口取 pricing 表 contextWindow；压缩 = 相邻 LLM 请求上下文骤降 >50%。 */
+/** B12 上下文压力：窗口取独立模型上下文元数据；压缩 = 相邻 LLM 请求上下文骤降 >50%。 */
 function widgetContextPressure(db: Database, opts: MissionOptions): MissionWidget<NonNullable<MissionQuality['contextPressure']['data']>> {
   const { sql, params } = sessionWhere(opts);
   const rows = cachedStmt(db, CONTEXT_SQL.replace('{{RANGE}}', sql.replace('data_source = ?', '')))
@@ -669,7 +632,7 @@ function widgetContextPressure(db: Database, opts: MissionOptions): MissionWidge
     'contextPressure',
     'mission.criteria.contextPressure',
     {
-      windowSource: 'pricing table (contextWindow)',
+      windowSource: 'model context metadata',
       peakPct: sorted.length > 0 ? sorted.at(-1)! * 100 : null,
       p50Pct: percentile(sorted, 50) === null ? null : percentile(sorted, 50)! * 100,
       p95Pct: percentile(sorted, 95) === null ? null : percentile(sorted, 95)! * 100,
@@ -712,10 +675,6 @@ function widgetModels(db: Database, opts: MissionOptions): MissionWidget<NonNull
     byModel.set(row.model, agg);
   }
   const out = [...byModel.entries()].map(([model, agg]) => {
-    const cost = computeCost(
-      { input: agg.input, output: agg.output, reasoning: 0, cacheRead: agg.cacheRead, cacheWrite: agg.cacheWrite, netInput: Math.max(0, agg.input - agg.cacheRead), total: 0 },
-      model,
-    );
     return {
       model,
       calls: agg.calls,
@@ -723,9 +682,6 @@ function widgetModels(db: Database, opts: MissionOptions): MissionWidget<NonNull
       output: agg.output,
       cacheRead: agg.cacheRead,
       cacheWrite: agg.cacheWrite,
-      costUsd: cost.cost,
-      costSource: cost.costSource,
-      costCurrency: cost.currency,
     };
   }).sort((a, b) => b.calls - a.calls);
   return availableWidget(
@@ -916,7 +872,6 @@ function widgetHeavyScenes(db: Database, opts: MissionOptions): MissionWidget<No
 async function computeQuality(db: Database, opts: MissionOptions): Promise<MissionQuality> {
   return {
     closure: widgetClosure(db, opts),
-    costEfficiency: widgetCostEfficiency(db, opts),
     toolFailure: widgetToolFailure(db, opts),
     tokenTrend: widgetTokenTrend(db, opts),
     errorReasons: widgetErrorReasons(db, opts),
@@ -1021,6 +976,7 @@ async function computeHealth(db: Database, opts: MissionOptions): Promise<Missio
  * 区之间 await setTimeout(0) 让出事件循环。
  */
 export async function getMission(db: Database, opts: MissionOptions): Promise<MissionResponse> {
+  registerCacheUsage(db);
   const stamp = missionStamp(db, opts);
   const key = cacheKey(opts);
   const hit = cacheFor(db).get(key);

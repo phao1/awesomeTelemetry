@@ -4,7 +4,7 @@ import { groupRecentOverviewSessions, overviewGroupKey, overviewTotals, recentOv
 
 const group = (sourceAgent: string, patch: Partial<AgentOverviewRow> = {}): AgentOverviewRow => ({
   provider: 'codex', sourceAgent, sessionCount: 2, eventCount: 10,
-  tokenInput: 10, tokenOutput: 20, tokenTotal: 30, costUsd: 9, pricedSessionCount: 0,
+  tokenInput: 10, tokenOutput: 20, cacheHitRate:null,cacheKnownMembers:0,cacheTotalMembers:0,tokenTotal: 30,
   avgWallClockMs: 1000, latestUpdatedAt: '2026-10-18T00:00:00.000Z',
   avgToolDurationMs: null, errorRate: null, verificationCoverage: null, debugEntryRate: null,
   durationByPhase: { understand: 0, plan: 0, implement: 0, debug: 0, verify: 0, report: 0 }, ...patch,
@@ -12,8 +12,8 @@ const group = (sourceAgent: string, patch: Partial<AgentOverviewRow> = {}): Agen
 const index = (id: string, sourceAgent: string, patch: Partial<SessionIndexEntry> = {}): SessionIndexEntry => ({
   id, sourceAgent, provider: 'codex', title: id, startedAt: '2026-10-18T00:00:00.000Z',
   updatedAt: '2026-10-18T00:00:00.000Z', status: 'success', cwd: null,
-  eventCount: 2, messageCount: 0, tokenTotal: 4, costUsd: 0, dataSource: 'scan',
-  sourcePath: '/synthetic/session', detailLoaded: false, mergeGroupId: null, hasSystemPrompt: false, tags: [], ...patch,
+  eventCount: 2, messageCount: 0, tokenTotal: 4,  dataSource: 'scan',
+  sourcePath: '/synthetic/session', detailLoaded: false, mergeGroupId: null, costUsd:0,hasSystemPrompt: false, tags: [], ...patch,
 });
 
 describe('Agent overview metadata-only interpretation', () => {

@@ -1,0 +1,17 @@
+.overview-dashboard { width: 100%; min-width: 0; }
+.overview-content { padding: var(--page-gutter); display: grid; gap: var(--space-4); min-width: 0; }
+.overview-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-6) * 6)), 1fr)); gap: var(--space-3); }
+.overview-stat { min-width: 0; cursor: pointer; }
+.overview-stat > .ui-card { height: 100%; }
+.overview-chart-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); min-width: 0; }
+.overview-chart-grid > *, .overview-chart-grid .ui-card-body { min-width: 0; }
+.overview-table { max-width: 100%; overflow-x: auto; }
+.overview-table tr { cursor: pointer; }
+.overview-table th { max-width: calc(var(--space-6) * 12); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overview-dashboard .page-header { flex-wrap: wrap; height: auto; min-height: var(--page-header-height); gap: var(--space-3); padding-block: var(--space-3); }
+.overview-dashboard .page-actions { flex-wrap: wrap; }
+.overview-dashboard .page-actions .ui-choice { max-width: calc(var(--space-6) * 8); }
+
+@media (min-width: 75rem) { .overview-chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.app-workspace > .view-body:has(.overview-dashboard) { padding: 0; }
+.overview-dashboard .overview-kpis { display: grid; }

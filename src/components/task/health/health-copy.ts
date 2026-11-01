@@ -29,3 +29,6 @@ export function healthErrorCopy(code: string, locale: Locale, deep = false): str
   if (code === 'BAD_REQUEST' && deep) return c.evidenceChanged;
   return messages[code] ?? c.error;
 }
+
+/** F3 severity labels are presentation only; report severity remains unchanged. */
+export function healthSeverity(severity:'warning'|'notice'|'info',locale:Locale):string {return ({warning:['警告','Warning'],notice:['注意','Notice'],info:['信息','Info']} as const)[severity][locale==='zh'?0:1];}

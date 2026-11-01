@@ -139,7 +139,7 @@ export function CompareDimensions({
     timingRow(t('compare.kpi.llmCalls', locale), 'eventDuration', ls.llmCalls, rs.llmCalls, false, (v) => String(v ?? '—')),
     timingRow(t('compare.kpi.totalToolDuration', locale), 'eventDuration', ls.totalToolDuration, rs.totalToolDuration, true, fmtMs),
   ];
-  const costRows: DimRow[] = [
+  const tokenRows: DimRow[] = [
     { label: t('session.tokens', locale), lv: left.tokenUsage.total, rv: right.tokenUsage.total, lowerBetter: true, fmt: (v) => (v === null ? '—' : v.toLocaleString()) },
   ];
   const qualityRows: DimRow[] = [
@@ -204,7 +204,7 @@ export function CompareDimensions({
   return (
     <div className="compare-dims-grid">
       <DimensionCard title={t('metric.speed', locale)} rows={speedRows} locale={locale} />
-      <DimensionCard title={t('metric.cost', locale)} rows={costRows} locale={locale} />
+      <DimensionCard title={t('metric.cost', locale)} rows={tokenRows} locale={locale} />
       <DimensionCard title={t('compare.dim.quality', locale)} rows={qualityRows.map(row=>({...row,lv:complete(result.left)?row.lv:null,rv:complete(result.right)?row.rv:null}))} locale={locale} />
       <p className="hint">{t('compare.observed.bars',locale)}</p>
       <p className="hint">{t('compare.dim.qualityDesc', locale)}</p>

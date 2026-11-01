@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseHash, serializeHash } from './hash-router.js';
+import { canonicalHash, parseHash, serializeHash } from './hash-router.js';
 
 describe('REQ-024 hash 路由', () => {
   it('序列化/解析往返：sessions 带 key/phase/provider', () => {
@@ -85,4 +85,28 @@ describe('REQ-024 hash 路由', () => {
     // 序列化不再输出 layout
     expect(serializeHash({ view: 'session' })).toBe('#/session');
   });
+});
+
+describe('Phase B canonical entry paths',()=>{
+  it('keeps old evidence and filter locators through canonical redirects',async()=>{
+    const {canonicalHash}=await import('./hash-router.js');
+    expect(canonicalHash('#/proxy?key=s&request=3')).toBe('#/intake?key=s&request=3&channel=proxy');
+    expect(canonicalHash('#/frida')).toBe('#/intake?channel=frida');
+    expect(canonicalHash('#/mission?range=30d')).toBe('#/overview?range=30d');
+    expect(canonicalHash('#/agent')).toBe('#/overview');
+    expect(canonicalHash('#/session?key=native&eventId=e')).toBe('#/task?key=native&eventId=e');
+    expect(canonicalHash('#/compare?left=a&right=b')).toBe('#/compare?left=a&right=b');
+    expect(parseHash(serializeHash({view:'intake',channel:'frida'}))).toEqual({view:'intake',channel:'frida'});
+    expect(parseHash('#/overview?range=7d')).toEqual({view:'overview',range:'7d'});
+  });
+});
+
+it('Phase C redirects legacy architecture groups while retaining source evidence navigation',()=>{
+ expect(canonicalHash('#/task?a=collected%3Aa&b=collected%3Ab')).toBe('#/compare?a=collected%3Aa&b=collected%3Ab');
+ expect(canonicalHash('#/task?task=collected%3Aa&event=a%3Aevent%3Ae&a=collected%3Aa&b=collected%3Ab')).toBe('#/task?task=collected%3Aa&event=a%3Aevent%3Ae&a=collected%3Aa&b=collected%3Ab');
+});
+
+it('round-trips all settings sections, omits general and rejects unrelated or invalid section values',()=>{
+ for(const section of ['appearance','health','alert-thresholds','storage','about'] as const){expect(serializeHash({view:'settings',section})).toBe('#/settings?section='+section);expect(parseHash('#/settings?section='+section)).toEqual({view:'settings',section});}
+ expect(serializeHash({view:'settings',section:'general'})).toBe('#/settings');expect(parseHash('#/settings?section=invalid')).toEqual({view:'settings'});expect(parseHash('#/task?section=storage')).toEqual({view:'task'});expect(serializeHash({view:'task',section:'storage'})).toBe('#/task');
 });

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parseTaskRoute, serializeTaskRoute } from './task-route.js';
+import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_TASK_ROUTE, parseTaskRoute, serializeTaskRoute } from './task-route.js';
 describe('task location', () => {
   it('round-trips an imported event without mixing source identities', () => {
     const route = { task: 'imported:abc', origin: 'imported' as const, member: 'main', mode: 'raw' as const, event: 'import:42' };
@@ -34,4 +34,69 @@ it('round-trips a shared health report and its exact evidence record', () => {
     expect(parseTaskRoute(serializeTaskRoute(route))).toEqual(route);
   }
   expect(parseTaskRoute('#/task?health=').health).toBeUndefined();
+});
+
+it('Phase B restores home filters/sorting and retains old session evidence anchors',()=>{
+ const route={...DEFAULT_TASK_ROUTE,homeProvider:'codex' as const,homeSort:'cacheHitRate' as const,homeRange:'7d' as const,homeFilter:'alerts' as const,homeDirection:'asc' as const};
+ expect(parseTaskRoute(serializeTaskRoute(route))).toEqual(route);
+ expect(parseTaskRoute('#/task?key=native&eventId=e')).toMatchObject({task:'collected:native',event:'native:event:e'});
+ expect(parseTaskRoute('#/task?sort=invalid&filter=bad&direction=wrong')).toEqual(DEFAULT_TASK_ROUTE);
+});
+
+it('Phase C restores legacy session pairs, preserves groups and process selection in share URLs',async()=>{
+ const {serializeComparisonRoute}=await import('./task-route.js');
+ const legacy=parseTaskRoute('#/compare?left=child&right=root');
+ expect(legacy.compareA).toEqual(['collected:child']);expect(legacy.compareB).toEqual(['collected:root']);
+ const route={...legacy,compareA:['collected:a','imported:b'],processA:'imported:b',processB:'collected:root'};
+ const hash=serializeComparisonRoute(route);expect(hash).toContain('pa=imported%3Ab');expect(hash).not.toContain('left=');
+ expect(parseTaskRoute(hash)).toMatchObject({compareA:route.compareA,compareB:route.compareB,processA:route.processA,processB:route.processB});
+ expect(serializeComparisonRoute({...route,processA:'collected:outside'})).not.toContain('pa=');
+});
+it('Phase C stores only10 recent valid URL definitions and tolerates storage failures',async()=>{
+ const {rememberComparison,readRecentComparisons}=await import('./task-route.js');
+ localStorage.clear();for(let i=0;i<12;i++)rememberComparison({...parseTaskRoute('#/compare'),compareA:['collected:a'+i],compareB:['collected:b']});
+ expect(readRecentComparisons()).toHaveLength(10);expect(readRecentComparisons()[0]).toContain('a11');
+ const diagnostic=vi.spyOn(console,'error').mockImplementation(()=>{});
+ try{localStorage.setItem('task-comparison.recent.v1','invalid');expect(readRecentComparisons()).toEqual([]);expect(diagnostic).toHaveBeenCalledExactlyOnceWith('[task-comparison] Failed to read recent comparisons:',expect.any(SyntaxError));}finally{diagnostic.mockRestore();}
+});
+
+it('Phase C storage failures are diagnosed without preventing URL-defined comparison',async()=>{
+ const {rememberComparison,readRecentComparisons}=await import('./task-route.js');
+ localStorage.clear();
+ const readError=new Error('disabled'),writeError=new Error('quota');
+ const diagnostic=vi.spyOn(console,'error').mockImplementation(()=>{});
+ const read=vi.spyOn(localStorage,'getItem').mockImplementation(()=>{throw readError;});
+ const write=vi.spyOn(localStorage,'setItem').mockImplementation(()=>{throw writeError;});
+ try{
+  expect(readRecentComparisons()).toEqual([]);
+  expect(diagnostic).toHaveBeenCalledExactlyOnceWith('[task-comparison] Failed to read recent comparisons:',readError);
+  read.mockRestore();diagnostic.mockClear();
+  expect(()=>rememberComparison({...DEFAULT_TASK_ROUTE,compareA:['collected:a'],compareB:['collected:b']})).not.toThrow();
+  expect(diagnostic).toHaveBeenCalledExactlyOnceWith('[task-comparison] Failed to save recent comparisons:',writeError);
+ }finally{read.mockRestore();write.mockRestore();diagnostic.mockRestore();}
+});
+
+it('round-trips request selection and comparison references while keeping old links whole-task',async()=>{
+  const {serializeComparisonRoute}=await import('./task-route.js');
+  const route={...DEFAULT_TASK_ROUTE,task:'collected:root',request:'request:root:event:prompt/1'};
+  expect(parseTaskRoute(serializeTaskRoute(route))).toEqual(route);
+  expect(parseTaskRoute('#/task?task=collected:root').request).toBeUndefined();
+  const compare={...DEFAULT_TASK_ROUTE,compareA:['collected:root'],compareB:['collected:root'],requestA:'request:root:event:one',requestB:'request:root:event:two'};
+  expect(parseTaskRoute(serializeComparisonRoute(compare))).toEqual(compare);
+  expect(parseTaskRoute('#/compare?a=collected:a&b=collected:b').requestA).toBeUndefined();
+});
+
+it('ignores retired currency and monetary sort parameters during canonicalization',()=>{
+ const parsed=parseTaskRoute('#/task?sort=cost&currency=CNY');expect(parsed).toEqual(DEFAULT_TASK_ROUTE);
+ expect(serializeTaskRoute(parsed)).not.toMatch(/currency|cost/);
+ expect(parseTaskRoute('#/task?currency=invalid&sort=cacheHitRate').homeSort).toBe('cacheHitRate');
+});
+
+it('F3 round-trips combined task filters, pagination and activity while retaining legacy start sorting',()=>{
+ const route={...DEFAULT_TASK_ROUTE,homeSort:'activity' as const,homeDirection:'asc' as const,homeFilters:['alerts','errors','failed','toolFailures'] as const,homePage:3,homeSize:25};
+ expect(parseTaskRoute(serializeTaskRoute({...route,homeFilters:[...route.homeFilters]}))).toEqual({...route,homeFilters:[...route.homeFilters]});
+ expect(parseTaskRoute('#/task?sort=time&filter=errors')).toMatchObject({homeSort:'time',homeFilter:'errors'});
+ expect(parseTaskRoute('#/task?page=-1&size=999&filters=alerts,bogus')).toMatchObject({homeFilters:['alerts']});
+ expect(parseTaskRoute('#/task?page=-1&size=999').homePage).toBeUndefined();
+ expect(parseTaskRoute('#/task?page=-1&size=999').homeSize).toBeUndefined();
 });

@@ -1,3 +1,6 @@
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Disclosure } from './ui/PageControls.js';
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { Locale } from '../i18n.js';
 import { fetchTraceExport, TraceExportReadError } from '../api/trace-export.js';
@@ -5,7 +8,7 @@ import { TRACE_EXPORT_MAX_EVENTS, TRACE_EXPORT_MAX_OFFSET } from '../core/trace-
 import type { TraceExportCoverage } from '../core/trace-export.js';
 
 const COPY = {
-  en: { title: 'Export scan Trace (OTLP JSON)', scope: 'Read-only local download of one retained native scan metadata page. No cloud upload, model/tool requests, proxy captures, original bodies, titles, errors, paths or fees.',
+  en: { title: 'Export scan Trace (OTLP JSON)', scope: 'Read-only local download of one retained native scan metadata page. No cloud upload, model/tool requests, proxy captures, original bodies, titles, errors, paths.',
     timing: 'Spans mark observation points, not measured instantaneous executions. Normalized durations are separate attributes. Generated IDs are not native IDs; no parent, causal or retry links are inferred.',
     page: 'Pages are independent live snapshots. Source-history completeness is unknown, even when all retained metadata is covered. No automatic paging.',
     offset: 'Event offset', limit: 'Page size', range: 'Use an integer offset 0–1000000 and page size 1–200.', action: 'Download OTLP JSON', retry: 'Retry local export',
@@ -15,7 +18,7 @@ const COPY = {
     returned: 'Rows read', total: 'Retained rows', omitted: 'Invalid-time rows omitted', unloaded: 'Details are not fully loaded. Open the native session, then export again.',
     mismatch: 'Index count differs from retained rows.', next: 'Select next page', empty: 'No exportable observations on this page.',
   },
-  zh: { title: '导出 scan Trace（OTLP JSON）', scope: '只读、本地下载一个原生 scan 会话的已存元数据页。不上传云端、不请求模型或工具，不包含代理采集、原文、标题、错误文本、路径或费用。',
+  zh: { title: '导出 scan Trace（OTLP JSON）', scope: '只读、本地下载一个原生 scan 会话的已存元数据页。不上传云端、不请求模型或工具，不包含代理采集、原文、标题、错误文本、路径。',
     timing: 'span 表示观测时间点，不是实测的瞬时执行。标准化时长单独保留为属性。导出 ID 为生成值，不是原生 ID；不推断父子、因果或重试关系。',
     page: '各页是独立的实时快照。即使覆盖全部已存元数据，原始历史是否完整仍未知。不自动翻页。',
     offset: '事件偏移', limit: '每页数量', range: '偏移须为 0–1000000 的整数，每页数量须为 1–200。', action: '下载 OTLP JSON', retry: '重试本地导出',
@@ -86,17 +89,17 @@ function ExportPage({ sessionKey, locale }: TraceExportPanelProps) {
       if (owned === generation.current) { operation.current = null; setPending(false); }
     }
   };
-  return <details className="trace-export-panel">
-    <summary>{copy.title}</summary>
+  return <Disclosure className="trace-export-panel" title={<>{copy.title}</>}>
+
     <p>{copy.scope}</p><p>{copy.timing}</p><p>{copy.page}</p>
     <div className="trace-export-range">
-      <label>{copy.offset}<input type="text" inputMode="numeric" value={offsetText} onChange={event => changeRange('offset', event.target.value)} /></label>
-      <label>{copy.limit}<input type="text" inputMode="numeric" value={limitText} onChange={event => changeRange('limit', event.target.value)} /></label>
+      <label>{copy.offset}<Input type="text" inputMode="numeric" value={offsetText} onChange={event => changeRange('offset', event.target.value)} /></label>
+      <label>{copy.limit}<Input type="text" inputMode="numeric" value={limitText} onChange={event => changeRange('limit', event.target.value)} /></label>
     </div>
     {!validRange && <p role="alert">{copy.range}</p>}
     <div className="trace-export-actions">
-      <button type="button" className="btn" disabled={!validRange || pending} onClick={() => void download()}>{error ? copy.retry : copy.action}</button>
-      {pending && <button type="button" className="btn" onClick={() => { invalidate(); setPending(false); setCancelled(true); }}>{copy.cancel}</button>}
+      <Button type="button"  disabled={!validRange || pending} onClick={() => void download()}>{error ? copy.retry : copy.action}</Button>
+      {pending && <Button type="button"  onClick={() => { invalidate(); setPending(false); setCancelled(true); }}>{copy.cancel}</Button>}
     </div>
     {pending && <p role="status">{copy.pending}</p>}
     {cancelled && <p role="status">{copy.cancelled}</p>}
@@ -107,9 +110,9 @@ function ExportPage({ sessionKey, locale }: TraceExportPanelProps) {
       {coverage.returned === coverage.omittedInvalidTime && <p>{copy.empty}</p>}
       {!coverage.detailLoaded && <p>{copy.unloaded}</p>}
       {coverage.countMismatch && <p>{copy.mismatch}</p>}
-      {coverage.nextOffset !== null && coverage.nextOffset <= TRACE_EXPORT_MAX_OFFSET && <button type="button" className="btn" onClick={() => changeRange('offset', String(coverage.nextOffset))}>{copy.next}</button>}
+      {coverage.nextOffset !== null && coverage.nextOffset <= TRACE_EXPORT_MAX_OFFSET && <Button type="button"  onClick={() => changeRange('offset', String(coverage.nextOffset))}>{copy.next}</Button>}
     </div>}
-  </details>;
+  </Disclosure>;
 }
 
 /** Parent invalidation/remount cancels ownership without reading or restoring stale downloads. */

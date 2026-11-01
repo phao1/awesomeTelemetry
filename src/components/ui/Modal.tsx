@@ -1,8 +1,9 @@
-import { ta } from '../../i18n.js';
+import { useUiTranslate } from './Locale.js';
 import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
 
 import { IconClose } from '../icons/index.js';
 import { useFocusTrap } from './focus-trap.js';
+import { Portal } from './portal.js';
 import { pushOverlay } from '../../keyboard.js';
 
 export interface ModalProps {
@@ -24,12 +25,13 @@ export function Modal({
   footer,
   initialFocusRef,
 }: ModalProps): React.JSX.Element {
+  const ta=useUiTranslate();
   const containerRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(containerRef, true, onClose, undefined, initialFocusRef);
   useEffect(() => pushOverlay(onClose), [onClose]);
 
   return (
-    <div
+    <Portal><div
       className="modal-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
@@ -65,7 +67,7 @@ export function Modal({
           </div>
         )}
       </div>
-    </div>
+    </div></Portal>
   );
 }
 
@@ -82,6 +84,7 @@ export interface DrawerProps {
 
 /** REQ-005：Drawer。右侧滑入（transform 过渡，reduced-motion 归零）。 */
 export function Drawer({ title, onClose, children, open, footer, className, width }: DrawerProps): React.JSX.Element {
+  const ta=useUiTranslate();
   const containerRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(containerRef, open, onClose);
   useEffect(() => (open ? pushOverlay(onClose) : undefined), [open, onClose]);
@@ -90,7 +93,7 @@ export function Drawer({ title, onClose, children, open, footer, className, widt
     return <div className="ui-drawer" aria-hidden="true" />;
   }
   return (
-    <>
+    <Portal>
       <div className="modal-backdrop" onMouseDown={onClose} />
       <div
         ref={containerRef}
@@ -113,6 +116,9 @@ export function Drawer({ title, onClose, children, open, footer, className, widt
           </div>
         )}
       </div>
-    </>
+    </Portal>
   );
 }
+
+export const Dialog = Modal;
+export const Sheet = Drawer;

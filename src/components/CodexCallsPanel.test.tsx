@@ -85,18 +85,18 @@ describe('selected Codex call chain', () => {
     const fetcher = vi.fn(async (url: string) => json(url.endsWith('/0') ? activeDetail : activePage)); vi.stubGlobal('fetch', fetcher);
     const live = { requestId: 'ws-synthetic' };
     await render({ source: live }); await click('Call 1');
-    const expanded = container.querySelector('details')!; expanded.open = true;
+    const expanded = container.querySelector('.ui-accordion')!; act(()=>expanded.querySelector('button')!.click());
     await render({ source: live, changeKey: 1 });
     await act(async () => vi.advanceTimersByTimeAsync(4999)); expect(fetcher).toHaveBeenCalledTimes(2);
     await render({ source: live, changeKey: 50 });
     await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(fetcher).toHaveBeenCalledTimes(3); expect(fetcher.mock.calls[2]?.[0]).toContain('?offset=0');
     expect(container.textContent).toContain('SYNTHETIC_SELECTED_OUTPUT');
-    expect(container.querySelector('details')).toBe(expanded); expect(expanded.open).toBe(true);
+    expect(container.querySelector('.ui-accordion')).toBe(expanded); expect(expanded.querySelector('button')!.getAttribute('aria-expanded')).toBe('true');
     expect(container.querySelector('[aria-pressed="true"]')?.textContent).toBe('Call 1');
     await act(async () => vi.advanceTimersByTimeAsync(30000)); expect(fetcher).toHaveBeenCalledTimes(3);
     await click('Refresh written calls'); expect(fetcher).toHaveBeenCalledTimes(5);
-    expect(container.querySelector('details')).toBe(expanded);
+    expect(container.querySelector('.ui-accordion')).toBe(expanded);
   });
   it('serializes changed pending detail after its metadata page and reflects final completion', async () => {
     vi.useFakeTimers(); let completed = false, resolvePage!: (value: Response) => void;

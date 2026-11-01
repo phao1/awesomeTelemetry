@@ -146,6 +146,7 @@ export function deepAnalysisText(analysis: DeepHealthReport['analysis'], locale:
 }
 export function deepLimitation(code: string, locale: HealthLocale = 'zh'): { text: string; detail?: string } {
   const zh = locale === 'zh';
+  if (code === 'partial_public_projection' || code.startsWith('Partial public projection:')) return { text: zh ? '公开投影已精简：统计使用全部保留输入；省略时间段及轮次关联；每项指标或发现最多保留 16 个证据引用，仅含证据标题。质量验收仍未知。' : 'Partial public projection: statistics use all retained input; spans and round links omitted; at most 16 evidence references per metric/finding, with titles only. Quality acceptance remains unknown.' };
   if (code.startsWith('null_metrics:')) {
     const keys = code.slice(code.indexOf(':') + 1).split(',').map(k => k.trim()).filter(Boolean);
     return { text: zh ? `${keys.length} 项指标无数据` : `${keys.length} metrics without data`, detail: keys.map(key => `${metricName(key, locale)} (${key})`).join('；') };

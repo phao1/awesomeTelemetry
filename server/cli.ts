@@ -15,10 +15,9 @@ import { cachedStmt } from './storage/stmt-cache.js';
 import { enforceProxyRetention } from './storage/retention.js';
 import {
   loadLocalSessionConfig,
-  loadModelPricingOverrides,
+
   type LoadConfigOptions,
 } from '../local-sessions/config.js';
-import { setModelPriceOverrides } from '../src/core/pricing.js';
 import { cleanupDuplicateSessionRows } from '../local-sessions/scanner-utils.js';
 import { queueSessionChange } from './realtime/coalescer.js';
 import { loadSessionGroups, primaryKeyFor } from './storage/session-merge.js';
@@ -296,9 +295,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   await probePort(options.port, options.host);
   const db = openWritable(options.dbPath);
   const config = loadLocalSessionConfig(configLoadOptions(options.configRoot));
-  // G2.3：定价覆盖层（config/model-pricing.json + 用户级）在扫描前生效，
-  // adapter 的 computeCost 才能命中扩展价格。
-  setModelPriceOverrides(loadModelPricingOverrides(options.configRoot));
+
   const enriched = { ...config, prewarmRecent: options.prewarmRecent };
   const backgroundTasks = new Set<Promise<unknown>>();
 
@@ -364,6 +361,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
   const server: Server = createAgentObservabilityServer({
     db,
     config: enriched,
+    configRoot: options.configRoot,
     enableMonitoring: options.enableMonitoring,
     distDir: runtimeResourcePath('dist'),
     dbPath: options.dbPath,

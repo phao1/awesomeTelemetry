@@ -1,3 +1,4 @@
+import { chooseOption } from '../ui/test-controls.js';
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,100 +38,100 @@ function mount(data: TeamRunSnapshot, extra: Partial<React.ComponentProps<typeof
   }
   act(() => root.render(<Harness />));
 }
-function click(selector: string): void { act(() => (container.querySelector(selector) as HTMLButtonElement).click()); }
+function click(selector: string): void { act(() => (container.ownerDocument.body.querySelector(selector) as HTMLButtonElement).click()); }
 function search(value: string): void {
-  const input = container.querySelector('input')!;
+  const input = container.ownerDocument.body.querySelector('input:not([type=hidden])')!;
   act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); });
 }
 
 describe('Team workbench observed responsibility and evidence workflow', () => {
   it('shows observed completion, blocked and unknown counts without claiming zero messages or live presence', () => {
     mount(snapshot());
-    expect(container.querySelector('.tw-stats')!.textContent).toContain('1 / 3');
-    expect(container.textContent).toContain('状态不代表当前在线');
-    expect(container.textContent).toContain('任务证据完整性: 部分');
-    expect(container.querySelector('.tw-communication')!.textContent).toContain('无法确认谁向谁发送了什么');
-    expect(container.textContent).not.toMatch(/0 messages|0 条消息/);
+    expect(container.ownerDocument.body.querySelector('.tw-stats')!.textContent).toContain('1 / 3');
+    expect(container.ownerDocument.body.textContent).toContain('状态不代表当前在线');
+    expect(container.ownerDocument.body.textContent).toContain('任务证据完整性: 部分');
+    expect(container.ownerDocument.body.querySelector('.tw-communication')!.textContent).toContain('无法确认谁向谁发送了什么');
+    expect(container.ownerDocument.body.textContent).not.toMatch(/0 messages|0 条消息/);
     expect(fetch).not.toHaveBeenCalled();
   });
   it('links member → assigned task → actual owner and prerequisite, without fetching bodies', () => {
     mount(snapshot()); click('.tw-member');
-    expect(container.querySelector('.tw-task.tw-linked')!.textContent).toContain('修复存储');
-    expect(container.querySelector('.tw-detail')!.textContent).toContain('原生角色storage-engineer');
+    expect(container.ownerDocument.body.querySelector('.tw-task.tw-linked')!.textContent).toContain('修复存储');
+    expect(container.ownerDocument.body.querySelector('.tw-detail')!.textContent).toContain('原生角色storage-engineer');
     click('.tw-detail .tw-links button');
-    expect(container.querySelector('.tw-detail h3')!.textContent).toBe('修复存储与恢复的阻塞问题');
-    expect(container.querySelector('.tw-member.tw-linked')).not.toBeNull();
-    expect(container.querySelector('.tw-detail')!.textContent).toContain('Task 1');
-    expect(container.querySelector('.tw-detail')!.textContent).toContain('不等于已确认的阻塞原因');
+    expect(container.ownerDocument.body.querySelector('.tw-detail h3')!.textContent).toBe('修复存储与恢复的阻塞问题');
+    expect(container.ownerDocument.body.querySelector('.tw-member.tw-linked')).not.toBeNull();
+    expect(container.ownerDocument.body.querySelector('.tw-detail')!.textContent).toContain('Task 1');
+    expect(container.ownerDocument.body.querySelector('.tw-detail')!.textContent).toContain('不等于已确认的阻塞原因');
     expect(fetch).not.toHaveBeenCalled();
   });
   it('preserves relation direction, kind, historical boundary and exact evidence IDs', () => {
     const data = snapshot(); data.agentEdges[0]!.validTo = '2026-10-18T00:00:00Z';
     mount(data); click('.tw-member');
-    const relation = container.querySelector('.tw-relations li')!;
+    const relation = container.ownerDocument.body.querySelector('.tw-relations li')!;
     expect(relation.textContent).toContain('→ 评审 →'); expect(relation.textContent).toContain('历史关系');
     expect(relation.textContent).toContain('native'); expect(relation.textContent).toContain('edge-source');
-    click('.tw-relations button'); expect(container.querySelector('.tw-detail h3')!.textContent).toBe('Member 1');
-    expect(container.querySelector('.tw-communication')!.textContent).toContain('结构关系不能代替通信证据');
+    click('.tw-relations button'); expect(container.ownerDocument.body.querySelector('.tw-detail h3')!.textContent).toBe('Member 1');
+    expect(container.ownerDocument.body.querySelector('.tw-communication')!.textContent).toContain('结构关系不能代替通信证据');
   });
   it('does not invent ownership from role labels, lifecycle or inactive assignments', () => {
     const data = snapshot(); data.assignments[0]!.unassignedAt = '2026-10-18T00:00:00Z';
     mount(data); click('.tw-task');
-    expect(container.querySelector('.tw-detail')!.textContent).toContain('尚无指派证据');
-    expect(container.querySelector('.tw-member.tw-linked')).toBeNull();
+    expect(container.ownerDocument.body.querySelector('.tw-detail')!.textContent).toContain('尚无指派证据');
+    expect(container.ownerDocument.body.querySelector('.tw-member.tw-linked')).toBeNull();
   });
   it('pages a 100-member / 1000-task snapshot with exact omitted counts and searchable long names', () => {
     mount(snapshot(100, 1000));
-    expect(container.querySelectorAll('.tw-member')).toHaveLength(8); expect(container.querySelectorAll('.tw-task')).toHaveLength(8);
-    expect(container.querySelector('.tw-section .tw-pager')!.textContent).toContain('1–8 / 100');
+    expect(container.ownerDocument.body.querySelectorAll('.tw-member')).toHaveLength(8); expect(container.ownerDocument.body.querySelectorAll('.tw-task')).toHaveLength(8);
+    expect(container.ownerDocument.body.querySelector('.tw-section .tw-pager')!.textContent).toContain('1–8 / 100');
     click('.tw-section .tw-pager button:last-child');
-    expect(container.querySelector('.tw-member')!.textContent).toContain('Member 8');
+    expect(container.ownerDocument.body.querySelector('.tw-member')!.textContent).toContain('Member 8');
     search('Storage Engineer');
-    expect(container.querySelectorAll('.tw-member')).toHaveLength(1);
-    expect(container.querySelector('.tw-member strong')!.textContent).toContain('很长的职责名称');
-    expect(container.querySelectorAll('.tw-task')).toHaveLength(1);
+    expect(container.ownerDocument.body.querySelectorAll('.tw-member')).toHaveLength(1);
+    expect(container.ownerDocument.body.querySelector('.tw-member strong')!.textContent).toContain('很长的职责名称');
+    expect(container.ownerDocument.body.querySelectorAll('.tw-task')).toHaveLength(1);
     expect(fetch).not.toHaveBeenCalled();
   });
   it('keeps status filtering separate from member search and restores all rows explicitly', () => {
     mount(snapshot());
-    const select = container.querySelector('select')!;
-    act(() => { select.value = 'blocked'; select.dispatchEvent(new Event('change', { bubbles: true })); });
-    expect(container.querySelectorAll('.tw-task')).toHaveLength(1);
-    search('no such member'); expect(container.textContent).toContain('没有匹配项');
-    click('.tw-toolbar > button'); expect(container.querySelectorAll('.tw-task')).toHaveLength(3);
-    expect(container.querySelectorAll('.tw-member')).toHaveLength(2);
+    const select = container.ownerDocument.body.querySelector('[role=combobox]')!;
+    act(() => { chooseOption(select,'blocked'); });
+    expect(container.ownerDocument.body.querySelectorAll('.tw-task')).toHaveLength(1);
+    search('no such member'); expect(container.ownerDocument.body.textContent).toContain('没有匹配项');
+    click('.tw-toolbar > button'); expect(container.ownerDocument.body.querySelectorAll('.tw-task')).toHaveLength(3);
+    expect(container.ownerDocument.body.querySelectorAll('.tw-member')).toHaveLength(2);
   });
   it('retains partial event coverage, ambiguous ordering and source IDs without reading input/output/raw', () => {
     mount(snapshot(), { activities: [activity()], activityCoverage: 'partial' }); click('.tw-member');
-    expect(container.querySelector('.tw-detail')!.textContent).toContain('活动分页尚未完整加载');
-    expect(container.querySelector('.tw-events')!.textContent).toContain('event-opaque-1');
-    expect(container.querySelector('.tw-events')!.textContent).toContain('event-source');
-    expect(container.querySelector('.tw-events a')!.getAttribute('href')).toBe('#/session?key=source%2Fkey%3Fone&time=all');
+    expect(container.ownerDocument.body.querySelector('.tw-detail')!.textContent).toContain('活动分页尚未完整加载');
+    expect(container.ownerDocument.body.querySelector('.tw-events')!.textContent).toContain('event-opaque-1');
+    expect(container.ownerDocument.body.querySelector('.tw-events')!.textContent).toContain('event-source');
+    expect(container.ownerDocument.body.querySelector('.tw-events a')!.getAttribute('href')).toBe('#/session?key=source%2Fkey%3Fone&time=all');
     expect(fetch).not.toHaveBeenCalled();
   });
   it('renders an accessible right drawer on narrow screens and closes selection without data mutation', () => {
     vi.stubGlobal('innerWidth', 600); mount(snapshot()); click('.tw-member');
-    expect(container.querySelector('.tw-detail')).toBeNull();
-    expect(container.querySelector('[role="dialog"]')!.textContent).toContain('存储工程师');
+    expect(container.ownerDocument.body.querySelector('.tw-detail')).toBeNull();
+    expect(container.ownerDocument.body.querySelector('[role="dialog"]')!.textContent).toContain('存储工程师');
     click('[role="dialog"] .ui-drawer-header button');
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.querySelector('.tw-member')!.getAttribute('aria-pressed')).toBe('false');
+    expect(container.ownerDocument.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.ownerDocument.body.querySelector('.tw-member')!.getAttribute('aria-pressed')).toBe('false');
   });
   it('explains empty evidence and supports English without substituting unavailable states with zero', () => {
     const data = snapshot(0, 0); data.assignments = [];
     mount(data, { locale: 'en' });
-    expect(container.textContent).toContain('No retained member evidence');
-    expect(container.textContent).toContain('No retained task evidence');
-    expect(container.textContent).toContain('Communication evidence unavailable');
-    expect(container.querySelectorAll('.tw-row')).toHaveLength(0);
+    expect(container.ownerDocument.body.textContent).toContain('No retained member evidence');
+    expect(container.ownerDocument.body.textContent).toContain('No retained task evidence');
+    expect(container.ownerDocument.body.textContent).toContain('Communication evidence unavailable');
+    expect(container.ownerDocument.body.querySelectorAll('.tw-row')).toHaveLength(0);
   });
   it('preserves the full long task title in the selected detail and tooltip without rewriting the snapshot', () => {
     const data = snapshot();
     data.tasks[0]!.title = '长任务标题、职责与验收要求。'.repeat(30);
     const before = JSON.stringify(data);
     mount(data); click('.tw-task');
-    expect(container.querySelector('.tw-task')!.getAttribute('title')).toBe(data.tasks[0]!.title);
-    expect(container.querySelector('.tw-detail h3')!.textContent).toBe(data.tasks[0]!.title);
+    expect(container.ownerDocument.body.querySelector('.tw-task')!.getAttribute('title')).toBe(data.tasks[0]!.title);
+    expect(container.ownerDocument.body.querySelector('.tw-detail h3')!.textContent).toBe(data.tasks[0]!.title);
     expect(JSON.stringify(data)).toBe(before);
   });
 });
