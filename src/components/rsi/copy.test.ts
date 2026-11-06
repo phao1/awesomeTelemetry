@@ -6,7 +6,7 @@ describe('RSI bilingual reason vocabulary',()=>{
     const contract=readFileSync('openspec/contracts/rsi.md','utf8'),block=contract.slice(contract.indexOf('### P5 authoritative runtime declarations'),contract.indexOf('### P5 host configuration'));
     const groups=['RsiHoldReason','RsiPauseReason','RsiOutcome','RsiFindingCategory','RsiCalibrationCategory'];
     const codes=groups.flatMap(group=>[...block.match(new RegExp(`export type ${group} = ([^;]+);`))![1]!.matchAll(/'([^']+)'/g)].map(m=>m[1]!));
-    codes.push('test_failed','agent_timeout','run_token_budget','infrastructure','l0_reject','l1_reject','gain_not_above_noise','sealed_regression','stable_regression');
+    codes.push('test_failed','agent_timeout','agent_crashed','run_token_budget','infrastructure','l0_reject','l1_reject','gain_not_above_noise','sealed_regression','stable_regression');
     for(const code of codes){expect(Object.hasOwn(RSI_COPY,code),code).toBe(true);expect(reasonLabel(code,'zh'),code).not.toBe(reasonLabel(code,'en'));}
   });
   it('covers all documented HTTP error codes and ledger issue codes',()=>{

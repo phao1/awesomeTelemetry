@@ -127,7 +127,7 @@
 .rsi-profile-choice .ui-select .ui-choice-icon { display: none; }
 .rsi-profile-popup .ui-option { position: relative; }
 .rsi-profile-popup .ui-option-label { padding-inline-end: calc(var(--control-height-md) * 4); }
-.rsi-profile-popup .ui-choice-icon { position: absolute; inset-inline-end: var(--space-6); top: var(--space-2); }
+.rsi-profile-popup .ui-choice-icon { position: absolute; inset-inline-end: var(--space-6); top: var(--space-2); width: auto; flex: none; }
 .rsi-profile-popup .ui-badge { max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .rsi-sheet .ui-field-label, .rsi-form .ui-field-label { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

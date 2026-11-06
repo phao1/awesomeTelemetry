@@ -30,7 +30,7 @@ class FakeDocker implements DockerClient {
 }
 class ModelBackend implements ExecutionBackend {
   calls: SlotRequest[] = []; infra = new Set<string>(); tokens = 100; noSession = false; candidateFail = false; crashAt = 0;
-  plan?: (req: SlotRequest) => boolean; forcedFailure: 'agent_timeout' | 'run_token_budget' | null = null;
+  plan?: (req: SlotRequest) => boolean; forcedFailure: 'agent_timeout' | 'agent_crashed' | 'run_token_budget' | null = null;
   docker = new FakeDocker();
   async prepare(): Promise<string> { return 'f'.repeat(64); }
   async run(req: SlotRequest): Promise<SlotResult> {
@@ -122,7 +122,7 @@ describe('ledger-backed worker scheduling', () => {
 });
 
 describe('worker budget and late approval recovery', () => {
-  it.each(['agent_timeout', 'run_token_budget'] as const)('%s is fail and never retried', async failure => {
+  it.each(['agent_timeout', 'agent_crashed', 'run_token_budget'] as const)('%s is fail and never retried', async failure => {
     const { store, worker, backend } = await setup(); backend.forcedFailure = failure; await worker.run();
     expect(store.task().state).toBe('running'); expect(backend.calls).toHaveLength(18);
     expect(store.list('run_put').every(r => r.outcome === 'fail' && r.attempt === 0 && r.failureReason === failure)).toBe(true);

@@ -14,7 +14,6 @@
     "argv": [
       "opencode",
       "run",
-      "--standalone",
       "--auto",
       "--format",
       "json",
@@ -28,7 +27,7 @@
     "files": [
       {
         "path": "/home/node/.config/opencode/opencode.json",
-        "content": "{\"model\": \"deepseek/deepseek-flash\", \"update\": \"disable\", \"share\": \"disabled\", \"snapshots\": false, \"lsp\": false, \"formatter\": false, \"plugins\": [], \"providers\": {\"deepseek\": {\"settings\": {\"baseURL\": \"{{baseUrl}}\", \"apiKey\": \"{{apiKey}}\"}}}}"
+        "content": "{\"model\": \"deepseek/deepseek-flash\", \"autoupdate\": false, \"share\": \"disabled\", \"snapshot\": false, \"plugin\": [], \"provider\": {\"deepseek\": {\"options\": {\"baseURL\": \"{{baseUrl}}\", \"apiKey\": \"{{apiKey}}\"}}}}"
       }
     ]
   },

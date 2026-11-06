@@ -52,7 +52,8 @@ export async function runTarget(client: DockerClient, taskId: string, q: RsiBank
     const r = await client.run(['exec', '-w', work, name, ...run.argv], { timeoutMs, signal });
     await privateWrite(join(output, 'agent.stdout'), r.stdout); await privateWrite(join(output, 'agent.stderr'), r.stderr);
     if (r.timedOut) result.failureReason = 'agent_timeout';
-    else if (!successful(r)) result.failureReason = 'infrastructure';
+    // docker exec reports 125-127 when it could not start the command; every other exit is the Agent's own.
+    else if (!successful(r)) result.failureReason = r.cancelled || r.code === null || (r.code >= 125 && r.code <= 127) ? 'infrastructure' : 'agent_crashed';
     else {
       await exec(['git', 'add', '-A']);
       result.patch = await exec(['git', 'diff', '--cached', '--binary', '--']);

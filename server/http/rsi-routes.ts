@@ -1,6 +1,6 @@
 import { overview, pageOptions, metrics, verdict, iterationRuns, comparePageRuns, reviewEvidence, ledgerReport, workerStatus } from '../rsi/page-data.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { readdir, open } from 'node:fs/promises';
+import { readdir, open, stat } from 'node:fs/promises';
 import { join, basename, dirname } from 'node:path';
 import type { IncomingMessage } from 'node:http';
 import { watch } from 'chokidar';
@@ -60,9 +60,15 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
   let closing=false;const active=new Set<Promise<void>>(), pending=new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const changed=(file:string):void=>{if(closing)return;if(basename(file)!=='ledger.jsonl')return;const id=basename(dirname(file));if(!/^[A-Za-z0-9_-]{1,128}$/.test(id))return;pending.add(id);if(timer===undefined){timer=setTimeout(()=>{timer=undefined;const taskIds=[...pending].sort();pending.clear();eventBus.emit('rsi_changed',{taskIds});},200);timer.unref();}};
-  const watcher=watch(dataRoot,{ignoreInitial:true,depth:1,usePolling:true,interval:100});watcher.on('add',changed);watcher.on('change',changed);
   // Surface watcher faults through endpoint503 rather than crashing or silently stopping.
-  let watcherError=false;watcher.on('error',()=>{watcherError=true;});
+  let watcherError=false,watcher:ReturnType<typeof watch>|undefined,existedAtStart=true;
+  // chokidar misses a root created after it started, and starting the server must not create one. A late root reports what is already there.
+  const startWatcher=async():Promise<void>=>{
+    try{await stat(dataRoot);}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')watcherError=true;existedAtStart=false;return;}
+    if(closing||watcher)return;
+    clearInterval(rootPoll);watcher=watch(dataRoot,{ignoreInitial:existedAtStart,depth:1,usePolling:true,interval:100});watcher.on('add',changed);watcher.on('change',changed);watcher.on('error',()=>{watcherError=true;});
+  };
+  const rootPoll=setInterval(()=>void startWatcher(),500);rootPoll.unref();void startWatcher();
   const stores=async():Promise<RsiStore[]>=>{
     let entries:string[]=[];try{entries=await readdir(dataRoot);}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
     const result:RsiStore[]=[];
@@ -157,5 +163,5 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
   register('GET','/api/rsi/tasks/:taskId/sessions/:sessionId/trajectory',false,async(s,_r,p,q)=>{const v=s!.list('session_put').find(v=>v.id===validId(p.sessionId!));if(!v)return notFound();return trajectory(s!.root,v.artifactPath,q,false);},200,['file','offset','limit']);
   register('GET','/api/rsi/tasks/:taskId/worker',false,async s=>workerStatus(s!));
   register('POST','/api/rsi/tasks/:taskId/commands',false,async(s,r)=>{const o=strictObject(await body(r),['requestId','iterationId','command']);const q=await humanCommand(s!,o.command as RsiCommand,o.requestId as string,o.iterationId as string|null);return{taskId:s!.taskId,queueId:q.id,status:'queued'};},202);
-  return async()=>{closing=true;clearTimeout(timer);pending.clear();await watcher.close();await Promise.allSettled(active);database?.close();};
+  return async()=>{closing=true;clearInterval(rootPoll);clearTimeout(timer);pending.clear();await watcher?.close();await Promise.allSettled(active);database?.close();};
 }

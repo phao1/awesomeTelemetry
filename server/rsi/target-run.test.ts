@@ -61,3 +61,33 @@ it('runs the none-session Agent using profile argv/env without loading a native 
   expect(calls.find(argv => argv.includes('/opt/mini-agent/agent.mjs'))!.slice(-3)).toEqual(['node', '/opt/mini-agent/agent.mjs', statement]);
   expect(calls[0]).toContain('OPENAI_API_KEY=temporary'); expect(calls[0]).not.toContain('OPENCODE_DB=/data/session.db');
 });
+
+describe('Agent exit classification', () => {
+  const run = async (result: Partial<CommandResult>): Promise<string | null> => {
+    const root = await mkdtemp(join(tmpdir(), 'target-exit-')); dirs.push(root);
+    const docker: DockerClient = { run: async argv => {
+      if (argv.includes('{{json .NetworkSettings.Networks}}')) return ok('{"internal":{}}');
+      if (argv.includes('{{json .Mounts}}')) return ok('[]');
+      if (argv.includes('/opt/mini-agent/agent.mjs')) return { ...ok(), ...result };
+      if (argv.includes('-cf')) return ok(await packTree(root));
+      if (argv.includes('/sys/fs/cgroup/memory.peak')) return ok('2048');
+      return ok();
+    } };
+    const bank = await readBank(resolve('server/rsi/__fixtures__/bank')), q = bank.questions.get('train_node')!;
+    const data = await readQuestionData(join(bank.root, 'tasks/train_node'));
+    const { profile } = await readAgentProfile(resolve('rsi-agents/mini-agent/profile.json'));
+    return (await runTarget(docker, 'task', q, data.repo, 'statement', 'target-node', { name: 'proxy', network: 'internal', token: 'temporary', runId: 'run' }, join(root, 'out'), profile, 'fixed', 1000)).failureReason;
+  };
+  it.each([1, 2, 137])('a crash with exit %i is the Agent failing, so a broken candidate cannot pause the task', async code => {
+    expect(await run({ code })).toBe('agent_crashed');
+  });
+  it('an Agent that floods its output fails instead of looking like an infrastructure problem', async () => {
+    expect(await run({ code: 0, overflow: true })).toBe('agent_crashed');
+  });
+  it.each([125, 126, 127, null])('docker failing to start the command stays infrastructure (exit %s)', async code => {
+    expect(await run({ code })).toBe('infrastructure');
+  });
+  it('a cancelled run stays infrastructure', async () => {
+    expect(await run({ code: 1, cancelled: true })).toBe('infrastructure');
+  });
+});

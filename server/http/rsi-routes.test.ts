@@ -2,12 +2,13 @@ import type { RsiPageRun } from '../../src/core/rsi-api-client.js';
 import type { ExecutionBackend } from '../rsi/worker.js';
 import type { RsiCalibrationCategory, RsiIteration, RsiMonitorCalibration } from '../../src/core/rsi-types.js';
 import { PassThrough, Writable } from 'node:stream';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Router } from './router.js';
+import { eventBus } from '../realtime/event-bus.js';
 import { registerRsiRoutes } from './rsi-routes.js';
 import { defaultRsiConfig } from '../../src/core/rsi-validation.js';
 import { openWritable } from '../storage/db.js';
@@ -152,3 +153,17 @@ it('RSI-016 overview/options, strict settings, field reasons and anchored verifi
   const broken=await call('GET','/api/rsi/tasks/task-create/ledger/verify',pageToken);expect(broken.status).toBe(200);expect(broken.body.valid).toBe(false);expect((broken.body.issues as unknown[]).length).toBeGreaterThan(0);
   await rm(join(root,'task-create/ledger.jsonl'));const missing=await call('GET','/api/rsi/tasks/task-create/ledger/verify',pageToken);expect(missing.status).toBe(200);expect(missing.body).toMatchObject({valid:false,entryCount:0,issues:[{code:'tail_truncated',line:1}]});
 });
+
+it('reports ledger changes for a data directory that only appears after the server started',async()=>{
+  // The first run of every new user: nothing exists until the first task is created, possibly by another process.
+  const root=await mkdtemp(join(tmpdir(),'rsi-late-'));dirs.push(root);const data=join(root,'later/rsi');
+  stops.push(registerRsiRoutes(new Router(),data));
+  const seen:string[]=[],unsubscribe=eventBus.on('rsi_changed',event=>{seen.push(...event.taskIds);});
+  try{
+    await mkdir(join(data,'task-late'),{recursive:true});
+    const ledger=join(data,'task-late/ledger.jsonl');await writeFile(ledger,'one\n');
+    // The watcher starts shortly after the directory appears, so a later write is what has to be noticed.
+    for(let i=0;i<80&&!seen.includes('task-late');i++){await new Promise(done=>setTimeout(done,100));await writeFile(ledger,`one ${i}\n`);}
+    expect(seen).toContain('task-late');
+  }finally{unsubscribe();}
+},15000);

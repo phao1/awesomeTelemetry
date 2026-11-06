@@ -62,7 +62,7 @@ describe('RSI runtime contract validation', () => {
     expect(() => validateRsiEvaluation({ ...evaluation(), phase: 'sealed', repetitions: 3, infraErrorRatio: .1, score: null, sealedVerdict: 'accept' })).toThrow();
   });
   it('run token 429 and Agent timeout are fails, not infrastructure errors', () => {
-    for (const failureReason of ['agent_timeout', 'run_token_budget'] as const) {
+    for (const failureReason of ['agent_timeout', 'agent_crashed', 'run_token_budget'] as const) {
       expect(validateRsiRun({ ...run(), outcome: 'fail', failureReason }).outcome).toBe('fail');
       expect(() => validateRsiRun({ ...run(), outcome: 'infra_error', failureReason })).toThrow();
     }

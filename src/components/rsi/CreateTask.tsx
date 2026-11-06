@@ -23,7 +23,9 @@ export function CreateTask({locale,worker,onClose,onOpen,onCreated}:{locale:Loca
 export function CreateForm({options,locale,worker,onOpen,onCreated,onClose}:{options:RsiOptions;locale:Locale;worker:RsiWorkerStatus|null;onOpen:(id:string)=>void;onCreated:()=>void;onClose:()=>void}) {
   const [step,setStep]=useState(0),[agent,setAgent]=useState(options.agents[0]?.path??''),[optimizer,setOptimizer]=useState(options.optimizers.find(p=>p.id==='opencode-deepseek')?.path??options.optimizers[0]?.path??'');
   const [customAgent,setCustomAgent]=useState(''),[customOptimizer,setCustomOptimizer]=useState(''),[repository,setRepository]=useState(''),[commit,setCommit]=useState(''),[bank,setBank]=useState(options.bank?.path??'rsi-bank'),[subset,setSubset]=useState<'small'|'full'>('small');
-  const [config,setConfig]=useState(options.defaults),[settings,setSettings]=useState(options.settings),[created,setCreated]=useState<RsiCreated|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState<RsiApiError|null>(null),[network,setNetwork]=useState(false);
+  const trainCount=(selected:'small'|'full')=>options.bank?.[selected].find(r=>r.phase==='train')?.count;
+  // The goal defaults to the whole training set of the chosen subset: a smaller default would finish at the baseline.
+  const [config,setConfig]=useState({...options.defaults,targetPassedCount:trainCount('small')??options.defaults.targetPassedCount}),[settings,setSettings]=useState(options.settings),[created,setCreated]=useState<RsiCreated|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState<RsiApiError|null>(null),[network,setNetwork]=useState(false);
   const request=useRef<string|null>(null),lock=useRef(false),changed=()=>{request.current=null;setError(null);};
   const selectedOptimizer=options.optimizers.find(p=>p.path===optimizer), unmetered=selectedOptimizer?.egress==='vendor-allowlist';
   const errorFor=(field:string)=>error?.details?.field===field||error?.details?.field?.startsWith(field+'.')?fieldErrorLabel(error.details.field??field,error.details.reason,locale):undefined;
@@ -38,10 +40,10 @@ export function CreateForm({options,locale,worker,onOpen,onCreated,onClose}:{opt
   const numberField=(key:keyof typeof config,zh:string,en:string,min=1)=>typeof config[key]==='number'?<Field key={key} label={copy(locale,zh,en)} error={errorFor('config.'+key)}><Input type="number" min={min} step={key==='tokenGrowthMaxRatio'?5:1} value={(config[key] as number)*(key==='tokenGrowthMaxRatio'?100:1)} disabled={busy} onChange={e=>{changed();setConfig({...config,[key]:Number(e.target.value)/(key==='tokenGrowthMaxRatio'?100:1)});}}/></Field>:null;
   if(created)return <div className="rsi-form" data-testid="rsi-created">
     <Callout tone="success" title={copy(locale,'任务已加入队列','Task queued')}/>
-    {created.agentToken?<><Callout tone="attention" title={copy(locale,'这个令牌只显示这一次','This token is shown only once')}/><CopyField locale={locale} label={copy(locale,'任务令牌','Task token')} value={created.agentToken} secret/></>:<Callout tone="attention" title={copy(locale,'任务已创建，令牌无法再次读取','Task already created; the token cannot be retrieved again')}/>}
+    {created.agentToken?<><Callout tone="attention" title={copy(locale,'这个令牌只显示这一次','This token is shown only once')}/><Field label={copy(locale,'任务令牌','Task token')}><CopyField locale={locale} label={copy(locale,'任务令牌','Task token')} value={created.agentToken} secret/></Field></>:<Callout tone="attention" title={copy(locale,'任务已创建，令牌无法再次读取','Task already created; the token cannot be retrieved again')}/>}
     <p>{copy(locale,'先设置 RSI_UPSTREAM_BASE_URL、RSI_UPSTREAM_MODEL、RSI_UPSTREAM_API_KEY 和 RSI_MONITOR_API_KEY（自定一个令牌）。监控没有启动时，迭代不会自动晋级，会停下来等人工审查。','First set RSI_UPSTREAM_BASE_URL, RSI_UPSTREAM_MODEL, RSI_UPSTREAM_API_KEY and RSI_MONITOR_API_KEY (any token you choose). Without the monitor, iterations are held for human review instead of being promoted.')}</p>
-    <CopyField locale={locale} label={copy(locale,'启动监控','Start monitor')} value={monitorCommand(options.cli,selectedOptimizer?.family??null)}/>
-    <CopyField locale={locale} label={copy(locale,'启动执行器','Start executor')} value={workerCommand(options.cli,created.taskId)}/>
+    <Field label={copy(locale,'启动监控','Start monitor')}><CopyField locale={locale} label={copy(locale,'启动监控','Start monitor')} value={monitorCommand(options.cli,selectedOptimizer?.family??null)}/></Field>
+    <Field label={copy(locale,'启动执行器','Start executor')}><CopyField locale={locale} label={copy(locale,'启动执行器','Start executor')} value={workerCommand(options.cli,created.taskId)}/></Field>
     <Button variant="primary" onClick={()=>{const id=created.taskId;setCreated(null);onOpen(id);}}>{copy(locale,'打开任务','Open task')}</Button>
   </div>;
   return <div className="rsi-create"><Steps items={steps} current={step}/><div className="rsi-form">
@@ -58,7 +60,7 @@ export function CreateForm({options,locale,worker,onOpen,onCreated,onClose}:{opt
     </>}
     {step===2&&<>
       <Field label={copy(locale,'题库路径','Question bank path')} error={errorFor('bank')}><Input value={bank} onChange={e=>{changed();setBank(e.target.value);}}/></Field>
-      <SegmentedControl activeId={subset} onChange={value=>{changed();setSubset(value as 'small'|'full');}} items={[{id:'small',label:copy(locale,'小题集（试用）','Small (trial)')},{id:'full',label:copy(locale,'完整','Full')}]}/>
+      <SegmentedControl activeId={subset} onChange={value=>{changed();const selected=value as 'small'|'full';setSubset(selected);setConfig(old=>({...old,targetPassedCount:trainCount(selected)??old.targetPassedCount}));}} items={[{id:'small',label:copy(locale,'小题集（试用）','Small (trial)')},{id:'full',label:copy(locale,'完整','Full')}]}/>
       {bank===options.bank?.path?<Table locale={locale} rowKey={r=>r.phase} rows={options.bank[subset]} columns={[{key:'set',label:copy(locale,'集合','Set'),render:r=>reasonLabel(r.phase,locale)},{key:'count',label:copy(locale,'题数','Questions'),align:'right',render:r=>r.count},{key:'languages',label:copy(locale,'语言分布','Languages'),render:r=>Object.entries(r.languages).map(([language,count])=>`${reasonLabel(language,locale)} ${count}`).join(' · ')}]}/>:<Callout title={copy(locale,'创建时将校验自定义题库','The custom bank will be validated on creation')}/>}
     </>}
     {step===3&&<>

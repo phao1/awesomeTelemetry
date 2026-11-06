@@ -1,0 +1,6 @@
+{
+  "name": "rsi-mini-agent",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node agent.mjs" }
+}

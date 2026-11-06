@@ -134,6 +134,8 @@ export class ContainerBackend implements ExecutionBackend {
       let failureReason = target.failureReason;
       if (receipt.blocked || receipt.tokens >= this.store.task().config.runTokenBudget) failureReason = 'run_token_budget';
       else if (failureReason !== 'agent_timeout' && (pollError || !receipt.complete)) failureReason = 'infrastructure';
+      // A baseline that never reached the model is a broken setup, not a score of zero. A candidate gets no such excuse.
+      else if (failureReason === 'agent_crashed' && e.iterationId === null && receipt.requests === 0) failureReason = 'infrastructure';
       let outcome: RsiOutcome = failureReason === 'infrastructure' ? 'infra_error' : failureReason ? 'fail' : 'pass';
       if (!failureReason) {
         const verdict = await evaluatePatch(this.client, this.store.taskId, q, data, target.patch,

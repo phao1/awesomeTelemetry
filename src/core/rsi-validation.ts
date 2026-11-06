@@ -100,7 +100,7 @@ const evaluation = shape({ id, taskId: id, iterationId: nullable(id), commit, so
   questionIds: array(id, true), passedCounts: array(integer), score: nullable(number), infraErrorRatio: nullable(ratio),
   sealedVerdict: nullable(oneOf(['accept', 'reject'])), locked: boolean, createdAt: at, updatedAt: at });
 const run = shape({ id, taskId: id, evaluationId: id, questionId: id, repetition: integer, attempt: oneOf([0, 1]),
-  outcome: oneOf(['pass', 'fail', 'infra_error']), failureReason: nullable(oneOf(['test_failed', 'agent_timeout', 'run_token_budget', 'infrastructure'])),
+  outcome: oneOf(['pass', 'fail', 'infra_error']), failureReason: nullable(oneOf(['test_failed', 'agent_timeout', 'agent_crashed', 'run_token_budget', 'infrastructure'])),
   durationMs: number, proxyTokens: nullable(integer), artifactPath: nullable(pathRef), sessionPath: nullable(pathRef), at });
 const finding = shape({ id, taskId: id, iterationId: id, level: oneOf(['L0', 'L1', 'L2', 'L3', 'L4', 'L5']),
   category: oneOf(['protected_path', 'task_fingerprint', 'opaque_blob', 'dependency_change', 'binary_file', 'diff_too_large', 'file_mode_change', 'symbolic_link', 'suspicious', 'review_clean', 'isolation_violation']),

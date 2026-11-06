@@ -119,7 +119,7 @@ export interface RsiEvaluation {
 export interface RsiRun {
   id: string; taskId: string; evaluationId: string; questionId: string;
   repetition: number; attempt: 0 | 1; outcome: RsiOutcome;
-  failureReason: 'test_failed' | 'agent_timeout' | 'run_token_budget' | 'infrastructure' | null;
+  failureReason: 'test_failed' | 'agent_timeout' | 'agent_crashed' | 'run_token_budget' | 'infrastructure' | null;
   durationMs: number; proxyTokens: number | null; artifactPath: string | null;
   sessionPath: string | null; at: string;
 }
@@ -1939,7 +1939,7 @@ export interface RsiEvaluation {
 export interface RsiRun {
   id: string; taskId: string; evaluationId: string; questionId: string;
   repetition: number; attempt: 0 | 1; outcome: RsiOutcome;
-  failureReason: 'test_failed' | 'agent_timeout' | 'run_token_budget' | 'infrastructure' | null;
+  failureReason: 'test_failed' | 'agent_timeout' | 'agent_crashed' | 'run_token_budget' | 'infrastructure' | null;
   durationMs: number; proxyTokens: number | null; artifactPath: string | null;
   sessionPath: string | null; at: string;
 }

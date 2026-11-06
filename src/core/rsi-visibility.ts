@@ -50,7 +50,7 @@ export function projectEvaluationForOptimizer(value: unknown): RecordValue | nul
 export function projectRunForOptimizer(value: unknown, phase: RsiPhase): RecordValue | null {
   const v = object(value); if (!v || (phase !== 'smoke' && phase !== 'train') || !['pass', 'fail', 'infra_error'].includes(v.outcome as string)) return null;
   return pick(v, { id: string, questionId: string, repetition: int, attempt: member([0, 1]), outcome: member(['pass', 'fail', 'infra_error']),
-    failureReason: nullable(member(['test_failed', 'agent_timeout', 'run_token_budget', 'infrastructure'])), durationMs: num, proxyTokens: nullable(int), at: string });
+    failureReason: nullable(member(['test_failed', 'agent_timeout', 'agent_crashed', 'run_token_budget', 'infrastructure'])), durationMs: num, proxyTokens: nullable(int), at: string });
 }
 export function projectFindingForOptimizer(value: unknown): RecordValue | null {
   const v = object(value); if (!v || !categories.includes(v.category as string)) return null;
