@@ -30,6 +30,7 @@
 - 你的沙箱不能写 `.git`、不能绑端口、不能用 Docker、没有网络。不要提交。需要这些能力的验证写成脚本或标记为 `skipIf`，由 Claude 在沙箱外运行，并在输出里列出“未运行项”。
 - Node：`export PATH="/Users/penghao/Documents/dshProject/dshPluginSecrete/.tools/node-v24.19.0-darwin-arm64/bin:$PATH"`。
 - 沙箱内验证：`npm run typecheck`、`npx eslint <改动路径>`、`npx vitest run <改动路径> src/catch-guard.test.ts src/styles`。
+- 沙箱里 `node_modules` 是只读软链，常规命令写缓存会 EPERM，这时用 `npx tsc -p tsconfig.app.json --noEmit --tsBuildInfoFile /tmp/<名字>.tsbuildinfo`（`tsconfig.node.json` 同样）和 `npx vitest run --configLoader native --no-cache <路径>`，并在输出里写明。全量测试由 Claude 在沙箱外跑，改 schema 版本这类全局改动时，要主动搜出其他写死旧值的测试。
 - 测试失败修实现，不放宽断言，不 mock 被测逻辑。
 - 真密钥不写进仓库、日志、账本或任何容器（模型代理除外）。不读取、不挂载 `~/.codex`、`~/.claude`、`~/.ssh`。
 - 界面和报告不出现金额，只有 token 和缓存命中率。
@@ -206,30 +207,82 @@
 **分支**：`codex/rsi-p2`（P1 合入后）
 
 ```text
-目标：实现 rsi worker 和两段式容器评测。
+你在 awesomeTelemetry 仓库的 worktree 里（分支 codex/rsi-p2）。P1 的契约和判定核心已合入。
 
-必读：AGENTS.md；openspec/contracts/rsi.md 全文；docs/rsi/p0-report.md（P0 实测结果，优先于设计稿的推测）；scripts/rsi-probe/ 全部；server/benchmark/runner.ts 的驱动协议（只借协议）；server/benchmark/cli.ts 和 bin/benchmark.js（CLI 写法）；local-sessions/opencode.ts 的 readOpenCodeDb。
+目标：实现 rsi worker 和两段式容器评测。用脚本化假模型能跑完基线标定、smoke、train、审查挂起，以及审查通过后的封存集和晋级判定，并且崩溃后能恢复。
+
+必读（按顺序）：
+1. AGENTS.md 全文
+2. openspec/contracts/rsi.md 全文（本模块最高权威，含 RSI-011 题库格式）；openspec/specs/rsi/spec.md
+3. docs/rsi/p0-report.md，尤其“带给 P2 的要求”，这些是实测踩过的坑
+4. scripts/rsi-probe/：run-probe.mjs、proxy/*、images/*、evaluate.mjs、session-tokens.mjs
+5. src/core/rsi-*.ts、server/rsi/ledger.ts、server/storage/rsi.ts
+6. server/benchmark/cli.ts、bin/benchmark.js（CLI 写法）；local-sessions/opencode.ts 的 readOpenCodeDb
 
 只允许新增或修改：
-- server/rsi/docker.ts（异步调用 docker CLI，全部有超时和取消）
-- server/rsi/build.ts（干净容器里按 commit 构建被优化 Agent，不接受任何上传的二进制）
-- server/rsi/target-run.ts（被优化容器，只导出 diff 和会话库）
-- server/rsi/evaluator.ts（无网络评估容器，封存副本覆盖，结构化报告，用例数核对，三态）
-- server/rsi/model-proxy.ts（把 P0 代理产品化：run 令牌、模型固定、token 预算硬拦截、usage JSONL）
-- server/rsi/queue.ts、worker.ts（拉队列、并发上限默认 2、崩溃恢复：进行中的评测重新排队，账本已有结果的不重跑）
-- server/rsi/artifacts.ts（大产物放文件，数据库只存索引）
-- server/rsi/cli.ts、bin/rsi.js、vite.cli.config.ts、package.json 的 bin 和 scripts
-- 各自的 .test.ts；fake-agent 测试替身
+- server/rsi/docker.ts（DockerClient 接口和实现：异步 spawn，argv 不经 shell，全部有超时、取消和输出上限；测试用假实现）
+- server/rsi/bank.ts（按 RSI-011 读取并校验题库）
+- server/rsi/build.ts、target-run.ts、evaluator.ts、proxy-run.ts、artifacts.ts、queue.ts、worker.ts、recovery.ts、review.ts、cli.ts
+- server/rsi/reporters/（可信的 node、unittest、go 报告器和解析器）
+- server/rsi/__fixtures__/bank/（测试用小题库，不是正式题库）
+- scripts/rsi-images/（target、evaluator、proxy 的 Dockerfile，产品化的 model-proxy 和 mock-model，及其测试）
+- scripts/rsi-e2e/p2-smoke.mjs 和说明（Claude 在沙箱外运行）
+- bin/rsi.js、vite.cli.config.ts、package.json 的 bin 和 scripts
+- openspec/contracts/rsi.md（只追加 RSI-012 worker 和 CLI 细则）；openspec/contracts/api.md 不动
+- 各自的测试文件，且必须能被 npm run test 跑到
 
-要求：
-- `rsi worker --execute` 是唯一能运行容器的入口。没有 --execute 只打印将要做的事。HTTP 不触发执行。
-- 基线标定、smoke、train、sealed 的调度按契约。smoke 挂了立即停。infra_error 重试一次。
-- 每次状态变化先写账本，再更新数据库索引。
-- token 和耗时以代理和容器层为准，会话库只用于展示；两边差距超过配置阈值时写一条 finding。
-- 用假 Agent（不调模型，直接改文件）跑通 smoke 和 train，这部分不依赖真实模型。
-- 所有 Docker 集成测试在没有 Docker 时 skip，并写进输出，由 Claude 运行。
+具体要求：
 
-验收：单测全绿；Claude 在沙箱外用假 Agent 跑完 smoke 和 train；中途 kill worker 后能恢复且不重复计分。
+1. 入口和边界
+   - `rsi worker --execute` 是唯一能启动容器的入口。不带 --execute 只打印将要做的事。HTTP 不触发执行（本阶段不写 HTTP）。
+   - CLI 子命令：task create、task status、iteration submit（本机可信入口，P4 才有优化者 HTTP）、worker、ledger verify、ledger recover。
+   - ledger recover 处理崩溃留下的半行：把残留字节移到隔离文件，由人显式执行，不自动截断。
+   - 每次状态变化先写账本，再更新数据库索引。所有转移必须走 rsi-state-machine，所有判定必须走 rsi-gate、rsi-noise，不得另写一份。
+
+2. 构建（L0）
+   - 平台维护一个可信的裸仓库副本，禁用 hooks，用 git archive 取出候选 commit，不接受任何上传的二进制。
+   - 候选 diff 由平台从父代 commit 到候选 commit 计算，先过 rsi-l1-rules，通过后才构建。
+   - Dockerfile 分两段：依赖安装段可以联网，只拷入 package.json 和 lockfile，lockfile 不变就命中缓存；编译段用 `RUN --network=none`，所以候选代码在构建时碰不到网络。
+   - 被拒绝版本的镜像要清理，保留最近若干个，别撑爆 30GB 的 VM 磁盘。
+
+3. 被优化容器（按 P0 报告）
+   - 每题每轮全新容器，无 bind mount，只接 internal 网络，cap-drop ALL，no-new-privileges，有内存、CPU、pids 上限。
+   - 数据进出走 tar 流或 stdin，工作目录由容器用户创建，路径随机，环境里没有题号。
+   - 按题目 toolchain 选镜像。Agent 超时算 fail，代理 429 也算 fail，都不是 infra_error。
+   - 导出：git add -A 后 git diff --cached --binary，加上会话库。销毁前读 cgroup 的 memory.peak。
+
+4. 评估容器
+   - 全新容器，--network none。放入 repo 快照，应用 diff，然后用封存副本覆盖所有隐藏测试，最后才运行。
+   - argv 按 RSI-011 的 report 和 testTargets 由平台构造。分数只来自可信报告器的结构化输出，用例数必须等于 expectedTests。
+   - 严格区分：评估器自身的权限、IO、启动、报告解析错误是 infra_error，重试一次；补丁应用失败、测试失败、测试超时才是 fail。git apply 的退出码不能笼统算 fail，P0 就吃过这个亏。
+
+5. 模型代理
+   - 容器同时接 internal 网络和 bridge，不发布端口，真密钥只在它的环境里。
+   - run 令牌归因、强制改写模型、max_tokens 可配置（不要写死 1024）、token 预算硬拦截。预算预留要按真实请求校准，不能因为工具定义的字节数大就误触发 429。
+   - mock 模式用脚本表驱动：每题可配 pass、fail、flaky（按重复次数变化），让 e2e 能测出非零 δ。
+   - worker 累加代理 usage，达到任务 token 预算时转 paused（budget_exhausted），作废进行中的评测。
+   - 代理和会话库 token 差距超过配置阈值时写一条 finding。没有任何请求时日志文件不存在，这不是错误。
+
+6. 调度和恢复
+   - 按契约调度：基线标定（train 重复 R 次，sealed 3 次）、smoke、train、sealed。smoke 挂了立即停。并发上限默认 2，可配置。
+   - 审查通过接口 ReviewProvider 接入。默认实现返回 missing，所以迭代会按契约在 reviewing 转 held。测试里用假实现走完封存集和晋级。P5 才接真实监控。
+   - 崩溃恢复：启动时校验账本，用 label 清理残留容器和网络，进行中的评测重新排队，账本里已有结果的不重跑、不重复计分。
+
+7. 测试
+   - 单测用假 DockerClient，覆盖 infra_error 和 fail 的区分、用例数不符、超时、恢复、预算耗尽。
+   - scripts/rsi-e2e/p2-smoke.mjs 用真实 Docker 和假模型跑完整流程，包括中途 kill -9 worker 再恢复，输出 JSON 报告。Docker 不可用时明确报错。你跑不了它，由 Claude 运行。
+
+不要做：
+- 不写 HTTP 路由、页面、监控 Agent、优化者接入。不改 server/server.ts、src/App.tsx。不新增依赖。
+- 不读取或挂载 ~/.codex、~/.claude、~/.ssh。
+
+遇到以下情况停下来问（一次列全）：
+- 契约有矛盾，或按契约写不出确定行为
+- 需要改动列表外的文件
+
+验收（沙箱内）：npm run typecheck；npx eslint <改动路径>；npx vitest run server/rsi scripts/rsi-images scripts/rsi-e2e src/catch-guard.test.ts
+
+完成后按 AGENTS.md Output format 输出，并列出未运行项和自行决定的取值。
 ```
 
 **审查清单**
@@ -246,24 +299,39 @@
 **分支**：`codex/rsi-p3`（与 P2 并行）
 
 ```text
-目标：做 30 道自建小题，含隐藏测试、参考解、变异检查和指纹字典，按设计稿划分集合。
+你在 awesomeTelemetry 仓库的 worktree 里（分支 codex/rsi-p3）。P1 的契约和判定核心已合入。
 
-必读：AGENTS.md；openspec/contracts/rsi.md 的题集和 L1 部分；docs/rsi/design.md“评测与晋级闸门”“自建题的要求”；scripts/rsi-probe/task；src/core/rsi-l1-rules.ts。
+目标：按 openspec/contracts/rsi.md 的 RSI-011 做 30 道自建题，含隐藏测试、参考解和变异检查，并按设计稿划分集合。
+
+必读：AGENTS.md；openspec/contracts/rsi.md 的 RSI-006、RSI-006.1、RSI-011；docs/rsi/design.md“评测与晋级闸门”“自建题的要求”；scripts/rsi-probe/task（样题格式）；src/core/rsi-l1-rules.ts。
 
 只允许新增：
-- rsi-bank/tasks/<id>/（repo/、statement.md、hidden_tests/、reference.patch、meta.json）
-- rsi-bank/manifest.json（分层划分：smoke 3 取自 train 15；sealed 9；final 6）
-- scripts/rsi-bank/validate.mjs、mutate.mjs、build-dictionary.mjs，及测试
-- package.json 的 files 排除项（如需要，确保题集不进发布包）
+- rsi-bank/manifest.json、rsi-bank/tasks/<questionId>/**
+- scripts/rsi-bank/validate.mjs、mutate.mjs，及测试
+- scripts/rsi-bank/bank.test.ts（用 buildFingerprintDictionary 和 scanDiff 验证字典，能被 npm run test 跑到）
+- docs/rsi/bank.md（说明、分布表、被剔除的题和原因）
 
 要求：
-- 至少 3 种语言：JavaScript/TypeScript、Python、Go（Go 由评估镜像提供，本机没有 Go 时该部分 skip 并写进输出）。难度分层。题目是自写的小型代码库，不复制受版权保护的代码。
-- 校验：原始 repo 必须不过隐藏测试；reference.patch 必须过；statement.md 不泄露隐藏测试的断言。
-- 变异检查：对参考解做简单变异（翻转条件、改边界、删语句），测试抓不住的比例超过阈值的题不收。阈值写进 manifest。
-- 题号、仓库名不写进 statement.md。
-- 输出指纹字典，交给 L1 使用。字典和隐藏测试只放在优化者挂载不到的地方。
+- 30 题：smoke 3（取自 train）、train 15、sealed 9、final 6。train、sealed、final 各自覆盖 JavaScript/TypeScript、Python、Go 三种语言，难度分层。划分用固定 seed，写进 manifest。
+- 题目是你自己写的小型代码库，不复制受版权保护的代码。全部只用标准库，因为评估容器没有网络：node:test、Python unittest（兼容 3.9）、go test。Go 模块不依赖任何外部包。
+- 难度要有区分度：编码 Agent 在 5～10 分钟内能做完，但不是全都一次就过。easy 是单文件小改；medium 要跨文件或处理边界条件；hard 要先理解模块间的关系。全部太简单或全部太难，闸门都测不出信号。
+- 题面像真实的 issue：描述现象和期望，不给补丁。statement.md 不得出现题号、仓库名、隐藏测试名、期望值。
+- 校验（validate.mjs）：manifest 不变量全部成立；原始 repo 不过隐藏测试；应用 reference.patch 后全过；实际用例数等于 expectedTests。
+- 变异检查（mutate.mjs）：对参考解改动处做简单变异（翻转比较和逻辑运算、改边界、删语句），算出被测试杀死的比例。低于 mutationKillMin（默认 0.7）的题要么加强测试，要么剔除。结果写进 manifest 和 docs/rsi/bank.md。
+- meta.json 的指纹字段（testNames、filePaths、rareStrings、expectedValues）要如实填写。bank.test.ts 要验证：字典非空；良性 diff（普通重构、加日志、改提示词措辞）不误报；把题号、隐藏测试名、罕见字符串写进 diff 必中。
+- 本机没有 Go：validate.mjs 和 mutate.mjs 支持 --docker 和本地两种模式，本地缺工具链时明确跳过并写进输出。Go 部分的代码由你写好，由 Claude 在容器里跑。你跑不了 Docker。
 
-验收：validate.mjs 全过；弱测试题被剔除并记录；输出每个集合的语言和难度分布。Claude 随后抽查若干题。
+不要做：
+- 不改 src/、server/、package.json。题库不进 npm 包，package.json 的 files 是白名单，不用动。
+- 不把参考解、隐藏测试内容或题号写进 statement.md。
+
+遇到以下情况停下来问（一次列全）：
+- RSI-011 的格式无法表达某类题
+- 需要改动列表外的文件
+
+验收（沙箱内）：node scripts/rsi-bank/validate.mjs（本地模式）；node scripts/rsi-bank/mutate.mjs（本地模式）；npx vitest run scripts/rsi-bank；npx eslint scripts/rsi-bank。
+
+完成后按 AGENTS.md Output format 输出，并列出每个集合的语言和难度分布、被剔除的题、未运行项。
 ```
 
 **审查清单**
