@@ -2058,3 +2058,7 @@ its own system prompt).
 ## M13 RSI P1 (2026-11-07)
 
 Contract, decision core, ledger and additive schema v25 only; no request-path or scan-path code changes. M1 8GB, full `perf:check` passed: listSessions(500) 0.557 ms, worst detail slim (9,590 events) 13.7 ms, overview cold 72.6 ms / hit 0.44 ms, mission cold 0.92 ms / hit 0.028 ms, event-loop p99 under load 0 ms; capture A/B all three profiles within budget; task health 20,000 events 785 ms.
+
+## M13 RSI P2 (2026-11-07)
+
+Worker, container evaluation and CLI only; no request-path or scan-path changes in the web server. M1 8GB, full `perf:check` passed, capture A/B profiles within budget, task health 20,000 events 784 ms. Docker e2e with a scripted model passed in 17.5 minutes including a first OpenCode image build, `kill -9` recovery and idempotent restart.

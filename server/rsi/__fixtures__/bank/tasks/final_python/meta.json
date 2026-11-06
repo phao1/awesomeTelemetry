@@ -1,0 +1,24 @@
+{
+  "questionId": "final_python",
+  "repository": "private-final_python-origin",
+  "testNames": [
+    "test_result"
+  ],
+  "filePaths": [
+    "answer.py"
+  ],
+  "rareStrings": [],
+  "expectedValues": [
+    "3"
+  ],
+  "version": 1,
+  "language": "python",
+  "difficulty": "easy",
+  "toolchain": "python",
+  "testTargets": [
+    "test_checks.py"
+  ],
+  "report": "unittest-json",
+  "expectedTests": 1,
+  "timeoutSeconds": 10
+}

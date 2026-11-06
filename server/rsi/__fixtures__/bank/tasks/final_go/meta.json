@@ -1,0 +1,24 @@
+{
+  "questionId": "final_go",
+  "repository": "private-final_go-origin",
+  "testNames": [
+    "TestResult"
+  ],
+  "filePaths": [
+    "answer.go"
+  ],
+  "rareStrings": [],
+  "expectedValues": [
+    "3"
+  ],
+  "version": 1,
+  "language": "go",
+  "difficulty": "easy",
+  "toolchain": "go",
+  "testTargets": [
+    "."
+  ],
+  "report": "go-test-json",
+  "expectedTests": 1,
+  "timeoutSeconds": 90
+}

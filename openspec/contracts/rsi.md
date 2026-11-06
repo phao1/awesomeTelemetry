@@ -349,7 +349,7 @@ lines (additions+deletions) or maxDiffBytes UTF8 bytes rejects diff_too_large.
 | protected_path | reject |
 | task_fingerprint | reject |
 | opaque_blob | reject |
-| dependency_change | hold, explicit human approval |
+| dependency_change | hold, explicit human approval; dependency manifests/locks, files under `patches/`, `.npmrc`, `bunfig.toml` |
 | binary_file | reject |
 | diff_too_large | reject and split hypothesis |
 | file_mode_change | hold, treated as dependency_change approval scope |
@@ -1180,3 +1180,238 @@ container, so a patch can in principle interfere with the test framework. Exact 
 counts and trusted reporters reduce this but do not eliminate it. L1 rejection
 categories are also a low-bandwidth oracle: an optimizer can learn whether a guessed
 string is in the dictionary by submitting it, at the cost of one iteration each.
+
+## RSI-012 Worker and trusted local CLI (M13 / P2)
+
+This additive P2 section implements containers and local commands; it does not
+change the P1 entity types, HTTP contract or public application. No HTTP execution,
+optimizer upload, monitor Agent, automatic merge or production bank ships here.
+
+### Entry, state and persistence
+
+`rsi worker --execute --task <id> [--root <configRoot>]` is the only production
+entry that builds images or creates/starts containers. Without `--execute`, it
+verifies/rebuilds the cache and prints the intended work; no Docker invocation.
+A worker drains available work then exits when idle, held or paused. Default
+ReviewProvider returns missing for both required reviews. Only a trusted test
+harness may inject a fake ReviewProvider; there is no clean-review CLI flag.
+The harness can inject an after-run crash barrier after fsynced run evidence.
+
+CLI commands are `task create`, `task status`, `iteration submit`, `worker`,
+`ledger verify`, `ledger recover`. `task command` additionally accepts a local
+human JSON command for approve/reject/retry_review/retry_evaluation/pause/resume/
+stop/set_budget/final. HTTP, rollback/adoption, instruction management and optimizer
+access remain later-phase work. All commands select `--task <id>` and optional
+`--root <configRoot>` (default current working directory). Data lives under
+`<configRoot>/awesome-telemetry-data/rsi/`; the shared rebuildable `index.db` lives
+there. Creation flags: `--repository <local-path> --baseline <full-commit>
+--bank <bank-path> [--config <RsiConfig-json>] [--settings <WorkerSettings-json>]`.
+Submit flags: `--commit <full-commit> --prd <RsiPrd-json> --request <id>`.
+Human commands use `--command <RsiCommand-json> --request <id>` and, for iteration
+commands, `--iteration <id>`. `--docker-context <name>` is worker-only in effect.
+Task creation returns the newly generated bearer once; it is never written to a
+file, log or ledger. Status is human-only and omits taskTokenHash.
+
+Every snapshot is storage-validated in a rolled-back transaction, appended and
+fsynced to the ledger, then applied to the cache. Task/iteration state changes call
+rsi-state-machine. Noise calls calibrateNoiseBand. Gate conditions, including early
+training and sealed checks, come from decidePromotion. Smoke is an all-pass
+prerequisite: any failed smoke prevents train/reviews/sealed. No scores are chosen
+from confirmations. Submissions count toward iterationCount when materialized;
+reaching either task budget pauses and invalidates unfinished evaluations. Human
+budget increase and resume create fresh evaluation IDs; old evidence remains.
+
+A per-task worker O_EXCL lock prevents two executors from cleaning each other's
+resources. A separate short writer lock serializes trusted CLI/worker writes;
+known-dead owners may be reclaimed under a second O_EXCL guard. Partial/malformed
+locks fail closed. These locks do not replace ledger.jsonl.lock and its RSI-007
+ownership/staleness rules. No periodic task daemon or polling HTTP handler exists.
+
+### Bank identity and private inputs
+
+bank.ts is the sole runtime reader of question-bank contents. It validates RSI-011
+fields, safe argv/path targets, split membership, language coverage, toolchain/
+report compatibility, mutation qualification and statement secrecy. Go `.` and
+`./...` package targets are allowed. The datasetHash is SHA256 over all sorted bank
+files: for each file hash canonicalJSON([repoRelativePath,byteLength]), then its
+raw bytes. Creation freezes a copy at private/bank and fingerprints at
+private/fingerprints.json; startup rehashes the copy before execution. No hidden
+content or reference patch enters a target container. Baseline is one ancestor
+version: disagreement across its calibration repetitions breaks a stable pass
+window instead of manufacturing multiple ancestor versions.
+
+### Trusted source build and dependency exception (approved 2026-11-07)
+
+The platform clones a local bare repository without hardlinks, disables hooks,
+imports full commits with no submodules/tags, computes the parent-to-candidate
+Git diff itself, then runs L1 before any candidate build. No uploaded binary or
+caller-supplied diff is accepted. Sources come from git archive. Existing source
+symlinks are materialized only from targets inside the archive, never host paths;
+new/modified symlink diffs still reject under unchanged L1 rules. Source archives
+are capped at256MiB (the P0 fixed source is approximately139MiB); question/session
+archives are capped at64MiB. Temporary contexts are removed after builds. Bounded build logs are retained in
+private/build. Recognizable source syntax/module compilation errors become a
+retained L0 rejection through the gate; daemon, deadline, output limit, permissions,
+IO/network and unknown build failures pause as infrastructure errors.
+
+The networked dependency layer receives only root/workspace package.json files,
+lockfiles, and dependency patches referenced by those manifests/locks. Lifecycle
+scripts are disabled with `bun install --frozen-lockfile --ignore-scripts`.
+Candidate `.npmrc` and `bunfig.toml` NEVER enter that layer; registry is fixed in
+the trusted Dockerfile to https://registry.npmjs.org. The dependency context hash
+and Docker COPY cache include every dependency input; source-only changes reuse
+that layer. Patches under `patches/`, `.npmrc` and `bunfig.toml` are L1
+`dependency_change` holds, including removals/renames; protected ancestors still
+reject. No other L1 behavior changes in P2.
+
+Candidate source, candidate build configuration, installation postprocessing and
+compilation execute only in `RUN --network=none`. The fixed OpenCode build runs
+its `packages/core` fix-node-pty step offline because the PTY spawn-helper may
+need executable permissions. Related dependency: `@lydell/node-pty`; this is
+OpenCode's postprocessing, not permission to run its installer online. No other
+third-party lifecycle script is enabled. Native/optional prebuilt artifacts must
+be present from locked installation; if a dependency needs an additional offline
+script, name it here before delivery. A dependency requiring online script
+execution requires a new explicit design decision.
+
+Toolchain images have node/python/go targets. Rejected images retain at most the
+configured recent commit groups (default2), in addition to baseline/promoted and
+active work. The selected Docker context's shared build cache is pruned to6GB (cache only,
+including reusable cache from other builds in that context). These are local image retention
+limits, not permission to delete unrelated Docker resources.
+
+### Two-stage runs and trusted reports
+
+Each (question,repetition,attempt) uses fresh target and evaluator containers.
+Targets have only a fresh internal network, zero bind mounts, cap-drop ALL,
+no-new-privileges, memory1100MiB/CPU1/pids256. Evaluators use network none and
+memory768MiB/CPU1/pids256. Proxies use memory256MiB, the internal network plus
+bridge, no published ports; only proxies receive real upstream secrets.
+Container users create random /tmp working directories. No question ID is in
+target environment variables. All input uses normalized tar streams/stdin;
+container users own extracted files independent of host 0600 permissions.
+Export is git add -A then git diff --cached --binary, plus a tar of session DB,
+WAL and SHM after Agent exit. cgroup memory.peak is read before removal and saved
+in trusted-host artifact metadata. No docker stats sampling is used.
+
+Evaluator order is original repository snapshot, git apply check/application,
+symlink check, sealed hidden-test overwrite, trusted reporters baked into the image outside the patched
+workspace (root-owned and read-only to the runtime user), then tests. No question-supplied test command executes. Argv:
+
+- node-test-events: node --test --test-reporter=/opt/rsi/node.mjs -- <testTargets>
+- unittest-json: python3 -I /opt/rsi/unittest.py <testTargets> (file targets)
+- go-test-json: node /opt/rsi/go.mjs <testTargets>, which launches
+  go test -json -count=1 <testTargets> without a shell.
+
+Node/unittest reports contain reporter discriminator, tests/passed/failed/skipped/
+cancelled/todo counters; Node also flags platform IO permission failures. The Go
+launcher strips output text and emits trusted run/pass/fail/skip events. Every
+named Go test/subtest is one inventory unit. Exact expectedTests and completion
+are required; duplicate, skipped, missing or malformed reports are infra_error.
+Test failures and test deadlines are fail. Agent deadline and per-run429 are fail.
+Evaluator startup/permissions/IO/report errors are infra_error with one retry.
+Git apply exit1 is fail only with recognized patch-mismatch diagnostics; permissions,
+IO, timeout and unknown failures remain infrastructure errors. Empty diffs are
+valid and test the unmodified snapshot. Candidate code and tests still share one
+process tree; exact inventory/reporters do not eliminate framework interference.
+
+### Model accounting, budgets and recovery
+
+WorkerSettings is a trusted-host-only JSON document at private/runtime.json:
+
+```ts
+interface MockScript {
+  outcome: 'pass' | 'fail' | 'flaky'; passCommand: string;
+  failCommand?: string; repetitions?: boolean[];
+}
+interface WorkerSettings {
+  concurrency: number; agentTimeoutMs: number; reconciliationMaxRatio: number;
+  keepRecentImages: number; imagesRoot: string; reportersRoot: string;
+  proxy: { mode: 'mock' | 'real'; maxTokens: number; inputTokensPerByte: number;
+    mockTable: Record<string, MockScript> };
+  candidateMockTable: Record<string, MockScript>;
+}
+```
+
+Defaults: concurrency2 (max32), Agent deadline300000ms, reconciliation threshold
+.05, recent image groups2, output cap4096, initial input calibration .35 tokens
+per UTF8 byte of messages/tools (not all wire bytes). Default asset paths are
+relative to the invocation's repository root; outside that root supply absolute
+paths in settings. A scripted mock chooses a question through trusted run-token
+attribution, and flaky chooses repetitions (default false,true,false). Real mode
+requires environment RSI_UPSTREAM_BASE_URL/RSI_UPSTREAM_API_KEY/RSI_UPSTREAM_MODEL;
+only the proxy receives them. Never pass host credential directories.
+
+Proxy requests are serialized per run, forcibly select the configured model,
+replace upstream authorization, clamp max_tokens to the configured output cap
+and remaining admission budget, and reject admission with429 before forwarding
+when reservations cannot fit. Observed prompt usage calibrates future input
+estimates with10% headroom. Usage, including auxiliary title requests, is fully
+charged; none is subtracted for comparison. Known estimator limitation: exact
+input tokenization is provider-specific and usage arrives after a request. An
+underestimate can make that final response exceed the reserved count; its entire
+reported usage is charged and the run is then blocked. This is an admission hard
+limit, not a claim that unknown vendor tokenization can be bounded exactly without
+a tokenizer/preflight service. Missing/incomplete usage burns its reservation and
+prevents a scored comparable result. No currency is recorded or displayed.
+
+Usage logs contain requestId/stage plus runId, UTC start, status, firstByteMs,
+durationMs, usage, cacheHitRate, toolCalls, complete, error and chargedTokens;
+never bearer keys, prompts or responses. A reserved record precedes forwarding;
+a settled record replaces it logically by requestId. No requests means no usage
+file, which is valid zero accounting. Worker polls settled usage and fsyncs
+private/usage/<runId>.json receipts before increasing task.tokenUsage. Recovery
+first terminates leftover targets, then reads remaining proxies, conservatively
+charges unsettled reservations, and removes only task-labelled containers/networks.
+A receipt contains runId,tokens,requests,blocked,complete. Repeated observations
+use a per-run monotonic maximum; receipts are accounting evidence, never scores.
+
+Token exhaustion aborts and invalidates all unfinished evaluations; no interrupted
+scores survive. Proxy/session token disagreement exceeding the configured ratio,
+or missing reconciliation evidence, produces an L2 suspicious/info finding for
+candidate runs. session_v2 sums input/output/reasoning/cache-read/cache-write;
+these native counters exclude their cached/reasoning subsets. Session DB data is
+untrusted; proxy usage remains authoritative. Artifact metadata has target/evaluator
+memoryPeakBytes, sessionTokens and toolchain; these are not new RSI entity fields.
+
+Startup verifies the ledger against the cache anchor before resource cleanup.
+Running queues/evaluations are requeued; terminal ledger results are reused.
+Slot IDs are SHA256(canonical array encoded with JSON.stringify of
+[evaluationId,questionId,repetition,attempt]); each scored slot selects attempt0
+unless infrastructure error requires attempt1. Existing slots are not rerun or
+charged twice. Budget-invalidated groups use fresh IDs; sealed reservation is
+reused and late token approval reuses completed sealed evidence. Final interrupted
+reservations preserve the original human request and completed final locks.
+
+`ledger recover` is an explicit operator command. It obtains worker/writer/ledger
+exclusivity, accepts only a lone partial_tail, copies raw residual bytes into a
+0600 `ledger-tail-<uuid>.quarantine`, fsyncs it and its directory, then truncates and
+fsyncs the ledger to its verified complete prefix. Hash/anchor corruption is never
+repaired this way. Existing unknown/live ledger locks fail closed; known-dead owners older than the
+RSI-007 stale threshold can be reclaimed under its exclusive reclaim guard. Normal startup
+never truncates a ledger. An unanchored valid prefix still cannot prove the absence
+of a removed tail (RSI-007 limitation).
+
+### Verification boundary
+
+Unit tests use Docker/process/model transport doubles, real ledger/cache/state/
+noise/gate logic and actual local reporter processes, without binding ports.
+`scripts/rsi-e2e/p2-smoke.mjs` is a separate real-Docker, scripted-model workflow
+for Claude outside the sandbox. It asserts nonzero delta, kills a worker with a
+running evaluation after one durable slot (the trusted barrier also leaves a
+labelled idle container/network for cleanup verification), resumes with concurrency2, verifies
+no repeated slot/charge, exercises default missing-review hold, injects trusted
+clean reviews, runs sealed, promotes, verifies the chain and checks restart and
+resource cleanup. It emits a JSON report and fails explicitly if Docker is absent.
+Real vendor calibration, genuine model resource measurements and third-party
+lifecycle/native-build availability remain externally verified integration work.
+
+Process/stream bounds: asynchronous host commands default to120000ms and8MiB
+combined stdout/stderr, with process-group cancellation; source archive reads use
+256MiB, candidate builds45min/16MiB, trusted image builds15min, proxy readiness10s.
+Proxy usage polling is250ms; upstream requests have a120s total deadline and8MiB
+response cap, request bodies2MiB and individual protocol frames4MiB. These are
+implementation defaults, not measured model requirements. The miniature Go bank
+uses90s test deadlines to include cold standard-library compilation on CPU1;
+production question deadlines remain RSI-011 metadata. Go images pin local
+GOTOOLCHAIN, disable module proxy/sumdb networking and set GOMAXPROCS=1.

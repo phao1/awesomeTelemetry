@@ -1,0 +1,7 @@
+diff --git a/answer.go b/answer.go
+--- a/answer.go
++++ b/answer.go
+@@ -1,2 +1,2 @@
+ package answer
+-func Answer() int { return 0 }
++func Answer() int { return 3 }

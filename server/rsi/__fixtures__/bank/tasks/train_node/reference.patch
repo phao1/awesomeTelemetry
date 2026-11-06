@@ -1,0 +1,6 @@
+diff --git a/answer.mjs b/answer.mjs
+--- a/answer.mjs
++++ b/answer.mjs
+@@ -1 +1 @@
+-export const answer = () => 0;
++export const answer = () => 3;

@@ -12,7 +12,8 @@
     "awesome-telemetry": "./bin/agent-observe.js",
     "agent-observe": "./bin/agent-observe.js",
     "telemetry-agent-folding": "./bin/agent-folding.js",
-    "telemetry-task-health": "./bin/task-health.js"
+    "telemetry-task-health": "./bin/task-health.js",
+    "rsi": "./bin/rsi.js"
   },
   "scripts": {
     "team:experiment": "node bin/team-experiment.js",
@@ -33,7 +34,10 @@
     "agent:folding": "node bin/agent-folding.js",
     "task-health": "node bin/task-health.js",
     "health-proxy:codex": "node scripts/codex-health-proxy.mjs",
-    "build:task-health": "node --input-type=module -e \"import { build } from 'vite'; await build({configFile:false,build:{ssr:'server/task-health/cli.ts',outDir:'server-dist/task-health',emptyOutDir:false,target:'node20',rollupOptions:{external:['better-sqlite3'],output:{entryFileNames:'cli.js'}}}})\""
+    "build:task-health": "node --input-type=module -e \"import { build } from 'vite'; await build({configFile:false,build:{ssr:'server/task-health/cli.ts',outDir:'server-dist/task-health',emptyOutDir:false,target:'node20',rollupOptions:{external:['better-sqlite3'],output:{entryFileNames:'cli.js'}}}})\"",
+    "rsi": "node bin/rsi.js",
+    "rsi:p2-smoke": "node scripts/rsi-e2e/p2-smoke.mjs",
+    "build:rsi": "vite build --config vite.cli.config.ts --configLoader native"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

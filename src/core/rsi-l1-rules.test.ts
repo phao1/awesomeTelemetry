@@ -66,7 +66,7 @@ describe('RSI L1 cheating and structural patches', () => {
     const diff = `diff --git a/${file} b/${file}\n--- a/${file}\n+++ /dev/null\n@@ -1 +0,0 @@\n-DETECTION_MARKER\n`;
     expect(scanDiff(diff, dictionary).some(f => f.category === 'protected_path' && f.severity === 'reject')).toBe(true);
   });
-  it.each(['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'package.json', 'requirements.txt'])('sends %s to a human without a contradictory protected-path rejection', file => {
+  it.each(['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'package.json', 'requirements.txt', 'patches/provider.patch', 'packages/core/patches/native.patch', '.npmrc', 'packages/core/.npmrc', 'bunfig.toml', 'packages/core/bunfig.toml'])('sends %s to a human without a contradictory protected-path rejection', file => {
     expect(scanDiff(patch(file, 'dependency = "new"'), dictionary)).toEqual([expect.objectContaining({ category: 'dependency_change', severity: 'hold' })]);
   });
   it('retains protected rejection when a lockfile is inside CI', () => {

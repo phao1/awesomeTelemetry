@@ -1,0 +1,24 @@
+{
+  "questionId": "train_node",
+  "repository": "private-train_node-origin",
+  "testNames": [
+    "check_result"
+  ],
+  "filePaths": [
+    "answer.mjs"
+  ],
+  "rareStrings": [],
+  "expectedValues": [
+    "3"
+  ],
+  "version": 1,
+  "language": "javascript",
+  "difficulty": "easy",
+  "toolchain": "node",
+  "testTargets": [
+    "checks.test.mjs"
+  ],
+  "report": "node-test-events",
+  "expectedTests": 1,
+  "timeoutSeconds": 10
+}

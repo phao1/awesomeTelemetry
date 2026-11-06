@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "seed": "p2-fixture",
+  "mutationKillMin": 0.8,
+  "sets": {
+    "smoke": [
+      "train_node"
+    ],
+    "train": [
+      "train_node",
+      "train_python",
+      "train_go"
+    ],
+    "sealed": [
+      "sealed_node",
+      "sealed_python",
+      "sealed_go"
+    ],
+    "final": [
+      "final_node",
+      "final_python",
+      "final_go"
+    ]
+  },
+  "questions": [
+    {
+      "id": "train_node",
+      "language": "javascript",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "train_python",
+      "language": "python",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "train_go",
+      "language": "go",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "sealed_node",
+      "language": "javascript",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "sealed_python",
+      "language": "python",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "sealed_go",
+      "language": "go",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "final_node",
+      "language": "javascript",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "final_python",
+      "language": "python",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "final_go",
+      "language": "go",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    }
+  ]
+}

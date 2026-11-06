@@ -93,7 +93,8 @@ function protectedPath(path: string): boolean {
     || /(?:^|\/)(?:[^/]+\.(?:test|spec)\.[^/]+|test_[^/]+\.[^/]+|[^/]+_test\.[^/]+|(?:evaluator|grader|detector)\.[^/]+|rsi-l1-rules\.[^/]+|\.(?:gitlab-ci|travis)\.ya?ml|Jenkinsfile|azure-pipelines\.ya?ml)$/i.test(path);
 }
 function dependencyPath(path: string): boolean {
-  return /(?:^|\/)(?:[^/]*lock(?:b|\.json|\.yaml|\.yml|\.toml)?|package(?:-lock)?\.json|npm-shrinkwrap\.json|requirements[^/]*\.txt|pyproject\.toml|Pipfile|Cargo\.toml|go\.(?:mod|sum)|Gemfile|composer\.json|pom\.xml|build\.gradle(?:\.kts)?)$/i.test(path);
+  return /(?:^|\/)patches\//i.test(path) || /(?:^|\/)(?:\.npmrc|bunfig\.toml)$/i.test(path)
+    || /(?:^|\/)(?:[^/]*lock(?:b|\.json|\.yaml|\.yml|\.toml)?|package(?:-lock)?\.json|npm-shrinkwrap\.json|requirements[^/]*\.txt|pyproject\.toml|Pipfile|Cargo\.toml|go\.(?:mod|sum)|Gemfile|composer\.json|pom\.xml|build\.gradle(?:\.kts)?)$/i.test(path);
 }
 
 export function scanDiff(diff: string, dictionary: RsiFingerprintDictionary): RsiDiffFinding[] {

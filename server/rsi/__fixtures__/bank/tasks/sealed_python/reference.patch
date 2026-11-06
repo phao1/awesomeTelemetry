@@ -1,0 +1,7 @@
+diff --git a/answer.py b/answer.py
+--- a/answer.py
++++ b/answer.py
+@@ -1,2 +1,2 @@
+ def answer():
+-    return 0
++    return 3
