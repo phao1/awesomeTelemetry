@@ -12,7 +12,7 @@ import type { HealthModelClient, HealthModelRequest } from '../task-health/model
 import { RSI_SCHEMA_SQL } from '../storage/schema.js';
 import { readBank } from './bank.js';
 import { unpackFiles } from './artifacts.js';
-import { AgentReviewProvider, auditSelected, createReviewModelClient } from './agent-review.js';
+import { AgentReviewProvider, auditSelected, createReviewModelClient, waitForTurn } from './agent-review.js';
 import { ADVERSARY_PROMPT_VERSION } from './adversary.js';
 import { BuildRejected } from './build.js';
 import { defaultWorkerSettings } from './cli.js';
@@ -302,5 +302,22 @@ describe('RSI-015 durable model accounting and sampling', () => {
     for (const id of ['a', 'b', 'candidate']) { expect(auditSelected(id, 0)).toBe(false); expect(auditSelected(id, 1)).toBe(true); expect(auditSelected(id, .1)).toBe(auditSelected(id, .1)); }
     expect(new Set(Array.from({ length: 100 }, (_, n) => auditSelected(String(n), .1))).size).toBe(2);
     for (const invalid of [-1, 2, NaN]) expect(() => auditSelected('a', invalid)).toThrow();
+  });
+});
+
+describe('sharing a monitor bridge', () => {
+  it('waits for its turn when the bridge is busy', async () => {
+    let calls = 0;
+    const fetcher = waitForTurn((async () => new Response(null, { status: ++calls < 3 ? 429 : 200 })) as typeof fetch, 1);
+    expect((await fetcher('http://bridge', {})).status).toBe(200); expect(calls).toBe(3);
+  });
+  it('gives up when the request deadline passes, which leaves the review missing', async () => {
+    const fetcher = waitForTurn((async () => new Response(null, { status: 429 })) as typeof fetch, 1);
+    await expect(fetcher('http://bridge', { signal: AbortSignal.timeout(20) })).rejects.toThrow();
+  });
+  it('passes every other failure straight through', async () => {
+    let calls = 0;
+    const fetcher = waitForTurn((async () => { calls++; return new Response(null, { status: 401 }); }) as typeof fetch, 1);
+    expect((await fetcher('http://bridge', {})).status).toBe(401); expect(calls).toBe(1);
   });
 });

@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { RsiEvaluation, RsiFinding, RsiIteration, RsiQuestionResult, RsiTask } from '../../src/core/rsi-types.js';
-import { createHealthModelClient } from '../task-health/model-client.js';
+import { setTimeout as delay } from 'node:timers/promises';
+import { OpenAICompatibleHealthClient } from '../task-health/model-client.js';
 import type { HealthModelClient, HealthModelRequest, HealthModelResponse } from '../task-health/model-client.js';
 import type { QuestionBank, QuestionData, RsiBankQuestion } from './bank.js';
 import { candidateDiff, git } from './build.js';
@@ -39,6 +40,17 @@ interface ModelReceipt {
   response: HealthModelResponse | null; complete: boolean;
 }
 export interface ReviewModelClient extends HealthModelClient { recover(): Promise<void> }
+/** A monitor bridge serves one request at a time and answers 429 otherwise. Tasks sharing it take turns within the request's own deadline. */
+export function waitForTurn(transport: typeof fetch = fetch, retryMs = 500): typeof fetch {
+  return async (input, init) => {
+    for (;;) {
+      const response = await transport(input, init);
+      if (response.status !== 429) return response;
+      await response.body?.cancel();
+      await delay(retryMs, undefined, init?.signal ? { signal: init.signal } : {});
+    }
+  };
+}
 /** Durable admission and receipts around the existing tool-free transport. Never persist prompts or keys. */
 export function createReviewModelClient(store: RsiStore, settings: ReviewSettings, scope: string,
   account: (receipt: UsageReceipt) => Promise<void>, transport?: HealthModelClient,
@@ -63,8 +75,8 @@ export function createReviewModelClient(store: RsiStore, settings: ReviewSetting
     const reservation = Buffer.byteLength(request.system) + Buffer.byteLength(request.user) + request.maxTokens;
     const task = store.task();
     if (reservation > task.config.maxTaskTokens - task.tokenUsage) throw new Error('Review token admission budget unavailable');
-    const client = transport ?? createHealthModelClient({ HEALTH_MODEL_PROVIDER: 'openai-compatible', HEALTH_MODEL: settings.monitorModel,
-      HEALTH_MODEL_BASE_URL: settings.monitorBaseUrl, HEALTH_MODEL_API_KEY: env.RSI_MONITOR_API_KEY });
+    const client = transport ?? new OpenAICompatibleHealthClient({ HEALTH_MODEL_PROVIDER: 'openai-compatible', HEALTH_MODEL: settings.monitorModel,
+      HEALTH_MODEL_BASE_URL: settings.monitorBaseUrl, HEALTH_MODEL_API_KEY: env.RSI_MONITOR_API_KEY }, waitForTurn());
     const r: ModelReceipt = { id, state: 'reserved', reservation, tokens: reservation, response: null, complete: false };
     await durableJson(file, r);
     let failure: unknown;
