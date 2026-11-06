@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, statfs, rename } from 'node:fs/promises';
 import { dirname, resolve, join } from 'node:path';
+import { rsiPackagePath, rsiPackageRoot } from './paths.js';
 import { defaultRsiConfig, validateRsiConfig } from '../../src/core/rsi-validation.js';
 import type { RsiCommand, RsiPrd } from '../../src/core/rsi-types.js';
 import { openWritable } from '../storage/db.js';
@@ -30,7 +31,7 @@ import { buildFingerprintDictionary } from '../../src/core/rsi-l1-rules.js';
 import { privateWrite } from './artifacts.js';
 
 export function defaultWorkerSettings(): WorkerSettings {
-  const root = process.cwd();
+  const root = rsiPackageRoot();
   return { concurrency: 2, agentTimeoutMs: 300000, reconciliationMaxRatio: 0.05, keepRecentImages: 2,
     imagesRoot: join(root, 'scripts/rsi-images'), reportersRoot: join(root, 'server/rsi/reporters'),
     optimizerSessionTokens: 2000000, optimizerSessionTimeoutMs: 1800000, allowUnmeteredOptimizer: false, apiBase: 'http://127.0.0.1:4173',
@@ -114,8 +115,8 @@ export async function runRsiCli(args: string[], output: (value: unknown) => void
       const settings = flags.has('--settings') ? validateWorkerSettings(await json(required('--settings')) as WorkerSettings) : defaultWorkerSettings();
       if (flags.has('--api-base')) settings.apiBase = required('--api-base');
       output(await createTask(store, { requestId: flags.get('--request') ?? 'start', repository: resolve(required('--repository')), baselineCommit: required('--baseline'),
-        bank: resolve(required('--bank')), agentProfile: resolve(flags.get('--agent') ?? 'rsi-agents/opencode/profile.json'),
-        optimizerProfile: resolve(flags.get('--optimizer') ?? 'rsi-agents/optimizers/opencode-deepseek/profile.json'), subset: (flags.get('--subset') ?? 'full') as 'small' | 'full', config }, settings)); return;
+        bank: resolve(required('--bank')), agentProfile: resolve(flags.get('--agent') ?? rsiPackagePath('rsi-agents/opencode/profile.json')),
+        optimizerProfile: resolve(flags.get('--optimizer') ?? rsiPackagePath('rsi-agents/optimizers/opencode-deepseek/profile.json')), subset: (flags.get('--subset') ?? 'full') as 'small' | 'full', config }, settings)); return;
     }
     const task = store.task();
     if (command === 'task status') {
@@ -152,7 +153,7 @@ export async function runRsiCli(args: string[], output: (value: unknown) => void
           await worker.loadUsage();
           const client = createReviewModelClient(store, reviews, `calibration-${randomUUID()}`, receipt => worker.account(receipt), options.modelClient);
           await client.recover();
-          const corpus = await readCalibrationCorpus(resolve('rsi-bank/calibration'));
+          const corpus = await readCalibrationCorpus(rsiPackagePath('rsi-bank/calibration'));
           const deterministic = deterministicCalibration(corpus, store.task().config.l1);
           if (deterministic.some(m => m.category !== 'benign' && m.detected !== m.samples)) throw new Error('Deterministic calibration must detect every cheating fixture');
           const reportId = randomUUID();
@@ -184,10 +185,10 @@ async function optimizerLogin(args: string[]): Promise<void> {
   const flags = new Map<string,string>();
   for(let i=0;i<args.length;i+=2) { if(!['--profile','--docker-context'].includes(args[i]!) || !args[i+1] || flags.has(args[i]!)) throw new Error('Usage: rsi optimizer login --profile <id>'); flags.set(args[i]!,args[i+1]!); }
   const id = flags.get('--profile'); if(!id || !/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error('Invalid optimizer profile ID');
-  const directory=resolve('rsi-agents/optimizers',id), {profile}=await readOptimizerProfile(join(directory,'profile.json'));
+  const directory=rsiPackagePath('rsi-agents/optimizers',id), {profile}=await readOptimizerProfile(join(directory,'profile.json'));
   if(profile.login.kind!=='volume' || profile.egress.kind!=='vendor-allowlist') throw new Error('Profile does not require interactive login');
   const client=new CliDockerClient(flags.get('--docker-context')??null), image=await buildOptimizer(client,directory,profile);
-  await mustDocker(client,['build','-t','rsi-proxy:p2','-f',resolve('scripts/rsi-images/proxy.Dockerfile'),resolve('scripts/rsi-images')]);
+  await mustDocker(client,['build','-t','rsi-proxy:p2','-f',rsiPackagePath('scripts/rsi-images/proxy.Dockerfile'),rsiPackagePath('scripts/rsi-images')]);
   const proxy=await startProxy(client,`login-${id}`,randomUUID().replaceAll('-','').padEnd(64,'0'),'optimizer',0,1,{mode:'mock',maxTokens:1,inputTokensPerByte:0.35,mockTable:{}},undefined,{apiBase:'http://127.0.0.1:4173',domains:profile.egress.domains});
   try {
     const argv=[...(client.context?['--context',client.context]:[]),'run','--rm','-it','--network',proxy.network,'--cap-drop','ALL','--security-opt','no-new-privileges','--mount',`type=volume,src=${optimizerVolume(id)},dst=${profile.login.path}`,'-e','HTTPS_PROXY=http://rsi-proxy:8080','-e','HTTP_PROXY=http://rsi-proxy:8080',...Object.entries(profile.run.env).filter(([key])=>key==='CLAUDE_CONFIG_DIR'||key==='CODEX_HOME').flatMap(([key,value])=>['-e',`${key}=${value}`]),'--entrypoint',profile.login.command[0]!,image,...profile.login.command.slice(1)];

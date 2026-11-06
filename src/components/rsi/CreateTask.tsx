@@ -12,10 +12,10 @@ import { Button } from '../ui/Button.js';
 import { Table } from '../ui/Table.js';
 import { Badge } from '../ui/Badge.js';
 import { PageSkeleton } from '../ui/PageSkeleton.js';
-import { useRsiRead } from './data.js';
+import { useRsiCli, useRsiRead, workerCommand } from './data.js';
 import { copy, reasonLabel, shellArgument, fieldErrorLabel } from './copy.js';
 import { ReadError, WriteError } from './Shared.js';
-export function OptimizerWarning({locale,id,allow,onAllow}:{locale:Locale;id:string;allow:boolean;onAllow:(allow:boolean)=>void}) {return <Callout tone="attention" title={copy(locale,'需登录 · 未实测','Login required · Not verified')}><p>{copy(locale,'用量无法硬限制。需要显式允许后才能运行；任务预算不包含自行报告的用量。','Usage cannot be hard-limited. Explicit opt-in is required; self-reported usage is excluded from the task budget.')}</p><CopyField locale={locale} label={copy(locale,'登录命令','Login command')} value={`node bin/rsi.js optimizer login --profile ${shellArgument(id)}`}/><Checkbox checked={allow} onChange={e=>onAllow(e.target.checked)} label={copy(locale,'允许无法硬限制用量的优化者','Allow an optimizer without hard usage limits')}/></Callout>;}
+export function OptimizerWarning({locale,id,allow,onAllow}:{locale:Locale;id:string;allow:boolean;onAllow:(allow:boolean)=>void}) {const cli=useRsiCli();return <Callout tone="attention" title={copy(locale,'需登录 · 未实测','Login required · Not verified')}><p>{copy(locale,'用量无法硬限制。需要显式允许后才能运行；任务预算不包含自行报告的用量。','Usage cannot be hard-limited. Explicit opt-in is required; self-reported usage is excluded from the task budget.')}</p><CopyField locale={locale} label={copy(locale,'登录命令','Login command')} value={`${cli.bin} optimizer login --profile ${shellArgument(id)}`}/><Checkbox checked={allow} onChange={e=>onAllow(e.target.checked)} label={copy(locale,'允许无法硬限制用量的优化者','Allow an optimizer without hard usage limits')}/></Callout>;}
 export function CreateTask({locale,worker,onClose,onOpen,onCreated}:{locale:Locale;worker:RsiWorkerStatus|null;onClose:()=>void;onOpen:(id:string)=>void;onCreated:()=>void}) {
   const read=useRsiRead('options',signal=>rsiApi.options(signal));
   return <Sheet open title={copy(locale,'新建调优任务','New tuning task')} onClose={onClose} className="rsi-sheet">{read.loading&&!read.value?<PageSkeleton compact/>:read.error?<ReadError error={read.error} locale={locale} retry={read.retry}/>:read.value?<CreateForm options={read.value} locale={locale} worker={worker} onOpen={onOpen} onCreated={onCreated} onClose={onClose}/>:null}</Sheet>;
@@ -39,7 +39,7 @@ export function CreateForm({options,locale,worker,onOpen,onCreated,onClose}:{opt
   if(created)return <div className="rsi-form" data-testid="rsi-created">
     <Callout tone="success" title={copy(locale,'任务已加入队列','Task queued')}/>
     {created.agentToken?<><Callout tone="attention" title={copy(locale,'这个令牌只显示这一次','This token is shown only once')}/><CopyField locale={locale} label={copy(locale,'任务令牌','Task token')} value={created.agentToken} secret/></>:<Callout tone="attention" title={copy(locale,'任务已创建，令牌无法再次读取','Task already created; the token cannot be retrieved again')}/>}
-    <CopyField locale={locale} label={copy(locale,'启动命令','Start command')} value={`node bin/rsi.js worker --execute --watch --task ${created.taskId}`}/>
+    <CopyField locale={locale} label={copy(locale,'启动命令','Start command')} value={workerCommand(options.cli,created.taskId)}/>
     <Button variant="primary" onClick={()=>{const id=created.taskId;setCreated(null);onOpen(id);}}>{copy(locale,'打开任务','Open task')}</Button>
   </div>;
   return <div className="rsi-create"><Steps items={steps} current={step}/><div className="rsi-form">

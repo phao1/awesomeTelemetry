@@ -112,7 +112,7 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
   };
   register('GET','/api/rsi/session',false,async()=>({token:pageToken}));
   register('GET','/api/rsi/overview',false,async()=>overview(await stores()));
-  register('GET','/api/rsi/options',false,async()=>pageOptions());
+  register('GET','/api/rsi/options',false,async()=>pageOptions(dataRoot));
   register('GET','/api/rsi/tasks/:taskId/metrics',false,async s=>metrics(s!));
   register('GET','/api/rsi/tasks/:taskId/ledger/verify',false,async s=>ledgerReport(s!));
   register('GET','/api/rsi/agent/brief',true,async s=>brief(s!));

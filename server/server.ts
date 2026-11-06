@@ -543,7 +543,8 @@ export function createAgentObservabilityServer(
   };
 
   const router = new Router();
-  const stopRsi = registerRsiRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'awesome-telemetry-data/rsi'));
+  // The same directory the rsi CLI derives from --root; dbPath already sits inside awesome-telemetry-data.
+  const stopRsi = registerRsiRoutes(router, opts.configRoot ? join(opts.configRoot, 'awesome-telemetry-data', 'rsi') : join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'awesome-telemetry-data/rsi'));
   const stopBenchmarks = registerBenchmarkRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'benchmark-demos'));
   const stopTeamExperiments = registerTeamExperimentRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'team-experiment-demos'));
   registerClaudeHookRoutes(router, hookReceiver);

@@ -18,7 +18,8 @@ export interface RsiReviewItem { id: string; taskId: string; taskName: string; i
 export interface RsiOverview { tasks: RsiSummary[]; reviews: RsiReviewItem[]; pendingCount: number }
 export interface RsiProfileOption { id: string; path: string; name: string; description: string | null; family: string | null; egress: 'model-proxy' | 'vendor-allowlist' | null; loginRequired: boolean; verified: boolean }
 export interface RsiBankDistribution { phase: 'smoke' | 'train' | 'sealed' | 'final'; count: number; languages: Record<string, number> }
-export interface RsiOptions { agents: RsiProfileOption[]; optimizers: RsiProfileOption[]; bank: { path: string; full: RsiBankDistribution[]; small: RsiBankDistribution[] } | null; defaults: RsiConfig; settings: Required<RsiPageSettings> }
+export interface RsiCliInfo { bin: string; root: string }
+export interface RsiOptions { cli: RsiCliInfo; agents: RsiProfileOption[]; optimizers: RsiProfileOption[]; bank: { path: string; full: RsiBankDistribution[]; small: RsiBankDistribution[] } | null; defaults: RsiConfig; settings: Required<RsiPageSettings> }
 export interface RsiIterationMetric { iteration: RsiIteration; iterationId: string; seq: number; targetTokens: number | null; optimizerTokens: number | null; reviewTokens: number | null; durationMs: number | null; cacheHitRate: number | null; reason: string | null; defenses: RsiVerdict['defenses']; finalState: 'not_requested' | 'reserved' | 'completed'; session: RsiOptimizerSession | null }
 export interface RsiMetrics { iterations: RsiIterationMetric[]; cacheHitRate: number | null; helpReason: string | null; pendingCommands: number; baselineProgress: { completed: number; planned: number } | null }
 export type RsiDefenseState = 'pass' | 'hold' | 'reject' | 'missing' | 'not_reached';

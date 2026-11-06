@@ -4,6 +4,7 @@ import { readdir, stat, realpath, lstat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { basename, join, resolve } from 'node:path';
 import type { RsiIteration, RsiOutcome } from '../../src/core/rsi-types.js';
+import { rsiCliInfo, rsiPackageRoot } from './paths.js';
 import type { RsiBankDistribution, RsiOverview, RsiOptions, RsiWorkerStatus, RsiMetrics, RsiPageRun, RsiReviewEvidence, RsiVerdict, RsiLedgerReport, RsiDefenseState, RsiProfileOption, RsiTraceUsage } from '../../src/core/rsi-api-client.js';
 import { defaultRsiConfig } from '../../src/core/rsi-validation.js';
 import { decidePromotion } from '../../src/core/rsi-gate.js';
@@ -78,9 +79,10 @@ function distribution(m: RsiBankManifest): RsiBankDistribution[] {
     return { phase, count: m.sets[phase].length, languages };
   });
 }
-export async function pageOptions(): Promise<RsiOptions> {
-  return cachedPage('options:' + process.cwd(), async () => {
-    const root = resolve('rsi-agents'), agents: RsiProfileOption[] = [], optimizers: RsiProfileOption[] = [];
+export async function pageOptions(dataRoot: string): Promise<RsiOptions> {
+  const packageRoot = rsiPackageRoot();
+  return cachedPage('options:' + packageRoot + ':' + dataRoot, async () => {
+    const root = join(packageRoot, 'rsi-agents'), agents: RsiProfileOption[] = [], optimizers: RsiProfileOption[] = [];
     async function profiles(parent: string, output: RsiProfileOption[], optimizer: boolean): Promise<void> {
       for (const id of await names(root, parent)) {
         if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) continue;
@@ -96,9 +98,9 @@ export async function pageOptions(): Promise<RsiOptions> {
     }
     await profiles('.', agents, false); await profiles('optimizers', optimizers, true);
     let bank: RsiOptions['bank'] = null;
-    try { const m=await boundedJson(process.cwd(),'rsi-bank/manifest.json') as RsiBankManifest; bank={path:resolve('rsi-bank'),full:distribution(m),small:distribution(selectBankSubset(m,'small'))}; }
+    try { const m=await boundedJson(packageRoot,'rsi-bank/manifest.json') as RsiBankManifest; bank={path:join(packageRoot,'rsi-bank'),full:distribution(m),small:distribution(selectBankSubset(m,'small'))}; }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-    return { agents, optimizers, bank, defaults: defaultRsiConfig(), settings: { optimizerSessionTokens: 2000000, optimizerSessionTimeoutMs: 1800000, allowUnmeteredOptimizer: false, concurrency: 2 } };
+    return { cli: rsiCliInfo(dataRoot), agents, optimizers, bank, defaults: defaultRsiConfig(), settings: { optimizerSessionTokens: 2000000, optimizerSessionTimeoutMs: 1800000, allowUnmeteredOptimizer: false, concurrency: 2 } };
   });
 }
 interface Telemetry { memoryPeakBytes: number | null; sessionTokens: number | null; input: number | null; cached: number | null; requests:RsiTraceUsage[]|null }

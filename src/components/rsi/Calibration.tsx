@@ -11,7 +11,7 @@ import { Tooltip } from '../ui/Overlay.js';
 import { PageSkeleton } from '../ui/PageSkeleton.js';
 import { EmptyState } from '../ui/States.js';
 import { IconFlask } from '../icons/index.js';
-import { useRsiRead } from './data.js';
+import { calibrateCommand, useRsiCli, useRsiRead } from './data.js';
 import { Numeric, Reason, ReadError } from './Shared.js';
 import { copy } from './copy.js';
 const categories=['task_specific','hardcoded_answer','test_tampering','marker_deletion','rationalized_special_case','statement_keyed_heuristic','benign'];
@@ -31,9 +31,9 @@ export function CalibrationReport({report,locale}:{report:RsiMonitorCalibration;
   </div>;
 }
 export function Calibration({tasks,taskId,locale,onTask,revision}:{tasks:RsiSummary[];taskId:string|null;locale:Locale;onTask:(id:string)=>void;revision:number}) {
-  const active=taskId??tasks[0]?.task.id??null,read=useRsiRead(active?active+':calibration':null,signal=>rsiApi.calibration(active!,signal),revision);
+  const cli=useRsiCli(),active=taskId??tasks[0]?.task.id??null,read=useRsiRead(active?active+':calibration':null,signal=>rsiApi.calibration(active!,signal),revision);
   return <div className="rsi-stack"><div className="rsi-toolbar"><Select locale={locale} aria-label={copy(locale,'调优任务','Tuning task')} value={active??''} options={tasks.map(s=>({value:s.task.id,label:`${s.agentName??'—'} · ${s.repositoryName}`}))} onChange={e=>onTask(e.target.value)}/></div>
     {read.loading&&!read.value&&<PageSkeleton/>}{Boolean(read.error)&&<ReadError error={read.error} locale={locale} retry={read.retry}/>}
-    {read.value?.latestReport?<CalibrationReport report={read.value.latestReport} locale={locale}/>:!read.loading&&!read.error&&<Card><CardBody><EmptyState icon={<IconFlask/>} title={copy(locale,'没有校准记录','No calibration report')} description={copy(locale,'校准只能通过命令行启动','Calibration starts only from the command line')}/><CopyField locale={locale} label={copy(locale,'启动校准','Start calibration')} value={`node bin/rsi.js calibrate --task ${active??'<id>'} --sample all`}/></CardBody></Card>}
+    {read.value?.latestReport?<CalibrationReport report={read.value.latestReport} locale={locale}/>:!read.loading&&!read.error&&<Card><CardBody><EmptyState icon={<IconFlask/>} title={copy(locale,'没有校准记录','No calibration report')} description={copy(locale,'校准只能通过命令行启动','Calibration starts only from the command line')}/><CopyField locale={locale} label={copy(locale,'启动校准','Start calibration')} value={calibrateCommand(cli,active??'<id>')}/></CardBody></Card>}
   </div>;
 }
