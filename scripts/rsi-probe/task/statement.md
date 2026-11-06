@@ -1,0 +1,1 @@
+Fix clamp.mjs. clamp(value, min, max) must return value within the inclusive bounds min and max, preserving values already inside the interval. Inputs are finite numbers with min <= max. Keep the existing named export. Work in the current directory; do not add dependencies.
