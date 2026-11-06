@@ -112,11 +112,12 @@ export class ContainerBackend implements ExecutionBackend {
     const proxy = await startProxy(this.client, this.store.taskId, runId, q.questionId, request.repetition,
       this.store.task().config.runTokenBudget, { ...this.settings.proxy,
         mockTable: e.iterationId === null ? this.settings.proxy.mockTable : this.settings.candidateMockTable }, signal);
-    let receipt: UsageReceipt | null = null, pollError = false, polling = true;
+    let receipt: UsageReceipt | null = null, polling = true;
+    // Live polling only reports progress: the proxy enforces the budget, and the final read below is what counts.
     const poll = async (): Promise<void> => {
       while (polling && !signal.aborted) {
         try { receipt = await readProxyUsage(this.client, proxy.name, runId); await onUsage(receipt); }
-        catch { pollError = true; }
+        catch (error) { console.error(`RSI worker: usage poll ${runId}: ${workerErrorText(error)}`); }
         await delay(2000);
       }
     };
@@ -133,7 +134,7 @@ export class ContainerBackend implements ExecutionBackend {
       receipt = await readProxyUsage(this.client, proxy.name, runId, true); await onUsage(receipt);
       let failureReason = target.failureReason;
       if (receipt.blocked || receipt.tokens >= this.store.task().config.runTokenBudget) failureReason = 'run_token_budget';
-      else if (failureReason !== 'agent_timeout' && (pollError || !receipt.complete)) failureReason = 'infrastructure';
+      else if (failureReason !== 'agent_timeout' && !receipt.complete) failureReason = 'infrastructure';
       // A baseline that never reached the model is a broken setup, not a score of zero. A candidate gets no such excuse.
       else if (failureReason === 'agent_crashed' && e.iterationId === null && receipt.requests === 0) failureReason = 'infrastructure';
       let outcome: RsiOutcome = failureReason === 'infrastructure' ? 'infra_error' : failureReason ? 'fail' : 'pass';
@@ -293,7 +294,10 @@ export class RsiWorker {
           if (attempt === 1 && !this.store.list('run_put').some(r => r.id === slotId(e, slot.questionId, slot.repetition, 0) && r.outcome === 'infra_error')) break;
           const started = performance.now(); let result: SlotResult;
           try { result = await this.backend.run({ runId: id, evaluation: e, question: overrides?.get(slot.questionId)?.question ?? this.bank.questions.get(slot.questionId)!, data: overrides?.get(slot.questionId)?.data, repetition: slot.repetition, attempt, signal: this.controller.signal }, r => this.account(r)); }
-          catch { result = { outcome: 'infra_error', failureReason: 'infrastructure', proxyTokens: null, artifactPath: null, sessionPath: null, sessionTokens: null }; }
+          catch (error) {
+            if (!this.controller.signal.aborted) console.error(`RSI worker: run ${id}: ${workerErrorText(error)}`);
+            result = { outcome: 'infra_error', failureReason: 'infrastructure', proxyTokens: null, artifactPath: null, sessionPath: null, sessionTokens: null };
+          }
           if (this.controller.signal.aborted || await this.checkBudget()) return;
           if (result.proxyTokens !== null) await this.account({ runId: id, tokens: result.proxyTokens, requests: 1, complete: true, blocked: result.failureReason === 'run_token_budget' });
           if (this.controller.signal.aborted) return;
