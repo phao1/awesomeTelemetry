@@ -323,3 +323,22 @@ it('evaluates the last allowed iteration, then pauses before another round', asy
   expect(store.list('iteration_put')[0]!.state).toBe('promoted'); expect(store.task().sealedQueriesUsed).toBe(1);
   expect(sessions).toBe(0); expect(store.task().pauseReason).toBe('budget_exhausted');
 });
+
+it('a person resuming after three empty rounds gets exactly one more round, not a spinning worker', async () => {
+  const { store, worker, backend } = await setup({ targetPassedCount: 100 });
+  backend.plan = () => false;
+  let sessions = 0;
+  worker.optimizerSession = async () => {
+    sessions++;
+    if (sessions > 8) throw new Error('Optimizer sessions did not stop');
+    const at = now();
+    const session = { id: `empty-${sessions}`, taskId: 'task', seq: sessions, parentId: null, commit: baseline, submissionId: null, accounting: 'proxy' as const, artifactPath: `artifacts/optimizer/empty-${sessions}`, startedAt: at };
+    await store.put({ event: 'session_put', payload: { ...session, state: 'running', tokens: null, endedAt: null } });
+    await store.put({ event: 'session_put', payload: { ...session, state: 'no_submission', tokens: 1, endedAt: at } });
+  };
+  await worker.run();
+  expect(sessions).toBe(3); expect(store.task().state).toBe('needs_help');
+  await enqueue(store, { action: 'resume', reason: 'Here is an idea' }, 'human', 'resume-1');
+  await Promise.race([worker.run(), new Promise((_, reject) => { setTimeout(() => reject(new Error('Worker spun instead of starting a round')), 3000).unref(); })]);
+  expect(sessions).toBe(4); expect(store.task().state).toBe('needs_help');
+}, 15000);

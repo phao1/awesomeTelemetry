@@ -613,8 +613,10 @@ export class RsiWorker {
         await enqueue(this.store, { action: 'declare_stuck', reason: atGoal ? 'The baseline already meets the goal: raise the goal or use harder questions'
           : 'No candidate can beat the noise band on this question set: use more repetitions or harder questions' }, 'optimizer', askId); return true;
       }
-      if (consecutiveNoSubmissions(this.store.list('session_put')) >= 3) {
-        await enqueue(this.store, { action: 'declare_stuck', reason: 'Three consecutive optimizer sessions without a submission' }, 'optimizer', `no-submission-${this.store.list('session_put').sort((a,b)=>b.seq-a.seq)[0]!.id}`); return true;
+      // Asked once per last session: a person who resumes after that wants one more round, and the next empty one asks again.
+      const lastSession = this.store.list('session_put').sort((a,b)=>b.seq-a.seq)[0], askedAfter = `no-submission-${lastSession?.id}`;
+      if (consecutiveNoSubmissions(this.store.list('session_put')) >= 3 && !this.store.list('queue_put').some(q => q.id === askedAfter)) {
+        await enqueue(this.store, { action: 'declare_stuck', reason: 'Three consecutive optimizer sessions without a submission' }, 'optimizer', askedAfter); return true;
       }
       await this.optimizerSession(); return true;
     }
