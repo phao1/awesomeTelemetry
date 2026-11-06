@@ -1,3 +1,187 @@
+# RSI additive schema25 (2026-11-07)
+
+Current SCHEMA_VERSION=25. RSI module authority: [rsi.md](rsi.md) RSI-001..010.
+Only the RSI tables/indexes below are added; existing native data is unchanged.
+
+### RSI-008.1 Exact schema25 SQL
+
+Each `entity_json` is the complete RSI-002 snapshot encoded with ledger canonical
+JSON, never a substitute for optimizer projection. SQL columns are indexed copies:
+`id`/`task_id` are entity/task IDs; `state`, `phase`, `kind`, `level`, `category`,
+`verdict`, `outcome` copy the named enums; `commit_sha` copies `commit`;
+`parent_id`, `iteration_id`, `evaluation_id`, `question_id` copy those references;
+`seq` is the positive iteration or ledger ordinal; `repetition` is zero-based;
+`attempt` is 0/1; `effective_from_seq` is the positive instruction activation
+ordinal; `created_at`, `updated_at`, `at` are UTC timestamps. Nullable SQL
+references match nullable runtime fields. All other columns are NOT NULL.
+`rsi_heads.hash` is the trusted SHA256 at `seq`, written atomically with each
+cached event. There is no row for an empty ledger.
+
+```sql
+CREATE TABLE IF NOT EXISTS rsi_tasks (
+  id TEXT PRIMARY KEY,
+  state TEXT NOT NULL CHECK(state IN ('created','calibrating','running','paused','needs_help','completed','stopped')),
+  updated_at TEXT NOT NULL,
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json))
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_iterations (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  seq INTEGER NOT NULL CHECK(seq>0),
+  parent_id TEXT,
+  commit_sha TEXT NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('draft','submitted','precheck','training','reviewing','held','sealed','deciding','promoted','rejected')),
+  created_at TEXT NOT NULL,
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  UNIQUE(task_id,seq),
+  FOREIGN KEY(task_id,parent_id) REFERENCES rsi_iterations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_evaluations (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  iteration_id TEXT,
+  commit_sha TEXT NOT NULL,
+  phase TEXT NOT NULL CHECK(phase IN ('smoke','train','sealed','final','adversarial','ablation')),
+  state TEXT NOT NULL CHECK(state IN ('queued','running','completed','infra_failed','invalidated')),
+  created_at TEXT NOT NULL,
+  ledger_seq INTEGER NOT NULL CHECK(ledger_seq>0),
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  FOREIGN KEY(task_id,iteration_id) REFERENCES rsi_iterations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_runs (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  evaluation_id TEXT NOT NULL,
+  question_id TEXT NOT NULL,
+  repetition INTEGER NOT NULL CHECK(repetition>=0),
+  attempt INTEGER NOT NULL CHECK(attempt IN (0,1)),
+  outcome TEXT NOT NULL CHECK(outcome IN ('pass','fail','infra_error')),
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  UNIQUE(task_id,evaluation_id,question_id,repetition,attempt),
+  FOREIGN KEY(task_id,evaluation_id) REFERENCES rsi_evaluations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_findings (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  iteration_id TEXT NOT NULL,
+  level TEXT NOT NULL CHECK(level IN ('L0','L1','L2','L3','L4','L5')),
+  category TEXT NOT NULL,
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  FOREIGN KEY(task_id,iteration_id) REFERENCES rsi_iterations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_decisions (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  iteration_id TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK(verdict IN ('promote','reject','hold','rollback')),
+  at TEXT NOT NULL,
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  FOREIGN KEY(task_id,iteration_id) REFERENCES rsi_iterations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_instructions (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  effective_from_seq INTEGER NOT NULL CHECK(effective_from_seq>0),
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_queue (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('submit','evaluate','review','final','adopt','intervene')),
+  state TEXT NOT NULL CHECK(state IN ('queued','running','completed','failed')),
+  iteration_id TEXT,
+  evaluation_id TEXT,
+  created_at TEXT NOT NULL,
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  FOREIGN KEY(task_id,iteration_id) REFERENCES rsi_iterations(task_id,id),
+  FOREIGN KEY(task_id,evaluation_id) REFERENCES rsi_evaluations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_heads (
+  task_id TEXT PRIMARY KEY REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL CHECK(seq>0),
+  hash TEXT NOT NULL CHECK(length(hash)=64)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_rsi_tasks_state ON rsi_tasks(state,updated_at,id);
+CREATE INDEX IF NOT EXISTS idx_rsi_iterations_state ON rsi_iterations(task_id,state,seq);
+CREATE INDEX IF NOT EXISTS idx_rsi_evaluations_phase ON rsi_evaluations(task_id,iteration_id,phase,created_at,id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rsi_final_commit ON rsi_evaluations(task_id,commit_sha) WHERE phase='final' AND state<>'invalidated';
+CREATE INDEX IF NOT EXISTS idx_rsi_findings_iteration ON rsi_findings(task_id,iteration_id,level,id);
+CREATE INDEX IF NOT EXISTS idx_rsi_decisions_iteration ON rsi_decisions(task_id,iteration_id,at,id);
+CREATE INDEX IF NOT EXISTS idx_rsi_instructions_effective ON rsi_instructions(task_id,effective_from_seq,id);
+CREATE INDEX IF NOT EXISTS idx_rsi_queue_state ON rsi_queue(state,created_at,task_id,id);
+```
+
+The run-slot UNIQUE index covers evaluation/question/repetition/attempt lookup.
+Other automatic indexes are the declared PRIMARY KEY and UNIQUE constraints.
+No RSI table references or rewrites native session/event tables.
+
+### RSI-008.2 Explicit column constants and storage API
+
+```ts
+RSI_TASK_COLS = 'id, state, updated_at, entity_json';
+RSI_ITERATION_COLS = 'task_id, id, seq, parent_id, commit_sha, state, created_at, entity_json';
+RSI_EVALUATION_COLS = 'task_id, id, iteration_id, commit_sha, phase, state, created_at, ledger_seq, entity_json';
+RSI_RUN_COLS = 'task_id, id, evaluation_id, question_id, repetition, attempt, outcome, entity_json';
+RSI_FINDING_COLS = 'task_id, id, iteration_id, level, category, entity_json';
+RSI_DECISION_COLS = 'task_id, id, iteration_id, verdict, at, entity_json';
+RSI_INSTRUCTION_COLS = 'task_id, id, effective_from_seq, entity_json';
+RSI_QUEUE_COLS = 'task_id, id, kind, state, iteration_id, evaluation_id, created_at, entity_json';
+RSI_HEAD_COLS = 'task_id, seq, hash';
+```
+
+`schema.ts` exports `RSI_SCHEMA_SQL`; fresh creation and the `fromVersion < 25`
+branch create all nine tables/eight explicit indexes and publish schema_version25
+in one transaction. Repeated initialization is idempotent. No existing native
+rows, scanners or versioned metrics are rewritten.
+
+`applyRsiLedgerEntry(db, entry): void` validates the typed entry and hash, then
+atomically upserts the entity snapshot and advances its task's head. Only the
+same current seq/hash is an idempotent replay; gaps, forks, old sequences and
+cross-task payloads are rejected. Immutable run/finding/decision/instruction
+snapshots cannot be replaced; iteration identity/parent/commit and first nonnull
+trainScore are frozen, and terminal iterations cannot be rewritten. Evaluation
+identity/commit/question set/repetitions are frozen; completed/locked evaluations
+and their runs cannot be rewritten. Every final (task,commit) is reserved from
+its first queued snapshot, including across iterations and cache rebuilding.
+References must exist in the same task. A run must belong to a planned question
+and repetition; attempt1 requires a prior attempt0 infra_error.
+
+`getRsiLedgerHead(db, taskId): RsiLedgerHead | null` reads explicit cached columns.
+`rebuildRsiIndexFromLedger(db, taskId, ledgerPath): Promise<void>` verifies once,
+streaming complete events into private staging SQLite, with the current cached
+head as a trusted prefix anchor. A partial tail, invalid chain, invalid entity,
+violated invariant or changed live cache head aborts without replacing any rows.
+After verification, all nine tables for that task are replaced in one synchronous
+transaction; other tasks/native tables are preserved. Staging contains only the
+latest entity snapshots, not an in-memory copy of the ledger. All read/write
+statements are prepared and cached outside replay loops. Concurrent writers that
+observe an apply sequence conflict recover by replay; they never skip events.
+Without a surviving trusted head, valid-prefix tail truncation cannot be proven.
+
+
+
+Evaluation cache ledger_seq is the last snapshot ledger ordinal while unfinished,
+and the immutable completion ordinal after completed/infra_failed. An identical
+terminal snapshot cannot change that ordinal. First valid completed training
+results are selected by this ordinal, never a caller-controlled timestamp.
+
+Final reservation persists logically across budget invalidation: the first human
+request reserves (taskId,commit) permanently. The unique index excludes invalidated
+attempts solely to allow automatic worker recovery after task-budget interruption.
+A repeated human trigger is rejected even if every prior attempt was invalidated.
+Only worker may create a fresh queued evaluation ID after the latest final attempt
+was invalidated, with identical iteration/commit/questionIds/repetitions and no
+active/completed replacement. This continues the original human reservation; old
+runs and invalidated snapshots remain retained and unscored. Completed final
+results, including recorded infrastructure outcomes, never become a new trigger.
+
 # Phase B additive schema23 (2026-10-31)
 Covering result-count and LLM numeric-context indexes; no body acquisition.
 ```sql

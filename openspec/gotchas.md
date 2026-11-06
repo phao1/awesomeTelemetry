@@ -569,3 +569,55 @@ prewarm** ⚠️
 - Include adjacent normal evidence and precise finding record IDs, not first400.
 - Save report/index atomically, retain history at revision change;50-report cap
   never auto-deletes. Model secrets and complete bodies never enter exports.
+
+## 14. RSI (M13 / P1)
+
+### G14.1 Noise band is not a confidence interval
+- Use all ordered differences and sample denominator R(R-1)-1, not the standard
+  deviation of raw scores. Shared train/sealed delta is in absolute question counts.
+- Parent selection is latest within the noise band, not a statistical lower bound.
+
+### G14.2 Missing evidence is not permission
+- Missing monitor/adversarial results hold; only human retry_review exits that
+  hold. Incomplete comparisons require reevaluation, never human approval.
+- Keep all five gate results and apply their documented priority; no score-only
+  promotion. Agent timeout/per-run token429 are failures, not infrastructure gaps.
+
+### G14.3 Confirmation is not score shopping
+- Freeze the first candidate train score. Confirmed stable failures need two
+  consecutive failures after the lineage pass window. Do not choose the best rerun.
+- A failed infrastructure retry leaves unknown data and cannot lower the parent's
+  comparison denominator to manufacture a candidate gain.
+
+### G14.4 Human approval does not skip gates
+- Bind approval categories and reason to iteration+commit. Dependency approval
+  still needs training/reviews; suspicious reviews still need sealed evaluation.
+- Late token-growth approval reuses completed sealed evidence and reevaluates the
+  full gate. Rejected/promoted records remain terminal; rollback creates a new one.
+
+### G14.5 Projection is an allowlist, not deletion of known secrets
+- Construct new objects; unknown keys disappear recursively. Sealed exposes only
+  accept/reject, final no result, monitor only held/category.
+- Freeform logs, hidden tests/assertions and monitor prose are excluded in P1.
+  Never serialize the cache entity_json directly into an optimizer response.
+
+### G14.6 L1 checks both structural metadata and additions
+- Scan all resource types, not just source extensions. Deleted/renamed protected
+  files and detector markers are caught even with zero added lines.
+- Dependency/lock changes hold; symlinks, binary changes and protected paths reject.
+  Decode long base64/hex once; do not claim general concatenation/deobfuscation.
+
+### G14.7 Hash chains need a surviving anchor
+- Compare verified prefix against the DB seq/hash before rebuilding. A valid tail
+  truncation is unprovable without a trusted head. Cache newer than ledger is not
+  an invitation to overwrite the cache with less history.
+- Partial last lines are crash evidence, not silently removed or called malicious
+  tampering. Never append after them. Only dead expired owners permit lock recovery.
+
+### G14.8 Cache and queue never become execution authority
+- Stage streaming replay privately, then replace all RSI rows atomically under a
+  fresh head CAS. Concurrent appends may be newer than a captured read snapshot.
+- Final reservations are unique per task+commit and survive rebuild; locked results
+  cannot be changed. Queue commands remain immutable across worker status changes.
+- HTTP only persists requests. Task Bearer tokens cannot authorize page operations;
+  loopback addresses alone cannot distinguish trusted pages from container traffic.

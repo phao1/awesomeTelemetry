@@ -2054,3 +2054,7 @@ fresh standard report, preview 33,034 bytes, deep run 26.9 s, accepted with 0
 rejected (before this change the same task's top cause was rejected for writing
 "毫秒除以 1000"), 22,939 input / 1,143 output tokens (Codex adds ~9.4k tokens of
 its own system prompt).
+
+## M13 RSI P1 (2026-11-07)
+
+Contract, decision core, ledger and additive schema v25 only; no request-path or scan-path code changes. M1 8GB, full `perf:check` passed: listSessions(500) 0.557 ms, worst detail slim (9,590 events) 13.7 ms, overview cold 72.6 ms / hit 0.44 ms, mission cold 0.92 ms / hit 0.028 ms, event-loop p99 under load 0 ms; capture A/B all three profiles within budget; task health 20,000 events 785 ms.

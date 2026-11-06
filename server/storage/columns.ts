@@ -140,3 +140,14 @@ export const HEALTH_EVENT_SLIM_COLS = [
   'duration_ms', 'status', 'actor', 'tool', 'tokens_json', 'error', 'model', 'turn_key',
   'input_len', 'output_len', 'input_len>0 AS has_input', 'output_len>0 AS has_output',
 ].join(', ');
+
+/** RSI-008.2 explicit cache columns; full snapshots are human/internal only. */
+export const RSI_TASK_COLS = 'id, state, updated_at, entity_json';
+export const RSI_ITERATION_COLS = 'task_id, id, seq, parent_id, commit_sha, state, created_at, entity_json';
+export const RSI_EVALUATION_COLS = 'task_id, id, iteration_id, commit_sha, phase, state, created_at, ledger_seq, entity_json';
+export const RSI_RUN_COLS = 'task_id, id, evaluation_id, question_id, repetition, attempt, outcome, entity_json';
+export const RSI_FINDING_COLS = 'task_id, id, iteration_id, level, category, entity_json';
+export const RSI_DECISION_COLS = 'task_id, id, iteration_id, verdict, at, entity_json';
+export const RSI_INSTRUCTION_COLS = 'task_id, id, effective_from_seq, entity_json';
+export const RSI_QUEUE_COLS = 'task_id, id, kind, state, iteration_id, evaluation_id, created_at, entity_json';
+export const RSI_HEAD_COLS = 'task_id, seq, hash';

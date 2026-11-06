@@ -1,0 +1,91 @@
+import { describe, expect, it } from 'vitest';
+import { defaultRsiConfig, validateRsiConfig, validateRsiTask, validateRsiIteration, validateRsiEvaluation,
+  validateRsiRun, validateRsiLedgerEvent, validateRsiLedgerEntry, validateRsiQueueItem } from './rsi-validation.js';
+import type { RsiTask, RsiIteration, RsiEvaluation, RsiRun, RsiQueueItem } from './rsi-types.js';
+
+const at = '2026-11-07T00:00:00.000Z', commit = 'a'.repeat(40), hash = 'b'.repeat(64);
+const task = (): RsiTask => ({ id: 'task', repository: '/workspace/repo', baselineCommit: commit, datasetHash: hash,
+  mainMetric: 'passed_count', config: defaultRsiConfig(), state: 'created', pauseReason: null, delta: null,
+  baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0,
+  currentParentId: null, taskTokenHash: hash, createdAt: at, updatedAt: at });
+const iteration = (): RsiIteration => ({ id: 'i', taskId: 'task', seq: 1, parentId: null, commit,
+  prd: { observation: 'repeat work', hypothesis: 'cache safe steps', changes: ['src/cache.ts'], expectedImpact: 'one more pass' },
+  packageSha256: null, state: 'draft', holdReasons: [], resumeState: null, approvals: [], trainScore: null, sealedScore: null, createdAt: at, updatedAt: at });
+const evaluation = (): RsiEvaluation => ({ id: 'e', taskId: 'task', iterationId: 'i', commit, phase: 'train', state: 'completed',
+  repetitions: 1, questionIds: ['q1', 'q2'], passedCounts: [1], score: 1, infraErrorRatio: 0, sealedVerdict: null, locked: false, createdAt: at, updatedAt: at });
+const run = (): RsiRun => ({ id: 'r', taskId: 'task', evaluationId: 'e', questionId: 'q1', repetition: 0, attempt: 0,
+  outcome: 'pass', failureReason: null, durationMs: 1, proxyTokens: 20, artifactPath: 'artifacts/i/result', sessionPath: null, at });
+const queued = (): RsiQueueItem => ({ id: 'j', taskId: 'task', kind: 'intervene', iterationId: null, evaluationId: null,
+  state: 'queued', requestedBy: 'human', reason: null, command: { action: 'start' }, createdAt: at, updatedAt: at });
+
+describe('RSI runtime contract validation', () => {
+  it('supplies independent approved defaults', () => {
+    expect(defaultRsiConfig()).toMatchObject({ noiseRepeats: 3, infraErrorMaxRatio: .1, stableWindow: 3, stableFailRepeats: 2, sealedQueryBudget: 10, tokenGrowthMaxRatio: .3 });
+    const a = defaultRsiConfig(); a.l1.maxDiffLines = 1; expect(defaultRsiConfig().l1.maxDiffLines).toBe(2000);
+  });
+  it.each([{ noiseRepeats: 1 }, { stableFailRepeats: 1 }, { infraErrorMaxRatio: 1.1 }, { maxIterations: 1.5 }, { maxTaskTokens: Infinity }, { targetPassedCount: 0 }])('rejects invalid config %j', override => {
+    expect(() => validateRsiConfig({ ...defaultRsiConfig(), ...override })).toThrow();
+  });
+  it('accepts exact required fields and rejects unknown/missing/undefined', () => {
+    expect(validateRsiTask(task())).toEqual(task());
+    expect(() => validateRsiTask({ ...task(), raw: 'unexpected' })).toThrow();
+    expect(() => validateRsiTask({ ...task(), delta: undefined })).toThrow();
+    const { taskTokenHash: _removed, ...missing } = task(); expect(() => validateRsiTask(missing)).toThrow();
+  });
+  it.each(['2026-11-07', '2026-11-07T00:00:00+00:00', '2026-02-31T00:00:00.000Z'])('rejects noncanonical/invalid timestamp %s', timestamp => {
+    expect(() => validateRsiTask({ ...task(), createdAt: timestamp })).toThrow();
+  });
+  it('enforces paused reasons and sealed reservation bounds', () => {
+    expect(() => validateRsiTask({ ...task(), state: 'paused' })).toThrow();
+    expect(validateRsiTask({ ...task(), state: 'paused', pauseReason: 'budget_exhausted' }).pauseReason).toBe('budget_exhausted');
+    expect(() => validateRsiTask({ ...task(), sealedQueriesUsed: 11 })).toThrow();
+  });
+  it('binds approvals to candidate identity and retains explicit hold resume state', () => {
+    expect(validateRsiIteration(iteration())).toEqual(iteration());
+    expect(() => validateRsiIteration({ ...iteration(), state: 'held' })).toThrow();
+    expect(() => validateRsiIteration({ ...iteration(), approvals: [{ iterationId: 'other', commit, categories: ['token_growth'], reason: 'approved', at }] })).toThrow();
+    expect(validateRsiIteration({ ...iteration(), state: 'held', holdReasons: ['token_growth'], resumeState: 'deciding' }).state).toBe('held');
+  });
+  it('retains fractional sealed means and enforces fixed repeat counts', () => {
+    const sealed = { ...evaluation(), phase: 'sealed', repetitions: 3, passedCounts: [1, 2, 2], score: 5 / 3, sealedVerdict: 'accept' };
+    expect(validateRsiEvaluation(sealed).score).toBe(5 / 3);
+    expect(() => validateRsiEvaluation({ ...sealed, score: 2 })).toThrow();
+    expect(() => validateRsiEvaluation({ ...sealed, repetitions: 1 })).toThrow();
+    expect(() => validateRsiEvaluation({ ...evaluation(), repetitions: 3, passedCounts: [1, 2, 2], score: 5 / 3 })).toThrow();
+    expect(() => validateRsiEvaluation({ ...evaluation(), iterationId: null })).toThrow();
+  });
+  it('invalidated and infra evaluations cannot retain scores; completed final locks', () => {
+    expect(() => validateRsiEvaluation({ ...evaluation(), state: 'invalidated' })).toThrow();
+    expect(() => validateRsiEvaluation({ ...evaluation(), infraErrorRatio: .1 })).toThrow();
+    expect(() => validateRsiEvaluation({ ...evaluation(), phase: 'final', locked: false })).toThrow();
+    expect(validateRsiEvaluation({ ...evaluation(), phase: 'final', locked: true }).locked).toBe(true);
+    expect(() => validateRsiEvaluation({ ...evaluation(), phase: 'sealed', repetitions: 3, infraErrorRatio: .1, score: null, sealedVerdict: 'accept' })).toThrow();
+  });
+  it('run token 429 and Agent timeout are fails, not infrastructure errors', () => {
+    for (const failureReason of ['agent_timeout', 'run_token_budget'] as const) {
+      expect(validateRsiRun({ ...run(), outcome: 'fail', failureReason }).outcome).toBe('fail');
+      expect(() => validateRsiRun({ ...run(), outcome: 'infra_error', failureReason })).toThrow();
+    }
+  });
+  it.each(['/private/secret', '../secret', 'artifacts/../../secret', 'C:\\secret'])('rejects escaping artifact path %s', artifactPath => {
+    expect(() => validateRsiRun({ ...run(), artifactPath })).toThrow();
+  });
+  it('verifies complete ledger payload and envelope identity', () => {
+    const input = { taskId: 'task', at, actor: 'human', event: 'task_put', payload: task() };
+    expect(validateRsiLedgerEvent(input)).toEqual(input);
+    expect(() => validateRsiLedgerEvent({ ...input, taskId: 'other' })).toThrow();
+    expect(validateRsiLedgerEntry({ ...input, version: 1, seq: 1, prevHash: '0'.repeat(64), hash }).seq).toBe(1);
+    expect(() => validateRsiLedgerEntry({ ...input, version: 1, seq: 0, prevHash: '0'.repeat(64), hash })).toThrow();
+  });
+  it('queue carries a validated command and enforces human-only final/adoption', () => {
+    expect(validateRsiQueueItem(queued())).toEqual(queued());
+    expect(() => validateRsiQueueItem({ ...queued(), requestedBy: 'optimizer' })).toThrow();
+    expect(() => validateRsiQueueItem({ ...queued(), kind: 'final', iterationId: 'i', requestedBy: 'worker', command: { action: 'final', reason: 'done' } })).toThrow();
+    expect(() => validateRsiQueueItem({ ...queued(), command: { action: 'arbitrary_shell', script: 'bad' } })).toThrow();
+  });
+  it('optimizer cannot disguise a hidden evaluation or monitor request as a worker command', () => {
+    expect(() => validateRsiQueueItem({ ...queued(), kind: 'evaluate', requestedBy: 'optimizer', command: { action: 'evaluate', phase: 'sealed', commit } })).toThrow();
+    expect(() => validateRsiQueueItem({ ...queued(), kind: 'review', iterationId: 'i', requestedBy: 'optimizer', command: { action: 'review' } })).toThrow();
+    expect(() => validateRsiQueueItem({ ...queued(), kind: 'evaluate', requestedBy: 'worker', command: { action: 'evaluate', phase: 'final', commit } })).toThrow();
+  });
+});

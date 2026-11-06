@@ -42,7 +42,108 @@ import { cachedStmt } from './stmt-cache.js';
  * team 表族内部 FK 级联；session 删除只清 junction 链接不清 team，team 删除只删
  * team-owned 行绝不删 session。
  */
-export const SCHEMA_VERSION = 24;
+export const SCHEMA_VERSION = 25;
+
+/** RSI-008: schema25 is an additive, rebuildable ledger index. */
+export const RSI_SCHEMA_SQL = `CREATE TABLE IF NOT EXISTS rsi_tasks (
+  id TEXT PRIMARY KEY,
+  state TEXT NOT NULL CHECK(state IN ('created','calibrating','running','paused','needs_help','completed','stopped')),
+  updated_at TEXT NOT NULL,
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json))
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_iterations (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  seq INTEGER NOT NULL CHECK(seq>0),
+  parent_id TEXT,
+  commit_sha TEXT NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('draft','submitted','precheck','training','reviewing','held','sealed','deciding','promoted','rejected')),
+  created_at TEXT NOT NULL,
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  UNIQUE(task_id,seq),
+  FOREIGN KEY(task_id,parent_id) REFERENCES rsi_iterations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_evaluations (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  iteration_id TEXT,
+  commit_sha TEXT NOT NULL,
+  phase TEXT NOT NULL CHECK(phase IN ('smoke','train','sealed','final','adversarial','ablation')),
+  state TEXT NOT NULL CHECK(state IN ('queued','running','completed','infra_failed','invalidated')),
+  created_at TEXT NOT NULL,
+  ledger_seq INTEGER NOT NULL CHECK(ledger_seq>0),
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  FOREIGN KEY(task_id,iteration_id) REFERENCES rsi_iterations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_runs (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  evaluation_id TEXT NOT NULL,
+  question_id TEXT NOT NULL,
+  repetition INTEGER NOT NULL CHECK(repetition>=0),
+  attempt INTEGER NOT NULL CHECK(attempt IN (0,1)),
+  outcome TEXT NOT NULL CHECK(outcome IN ('pass','fail','infra_error')),
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  UNIQUE(task_id,evaluation_id,question_id,repetition,attempt),
+  FOREIGN KEY(task_id,evaluation_id) REFERENCES rsi_evaluations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_findings (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  iteration_id TEXT NOT NULL,
+  level TEXT NOT NULL CHECK(level IN ('L0','L1','L2','L3','L4','L5')),
+  category TEXT NOT NULL,
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  FOREIGN KEY(task_id,iteration_id) REFERENCES rsi_iterations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_decisions (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  iteration_id TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK(verdict IN ('promote','reject','hold','rollback')),
+  at TEXT NOT NULL,
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  FOREIGN KEY(task_id,iteration_id) REFERENCES rsi_iterations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_instructions (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  effective_from_seq INTEGER NOT NULL CHECK(effective_from_seq>0),
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_queue (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('submit','evaluate','review','final','adopt','intervene')),
+  state TEXT NOT NULL CHECK(state IN ('queued','running','completed','failed')),
+  iteration_id TEXT,
+  evaluation_id TEXT,
+  created_at TEXT NOT NULL,
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  FOREIGN KEY(task_id,iteration_id) REFERENCES rsi_iterations(task_id,id),
+  FOREIGN KEY(task_id,evaluation_id) REFERENCES rsi_evaluations(task_id,id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_heads (
+  task_id TEXT PRIMARY KEY REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL CHECK(seq>0),
+  hash TEXT NOT NULL CHECK(length(hash)=64)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_rsi_tasks_state ON rsi_tasks(state,updated_at,id);
+CREATE INDEX IF NOT EXISTS idx_rsi_iterations_state ON rsi_iterations(task_id,state,seq);
+CREATE INDEX IF NOT EXISTS idx_rsi_evaluations_phase ON rsi_evaluations(task_id,iteration_id,phase,created_at,id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rsi_final_commit ON rsi_evaluations(task_id,commit_sha) WHERE phase='final' AND state<>'invalidated';
+CREATE INDEX IF NOT EXISTS idx_rsi_findings_iteration ON rsi_findings(task_id,iteration_id,level,id);
+CREATE INDEX IF NOT EXISTS idx_rsi_decisions_iteration ON rsi_decisions(task_id,iteration_id,at,id);
+CREATE INDEX IF NOT EXISTS idx_rsi_instructions_effective ON rsi_instructions(task_id,effective_from_seq,id);
+CREATE INDEX IF NOT EXISTS idx_rsi_queue_state ON rsi_queue(state,created_at,task_id,id);
+`;
 const TELEMETRY_SCHEMA_SQL = `CREATE TABLE IF NOT EXISTS telemetry_quota (
   id INTEGER PRIMARY KEY CHECK(id=1),
   span_count INTEGER NOT NULL,
@@ -1212,6 +1313,10 @@ export function migrateSchema(db: Database, fromVersion: number): void {
   if (fromVersion < 23) db.transaction(()=>{db.exec(`CREATE INDEX IF NOT EXISTS idx_events_task_results ON events(session_id,kind,status,output_len);
 CREATE INDEX IF NOT EXISTS idx_events_task_context ON events(session_id,kind,model,tokens_json);`);cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('23');})();
   if (fromVersion < 24) db.transaction(() => { db.exec(TELEMETRY_SCHEMA_SQL); cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('24'); })();
+  if (fromVersion < 25) db.transaction(() => {
+    db.exec(RSI_SCHEMA_SQL);
+    cachedStmt(db, SET_SCHEMA_VERSION_SQL).run('25');
+  })();
   cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
 }
 
@@ -1228,6 +1333,9 @@ export function initSchema(db: Database): void {
   db.exec(TELEMETRY_SCHEMA_SQL);
   ensureEventsContentHash(db);
   db.exec(INDEX_SQL); // §4 全部 CREATE INDEX IF NOT EXISTS
-  cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
+  db.transaction(() => {
+    db.exec(RSI_SCHEMA_SQL);
+    cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
+  })();
   db.exec('ANALYZE');
 }

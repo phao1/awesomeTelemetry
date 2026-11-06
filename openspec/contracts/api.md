@@ -1832,3 +1832,114 @@ GET /api/providers/status retains §2.2 fields and adds required
 paths concurrently with async filesystem access and a1s response deadline.
 No enabling, scanning, filesystem writes or body reads occur. The existing local
 HTTP/no-store/ApiError protections apply. Older clients may ignore this addition.
+
+
+## RSI queue-only API (M13 / P1 contract; handlers deferred)
+
+Authority: [rsi.md](rsi.md) RSI-009.1; this exact additive section uses §0.3 ApiError.
+
+
+This section defines future handlers only. All request JSON objects reject unknown
+keys; UTF8 body limit65536 bytes. IDs follow RSI-002. GET list limit defaults50,
+range1..200; cursor is the last returned entity ID (ASCII lexical ASC, exclusive),
+null when exhausted. No hidden data ever enters an optimizer error body. All
+responses are no-store. No HTTP request builds/runs code, evaluates, invokes a
+model, starts a process, or changes the active iteration/task state synchronously.
+
+DTO definitions (all fields required unless marked optional):
+
+```ts
+type RsiPage<T> = { items: T[]; nextCursor: string | null };
+type RsiAccepted = { taskId: string; queueId: string; status: 'queued' };
+type RsiTaskView = Omit<RsiTask, 'taskTokenHash'>;
+type RsiCreateTaskRequest = {
+  requestId: string; repository: string; baselineCommit: string;
+  datasetHash: string; config: RsiConfig;
+};
+type RsiCreateTaskResponse = RsiAccepted & { agentToken: string | null };
+type RsiSubmitRequest = { requestId: string; commit: string; prd: RsiPrd };
+type RsiStuckRequest = { requestId: string; reason: string };
+type RsiHumanCommandRequest = { requestId: string; iterationId: string | null; command: RsiCommand };
+type RsiBriefResponse = {
+  task: NonNullable<ReturnType<typeof projectTaskForOptimizer>>;
+  parent: { iterationId: string | null; commit: string; trainScore: number };
+  instructions: NonNullable<ReturnType<typeof projectInstructionForOptimizer>>[];
+};
+type RsiOptimizerResults = {
+  iteration: NonNullable<ReturnType<typeof projectIterationForOptimizer>>;
+  evaluations: NonNullable<ReturnType<typeof projectEvaluationForOptimizer>>[];
+  runs: NonNullable<ReturnType<typeof projectRunForOptimizer>>[];
+  findings: NonNullable<ReturnType<typeof projectFindingForOptimizer>>[];
+  decisions: NonNullable<ReturnType<typeof projectDecisionForOptimizer>>[];
+  nextCursor: string | null;
+};
+```
+
+| Method and route | Request / response |
+|---|---|
+| GET /api/rsi/agent/brief | no body/query; 200 RsiBriefResponse, active task derived solely from bearer |
+| GET /api/rsi/agent/iterations/:seq/results | seq positive; cursor/limit; 200 RsiOptimizerResults, pages by evaluation ID, safe runs for those evaluations; no results from other tasks |
+| POST /api/rsi/agent/iterations | RsiSubmitRequest; 202 RsiAccepted; enqueue submit with the task's selected parent, no binary uploads or caller diff |
+| POST /api/rsi/agent/stuck | RsiStuckRequest; 202 RsiAccepted; enqueue declare_stuck, no failure penalty |
+| GET /api/rsi/tasks | cursor/limit; 200 RsiPage<RsiTaskView> |
+| POST /api/rsi/tasks | RsiCreateTaskRequest; 202 RsiCreateTaskResponse |
+| GET /api/rsi/tasks/:taskId | no body; 200 {task:RsiTaskView,head:RsiLedgerHead|null} |
+| GET /api/rsi/tasks/:taskId/iterations | cursor/limit; 200 RsiPage<RsiIteration> |
+| GET /api/rsi/tasks/:taskId/iterations/:seq | no body; 200 {iteration:RsiIteration} |
+| GET /api/rsi/tasks/:taskId/evaluations | cursor/limit and optional phase:RsiPhase; 200 RsiPage<RsiEvaluation> |
+| GET /api/rsi/tasks/:taskId/evaluations/:evaluationId/runs | cursor/limit; 200 RsiPage<RsiRun> |
+| GET /api/rsi/tasks/:taskId/findings | cursor/limit and optional iterationId; 200 RsiPage<RsiFinding> |
+| GET /api/rsi/tasks/:taskId/decisions | cursor/limit and optional iterationId; 200 RsiPage<RsiDecision> |
+| GET /api/rsi/tasks/:taskId/instructions | cursor/limit; 200 RsiPage<RsiInstruction> |
+| GET /api/rsi/tasks/:taskId/queue | cursor/limit; 200 RsiPage<RsiQueueItem> |
+| POST /api/rsi/tasks/:taskId/commands | RsiHumanCommandRequest; 202 RsiAccepted |
+
+Human commands are approve/reject/retry_review/retry_evaluation/pause/resume/stop/
+rollback/instruction/set_budget/final/adopt. Approve names exact categories/reason;
+rollback parentId null selects baseline; final/adopt require a promoted iteration,
+and remain possible in completed tasks. Their iterationId must be nonnull; task
+commands must use null. Worker owns evaluate/review materialization. Optimizer
+cannot submit arbitrary RsiCommand objects or set actor/requestedBy/parent IDs.
+
+Each task receives an independently generated 256-bit random bearer token; compare
+SHA256(token) to taskTokenHash in constant time. Token has no global/page scope.
+Human routes require a separate local token (Authorization Bearer) plus allowed
+local Host/Origin policy. Never infer human privilege from remoteAddress/loopback.
+Authenticated actor is assigned by the trusted entry point, not request JSON.
+Tokens are never in query strings, logs, ledger, cache payloads or model prompts;
+agentToken appears only in the initial local response, delivered securely to the
+optimizer by the host. Creation reserves created task metadata and a start queue
+command; this is durable queue setup, not execution. If the initial response is
+lost, repeated acceptance returns agentToken=null without a recovered plaintext token;
+token rotation is an explicit future human operation, outside P1 route scope.
+
+requestId is the idempotency key within a task; reusing it for identical command
+returns the original acceptance, changing its contents returns409 RSI_CONFLICT.
+Queue command, requester, targets and creation time are immutable. Worker may
+change queue execution state but not replace the command. Restart requeues running
+work whose result is not in the ledger; completed ledger results are not rerun.
+Budget-invalidated evaluations get a new evaluation ID on resume. An existing
+final reservation retries its incomplete evaluation, never creates a second one.
+
+The optimizer result projector resolves each run's phase from its trusted parent
+evaluation, never from a caller-supplied phase. Filter final evaluation records
+before pagination so their existence does not appear as an empty final page.
+Max JSON response size=1048576 UTF8 bytes; overflow returns RSI_LIMIT without
+truncating a record or leaking a private diagnostic. All non2xx use ApiError:
+
+| HTTP | code | Meaning |
+|---|---|---|
+| 400 | RSI_INVALID_REQUEST | invalid field, query, ID, phase or configuration |
+| 401 | RSI_AUTH_REQUIRED | absent/invalid bearer; static message |
+| 403 | RSI_FORBIDDEN | wrong token scope, forbidden actor, Host/Origin failure |
+| 404 | RSI_NOT_FOUND | task/iteration/evaluation absent or outside token scope |
+| 409 | RSI_CONFLICT | idempotency collision, illegal transition, stale command |
+| 409 | RSI_BUDGET_EXHAUSTED | request cannot start under remaining budget |
+| 409 | RSI_FINAL_LOCKED | final already reserved/locked for this commit |
+| 413 | RSI_LIMIT | body or response exceeds declared byte limit |
+| 503 | RSI_BUSY | queue/ledger lock unavailable within timeout |
+| 503 | RSI_LEDGER_INVALID | integrity/partial-tail/cache-rebuild failure |
+| 500 | INTERNAL_ERROR | unexpected internal failure, no raw exception text |
+
+Error `details`, when present, contains only `{reason:string}` drawn from the gate
+reason codes or these static error names; never raw paths, evidence or scores.
