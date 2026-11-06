@@ -2281,10 +2281,21 @@ the same pure selectAblationPatch over retained diff/findings/monitor locations.
 No variant hidden tests, draft bodies, source tar or raw receipts are returned.
 RSI-016 permits bounded metadata-only reads of the frozen bank manifest;
 source, statement, reference and test reads remain owned by bank.ts.
-Runs aggregate across all iteration phases, page by run ID, include language
+Runs aggregate across all iteration phases. The human phase filter is applied before
+pagination; order is smoke/train/sealed/adversarial/ablation/final, question ID,
+repetition, attempt, then run ID (ASCII lexical tie-breaks). The exclusive cursor
+is the last run ID in this order, rather than the default entity-ID order. Include language
 from the frozen bank and observed target.json telemetry. Unknown metadata=null.
 Ledger verify streams verifyLedger with the DB head as anchor, reporting issue
 codes and line numbers; it does not repair or write the ledger.
+
+Process-monitor findings use category=suspicious only for status=suspicious.
+Clean and missing process results use review_clean with explicit JSON evidence
+{status,evidence:[],reason}; clean requires reason=ok, missing requires
+session_missing/invalid_output/model_error. This narrowly extends the earlier
+monitor-only completion category: process records remain worker-only L4/info,
+are excluded before the gate and never attest that L4 passed. Page findings show
+clean completions as summaries, and preserve the explicit missing status.
 
 Page-data caches are bounded (24 entries, 2-second TTL, maximum1MiB per entry),
 keyed by ledger head and task root; verification also keys file identity, size,

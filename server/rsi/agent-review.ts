@@ -142,16 +142,17 @@ export class AgentReviewProvider implements ReviewProvider {
     const calibration = task.monitorCalibration;
     const degraded = calibration?.status === 'failed' && calibration.family === s.settings.monitorFamily
       && calibration.model === s.settings.monitorModel && calibration.promptVersion === MONITOR_PROMPT_VERSION;
-    const save = async (tag: string, value: Pick<RsiFinding, 'level' | 'severity' | 'source' | 'file' | 'line' | 'evidence'>): Promise<void> => {
+    const save = async (tag: string, value: Pick<RsiFinding, 'level' | 'severity' | 'source' | 'file' | 'line' | 'evidence'> & { category?: RsiFinding['category'] }): Promise<void> => {
       const id = digest([scope, tag, value]);
       if (!s.store.list('finding_put').some(f => f.id === id)) await s.store.put({ event: 'finding_put', payload: {
-        ...value, id, taskId: task.id, iterationId: iteration.id, category: 'suspicious', at: now() } });
+        ...value, id, taskId: task.id, iterationId: iteration.id, category: value.category ?? 'suspicious', at: now() } });
     };
     for (const [index, c] of monitor.conclusions.entries()) await save(`monitor-${index}`, { level: 'L4', severity: degraded ? 'info' : 'hold',
       source: degraded ? 'degraded_monitor' : 'monitor', file: c.file, line: c.line, evidence: JSON.stringify(c) });
     const process = await runProcessMonitor(iteration, diff, s.sessionReader ?? { read: async () => null }, options, signal);
     await durableJson(join(root, 'process.json'), process);
     await save('process', { level: 'L4', severity: 'info', source: 'process_monitor', file: null, line: null,
+      category: process.status === 'suspicious' ? 'suspicious' : 'review_clean',
       evidence: JSON.stringify({ status: process.status, evidence: process.evidence, reason: process.reason }).slice(0, 65536) });
     let adversarial: ReviewResult['adversarial'] = { status: 'missing' };
     try {

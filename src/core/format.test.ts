@@ -1,5 +1,5 @@
 import { describe,it,expect } from 'vitest';
-import {formatTokens,formatCount,formatPercent,formatDuration,formatRelativeTime,formatAbsoluteTime,formatCoverage} from './format.js';
+import {formatBytes,formatTokens,formatCount,formatPercent,formatDuration,formatRelativeTime,formatAbsoluteTime,formatCoverage} from './format.js';
 describe('F2 centralized format',()=>{
  it('uses one decimal compact values without trailing .0 and preserves exact counts',()=>{expect([999,292700,53300000,1210000000,12000].map(formatTokens)).toEqual(['999','292.7K','53.3M','1.2B','12K']);expect(formatCount(2409,'en')).toBe('2,409');});
  it('distinguishes missing, invalid, zero and tiny percentages',()=>{expect(formatTokens(null)).toBe('—');expect(formatTokens(NaN)).toBe('—');expect(formatTokens(0)).toBe('0');expect(formatPercent(.0005)).toBe('<0.1%');expect(formatPercent(0)).toBe('0.0%');expect(formatPercent(.874)).toBe('87.4%');});
@@ -7,3 +7,8 @@ describe('F2 centralized format',()=>{
  it.each(['zh','en'] as const)('formats time and coverage (%s)',locale=>{const now=new Date('2026-11-01T10:00:00Z');expect(formatRelativeTime(now,locale,now)).toBe(locale==='zh'?'刚刚':'Just now');expect(formatRelativeTime('2026-11-01T09:55:00Z',locale,now)).toBe(locale==='zh'?'5 分钟前':'5m ago');expect(formatAbsoluteTime('bad',locale)).toBe('—');expect(formatAbsoluteTime(now,locale,now)).not.toContain('2026');expect(formatCoverage(16,21,locale)).toBe(locale==='zh'?'部分 16/21':'Partial 16/21');expect(formatCoverage(21,21,locale)).toBe('');});
 });
 it('handles rounding across suffix boundaries and signed counts',()=>{expect(formatTokens(999949)).toBe('999.9K');expect(formatTokens(999950)).toBe('1M');expect(formatTokens(-292700)).toBe('-292.7K');expect(formatTokens(1000)).toBe('1K');});
+
+it('formats decimal byte units with a separating space and no token suffixes',()=>{
+ expect([0,39800000,999,1000,999950,1e9].map(formatBytes)).toEqual(['0 B','39.8 MB','999 B','1 KB','1 MB','1 GB']);
+ for(const value of [null,undefined,NaN,Infinity,-1])expect(formatBytes(value)).toBe('—');
+});

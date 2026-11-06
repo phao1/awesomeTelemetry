@@ -1,3 +1,4 @@
+import type { RsiPageRun } from '../../src/core/rsi-api-client.js';
 import type { ExecutionBackend } from '../rsi/worker.js';
 import type { RsiCalibrationCategory, RsiIteration, RsiMonitorCalibration } from '../../src/core/rsi-types.js';
 import { PassThrough, Writable } from 'node:stream';
@@ -90,6 +91,15 @@ it('walks agent-visible HTTP with private sealed/final trajectories and monitor 
     await call('POST','/api/rsi/tasks/task-create/commands',pageToken,{requestId:'final',iterationId:'candidate',command:{action:'final',reason:'human final'}});await worker.run();
     const humanRuns=await call('GET','/api/rsi/tasks/task-create/iterations/1/runs',pageToken);expect(humanRuns.status).toBe(200);
     const rows=humanRuns.body.items as Record<string,unknown>[];expect(rows.some(r=>r.phase==='sealed')).toBe(true);expect(rows.some(r=>r.phase==='final')).toBe(true);for(const row of rows){expect(row).not.toHaveProperty('artifactPath');expect(row).not.toHaveProperty('sessionPath');expect(row).not.toHaveProperty('hidden_tests');}
+    const {comparePageRuns}=await import('../rsi/page-data.js');
+    expect(rows).toEqual([...rows].sort((a,b)=>comparePageRuns(a as unknown as RsiPageRun,b as unknown as RsiPageRun)));
+    const filtered=await call('GET','/api/rsi/tasks/task-create/iterations/1/runs?phase=sealed&limit=1',pageToken);
+    expect(filtered.status).toBe(200);expect((filtered.body.items as {phase:string}[]).map(r=>r.phase)).toEqual(['sealed']);
+    const cursor=filtered.body.nextCursor as string;expect(cursor).toBeTruthy();
+    const next=await call('GET',`/api/rsi/tasks/task-create/iterations/1/runs?phase=sealed&limit=200&cursor=${cursor}`,pageToken);
+    expect(next.status).toBe(200);expect([...(filtered.body.items as unknown[]),...(next.body.items as unknown[])]).toEqual(rows.filter(r=>r.phase==='sealed'));
+    expect((await call('GET','/api/rsi/tasks/task-create/iterations/1/runs?phase=invalid',pageToken)).status).toBe(400);
+    expect((await call('GET','/api/rsi/tasks/task-create/iterations/1/runs?phase=sealed',agentToken)).status).toBe(403);
     const pageVerdict=await call('GET','/api/rsi/tasks/task-create/iterations/1/verdict',pageToken);expect(pageVerdict.status).toBe(200);expect(pageVerdict.body.result).toEqual(worker.gate(store.list('iteration_put')[0]!));
     const {enqueue}=await import('../rsi/queue.js');await enqueue(store,{action:'review',audit:true},'worker','human-audit','candidate');
     const auditPage=await call('GET','/api/rsi/tasks/task-create/queue',pageToken);expect((auditPage.body.items as {id:string;audit:boolean}[]).find(q=>q.id==='human-audit')?.audit).toBe(true);

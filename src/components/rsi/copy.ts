@@ -42,3 +42,12 @@ export function shellArgument(value:string):string {return /^[A-Za-z0-9_./-]+$/.
 
 const PROFILE_FIELDS:Record<string,readonly [string,string]>={dockerfile:['容器构建文件','Container build file'],run:['启动配置','Launch configuration'],session:['会话保存配置','Session storage configuration'],dependencyInputs:['依赖输入','Dependency inputs'],l1:['规则配置','Rule configuration'],description:['档案说明','Profile description'],verified:['实测标记','Verification flag'],name:['档案名称','Profile name'],id:['档案标识','Profile identifier'],family:['模型系列','Model family'],egress:['模型连接方式','Model connection'],login:['登录配置','Login configuration']};
 export function fieldErrorLabel(field:string,reason:string,locale:Locale):string {const part=field.split('.')[1],label=part?PROFILE_FIELDS[part]:undefined;return (label?label[locale==='zh'?0:1]+copy(locale,'：',': '):'')+reasonLabel(reason,locale);}
+
+/** Condition titles describe the metric; reason labels describe an actual outcome. */
+export function verdictConditionLabel(condition: 'anti_cheating' | 'primary_metric' | 'sealed' | 'stable_regression' | 'token_growth', locale: Locale): string {
+  const titles = {
+    anti_cheating: ['防作弊', 'Anti-cheating'], primary_metric: ['主指标', 'Primary metric'],
+    sealed: ['封存集', 'Sealed set'], stable_regression: ['稳定题', 'Stable questions'], token_growth: ['Token 增幅', 'Token growth'],
+  } as const;
+  return copy(locale, titles[condition][0], titles[condition][1]);
+}

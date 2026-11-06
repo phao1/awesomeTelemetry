@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Locale } from '../../i18n.js';
 import type { RsiIteration } from '../../core/rsi-types.js';
 import type { RsiMetrics, RsiTaskView } from '../../core/rsi-api-client.js';
-import { formatCount, formatTokens, formatDuration } from '../../core/format.js';
+import { formatCount, formatDuration } from '../../core/format.js';
 import { Card, CardBody, CardHeader } from '../ui/Display.js';
 import { Button } from '../ui/Button.js';
 import { EmptyState } from '../ui/States.js';
@@ -12,15 +12,21 @@ import { IconTrendingUp } from '../icons/index.js';
 import { copy, reasonLabel } from './copy.js';
 import { Status } from './Shared.js';
 export function ScoreChart({task,iterations,locale,onOpen}:{task:RsiTaskView;iterations:RsiIteration[];locale:Locale;onOpen:(i:RsiIteration)=>void}) {
-  const [ref,width]=useChartWidth(),[hover,setHover]=useState<number|null>(null),points=iterations.filter(i=>i.trainScore!==null).sort((a,b)=>a.seq-b.seq);
+  const points=iterations.filter(i=>i.trainScore!==null).sort((a,b)=>a.seq-b.seq);
   const baseline=task.baselineTrainScore;
   if(!points.length)return <EmptyState icon={<IconTrendingUp/>} title={copy(locale,baseline===null?'等待基线标定':'当前只有基线',baseline===null?'Waiting for baseline calibration':'Only the baseline is available')} description={copy(locale,'完成首轮迭代后将显示分数趋势','Score trends appear after the first iteration')}/>;
-  const w=Math.max(180,width),height=280,left=40,right=w-16,bottom=248,top=16,max=Math.max(1,...points.map(i=>i.trainScore!+(task.delta??0)),(baseline??0)+(task.delta??0))*1.1;
+  return <ScorePlot task={task} iterations={iterations} points={points} locale={locale} onOpen={onOpen}/>;
+}
+function ScorePlot({task,iterations,points,locale,onOpen}:{task:RsiTaskView;iterations:RsiIteration[];points:RsiIteration[];locale:Locale;onOpen:(i:RsiIteration)=>void}) {
+  const [ref,width]=useChartWidth(),[hover,setHover]=useState<number|null>(null),baseline=task.baselineTrainScore;
+  const upper=Math.ceil(Math.max(1,...points.map(i=>i.trainScore!+(task.delta??0)),(baseline??0)+(task.delta??0))*1.1),step=Math.max(1,Math.ceil(upper/4)),max=Math.ceil(upper/step)*step;
+  const ticks=Array.from({length:max/step+1},(_,index)=>index*step);
+  const w=Math.max(180,width),height=280,left=40,right=w-16,bottom=248,top=16;
   const parent=iterations.find(i=>i.id===task.currentParentId)?.trainScore??baseline;
   const x=(seq:number)=>left+seq/Math.max(1,...points.map(i=>i.seq))*(right-left), y=(score:number)=>bottom-score/max*(bottom-top);
   const point=hover===null?null:points[hover];
   return <div className="rsi-score-chart" ref={ref}><svg role="img" aria-label={copy(locale,'训练集通过数与噪声带','Training passes and noise band')} width="100%" height={height} viewBox={`0 0 ${w} ${height}`}>
-    {[0,.25,.5,.75,1].map(f=><g key={f}><line x1={left} x2={right} y1={y(max*f)} y2={y(max*f)} stroke="var(--chart-grid)" strokeDasharray="3 4"/><text x={left-8} y={y(max*f)+4} textAnchor="end" className="chart-axis">{formatTokens(Math.round(max*f))}</text></g>)}
+    {ticks.map(tick=><g key={tick}><line x1={left} x2={right} y1={y(tick)} y2={y(tick)} stroke="var(--chart-grid)" strokeDasharray="3 4"/><text x={left-8} y={y(tick)+4} textAnchor="end" className="chart-axis">{formatCount(tick,locale)}</text></g>)}
     {parent!==null&&task.delta!==null&&<rect x={left} y={y(Math.min(max,parent+task.delta))} width={right-left} height={y(Math.max(0,parent-task.delta))-y(Math.min(max,parent+task.delta))} fill="var(--accent-subtle)"><title>δ {formatCount(task.delta,locale)}</title></rect>}
     {baseline!==null&&<g><line x1={left} x2={right} y1={y(baseline)} y2={y(baseline)} stroke="var(--fg-subtle)" strokeDasharray="5 4"/><text x={right} y={Math.max(14,y(baseline)-8)} textAnchor="end" className="chart-axis">{copy(locale,'基线','Baseline')} {formatCount(baseline,locale)}</text></g>}
     <path d={points.map((p,index)=>`${index?'L':'M'}${x(p.seq)},${y(p.trainScore!)}`).join(' ')} fill="none" stroke="var(--chart-1)" strokeWidth={2}/>

@@ -21,6 +21,7 @@ import { PROCESS_MONITOR_PROMPT_VERSION } from './process-monitor.js';
 import { RsiStore, enqueue, now } from './queue.js';
 import { defaultReviewSettings, isInformationalReviewFinding, validateReviewSettings } from './review.js';
 import { CALIBRATION_CATEGORIES, calibrationMetric } from './stats.js';
+import { promotionInput } from './verdict.js';
 import { RsiWorker, finalRuns } from './worker.js';
 import type { ExecutionBackend, SlotRequest, SlotResult } from './worker.js';
 
@@ -66,7 +67,7 @@ function model(monitor: 'clean' | 'suspicious' | 'missing', processMismatch = fa
     return { text, inputTokens: 20, outputTokens: 10 };
   } };
 }
-async function setup(options: { monitor?: 'clean' | 'suspicious' | 'missing'; regression?: boolean; degraded?: boolean; processMismatch?: boolean } = {}) {
+async function setup(options: { monitor?: 'clean' | 'suspicious' | 'missing'; regression?: boolean; degraded?: boolean; processMismatch?: boolean; processMissing?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'agent-review-')); directories.push(root);
   const db = new Database(':memory:'); databases.push(db); db.pragma('foreign_keys=ON'); db.exec(RSI_SCHEMA_SQL);
   const bank = await readBank(resolve('server/rsi/__fixtures__/bank')), store = new RsiStore(db, root, 'task');
@@ -91,7 +92,7 @@ async function setup(options: { monitor?: 'clean' | 'suspicious' | 'missing'; re
     validate: async (_question, data) => ({ outcome: [...unpackFiles(data.repo).values()].some(bytes => /return 3|=> 3/.test(bytes.toString())) ? 'pass' : 'fail' }),
     evaluate: request => worker.reviewEvaluation(request),
     results: e => finalRuns(e, store.list('run_put')).map(r => ({ questionId: r.questionId, outcome: r.outcome })),
-    sessionReader: { read: async i => ({ prd: i.prd, trajectory: 'I hardcode this result.' }) },
+    sessionReader: { read: async i => options.processMissing ? null : ({ prd: i.prd, trajectory: 'I hardcode this result.' }) },
   });
   let iteration: RsiIteration = { id: 'candidate', taskId: 'task', seq: 1, parentId: null, commit,
     prd: { observation: 'Original behavior fails.', hypothesis: 'A general repair improves behavior.', changes: ['src/agent.ts'], expectedImpact: 'More passes.' },
@@ -116,6 +117,16 @@ describe('RSI-015 real AgentReviewProvider with model/container transport double
     expect(audit.state).toBe('queued'); await worker.run(); expect(store.list('queue_put').find(q => q.id === audit.id)!.state).toBe('queued');
     expect(projectIterationForOptimizer({ ...store.list('iteration_put')[0]!, audit: true })).not.toHaveProperty('audit');
   });
+  it.each(['clean','suspicious','missing'] as const)('records process %s honestly without changing the promotion gate', async status => {
+    const {store,worker}=await setup({processMismatch:status==='suspicious',processMissing:status==='missing'});
+    await worker.run();
+    const process=store.list('finding_put').filter(f=>f.source==='process_monitor');expect(process).toHaveLength(1);
+    expect(process[0]).toMatchObject({category:status==='suspicious'?'suspicious':'review_clean',severity:'info'});
+    expect(JSON.parse(process[0]!.evidence!)).toEqual({status,evidence:status==='suspicious'?['I hardcode this result.']:[],reason:status==='missing'?'session_missing':'ok'});
+    expect(isInformationalReviewFinding(process[0]!)).toBe(true);
+    expect(promotionInput(store,worker.bank.manifest.sets.train,store.list('iteration_put')[0]!).findings.some(f=>f.source==='process_monitor')).toBe(false);
+    expect(store.list('iteration_put')[0]).toMatchObject({state:'promoted',holdReasons:[]});
+  });
   it('holds suspicious adversarial regressions before sealed evaluation', async () => {
     const { store, worker } = await setup({ regression: true }); await worker.run();
     expect(store.list('iteration_put')[0]).toMatchObject({ state: 'held', holdReasons: ['l3_suspicious'] });
@@ -124,7 +135,9 @@ describe('RSI-015 real AgentReviewProvider with model/container transport double
   it('retains missing monitor status instead of treating a parse failure as clean', async () => {
     const { store, worker } = await setup({ monitor: 'missing' }); await worker.run();
     expect(store.list('iteration_put')[0]).toMatchObject({ state: 'held', holdReasons: ['missing_monitor'] });
-    expect(store.list('finding_put').some(f => f.level === 'L4' && f.category === 'review_clean')).toBe(false);
+    expect(store.list('finding_put').some(f => f.level === 'L4' && f.source === 'monitor' && f.category === 'review_clean')).toBe(false);
+    expect(store.list('finding_put').find(f => f.source === 'process_monitor')).toMatchObject({category:'review_clean',severity:'info'});
+    expect(worker.gate(store.list('iteration_put')[0]!).conditions[0]).toMatchObject({verdict:'hold',reasons:['missing_monitor']});
   });
   it('holds a supported L4 suspicion while keeping completed ablation evidence separate', async () => {
     const { store, worker } = await setup({ monitor: 'suspicious' }); await worker.run();

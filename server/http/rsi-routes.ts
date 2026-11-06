@@ -1,4 +1,4 @@
-import { overview, pageOptions, metrics, verdict, iterationRuns, reviewEvidence, ledgerReport, workerStatus } from '../rsi/page-data.js';
+import { overview, pageOptions, metrics, verdict, iterationRuns, comparePageRuns, reviewEvidence, ledgerReport, workerStatus } from '../rsi/page-data.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readdir, open } from 'node:fs/promises';
 import { join, basename, dirname } from 'node:path';
@@ -139,7 +139,11 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
   },200,['cursor','limit',...(path==='evaluations'?['phase']:path==='findings'||path==='decisions'?['iterationId']:[])]);
   const iteration=(s:RsiStore,seq:string)=>{if(!/^[1-9]\d*$/.test(seq))throw new RsiError(400,'RSI_INVALID_REQUEST');return s.list('iteration_put').find(i=>i.seq===Number(seq))??notFound();};
   register('GET','/api/rsi/tasks/:taskId/iterations/:seq/verdict',false,async(s,_r,p)=>verdict(s!,iteration(s!,p.seq!)));
-  register('GET','/api/rsi/tasks/:taskId/iterations/:seq/runs',false,async(s,_r,p,q)=>page(await iterationRuns(s!,iteration(s!,p.seq!)),q),200,['cursor','limit']);
+  register('GET','/api/rsi/tasks/:taskId/iterations/:seq/runs',false,async(s,_r,p,q)=>{
+    const phase=q.get('phase');if(phase!==null&&!RSI_PHASES.includes(phase as never))throw new RsiError(400,'RSI_INVALID_REQUEST');
+    const rows=await iterationRuns(s!,iteration(s!,p.seq!));
+    return page(phase===null?rows:rows.filter(r=>r.phase===phase),q,comparePageRuns);
+  },200,['cursor','limit','phase']);
   register('GET','/api/rsi/tasks/:taskId/iterations/:seq/review',false,async(s,_r,p)=>reviewEvidence(s!,iteration(s!,p.seq!)));
   register('GET','/api/rsi/tasks/:taskId/iterations/:seq',false,async(s,_r,p)=>({iteration:iteration(s!,p.seq!)}));
   register('GET','/api/rsi/tasks/:taskId/iterations/:seq/findings',false,async(s,_r,p,q)=>page(s!.list('finding_put').filter(f=>f.iterationId===iteration(s!,p.seq!).id),q),200,['cursor','limit']);

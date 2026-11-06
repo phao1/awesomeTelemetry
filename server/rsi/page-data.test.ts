@@ -8,8 +8,10 @@ import { RsiStore, now, enqueue } from './queue.js';
 import { createTask } from './commands.js';
 import { defaultWorkerSettings } from './cli.js';
 import { defaultRsiConfig } from '../../src/core/rsi-validation.js';
-import type { RsiIteration } from '../../src/core/rsi-types.js';
-import { overview, verdict, metrics, reviewEvidence, runTelemetry, cachedPage } from './page-data.js';
+import type { RsiIteration, RsiPhase } from '../../src/core/rsi-types.js';
+import { overview, verdict, metrics, reviewEvidence, runTelemetry, cachedPage, comparePageRuns } from './page-data.js';
+import { page } from './reader.js';
+import type { RsiPageRun } from '../../src/core/rsi-api-client.js';
 import { privateWrite } from './artifacts.js';
 const roots:string[]=[],dbs:Database.Database[]=[];
 afterEach(async()=>{for(const db of dbs.splice(0))db.close();await Promise.all(roots.splice(0).map(root=>rm(root,{force:true,recursive:true})));});
@@ -45,4 +47,13 @@ describe('RSI-016 bounded human page projections',()=>{
   it('returns independent cached values and enforces response bounds',async()=>{
     const value=await cachedPage('independent',async()=>({items:[1]}));value.items.push(2);expect(await cachedPage('independent',async()=>({items:[3]}))).toEqual({items:[1]});await expect(cachedPage('oversized',async()=>({text:'x'.repeat(1048576)}))).rejects.toMatchObject({code:'RSI_LIMIT'});
   });
+});
+
+it('orders human runs across page boundaries by phase, question and repetition',()=>{
+ const row=(id:string,phase:RsiPhase,questionId:string,repetition=0,attempt=0):RsiPageRun=>({id,phase,questionId,repetition,attempt,language:null,outcome:'pass',failureReason:null,tokens:null,durationMs:0,memoryPeakBytes:null,sessionTokens:null,tokenDifference:null,at:'2026-11-07T00:00:00.000Z'});
+ const rows=[row('a','final','a'),row('b','ablation','a'),row('c','adversarial','a'),row('d','sealed','a'),row('e','train','b'),row('f','smoke','b'),row('g','train','a',1),row('h','train','a',0,1),row('i','train','a',0)];
+ const first=page(rows,new URLSearchParams('limit=3'),comparePageRuns);expect(first.items.map(r=>r.id)).toEqual(['f','i','h']);expect(first.nextCursor).toBe('h');
+ const second=page(rows,new URLSearchParams('limit=3&cursor=h'),comparePageRuns);expect(second.items.map(r=>r.id)).toEqual(['g','e','d']);
+ const last=page(rows,new URLSearchParams('limit=3&cursor=d'),comparePageRuns);expect(last.items.map(r=>r.phase)).toEqual(['adversarial','ablation','final']);expect(last.nextCursor).toBeNull();
+ expect(()=>page(rows,new URLSearchParams('cursor=absent'),comparePageRuns)).toThrow();
 });

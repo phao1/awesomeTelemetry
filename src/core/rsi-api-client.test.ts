@@ -32,3 +32,12 @@ it('adopts every RSI-016 page DTO verbatim from the authoritative contract',asyn
  const adopted=source.slice(source.indexOf('export type RsiTaskView'),source.indexOf('export class RsiApiError'));
  expect(adopted.trim().replace(/\s+/g,' ')).toBe(block.trim().replace(/\s+/g,' '));
 });
+
+it('sends the human question phase filter and cursor in one owned request',async()=>{
+ const fetcher=vi.fn<typeof fetch>().mockResolvedValueOnce(response({token:'page'})).mockImplementation(async()=>response({items:[],nextCursor:null}));
+ const client=createRsiClient(fetcher),controller=new AbortController();
+ await client.runs('task',3,'last-run',controller.signal,'sealed');
+ expect(fetcher.mock.calls[1]![0]).toBe('/api/rsi/tasks/task/iterations/3/runs?limit=200&cursor=last-run&phase=sealed');
+ expect(fetcher.mock.calls[1]![1]?.signal).toBe(controller.signal);
+ await client.runs('task',3,null,controller.signal,'all');expect(String(fetcher.mock.calls[2]![0])).not.toContain('phase=');
+});

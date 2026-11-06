@@ -3,7 +3,7 @@ import type { Locale } from '../../i18n.js';
 import type { RsiWorkerStatus } from '../../core/rsi-api-client.js';
 import { useRsiCli, workerCommand } from './data.js';
 import { rsiApi, RsiApiError } from '../../core/rsi-api-client.js';
-import { formatCount, formatTokens, formatPercent, formatDuration, formatRelativeTime, formatAbsoluteTime } from '../../core/format.js';
+import { formatCount, formatBytes, formatTokens, formatPercent, formatDuration, formatRelativeTime, formatAbsoluteTime } from '../../core/format.js';
 import { Badge } from '../ui/Badge.js';
 import { Button } from '../ui/Button.js';
 import { Callout, CopyField } from '../ui/Display.js';
@@ -13,7 +13,7 @@ import { copy, reasonLabel, reasonText, RSI_COPY, statusTone } from './copy.js';
 export function Reason({code,locale}:{code:string;locale:Locale}) { const known=Object.hasOwn(RSI_COPY,code);return <Tooltip label={known?reasonLabel(code,locale):code}><span tabIndex={0}>{reasonLabel(code,locale)}{known?'':' ⓘ'}</span></Tooltip>; }
 export function Status({value,locale}:{value:string;locale:Locale}) {return <Badge tone={statusTone(value)} dot={['running','calibrating','training','reviewing'].includes(value)}><Reason code={value==='sealed'?'evaluating_sealed':value} locale={locale}/></Badge>;}
 export function Numeric({value,kind='count',locale='zh',children}:{value:number|null|undefined;kind?:'count'|'tokens'|'percent'|'duration'|'bytes';locale?:Locale;children?:ReactNode}) {
-  const display=kind==='tokens'?formatTokens(value):kind==='percent'?formatPercent(value):kind==='duration'?formatDuration(value,locale):kind==='bytes'?(value==null?'—':`${formatTokens(value)} B`):formatCount(value,locale);
+  const display=kind==='tokens'?formatTokens(value):kind==='percent'?formatPercent(value):kind==='duration'?formatDuration(value,locale):kind==='bytes'?formatBytes(value):formatCount(value,locale);
   return <Tooltip label={value==null?copy(locale,'没有可核实的计数','No verified counter available'):kind==='percent'?`${value*100}%`:(Number.isInteger(value)?formatCount(value,locale):String(value))+(kind==='duration'?' ms':kind==='bytes'?' B':'')}><span className="num" tabIndex={0}>{children??display}</span></Tooltip>;
 }
 export function Time({at,locale}:{at:string;locale:Locale}) {return <Tooltip label={formatAbsoluteTime(at,locale)}><time className="num rsi-nowrap" dateTime={at} tabIndex={0}>{formatRelativeTime(at,locale)}</time></Tooltip>;}
@@ -32,3 +32,8 @@ export function WorkerPill({status,taskId,locale}:{status:RsiWorkerStatus|null;t
 }
 export function EmptyIcon(){return <span className="rsi-empty-icon"><IconPlay size={24}/></span>;}
 export function WriteError({error,locale}:{error:unknown;locale:Locale}) {const code=error instanceof RsiApiError?error.details?.reason??error.code:'network_error';return <Callout tone="danger" title={reasonLabel(code,locale)}>{!Object.hasOwn(RSI_COPY,code)&&<Reason code={code} locale={locale}/>}</Callout>;}
+
+export function CursorPagination({cursor,nextCursor,locale,onCursor,className=''}:{cursor:string|null;nextCursor?:string|null;locale:Locale;onCursor:(cursor:string|null)=>void;className?:string}) {
+  if(!cursor&&!nextCursor)return null;
+  return <div className={`rsi-inline ${className}`}>{cursor&&<Button onClick={()=>onCursor(null)}>{copy(locale,'首页','First page')}</Button>}{nextCursor&&<Button onClick={()=>onCursor(nextCursor)}>{copy(locale,'下一页','Next page')}</Button>}</div>;
+}

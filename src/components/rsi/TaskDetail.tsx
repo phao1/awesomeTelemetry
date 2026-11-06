@@ -1,3 +1,4 @@
+import { formatCount, formatTokens } from '../../core/format.js';
 import { Tooltip } from '../ui/Overlay.js';
 import { useEffect, useRef, useState } from 'react';
 import type { Locale } from '../../i18n.js';
@@ -18,7 +19,7 @@ import type { HumanAction } from './Actions.js';
 import type { RsiRoute } from './route.js';
 import { useRsiRead } from './data.js';
 import { Trends } from './Trend.js';
-import { Numeric, Reason, ReadError, WriteError, Status, Time } from './Shared.js';
+import { Numeric, Reason, ReadError, WriteError, Status, Time, CursorPagination } from './Shared.js';
 import { copy, reasonLabel, pauseReasonLabel } from './copy.js';
 export function TaskAttention({task,metrics,workerRunning,workerError,locale,onAction}:{task:RsiTaskView;metrics:RsiMetrics|null;workerRunning:boolean;workerError:string|null;locale:Locale;onAction:(action:HumanAction)=>void}) {
   if(task.state==='needs_help')return <Callout tone="danger" title={copy(locale,'优化者需要帮助','The optimizer needs help')}><p>{metrics?.helpReason??copy(locale,'尚无求助理由','No help reason available')}</p><div className="rsi-inline"><Button onClick={()=>onAction('set_target')}>{copy(locale,'放宽目标','Adjust target')}</Button><Button onClick={()=>onAction('instruction')}>{copy(locale,'给思路','Give an idea')}</Button><Button variant="danger" onClick={()=>onAction('stop')}>{copy(locale,'终止','Stop')}</Button></div></Callout>;
@@ -42,7 +43,10 @@ export function IterationTable({items,task,metrics,locale,onOpen,lineage=items}:
   {key:'train',label:copy(locale,'训练','Train'),align:'right',render:i=>{const parent=lineage.find(p=>p.id===i.parentId)?.trainScore??task.baselineTrainScore;return <span className="rsi-inline"><Numeric value={i.trainScore} locale={locale}/>{i.trainScore!==null&&parent!==null&&<Badge tone={i.trainScore>parent?'success':i.trainScore<parent?'danger':'neutral'}>{i.trainScore-parent>0?'+':''}<Numeric value={i.trainScore-parent} locale={locale}/></Badge>}</span>;}},
   {key:'sealed',label:copy(locale,'封存','Sealed'),render:i=>{const d=metrics?.iterations.find(m=>m.iterationId===i.id)?.defenses.find(d=>d.level==='L2');return d&&['pass','reject'].includes(d.state)?<Badge tone={d.state==='pass'?'success':'danger'}>{reasonLabel(d.state==='pass'?'accept':'reject',locale)}</Badge>:'—';}},
   {key:'defenses',label:copy(locale,'防线','Defenses'),render:i=><div className="rsi-defense-dots">{['L0','L1','L2','L3','L4','L5'].map(level=>{const defense=metrics?.iterations.find(m=>m.iterationId===i.id)?.defenses.find(d=>d.level===level);return <Tooltip key={level} label={`${level} · ${reasonLabel(defense?.reason??'evidence_missing',locale)}`}><span className={`rsi-defense-dot is-${defense?.state??'missing'}`} tabIndex={0}>{level}</span></Tooltip>;})}</div>},
-  {key:'tokens',label:'Token',align:'right',render:i=>{const m=metrics?.iterations.find(m=>m.iterationId===i.id),values=[m?.targetTokens,m?.optimizerTokens,m?.reviewTokens];return <Numeric value={values.every(v=>v!=null)?values.reduce<number>((n,v)=>n+v!,0):null} kind="tokens"/>;}},
+  {key:'tokens',label:'Token',align:'right',render:i=>{const m=metrics?.iterations.find(m=>m.iterationId===i.id),values=[m?.targetTokens,m?.optimizerTokens,m?.reviewTokens],known=values.filter((v):v is number=>v!=null),sum=known.length?known.reduce((n,v)=>n+v,0):null;
+    const missing=[copy(locale,'被优化 Agent','Target Agent'),copy(locale,'优化者','Optimizer'),copy(locale,'审查','Review')].filter((_,index)=>values[index]==null);
+    const label=(sum===null?copy(locale,'没有可核实的计数','No verified counter available'):formatCount(sum,locale))+(missing.length?` · ${copy(locale,'用量不完整，缺少','Incomplete usage; missing')}: ${missing.join(' · ')}`:'');
+    return <Tooltip label={label}><span className="num" tabIndex={0}>{formatTokens(sum)}{known.length>0&&missing.length>0?' ⓘ':''}</span></Tooltip>;}},
   {key:'duration',label:copy(locale,'耗时','Duration'),align:'right',render:i=><Numeric value={metrics?.iterations.find(m=>m.iterationId===i.id)?.durationMs} kind="duration" locale={locale}/>},
   {key:'time',label:copy(locale,'时间','Time'),render:i=><Time at={i.updatedAt} locale={locale}/>},
 ]} emptyState={<EmptyState icon={<IconList/>} title={copy(locale,'还没有迭代','No iterations yet')}/>}/>;}
@@ -53,7 +57,7 @@ export function Instructions({task,locale,revision,onSuccess,cursor,onCursor}:{t
   return <div className="rsi-stack"><Card><CardHeader title={copy(locale,'添加指令','Add instruction')} description={copy(locale,'下一轮优化者开始时读取','Read when the optimizer starts the next round')}/><CardBody><div className="rsi-form"><SegmentedControl activeId={kind} onChange={v=>{request.current=null;setKind(v as typeof kind);}} items={[{id:'prohibition',label:copy(locale,'禁令','Prohibition')},{id:'idea',label:copy(locale,'思路','Idea')}]}/><Field label={copy(locale,'指令内容','Instruction')} hint={kind==='prohibition'?copy(locale,'能写成确定性规则的禁令，也请加入 Agent 档案','Add prohibitions that can be deterministic rules to the Agent profile as well'):undefined}><textarea className="rsi-textarea" rows={3} value={text} disabled={busy} onChange={e=>{request.current=null;setText(e.target.value);}}/></Field><Button variant="primary" loading={busy} disabled={!text.trim()} onClick={()=>void submit()}>{copy(locale,'添加','Add')}</Button>{Boolean(error)&&<WriteError error={error} locale={locale}/>}</div></CardBody></Card>
     {read.loading&&!read.value&&<PageSkeleton compact/>}{Boolean(read.error)&&<ReadError error={read.error} locale={locale} retry={read.retry}/>}
     {(['prohibition','idea'] as const).map(group=><Card key={group}><CardHeader title={reasonLabel(group,locale)}/><CardBody>{read.value?.items.filter(i=>i.kind===group).map(i=><InstructionRow key={i.id} value={i} locale={locale}/>)}{read.value&&!read.value.items.some(i=>i.kind===group)&&<EmptyState icon={<IconMessage/>} title={copy(locale,'暂无指令','No instructions')}/>}</CardBody></Card>)}
-    <div className="rsi-inline"><Button disabled={!cursor} onClick={()=>onCursor(null)}>{copy(locale,'首页','First page')}</Button>{read.value?.nextCursor&&<Button onClick={()=>onCursor(read.value!.nextCursor)}>{copy(locale,'下一页','Next page')}</Button>}</div>
+    <CursorPagination cursor={cursor} nextCursor={read.value?.nextCursor} locale={locale} onCursor={onCursor}/>
   </div>;
 }
 function InstructionRow({value,locale}:{value:RsiInstruction;locale:Locale}) {return <div className="rsi-instruction"><p>{value.text}</p><small>{copy(locale,'生效轮次','Effective iteration')} #{value.effectiveFromSeq} · <Time at={value.at} locale={locale}/></small></div>;}
@@ -66,7 +70,7 @@ export function Decisions({taskId,locale,revision,iterations,cursor,onCursor,ver
     {read.loading&&!read.value&&<PageSkeleton compact/>}{Boolean(read.error)&&<ReadError error={read.error} locale={locale} retry={read.retry}/>}
     {read.value&&!read.value.items.length&&<EmptyState icon={<IconList/>} title={copy(locale,'暂无决定记录','No decisions yet')}/>}
     <ol className="rsi-timeline">{read.value?.items.map(d=><li key={d.id}><div className="rsi-inline"><Time at={d.at} locale={locale}/><Badge>{reasonLabel(d.actor,locale)}</Badge><Status value={d.verdict} locale={locale}/></div><p>{d.actor==='human'?d.reason:d.reason.split(',').map((code,n)=><span key={n}>{n?' · ':''}<Reason code={code} locale={locale}/></span>)}</p><small>{copy(locale,'迭代','Iteration')} · <span className="num">#{iterations.find(i=>i.id===d.iterationId)?.seq??'—'}</span></small></li>)}</ol>
-    <div className="rsi-inline"><Button disabled={!cursor} onClick={()=>onCursor(null)}>{copy(locale,'首页','First page')}</Button>{read.value?.nextCursor&&<Button onClick={()=>onCursor(read.value!.nextCursor)}>{copy(locale,'下一页','Next page')}</Button>}</div>
+    <CursorPagination cursor={cursor} nextCursor={read.value?.nextCursor} locale={locale} onCursor={onCursor}/>
   </CardBody></Card>;
 }
 export function TaskDetail({task,iterations,metrics,locale,route,onRoute,onSuccess,revision,onOpen,verifyRevision=0}:{task:RsiTaskView;iterations:RsiIteration[];metrics:RsiMetrics|null;locale:Locale;route:RsiRoute;onRoute:(r:Partial<RsiRoute>)=>void;onSuccess:()=>void;revision:number;onOpen:(i:RsiIteration)=>void;verifyRevision?:number}) {
@@ -74,7 +78,7 @@ export function TaskDetail({task,iterations,metrics,locale,route,onRoute,onSucce
   const tab=['trend','iterations','instructions','decisions'].includes(route.tab)?route.tab:'trend';
   return <><Tabs activeId={tab} onChange={tab=>onRoute({tab,cursor:null})} items={[['trend','趋势','Trend'],['iterations','迭代','Iterations'],['instructions','指令','Instructions'],['decisions','决定记录','Decisions']].map(([id,zh,en])=>({id:id!,label:copy(locale,zh!,en!)}))}/>
     {tab==='trend'&&<Trends task={task} iterations={iterations} metrics={metrics} locale={locale} onOpen={onOpen}/>}
-    {tab==='iterations'&&<Card><CardHeader title={copy(locale,'迭代树','Iteration tree')}/><IterationTable items={page} lineage={iterations} task={task} metrics={metrics} locale={locale} onOpen={onOpen}/><div className="rsi-inline rsi-pagination"><Button disabled={!route.cursor} onClick={()=>onRoute({cursor:null})}>{copy(locale,'首页','First page')}</Button>{start+100<sorted.length&&<Button onClick={()=>onRoute({cursor:page.at(-1)!.id})}>{copy(locale,'下一页','Next page')}</Button>}</div></Card>}
+    {tab==='iterations'&&<Card><CardHeader title={copy(locale,'迭代树','Iteration tree')}/><IterationTable items={page} lineage={iterations} task={task} metrics={metrics} locale={locale} onOpen={onOpen}/><CursorPagination className="rsi-pagination" cursor={route.cursor} nextCursor={start+100<sorted.length?page.at(-1)!.id:null} locale={locale} onCursor={cursor=>onRoute({cursor})}/></Card>}
     {tab==='instructions'&&<Instructions cursor={route.cursor} onCursor={cursor=>onRoute({cursor})} task={task} locale={locale} revision={revision} onSuccess={onSuccess}/>}{tab==='decisions'&&<Decisions verifyRevision={verifyRevision} cursor={route.cursor} onCursor={cursor=>onRoute({cursor})} taskId={task.id} locale={locale} revision={revision} iterations={iterations}/>}
   </>;
 }

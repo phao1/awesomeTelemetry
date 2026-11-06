@@ -80,7 +80,7 @@
 .rsi-timeline li { border-inline-start: 1px solid var(--border-default); position: relative; padding: 0 var(--space-4) var(--space-6); }
 .rsi-timeline li::before { content: ''; position: absolute; inset-inline-start: calc(var(--space-1) * -.5); top: var(--space-2); width: var(--space-1); height: var(--space-1); border-radius: var(--radius-full); background: var(--accent-fg); }
 .rsi-timeline li p { overflow-wrap: anywhere; }
-.rsi-verdict-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,var(--sidebar-width)),1fr)); gap: var(--space-4); }
+.rsi-verdict-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,calc(var(--space-10) * 4 + var(--space-5))),1fr)); gap: var(--space-4); }
 .rsi-verdict-grid .ui-verdict-assessment { max-width: 100%; }
 .rsi-verdict-grid .ui-badge { max-width: 100%; text-overflow: ellipsis; overflow: hidden; display: block; }
 .rsi-defenses { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: var(--space-2); }
@@ -140,3 +140,64 @@
 .rsi-finding .ui-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
 .rsi-sheet, .rsi-form { font-variant-numeric: tabular-nums; }
+
+.rsi-mono { font-family: var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+.rsi-verdict-conclusion .ui-verdict-assessment { margin-top: var(--space-3); }
+.rsi-mobile-label { display: none; }
+.rsi-process-summary + .rsi-process-summary { margin-top: var(--space-4); }
+
+/* Detail headers own two deliberate rows when title and actions no longer fit. */
+@media (max-width: 64em) {
+  .rsi-detail-page > .page-header { display: grid; grid-template-columns: auto minmax(0,1fr); height: auto; gap: var(--space-2) var(--space-3); padding-block: var(--space-3); }
+  .rsi-detail-page .page-heading { grid-column: 2; min-width: 0; }
+  .rsi-detail-page .mobile-menu { grid-column: 1; grid-row: 1; align-self: start; }
+  .rsi-detail-page .page-actions { grid-column: 1 / -1; width: 100%; max-width: 100%; justify-content: flex-end; gap: var(--space-2); }
+  .rsi-detail-page .page-heading h1 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
+  .rsi-detail-page .page-breadcrumb { width: 100%; max-width: 100%; }
+  .rsi-detail-page .page-breadcrumb > :not(:nth-child(3)) { flex-shrink: 0; }
+  .rsi-detail-page .page-breadcrumb > .ui-btn:nth-child(3) { max-width: none; flex: 0 1 auto; }
+  .rsi-detail-page .rsi-header-actions { max-width: none; overflow: visible; flex: 0 1 auto; }
+  .rsi-detail-page .rsi-header-actions .rsi-extra-action { display: none; }
+  .rsi-detail-page .rsi-worker { margin-inline-end: auto; }
+  .rsi-detail-page .rsi-worker-label { display: none; }
+}
+
+@media (width < 48em) {
+  .rsi-detail-page .page-actions .ui-btn { max-width: none; }
+  .rsi-page .rsi-task-table, .rsi-page .rsi-review-table,
+  .rsi-task-table tbody, .rsi-review-table tbody { display: block; width: 100%; }
+  .rsi-task-table thead, .rsi-review-table thead { display: none; }
+  .rsi-page .rsi-task-table tr[data-table-row], .rsi-page .rsi-review-table tr[data-table-row] {
+    display: grid; grid-template-columns: minmax(0,1fr) auto; gap: var(--space-2) var(--space-3); padding: var(--space-4); border-bottom: 1px solid var(--border-muted);
+  }
+  .rsi-task-table tr[data-table-row] { grid-template-areas: 'task actions' 'state state' 'passes passes' 'tokens tokens'; }
+  .rsi-review-table tr[data-table-row] { grid-template-areas: 'task iteration' 'kind wait' 'hypothesis hypothesis' 'reason reason'; }
+  .rsi-page .rsi-task-table td, .rsi-page .rsi-review-table td { display: block; min-width: 0; max-width: 100%; height: auto; padding: 0; border: 0; white-space: normal; }
+  .rsi-page .rsi-task-table .ui-sticky-cell, .rsi-page .rsi-review-table .ui-sticky-cell { position: static; background: transparent; }
+  .rsi-task-table td[data-column=task], .rsi-review-table td[data-column=task] { grid-area: task; }
+  .rsi-task-table td[data-column=state] { grid-area: state; }
+  .rsi-task-table td[data-column=passes] { grid-area: passes; }
+  .rsi-task-table td[data-column=tokens] { grid-area: tokens; }
+  .rsi-page .rsi-task-table td[data-column=iterations], .rsi-page .rsi-task-table td[data-column=pending], .rsi-page .rsi-task-table td[data-column=sealed], .rsi-page .rsi-task-table td[data-column=activity] { display: none; }
+  .rsi-task-table td:last-child { grid-area: actions; }
+  .rsi-task-table .ui-row-actions { opacity: 1; }
+  .rsi-task-table .rsi-task-name { max-width: none; }
+  .rsi-task-table .rsi-task-name .ui-overlay-anchor { display: block; max-width: 100%; }
+  .rsi-page .rsi-task-table .rsi-task-name strong, .rsi-page .rsi-review-table td[data-column=task] .ui-cell-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow-wrap: anywhere; max-width: none; }
+  .rsi-task-table .rsi-meter-cell { display: grid; grid-template-columns: auto minmax(0,1fr); gap: var(--space-1) var(--space-3); align-items: center; text-align: start; }
+  .rsi-task-table .rsi-meter-cell > .ui-meter { grid-column: 2; width: 100%; }
+  .rsi-task-table .rsi-score-cell { flex-wrap: wrap; gap: var(--space-2); }
+  .rsi-task-table .rsi-mobile-label { display: inline; color: var(--fg-subtle); font-size: var(--text-sm); white-space: nowrap; }
+  .rsi-review-table td[data-column=iteration] { grid-area: iteration; }
+  .rsi-review-table td[data-column=kind] { grid-area: kind; }
+  .rsi-review-table td[data-column=wait] { grid-area: wait; text-align: end; }
+  .rsi-review-table td[data-column=hypothesis] { grid-area: hypothesis; }
+  .rsi-review-table td[data-column=reason] { grid-area: reason; }
+  .rsi-review-table td[data-column=reason] .rsi-inline { display: flex; max-width: 100%; overflow-x: auto; }
+  .rsi-review-table td[data-column=reason] .ui-badge { flex-shrink: 0; }
+  .rsi-review-table .ui-cell-text { max-width: 100%; }
+}
+
+/* The reason sits inside a button, which inherits nowrap; it must wrap inside the cell. */
+.rsi-defenses button, .rsi-defenses button * { white-space: normal; }
+.rsi-defenses button { height: auto; align-items: flex-start; text-align: left; }

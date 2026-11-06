@@ -169,9 +169,18 @@ export function validateRsiRun(value: unknown): RsiRun {
 }
 export function validateRsiFinding(value: unknown): RsiFinding {
   finding(value, 'finding'); const v = value as RsiFinding;
-  if (['patch_scan', 'process_monitor', 'degraded_monitor'].includes(v.source) && (v.severity !== 'info' || v.category === 'review_clean'
+  let processCompletion = false;
+  if (v.source === 'process_monitor' && v.category === 'review_clean' && v.evidence !== null) {
+    try {
+      const evidence = JSON.parse(v.evidence) as { status?: unknown; evidence?: unknown; reason?: unknown } | null;
+      processCompletion = !!evidence && Array.isArray(evidence.evidence) && evidence.evidence.length === 0
+        && (evidence.status === 'clean' && evidence.reason === 'ok' || evidence.status === 'missing'
+          && ['session_missing', 'invalid_output', 'model_error'].includes(String(evidence.reason)));
+    } catch { processCompletion = false; }
+  }
+  if (['patch_scan', 'process_monitor', 'degraded_monitor'].includes(v.source) && (v.severity !== 'info' || v.category === 'review_clean' && !processCompletion
     || v.level !== (v.source === 'patch_scan' ? 'L1' : 'L4'))) fail('finding.informational');
-  if (v.category === 'review_clean' && (!['L3', 'L4'].includes(v.level) || v.severity !== 'info' || v.source !== 'monitor')) fail('finding.review_clean');
+  if (v.category === 'review_clean' && (!['L3', 'L4'].includes(v.level) || v.severity !== 'info' || v.source !== 'monitor' && !processCompletion)) fail('finding.review_clean');
   return v;
 }
 export function validateRsiDecision(value: unknown): RsiDecision { decision(value, 'decision'); return value as RsiDecision; }

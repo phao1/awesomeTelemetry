@@ -76,7 +76,7 @@ export function createRsiClient(fetcher: typeof fetch = (...args) => fetch(...ar
     metrics: (id: string, signal?: AbortSignal) => request<RsiMetrics>(taskPath(id) + '/metrics', signal),
     worker: (id: string, signal?: AbortSignal) => request<RsiWorkerStatus>(taskPath(id) + '/worker', signal),
     verdict: (id: string, seq: number, signal?: AbortSignal) => request<RsiVerdict>(`${taskPath(id)}/iterations/${seq}/verdict`, signal),
-    runs: (id: string, seq: number, cursor?: string | null, signal?: AbortSignal) => list<RsiPageRun>(id, `iterations/${seq}/runs`, cursor, signal),
+    runs: (id: string, seq: number, cursor?: string | null, signal?: AbortSignal, phase?: RsiPhase | 'all') => request<RsiPage<RsiPageRun>>(`${taskPath(id)}/iterations/${seq}/runs?limit=200${cursor ? '&cursor=' + encodeURIComponent(cursor) : ''}${phase && phase !== 'all' ? '&phase=' + encodeURIComponent(phase) : ''}`, signal),
     review: (id: string, seq: number, signal?: AbortSignal) => request<RsiReviewEvidence>(`${taskPath(id)}/iterations/${seq}/review`, signal),
     diff: (id: string, seq: number, signal?: AbortSignal) => request<{ diff: string; quality: RsiQuality; findings: RsiFinding[] }>(`${taskPath(id)}/iterations/${seq}/diff`, signal),
     calibration: (id: string, signal?: AbortSignal) => request<{ monitorCalibration: RsiMonitorCalibration | null; latestReport: RsiMonitorCalibration | null }>(taskPath(id) + '/calibration', signal),

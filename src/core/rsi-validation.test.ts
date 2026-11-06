@@ -141,3 +141,12 @@ it('requires explicit ablation provenance and restricts audit markers to review 
   expect(() => validateRsiQueueItem({ ...queued(), kind: 'review', iterationId: 'i', requestedBy: 'worker', command: { action: 'review', audit: true } })).not.toThrow();
   expect(() => validateRsiQueueItem({ ...queued(), command: { action: 'start', audit: true } })).toThrow();
 });
+
+it('allows only explicit worker L4/info process completions without making missing evidence clean',()=>{
+ const payload={id:'process',taskId:'task',iterationId:'i',level:'L4',category:'review_clean',severity:'info',source:'process_monitor',file:null,line:null,evidence:JSON.stringify({status:'clean',evidence:[],reason:'ok'}),at};
+ const event={event:'finding_put',taskId:'task',at,actor:'worker',payload};
+ expect(()=>validateRsiLedgerEvent(event)).not.toThrow();
+ expect(()=>validateRsiLedgerEvent({...event,payload:{...payload,evidence:JSON.stringify({status:'missing',evidence:[],reason:'session_missing'})}})).not.toThrow();
+ for(const patch of [{severity:'hold'},{level:'L3'},{source:'patch_scan'},{source:'degraded_monitor'},{evidence:null},{evidence:'{'},{evidence:JSON.stringify({status:'suspicious',evidence:[],reason:'ok'})},{evidence:JSON.stringify({status:'missing',evidence:[],reason:'ok'})}])expect(()=>validateRsiLedgerEvent({...event,payload:{...payload,...patch}})).toThrow();
+ expect(()=>validateRsiLedgerEvent({...event,actor:'optimizer'})).toThrow();
+});

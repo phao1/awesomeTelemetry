@@ -128,6 +128,12 @@ export async function runTelemetry(root: string, artifact: string | null, detail
   if (!entries.size || [...entries.values()].some(e => e.stage !== 'settled' || !e.complete || e.error || number(e.usage?.input) === null || number(e.usage?.cached) === null || e.usage!.cached! > e.usage!.input!)) return absent;
   return { ...absent, requests:[...entries.entries()].map(([requestId,e])=>({requestId,tokens:number(e.usage?.total),cacheHitRate:e.usage!.input!>0?e.usage!.cached!/e.usage!.input!:null})), input: [...entries.values()].reduce((n,e) => n + e.usage!.input!, 0), cached: [...entries.values()].reduce((n,e) => n + e.usage!.cached!, 0) };
 }
+/** Human run order is phase, question, repetition, attempt, then stable run ID. */
+export function comparePageRuns(a:RsiPageRun,b:RsiPageRun):number {
+  const phases=['smoke','train','sealed','adversarial','ablation','final'];
+  const lexical=(a:string,b:string)=>a<b?-1:a>b?1:0;
+  return phases.indexOf(a.phase)-phases.indexOf(b.phase)||lexical(a.questionId,b.questionId)||a.repetition-b.repetition||a.attempt-b.attempt||lexical(a.id,b.id);
+}
 export async function iterationRuns(store: RsiStore, i: RsiIteration): Promise<RsiPageRun[]> {
   return cachedPage(key(store, `runs:${i.id}`), async () => {
     const evaluations = store.list('evaluation_put').filter(e => e.iterationId === i.id), bank = await manifest(store), rows: RsiPageRun[] = [];

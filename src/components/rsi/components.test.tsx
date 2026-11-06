@@ -2,7 +2,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultRsiConfig } from '../../core/rsi-validation.js';
-import type { RsiTaskView, RsiOptions } from '../../core/rsi-api-client.js';
+import type { RsiTaskView, RsiOptions, RsiVerdict, RsiIterationMetric, RsiOverview } from '../../core/rsi-api-client.js';
 import { RsiApiError } from '../../core/rsi-api-client.js';
 import type { RsiIteration, RsiMonitorCalibration } from '../../core/rsi-types.js';
 import { UiLocaleProvider } from '../ui/Locale.js';
@@ -10,6 +10,11 @@ import { RsiPage } from './RsiPage.js';
 import { ActionDialog, approvalAllowed } from './Actions.js';
 import { CalibrationReport, calibrationSufficient } from './Calibration.js';
 import { CreateForm, OptimizerWarning } from './CreateTask.js';
+import { IterationTable, TaskDetail } from './TaskDetail.js';
+import { ScoreChart } from './Trend.js';
+import { Verdicts, Findings, RunTable, IterationDetail } from './IterationDetail.js';
+import { parseRsiRoute } from './route.js';
+import { CursorPagination } from './Shared.js';
 import { Reason } from './Shared.js';
 import { traceSteps } from './Trajectory.js';
 import { parseDiff } from './Diff.js';
@@ -53,3 +58,87 @@ describe('complete RSI page states and human guards',()=>{
 });
 it('parses retained platform diffs with new-file line numbers',()=>{expect(parseDiff('diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1,2 @@\n-old\n+new\n+next\n')[0]).toEqual({file:'a.ts',rows:[{row:{kind:'ctx',text:'@@ -1 +1,2 @@'},line:null},{row:{kind:'del',text:'old'},line:null},{row:{kind:'add',text:'new'},line:1},{row:{kind:'add',text:'next'},line:2}]});});
 it('uses observed request usage for trace steps and never fabricates message tokens',()=>{const text=JSON.stringify({requestId:'request',assistant:[{text:'done',tool_calls:[{function:{name:'edit',arguments:'{}'}}]}]});expect(traceSteps(text,'responses',true,[{requestId:'request',tokens:123,cacheHitRate:.5}])[0]).toMatchObject({role:'assistant',content:'done',tokens:123,cache:.5,tools:[{name:'edit',arguments:'{}'}]});expect(traceSteps('{"messages":[{"role":"user","content":"question"}]}','last-request',true)[0]!.tokens).toBeNull();});
+
+const scored={...iteration,trainScore:3};
+const metric:RsiIterationMetric={iteration:scored,iterationId:iteration.id,seq:1,targetTokens:1000,optimizerTokens:2000,reviewTokens:null,durationMs:100,cacheHitRate:null,reason:'review_usage_unavailable',defenses:[],finalState:'not_requested',session:null};
+const verdict:RsiVerdict={result:{verdict:'promote',conditions:(['anti_cheating','primary_metric','sealed','stable_regression','token_growth'] as const).map(condition=>({condition,verdict:'pass',reasons:[]}))},defenses:[],parentTrainScore:1,candidateTrainScore:3,parentSealedScore:1,candidateSealedScore:2,delta:.3,parentTokens:100,candidateTokens:120};
+function json(body:unknown){return new Response(JSON.stringify(body));}
+function fixtureReads(){
+ const fetcher=vi.fn<typeof fetch>().mockImplementation(async url=>{
+   const path=String(url).split('?')[0]!;
+   if(path.endsWith('/session'))return json({token:'page'});
+   if(path.endsWith('/options'))return json(options);
+   if(path.endsWith('/metrics'))return json({iterations:[metric],helpReason:'Please help',pendingCommands:0,cacheHitRate:null,baselineProgress:null});
+   if(path.endsWith('/iterations/1'))return json({iteration});
+   if(path.endsWith('/verdict'))return json(verdict);
+   if(path.endsWith('/diff'))return json({diff:'',quality:{changedLines:0,files:0},findings:[]});
+   if(path.endsWith('/task'))return json({task:{...task,state:'needs_help'},head:null});
+   return json({items:[],nextCursor:null});
+ });vi.stubGlobal('fetch',fetcher);return fetcher;
+}
+describe('RSI browser review regressions',()=>{
+ it('measures the score plot when data arrives after its empty state, and cleans up the observer',()=>{
+   const observed:Element[]=[],disconnect=vi.fn();
+   vi.stubGlobal('ResizeObserver',class {callback:ResizeObserverCallback;constructor(callback:ResizeObserverCallback){this.callback=callback;} observe(target:Element){observed.push(target);this.callback([{contentRect:{width:960}}] as ResizeObserverEntry[],this as unknown as ResizeObserver);}disconnect=disconnect;});
+   const {host,root}=render(<ScoreChart task={task} iterations={[]} locale="zh" onOpen={noOp}/>);expect(observed).toHaveLength(0);
+   act(()=>root.render(<ScoreChart task={task} iterations={[scored]} locale="zh" onOpen={noOp}/>));
+   expect(observed).toHaveLength(1);expect(observed[0]).toBe(host.querySelector('.rsi-score-chart'));expect(host.querySelector('svg')!.getAttribute('viewBox')).toBe('0 0 960 280');
+   act(()=>root.render(<ScoreChart task={task} iterations={[]} locale="zh" onOpen={noOp}/>));expect(disconnect).toHaveBeenCalledOnce();
+ });
+ it.each([1,3,17,103])('draws unique integer score ticks for maximum %s while retaining fractional delta',score=>{
+   const {host}=render(<ScoreChart task={{...task,baselineTrainScore:1,delta:.3}} iterations={[{...scored,trainScore:score}]} locale="en" onOpen={noOp}/>);
+   const ticks=[...host.querySelectorAll('text[text-anchor=end]')].map(t=>t.textContent!).filter(t=>!t.startsWith('Baseline')).map(Number);
+   expect(ticks.length).toBeGreaterThan(1);expect(new Set(ticks).size).toBe(ticks.length);expect(ticks.every(Number.isInteger)).toBe(true);expect(ticks.at(-1)).toBeGreaterThanOrEqual(score+.3);expect(host.querySelector('rect title')!.textContent).toBe('δ 0.3');
+ });
+ it('displays observed iteration tokens and explains every missing role',()=>{
+   vi.useFakeTimers();const {host}=render(<IterationTable items={[scored]} task={task} metrics={{iterations:[metric],cacheHitRate:null,helpReason:null,pendingCommands:0,baselineProgress:null}} locale="en" onOpen={noOp}/>);
+   const tokens=host.querySelector<HTMLElement>('td[data-column=tokens] [tabindex]')!;expect(tokens.textContent).toBe('3K ⓘ');act(()=>tokens.focus());act(()=>vi.advanceTimersByTime(300));expect(document.querySelector('[role=tooltip]')!.textContent).toBe('3,000 · Incomplete usage; missing: Review');
+ });
+ it('hides pagination for a single page, offers next on the first page and first on subsequent pages',()=>{
+   const onCursor=vi.fn(),{host,root}=render(<CursorPagination cursor={null} nextCursor={null} locale="zh" onCursor={onCursor}/>);expect(host.querySelector('button')).toBeNull();
+   act(()=>root.render(<CursorPagination cursor={null} nextCursor="next" locale="zh" onCursor={onCursor}/>));expect(host.textContent).toBe('下一页');act(()=>host.querySelector('button')!.click());expect(onCursor).toHaveBeenLastCalledWith('next');
+   act(()=>root.render(<CursorPagination cursor="next" locale="en" onCursor={onCursor}/>));expect(host.textContent).toBe('First page');act(()=>host.querySelector('button')!.click());expect(onCursor).toHaveBeenLastCalledWith(null);
+ });
+ it.each(['zh','en'] as const)('uses neutral condition titles and no fabricated comparisons for qualitative verdicts (%s)',locale=>{
+   const {host}=render(<Verdicts verdict={verdict} locale={locale}/>),cards=[...host.querySelectorAll('.ui-verdict-card')];
+   expect(cards.map(c=>c.querySelector('.ui-muted')!.textContent)).toEqual(locale==='zh'?['防作弊','主指标','封存集','稳定题','Token 增幅']:['Anti-cheating','Primary metric','Sealed set','Stable questions','Token growth']);
+   for(const index of [0,3]){expect(cards[index]!.textContent).not.toContain('—');expect(cards[index]!.textContent).not.toContain('→');expect(cards[index]!.textContent).toContain(locale==='zh'?'通过':'Pass');}
+ });
+ it('shows successful reviews beside the layer title, without empty evidence or a finding row',()=>{
+   const {host}=render(<Findings findings={[{id:'f',taskId:'task',iterationId:'iteration',level:'L4',category:'review_clean',source:'monitor',severity:'info',evidence:null,file:null,line:null,at}]} locale="zh" onDiff={noOp}/>);
+   expect(host.querySelector('h2')!.textContent).toContain('审查通过');expect(host.querySelector('.rsi-finding,.rsi-evidence')).toBeNull();
+ });
+ it.each(['clean','suspicious','missing'] as const)('renders parsed process %s evidence as human fields, including old misclassified records',status=>{
+   const {host}=render(<Findings findings={[{id:'f',taskId:'task',iterationId:'iteration',level:'L4',category:'suspicious',source:'process_monitor',severity:'info',evidence:JSON.stringify({status,evidence:status==='suspicious'?['exact line']:[],reason:status==='missing'?'session_missing':'ok'}),file:null,line:null,at}]} locale="zh" onDiff={noOp}/>);
+   expect(host.textContent).toContain('结论');expect(host.textContent).toContain('原因');expect(host.textContent).not.toContain('"status"');expect(host.textContent).not.toContain('"evidence"');expect(host.textContent).toContain('仅供参考，不影响判定');
+   if(status==='clean'){expect(host.querySelector('.rsi-finding')).toBeNull();expect(host.textContent).toContain('未发现可疑行为');}
+   if(status==='suspicious')expect(host.textContent).toContain('exact line');
+   if(status==='missing')expect(host.textContent).toContain('优化者会话证据缺失');
+   expect(host.querySelector('.rsi-evidence')).toBeNull();
+ });
+ it('retains unparseable process evidence as text',()=>{
+   const {host}=render(<Findings findings={[{id:'f',taskId:'task',iterationId:'iteration',level:'L4',category:'suspicious',source:'process_monitor',severity:'info',evidence:'{truncated',file:null,line:null,at}]} locale="en" onDiff={noOp}/>);expect(host.querySelector('pre')!.textContent).toBe('{truncated');
+ });
+ it('formats peak memory in byte units',()=>{
+   const {host}=render(<RunTable rows={[{id:'r',questionId:'q',phase:'train',language:'javascript',outcome:'pass',failureReason:null,tokens:1,durationMs:1,memoryPeakBytes:39800000,sessionTokens:null,tokenDifference:null,at,repetition:0,attempt:0}]} locale="en" onTrace={noOp}/>);expect(host.querySelector('td[data-column=memory]')!.textContent).toBe('39.8 MB');
+ });
+ it('keeps the question phase in the deep link and resets pagination when it changes',async()=>{
+   const fetcher=fixtureReads(),route=parseRsiRoute('#/rsi?task=task&iter=1&tab=runs&phase=sealed'),onRoute=vi.fn();
+   await act(async()=>render(<IterationDetail taskId="task" iteration={iteration} metric={metric} locale="en" route={route} onRoute={onRoute} revision={0} parentSeq={null}/>));
+   expect(fetcher.mock.calls.some(([url])=>String(url).endsWith('/runs?limit=200&phase=sealed'))).toBe(true);
+   const train=[...document.querySelectorAll<HTMLButtonElement>('.rsi-toolbar [role=tab]')].find(b=>b.textContent==='Training set')!;expect(train).toBeDefined();act(()=>train.click());expect(onRoute).toHaveBeenCalledWith({phase:'train',cursor:null});
+ });
+ it('keeps task help on the task page and out of iteration detail',async()=>{
+   fixtureReads();window.location.hash='#/rsi?task=task&iter=1';
+   const overview:RsiOverview={tasks:[],reviews:[],pendingCount:0};let root:Root,host:HTMLElement;
+   await act(async()=>{({root,host}=render(<RsiPage {...props} overview={overview}/>));});expect(host!.textContent).not.toContain('优化者需要帮助');expect(host!.querySelector('.rsi-detail-page')).not.toBeNull();
+   await act(async()=>{window.location.hash='#/rsi?task=task';window.dispatchEvent(new HashChangeEvent('hashchange'));});expect(root!).toBeDefined();expect(host!.textContent).toContain('优化者需要帮助');
+ });
+ it('does not repeat the audit type in its reason column',()=>{
+   window.location.hash='#/rsi?view=review';const {host}=render(<RsiPage {...props} overview={{tasks:[],pendingCount:1,reviews:[{id:'audit',taskId:'task',taskName:'Agent · repo',kind:'audit',iteration,reasons:['random_audit'],at}]}}/>);
+   expect(host.querySelector('td[data-column=kind]')!.textContent).toBe('随机抽检');expect(host.querySelector('td[data-column=reason]')!.textContent).toBe('—');
+ });
+ it('does not show first-page controls on a one-page iteration table',()=>{
+   const {host}=render(<TaskDetail task={task} iterations={[scored]} metrics={null} locale="en" route={parseRsiRoute('#/rsi?task=task&tab=iterations')} onRoute={noOp} onSuccess={noOp} revision={0} onOpen={noOp}/>);expect(host.textContent).not.toContain('First page');
+ });
+});

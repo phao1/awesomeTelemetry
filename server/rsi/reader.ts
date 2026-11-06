@@ -22,10 +22,12 @@ export function strictObject(v: unknown, required: string[], optional: string[] 
   if (required.some(k => !Object.hasOwn(o, k)) || Object.keys(o).some(k => ![...required, ...optional].includes(k))) throw new RsiError(400, 'RSI_INVALID_REQUEST');
   return o;
 }
-export function page<T extends { id: string }>(items: T[], query: URLSearchParams): { items: T[]; nextCursor: string | null } {
+export function page<T extends { id: string }>(items: T[], query: URLSearchParams, compare?: (a:T,b:T)=>number): { items: T[]; nextCursor: string | null } {
   const limitText = query.get('limit') ?? '50', cursor = query.get('cursor');
   if (!/^[1-9]\d*$/.test(limitText) || Number(limitText) > 200 || cursor !== null && !/^[A-Za-z0-9_-]{1,128}$/.test(cursor)) throw new RsiError(400, 'RSI_INVALID_REQUEST');
-  const sorted = items.filter(i => cursor === null || i.id > cursor).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const anchor=compare&&cursor!==null?items.find(i=>i.id===cursor):null;
+  if(compare&&cursor!==null&&!anchor)throw new RsiError(400,'RSI_INVALID_REQUEST');
+  const sorted = items.filter(i => cursor === null || (compare&&anchor?compare(i,anchor)>0:i.id > cursor)).sort(compare??((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const selected = sorted.slice(0, Number(limitText));
   return { items: selected, nextCursor: sorted.length > selected.length ? selected.at(-1)!.id : null };
 }

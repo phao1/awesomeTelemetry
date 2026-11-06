@@ -16,6 +16,16 @@ export function formatTokens(n: number | null | undefined): string {
   }
   return String(n);
 }
+/** Decimal byte units (MB = 1,000,000 bytes); raw bytes remain available to tooltips. */
+export function formatBytes(bytes: number | null | undefined): string {
+  if (!valid(bytes) || bytes < 0) return UNKNOWN;
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'] as const;
+  let value = bytes, unit = 0;
+  while (value >= 1000 && unit < units.length - 1) { value /= 1000; unit++; }
+  let rounded = Number(value.toFixed(unit ? 1 : 0));
+  if (rounded >= 1000 && unit < units.length - 1) { rounded = Number((rounded / 1000).toFixed(1)); unit++; }
+  return `${rounded} ${units[unit]}`;
+}
 /** Percent input is a ratio, so 0.874 = 87.4%. */
 export function formatPercent(ratio: number | null | undefined): string {
   return !valid(ratio) ? UNKNOWN : ratio > 0 && ratio < .001 ? '<0.1%' : `${(ratio * 100).toFixed(1)}%`;

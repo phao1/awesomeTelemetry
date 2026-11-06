@@ -6,14 +6,16 @@ import { formatCount, formatTokens, formatDuration } from '../../core/format.js'
 import { Tabs } from '../ui/Tabs.js';
 import { Card, CardBody, CardHeader, KeyValue, CopyField, Callout, Accordion } from '../ui/Display.js';
 import { VerdictCard } from '../ui/VerdictCard.js';
+import { Tooltip } from '../ui/Overlay.js';
+import { SegmentedControl } from '../ui/Controls.js';
 import { Badge } from '../ui/Badge.js';
 import { Table } from '../ui/Table.js';
 import { Button } from '../ui/Button.js';
 import { EmptyState } from '../ui/States.js';
 import { PageSkeleton } from '../ui/PageSkeleton.js';
 import { IconFile, IconCheckCircle, IconXCircle, IconAlertCircle, IconMinus, IconMessage } from '../icons/index.js';
-import { copy, reasonLabel, statusTone } from './copy.js';
-import { ReadError, Numeric, Reason, Status, Time } from './Shared.js';
+import { copy, reasonLabel, statusTone, verdictConditionLabel } from './copy.js';
+import { ReadError, Numeric, Reason, Status, Time, CursorPagination } from './Shared.js';
 import { useRsiRead } from './data.js';
 import type { RsiRoute } from './route.js';
 import { Diff } from './Diff.js';
@@ -26,21 +28,49 @@ export function Verdicts({verdict,locale}:{verdict:RsiVerdict;locale:Locale}) {
     const missingDefense=c.condition==='anti_cheating'&&verdict.defenses.some(d=>['L0','L1','L3','L4'].includes(d.level)&&['missing','not_reached'].includes(d.state));
     const unavailable=c.verdict==='pass'&&(verdict.candidateTrainScore===null||missingDefense||c.condition==='stable_regression'&&verdict.result.conditions.some(v=>v.condition==='primary_metric'&&v.reasons.includes('incomplete_comparison')));
     const acknowledged=c.condition==='anti_cheating'&&c.verdict==='pass'&&verdict.defenses.some(d=>['L1','L3','L4'].includes(d.level)&&d.state==='hold');
-    const label=reasonLabel(c.condition,locale),reasons=c.reasons.map(r=>reasonLabel(r,locale)).join(' · ');
+    const label=verdictConditionLabel(c.condition,locale),reasons=c.reasons.map(r=>reasonLabel(r,locale)).join(' · ');
     const exactA=c.condition==='primary_metric'?verdict.parentTrainScore:c.condition==='sealed'?lower:c.condition==='token_growth'?verdict.parentTokens:null,exactB=c.condition==='primary_metric'?verdict.candidateTrainScore:c.condition==='sealed'?verdict.candidateSealedScore:c.condition==='token_growth'?verdict.candidateTokens:null;
     const gain=verdict.parentTrainScore===null||verdict.candidateTrainScore===null?null:verdict.candidateTrainScore-verdict.parentTrainScore;
+    const state=c.verdict==='hold'||unavailable?'unavailable':c.verdict==='reject'?'worse':'better';
+    const assessment=unavailable?copy(locale,'尚无判定证据','No decision evidence yet'):acknowledged?copy(locale,'人工确认后通过','Passed after human review'):reasonLabel(c.verdict,locale);
+    if(c.condition==='anti_cheating'||c.condition==='stable_regression')return <Card key={c.condition} className="ui-verdict-card rsi-verdict-conclusion" data-verdict={state}><CardBody><div className="ui-muted">{label}</div><Tooltip label={reasons||assessment}><span className="ui-verdict-assessment" tabIndex={0}><Badge tone={state==='better'?'success':state==='worse'?'danger':'neutral'}>{assessment}{reasons?' ⓘ':''}</Badge></span></Tooltip></CardBody></Card>;
     return <VerdictCard key={c.condition} label={label} a={a} b={b} aExact={exactA===null?'—':Number.isInteger(exactA)?formatCount(exactA,locale):String(exactA)} bExact={exactB===null?'—':Number.isInteger(exactB)?formatCount(exactB,locale):String(exactB)} verdict={c.verdict==='hold'||unavailable?'unavailable':c.verdict==='reject'?'worse':'better'} assessment={unavailable?copy(locale,'尚无判定证据','No decision evidence yet'):acknowledged?copy(locale,'人工确认后通过','Passed after human review'):reasonLabel(c.verdict,locale)} reason={reasons||(c.condition==='sealed'?copy(locale,'下限 → 候选通过数','Minimum → candidate passes'):undefined)} change={c.condition==='primary_metric'&&verdict.delta!==null?`${gain===null?'—':formatCount(gain,locale)} · δ ${formatCount(verdict.delta,locale)}`:undefined}/>;
   })}</div>;
 }
 const defenseNames=[['隔离','Isolation'],['规则','Rules'],['封存','Sealed'],['对抗','Adversarial'],['监控','Monitor'],['校准','Calibration']];
 export function Defenses({verdict,locale,onEvidence}:{verdict:RsiVerdict;locale:Locale;onEvidence:(level:string)=>void}) {return <Card><CardHeader title={copy(locale,'六层防线','Six defense layers')}/><CardBody><div className="rsi-defenses">{verdict.defenses.map((d,index)=>{const Icon=d.state==='pass'?IconCheckCircle:d.state==='reject'?IconXCircle:d.state==='hold'||d.state==='missing'?IconAlertCircle:IconMinus;return <Button key={d.level} variant="ghost" className={`rsi-defense rsi-tone-${statusTone(d.state)}`} onClick={()=>onEvidence(d.level)}><span className="rsi-inline"><Icon/><strong>{d.level} · {copy(locale,...defenseNames[index] as [string,string])}</strong></span><span className="rsi-defense-caption"><Reason code={d.reason} locale={locale}/></span></Button>;})}</div></CardBody></Card>;}
-function evidence(f:RsiFinding,locale:Locale):string {
-  if(!f.evidence)return '—';
-  if(!f.evidence.trim().startsWith('{'))return f.evidence;
-  try {const parsed=JSON.parse(f.evidence) as {evidence?:string|string[];reason?:string};return Array.isArray(parsed.evidence)?parsed.evidence.join('\n'):typeof parsed.evidence==='string'?parsed.evidence:parsed.reason?reasonLabel(parsed.reason,locale):copy(locale,'数值证据见逐题记录','See per-question records for numeric evidence');}
-  catch{return f.evidence;}
+function processEvidence(f:RsiFinding): {status:string;evidence:string[];reason:string|null}|null {
+  if(f.source!=='process_monitor'||!f.evidence)return null;
+  try {
+    const value:unknown=JSON.parse(f.evidence);
+    if(!value||typeof value!=='object'||!('status' in value)||!['clean','suspicious','missing'].includes(String(value.status)))return null;
+    const v=value as {status:string;evidence?:unknown;reason?:unknown};
+    return {status:v.status,evidence:Array.isArray(v.evidence)?v.evidence.filter((line):line is string=>typeof line==='string'&&!!line.trim()):[],reason:typeof v.reason==='string'?v.reason:null};
+  } catch { return null; }
 }
-function Findings({findings,locale,onDiff}:{findings:RsiFinding[];locale:Locale;onDiff:(file:string)=>void}) {return <div className="rsi-stack">{!findings.length&&<EmptyState icon={<IconFile/>} title={copy(locale,'尚无发现记录','No findings recorded')} description={copy(locale,'没有发现记录不代表检查已经通过','Absence of findings does not demonstrate a passed check')}/>}{['L0','L1','L2','L3','L4','L5'].map(level=>{const rows=findings.filter(f=>f.level===level);return rows.length?<Card key={level}><CardHeader title={`${level} · ${copy(locale,...defenseNames[Number(level.slice(1))] as [string,string])}`}/><CardBody>{rows.map(f=><div key={f.id} className="rsi-finding"><div className="rsi-inline"><Status value={f.severity} locale={locale}/><Badge><Reason code={f.source} locale={locale}/></Badge><strong><Reason code={f.category} locale={locale}/></strong>{f.source==='degraded_monitor'&&<Badge tone="attention">{copy(locale,'只告警','Alerts only')}</Badge>}</div>{f.source==='process_monitor'&&<Callout title={copy(locale,'仅供参考，不影响判定','Reference only; does not affect the decision')}/>}<pre className="rsi-evidence">{evidence(f,locale)}</pre><div className="rsi-inline">{f.file&&<Button size="sm" onClick={()=>onDiff(f.file!)}>{f.file}{f.line!==null?`:${f.line}`:''}</Button>}<Time at={f.at} locale={locale}/></div></div>)}</CardBody></Card>:null;})}</div>;}
+function FindingEvidence({finding:f,locale}:{finding:RsiFinding;locale:Locale}) {
+  const process=processEvidence(f);
+  if(process)return <KeyValue items={[
+    {label:copy(locale,'结论','Conclusion'),value:<Status value={process.status} locale={locale}/>},
+    ...(process.evidence.length?[{label:copy(locale,'证据行','Evidence lines'),value:<div className="rsi-prose">{process.evidence.join('\n')}</div>}]:[]),
+    ...(process.reason?[{label:copy(locale,'原因','Reason'),value:<Reason code={process.reason} locale={locale}/>}]:[]),
+  ]}/>;
+  if(!f.evidence?.trim())return null;
+  let text=f.evidence;
+  if(f.source!=='process_monitor'&&text.trim().startsWith('{')){
+    try {const parsed=JSON.parse(text) as {evidence?:string|string[];reason?:string};text=Array.isArray(parsed.evidence)?parsed.evidence.join('\n'):typeof parsed.evidence==='string'?parsed.evidence:parsed.reason?reasonLabel(parsed.reason,locale):copy(locale,'数值证据见逐题记录','See per-question records for numeric evidence');}
+    catch {text=f.evidence;}
+  }
+  return text.trim()?<pre className="rsi-evidence">{text}</pre>:null;
+}
+export function Findings({findings,locale,onDiff}:{findings:RsiFinding[];locale:Locale;onDiff:(file:string)=>void}) {return <div className="rsi-stack">{!findings.length&&<EmptyState icon={<IconFile/>} title={copy(locale,'尚无发现记录','No findings recorded')} description={copy(locale,'没有发现记录不代表检查已经通过','Absence of findings does not demonstrate a passed check')}/>}{['L0','L1','L2','L3','L4','L5'].map(level=>{
+  const rows=findings.filter(f=>f.level===level),completed=rows.filter(f=>f.category==='review_clean'||['clean','missing'].includes(processEvidence(f)?.status??'')),visible=rows.filter(f=>!completed.includes(f));
+  const reviewed=completed.some(f=>f.source!=='process_monitor');
+  return rows.length?<Card key={level}><CardHeader title={<span className="rsi-inline">{level} · {copy(locale,...defenseNames[Number(level.slice(1))] as [string,string])}{reviewed&&<Badge tone="success">{copy(locale,'审查通过','Review passed')}</Badge>}</span>}/><CardBody>
+    {completed.filter(f=>f.source==='process_monitor').map(f=><div className="rsi-process-summary" key={f.id}><Badge><Reason code="process_monitor" locale={locale}/></Badge><FindingEvidence finding={f} locale={locale}/><p className="rsi-muted">{copy(locale,'仅供参考，不影响判定','Reference only; does not affect the decision')}</p></div>)}
+    {visible.map(f=><div key={f.id} className="rsi-finding"><div className="rsi-inline"><Status value={f.severity} locale={locale}/><Badge><Reason code={f.source} locale={locale}/></Badge><strong><Reason code={f.category} locale={locale}/></strong>{f.source==='degraded_monitor'&&<Badge tone="attention">{copy(locale,'只告警','Alerts only')}</Badge>}</div>{f.source==='process_monitor'&&<Callout title={copy(locale,'仅供参考，不影响判定','Reference only; does not affect the decision')}/>}<FindingEvidence finding={f} locale={locale}/><div className="rsi-inline">{f.file&&<Button size="sm" onClick={()=>onDiff(f.file!)}>{f.file}{f.line!==null?`:${f.line}`:''}</Button>}<Time at={f.at} locale={locale}/></div></div>)}
+  </CardBody></Card>:null;
+})}</div>;}
 export function RunTable({rows,locale,onTrace}:{rows:RsiPageRun[];locale:Locale;onTrace:(run:RsiPageRun)=>void}) {return <Table locale={locale} label={copy(locale,'逐题结果','Per-question results')} rows={rows} rowKey={r=>r.id} stickyFirst columns={[
   {key:'question',label:copy(locale,'题目','Question'),render:r=><span className="rsi-truncate" title={r.questionId}>{r.questionId}<small className="rsi-subline">{copy(locale,'重复','Repeat')} {r.repetition+1} · {copy(locale,'尝试','Attempt')} {r.attempt+1}</small></span>},
   {key:'set',label:copy(locale,'集合','Set'),render:r=><Badge><Reason code={r.phase} locale={locale}/></Badge>},{key:'language',label:copy(locale,'语言','Language'),render:r=>r.language?reasonLabel(r.language,locale):'—'},
@@ -62,7 +92,7 @@ export function IterationDetail({taskId,iteration,metric,locale,route,onRoute,re
   const seq=iteration.seq,tab=['plan','diff','findings','runs','review','optimizer'].includes(route.tab)?route.tab:'plan';
   const verdict=useRsiRead(`${taskId}:${seq}:verdict`,signal=>rsiApi.verdict(taskId,seq,signal),revision);
   const findings=useRsiRead(`${taskId}:${seq}:findings:${route.cursor}`,signal=>rsiApi.findings(taskId,seq,tab==='findings'?route.cursor:null,signal),revision);
-  const runs=useRsiRead(tab==='runs'?`${taskId}:${seq}:runs:${route.cursor}`:null,signal=>rsiApi.runs(taskId,seq,route.cursor,signal),revision);
+  const runs=useRsiRead(tab==='runs'?`${taskId}:${seq}:runs:${route.phase}:${route.cursor}`:null,signal=>rsiApi.runs(taskId,seq,route.cursor,signal,route.phase),revision);
   const quality=useRsiRead(tab==='plan'?`${taskId}:${seq}:quality`:null,signal=>rsiApi.diff(taskId,seq,signal),revision);
   const setTab=(tab:string)=>onRoute({tab,cursor:null});
   return <div className="rsi-stack">
@@ -70,8 +100,8 @@ export function IterationDetail({taskId,iteration,metric,locale,route,onRoute,re
     <div className="rsi-tabs"><Tabs activeId={tab} onChange={setTab} items={[['plan','方案','Plan'],['diff','改动','Changes'],['findings','发现','Findings'],['runs','逐题','Questions'],['review','对抗和消融','Adversarial & ablation'],['optimizer','优化者过程','Optimizer process']].map(([id,zh,en])=>({id:id!,label:copy(locale,zh!,en!)}))}/></div>
     {tab==='plan'&&<Card><CardHeader title={copy(locale,'迭代方案','Iteration plan')}/><CardBody><KeyValue items={[{label:copy(locale,'观察','Observation'),value:iteration.prd.observation},{label:copy(locale,'假设','Hypothesis'),value:iteration.prd.hypothesis},{label:copy(locale,'改动范围','Scope'),value:<ul>{iteration.prd.changes.map((c,n)=><li key={n}>{c}</li>)}</ul>},{label:copy(locale,'预期影响','Expected impact'),value:iteration.prd.expectedImpact},{label:'Commit',value:<CopyField locale={locale} label="Commit" value={iteration.commit}/>},{label:copy(locale,'父代','Parent'),value:iteration.parentId?parentSeq?<Button variant="link" onClick={()=>onRoute({iter:parentSeq,tab:'plan',file:null,run:null,cursor:null})}>#{parentSeq}</Button>:'—':copy(locale,'基线','Baseline')},{label:copy(locale,'包校验值','Package SHA256'),value:iteration.packageSha256?<CopyField locale={locale} label="SHA256" value={iteration.packageSha256}/>:'—'},{label:copy(locale,'改动行数／文件数','Changed lines / files'),value:quality.value?<><Numeric value={quality.value.quality.changedLines} locale={locale}/> / <Numeric value={quality.value.quality.files} locale={locale}/></>:'—'}]}/>{Boolean(quality.error)&&<ReadError error={quality.error} locale={locale} retry={quality.retry}/>}</CardBody></Card>}
     {tab==='diff'&&<Diff taskId={taskId} seq={seq} findings={findings.value?.items??[]} locale={locale} file={route.file} onFile={file=>onRoute({file})} revision={revision}/>}
-    {tab==='findings'&&<>{findings.loading&&!findings.value&&<PageSkeleton compact/>}{Boolean(findings.error)&&<ReadError error={findings.error} locale={locale} retry={findings.retry}/>}<Findings findings={findings.value?.items??[]} locale={locale} onDiff={file=>onRoute({tab:'diff',file,cursor:null})}/><div className="rsi-inline"><Button disabled={!route.cursor} onClick={()=>onRoute({cursor:null})}>{copy(locale,'首页','First page')}</Button>{findings.value?.nextCursor&&<Button onClick={()=>onRoute({cursor:findings.value!.nextCursor})}>{copy(locale,'下一页','Next page')}</Button>}</div></>}
-    {tab==='runs'&&<>{runs.loading&&!runs.value&&<PageSkeleton compact/>}{Boolean(runs.error)&&<ReadError error={runs.error} locale={locale} retry={runs.retry}/>}<Card><CardHeader title={copy(locale,'逐题结果','Per-question results')}/><RunTable rows={runs.value?.items??[]} locale={locale} onTrace={run=>onRoute({run:run.id,trajectory:'runs',traceFile:'responses'})}/></Card><div className="rsi-inline"><Button disabled={!route.cursor} onClick={()=>onRoute({cursor:null})}>{copy(locale,'首页','First page')}</Button>{runs.value?.nextCursor&&<Button onClick={()=>onRoute({cursor:runs.value!.nextCursor})}>{copy(locale,'下一页','Next page')}</Button>}</div></>}
+    {tab==='findings'&&<>{findings.loading&&!findings.value&&<PageSkeleton compact/>}{Boolean(findings.error)&&<ReadError error={findings.error} locale={locale} retry={findings.retry}/>}<Findings findings={findings.value?.items??[]} locale={locale} onDiff={file=>onRoute({tab:'diff',file,cursor:null})}/><CursorPagination cursor={route.cursor} nextCursor={findings.value?.nextCursor} locale={locale} onCursor={cursor=>onRoute({cursor})}/></>}
+    {tab==='runs'&&<><div className="rsi-toolbar"><SegmentedControl activeId={route.phase} onChange={phase=>onRoute({phase:phase as RsiRoute['phase'],cursor:null})} items={['all','smoke','train','sealed','adversarial','ablation','final'].map(id=>({id,label:id==='all'?copy(locale,'全部','All'):reasonLabel(id,locale)}))}/></div>{runs.loading&&!runs.value&&<PageSkeleton compact/>}{Boolean(runs.error)&&<ReadError error={runs.error} locale={locale} retry={runs.retry}/>}<Card><CardHeader title={copy(locale,'逐题结果','Per-question results')}/><RunTable rows={runs.value?.items??[]} locale={locale} onTrace={run=>onRoute({run:run.id,trajectory:'runs',traceFile:'responses'})}/></Card><CursorPagination cursor={route.cursor} nextCursor={runs.value?.nextCursor} locale={locale} onCursor={cursor=>onRoute({cursor})}/></>}
     {tab==='review'&&<Review onDiff={file=>onRoute({tab:'diff',file,cursor:null})} taskId={taskId} iteration={iteration} locale={locale} revision={revision}/>}
     {tab==='optimizer'&&<Card><CardHeader title={copy(locale,'优化者过程','Optimizer process')}/><CardBody>{metric?.session?<><KeyValue items={[{label:copy(locale,'耗时','Duration'),value:metric.session.endedAt?formatDuration(Date.parse(metric.session.endedAt)-Date.parse(metric.session.startedAt),locale):'—'},{label:'Token',value:<Numeric value={metric.session.tokens} kind="tokens"/>},{label:copy(locale,'提交结果','Submission'),value:<Status value={metric.session.state} locale={locale}/>},{label:copy(locale,'计量方式','Accounting'),value:<Reason code={metric.session.accounting} locale={locale}/>} ]}/><Button onClick={()=>onRoute({run:metric.session!.id,trajectory:'sessions',traceFile:'responses'})}>{copy(locale,'查看轨迹','View trajectory')}</Button>{metric.session.state==='stuck'&&<Callout tone="danger" title={copy(locale,'优化者声明卡住，请查看任务求助理由','Optimizer declared itself stuck; see the task’s help reason')}/>}</>:<EmptyState icon={<IconMessage/>} title={copy(locale,'没有关联的优化者会话','No linked optimizer session')} description={copy(locale,'此迭代可能由外部优化者提交','This iteration may have been submitted by an external optimizer')}/>}</CardBody></Card>}
     {route.run&&<Trajectory key={`${route.run}:${route.trajectory}`} taskId={taskId} entity={route.run} kind={route.trajectory} file={route.traceFile} locale={locale} onFile={traceFile=>onRoute({traceFile})} onClose={()=>onRoute({run:null})} sessionTokens={runs.value?.items.find(r=>r.id===route.run)?.sessionTokens}/>}
