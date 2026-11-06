@@ -301,7 +301,17 @@ it('asks a person instead of spending a round when the baseline already meets th
   await enqueue(store, { action: 'start' }, 'human', 'start');
   await worker.run();
   expect(sessions).toBe(0); expect(store.task().state).toBe('needs_help');
-  expect(store.list('queue_put').find(q => q.id === 'baseline-at-target-1')?.command).toMatchObject({ action: 'declare_stuck' });
+  expect(store.list('queue_put').find(q => q.id.startsWith('no-room-1-'))?.command).toMatchObject({ action: 'declare_stuck', reason: expect.stringContaining('meets the goal') });
+});
+it('asks a person when the noise band leaves no score a candidate could reach', async () => {
+  const { store, worker, backend } = await setup({ targetPassedCount: 100 });
+  // Two of three questions pass or fail together, so the baseline is noisy and high.
+  backend.plan = req => req.question.questionId !== 'train_python' || req.repetition % 2 === 0;
+  let sessions = 0; worker.optimizerSession = async () => { sessions++; };
+  await enqueue(store, { action: 'start' }, 'human', 'start');
+  await worker.run();
+  expect(sessions).toBe(0); expect(store.task().delta).toBeGreaterThan(0); expect(store.task().state).toBe('needs_help');
+  expect(store.list('queue_put').find(q => q.id.startsWith('no-room-100-'))?.command).toMatchObject({ reason: expect.stringContaining('noise band') });
 });
 
 it('evaluates the last allowed iteration, then pauses before another round', async () => {

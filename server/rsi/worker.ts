@@ -604,10 +604,14 @@ export class RsiWorker {
     const iteration = this.store.list('iteration_put').find(i => !['draft', 'held', 'promoted', 'rejected'].includes(i.state));
     if (iteration) { await this.processIteration(iteration); return true; }
     if (this.optimizerSession && !this.store.list('iteration_put').some(i => !['promoted','rejected'].includes(i.state))) {
-      // A round cannot beat a baseline that already meets the goal, so ask a person once for each goal instead of spending tokens.
-      const atTarget = `baseline-at-target-${t.config.targetPassedCount}`;
-      if (!promoted.length && t.baselineTrainScore !== null && t.baselineTrainScore >= t.config.targetPassedCount && !this.store.list('queue_put').some(q => q.id === atTarget)) {
-        await enqueue(this.store, { action: 'declare_stuck', reason: 'The baseline already meets the goal: raise the goal or use harder questions' }, 'optimizer', atTarget); return true;
+      // A round that cannot be promoted only spends tokens, so ask a person once per goal and parent. They can still resume.
+      const parent = this.store.list('iteration_put').find(i => i.id === selectedParent(this.store))?.trainScore ?? t.baselineTrainScore;
+      const atGoal = !promoted.length && parent !== null && parent >= t.config.targetPassedCount;
+      const noRoom = parent !== null && t.delta !== null && parent + t.delta >= this.bank.manifest.sets.train.length;
+      const askId = `no-room-${t.config.targetPassedCount}-${Math.round((parent ?? 0) * 1000)}`;
+      if ((atGoal || noRoom) && !this.store.list('queue_put').some(q => q.id === askId)) {
+        await enqueue(this.store, { action: 'declare_stuck', reason: atGoal ? 'The baseline already meets the goal: raise the goal or use harder questions'
+          : 'No candidate can beat the noise band on this question set: use more repetitions or harder questions' }, 'optimizer', askId); return true;
       }
       if (consecutiveNoSubmissions(this.store.list('session_put')) >= 3) {
         await enqueue(this.store, { action: 'declare_stuck', reason: 'Three consecutive optimizer sessions without a submission' }, 'optimizer', `no-submission-${this.store.list('session_put').sort((a,b)=>b.seq-a.seq)[0]!.id}`); return true;
