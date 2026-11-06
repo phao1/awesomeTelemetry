@@ -351,7 +351,7 @@ export class RsiWorker {
   async decision(i: RsiIteration, verdict: 'promote' | 'reject' | 'hold', reason: string): Promise<void> {
     const id = createHash('sha256').update(JSON.stringify([i.id, i.state, i.updatedAt, verdict, reason])).digest('hex');
     if (this.store.list('decision_put').some(d => d.id === id)) return;
-    await this.store.put({ event: 'decision_put', payload: { id, taskId: this.store.taskId, iterationId: i.id, verdict, actor: 'worker', reason, approvedCategories: [], at: now() } });
+    await this.store.put({ event: 'decision_put', payload: { id, taskId: this.store.taskId, iterationId: i.id, verdict, actor: 'worker', reason, approvedCategories: [...new Set(i.approvals.flatMap(a => a.categories))], at: now() } });
   }
   async precheckIteration(i: RsiIteration): Promise<void> {
     if (i.state === 'submitted') i = await this.iterationEvent(i, 'start_precheck', { actor: 'worker' });
@@ -478,6 +478,9 @@ export class RsiWorker {
       const t = this.store.task();
       if (c.parentId !== null && !this.store.list('iteration_put').some(i => i.id === c.parentId && i.state === 'promoted')) throw new Error('Invalid rollback parent');
       await this.store.put({ event: 'task_put', payload: { ...t, currentParentId: c.parentId, updatedAt: now() } });
+      // A rollback to the baseline has no iteration of its own, so it is logged against the latest one.
+      const about = c.parentId ?? this.store.list('iteration_put').at(-1)?.id;
+      if (about) await this.store.put({ event: 'decision_put', payload: { id: createHash('sha256').update(JSON.stringify(['human', q.id])).digest('hex'), taskId: this.store.taskId, iterationId: about, verdict: 'rollback', actor: 'human', reason: c.reason, approvedCategories: [], at: now() } }, 'human');
     } else if (c.action === 'instruction') {
       const id = createHash('sha256').update(`instruction:${q.id}`).digest('hex');
       if (!this.store.list('instruction_put').some(i => i.id === id)) await this.store.put({ event: 'instruction_put', payload: { id, taskId: this.store.taskId, kind: c.kind, text: c.text, effectiveFromSeq: c.effectiveFromSeq, at: q.createdAt } }, 'human');
@@ -524,6 +527,8 @@ export class RsiWorker {
       const t = this.store.task(), reserved = this.store.list('evaluation_put').some(e => e.iterationId === i.id && e.phase === 'sealed');
       const context: RsiIterationContext = { actor: 'human', reason, holdReasons: i.holdReasons, ...(i.resumeState ? { resumeState: i.resumeState } : {}),
         ...(approval ? { approvedCategories: approval.categories } : {}), hasSealedResult: !!this.completed(i.id, 'sealed'), sealedBudgetRemaining: t.config.sealedQueryBudget - t.sealedQueriesUsed + (reserved ? 1 : 0) };
+      if (c.action === 'approve' || c.action === 'reject') await this.store.put({ event: 'decision_put', payload: { id: createHash('sha256').update(JSON.stringify(['human', q.id])).digest('hex'), taskId: this.store.taskId, iterationId: i.id,
+        verdict: c.action === 'approve' ? 'promote' : 'reject', actor: 'human', reason, approvedCategories: approval?.categories ?? [], at: now() } }, 'human');
       await this.iterationEvent(approval ? { ...i, approvals: [...i.approvals, approval] } : i, c.action as RsiIterationEvent, context);
     } else if (c.action === 'set_budget') {
       const t = this.store.task(); await this.store.put({ event: 'task_put', payload: { ...t, config: { ...t.config, maxTaskTokens: c.maxTaskTokens, maxIterations: c.maxIterations, sealedQueryBudget: c.sealedQueryBudget }, updatedAt: now() } }, 'human');

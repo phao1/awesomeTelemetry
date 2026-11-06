@@ -147,6 +147,10 @@ describe('worker budget and late approval recovery', () => {
     const count = backend.calls.length;
     await enqueue(store, { action: 'approve', categories: ['token_growth'], reason: 'Accept documented increase' }, 'human', 'approve-tokens', i.id);
     await worker.run(); expect(store.list('iteration_put')[0]!.state).toBe('promoted'); expect(store.task().sealedQueriesUsed).toBe(1); expect(backend.calls).toHaveLength(count);
+    // The person's reason is in the decision log, and the automatic decision that followed names what they accepted.
+    const decisions = store.list('decision_put');
+    expect(decisions.find(d => d.actor === 'human')).toMatchObject({ verdict: 'promote', reason: 'Accept documented increase', approvedCategories: ['token_growth'] });
+    expect(decisions.find(d => d.actor === 'worker' && d.verdict === 'promote')?.approvedCategories).toEqual(['token_growth']);
   });
   it('confirms stable failure without replacing the first train score', async () => {
     const { store, worker, backend } = await setup({ stableWindow: 1 }, clean);

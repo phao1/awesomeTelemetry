@@ -48,6 +48,7 @@ describe('human intervention and durable optimizer loop',()=>{
       const i=await submit();expect(i.state).toBe('promoted');
       await humanCommand(store,{action:'rollback',parentId:null,reason:'compare baseline'},'rollback',null);await worker.run();
       expect(selectedParent(store)).toBeNull();expect(store.list('iteration_put')).toHaveLength(1);expect(store.list('iteration_put')[0]!.state).toBe('promoted');
+      expect(store.list('decision_put').find(d=>d.actor==='human')).toMatchObject({verdict:'rollback',reason:'compare baseline',iterationId:i.id});
       await humanCommand(store,{action:'instruction',kind:'idea',text:'try a shared parsing rule',effectiveFromSeq:2},'idea',null);await worker.run();
       expect(JSON.stringify(await brief(store))).toContain('try a shared parsing rule');
       await expect(humanCommand(store,{action:'instruction',kind:'idea',text:'too late',effectiveFromSeq:1},'bad-idea',null)).rejects.toThrow();

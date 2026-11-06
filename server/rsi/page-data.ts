@@ -249,7 +249,7 @@ export async function verdict(store: RsiStore, i: RsiIteration): Promise<RsiVerd
     defenses.push({level,state,reason});
   }
   const mean=(side:'parentMeanTokens'|'candidateMeanTokens')=>input.tokenPairs.length&&input.tokenPairs.every(p=>p[side]!==null)?input.tokenPairs.reduce((n,p)=>n+p[side]!,0)/input.tokenPairs.length:null;
-  return { result, approvedCategories:[...new Set(store.list('decision_put').filter(d=>d.iterationId===i.id).flatMap(d=>d.approvedCategories))], defenses, parentTrainScore:input.parentTrainScore,candidateTrainScore:input.candidateTrainScore,parentSealedScore:input.parentSealedScore,candidateSealedScore:input.candidateSealedScore,delta:task.delta,parentTokens:mean('parentMeanTokens'),candidateTokens:mean('candidateMeanTokens') };
+  return { result, approvedCategories:[...new Set(i.approvals.flatMap(a=>a.categories))], defenses, parentTrainScore:input.parentTrainScore,candidateTrainScore:input.candidateTrainScore,parentSealedScore:input.parentSealedScore,candidateSealedScore:input.candidateSealedScore,delta:task.delta,parentTokens:mean('parentMeanTokens'),candidateTokens:mean('candidateMeanTokens') };
 }
 export async function ledgerReport(store:RsiStore):Promise<RsiLedgerReport> {
   const head=getRsiLedgerHead(store.db,store.taskId);let version='missing';
