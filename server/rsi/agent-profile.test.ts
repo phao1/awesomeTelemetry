@@ -93,3 +93,11 @@ it('derives the startup family from pinned optimizer bytes and rejects a spoofed
   await expect(runWorker(store,settings,{run:async()=>{calls++;throw new Error('Docker must not run');}},true)).rejects.toThrow('scripts/claude-monitor-proxy.mjs');expect(calls).toBe(0);
  }finally{db.close();}
 });
+
+
+it('RSI-016 allows bounded display metadata without weakening credential or execution validation',async()=>{
+ const profile=await sample(),value={...profile,description:'Small isolated coding assistant',verified:true};
+ expect(validateAgentProfile(value)).toEqual(value);expect(renderAgentRun(value,{statement:'repair',model:'fixed',apiKey:'temporary'})).toEqual(renderAgentRun(profile,{statement:'repair',model:'fixed',apiKey:'temporary'}));
+ expect(()=>validateAgentProfile({...profile,verified:'yes'})).toThrow('verified');expect(()=>validateAgentProfile({...profile,description:'x'.repeat(1025)})).toThrow('description');expect(()=>validateAgentProfile({...profile,description:'Bearer literal-secret-token'})).toThrow('literal credential');
+ expect(()=>validateAgentProfile({...value,network:'bridge'})).toThrow('profile.network');
+});

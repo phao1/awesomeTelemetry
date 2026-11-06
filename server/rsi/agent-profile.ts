@@ -5,7 +5,7 @@ import { privateWrite } from './artifacts.js';
 
 export interface RsiAgentProfile {
   version: 1;
-  id: string; name: string;
+  id: string; name: string; description?: string; verified?: boolean;
   dockerfile: string;
   dependencyInputs: { kind: 'bun-workspace' } | { kind: 'globs'; include: string[] } | { kind: 'none' };
   run: {
@@ -73,9 +73,11 @@ function credentials(value: string, field: string): void {
     || /["']?(?:api[_-]?key|access[_-]?token|secret|password)["']?\s*[:=]\s*["']?(?!\{\{apiKey\}\})([^\s"',}\n]+)/i.test(value.replaceAll('{{apiKey}}', ''))) fail(`${field}: literal credential`);
 }
 export function validateAgentProfile(value: unknown): RsiAgentProfile {
-  const p = object(value, 'profile', ['version', 'id', 'name', 'dockerfile', 'dependencyInputs', 'run', 'session'], ['l1']);
+  const p = object(value, 'profile', ['version', 'id', 'name', 'dockerfile', 'dependencyInputs', 'run', 'session'], ['l1','description','verified']);
   if (p.version !== 1) fail('version');
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(string(p.id, 'id'))) fail('id');
+  if(p.description!==undefined){string(p.description,'description',true);if((p.description as string).length>1024)fail('description');}
+  if(p.verified!==undefined&&typeof p.verified!=='boolean')fail('verified');
   string(p.name, 'name'); relative(p.dockerfile, 'dockerfile');
   if (p.dockerfile === 'profile.json') fail('dockerfile');
   const d = object(p.dependencyInputs, 'dependencyInputs', ['kind'], ['include']);

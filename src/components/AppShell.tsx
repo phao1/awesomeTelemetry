@@ -9,7 +9,7 @@ import { Tooltip } from './ui/Overlay.js';
 import { IconRefresh } from './icons/index.js';
 import { Tabs } from './ui/Tabs.js';
 
-export type AppView = 'ui-kit' | 'settings' | 'overview' | 'session' | 'agent' | 'compare' | 'proxy' | 'frida' | 'mission' | 'task' | 'intake' | 'benchmark' | 'team-experiment';
+export type AppView = 'rsi' | 'ui-kit' | 'settings' | 'overview' | 'session' | 'agent' | 'compare' | 'proxy' | 'frida' | 'mission' | 'task' | 'intake' | 'benchmark' | 'team-experiment';
 
 export interface AppHeaderProps {
   locale: Locale;
@@ -44,7 +44,7 @@ export function AppHeader({ locale, onSearch, children }: AppHeaderProps): React
 }
 
 export interface ViewTabsProps {
-  active: Exclude<AppView, 'overview' | 'task' | 'intake' | 'benchmark' | 'team-experiment' | 'ui-kit' | 'settings'>;
+  active: Exclude<AppView, 'rsi' | 'overview' | 'task' | 'intake' | 'benchmark' | 'team-experiment' | 'ui-kit' | 'settings'>;
   onChange: (view: AppView) => void;
   locale: Locale;
 }

@@ -17,3 +17,12 @@ describe('RSI-014 optimizer profiles',()=>{
     expect(handoffPrompt()).toContain('ONE hypothesis');expect(handoffPrompt()).toContain('stuck');expect(handoffPrompt()).toContain('$RSI_AGENT_TOKEN');expect(handoffPrompt()).not.toContain('secret-review-marker');
   });
 });
+
+
+it('RSI-016 accepts only the two inert display fields and preserves strict optimizer validation',async()=>{
+ const {profile}=await readOptimizerProfile(resolve('rsi-agents/optimizers/scripted/profile.json'));
+ const value={...profile,description:'Controlled interface fixture',verified:true};expect(validateOptimizerProfile(value)).toEqual(value);
+ expect(renderOptimizerRun(value,'repair','fixed','temporary')).toEqual(renderOptimizerRun(profile,'repair','fixed','temporary'));
+ for(const metadata of [{verified:1},{description:'x'.repeat(1025)},{description:'Bearer literal-secret-token'},{unknown:'metadata'}])expect(()=>validateOptimizerProfile({...profile,...metadata})).toThrow();
+ expect(()=>validateOptimizerProfile({...value,run:{...profile.run,env:{RSI_API_BASE:'evil'}}})).toThrow();
+});

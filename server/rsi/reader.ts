@@ -1,3 +1,4 @@
+import type { RsiTraceUsage } from '../../src/core/rsi-api-client.js';
 import { createHash } from 'node:crypto';
 import type { OptimizerSessionReader } from './process-monitor.js';
 import type { RsiIteration, RsiPrd } from '../../src/core/rsi-types.js';
@@ -9,8 +10,8 @@ import type { RsiStore } from './queue.js';
 import { projectTrajectoryForOptimizer } from '../../src/core/rsi-visibility.js';
 
 export class RsiError extends Error {
-  readonly status: number; readonly code: string;
-  constructor(status: number, code: string) { super(code); this.status = status; this.code = code; }
+  readonly status: number; readonly code: string; readonly details: { field: string; reason: string } | null;
+  constructor(status: number, code: string, details: { field: string; reason: string } | null = null) { super(code); this.status = status; this.code = code; this.details = details; }
 }
 export const notFound = (): never => { throw new RsiError(404, 'RSI_NOT_FOUND'); };
 export const conflict = (): never => { throw new RsiError(409, 'RSI_CONFLICT'); };
@@ -38,7 +39,7 @@ export async function boundedJson(root: string, path: string, limit = 1024 * 102
   try { const stat = await file.stat(); if (!stat.isFile() || stat.size > limit) throw new RsiError(413, 'RSI_LIMIT'); return JSON.parse(await file.readFile('utf8')); }
   finally { await file.close(); }
 }
-export interface TrajectoryPage { file: string; content: string; nextOffset: number | null; truncated: boolean }
+export interface TrajectoryPage { file: string; content: string; nextOffset: number | null; truncated: boolean; usage?:RsiTraceUsage[]|null;sessionTokens?:number|null }
 export async function trajectory(root: string, directory: string, query: URLSearchParams, optimizer: boolean): Promise<TrajectoryPage> {
   const kind = query.get('file') ?? 'responses';
   const start = query.get('offset') ?? '0', count = query.get('limit') ?? '65536';
@@ -72,7 +73,8 @@ export async function trajectory(root: string, directory: string, query: URLSear
   // A tiny page still makes progress through a complete UTF8 codepoint.
   while (end < data.length && (data[end]! & 0xc0) === 0x80) end++;
   const content = data.subarray(offset, end).toString('utf8');
-  return { file: kind, content, nextOffset: end < data.length ? end : null, truncated: data.includes(Buffer.from('"truncated":true')) };
+  const telemetry=optimizer?null:await import('./page-data.js').then(m=>m.runTelemetry(root,directory,true));
+  return { file: kind, content, nextOffset: end < data.length ? end : null, truncated: data.includes(Buffer.from('"truncated":true')), ...(optimizer?{}:{usage:telemetry?.requests??null,sessionTokens:telemetry?.sessionTokens??null}) };
 }
 export async function runTrajectory(store: RsiStore, runId: string, query: URLSearchParams, optimizer: boolean): Promise<TrajectoryPage> {
   const run = store.list('run_put').find(r => r.id === validId(runId)); if (!run) return notFound();
@@ -108,4 +110,10 @@ export class StoredOptimizerSessionReader implements OptimizerSessionReader {
       return{prd:{observation:saved.prd.observation,hypothesis:saved.prd.hypothesis,changes:[...saved.prd.changes],expectedImpact:saved.prd.expectedImpact},trajectory:JSON.stringify({responses,lastRequest})};
     }catch{return null;}
   }
+}
+
+/** Bounded UTF8 artifact text; callers choose a fixed platform-relative artifact. */
+export async function boundedText(root: string, path: string, limit = 262144): Promise<string> {
+  const file=await open(await safeArtifact(root,path),'r');
+  try {if((await file.stat()).size>limit)throw new RsiError(413,'RSI_LIMIT');return await file.readFile('utf8');} finally {await file.close();}
 }

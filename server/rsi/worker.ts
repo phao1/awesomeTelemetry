@@ -1,3 +1,5 @@
+import { optionalArtifact, runTelemetry } from './page-data.js';
+import { finalRuns, promotionInput } from './verdict.js';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -22,7 +24,7 @@ import { privateWrite } from './artifacts.js';
 import type { RsiStore } from './queue.js';
 import { enqueue, newId, now, taskLock } from './queue.js';
 import { recoverWork } from './recovery.js';
-import { MissingReviewProvider, isInformationalReviewFinding, resolveReviewSettings, validateReviewConfiguration, defaultReviewSettings } from './review.js';
+import { MissingReviewProvider, resolveReviewSettings, validateReviewConfiguration, defaultReviewSettings } from './review.js';
 import type { ReviewSettings } from './review.js';
 import { AgentReviewProvider, auditSelected, createReviewModelClient } from './agent-review.js';
 import type { ReviewEvaluationRequest } from './agent-review.js';
@@ -158,15 +160,7 @@ export class ContainerBackend implements ExecutionBackend {
 function slotId(e: RsiEvaluation, questionId: string, repetition: number, attempt: number): string {
   return createHash('sha256').update(JSON.stringify([e.id, questionId, repetition, attempt])).digest('hex');
 }
-export function finalRuns(e: RsiEvaluation, all: RsiRun[]): RsiRun[] {
-  const own = all.filter(r => r.evaluationId === e.id), result: RsiRun[] = [];
-  for (let repetition = 0; repetition < e.repetitions; repetition++) for (const questionId of e.questionIds) {
-    const first = own.find(r => r.questionId === questionId && r.repetition === repetition && r.attempt === 0);
-    const last = first?.outcome === 'infra_error' ? own.find(r => r.questionId === questionId && r.repetition === repetition && r.attempt === 1) : first;
-    if (last) result.push(last);
-  }
-  return result;
-}
+export { finalRuns } from './verdict.js';
 export class RsiWorker {
   readonly store: RsiStore; readonly bank: QuestionBank; readonly settings: WorkerSettings;
   readonly backend: ExecutionBackend; reviews: ReviewProvider; readonly afterRun?: () => Promise<void>; readonly profile?: RsiAgentProfile;
@@ -304,6 +298,7 @@ export class RsiWorker {
           const run: RsiRun = { id, taskId: this.store.taskId, evaluationId: e.id, questionId: slot.questionId, repetition: slot.repetition, attempt,
             outcome: result.outcome, failureReason: result.failureReason, durationMs: performance.now() - started, proxyTokens: result.proxyTokens,
             artifactPath: result.artifactPath, sessionPath: result.sessionPath, at: now() };
+          if(result.artifactPath)await privateWrite(join(this.store.root,result.artifactPath,'page-metrics.json'),JSON.stringify({...await runTelemetry(this.store.root,result.artifactPath),requests:null}));
           await this.store.put({ event: 'run_put', payload: run });
           await this.afterRun?.();
           if (this.profile?.session.format !== 'none' && e.iterationId && (result.proxyTokens === null || result.sessionTokens === null || Math.abs(result.proxyTokens - result.sessionTokens) > Math.max(1, result.proxyTokens) * this.settings.reconciliationMaxRatio)) {
@@ -345,46 +340,7 @@ export class RsiWorker {
       return own.length === baseline.repetitions && own.every(r => r.outcome === 'pass');
     }).length;
   }
-  promotionInput(iteration: RsiIteration): RsiPromotionInput {
-    const t = this.store.task(), evaluations = this.store.list('evaluation_put'), runs = this.store.list('run_put');
-    const train = this.completed(iteration.id, 'train'), parentTrain = this.completed(iteration.parentId, 'train');
-    const sealed = this.completed(iteration.id, 'sealed'), parentSealed = this.completed(iteration.parentId, 'sealed');
-    const parent = this.store.list('iteration_put').find(i => i.id === iteration.parentId);
-    const findings = this.store.list('finding_put').filter(f => f.iterationId === iteration.id && !isInformationalReviewFinding(f));
-    const review = (level: 'L3' | 'L4'): { status: 'clean' | 'suspicious' | 'missing' } => ({ status: findings.some(f => f.level === level && f.category !== 'review_clean') ? 'suspicious'
-      : findings.some(f => f.level === level && f.category === 'review_clean') ? 'clean' : 'missing' });
-    const complete = (a?: RsiEvaluation, b?: RsiEvaluation): boolean => !!a && !!b && a.score !== null && b.score !== null
-      && [...a.questionIds].sort().join(',') === [...b.questionIds].sort().join(',');
-    const tokens = (evaluation: RsiEvaluation | undefined, q: string): number | null => {
-      if (!evaluation) return null;
-      const values = finalRuns(evaluation, runs).filter(r => r.questionId === q);
-      if (values.length !== evaluation.repetitions || values.some(r => r.outcome === 'infra_error' || r.proxyTokens === null)) return null;
-      return values.reduce((n, r) => n + r.proxyTokens!, 0) / values.length;
-    };
-    const lineage: Array<RsiIteration | null> = [];
-    let ancestor = parent;
-    while (ancestor) { lineage.unshift(ancestor); ancestor = this.store.list('iteration_put').find(i => i.id === ancestor!.parentId); }
-    lineage.unshift(null);
-    const histories = this.bank.manifest.sets.train.map(questionId => ({ questionId,
-      // A baseline is one ancestor version. Disagreement among calibration repeats
-      // breaks stable history rather than manufacturing multiple ancestor versions.
-      ancestorOutcomes: lineage.map(i => {
-        const e = this.completed(i?.id ?? null, 'train');
-        const values = e ? finalRuns(e, runs).filter(r => r.questionId === questionId) : [];
-        return values.length && values.every(r => r.outcome === 'pass') ? 'pass' as const : values.length && values.every(r => r.outcome === 'fail') ? 'fail' as const : 'infra_error' as const;
-      }),
-      candidateOutcomes: evaluations.filter(e => e.iterationId === iteration.id && e.phase === 'train' && e.state === 'completed' && e.score !== null)
-        .flatMap(e => finalRuns(e, runs).filter(r => r.questionId === questionId).map(r => r.outcome)),
-    }));
-    const input: RsiPromotionInput = { iterationId: iteration.id, commit: iteration.commit, delta: t.delta ?? 0,
-      parentTrainScore: parent?.trainScore ?? t.baselineTrainScore, candidateTrainScore: iteration.trainScore,
-      parentSealedScore: parent?.sealedScore ?? t.baselineSealedScore, candidateSealedScore: iteration.sealedScore,
-      trainComparisonComplete: complete(train, parentTrain), sealedComparisonComplete: complete(sealed, parentSealed),
-      findings, monitor: review('L4'), adversarial: review('L3'), approvals: iteration.approvals,
-      stableHistories: histories, stableWindow: t.config.stableWindow, stableFailRepeats: t.config.stableFailRepeats,
-      tokenPairs: this.bank.manifest.sets.train.map(questionId => ({ questionId, parentMeanTokens: tokens(parentTrain, questionId), candidateMeanTokens: tokens(train, questionId) })), tokenGrowthMaxRatio: t.config.tokenGrowthMaxRatio };
-    return input;
-  }
+  promotionInput(iteration: RsiIteration): RsiPromotionInput { return promotionInput(this.store, this.bank.manifest.sets.train, iteration); }
   gate(iteration: RsiIteration): ReturnType<typeof decidePromotion> { return decidePromotion(this.promotionInput(iteration)); }
   async decision(i: RsiIteration, verdict: 'promote' | 'reject' | 'hold', reason: string): Promise<void> {
     const id = createHash('sha256').update(JSON.stringify([i.id, i.state, i.updatedAt, verdict, reason])).digest('hex');
@@ -458,17 +414,21 @@ export class RsiWorker {
     }
     if (i.state === 'reviewing') {
       let review;
+      const priorReviewUsage=new Map(this.usage);
       try { review = await this.reviews.review(this.store.task(), i, this.controller.signal); }
       catch (error) { if (this.controller.signal.aborted && this.store.task().pauseReason === 'budget_exhausted') return; throw error; }
       if (this.controller.signal.aborted || this.store.task().state !== 'running' || await this.checkBudget()) return;
+      const reviewUsage=await optionalArtifact<{receipts:Record<string,number|null>}>(this.store.root,`artifacts/${i.id}/review-usage.json`)??{receipts:{}};
+      const targetRunIds=new Set(this.store.list('run_put').map(r=>r.id));
+      for(const [id,tokens] of this.usage)if(!targetRunIds.has(id)&&(!priorReviewUsage.has(id)||tokens!==priorReviewUsage.get(id))){const receipt=await optionalArtifact<UsageReceipt>(this.store.root,`private/usage/${id}.json`);reviewUsage.receipts[id]=receipt?.complete?receipt.tokens:null;}
+      await privateWrite(join(this.store.root,`artifacts/${i.id}/review-usage.json`),JSON.stringify(reviewUsage));
       for (const [level, result] of [['L3', review.adversarial], ['L4', review.monitor]] as const) if (result.status !== 'missing') {
         const id = `${i.id}-${level}-${result.status}`;
         if (!this.store.list('finding_put').some(f => f.id === id)) await this.store.put({ event: 'finding_put', payload: {
           id, taskId: this.store.taskId, iterationId: i.id, level, category: result.status === 'clean' ? 'review_clean' : 'suspicious', severity: result.status === 'clean' ? 'info' : 'hold',
           source: 'monitor', file: null, line: null, evidence: null, at: now() } });
       }
-      const reviewInput = this.promotionInput(i);
-      reviewInput.monitor = review.monitor; reviewInput.adversarial = review.adversarial;
+      const reviewInput = promotionInput(this.store,this.bank.manifest.sets.train,i,review);
       const anti = decidePromotion(reviewInput).conditions[0]!;
       if (anti.verdict !== 'pass') {
         const reasons = anti.reasons.filter(r => ['missing_monitor', 'missing_adversarial', 'l3_suspicious', 'l4_suspicious'].includes(r)) as RsiHoldReason[];
@@ -654,7 +614,7 @@ async function withHeartbeat<T>(store: RsiStore, action: () => Promise<T>): Prom
   let stopped=false, error: unknown, pending:Promise<void>=Promise.resolve();
   const beat=():void=>{
     const phase=stopped?'stopped':store.list('session_put').some(s=>s.state==='running')?'optimizer':store.list('evaluation_put').find(e=>e.state==='running')?.phase??store.list('iteration_put').find(i=>!['promoted','rejected','held'].includes(i.state))?.state??(store.task().state==='created'?'materializing':store.task().state);
-    pending=pending.then(async()=>{const file=join(store.root,'private/worker.json');await privateWrite(`${file}.tmp`,JSON.stringify({pid:process.pid,at:now(),phase}));await rename(`${file}.tmp`,file);}).catch(e=>{error=e;});
+    pending=pending.then(async()=>{const file=join(store.root,'private/worker.json');await privateWrite(`${file}.tmp`,JSON.stringify({pid:process.pid,at:now(),phase,upstreamConfigured:['RSI_UPSTREAM_BASE_URL','RSI_UPSTREAM_MODEL','RSI_UPSTREAM_API_KEY'].every(key=>Boolean(process.env[key]?.trim()))}));await rename(`${file}.tmp`,file);}).catch(e=>{error=e;});
   };
   beat();const timer=setInterval(beat,5000);timer.unref();
   let result:T;

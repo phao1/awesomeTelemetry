@@ -173,7 +173,8 @@ describe('REQ-025 命令面板', () => {
     };
     setValue('/nav');
     const navRows = Array.from(container.ownerDocument.body.querySelectorAll('.palette-row'));
-    expect(navRows.length).toBe(6);
+    expect(navRows.length).toBe(7);
+    expect(navRows.map(row => row.textContent).join(' ')).toContain('自优化');
     expect(navRows.map(row => row.textContent).join(' ')).toContain('任务');
     expect(navRows.map(row => row.textContent).join(' ')).toContain('数据接入');
     expect(navRows.map(row => row.textContent).join(' ')).toContain('Agent 边界评测');
@@ -348,4 +349,12 @@ it('navigates grouped page results from the search field with ArrowDown and Ente
  act(()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true})));
  act(()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
  expect(onAction).toHaveBeenCalledWith({type:'view',view:'task'});
+});
+
+
+it.each(['zh','en'] as const)('finds RSI navigation and new-task actions (%s)',locale=>{
+ const onAction=vi.fn(),view=render(<CommandPalette sessions={[]} locale={locale} onClose={()=>undefined} onAction={onAction}/>),input=view.ownerDocument.body.querySelector<HTMLInputElement>('input[type=search]')!;
+ const search=(text:string)=>act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,text);input.dispatchEvent(new Event('input',{bubbles:true}));});
+ search(locale==='zh'?'自优化':'Self-improvement');const nav=[...view.ownerDocument.body.querySelectorAll<HTMLButtonElement>('.palette-row')].find(b=>b.textContent?.includes(locale==='zh'?'自优化':'Self-improvement'))!;act(()=>nav.click());expect(onAction).toHaveBeenCalledWith({type:'view',view:'rsi'});
+ search(locale==='zh'?'新建调优任务':'New tuning task');const create=[...view.ownerDocument.body.querySelectorAll<HTMLButtonElement>('.palette-row')].find(b=>b.textContent?.includes(locale==='zh'?'新建调优任务':'New tuning task'))!;act(()=>create.click());expect(onAction).toHaveBeenCalledWith({type:'rsi-create'});
 });

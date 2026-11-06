@@ -2003,3 +2003,36 @@ included. An artifact not yet committed to the ledger cannot replace this report
 Page Bearer + local Host/Origin/Fetch-Site policy, no-store,1MiB cap and §0.3 ApiError
 apply. Task/session Bearers receive403 on these human routes; no optimizer route,
 projection or handoff includes audit/calibration/process-review evidence.
+
+
+## RSI P6 human page data — RSI-016
+
+**决定于 2026-11-07.** Authority and exact DTOs: RSI-016 in rsi.md.
+All routes below use page bearer + localPageRequest, no-store,1MiB cap and §0.3
+ApiError; task/session bearers403, missing bearer401. Optimizer proxies never
+forward these paths. No process/model/Docker or synchronous large-file IO.
+
+| Method and route | Response |
+|---|---|
+| GET /api/rsi/overview | RsiOverview; aggregate task summaries + held/audit review queue |
+| GET /api/rsi/options | RsiOptions; trusted local profile metadata/default bank distributions |
+| GET /api/rsi/tasks/:taskId/metrics | RsiMetrics; observed per-iteration metrics |
+| GET /api/rsi/tasks/:taskId/iterations/:seq/verdict | RsiVerdict; shared gate + evidence-based defenses |
+| GET /api/rsi/tasks/:taskId/iterations/:seq/runs | RsiPage<RsiPageRun>; cursor/limit, all human phases |
+| GET /api/rsi/tasks/:taskId/iterations/:seq/review | RsiReviewEvidence; latest private review scope allowlist |
+| GET /api/rsi/tasks/:taskId/ledger/verify | RsiLedgerReport; streamed verification anchored to DB head |
+
+Other new routes accept no query/body. POST tasks additionally accepts optional
+settings:RsiPageSettings (strict allowlist), persisting validated runtime settings.
+GET worker adds upstreamConfigured:boolean|null; null when not running.
+Errors for determinable creation/command validation add error.details with field
+and static reason. Unknown/private diagnostics never enter message/details.
+All old idempotency, queue-only and one-time task-token semantics remain.
+
+RSI-016 human trajectory responses additionally include usage:RsiTraceUsage[]|null
+and sessionTokens:number|null, projected from settled proxy usage and target.json.
+Agent trajectory responses keep their prior DTO and never include these additions.
+
+RSI-016 human diff responses additionally include findings:RsiFinding[] for all
+L1/L4 file-and-line annotations on that iteration, within the existing1MiB cap,
+so line highlights never depend on the currently paged findings list.

@@ -1,3 +1,6 @@
+import type { RsiOverview } from './core/rsi-api-client.js';
+import type { RsiChanges } from './components/rsi/RsiPage.js';
+const RsiPage=lazy(()=>import('./components/rsi/RsiPage.js').then(m=>({default:m.RsiPage})));
 import { useSidebarPreference } from './sidebar-preference.js';
 import { UiLocaleProvider } from './components/ui/Locale.js';
 import type { SettingsSection } from './settings-route.js';
@@ -136,6 +139,9 @@ export default function App() {
   const [settingsSection,setSettingsSection]=useState<SettingsSection>(INITIAL_HASH?.section??'general');
   const openSettings=useCallback((section:SettingsSection='general')=>{setSettingsSection(section);startTransition(()=>setView('settings'));},[]);
   const openSettingsTarget=useCallback((target:LocalSettingsTarget)=>openSettings(target.section),[openSettings]);
+  const [rsiOverview,setRsiOverview]=useState<RsiOverview|null>(null),[rsiOverviewError,setRsiOverviewError]=useState<unknown>(null),[rsiRevision,setRsiRevision]=useState(0),[rsiChanges,setRsiChanges]=useState<RsiChanges>({version:0,taskIds:[]});
+  const refreshRsi=useCallback(()=>{setRsiRevision(n=>n+1);setRsiChanges(old=>({version:old.version+1,taskIds:[]}));},[]);
+  useEffect(()=>{const controller=new AbortController();void import('./core/rsi-api-client.js').then(({rsiApi})=>rsiApi.overview(controller.signal)).then(value=>{if(!controller.signal.aborted){setRsiOverview(value);setRsiOverviewError(null);}}).catch((error:unknown)=>{if(!controller.signal.aborted)setRsiOverviewError(error);});return()=>controller.abort();},[rsiRevision]);
   const [settingsRevision,setSettingsRevision]=useState(0);
 
   const [intakeChannel, setIntakeChannel] = useState<'native' | 'proxy' | 'cdp' | 'frida' | 'import'>(()=>INITIAL_HASH?.channel??'native');
@@ -251,6 +257,7 @@ export default function App() {
   }, [locale]);
 
   const switchView = useCallback((next: AppView | 'team') => {
+    if(next==='rsi'&&!window.location.hash.startsWith('#/rsi'))history.replaceState(null,'','#/rsi');
     if(next==='proxy'||next==='frida'){setIntakeChannel(next);next='intake';}
     if(next==='mission'||next==='agent')next='overview';
     if(next==='session')next='task';
@@ -355,6 +362,7 @@ export default function App() {
   // REQ-004：SSE 局部 patch——失效缓存 + 一次 keys 批量补丁，不重拉全量
   useEffect(() => {
     const es = new EventSource('/api/events');
+    const rsiDirty=new Set<string>();let rsiTimer:ReturnType<typeof setTimeout>|undefined;
     const seen = new Set<string>();
     const listen = (name: string, callback: (event: MessageEvent) => void): void => {
       es.addEventListener(name, event => {
@@ -383,6 +391,7 @@ export default function App() {
       setProxyFocusedId(null); setLiveReset(value => value + 1);
       setTraceLinksVersion(value => value + 1);
       setMissionInvalidateKey(value => value + 1); setTeamInvalidateKey(value => value + 1);
+      setRsiRevision(value=>value+1);setRsiChanges(old=>({version:old.version+1,taskIds:[]}));
       setTaskChanges(previous => ({ version: previous.version + 1, keys: [], runIds: [], reset: true }));
       selectedKeyRef.current = null; setSelectedKey(null); setDetail(null); setSelectedTurn(null); setPending(false);
       setPromptContextKey(null); eventPageRequest.current = null; setLoadingMoreEvents(false); setMoreEventsError(null); setDetailError(null);
@@ -397,6 +406,7 @@ export default function App() {
       const { requestId } = JSON.parse((event as MessageEvent).data) as BusEvents['proxy_stream_ended'];
       setProxyStreams(previous => previous.map(item => item.requestId === requestId ? { ...item, ended: true } : item));
     });
+    listen('rsi_changed', event=>{try {const value=JSON.parse(event.data) as {taskIds?:unknown};if(Array.isArray(value.taskIds)&&value.taskIds.every(id=>typeof id==='string')){for(const id of value.taskIds)rsiDirty.add(id as string);if(rsiTimer===undefined)rsiTimer=setTimeout(()=>{rsiTimer=undefined;const taskIds=[...rsiDirty];rsiDirty.clear();setRsiChanges(old=>({version:old.version+1,taskIds}));setRsiRevision(n=>n+1);},1000);}} catch(error){console.error('[rsi] Invalid change notification',error);}});
     listen('scan_started', () => {
       setScanning(true);
     });
@@ -499,7 +509,7 @@ export default function App() {
       setTaskChanges(previous => ({ version: previous.version + 1, keys: [], runIds: data.runIds }));
       setTeamInvalidateKey((k) => k + 1);
     });
-    return () => es.close();
+    return () => {clearTimeout(rsiTimer);rsiDirty.clear();es.close();};
   }, [loadSessions]);
 
   const selectSession = useCallback(
@@ -706,6 +716,7 @@ export default function App() {
 
   // REQ-024（D3）：状态变 → 写 hash（replaceState 不触发 hashchange，避免循环）
   useEffect(() => {
+    if (view === 'rsi') { if(!window.location.hash.startsWith('#/rsi'))history.replaceState(null,'','#/rsi');return; }
     if (view === 'settings') { history.replaceState(null,'',serializeHash({view:'settings',section:settingsSection})); return; }
     if (view === 'compare') { history.replaceState(null,'',serializeComparisonRoute(taskRoute)); return; }
     if (view === 'task') { history.replaceState(null, '', serializeTaskRoute({...taskRoute,homeProvider:providerFilter[0]})); return; }
@@ -793,7 +804,7 @@ export default function App() {
 
   return (
     <UiLocaleProvider locale={locale}><div className={`app ${trajectoryFocus && view === 'session' ? 'app-trajectory-focus' : ''}`}>
-      <AppSidebar view={view} locale={locale} collapsed={sidebarCollapsed} mobileOpen={mobileNav} onClose={()=>setMobileNav(false)} onCollapse={toggleSidebar} onFont={setFontPx} onNavigate={id=>{if(id==='settings'){openSettings();return;}if(id==='task')setTaskRoute({...taskRoute,task:null,health:undefined,event:null,compareImport:undefined,overview:undefined});switchView(id as AppView);}} status={<StatusBar
+      <AppSidebar rsiPending={rsiOverview?.pendingCount} view={view} locale={locale} collapsed={sidebarCollapsed} mobileOpen={mobileNav} onClose={()=>setMobileNav(false)} onCollapse={toggleSidebar} onFont={setFontPx} onNavigate={id=>{if(id==='settings'){openSettings();return;}if(id==='task')setTaskRoute({...taskRoute,task:null,health:undefined,event:null,compareImport:undefined,overview:undefined});switchView(id as AppView);}} status={<StatusBar
         live={live}
         locale={locale}
         /* 状态栏是系统级读数：显示全库总量，不是当前筛选/已加载的那一页。
@@ -811,7 +822,8 @@ export default function App() {
         <LanguageToggle locale={locale} onChange={setLocale}/>
       </AppSidebar>
       <div className="app-workspace">
-      {!['task','overview','compare','benchmark','team-experiment','intake','settings'].includes(view)&&<PageHeader title={view==='ui-kit'?'UI Kit':view==='settings'?taskCopy(locale).settings:view==='task'?taskCopy(locale).tasks:view==='overview'?(locale==='zh'?'概览':'Overview'):view==='compare'?(locale==='zh'?'对比':'Compare'):view==='intake'?taskCopy(locale).intake:view==='benchmark'?(locale==='zh'?'评测中心':'Benchmarks'):t(`view.${view}` as Parameters<typeof t>[0],locale)} locale={locale} onSearch={openPalette} onMenu={()=>setMobileNav(true)}/>}
+      {!['rsi','task','overview','compare','benchmark','team-experiment','intake','settings'].includes(view)&&<PageHeader title={view==='ui-kit'?'UI Kit':view==='settings'?taskCopy(locale).settings:view==='task'?taskCopy(locale).tasks:view==='overview'?(locale==='zh'?'概览':'Overview'):view==='compare'?(locale==='zh'?'对比':'Compare'):view==='intake'?taskCopy(locale).intake:view==='benchmark'?(locale==='zh'?'评测中心':'Benchmarks'):t(`view.${view}` as Parameters<typeof t>[0],locale)} locale={locale} onSearch={openPalette} onMenu={()=>setMobileNav(true)}/>}
+      {view==='rsi'&&<ErrorBoundary label={locale==='zh'?'自优化':'Self-improvement'}><Suspense fallback={<PageSkeleton locale={locale}/>}><RsiPage locale={locale} onMenu={()=>setMobileNav(true)} onSearch={openPalette} overview={rsiOverview} overviewError={rsiOverviewError} onRefresh={refreshRsi} changes={rsiChanges}/></Suspense></ErrorBoundary>}
       {view==='settings'&&<ErrorBoundary label={t('settings.title',locale)}><Suspense fallback={<PageSkeleton locale={locale}/>}><SettingsPage locale={locale} section={settingsSection} onSectionChange={setSettingsSection} onSearch={openPalette} onMenu={()=>setMobileNav(true)} appearance={{theme:theme.theme,onTheme:theme.setTheme,fontPx,onFont:setFontPx,onLocale:setLocale}} onSettingsSaved={()=>{setSettingsRevision(n=>n+1);setMissionInvalidateKey(n=>n+1);}}/></Suspense></ErrorBoundary>}
       {view==='ui-kit'&&<Suspense fallback={<PageSkeleton locale={locale} />}><UiKit locale={locale} theme={theme}/></Suspense>}
       {paletteLoadError && <div className="workbench-error" role="alert">
@@ -1145,7 +1157,7 @@ export default function App() {
           onAction={(action) => {
             setPaletteHintSeen(true);
             storeBool(LAYOUT_KEYS.paletteHintSeen, true);
-            if (action.type === 'session') {
+            if (action.type === 'rsi-create') { window.location.hash='#/rsi?create=1';switchView('rsi'); } else if (action.type === 'session') {
               setTaskRoute({...parseTaskRoute('#/task'),task:'collected:'+action.key});switchView('task');
             } else if (action.type === 'compare') {
               // REQ-111：直接进对比视图，会话 key 来自共享 store（不发额外请求）。

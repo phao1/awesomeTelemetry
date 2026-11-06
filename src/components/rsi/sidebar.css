@@ -1,0 +1,4 @@
+.app-sidebar nav button[data-rsi-nav] { position: relative; }
+.rsi-sidebar-count { display: inline-flex; margin-inline-start: auto; font-style: normal; }
+.app-sidebar nav button .rsi-sidebar-count span { display: inline-flex; font-variant-numeric: tabular-nums; }
+.app-sidebar.is-collapsed .rsi-sidebar-count { position: absolute; top: calc(var(--space-1) * -.5); inset-inline-end: calc(var(--space-1) * -.5); }

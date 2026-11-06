@@ -7,7 +7,7 @@ import { parseTaskRoute, serializeComparisonRoute } from './task-route.js';
 
 import type { SessionRange } from './core/trace-types.js';
 
-export const HASH_VIEWS = ['ui-kit', 'settings', 'overview', 'session', 'agent', 'compare', 'proxy', 'frida', 'mission', 'task', 'intake', 'benchmark', 'team-experiment'] as const;
+export const HASH_VIEWS = ['rsi', 'ui-kit', 'settings', 'overview', 'session', 'agent', 'compare', 'proxy', 'frida', 'mission', 'task', 'intake', 'benchmark', 'team-experiment'] as const;
 
 /** 色带宽度模式（add-trajectory-inspector D10/D18）。 */
 export type RibbonMode = 'time' | 'token';

@@ -22,6 +22,7 @@ import { ProviderBadge } from './ui/Badge.js';
 import { IconChevronRight } from './icons/index.js';
 
 export type PaletteAction =
+  | { type: 'rsi-create' }
   | { type: 'session'; key: string }
   | { type: 'view'; view: string }
   | { type: 'export' }
@@ -185,10 +186,10 @@ export function CommandPalette({
 
     const navCommands: Command[] =
       prefix === null || prefix === 'nav'
-        ? (['overview', 'task', 'benchmark', 'team-experiment', 'intake', 'compare'] as const)
+        ? (['overview', 'task', 'benchmark', 'team-experiment', 'rsi', 'intake', 'compare'] as const)
             .map((target) => ({
               id: `view-${target}`,
-              label: target === 'overview' ? (locale==='zh'?'概览':'Overview') : target === 'benchmark' ? (locale==='zh'?'评测中心':'Benchmarks') : target === 'task' ? taskCopy(locale).tasks : target === 'intake' ? taskCopy(locale).intake : t(`view.${target}`, locale),
+              label: target === 'rsi' ? t('view.rsi',locale) : target === 'overview' ? (locale==='zh'?'概览':'Overview') : target === 'benchmark' ? (locale==='zh'?'评测中心':'Benchmarks') : target === 'task' ? taskCopy(locale).tasks : target === 'intake' ? taskCopy(locale).intake : t(`view.${target}`, locale),
               hint: 'nav',
               category: 'nav' as const,
               run: () => run({ type: 'view', view: target }),
@@ -200,6 +201,7 @@ export function CommandPalette({
       prefix === null || prefix === 'action'
         ? (
             [
+              { id: 'rsi-create', label: t('rsi.create',locale), action: {type:'rsi-create'} as PaletteAction },
               { id: 'export', label: t('palette.export', locale), action: { type: 'export' } as PaletteAction },
               { id: 'theme', label: t('palette.theme', locale), action: { type: 'theme' } as PaletteAction },
               { id: 'language', label: t('palette.language', locale), action: { type: 'language' } as PaletteAction },

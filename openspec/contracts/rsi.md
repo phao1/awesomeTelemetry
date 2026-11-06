@@ -2223,3 +2223,129 @@ in AgentReviewProvider and this test uses a128MiB output budget (overriding the
 ordinary8MiB command default). The larger bound accommodates real generated source
 files while preserving lexical context; the model payload still has its1MiB bound.
 The test verifies complete preservation independently from model-budget truncation.
+
+
+## RSI-016 Human page data and complete RSI UI (M13 / P6)
+
+**Design-author decisions — 决定于 2026-11-07.** This section supersedes
+RSI-014's page/options deferral and creation settings exclusion. All additions
+are human page routes, guarded by the existing process-local page bearer and
+localPageRequest. Task and optimizer-session bearers always receive403; no new
+route is forwarded by optimizer proxies. HTTP never starts processes, builds,
+evaluations, Docker or models. No additional runtime dependencies.
+
+Task display name is Agent name · repository basename; no new persisted task
+name. Overview aggregates task summaries, held iterations and queued audit items
+server-side; a held iteration appears once and audit queue IDs identify audits.
+Task/hash-chain cache entities remain unchanged. Sealed/final question metadata
+are human-only; hidden tests, reference sources and private model request bodies
+never enter page projections. Every projection is an explicit allowlist.
+
+Profiles may add optional description:string (at most1024 UTF16 code units)
+and verified:boolean display metadata; credential scanning and every executable
+profile field remain strict, and display metadata never relaxes worker policy; only
+bundled opencode-deepseek, mini-agent and scripted are marked verified. Options
+expose bounded profile metadata and full/small default-bank distributions, never
+run env, file content, Dockerfile or login secrets. Paths are absolute local
+profile/bank selectors; custom absolute paths remain supported and validated.
+Creation settings accepts ONLY optimizerSessionTokens, optimizerSessionTimeoutMs,
+allowUnmeteredOptimizer and concurrency, validated by WorkerSettings and stored
+in private/runtime.json. No key, proxy setting or arbitrary settings accepted.
+
+Worker heartbeat adds upstreamConfigured:boolean, computed only from presence
+of RSI_UPSTREAM_BASE_URL, RSI_UPSTREAM_MODEL and RSI_UPSTREAM_API_KEY. The page
+worker response returns upstreamConfigured=null whenever worker is not running.
+No environment values are returned. Metrics are observed: absent data=null, never
+estimates or fabricated zeroes. Target tokens sum observed proxy counters for
+all attempts; optimizer tokens bind via the immutable submit queue; review tokens
+use worker-attributed complete observed receipts (null if the complete
+per-iteration association is unavailable; admission reservations never displayed). Duration sums
+recorded run durations (not wall-clock round latency). Worker writes compact immutable page-metrics.json alongside each run; old
+artifacts fall back to bounded asynchronous telemetry reads. Cache ratio uses only
+complete settled proxy usage with known input accounting; missing usage=null.
+
+Worker promotionInput is extracted verbatim into a shared read-only function in
+server/rsi/verdict.ts, used by worker and page, followed by decidePromotion.
+Defenses require positive evidence: L0/L1 pass requires retained platform diff
+and completion of precheck; an empty finding list alone is never a pass. L2 uses
+sealed evidence, not_reached before any sealed evaluation, missing if incomplete.
+L3/L4 use current review scope when available and gate evidence; process review
+never gates. L5 uses effective calibration: insufficient=missing, failed=hold,
+passed=pass only for sufficient samples. Unknown/missing basis has a reason.
+
+Review reads the newest artifact scope for that iteration, preferring latest
+artifact mtime and lexical name for ties. It projects monitor/process outcomes,
+qualified variant pairs and discard reasons. Ablation hunks are selected with
+the same pure selectAblationPatch over retained diff/findings/monitor locations.
+No variant hidden tests, draft bodies, source tar or raw receipts are returned.
+RSI-016 permits bounded metadata-only reads of the frozen bank manifest;
+source, statement, reference and test reads remain owned by bank.ts.
+Runs aggregate across all iteration phases, page by run ID, include language
+from the frozen bank and observed target.json telemetry. Unknown metadata=null.
+Ledger verify streams verifyLedger with the DB head as anchor, reporting issue
+codes and line numbers; it does not repair or write the ledger.
+
+Page-data caches are bounded (24 entries, 2-second TTL, maximum1MiB per entry),
+keyed by ledger head and task root; verification also keys file identity, size,
+mtime and ctime (including a missing-file marker) so
+corruption cannot be hidden by an unchanged cache head. Responses remain capped
+at1MiB with RSI_LIMIT. Artifact JSON<=1MiB (variant attempts<=8MiB), usage JSONL
+streamed with total8MiB/per-line1MiB bounds. All list page limits stay1..200.
+Overview is bounded to200 tasks and2000 reviews; overflow returns RSI_LIMIT.
+
+ApiError.details may add {field,reason}; both use static validation paths/codes,
+never raw filesystem errors, hidden data or credentials. Invalid paths, full-SHA,
+profile fields, bank validation and command fields yield actionable reasons.
+
+The following DTOs are adopted by src/core/rsi-api-client.ts. All fields required
+unless optional; all external dates canonical ISO UTC.
+
+```ts
+export type RsiTaskView = Omit<RsiTask, 'taskTokenHash'>;
+export interface RsiPage<T> { items: T[]; nextCursor: string | null }
+export interface RsiPageSettings { optimizerSessionTokens?: number; optimizerSessionTimeoutMs?: number; allowUnmeteredOptimizer?: boolean; concurrency?: number }
+export interface RsiCreateRequest { requestId: string; repository: string; baselineCommit: string; agentProfile: string; optimizerProfile: string; bank: string; subset?: 'small' | 'full'; config: RsiConfig; settings?: RsiPageSettings }
+export interface RsiAccepted { taskId: string; queueId: string; status: 'queued' }
+export interface RsiCreated extends RsiAccepted { agentToken: string | null }
+export interface RsiWorkerStatus { pid: number | null; at: string | null; phase: string | null; running: boolean; upstreamConfigured: boolean | null }
+export interface RsiSummary {
+  task: RsiTaskView; agentName: string | null; optimizerName: string | null; repositoryName: string;
+  pendingCount: number; bestTrainScore: number | null; trainScores: { seq: number; score: number | null }[];
+  sealedRemaining: number; tokenUsage: number; tokenBudget: number; lastActivity: string;
+  trainCount: number | null; worker: RsiWorkerStatus;
+}
+export interface RsiReviewItem { id: string; taskId: string; taskName: string; iteration: RsiIteration; kind: 'held' | 'audit'; reasons: string[]; at: string }
+export interface RsiOverview { tasks: RsiSummary[]; reviews: RsiReviewItem[]; pendingCount: number }
+export interface RsiProfileOption { id: string; path: string; name: string; description: string | null; family: string | null; egress: 'model-proxy' | 'vendor-allowlist' | null; loginRequired: boolean; verified: boolean }
+export interface RsiBankDistribution { phase: 'smoke' | 'train' | 'sealed' | 'final'; count: number; languages: Record<string, number> }
+export interface RsiOptions { agents: RsiProfileOption[]; optimizers: RsiProfileOption[]; bank: { path: string; full: RsiBankDistribution[]; small: RsiBankDistribution[] } | null; defaults: RsiConfig; settings: Required<RsiPageSettings> }
+export interface RsiIterationMetric { iteration: RsiIteration; iterationId: string; seq: number; targetTokens: number | null; optimizerTokens: number | null; reviewTokens: number | null; durationMs: number | null; cacheHitRate: number | null; reason: string | null; defenses: RsiVerdict['defenses']; finalState: 'not_requested' | 'reserved' | 'completed'; session: RsiOptimizerSession | null }
+export interface RsiMetrics { iterations: RsiIterationMetric[]; cacheHitRate: number | null; helpReason: string | null; pendingCommands: number; baselineProgress: { completed: number; planned: number } | null }
+export type RsiDefenseState = 'pass' | 'hold' | 'reject' | 'missing' | 'not_reached';
+export interface RsiVerdict { result: RsiPromotionResult; defenses: { level: RsiFinding['level']; state: RsiDefenseState; reason: string }[]; parentTrainScore: number | null; candidateTrainScore: number | null; parentSealedScore: number | null; candidateSealedScore: number | null; delta: number | null; parentTokens: number | null; candidateTokens: number | null }
+export interface RsiPageRun { id: string; questionId: string; phase: RsiPhase; language: string | null; outcome: RsiOutcome; failureReason: RsiRun['failureReason']; tokens: number | null; durationMs: number; memoryPeakBytes: number | null; sessionTokens: number | null; tokenDifference: number | null; at: string; repetition: number; attempt: number }
+export interface RsiReviewEvidence {
+  scope: string | null; monitor: { status: 'clean' | 'suspicious' | 'missing'; reason: string; model: string | null; promptVersion: string | null; conclusions: { category: string; evidence: string; confidence: number; file: string; line: number }[] } | null;
+  process: { status: 'clean' | 'suspicious' | 'missing'; reason: string; evidence: string[] } | null;
+  variants: { questionId: string; sourceQuestionId: string; parentOutcome: RsiOutcome | null; candidateOutcome: RsiOutcome | null; regression: boolean | null }[];
+  discarded: { questionId: string; reason: string }[];
+  ablation: { status: string; reason: string; score: number | null; scoreDrop: number | null; hunks: { file: string; line: number; count: number }[] } | null;
+}
+export interface RsiLedgerReport { valid: boolean; entryCount: number; head: RsiLedgerHead; issues: { code: string; line: number }[]; anchored: boolean }
+export interface RsiQuality { addedLines: number; deletedLines: number; changedLines: number; files: number; addedFunctions: number }
+export interface RsiTraceUsage { requestId: string; tokens: number | null; cacheHitRate: number | null }
+export interface RsiTrajectoryPage { file: 'responses' | 'last-request'; content: string; nextOffset: number | null; truncated: boolean; usage: RsiTraceUsage[] | null; sessionTokens: number | null }
+export interface RsiFieldError { field?: string; reason: string }
+
+```
+
+Page UI implements docs/rsi/ui-spec.md §1–9, lazily imported at #/rsi. All filters,
+selection and tabs persist in hash query parameters. Page bearer only in memory;
+creation bearer appears once then is discarded when its Sheet closes. SSE
+rsi_changed invalidates only affected task reads without clearing current data;
+subscriptions/timers abort on unmount. Client ledger hints merge for1s; the
+visible worker pill reads its one selected task heartbeat every5s, independently
+of data refresh, and cancels polling/requests on unmount. Writes are idempotent, disable while
+pending, report conflicts and show Toast. Approve/reject require nonempty reason;
+missing review/comparison categories cannot be approved. Calibration with fewer
+than30 valid samples per stratum never displays as passed. No amounts displayed.

@@ -1,5 +1,7 @@
 /** REQ-010：zh / en 双字典，键必须完全对齐（测试断言）。 */
 export const ZH = {
+  'view.rsi': '自优化',
+  'rsi.create': '新建调优任务',
   'workbench.subtitle': '本地 Agent 观测工作台',
   'workbench.search': '搜索任务与操作…',
   'workbench.searchUnavailable': '搜索面板未能加载，请重试。',
@@ -1676,6 +1678,8 @@ export const ZH = {
 export type I18nKey = keyof typeof ZH;
 
 export const EN: Record<I18nKey, string> = {
+  'view.rsi': 'Self-improvement',
+  'rsi.create': 'New tuning task',
   'workbench.subtitle': 'Local agent observability',
   'workbench.search': 'Search tasks and actions…',
   'workbench.searchUnavailable': 'The search panel could not load. Please retry.',

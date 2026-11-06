@@ -20,12 +20,20 @@ import { boundedJson, conflict, RsiError, validId } from './reader.js';
 
 export interface CreateTaskInput {
   requestId: string; repository: string; baselineCommit: string; agentProfile: string;
-  optimizerProfile: string; bank: string; subset?: 'small' | 'full'; config: RsiConfig;
+  optimizerProfile: string; bank: string; subset?: 'small' | 'full'; config: RsiConfig; settings?: Pick<WorkerSettings, 'optimizerSessionTokens' | 'optimizerSessionTimeoutMs' | 'allowUnmeteredOptimizer' | 'concurrency'>;
 }
+function invalidField(field: string, reason: string): never { throw new RsiError(400, 'RSI_INVALID_REQUEST', {field,reason}); }
 export async function createTask(store: RsiStore, input: CreateTaskInput, settings: WorkerSettings): Promise<{ taskId: string; queueId: string; status: 'queued'; agentToken: string | null }> {
   validId(input.requestId);
-  for (const key of ['repository','agentProfile','optimizerProfile','bank'] as const) if (typeof input[key] !== 'string' || !isAbsolute(input[key]) || input[key].includes('\0')) throw new RsiError(400, 'RSI_INVALID_REQUEST');
-  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.baselineCommit) || !['small','full'].includes(input.subset ?? 'full')) throw new RsiError(400, 'RSI_INVALID_REQUEST');
+  for (const key of ['repository','agentProfile','optimizerProfile','bank'] as const) if (typeof input[key] !== 'string' || !isAbsolute(input[key]) || input[key].includes('\0')) invalidField(key,'absolute_path_required');
+  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.baselineCommit)) invalidField('baselineCommit','full_commit_required');
+  if (!['small','full'].includes(input.subset ?? 'full')) invalidField('subset','invalid_value');
+  if(input.settings!==undefined&&(input.settings===null||typeof input.settings!=='object'||Array.isArray(input.settings)))invalidField('settings','invalid_value');
+  if(input.settings) {
+    for(const key of Object.keys(input.settings)) if(!['optimizerSessionTokens','optimizerSessionTimeoutMs','allowUnmeteredOptimizer','concurrency'].includes(key)) invalidField('settings','invalid_value');
+    for(const [key,value] of Object.entries(input.settings)) if(key==='allowUnmeteredOptimizer'?typeof value!=='boolean':!Number.isSafeInteger(value)||Number(value)<1||(key==='concurrency'&&Number(value)>32)) invalidField('settings.'+key,'invalid_value');
+    settings={...settings,...input.settings};
+  }
   validateRsiConfig(input.config); validateWorkerSettings(settings);
   return taskLock(store.root, 'ingress', async () => {
     await store.refresh();
@@ -35,24 +43,28 @@ export async function createTask(store: RsiStore, input: CreateTaskInput, settin
       await enqueue(store, { action: 'start' }, 'human', input.requestId);
       return { taskId: store.taskId, queueId: input.requestId, status: 'queued', agentToken: null };
     }
-  for (const path of [input.repository,input.agentProfile,input.optimizerProfile,input.bank]) {
-    const resolved = await realpath(path);
-    for (const name of ['.codex','.claude','.ssh']) { const forbidden=join(homedir(),name); if(resolved===forbidden||resolved.startsWith(forbidden+sep)||forbidden.startsWith(resolved+sep)) throw new RsiError(400,'RSI_INVALID_REQUEST'); }
+  for (const field of ['repository','agentProfile','optimizerProfile','bank'] as const) {
+    let resolved: string;
+    try { resolved = await realpath(input[field]); } catch(error) { if(['ENOENT','ENOTDIR'].includes((error as NodeJS.ErrnoException).code??'')) return invalidField(field,'path_not_found');if((error as NodeJS.ErrnoException).code==='EACCES')return invalidField(field,'path_unreadable'); throw error; }
+    const inputStat=await lstat(resolved);if((field==='repository'||field==='bank')?!inputStat.isDirectory():!inputStat.isFile())invalidField(field,field==='repository'||field==='bank'?'directory_required':'profile_file_required');
+    for (const name of ['.codex','.claude','.ssh']) { const forbidden=join(homedir(),name); if(resolved===forbidden||resolved.startsWith(forbidden+sep)||forbidden.startsWith(resolved+sep)) invalidField(field,'forbidden_path'); }
   }
     // Trusted local files still have aggregate/per-file bounds before bank reads.
-    let size = 0;
-    for (const file of await treeFiles(input.bank)) {
-      const stat = await lstat(join(input.bank, file)); size += stat.size;
-      if (!stat.isFile() || stat.size > 64 * 1024 * 1024 || size > 64 * 1024 * 1024) throw new RsiError(413, 'RSI_LIMIT');
-    }
+    try {
+      let size = 0;
+      for (const file of await treeFiles(input.bank)) {
+        const stat = await lstat(join(input.bank, file)); size += stat.size;
+        if (!stat.isFile() || stat.size > 64 * 1024 * 1024 || size > 64 * 1024 * 1024) throw new RsiError(413, 'RSI_LIMIT', {field:'bank',reason:'bank_too_large'});
+      }
+    } catch(error) {if(error instanceof RsiError)throw error;return invalidField('bank','invalid_bank');}
     await rm(join(store.root, 'private'), { force: true, recursive: true });
     await mkdir(join(store.root, 'private'), { recursive: true, mode: 0o700 });
     for (const file of [input.agentProfile,input.optimizerProfile]) if ((await lstat(file)).size > 1024*1024) throw new RsiError(413,'RSI_LIMIT');
     const runtime = structuredClone(settings);
     if(runtime.reviews) { const {optimizerFamily:_ignored,...reviews}=runtime.reviews;runtime.reviews=reviews; }
-    runtime.agent = await freezeAgentProfile(input.agentProfile, join(store.root, 'private/agent'));
-    runtime.optimizer = await freezeOptimizerProfile(input.optimizerProfile, join(store.root, 'private/optimizer'));
-    const bank = await freezeBank(await readBank(input.bank), join(store.root, 'private/bank'), input.subset ?? 'full');
+    try { runtime.agent = await freezeAgentProfile(input.agentProfile, join(store.root, 'private/agent')); } catch(error) { const field=error instanceof Error ? /^Invalid agent profile: ([A-Za-z0-9_.[\]]+)/.exec(error.message)?.[1] : null; return invalidField('agentProfile'+(field?'.'+field:''),'invalid_profile'); }
+    try { runtime.optimizer = await freezeOptimizerProfile(input.optimizerProfile, join(store.root, 'private/optimizer')); } catch(error) {const field=error instanceof Error?/^Invalid (?:agent|optimizer) profile: ([A-Za-z0-9_.[\]]+)/.exec(error.message)?.[1]:null;return invalidField('optimizerProfile'+(field?'.'+field:''),'invalid_profile');}
+    const bank = await (async()=>{try {return await freezeBank(await readBank(input.bank), join(store.root, 'private/bank'), input.subset ?? 'full');} catch {return invalidField('bank','invalid_bank');}})();
     await privateWrite(join(store.root, 'private/fingerprints.json'), JSON.stringify(buildFingerprintDictionary([...bank.questions.values()], input.config.l1)));
     await privateWrite(join(store.root, 'private/runtime.json'), JSON.stringify(runtime));
     await privateWrite(join(store.root, 'private/create.json'), canonicalJson(input));

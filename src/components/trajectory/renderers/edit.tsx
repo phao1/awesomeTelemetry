@@ -65,7 +65,7 @@ function parseEditArgs(text: string): ParsedEditArgs {
 
 type DiffRowKind = 'ctx' | 'add' | 'del';
 
-interface DiffRow {
+export interface DiffRow {
   kind: DiffRowKind;
   text: string;
 }
@@ -113,7 +113,7 @@ function diffLines(a: readonly string[], b: readonly string[]): DiffRow[] {
   return rows;
 }
 
-function DiffRowView({ row }: { row: DiffRow }): React.JSX.Element {
+export function DiffRowView({ row }: { row: DiffRow }): React.JSX.Element {
   if (row.kind === 'ctx') {
     return (
       <div
