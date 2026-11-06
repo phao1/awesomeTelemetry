@@ -187,12 +187,15 @@ async function runOne(index, token) {
     await exec(name, ['mkdir', '-p', work]);
     await copyOwned(name, path.join(root, 'task/repo'), work);
     await exec(name, ['git', 'config', '--global', '--add', 'safe.directory', work]);
-    const config = { model: 'probe/fixed', update: 'disable', share: 'disabled', snapshots: false,
+    const config = { model: modelRef(), update: 'disable', share: 'disabled', snapshots: false,
       lsp: false, formatter: false, plugins: [],
-      providers: { probe: { package: '@opencode/ai/providers/openai-compatible',
-        settings: { baseURL: 'http://rsi-proxy:8080/v1', apiKey: token },
-        models: { fixed: { name: 'fixed', limit: { context: 100000, output: 1024 },
-          capabilities: { tools: true, input: ['text'], output: ['text'] } } } } } };
+      providers: report.model === 'real'
+        // Built-in provider: this model requires reasoning_content to be passed back between steps.
+        ? { deepseek: { settings: { baseURL: 'http://rsi-proxy:8080/v1', apiKey: token } } }
+        : { probe: { package: '@opencode/ai/providers/openai-compatible',
+          settings: { baseURL: 'http://rsi-proxy:8080/v1', apiKey: token },
+          models: { fixed: { name: 'fixed', limit: { context: 100000, output: 1024 },
+            capabilities: { tools: true, input: ['text'], output: ['text'] } } } } } };
     await must(['exec', '-i', name, 'node', '-e', "let s='';process.stdin.on('data',b=>s+=b);process.stdin.on('end',()=>require('fs').writeFileSync('/home/node/.config/opencode/opencode.json',s,{mode:0o600}))"],
       { input: JSON.stringify(config) });
     await copyTo(name, path.join(root, 'isolation-check.sh'), '/tmp/isolation-check.sh');
@@ -205,7 +208,7 @@ async function runOne(index, token) {
     }
     await must(['exec', '-w', work, name, 'sh', '-c', 'git init -q && git config user.email probe@localhost && git config user.name Probe && git add clamp.mjs && git commit -qm baseline']);
     const prompt = await readFile(path.join(root, 'task/statement.md'), 'utf8');
-    const run = await docker(['exec', '-w', work, name, 'timeout', '--signal=TERM', '--kill-after=5s', '290', 'opencode', 'run', '--standalone', '--auto', '--format', 'json', '--model', 'probe/fixed', prompt],
+    const run = await docker(['exec', '-w', work, name, 'timeout', '--signal=TERM', '--kill-after=5s', '290', 'opencode', 'run', '--standalone', '--auto', '--format', 'json', '--model', modelRef(), prompt],
       { timeout: 310_000 });
     result.targetExitCode = run.code;
     result.timedOut = run.timedOut || run.code === 124;
@@ -233,6 +236,8 @@ async function runOne(index, token) {
     result.evaluation ??= { verdict: result.timedOut ? 'fail' : 'infra_error', reason: result.timedOut ? 'agent_timeout' : 'execution_error' };
   } finally { result.durationMs = performance.now() - start; }
 }
+
+function modelRef() { return report.model === 'real' ? 'deepseek/deepseek-flash' : 'probe/fixed'; }
 
 async function main() {
   await mkdir(out, { recursive: true, mode: 0o700 });
@@ -295,10 +300,10 @@ async function main() {
     const tokens = Array.from({ length: report.concurrency }, () => randomBytes(32).toString('hex'));
     secrets.push(...tokens);
     proxy = `${prefix}-proxy`;
-    const proxyEnv = { PATH: process.env.PATH, HOME: process.env.HOME, ...(options.model === 'real' ? { RSI_UPSTREAM_BASE_URL: process.env.RSI_UPSTREAM_BASE_URL, RSI_UPSTREAM_API_KEY: process.env.RSI_UPSTREAM_API_KEY, RSI_UPSTREAM_MODEL: process.env.RSI_UPSTREAM_MODEL } : {}), RSI_MODEL: options.model, RSI_RUNS: JSON.stringify(tokens.map((token, i) => ({ token, runId: `run-${i + 1}`, budget: 100000 }))) };
+    const proxyEnv = { PATH: process.env.PATH, HOME: process.env.HOME, ...(options.model === 'real' ? { RSI_UPSTREAM_BASE_URL: process.env.RSI_UPSTREAM_BASE_URL, RSI_UPSTREAM_API_KEY: process.env.RSI_UPSTREAM_API_KEY, RSI_UPSTREAM_MODEL: process.env.RSI_UPSTREAM_MODEL } : {}), RSI_MODEL: options.model, RSI_MAX_TOKENS: options.model === 'real' ? '8192' : '1024', RSI_RUNS: JSON.stringify(tokens.map((token, i) => ({ token, runId: `run-${i + 1}`, budget: options.model === 'real' ? 300000 : 100000 }))) };
     await create(proxy, ['--network', network, '--network-alias', 'rsi-proxy',
       '--memory', '256m', '--cpus', '0.5', '--pids-limit', '128', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-      '-e', 'RSI_MODEL', '-e', 'RSI_RUNS', ...(options.model === 'real' ? ['-e', 'RSI_UPSTREAM_BASE_URL', '-e', 'RSI_UPSTREAM_API_KEY', '-e', 'RSI_UPSTREAM_MODEL'] : []),
+      '-e', 'RSI_MODEL', '-e', 'RSI_RUNS', '-e', 'RSI_MAX_TOKENS', ...(options.model === 'real' ? ['-e', 'RSI_UPSTREAM_BASE_URL', '-e', 'RSI_UPSTREAM_API_KEY', '-e', 'RSI_UPSTREAM_MODEL'] : []),
       'rsi-proxy:p0'], { env: proxyEnv });
     await must(['network', 'connect', 'bridge', proxy]);
     await must(['start', proxy]);

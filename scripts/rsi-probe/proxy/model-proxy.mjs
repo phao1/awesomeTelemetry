@@ -107,6 +107,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     baseURL: mock ? 'http://127.0.0.1:8081/v1' : process.env.RSI_UPSTREAM_BASE_URL,
     apiKey: mock ? 'mock' : process.env.RSI_UPSTREAM_API_KEY,
     model: mock ? 'mock-fixed' : process.env.RSI_UPSTREAM_MODEL,
+    maxTokens: Number(process.env.RSI_MAX_TOKENS ?? 1024),
     log: entry => appendFile('/out/usage.jsonl', `${JSON.stringify(entry)}\n`, { mode: 0o600 }),
   });
   http.createServer(handler).listen(8080, '0.0.0.0');
