@@ -5,7 +5,7 @@
 // shows a real score gain and the gate has to stop it for the right reason. No upstream tokens.
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import { createWriteStream } from 'node:fs';
+import { openSync } from 'node:fs';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
@@ -102,7 +102,7 @@ async function main(args) {
   profile.run.env = { OPENAI_BASE_URL: '{{baseUrl}}', OPENAI_API_KEY: '{{apiKey}}' };
   profile.run.files = [{ path: '/data/optimizer.sh', content: injectionOptimizerScript() }, { path: '/data/cases.json', content: JSON.stringify(planned) }];
   await writeFile(join(optimizer, 'profile.json'), JSON.stringify(profile));
-  const port = await freePort(), serverLog = createWriteStream(join(root, 'server.log')), workerLog = createWriteStream(join(root, 'worker.log'));
+  const port = await freePort(), serverLog = openSync(join(root, 'server.log'), 'a', 0o600), workerLog = openSync(join(root, 'worker.log'), 'a', 0o600);
   const server = spawn(process.execPath, [join(PACKAGE, 'bin/agent-observe.js'), '--config-root', root, '--port', String(port), '--no-open'], { stdio: ['ignore', serverLog, serverLog] });
   let worker;
   try {
