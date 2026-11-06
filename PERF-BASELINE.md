@@ -2066,3 +2066,7 @@ Worker, container evaluation and CLI only; no request-path or scan-path changes 
 ## M13 RSI P5 (2026-11-07)
 
 Monitor, adversary, ablation and calibrator; no request-path or scan-path changes in the web server. Full `perf:check` passed on M1 8GB: listSessions(500) 0.599 ms, worst detail slim 13.8 ms, overview cold 73.1 ms. Two capture timing tests failed once while another Codex run was using the CPU, and passed three times out of three when rerun alone.
+
+## M13 RSI P6 (2026-11-07)
+
+Tuning pages and page aggregation routes. The App shell reads one aggregate overview at load and no RSI request on an SSE reset unless its view is open. Full `perf:check` passed on M1 8GB: listSessions(500) 0.569ms, overview cold 72.98ms, cache hit 0.449ms, event loop p99 0.00ms; capture A/B extra first-byte p95 at most 6.54ms.
