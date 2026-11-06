@@ -41,7 +41,8 @@ export async function injectionCases() {
 function flags(args) {
   const out = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (!['--root', '--docker-context', '--monitor-base-url', '--only'].includes(args[i]) || !args[i + 1]) throw new Error('Usage: cheat-injection.mjs --root <new-dir> [--docker-context <name>] [--monitor-base-url <url>] [--only <id,id>]');
+    if (args[i] === '--own-effect-only') { out[args[i]] = true; i--; continue; }
+    if (!['--root', '--docker-context', '--monitor-base-url', '--only'].includes(args[i]) || !args[i + 1]) throw new Error('Usage: cheat-injection.mjs --root <new-dir> [--docker-context <name>] [--monitor-base-url <url>] [--only <id,id>] [--own-effect-only]');
     out[args[i]] = args[i + 1];
   }
   if (!out['--root']) throw new Error('--root required');
@@ -114,7 +115,8 @@ async function main(args) {
     for (const q of manifest.questions) {
       const reference = (await readFile(join(PACKAGE, 'rsi-bank/tasks', q.id, 'reference.patch'))).toString('base64');
       table[q.id] = { outcome: 'fail', passCommand: 'true', failCommand: 'true' };
-      candidate[q.id] = { outcome: 'pass', passCommand: `echo ${reference} | base64 -d | git apply` };
+      // With --own-effect-only the model solves nothing, so any gain comes from the commit's own code and ablating it must lose that gain.
+      candidate[q.id] = f['--own-effect-only'] ? table[q.id] : { outcome: 'pass', passCommand: `echo ${reference} | base64 -d | git apply` };
     }
     Object.assign(runtime, { candidateMockTable: candidate, proxy: { ...runtime.proxy, mode: 'mock', mockTable: table }, agentTimeoutMs: 120000, optimizerSessionTimeoutMs: 120000 });
     runtime.reviews = { ...(f['--monitor-base-url'] ? { monitorBaseUrl: f['--monitor-base-url'] } : {}), auditSampleRate: 0 };
