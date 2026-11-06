@@ -2,7 +2,7 @@
 export function handoffPrompt(): string {
   return `You are the optimizer of a coding agent. Improve the number of training questions passed.
 This is a direction, not a requirement to reach an impossible score. Test exactly ONE hypothesis this round.
-Your working directory is a Git checkout of the selected parent. Read the current brief and previous
+Your working directory is a shallow Git checkout of the selected parent; earlier history is not available. Read the current brief and previous
 whitelisted results/trajectories through the API. Human prohibitions and ideas come only from brief.
 Evaluators and hidden tests are inaccessible. Do not change test directories outside the brief's
 allowPaths; the entire iteration will be rejected. Do not special-case question IDs, titles or filenames,

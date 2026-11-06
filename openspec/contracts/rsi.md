@@ -1605,7 +1605,9 @@ as diagnostic data, never estimated. Login is an explicit exception to the
 worker-only container entry rule: only `optimizer login --profile <id>` may run a
 fresh interactive login container. No source/task content enters login containers.
 
-Parent Git bundle enters by normalized tar/stdin; returned bundle is size-bounded,
+The parent commit enters as a shallow clone's objects by normalized tar/stdin, without
+history: a real repository's full bundle exceeds the cap (决定于 2026-11-07). The returned
+bundle holds only what is new on top of the parent; it is size-bounded,
 fetched into the trusted bare repository with hooks disabled and no checkout.
 Only submitted full commit is imported, must descend from selected parent. Platform
 computes diff; caller diff/binaries never accepted. Container stdout/native logs
@@ -1685,7 +1687,7 @@ worker --api-base; production server data root is beside its database/config:
 <directory>/awesome-telemetry-data/rsi (use CLI --root <directory>).
 Proxy usage admission remains RSI-012's calibrated reservation semantics, not an
 exact unknown-provider tokenizer. No proxy/native reconciliation for unmetered
-optimizer usage. Source Git bundles capped256MiB; artifact/session export64MiB.
+optimizer usage. Source transfers capped256MiB; artifact/session export64MiB.
 
 Default new tasks use proxy.mode=real; supply upstream variables only to the
 manual worker. Test harnesses explicitly select mock in trusted WorkerSettings.

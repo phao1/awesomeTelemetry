@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rename, rm, unlink, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, unlink } from 'node:fs/promises';
 import { dirname, basename, join, posix } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Readable } from 'node:stream';
@@ -21,13 +21,17 @@ import { handoffPrompt } from './handoff-prompt.js';
 import { startProxy, stopProxy, exportProxyArtifacts, readProxyUsage } from './proxy-run.js';
 import type { UsageReceipt } from './proxy-run.js';
 
-/** One normalized USTAR entry, source-sized (the generic artifact packer caps64MiB). */
-async function bundleTar(file: string): Promise<Buffer> {
-  const size=(await stat(file)).size;if(size>256*1024*1024)throw new Error('Optimizer source bundle exceeds256MiB');
-  const bytes=await readFile(file),header=Buffer.from(packFiles(new Map([['parent.bundle',Buffer.alloc(0)]])).subarray(0,512));
-  header.write(bytes.length.toString(8).padStart(11,'0')+'\0',124,12,'ascii');header.fill(32,148,156);
-  const sum=header.reduce((n,b)=>n+b,0);header.write(sum.toString(8).padStart(6,'0')+'\0 ',148,8,'ascii');
-  return Buffer.concat([header,bytes,Buffer.alloc((512-bytes.length%512)%512+1024)]);
+/** Normalized USTAR entries for a shallow clone's objects, source-sized (the generic artifact packer caps64MiB). */
+async function shallowSourceTar(clone: string): Promise<Buffer> {
+  const names=['.git/shallow',...(await readdir(join(clone,'.git/objects/pack'))).map(file=>`.git/objects/pack/${file}`)],chunks:Buffer[]=[];let size=0;
+  for(const name of names){
+    const bytes=await readFile(join(clone,name));size+=bytes.length;if(size>256*1024*1024)throw new Error('Optimizer source exceeds256MiB');
+    const header=Buffer.from(packFiles(new Map([[name,Buffer.alloc(0)]])).subarray(0,512));
+    header.write(bytes.length.toString(8).padStart(11,'0')+'\0',124,12,'ascii');header.fill(32,148,156);
+    const sum=header.reduce((n,b)=>n+b,0);header.write(sum.toString(8).padStart(6,'0')+'\0 ',148,8,'ascii');
+    chunks.push(header,bytes,Buffer.alloc((512-bytes.length%512)%512));
+  }
+  return Buffer.concat([...chunks,Buffer.alloc(1024)]);
 }
 export async function revokeAgentSession(root: string): Promise<void> {
   try { await unlink(join(root, 'private/agent-session.json')); }
@@ -108,9 +112,13 @@ export async function importSessionBundle(store: RsiStore, client: DockerClient,
   const work=`/tmp/rsi-${s.id}/source`,temp=await mkdtemp(join(tmpdir(),'rsi-recover-bundle-'));
   try{
     await stopOptimizer(client,name);
-    await mustDocker(client,['exec','-w',work,name,'git','-c','core.hooksPath=/dev/null','bundle','create','/tmp/candidate.bundle','--all']);
-    const archive=await mustDocker(client,['exec',name,'tar','-cf','-','-C','/tmp','candidate.bundle'],{maxOutputBytes:256*1024*1024});
-    await extractFiles(archive,temp,true);await importCommit(join(temp,'candidate.bundle'),mirror,commit);
+    // The clone is shallow, so the bundle carries only what is new on top of the parent, which the mirror already has.
+    if(commit!==s.commit){
+      await mustDocker(client,['exec','-w',work,name,'git','-c','core.hooksPath=/dev/null','update-ref','refs/rsi/submission',commit]);
+      await mustDocker(client,['exec','-w',work,name,'git','-c','core.hooksPath=/dev/null','bundle','create','/tmp/candidate.bundle','refs/rsi/submission',`^${s.commit}`]);
+      const archive=await mustDocker(client,['exec',name,'tar','-cf','-','-C','/tmp','candidate.bundle'],{maxOutputBytes:256*1024*1024});
+      await extractFiles(archive,temp,true);await importCommit(join(temp,'candidate.bundle'),mirror,commit);
+    }
     await git(['--git-dir',mirror,'merge-base','--is-ancestor',s.commit,commit]);
     await git(['--git-dir',mirror,'update-ref',`refs/rsi/submissions/${createHash('sha256').update(queueId).digest('hex')}`,commit]);
     const manifest=join(output,'imported.json');await privateWrite(`${manifest}.tmp`,JSON.stringify({commit,queueId}));await rename(`${manifest}.tmp`,manifest);
@@ -158,10 +166,11 @@ export async function runOptimizerSession(store: RsiStore, client: DockerClient,
     await mkdir(output, { recursive: true, mode: 0o700 });
     proxy = await startProxy(client, store.taskId, runId, 'optimizer', 0, Math.min(limit, Math.max(1, store.task().config.maxTaskTokens-store.task().tokenUsage)),
       unmetered ? { ...settings.proxy, mode: 'mock' } : settings.proxy, controller.signal, { apiBase: settings.apiBase ?? 'http://127.0.0.1:4173', redactionHashes: [store.task().taskTokenHash,createHash('sha256').update(token).digest('hex')], domains: profile.egress.kind === 'vendor-allowlist' ? profile.egress.domains : [] });
+    // Only the parent commit travels: a real repository's history can dwarf its tree and the optimizer needs just the code.
     // git clone only fetches refs/heads/*, so the parent must travel under a branch ref.
-    const ref = `refs/heads/rsi-session-${id}`;
+    const ref = `refs/heads/rsi-session-${id}`, shallow = join(temp,'source');
     await git(['--git-dir',mirror,'update-ref',ref,parent]);
-    await git(['--git-dir',mirror,'bundle','create',join(temp,'parent.bundle'),ref]);
+    await git(['clone','-q','--no-checkout','--depth','1','--no-tags','--template=','--branch',`rsi-session-${id}`,`file://${mirror}`,shallow]);
     await git(['--git-dir',mirror,'update-ref','-d',ref]);
     const model = settings.proxy.mode === 'mock' ? 'fixed' : process.env.RSI_UPSTREAM_MODEL!;
     const rendered = renderOptimizerRun(profile, handoffPrompt(), model, proxy.token);
@@ -181,9 +190,9 @@ export async function runOptimizerSession(store: RsiStore, client: DockerClient,
       || mounts.some(m => profile.login.kind!=='volume' || m.Type!=='volume' || m.Name!==optimizerVolume(profile.id) || m.Destination!==profile.login.path)) throw new Error('Optimizer isolation violation');
     userClient=await optimizerExecutionClient(client,name,user);
     const work = `/tmp/rsi-${id}`;
-    await putTar(userClient,name,work,await bundleTar(join(temp,'parent.bundle')),controller.signal);
+    await putTar(userClient,name,`${work}/source`,await shallowSourceTar(shallow),controller.signal);
     for (const file of rendered.files) await putTar(userClient,name,dirname(file.path),packFiles(new Map([[basename(file.path),Buffer.from(file.content)]])),controller.signal);
-    await mustDocker(userClient,['exec','-w',work,name,'git','-c','core.hooksPath=/dev/null','clone','-q','--no-checkout','parent.bundle','source'],{signal:controller.signal});
+    await mustDocker(userClient,['exec','-w',`${work}/source`,name,'git','-c','core.hooksPath=/dev/null','init','-q'],{signal:controller.signal});
     const exec = (argv: string[], extra = {}) => mustDocker(userClient,['exec','-w',`${work}/source`,name,...argv],extra);
     await exec(['git','config','core.hooksPath','/dev/null']); await exec(['git','checkout','-q',parent]);
     await exec(['git','config','user.name','RSI Optimizer']); await exec(['git','config','user.email','rsi@localhost']);

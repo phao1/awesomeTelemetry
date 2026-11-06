@@ -58,7 +58,10 @@ it('imports the actual submitted Git bundle with hooks disabled and verifies its
   const archive=packFiles(new Map([['candidate.bundle',await readFile(bundle)]]));
   const client:DockerClient={run:async argv=>({code:0,stdout:argv.includes('tar')?archive:argv[0]==='inspect'?Buffer.from('node'):argv.includes('id')?Buffer.from('1000'):argv.some(s=>s.startsWith('uid=$(id -u)'))?Buffer.from('/home/node'):Buffer.alloc(0),stderr:Buffer.alloc(0),timedOut:false,cancelled:false,overflow:false})};
   const s={id:'bundle-session',taskId:'task',seq:1,parentId:null,commit:baseline,state:'running' as const,submissionId:null,accounting:'proxy' as const,tokens:null,artifactPath:'artifacts/optimizer/bundle-session',startedAt:new Date().toISOString(),endedAt:null};
-  await importSessionBundle({root} as RsiStore,client,s,'request',commit);
+  const calls:string[][]=[],recording:DockerClient={run:async(argv,options)=>{calls.push(argv);return client.run(argv,options);}};
+  await importSessionBundle({root} as RsiStore,recording,s,'request',commit);
+  // A shallow clone cannot bundle everything: only what is new on top of the parent the mirror already has.
+  const bundled=calls.find(argv=>argv.includes('bundle'))!;expect(bundled).toContain(`^${baseline}`);expect(bundled).not.toContain('--all');
   expect((await git(['--git-dir',mirror,'rev-parse',commit])).toString().trim()).toBe(commit);
   expect((await git(['--git-dir',mirror,'config','core.hooksPath'])).toString().trim()).toBe('/dev/null');
   await importSessionBundle({root} as RsiStore,{run:async()=>{throw new Error('durable import must be reused');}},s,'request',commit);
