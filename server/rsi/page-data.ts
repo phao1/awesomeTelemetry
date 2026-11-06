@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readdir, stat, realpath, lstat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
-import { basename, join, resolve } from 'node:path';
+import { basename, join } from 'node:path';
 import type { RsiIteration, RsiOutcome } from '../../src/core/rsi-types.js';
 import { rsiCliInfo, rsiPackageRoot } from './paths.js';
 import type { RsiBankDistribution, RsiOverview, RsiOptions, RsiWorkerStatus, RsiMetrics, RsiPageRun, RsiReviewEvidence, RsiVerdict, RsiLedgerReport, RsiDefenseState, RsiProfileOption, RsiTraceUsage } from '../../src/core/rsi-api-client.js';
