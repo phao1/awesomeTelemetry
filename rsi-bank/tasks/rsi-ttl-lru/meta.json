@@ -1,0 +1,41 @@
+{
+  "questionId": "rsi-ttl-lru",
+  "repository": "fixture-ttl-lru",
+  "testNames": [
+    "test_ttl_lru_scenario_01",
+    "test_ttl_lru_scenario_02",
+    "test_ttl_lru_scenario_03",
+    "test_ttl_lru_scenario_04",
+    "test_ttl_lru_scenario_05",
+    "test_ttl_lru_scenario_06",
+    "test_ttl_lru_scenario_07",
+    "test_ttl_lru_scenario_08",
+    "test_ttl_lru_scenario_09"
+  ],
+  "filePaths": [
+    "checks/test_behavior.py",
+    "logic.py",
+    "policy.py"
+  ],
+  "rareStrings": [
+    "regression-c6b2e84fd11f761d"
+  ],
+  "expectedValues": [
+    "[\"A\", null]",
+    "[\"alive\"]",
+    "[\"new\", null]",
+    "[\"wisteria-cache\", null, \"wisteria-cache\"]",
+    "[false]",
+    "[null]"
+  ],
+  "version": 1,
+  "language": "python",
+  "difficulty": "hard",
+  "toolchain": "python",
+  "testTargets": [
+    "checks/test_behavior.py"
+  ],
+  "report": "unittest-json",
+  "expectedTests": 9,
+  "timeoutSeconds": 30
+}

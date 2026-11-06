@@ -1,0 +1,40 @@
+{
+  "questionId": "rsi-lease-queue",
+  "repository": "fixture-lease-queue",
+  "testNames": [
+    "test_lease_queue_scenario_01",
+    "test_lease_queue_scenario_02",
+    "test_lease_queue_scenario_03",
+    "test_lease_queue_scenario_04",
+    "test_lease_queue_scenario_05",
+    "test_lease_queue_scenario_06",
+    "test_lease_queue_scenario_07"
+  ],
+  "filePaths": [
+    "checks/test_behavior.py",
+    "leases.py",
+    "logic.py"
+  ],
+  "rareStrings": [
+    "regression-93647934568182f2"
+  ],
+  "expectedValues": [
+    "[\"a\", \"b\", true, null]",
+    "[\"a\", false]",
+    "[\"a\", null]",
+    "[\"a\", true, \"a\"]",
+    "[\"iris-lease\", \"iris-lease\", false, true]",
+    "[false]",
+    "[null, false]"
+  ],
+  "version": 1,
+  "language": "python",
+  "difficulty": "hard",
+  "toolchain": "python",
+  "testTargets": [
+    "checks/test_behavior.py"
+  ],
+  "report": "unittest-json",
+  "expectedTests": 7,
+  "timeoutSeconds": 30
+}

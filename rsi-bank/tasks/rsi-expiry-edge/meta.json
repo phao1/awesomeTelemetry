@@ -1,0 +1,32 @@
+{
+  "questionId": "rsi-expiry-edge",
+  "repository": "fixture-expiry-edge",
+  "testNames": [
+    "expiry-edge-scenario-01",
+    "expiry-edge-scenario-02",
+    "expiry-edge-scenario-03",
+    "expiry-edge-scenario-04",
+    "expiry-edge-scenario-05",
+    "expiry-edge-scenario-06",
+    "expiry-edge-scenario-07",
+    "expiry-edge-scenario-08"
+  ],
+  "filePaths": [
+    "checks/behavior.test.mjs",
+    "logic.mjs"
+  ],
+  "rareStrings": [
+    "regression-2ab4c9f7c57d8ed7"
+  ],
+  "expectedValues": [],
+  "version": 1,
+  "language": "javascript",
+  "difficulty": "easy",
+  "toolchain": "node",
+  "testTargets": [
+    "checks/behavior.test.mjs"
+  ],
+  "report": "node-test-events",
+  "expectedTests": 8,
+  "timeoutSeconds": 30
+}

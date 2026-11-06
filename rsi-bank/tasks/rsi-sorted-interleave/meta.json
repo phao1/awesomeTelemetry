@@ -1,0 +1,38 @@
+{
+  "questionId": "rsi-sorted-interleave",
+  "repository": "fixture-sorted-interleave",
+  "testNames": [
+    "TestSortedInterleaveScenario01",
+    "TestSortedInterleaveScenario02",
+    "TestSortedInterleaveScenario03",
+    "TestSortedInterleaveScenario04",
+    "TestSortedInterleaveScenario05",
+    "TestSortedInterleaveScenario06",
+    "TestSortedInterleaveScenario07"
+  ],
+  "filePaths": [
+    "behavior_test.go",
+    "go.mod",
+    "logic.go"
+  ],
+  "rareStrings": [
+    "regression-99d456b3b7041a21"
+  ],
+  "expectedValues": [
+    "[]int{-3,-2,0,0,5}",
+    "[]int{1,1,1}",
+    "[]int{1,2,3,4}",
+    "[]int{2}",
+    "[]int{}"
+  ],
+  "version": 1,
+  "language": "go",
+  "difficulty": "medium",
+  "toolchain": "go",
+  "testTargets": [
+    "./..."
+  ],
+  "report": "go-test-json",
+  "expectedTests": 7,
+  "timeoutSeconds": 30
+}

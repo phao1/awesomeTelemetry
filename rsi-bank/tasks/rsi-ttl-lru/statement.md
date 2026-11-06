@@ -1,0 +1,3 @@
+The response cache evicts recently read values and serves entries at their deadline. Repair evaluate(capacity, operations) and the cache policy helper. Operations are put(key, value, ttl, now) or get(key, now), represented as dictionaries. Each put replaces the entry and marks it most recent; a successful get also refreshes recency but never extends its deadline. Purge expired entries before every operation, expire at the deadline, and evict least recent entries when over capacity. Return the get results, using null for misses. Times are monotonic, capacity and TTL are nonnegative integers.
+
+Keep the existing public entry point. Use only the standard library.

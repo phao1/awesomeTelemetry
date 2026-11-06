@@ -1,0 +1,46 @@
+{
+  "questionId": "rsi-quota-buckets",
+  "repository": "fixture-quota-buckets",
+  "testNames": [
+    "TestQuotaBucketsScenario01",
+    "TestQuotaBucketsScenario02",
+    "TestQuotaBucketsScenario03",
+    "TestQuotaBucketsScenario04",
+    "TestQuotaBucketsScenario05",
+    "TestQuotaBucketsScenario06",
+    "TestQuotaBucketsScenario07",
+    "TestQuotaBucketsScenario08",
+    "TestQuotaBucketsScenario09",
+    "TestQuotaBucketsScenario10",
+    "TestQuotaBucketsScenario11"
+  ],
+  "filePaths": [
+    "behavior_test.go",
+    "go.mod",
+    "logic.go",
+    "reservations.go"
+  ],
+  "rareStrings": [
+    "regression-c0802038a588fa8d"
+  ],
+  "expectedValues": [
+    "map[string]int{\"a\":0}",
+    "map[string]int{\"a\":1}",
+    "map[string]int{\"a\":3,\"b\":5}",
+    "map[string]int{\"a\":3}",
+    "map[string]int{\"a\":5}",
+    "map[string]int{\"heather-tenant\":2,\"b\":3}",
+    "map[string]int{}",
+    "map[string]int{\"a\\x00b\":3,\"a\":2}"
+  ],
+  "version": 1,
+  "language": "go",
+  "difficulty": "hard",
+  "toolchain": "go",
+  "testTargets": [
+    "./..."
+  ],
+  "report": "go-test-json",
+  "expectedTests": 11,
+  "timeoutSeconds": 30
+}

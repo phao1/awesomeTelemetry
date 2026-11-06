@@ -1,0 +1,25 @@
+diff --git a/logic.mjs b/logic.mjs
+--- a/logic.mjs
++++ b/logic.mjs
+@@ -3,7 +3,7 @@
+   const state = { available: initial, holds: new Map() };
+   for (const e of events) {
+     if (e.type === "reserve") reserve(state, e.id, e.qty);
+-    else release(state, e.id);
++    else if (e.type === "release") release(state, e.id);
+   }
+   return state.available;
+ }
+diff --git a/inventory.mjs b/inventory.mjs
+--- a/inventory.mjs
++++ b/inventory.mjs
+@@ -1,7 +1,9 @@
+ export function reserve(s, id, qty) {
++  if (s.holds.has(id) || qty > s.available) return;
+   s.available -= qty;
+   s.holds.set(id, qty);
+ }
+ export function release(s, id) {
+   s.available += s.holds.get(id) ?? 0;
++  s.holds.delete(id);
+ }

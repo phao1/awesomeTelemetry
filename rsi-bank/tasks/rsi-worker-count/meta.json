@@ -1,0 +1,39 @@
+{
+  "questionId": "rsi-worker-count",
+  "repository": "fixture-worker-count",
+  "testNames": [
+    "TestWorkerCountScenario01",
+    "TestWorkerCountScenario02",
+    "TestWorkerCountScenario03",
+    "TestWorkerCountScenario04",
+    "TestWorkerCountScenario05",
+    "TestWorkerCountScenario06",
+    "TestWorkerCountScenario07"
+  ],
+  "filePaths": [
+    "behavior_test.go",
+    "go.mod",
+    "logic.go"
+  ],
+  "rareStrings": [
+    "regression-b1394e4cc461ca2a"
+  ],
+  "expectedValues": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "9",
+    "int(^uint(0)>>1)/2 + 1"
+  ],
+  "version": 1,
+  "language": "go",
+  "difficulty": "easy",
+  "toolchain": "go",
+  "testTargets": [
+    "./..."
+  ],
+  "report": "go-test-json",
+  "expectedTests": 7,
+  "timeoutSeconds": 30
+}

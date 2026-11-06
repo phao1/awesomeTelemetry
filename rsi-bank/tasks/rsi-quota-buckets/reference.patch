@@ -1,0 +1,40 @@
+diff --git a/logic.go b/logic.go
+--- a/logic.go
++++ b/logic.go
+@@ -6,9 +6,9 @@
+ func Evaluate(limits map[string]int, operations []Op) map[string]int {
+     remaining := map[string]int{}
+     for tenant, limit := range limits { remaining[tenant] = limit }
+-    holds := map[string]Hold{}
++    holds := map[[2]string]Hold{}
+     for _, op := range operations {
+-        if op.Kind == "reserve" { reserve(remaining, holds, op) } else { cancel(remaining, holds, op) }
++        if op.Kind == "reserve" { reserve(remaining, holds, op) } else if op.Kind == "cancel" { cancel(remaining, holds, op) }
+     }
+     return remaining
+ }
+diff --git a/reservations.go b/reservations.go
+--- a/reservations.go
++++ b/reservations.go
+@@ -1,10 +1,16 @@
+ package task
+ 
+-func reserve(remaining map[string]int, holds map[string]Hold, op Op) {
++func holdKey(tenant, id string) [2]string { return [2]string{tenant, id} }
++func reserve(remaining map[string]int, holds map[[2]string]Hold, op Op) {
++    key := holdKey(op.Tenant, op.ID)
++    _, duplicate := holds[key]
++    available, known := remaining[op.Tenant]
++    if !known || duplicate || op.Quantity <= 0 || op.Quantity > available { return }
+     remaining[op.Tenant] -= op.Quantity
+-    holds[op.ID] = Hold{op.Tenant, op.Quantity}
++    holds[key] = Hold{op.Tenant, op.Quantity}
+ }
+-func cancel(remaining map[string]int, holds map[string]Hold, op Op) {
+-    hold, ok := holds[op.ID]
+-    if ok { remaining[op.Tenant] += hold.Quantity }
++func cancel(remaining map[string]int, holds map[[2]string]Hold, op Op) {
++    key := holdKey(op.Tenant, op.ID)
++    hold, ok := holds[key]
++    if ok { remaining[op.Tenant] += hold.Quantity; delete(holds, key) }
+ }

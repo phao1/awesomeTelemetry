@@ -1,0 +1,7 @@
+diff --git a/logic.py b/logic.py
+--- a/logic.py
++++ b/logic.py
+@@ -1,2 +1,2 @@
+ def evaluate(items, size):
+-    return [items[i:i + size] for i in range(0, len(items) - size + 1, size)]
++    return [items[i:i + size] for i in range(0, len(items), size)]

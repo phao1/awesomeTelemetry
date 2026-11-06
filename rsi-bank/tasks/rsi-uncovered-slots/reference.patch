@@ -1,0 +1,17 @@
+diff --git a/logic.py b/logic.py
+--- a/logic.py
++++ b/logic.py
+@@ -2,9 +2,12 @@
+     cursor = start
+     gaps = []
+     for left, right in sorted(bookings):
++        left, right = max(left, start), min(right, end)
++        if right <= left:
++            continue
+         if left > cursor:
+             gaps.append([cursor, left])
+-        cursor = right
++        cursor = max(cursor, right)
+     if cursor < end:
+         gaps.append([cursor, end])
+     return gaps

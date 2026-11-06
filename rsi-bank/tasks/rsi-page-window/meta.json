@@ -1,0 +1,37 @@
+{
+  "questionId": "rsi-page-window",
+  "repository": "fixture-page-window",
+  "testNames": [
+    "page-window-scenario-01",
+    "page-window-scenario-02",
+    "page-window-scenario-03",
+    "page-window-scenario-04",
+    "page-window-scenario-05",
+    "page-window-scenario-06",
+    "page-window-scenario-07"
+  ],
+  "filePaths": [
+    "checks/behavior.test.mjs",
+    "logic.mjs"
+  ],
+  "rareStrings": [
+    "regression-3315594f7af2e7bc"
+  ],
+  "expectedValues": [
+    "[\"b\", \"c\"]",
+    "[1, 2]",
+    "[2, 3, 4]",
+    "[3]",
+    "[]"
+  ],
+  "version": 1,
+  "language": "javascript",
+  "difficulty": "easy",
+  "toolchain": "node",
+  "testTargets": [
+    "checks/behavior.test.mjs"
+  ],
+  "report": "node-test-events",
+  "expectedTests": 7,
+  "timeoutSeconds": 30
+}

@@ -1,0 +1,3 @@
+A delayed worker acknowledgement can remove a job leased by another worker. Repair evaluate(operations) and the lease helper. Enqueue appends an id only if it is absent. Claim returns the oldest available id or null; leases expire at the deadline and may then be claimed with a new opaque token. Ack removes a job only for its current, unexpired token. Return results of claim and ack operations in order; ack returns a boolean. Claims carry now, ttl and token, ack carries now, id and token. Times are monotonic and TTL is positive.
+
+Keep the existing public entry point. Use only the standard library.

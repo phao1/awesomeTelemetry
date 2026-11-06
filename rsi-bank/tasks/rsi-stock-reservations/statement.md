@@ -1,0 +1,3 @@
+Warehouse availability drifts after duplicate reservation deliveries and releases. Repair evaluate(initial, events), using the existing reducer and inventory module. Events reserve a positive quantity under a unique id or release that id. Accept a reservation only if enough stock remains; duplicate live ids and unknown releases do nothing. A release restores exactly its accepted quantity and allows reuse of the id. Other event kinds are ignored. Return available stock after all events; rejected reservations must leave no record.
+
+Keep the existing public entry point. Use only the standard library.

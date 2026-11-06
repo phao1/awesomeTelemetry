@@ -1,0 +1,41 @@
+{
+  "questionId": "rsi-dependency-waves",
+  "repository": "fixture-dependency-waves",
+  "testNames": [
+    "TestDependencyWavesScenario01",
+    "TestDependencyWavesScenario02",
+    "TestDependencyWavesScenario03",
+    "TestDependencyWavesScenario04",
+    "TestDependencyWavesScenario05",
+    "TestDependencyWavesScenario06",
+    "TestDependencyWavesScenario07",
+    "TestDependencyWavesScenario08"
+  ],
+  "filePaths": [
+    "behavior_test.go",
+    "go.mod",
+    "logic.go",
+    "readiness.go"
+  ],
+  "rareStrings": [
+    "regression-360990fb55098a68"
+  ],
+  "expectedValues": [
+    "[][]string(nil)",
+    "[][]string{{\"a\",\"b\"},{\"c\"}}",
+    "[][]string{{\"a\"},{\"b\"},{\"c\"}}",
+    "[][]string{{\"b\"},{\"a\"}}",
+    "[][]string{{\"z\"},{\"azalea-job\"}}",
+    "[][]string{}"
+  ],
+  "version": 1,
+  "language": "go",
+  "difficulty": "hard",
+  "toolchain": "go",
+  "testTargets": [
+    "./..."
+  ],
+  "report": "go-test-json",
+  "expectedTests": 8,
+  "timeoutSeconds": 30
+}

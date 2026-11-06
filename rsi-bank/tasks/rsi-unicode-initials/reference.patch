@@ -1,0 +1,12 @@
+diff --git a/logic.go b/logic.go
+--- a/logic.go
++++ b/logic.go
+@@ -5,7 +5,7 @@
+ func Evaluate(name string) string {
+     result := ""
+     for _, word := range strings.Fields(name) {
+-        result += word[:1]
++        result += string([]rune(word)[:1])
+     }
+     return result
+ }

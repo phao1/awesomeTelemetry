@@ -1,0 +1,230 @@
+{
+  "version": 1,
+  "seed": "rsi-p3-2026-11-07-v1",
+  "mutationKillMin": 0.7,
+  "sets": {
+    "smoke": [
+      "rsi-batch-tail",
+      "rsi-rune-runs",
+      "rsi-stock-reservations"
+    ],
+    "train": [
+      "rsi-atomic-transfer",
+      "rsi-batch-tail",
+      "rsi-escaped-columns",
+      "rsi-expiry-edge",
+      "rsi-interval-contact",
+      "rsi-journal-replay",
+      "rsi-latest-record",
+      "rsi-page-window",
+      "rsi-prefix-removal",
+      "rsi-query-multimap",
+      "rsi-retry-budget",
+      "rsi-rune-runs",
+      "rsi-sorted-interleave",
+      "rsi-stock-reservations",
+      "rsi-worker-count"
+    ],
+    "sealed": [
+      "rsi-adjacent-labels",
+      "rsi-dependency-order",
+      "rsi-dependency-waves",
+      "rsi-rooted-path",
+      "rsi-route-priority",
+      "rsi-segment-prefix",
+      "rsi-time-buckets",
+      "rsi-ttl-lru",
+      "rsi-unicode-initials"
+    ],
+    "final": [
+      "rsi-lease-queue",
+      "rsi-quota-buckets",
+      "rsi-range-union",
+      "rsi-revision-view",
+      "rsi-rolling-limiter",
+      "rsi-uncovered-slots"
+    ]
+  },
+  "questions": [
+    {
+      "id": "rsi-adjacent-labels",
+      "language": "javascript",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-atomic-transfer",
+      "language": "python",
+      "difficulty": "hard",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-batch-tail",
+      "language": "python",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-dependency-order",
+      "language": "python",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-dependency-waves",
+      "language": "go",
+      "difficulty": "hard",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-escaped-columns",
+      "language": "python",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-expiry-edge",
+      "language": "javascript",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-interval-contact",
+      "language": "go",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-journal-replay",
+      "language": "go",
+      "difficulty": "hard",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-latest-record",
+      "language": "python",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-lease-queue",
+      "language": "python",
+      "difficulty": "hard",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-page-window",
+      "language": "javascript",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-prefix-removal",
+      "language": "python",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-query-multimap",
+      "language": "javascript",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-quota-buckets",
+      "language": "go",
+      "difficulty": "hard",
+      "mutationKillRatio": 0.8181818181818182
+    },
+    {
+      "id": "rsi-range-union",
+      "language": "javascript",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-retry-budget",
+      "language": "javascript",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-revision-view",
+      "language": "javascript",
+      "difficulty": "hard",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-rolling-limiter",
+      "language": "go",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-rooted-path",
+      "language": "javascript",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-route-priority",
+      "language": "javascript",
+      "difficulty": "hard",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-rune-runs",
+      "language": "go",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-segment-prefix",
+      "language": "go",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-sorted-interleave",
+      "language": "go",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-stock-reservations",
+      "language": "javascript",
+      "difficulty": "hard",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-time-buckets",
+      "language": "python",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-ttl-lru",
+      "language": "python",
+      "difficulty": "hard",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-uncovered-slots",
+      "language": "python",
+      "difficulty": "medium",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-unicode-initials",
+      "language": "go",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "rsi-worker-count",
+      "language": "go",
+      "difficulty": "easy",
+      "mutationKillRatio": 1
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "questionId": "rsi-revision-view",
+  "repository": "fixture-revision-view",
+  "testNames": [
+    "revision-view-scenario-01",
+    "revision-view-scenario-02",
+    "revision-view-scenario-03",
+    "revision-view-scenario-04",
+    "revision-view-scenario-05",
+    "revision-view-scenario-06",
+    "revision-view-scenario-07",
+    "revision-view-scenario-08"
+  ],
+  "filePaths": [
+    "checks/behavior.test.mjs",
+    "logic.mjs",
+    "revision.mjs"
+  ],
+  "rareStrings": [
+    "regression-ce2e56bec9a1a705"
+  ],
+  "expectedValues": [
+    "{\"__proto__\": \"safe\"}",
+    "{\"a\": \"first\"}",
+    "{\"a\": \"new\"}",
+    "{\"a\": \"reborn\"}",
+    "{}"
+  ],
+  "version": 1,
+  "language": "javascript",
+  "difficulty": "hard",
+  "toolchain": "node",
+  "testTargets": [
+    "checks/behavior.test.mjs"
+  ],
+  "report": "node-test-events",
+  "expectedTests": 8,
+  "timeoutSeconds": 30
+}

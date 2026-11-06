@@ -1,0 +1,36 @@
+diff --git a/logic.go b/logic.go
+--- a/logic.go
++++ b/logic.go
+@@ -4,7 +4,10 @@
+ 
+ func Evaluate(graph map[string][]string) [][]string {
+     pending := map[string]bool{}
+-    for name := range graph { pending[name] = true }
++    for name, deps := range graph {
++        pending[name] = true
++        for _, dep := range deps { pending[dep] = true }
++    }
+     done := map[string]bool{}
+     waves := [][]string{}
+     for len(pending) > 0 {
+@@ -12,7 +15,7 @@
+         for name := range pending {
+             if ready(graph[name], done) { wave = append(wave, name) }
+         }
+-        if len(wave) == 0 { return waves }
++        if len(wave) == 0 { return nil }
+         sort.Strings(wave)
+         for _, name := range wave { done[name] = true; delete(pending, name) }
+         waves = append(waves, wave)
+diff --git a/readiness.go b/readiness.go
+--- a/readiness.go
++++ b/readiness.go
+@@ -1,6 +1,6 @@
+ package task
+ 
+ func ready(deps []string, done map[string]bool) bool {
+-    for _, dep := range deps { if done[dep] { return true } }
+-    return len(deps) == 0
++    for _, dep := range deps { if !done[dep] { return false } }
++    return true
+ }

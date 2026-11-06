@@ -1,0 +1,15 @@
+diff --git a/logic.go b/logic.go
+--- a/logic.go
++++ b/logic.go
+@@ -4,9 +4,10 @@
+     accepted := []int{}
+     result := []bool{}
+     for _, now := range times {
++        for len(accepted) > 0 && accepted[0] <= now-width { accepted = accepted[1:] }
+         ok := len(accepted) < limit
+         result = append(result, ok)
+-        accepted = append(accepted, now)
++        if ok { accepted = append(accepted, now) }
+     }
+     return result
+ }

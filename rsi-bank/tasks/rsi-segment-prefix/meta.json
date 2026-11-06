@@ -1,0 +1,34 @@
+{
+  "questionId": "rsi-segment-prefix",
+  "repository": "fixture-segment-prefix",
+  "testNames": [
+    "TestSegmentPrefixScenario01",
+    "TestSegmentPrefixScenario02",
+    "TestSegmentPrefixScenario03",
+    "TestSegmentPrefixScenario04",
+    "TestSegmentPrefixScenario05",
+    "TestSegmentPrefixScenario06",
+    "TestSegmentPrefixScenario07",
+    "TestSegmentPrefixScenario08",
+    "TestSegmentPrefixScenario09"
+  ],
+  "filePaths": [
+    "behavior_test.go",
+    "go.mod",
+    "logic.go"
+  ],
+  "rareStrings": [
+    "regression-17d4d009e1295efa"
+  ],
+  "expectedValues": [],
+  "version": 1,
+  "language": "go",
+  "difficulty": "medium",
+  "toolchain": "go",
+  "testTargets": [
+    "./..."
+  ],
+  "report": "go-test-json",
+  "expectedTests": 9,
+  "timeoutSeconds": 30
+}

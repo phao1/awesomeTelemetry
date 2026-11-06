@@ -1,0 +1,41 @@
+{
+  "questionId": "rsi-escaped-columns",
+  "repository": "fixture-escaped-columns",
+  "testNames": [
+    "test_escaped_columns_scenario_01",
+    "test_escaped_columns_scenario_02",
+    "test_escaped_columns_scenario_03",
+    "test_escaped_columns_scenario_04",
+    "test_escaped_columns_scenario_05",
+    "test_escaped_columns_scenario_06",
+    "test_escaped_columns_scenario_07",
+    "test_escaped_columns_scenario_08"
+  ],
+  "filePaths": [
+    "checks/test_behavior.py",
+    "logic.py"
+  ],
+  "rareStrings": [
+    "regression-78334d5124c433ef"
+  ],
+  "expectedValues": [
+    "[\"\", \"\", \"\"]",
+    "[\"\"]",
+    "[\"a\", \"\"]",
+    "[\"a\\\\\", \"b\"]",
+    "[\"a\\\\\"]",
+    "[\"aq\", \" b \"]",
+    "[\"lotus|column\", \"x\"]",
+    "[\"|\"]"
+  ],
+  "version": 1,
+  "language": "python",
+  "difficulty": "medium",
+  "toolchain": "python",
+  "testTargets": [
+    "checks/test_behavior.py"
+  ],
+  "report": "unittest-json",
+  "expectedTests": 8,
+  "timeoutSeconds": 30
+}

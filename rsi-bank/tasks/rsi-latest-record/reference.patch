@@ -1,0 +1,12 @@
+diff --git a/logic.py b/logic.py
+--- a/logic.py
++++ b/logic.py
+@@ -1,5 +1,7 @@
+ def evaluate(records):
+     latest = {}
+     for record in records:
+-        latest[record["id"]] = record
++        old = latest.get(record["id"])
++        if old is None or record["revision"] > old["revision"]:
++            latest[record["id"]] = record
+     return list(latest.values())

@@ -1,0 +1,38 @@
+{
+  "questionId": "rsi-route-priority",
+  "repository": "fixture-route-priority",
+  "testNames": [
+    "route-priority-scenario-01",
+    "route-priority-scenario-02",
+    "route-priority-scenario-03",
+    "route-priority-scenario-04",
+    "route-priority-scenario-05",
+    "route-priority-scenario-06",
+    "route-priority-scenario-07",
+    "route-priority-scenario-08"
+  ],
+  "filePaths": [
+    "checks/behavior.test.mjs",
+    "logic.mjs",
+    "matcher.mjs"
+  ],
+  "rareStrings": [
+    "regression-64180c632dc42625"
+  ],
+  "expectedValues": [
+    "\"capture\"",
+    "\"first\"",
+    "\"home\"",
+    "\"indigo-dispatch\""
+  ],
+  "version": 1,
+  "language": "javascript",
+  "difficulty": "hard",
+  "toolchain": "node",
+  "testTargets": [
+    "checks/behavior.test.mjs"
+  ],
+  "report": "node-test-events",
+  "expectedTests": 8,
+  "timeoutSeconds": 30
+}

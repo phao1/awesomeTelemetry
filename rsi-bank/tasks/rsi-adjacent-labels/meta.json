@@ -1,0 +1,37 @@
+{
+  "questionId": "rsi-adjacent-labels",
+  "repository": "fixture-adjacent-labels",
+  "testNames": [
+    "adjacent-labels-scenario-01",
+    "adjacent-labels-scenario-02",
+    "adjacent-labels-scenario-03",
+    "adjacent-labels-scenario-04",
+    "adjacent-labels-scenario-05",
+    "adjacent-labels-scenario-06",
+    "adjacent-labels-scenario-07"
+  ],
+  "filePaths": [
+    "checks/behavior.test.mjs",
+    "logic.mjs"
+  ],
+  "rareStrings": [
+    "regression-738a20e04846c68d"
+  ],
+  "expectedValues": [
+    "[\"\"]",
+    "[\"a\", \"b\", \"a\"]",
+    "[\"a\", \"b\"]",
+    "[\"velvet-breadcrumb\", \"x\", \"velvet-breadcrumb\"]",
+    "[]"
+  ],
+  "version": 1,
+  "language": "javascript",
+  "difficulty": "easy",
+  "toolchain": "node",
+  "testTargets": [
+    "checks/behavior.test.mjs"
+  ],
+  "report": "node-test-events",
+  "expectedTests": 7,
+  "timeoutSeconds": 30
+}

@@ -1,0 +1,39 @@
+{
+  "questionId": "rsi-batch-tail",
+  "repository": "fixture-batch-tail",
+  "testNames": [
+    "test_batch_tail_scenario_01",
+    "test_batch_tail_scenario_02",
+    "test_batch_tail_scenario_03",
+    "test_batch_tail_scenario_04",
+    "test_batch_tail_scenario_05",
+    "test_batch_tail_scenario_06",
+    "test_batch_tail_scenario_07"
+  ],
+  "filePaths": [
+    "checks/test_behavior.py",
+    "logic.py"
+  ],
+  "rareStrings": [
+    "regression-f4e52c2240882bb5"
+  ],
+  "expectedValues": [
+    "[[\"marigold-batch\", \"b\"], [\"c\"]]",
+    "[[1, 2, 3], [4, 5]]",
+    "[[1, 2, 3]]",
+    "[[1, 2], [3, 4]]",
+    "[[1], [2]]",
+    "[[1]]",
+    "[]"
+  ],
+  "version": 1,
+  "language": "python",
+  "difficulty": "easy",
+  "toolchain": "python",
+  "testTargets": [
+    "checks/test_behavior.py"
+  ],
+  "report": "unittest-json",
+  "expectedTests": 7,
+  "timeoutSeconds": 30
+}

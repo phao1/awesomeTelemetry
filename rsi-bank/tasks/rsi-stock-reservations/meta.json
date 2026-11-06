@@ -1,0 +1,41 @@
+{
+  "questionId": "rsi-stock-reservations",
+  "repository": "fixture-stock-reservations",
+  "testNames": [
+    "stock-reservations-scenario-01",
+    "stock-reservations-scenario-02",
+    "stock-reservations-scenario-03",
+    "stock-reservations-scenario-04",
+    "stock-reservations-scenario-05",
+    "stock-reservations-scenario-06",
+    "stock-reservations-scenario-07",
+    "stock-reservations-scenario-08",
+    "stock-reservations-scenario-09"
+  ],
+  "filePaths": [
+    "checks/behavior.test.mjs",
+    "inventory.mjs",
+    "logic.mjs"
+  ],
+  "rareStrings": [
+    "regression-36fb2b88ee76a2e7"
+  ],
+  "expectedValues": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+  ],
+  "version": 1,
+  "language": "javascript",
+  "difficulty": "hard",
+  "toolchain": "node",
+  "testTargets": [
+    "checks/behavior.test.mjs"
+  ],
+  "report": "node-test-events",
+  "expectedTests": 9,
+  "timeoutSeconds": 30
+}

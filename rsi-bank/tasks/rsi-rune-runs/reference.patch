@@ -1,0 +1,19 @@
+diff --git a/logic.go b/logic.go
+--- a/logic.go
++++ b/logic.go
+@@ -4,8 +4,13 @@
+ 
+ func Evaluate(text string) []Run {
+     out := []Run{}
+-    for i := 0; i < len(text)-1; i++ {
+-        out = append(out, Run{rune(text[i]), 1})
++    for _, symbol := range text {
++        n := len(out)
++        if n > 0 && out[n-1].Symbol == symbol {
++            out[n-1].Count++
++        } else {
++            out = append(out, Run{symbol, 1})
++        }
+     }
+     return out
+ }

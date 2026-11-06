@@ -1,0 +1,7 @@
+diff --git a/logic.py b/logic.py
+--- a/logic.py
++++ b/logic.py
+@@ -1,2 +1,2 @@
+ def evaluate(timestamp, width):
+-    return int(timestamp / width) * width
++    return (timestamp // width) * width

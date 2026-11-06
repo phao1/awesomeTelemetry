@@ -1,0 +1,23 @@
+diff --git a/logic.py b/logic.py
+--- a/logic.py
++++ b/logic.py
+@@ -1,2 +1,18 @@
+ def evaluate(line):
+-    return line.split("|")
++    fields, current = [], []
++    escaped = False
++    for char in line:
++        if escaped:
++            current.append(char)
++            escaped = False
++        elif char == "\\":
++            escaped = True
++        elif char == "|":
++            fields.append("".join(current))
++            current = []
++        else:
++            current.append(char)
++    if escaped:
++        current.append("\\")
++    fields.append("".join(current))
++    return fields

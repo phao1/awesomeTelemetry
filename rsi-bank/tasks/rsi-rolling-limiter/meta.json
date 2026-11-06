@@ -1,0 +1,42 @@
+{
+  "questionId": "rsi-rolling-limiter",
+  "repository": "fixture-rolling-limiter",
+  "testNames": [
+    "TestRollingLimiterScenario01",
+    "TestRollingLimiterScenario02",
+    "TestRollingLimiterScenario03",
+    "TestRollingLimiterScenario04",
+    "TestRollingLimiterScenario05",
+    "TestRollingLimiterScenario06",
+    "TestRollingLimiterScenario07",
+    "TestRollingLimiterScenario08"
+  ],
+  "filePaths": [
+    "behavior_test.go",
+    "go.mod",
+    "logic.go"
+  ],
+  "rareStrings": [
+    "regression-2686cafac201e6bd"
+  ],
+  "expectedValues": [
+    "[]bool{false,false}",
+    "[]bool{true,false,true,false}",
+    "[]bool{true,true,false,true}",
+    "[]bool{true,true,false}",
+    "[]bool{true,true,true,true,false}",
+    "[]bool{true,true,true}",
+    "[]bool{true,true}",
+    "[]bool{}"
+  ],
+  "version": 1,
+  "language": "go",
+  "difficulty": "medium",
+  "toolchain": "go",
+  "testTargets": [
+    "./..."
+  ],
+  "report": "go-test-json",
+  "expectedTests": 8,
+  "timeoutSeconds": 30
+}

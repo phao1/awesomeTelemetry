@@ -1,0 +1,28 @@
+diff --git a/logic.py b/logic.py
+--- a/logic.py
++++ b/logic.py
+@@ -5,7 +5,8 @@
+     for op in operations:
+         kind = op["type"]
+         if kind == "enqueue":
+-            jobs[op["id"]] = None
++            if op["id"] not in jobs:
++                jobs[op["id"]] = None
+         elif kind == "claim":
+             key = next((k for k, lease in jobs.items() if available(lease, op["now"])), None)
+             if key is not None:
+diff --git a/leases.py b/leases.py
+--- a/leases.py
++++ b/leases.py
+@@ -1,8 +1,9 @@
+ def available(lease, now):
+-    return lease is None or lease[1] < now
++    return lease is None or lease[1] <= now
+ 
+ def acknowledge(jobs, op):
+-    if op["id"] not in jobs:
++    lease = jobs.get(op["id"])
++    if lease is None or lease[0] != op["token"] or op["now"] >= lease[1]:
+         return False
+     del jobs[op["id"]]
+     return True

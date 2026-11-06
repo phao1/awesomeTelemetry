@@ -1,0 +1,38 @@
+{
+  "questionId": "rsi-dependency-order",
+  "repository": "fixture-dependency-order",
+  "testNames": [
+    "test_dependency_order_scenario_01",
+    "test_dependency_order_scenario_02",
+    "test_dependency_order_scenario_03",
+    "test_dependency_order_scenario_04",
+    "test_dependency_order_scenario_05",
+    "test_dependency_order_scenario_06",
+    "test_dependency_order_scenario_07",
+    "test_dependency_order_scenario_08"
+  ],
+  "filePaths": [
+    "checks/test_behavior.py",
+    "logic.py"
+  ],
+  "rareStrings": [
+    "regression-417b02906baa74ed"
+  ],
+  "expectedValues": [
+    "[\"a\", \"b\"]",
+    "[\"d\", \"b\", \"c\", \"a\"]",
+    "[\"z\", \"a\"]",
+    "[\"z\", \"amber-build\"]",
+    "[]"
+  ],
+  "version": 1,
+  "language": "python",
+  "difficulty": "medium",
+  "toolchain": "python",
+  "testTargets": [
+    "checks/test_behavior.py"
+  ],
+  "report": "unittest-json",
+  "expectedTests": 8,
+  "timeoutSeconds": 30
+}

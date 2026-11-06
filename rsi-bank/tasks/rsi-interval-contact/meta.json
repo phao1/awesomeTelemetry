@@ -1,0 +1,33 @@
+{
+  "questionId": "rsi-interval-contact",
+  "repository": "fixture-interval-contact",
+  "testNames": [
+    "TestIntervalContactScenario01",
+    "TestIntervalContactScenario02",
+    "TestIntervalContactScenario03",
+    "TestIntervalContactScenario04",
+    "TestIntervalContactScenario05",
+    "TestIntervalContactScenario06",
+    "TestIntervalContactScenario07",
+    "TestIntervalContactScenario08"
+  ],
+  "filePaths": [
+    "behavior_test.go",
+    "go.mod",
+    "logic.go"
+  ],
+  "rareStrings": [
+    "regression-4a65c7400b0fde0b"
+  ],
+  "expectedValues": [],
+  "version": 1,
+  "language": "go",
+  "difficulty": "easy",
+  "toolchain": "go",
+  "testTargets": [
+    "./..."
+  ],
+  "report": "go-test-json",
+  "expectedTests": 8,
+  "timeoutSeconds": 30
+}

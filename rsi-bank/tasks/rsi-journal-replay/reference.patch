@@ -1,0 +1,32 @@
+diff --git a/logic.go b/logic.go
+--- a/logic.go
++++ b/logic.go
+@@ -4,13 +4,14 @@
+ 
+ func Evaluate(events []Event) map[string]string {
+     records := map[string]Event{}
++    seen := map[string]bool{}
+     for _, e := range events {
++        if seen[e.ID] { continue }
++        seen[e.ID] = true
+         old, exists := records[e.Key]
+-        if accept(e, old, exists) {
+-            if e.Deleted { delete(records, e.Key) } else { records[e.Key] = e }
+-        }
++        if accept(e, old, exists) { records[e.Key] = e }
+     }
+     live := map[string]string{}
+-    for key, e := range records { live[key] = e.Value }
++    for key, e := range records { if !e.Deleted { live[key] = e.Value } }
+     return live
+ }
+diff --git a/revision.go b/revision.go
+--- a/revision.go
++++ b/revision.go
+@@ -1,5 +1,5 @@
+ package task
+ 
+ func accept(next, old Event, exists bool) bool {
+-    return !exists || next.Revision >= old.Revision
++    return !exists || next.Revision > old.Revision
+ }

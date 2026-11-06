@@ -1,0 +1,27 @@
+diff --git a/logic.mjs b/logic.mjs
+--- a/logic.mjs
++++ b/logic.mjs
+@@ -1,4 +1,8 @@
+ import { matches, score } from "./matcher.mjs";
+ export function evaluate(routes, path) {
+-  return routes.find(r => matches(r.path, path))?.name ?? null;
++  let best = null;
++  for (const r of routes) {
++    if (matches(r.path, path) && (best === null || score(r.path) > score(best.path))) best = r;
++  }
++  return best?.name ?? null;
+ }
+diff --git a/matcher.mjs b/matcher.mjs
+--- a/matcher.mjs
++++ b/matcher.mjs
+@@ -1,8 +1,8 @@
+ const segments = p => p.replace(/^\/+|\/+$/g, "").split("/");
+ export function matches(pattern, path) {
+   const a = segments(pattern), b = segments(path);
+-  return a.every((part, i) => part.startsWith(":") || part === b[i]);
++  return a.length === b.length && a.every((part, i) => part.startsWith(":") ? b[i] !== "" : part === b[i]);
+ }
+ export function score(pattern) {
+-  return segments(pattern).length;
++  return segments(pattern).filter(part => !part.startsWith(":")).length;
+ }

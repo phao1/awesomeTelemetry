@@ -1,0 +1,41 @@
+{
+  "questionId": "rsi-journal-replay",
+  "repository": "fixture-journal-replay",
+  "testNames": [
+    "TestJournalReplayScenario01",
+    "TestJournalReplayScenario02",
+    "TestJournalReplayScenario03",
+    "TestJournalReplayScenario04",
+    "TestJournalReplayScenario05",
+    "TestJournalReplayScenario06",
+    "TestJournalReplayScenario07",
+    "TestJournalReplayScenario08"
+  ],
+  "filePaths": [
+    "behavior_test.go",
+    "go.mod",
+    "logic.go",
+    "revision.go"
+  ],
+  "rareStrings": [
+    "regression-95c84f2c10d9e69d"
+  ],
+  "expectedValues": [
+    "map[string]string{\"a\":\"A\"}",
+    "map[string]string{\"a\":\"first\"}",
+    "map[string]string{\"a\":\"negative\"}",
+    "map[string]string{\"a\":\"new\"}",
+    "map[string]string{\"a\":\"reborn\"}",
+    "map[string]string{}"
+  ],
+  "version": 1,
+  "language": "go",
+  "difficulty": "hard",
+  "toolchain": "go",
+  "testTargets": [
+    "./..."
+  ],
+  "report": "go-test-json",
+  "expectedTests": 8,
+  "timeoutSeconds": 30
+}

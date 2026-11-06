@@ -1,0 +1,40 @@
+{
+  "questionId": "rsi-rune-runs",
+  "repository": "fixture-rune-runs",
+  "testNames": [
+    "TestRuneRunsScenario01",
+    "TestRuneRunsScenario02",
+    "TestRuneRunsScenario03",
+    "TestRuneRunsScenario04",
+    "TestRuneRunsScenario05",
+    "TestRuneRunsScenario06",
+    "TestRuneRunsScenario07"
+  ],
+  "filePaths": [
+    "behavior_test.go",
+    "go.mod",
+    "logic.go"
+  ],
+  "rareStrings": [
+    "regression-d9ff55bc27cd0164"
+  ],
+  "expectedValues": [
+    "[]Run{{' ',2}}",
+    "[]Run{{'a',1},{'b',1},{'a',1}}",
+    "[]Run{{'a',3},{'b',2}}",
+    "[]Run{{'x',1}}",
+    "[]Run{{'张',2},{'伟',1}}",
+    "[]Run{{'🦊',2},{'!',1}}",
+    "[]Run{}"
+  ],
+  "version": 1,
+  "language": "go",
+  "difficulty": "medium",
+  "toolchain": "go",
+  "testTargets": [
+    "./..."
+  ],
+  "report": "go-test-json",
+  "expectedTests": 7,
+  "timeoutSeconds": 30
+}

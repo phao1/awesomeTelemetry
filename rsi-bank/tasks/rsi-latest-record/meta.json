@@ -1,0 +1,37 @@
+{
+  "questionId": "rsi-latest-record",
+  "repository": "fixture-latest-record",
+  "testNames": [
+    "test_latest_record_scenario_01",
+    "test_latest_record_scenario_02",
+    "test_latest_record_scenario_03",
+    "test_latest_record_scenario_04",
+    "test_latest_record_scenario_05",
+    "test_latest_record_scenario_06"
+  ],
+  "filePaths": [
+    "checks/test_behavior.py",
+    "logic.py"
+  ],
+  "rareStrings": [
+    "regression-727b256c5cd9f474"
+  ],
+  "expectedValues": [
+    "[]",
+    "[{\"id\": \"a\", \"revision\": -1, \"value\": null}]",
+    "[{\"id\": \"a\", \"revision\": 1, \"value\": \"first\"}]",
+    "[{\"id\": \"a\", \"revision\": 1, \"value\": true}]",
+    "[{\"id\": \"b\", \"revision\": 2, \"value\": \"z\"}, {\"id\": \"a\", \"revision\": 1, \"value\": \"y\"}]",
+    "[{\"id\": \"peony-record\", \"revision\": 2, \"value\": \"new\"}]"
+  ],
+  "version": 1,
+  "language": "python",
+  "difficulty": "medium",
+  "toolchain": "python",
+  "testTargets": [
+    "checks/test_behavior.py"
+  ],
+  "report": "unittest-json",
+  "expectedTests": 6,
+  "timeoutSeconds": 30
+}

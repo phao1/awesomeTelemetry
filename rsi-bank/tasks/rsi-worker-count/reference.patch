@@ -1,0 +1,12 @@
+diff --git a/logic.go b/logic.go
+--- a/logic.go
++++ b/logic.go
+@@ -1,5 +1,7 @@
+ package task
+ 
+ func Evaluate(items, capacity int) int {
+-    return items / capacity
++    workers := items / capacity
++    if items % capacity != 0 { workers++ }
++    return workers
+ }

@@ -1,0 +1,24 @@
+diff --git a/logic.py b/logic.py
+--- a/logic.py
++++ b/logic.py
+@@ -1,2 +1,19 @@
+ def evaluate(graph):
+-    return sorted(graph)
++    visiting, done, order = set(), set(), []
++    def visit(node):
++        if node in visiting:
++            return False
++        if node in done:
++            return True
++        visiting.add(node)
++        for dep in sorted(graph.get(node, [])):
++            if not visit(dep):
++                return False
++        visiting.remove(node)
++        done.add(node)
++        order.append(node)
++        return True
++    for node in sorted(graph):
++        if not visit(node):
++            return None
++    return order

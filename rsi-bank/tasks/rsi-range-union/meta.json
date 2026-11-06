@@ -1,0 +1,39 @@
+{
+  "questionId": "rsi-range-union",
+  "repository": "fixture-range-union",
+  "testNames": [
+    "range-union-scenario-01",
+    "range-union-scenario-02",
+    "range-union-scenario-03",
+    "range-union-scenario-04",
+    "range-union-scenario-05",
+    "range-union-scenario-06",
+    "range-union-scenario-07"
+  ],
+  "filePaths": [
+    "checks/behavior.test.mjs",
+    "logic.mjs"
+  ],
+  "rareStrings": [
+    "regression-fd26bff21f7476a9"
+  ],
+  "expectedValues": [
+    "[[-5, -2], [-1, 2]]",
+    "[[0, 1]]",
+    "[[1, 10]]",
+    "[[1, 2]]",
+    "[[1, 8]]",
+    "[[2, 7], [9, 10]]",
+    "[]"
+  ],
+  "version": 1,
+  "language": "javascript",
+  "difficulty": "medium",
+  "toolchain": "node",
+  "testTargets": [
+    "checks/behavior.test.mjs"
+  ],
+  "report": "node-test-events",
+  "expectedTests": 7,
+  "timeoutSeconds": 30
+}

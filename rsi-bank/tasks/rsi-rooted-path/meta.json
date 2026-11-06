@@ -1,0 +1,38 @@
+{
+  "questionId": "rsi-rooted-path",
+  "repository": "fixture-rooted-path",
+  "testNames": [
+    "rooted-path-scenario-01",
+    "rooted-path-scenario-02",
+    "rooted-path-scenario-03",
+    "rooted-path-scenario-04",
+    "rooted-path-scenario-05",
+    "rooted-path-scenario-06",
+    "rooted-path-scenario-07",
+    "rooted-path-scenario-08"
+  ],
+  "filePaths": [
+    "checks/behavior.test.mjs",
+    "logic.mjs"
+  ],
+  "rareStrings": [
+    "regression-87e1b771d9118b96"
+  ],
+  "expectedValues": [
+    "\"/\"",
+    "\"/.../x\"",
+    "\"/a\"",
+    "\"/a/b\"",
+    "\"/juniper-archive/b\""
+  ],
+  "version": 1,
+  "language": "javascript",
+  "difficulty": "medium",
+  "toolchain": "node",
+  "testTargets": [
+    "checks/behavior.test.mjs"
+  ],
+  "report": "node-test-events",
+  "expectedTests": 8,
+  "timeoutSeconds": 30
+}

@@ -1,0 +1,27 @@
+diff --git a/logic.py b/logic.py
+--- a/logic.py
++++ b/logic.py
+@@ -1,8 +1,8 @@
+ from transfer import apply
+ 
+ def evaluate(balances, transfers):
+-    work = balances
++    work = dict(balances)
+     for transfer in transfers:
+         if not apply(work, transfer):
+-            break
++            return dict(balances)
+     return work
+diff --git a/transfer.py b/transfer.py
+--- a/transfer.py
++++ b/transfer.py
+@@ -1,7 +1,7 @@
+ def apply(balances, transfer):
+     source, target, amount = transfer["source"], transfer["target"], transfer["amount"]
+-    if source not in balances or balances[source] < amount:
++    if type(amount) is not int or amount <= 0 or source not in balances or target not in balances or balances[source] < amount:
+         return False
+     balances[source] -= amount
+-    balances[target] = balances.get(target, 0) + amount
++    balances[target] += amount
+     return True

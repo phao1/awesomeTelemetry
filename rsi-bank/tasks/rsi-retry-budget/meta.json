@@ -1,0 +1,40 @@
+{
+  "questionId": "rsi-retry-budget",
+  "repository": "fixture-retry-budget",
+  "testNames": [
+    "retry-budget-scenario-01",
+    "retry-budget-scenario-02",
+    "retry-budget-scenario-03",
+    "retry-budget-scenario-04",
+    "retry-budget-scenario-05",
+    "retry-budget-scenario-06",
+    "retry-budget-scenario-07",
+    "retry-budget-scenario-08",
+    "retry-budget-scenario-09"
+  ],
+  "filePaths": [
+    "checks/behavior.test.mjs",
+    "logic.mjs"
+  ],
+  "rareStrings": [
+    "regression-13780771c2cc4549"
+  ],
+  "expectedValues": [
+    "0",
+    "16",
+    "2",
+    "20",
+    "3",
+    "7"
+  ],
+  "version": 1,
+  "language": "javascript",
+  "difficulty": "medium",
+  "toolchain": "node",
+  "testTargets": [
+    "checks/behavior.test.mjs"
+  ],
+  "report": "node-test-events",
+  "expectedTests": 9,
+  "timeoutSeconds": 30
+}

@@ -1,0 +1,40 @@
+{
+  "questionId": "rsi-atomic-transfer",
+  "repository": "fixture-atomic-transfer",
+  "testNames": [
+    "test_atomic_transfer_scenario_01",
+    "test_atomic_transfer_scenario_02",
+    "test_atomic_transfer_scenario_03",
+    "test_atomic_transfer_scenario_04",
+    "test_atomic_transfer_scenario_05",
+    "test_atomic_transfer_scenario_06",
+    "test_atomic_transfer_scenario_07",
+    "test_atomic_transfer_scenario_08",
+    "test_atomic_transfer_scenario_09",
+    "test_atomic_transfer_scenario_10"
+  ],
+  "filePaths": [
+    "checks/test_behavior.py",
+    "logic.py",
+    "transfer.py"
+  ],
+  "rareStrings": [
+    "regression-6398b97eccf89699"
+  ],
+  "expectedValues": [
+    "{\"a\": 1, \"b\": 4}",
+    "{\"a\": 5, \"b\": 0}",
+    "{\"a\": 5}",
+    "{\"dahlia-account\": 7, \"b\": 3}"
+  ],
+  "version": 1,
+  "language": "python",
+  "difficulty": "hard",
+  "toolchain": "python",
+  "testTargets": [
+    "checks/test_behavior.py"
+  ],
+  "report": "unittest-json",
+  "expectedTests": 10,
+  "timeoutSeconds": 30
+}

@@ -1,0 +1,38 @@
+{
+  "questionId": "rsi-prefix-removal",
+  "repository": "fixture-prefix-removal",
+  "testNames": [
+    "test_prefix_removal_scenario_01",
+    "test_prefix_removal_scenario_02",
+    "test_prefix_removal_scenario_03",
+    "test_prefix_removal_scenario_04",
+    "test_prefix_removal_scenario_05",
+    "test_prefix_removal_scenario_06",
+    "test_prefix_removal_scenario_07"
+  ],
+  "filePaths": [
+    "checks/test_behavior.py",
+    "logic.py"
+  ],
+  "rareStrings": [
+    "regression-d40ded0ea5c71b72"
+  ],
+  "expectedValues": [
+    "\" tail ab\"",
+    "\" x \"",
+    "\"ab\"",
+    "\"acus\"",
+    "\"cab\"",
+    "\"ready\""
+  ],
+  "version": 1,
+  "language": "python",
+  "difficulty": "easy",
+  "toolchain": "python",
+  "testTargets": [
+    "checks/test_behavior.py"
+  ],
+  "report": "unittest-json",
+  "expectedTests": 7,
+  "timeoutSeconds": 30
+}

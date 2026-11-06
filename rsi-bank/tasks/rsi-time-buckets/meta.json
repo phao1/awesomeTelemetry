@@ -1,0 +1,38 @@
+{
+  "questionId": "rsi-time-buckets",
+  "repository": "fixture-time-buckets",
+  "testNames": [
+    "test_time_buckets_scenario_01",
+    "test_time_buckets_scenario_02",
+    "test_time_buckets_scenario_03",
+    "test_time_buckets_scenario_04",
+    "test_time_buckets_scenario_05",
+    "test_time_buckets_scenario_06",
+    "test_time_buckets_scenario_07"
+  ],
+  "filePaths": [
+    "checks/test_behavior.py",
+    "logic.py"
+  ],
+  "rareStrings": [
+    "regression-29114d7fae38987a"
+  ],
+  "expectedValues": [
+    "-15",
+    "-5",
+    "0",
+    "10",
+    "1000000000000000000",
+    "5"
+  ],
+  "version": 1,
+  "language": "python",
+  "difficulty": "easy",
+  "toolchain": "python",
+  "testTargets": [
+    "checks/test_behavior.py"
+  ],
+  "report": "unittest-json",
+  "expectedTests": 7,
+  "timeoutSeconds": 30
+}

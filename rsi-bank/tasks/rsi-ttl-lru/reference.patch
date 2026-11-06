@@ -1,0 +1,32 @@
+diff --git a/logic.py b/logic.py
+--- a/logic.py
++++ b/logic.py
+@@ -7,8 +7,13 @@
+         purge(entries, op["now"])
+         key = op["key"]
+         if op["type"] == "put":
++            entries.pop(key, None)
+             entries[key] = (op["value"], op["now"] + op["ttl"])
++            purge(entries, op["now"])
+             trim(entries, capacity)
+         else:
+-            output.append(entries.get(key, (None, None))[0])
++            item = entries.pop(key, None)
++            output.append(item[0] if item is not None else None)
++            if item is not None:
++                entries[key] = item
+     return output
+diff --git a/policy.py b/policy.py
+--- a/policy.py
++++ b/policy.py
+@@ -1,8 +1,8 @@
+ def purge(entries, now):
+     for key in list(entries):
+-        if entries[key][1] < now:
++        if entries[key][1] <= now:
+             del entries[key]
+ 
+ def trim(entries, capacity):
+     while len(entries) > capacity:
+-        entries.popitem()
++        del entries[next(iter(entries))]

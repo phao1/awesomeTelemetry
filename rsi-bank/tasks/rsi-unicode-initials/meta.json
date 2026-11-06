@@ -1,0 +1,40 @@
+{
+  "questionId": "rsi-unicode-initials",
+  "repository": "fixture-unicode-initials",
+  "testNames": [
+    "TestUnicodeInitialsScenario01",
+    "TestUnicodeInitialsScenario02",
+    "TestUnicodeInitialsScenario03",
+    "TestUnicodeInitialsScenario04",
+    "TestUnicodeInitialsScenario05",
+    "TestUnicodeInitialsScenario06",
+    "TestUnicodeInitialsScenario07",
+    "TestUnicodeInitialsScenario08"
+  ],
+  "filePaths": [
+    "behavior_test.go",
+    "go.mod",
+    "logic.go"
+  ],
+  "rareStrings": [
+    "regression-2c19242d6a8e9972"
+  ],
+  "expectedValues": [
+    "\"AL\"",
+    "\"CH\"",
+    "\"S\"",
+    "\"ÉZ\"",
+    "\"张伟\"",
+    "\"🦊T\""
+  ],
+  "version": 1,
+  "language": "go",
+  "difficulty": "easy",
+  "toolchain": "go",
+  "testTargets": [
+    "./..."
+  ],
+  "report": "go-test-json",
+  "expectedTests": 8,
+  "timeoutSeconds": 30
+}

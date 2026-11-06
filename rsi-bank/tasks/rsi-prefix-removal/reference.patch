@@ -1,0 +1,7 @@
+diff --git a/logic.py b/logic.py
+--- a/logic.py
++++ b/logic.py
+@@ -1,2 +1,2 @@
+ def evaluate(text, prefix):
+-    return text.strip(prefix)
++    return text[len(prefix):] if prefix and text.startswith(prefix) else text
