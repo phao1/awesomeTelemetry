@@ -303,3 +303,13 @@ it('asks a person instead of spending a round when the baseline already meets th
   expect(sessions).toBe(0); expect(store.task().state).toBe('needs_help');
   expect(store.list('queue_put').find(q => q.id === 'baseline-at-target-1')?.command).toMatchObject({ action: 'declare_stuck' });
 });
+
+it('evaluates the last allowed iteration, then pauses before another round', async () => {
+  const { store, worker } = await setup({ maxIterations: 1, targetPassedCount: 100 }, clean); await worker.run();
+  await candidate(store);
+  await store.put({ event: 'task_put', payload: { ...store.task(), iterationCount: 1, updatedAt: now() } });
+  let sessions = 0; worker.optimizerSession = async () => { sessions++; };
+  await worker.run();
+  expect(store.list('iteration_put')[0]!.state).toBe('promoted'); expect(store.task().sealedQueriesUsed).toBe(1);
+  expect(sessions).toBe(0); expect(store.task().pauseReason).toBe('budget_exhausted');
+});

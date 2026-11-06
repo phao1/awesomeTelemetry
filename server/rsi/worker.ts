@@ -208,7 +208,9 @@ export class RsiWorker {
     const t = this.store.task();
     if (t.state === 'completed' && !this.store.list('evaluation_put').some(e => e.phase === 'final' && (e.state === 'queued' || e.state === 'running'))
       && !this.store.list('queue_put').some(q => q.kind === 'final' && (q.state === 'queued' || q.state === 'running'))) return false;
-    const exhausted = t.tokenUsage >= t.config.maxTaskTokens || t.iterationCount >= t.config.maxIterations;
+    // The iteration limit stops new rounds. The last allowed round was already paid for, so it still gets its evaluation.
+    const open = this.store.list('iteration_put').some(i => !['promoted', 'rejected'].includes(i.state));
+    const exhausted = t.tokenUsage >= t.config.maxTaskTokens || t.iterationCount >= t.config.maxIterations && !open;
     if (!exhausted) return false;
     if (['calibrating', 'running', 'completed'].includes(t.state)) await this.taskEvent('budget_exhausted', 'Task budget exhausted');
     if (this.store.task().pauseReason === 'budget_exhausted') {
