@@ -1215,8 +1215,9 @@ file, log or ledger. Status is human-only and omits taskTokenHash.
 Every snapshot is storage-validated in a rolled-back transaction, appended and
 fsynced to the ledger, then applied to the cache. Task/iteration state changes call
 rsi-state-machine. Noise calls calibrateNoiseBand. Gate conditions, including early
-training and sealed checks, come from decidePromotion. Smoke is an all-pass
-prerequisite: any failed smoke prevents train/reviews/sealed. No scores are chosen
+training and sealed checks, come from decidePromotion. Smoke requires candidate passed count >= smokeFloor, where smokeFloor is the
+number of smoke questions passed in every baseline calibration repetition
+(design author decision, 2026-11-07); otherwise train/reviews/sealed are prevented. No scores are chosen
 from confirmations. Submissions count toward iterationCount when materialized;
 reaching either task budget pauses and invalidates unfinished evaluations. Human
 budget increase and resume create fresh evaluation IDs; old evidence remains.
@@ -1415,3 +1416,97 @@ implementation defaults, not measured model requirements. The miniature Go bank
 uses90s test deadlines to include cold standard-library compilation on CPU1;
 production question deadlines remain RSI-011 metadata. Go images pin local
 GOTOOLCHAIN, disable module proxy/sumdb networking and set GOMAXPROCS=1.
+
+## RSI-013 Configurable Agent profiles (M13, 2026-11-07)
+
+A trusted profile is a JSON file beside its Dockerfile. It does not change
+RsiTask or authorize any relaxation of RSI-012 isolation.
+
+```ts
+interface RsiAgentProfile {
+  version: 1;
+  id: string; name: string;
+  dockerfile: string;
+  dependencyInputs: { kind: 'bun-workspace' } | { kind: 'globs'; include: string[] } | { kind: 'none' };
+  run: {
+    argv: string[];
+    env: Record<string, string>;
+    files: { path: string; content: string }[];
+  };
+  session: { format: 'opencode-db' | 'none'; dir: string };
+  l1?: { allowPaths?: string[] };
+}
+```
+
+IDs follow RSI-001. Unknown fields and invalid fields fail with a field path.
+Dockerfile is a safe profile-relative file (no traversal/symlinks) and must define
+`target-node`, `target-python`, `target-go`. Run files and session.dir are normalized
+container absolute paths. Profiles contain no real credentials: credential values
+must use the temporary `{{apiKey}}`. No host credential directory is read/mounted.
+argv supports `{{statement}}`, `{{model}}`; env and files.content support
+`{{baseUrl}}`, `{{apiKey}}`, `{{model}}`, `{{sessionDir}}`. Unknown/malformed
+placeholders fail. Replacement is a single literal string pass without shell
+interpolation. baseUrl is `http://rsi-proxy:8080/v1`, sessionDir is session.dir;
+model is `fixed` for mock and RSI_UPSTREAM_MODEL for real runs (a provider prefix
+may be supplied by profile argv/config). The proxy still forces the upstream model.
+
+`task create --agent <profile.json> [--subset small|full]` defaults to the bundled
+OpenCode compatible profile and full bank. It freezes the original profile bytes
+as private/agent/profile.json and Dockerfile at its profile-relative path.
+WorkerSettings gains `agent: { profileSha256: string; dockerfileSha256: string }`
+in private/runtime.json, verified at every worker startup before Docker, including dry run.
+Missing pins fail closed. They are separate
+from RsiTask and never contain secrets. Changed/missing frozen files fail closed.
+
+Build context contains only source/ and deps/ plus the trusted Dockerfile.
+bun-workspace retains RSI-012 collection. globs copies only matched source files;
+none copies no dependency inputs. deps/ exists even when empty. In every mode,
+`.npmrc` and `bunfig.toml` are excluded from deps/ at any depth. Simple globs are
+case-sensitive repo-relative: `*` matches within a segment, `?` one non-slash,
+`**` spans directories (`**/` also matches zero directories); no braces/extglobs,
+absolute paths, dot segments or backslashes. L1 allowPaths uses the same matching
+semantics and suppresses only protected_path for successfully parsed matching
+paths; content/dependency/mode/link/binary/size rules still apply.
+
+Profile authors are trusted infrastructure authors. Candidate source/configuration
+and dependency lifecycle code MUST execute only in `RUN --network=none`.
+Only platform-filtered deps may enter a networked installation with lifecycle
+scripts disabled. Text stage validation cannot prove Dockerfile safety; authors
+must review it. Profiles cannot add mounts, ports, capabilities or networks.
+All bundled target/evaluator Go stages use
+`COPY --from=golang:1.23-bookworm /usr/local/go /usr/local/go` and
+PATH=/usr/local/go/bin:$PATH, with local/offline Go settings; never Debian Go1.19.
+
+Proxy credentials come exclusively from worker environment
+RSI_UPSTREAM_BASE_URL / RSI_UPSTREAM_MODEL / RSI_UPSTREAM_API_KEY; missing real-mode
+variables report their names only. They never enter settings/runtime/ledger/logs
+or target/evaluator containers. Usage polling is **2000ms**, superseding RSI-012's
+250ms default. Proxy artifacts additionally retain responses.jsonl (one record per
+response: requestId, assistant text and tool_calls) and last-request.json (last
+request's messages). Authorization headers are never captured. Each trace file has
+an 8MiB UTF8-byte limit; oversized last requests retain a bounded prefix of messages
+and set truncated=true; response logs reserve room for a final truncated marker
+and stop appending when full. Streaming tool deltas are assembled by choice/index.
+All three proxy artifacts, including usage.jsonl when present, export to the run's
+artifacts directory via tar before removal. Session dir exports independently;
+format none skips native token reads and reconciliation findings, leaving proxy
+tokens authoritative. Traces remain private human-only artifacts, not optimizer DTOs.
+
+Small subset selection preserves manifest.questions order: smoke unchanged; train
+contains smoke plus the first non-smoke train question of each available language;
+sealed/final each contain the first question of each language. A language with no
+additional non-smoke train question contributes none. Sets retain their original
+set order. Only selected question entries/directories are frozen, manifest rewritten
+before datasetHash/fingerprints are computed. RSI-011 invariants (including coverage,
+qualification, secrecy, disjointness and full assignment) remain unchanged.
+
+SmokeFloor is the number of smoke questions passed in **every** repetition of the
+complete baseline train calibration; no extra baseline smoke evaluation is needed.
+It is derived from immutable runs, including selected infrastructure retries.
+Candidate smoke passed count >= smokeFloor permits train, otherwise rejects.
+
+`rsi agent validate <profile.json>` validates profile and Dockerfile, without a task
+or Docker. `rsi doctor [--root <path>] [--docker-context <name>]` emits JSON checking
+CLI/buildx availability, context connectivity, Linux engine and amd64/arm64 support,
+free bytes (minimum6GiB at config root), and presence booleans for all three upstream
+variables, never their values. Probe failures are structured checks, not raw logs.

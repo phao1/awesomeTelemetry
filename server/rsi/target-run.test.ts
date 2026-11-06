@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
+import { readAgentProfile } from './agent-profile.js';
 import { runTarget } from './target-run.js';
 import { packTree } from './artifacts.js';
 import { readBank, readQuestionData } from './bank.js';
@@ -29,7 +30,7 @@ describe('target container P0 regressions', () => {
     } };
     const bank = await readBank(resolve('server/rsi/__fixtures__/bank')), q = bank.questions.get('train_node')!;
     const data = await readQuestionData(join(bank.root, 'tasks/train_node'));
-    const r = await runTarget(docker, 'task', q, data.repo, data.statement, 'target-node', { name: 'proxy', network: 'internal', token: 'temporary', runId: 'run' }, join(root, 'out'), 4096, 1000);
+    const r = await runTarget(docker, 'task', q, data.repo, data.statement, 'target-node', { name: 'proxy', network: 'internal', token: 'temporary', runId: 'run' }, join(root, 'out'), (await readAgentProfile(resolve('rsi-agents/opencode/profile.json'))).profile, 'fixed', 1000);
     expect(r.failureReason).toBe(timedOut ? 'agent_timeout' : null); expect(r.memoryPeakBytes).toBe(2048);
     expect(calls.at(-2)!.argv).toContain('/sys/fs/cgroup/memory.peak'); expect(calls.at(-1)!.argv[0]).toBe('rm');
     expect(calls.filter(c => c.argv.includes('tar') && c.argv.includes('-xf')).every(c => c.input && c.argv.includes('-i'))).toBe(true);
@@ -39,4 +40,24 @@ describe('target container P0 regressions', () => {
       expect(calls[at]!.argv).toContain('--binary'); expect(r.patch.toString()).toBe(patch); expect(r.sessionTokens).toBe(60);
     }
   });
+});
+
+it('runs the none-session Agent using profile argv/env without loading a native database', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'target-none-')); dirs.push(root);
+  const calls: string[][] = [], statement = 'repair "quoted"; $(no-shell)';
+  const docker: DockerClient = { run: async argv => {
+    calls.push(argv);
+    if (argv.includes('{{json .NetworkSettings.Networks}}')) return ok('{"internal":{}}');
+    if (argv.includes('{{json .Mounts}}')) return ok('[]');
+    if (argv.includes('-cf')) return ok(await packTree(root));
+    if (argv.includes('/sys/fs/cgroup/memory.peak')) return ok('2048');
+    return ok();
+  } };
+  const bank = await readBank(resolve('server/rsi/__fixtures__/bank')), q = bank.questions.get('train_node')!;
+  const data = await readQuestionData(join(bank.root, 'tasks/train_node'));
+  const { profile } = await readAgentProfile(resolve('rsi-agents/mini-agent/profile.json'));
+  const result = await runTarget(docker, 'task', q, data.repo, statement, 'target-node', { name: 'proxy', network: 'internal', token: 'temporary', runId: 'run' }, join(root, 'out'), profile, 'fixed', 1000);
+  expect(result.failureReason).toBeNull(); expect(result.sessionTokens).toBeNull(); expect(result.sessionPath).toBe('session');
+  expect(calls.find(argv => argv.includes('/opt/mini-agent/agent.mjs'))!.slice(-3)).toEqual(['node', '/opt/mini-agent/agent.mjs', statement]);
+  expect(calls[0]).toContain('OPENAI_API_KEY=temporary'); expect(calls[0]).not.toContain('OPENCODE_DB=/data/session.db');
 });

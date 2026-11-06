@@ -30,3 +30,42 @@ describe('RSI-011 bank boundary', () => {
     expect(() => validateQuestion({ ...q, testTargets: ['../outside'] })).toThrow();
   });
 });
+
+it('small selection follows manifest question order, retains smoke and all original invariants', async () => {
+  const { selectBankSubset, freezeBank } = await import('./bank.js');
+  const bank = await readBank(resolve('rsi-bank'));
+  const small = selectBankSubset(bank.manifest, 'small');
+  expect(selectBankSubset(bank.manifest, 'full')).toEqual(bank.manifest);
+  expect(small.sets.smoke).toEqual(bank.manifest.sets.smoke);
+  for (const split of ['train', 'sealed', 'final'] as const) {
+    const nonSmoke = bank.manifest.questions.filter(q => bank.manifest.sets[split].includes(q.id) && (split !== 'train' || !bank.manifest.sets.smoke.includes(q.id)));
+    const firsts = nonSmoke.filter((q, i) => nonSmoke.findIndex(other => other.language === q.language) === i).map(q => q.id);
+    const keep = new Set([...(split === 'train' ? small.sets.smoke : []), ...firsts]);
+    expect(small.sets[split]).toEqual(bank.manifest.sets[split].filter(id => keep.has(id)));
+  }
+  expect(small.questions.length).toBeLessThan(bank.manifest.questions.length);
+  expect(selectBankSubset(bank.manifest, 'small')).toEqual(small);
+  const root = await mkdtemp(join(tmpdir(), 'small-bank-')); directories.push(root);
+  const frozen = await freezeBank(bank, root, 'small');
+  expect(frozen.manifest).toEqual(small); expect(frozen.datasetHash).not.toBe(bank.datasetHash);
+  expect((await readBank(root)).datasetHash).toBe(frozen.datasetHash);
+  expect(frozen.questions.size).toBe(small.questions.length);
+  const manifest = structuredClone(small); manifest.sets.final[0] = manifest.sets.train[0]!;
+  await writeFile(join(root, 'manifest.json'), JSON.stringify(manifest));
+  await expect(readBank(root)).rejects.toThrow();
+});
+
+it('small chooses first manifest entries even when split order differs; smoke does not consume the extra train slot', async () => {
+  const { selectBankSubset } = await import('./bank.js');
+  const manifest = {
+    version: 1 as const, seed: 'order', mutationKillMin: 0.7,
+    sets: { smoke: ['js_smoke'], train: ['js_later', 'go_first', 'js_smoke', 'py_first', 'js_first'], sealed: ['go_sealed', 'js_sealed', 'py_sealed'], final: ['py_final', 'js_final', 'go_final'] },
+    questions: [
+      ['js_smoke', 'javascript'], ['js_first', 'javascript'], ['js_later', 'javascript'], ['py_first', 'python'], ['go_first', 'go'],
+      ['js_sealed', 'javascript'], ['py_sealed', 'python'], ['go_sealed', 'go'], ['js_final', 'javascript'], ['py_final', 'python'], ['go_final', 'go'],
+    ].map(([id, language]) => ({ id: id!, language: language as 'javascript' | 'python' | 'go', difficulty: 'easy' as const, mutationKillRatio: 1 })),
+  };
+  const before = structuredClone(manifest), small = selectBankSubset(manifest, 'small');
+  expect(small.sets).toEqual({ smoke: ['js_smoke'], train: ['go_first', 'js_smoke', 'py_first', 'js_first'], sealed: ['go_sealed', 'js_sealed', 'py_sealed'], final: ['py_final', 'js_final', 'go_final'] });
+  expect(small.questions.map(q => q.id)).not.toContain('js_later'); expect(manifest).toEqual(before);
+});

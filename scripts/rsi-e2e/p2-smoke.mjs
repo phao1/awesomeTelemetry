@@ -19,7 +19,7 @@ export function argumentsFor(args) {
   if (!values.repository) throw new Error('--repository is required');
   return values;
 }
-function command(executable, argv, { input, timeoutMs = 120000, env, ipc = false } = {}) {
+export function command(executable, argv, { input, timeoutMs = 120000, env, ipc = false } = {}) {
   const child = spawn(executable, argv, { shell: false, env: env ?? { PATH: process.env.PATH, DOCKER_CONFIG: process.env.DOCKER_CONFIG }, stdio: ['pipe', 'pipe', 'pipe', ...(ipc ? ['ipc'] : [])] });
   const promise = new Promise((resolvePromise, reject) => {
     let output = '', error = '', size = 0;
@@ -32,12 +32,12 @@ function command(executable, argv, { input, timeoutMs = 120000, env, ipc = false
   });
   return { child, promise };
 }
-async function must(executable, argv, options) {
+export async function must(executable, argv, options) {
   const r = await command(executable, argv, options).promise;
   if (r.code !== 0) throw new Error(`${executable} ${argv[0]} failed (${r.code}): ${r.error.slice(-1000)}`);
   return r.output;
 }
-async function ledger(file) {
+export async function ledger(file) {
   const snapshots = { runs: new Map(), evaluations: new Map(), iterations: new Map(), decisions: [], task: null };
   for await (const line of createInterface({ input: createReadStream(file) })) {
     const e = JSON.parse(line);
@@ -105,7 +105,7 @@ export async function main(args) {
     const save = async (name, value) => { const file = join(root, `${name}.json`); await writeFile(file, JSON.stringify(value), { mode: 0o600 }); return file; };
     const settingsFile = await save('settings', settings), configFile = await save('config', config), taskId = 'p2-smoke';
     const cli = async argv => JSON.parse((await must(process.execPath, ['bin/rsi.js', ...argv, '--task', taskId, '--root', root])).trim());
-    await cli(['task', 'create', '--repository', repository, '--baseline', baseline, '--bank', fixture, '--settings', settingsFile, '--config', configFile]);
+    await cli(['task', 'create', '--repository', repository, '--baseline', baseline, '--bank', fixture, '--agent', resolve('rsi-agents/opencode/profile.json'), '--settings', settingsFile, '--config', configFile]);
     const taskRoot = join(root, 'awesome-telemetry-data/rsi', taskId), ledgerFile = join(taskRoot, 'ledger.jsonl');
     const dry = await cli(['worker']); assert.equal(dry.execute, false); report.checks.dryRun = true;
     const startWorker = flags => command(process.execPath, ['scripts/rsi-e2e/p2-smoke.mjs', '--child', JSON.stringify({ taskId, root, context, ...flags })], { timeoutMs: 3600000, ipc: true });
@@ -117,7 +117,9 @@ export async function main(args) {
     assert.equal((await docker(['inspect', '--format', '{{.State.Running}}', barrier.container])).trim(), 'true');
     // Resume with production-default concurrency 2. The barrier ensured no ledger
     // append was in progress at SIGKILL; the first retained slot must not rerun.
-    settings.concurrency = 2; await writeFile(join(taskRoot, 'private/runtime.json'), JSON.stringify(settings), { mode: 0o600 });
+    settings.concurrency = 2;
+    const runtime = JSON.parse(await readFile(join(taskRoot, 'private/runtime.json'), 'utf8'));
+    await writeFile(join(taskRoot, 'private/runtime.json'), JSON.stringify({ ...runtime, concurrency: 2 }), { mode: 0o600 });
     const resumed = await startWorker({}).promise; assert.equal(resumed.code, 0, resumed.error);
     let state = await ledger(ledgerFile); assert(state.task.delta > 0); assert.equal(state.task.state, 'running');
     assert.equal(state.runs.size, 18); for (const [id, run] of before.runs) assert.deepEqual(state.runs.get(id), run);

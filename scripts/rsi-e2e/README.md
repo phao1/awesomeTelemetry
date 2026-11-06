@@ -77,3 +77,28 @@ node bin/rsi.js ledger recover --task demo
 真实模型 token 估计、native binary 安装、镜像构建、网络隔离与资源峰值都需要外部验证。
 代理 admission 使用可配置并按 usage 校准的输入估计；未知厂商 tokenizer 的单次低估
 仍可能使最终 usage 高于预留，随后会全额入账并阻止后续请求。这一限制已列入 RSI-012。
+
+## 第二个被优化对象：mini-agent
+
+P2 smoke 现在显式使用 `rsi-agents/opencode/profile.json`，原断言保持不变。
+另一个流程完全不需要 OpenCode 源码：
+
+```sh
+npm run build:rsi
+node scripts/rsi-e2e/mini-agent-smoke.mjs \
+  --docker-context colima-rsi \
+  --root /tmp/rsi-mini-new-run \
+  --report /tmp/rsi-mini-report.json
+```
+
+由 Claude 在沙箱外运行。脚本从 `rsi-agents/mini-agent/source/` 建立临时 Git 仓库，
+通过 `--agent rsi-agents/mini-agent/profile.json --subset small` 创建任务。
+题库使用 rsi-bank 的确定性子集；基线全失败，候选按 reference.patch 的脚本全部修复，
+因此 delta=0、smokeFloor=0。它依次完成基线标定、一个候选的 smoke 和 train，断言
+missing_monitor/missing_adversarial 的 held，候选 sealed 不启动。
+还验证冻结子集、proxy usage/响应/最后请求导出、none 会话没有原生 token、账本与资源清理。
+不注入 clean reviews。假模型只测基础设施通用性，不测优化或模型质量。
+
+沙箱内只运行相邻单测；真实 Docker 用例在 `RSI_DOCKER_E2E=1` 时启用。
+档案格式、可信 Dockerfile 审阅、离线编译要求和模型环境变量见
+[档案作者指南](../../rsi-agents/README.md)。doctor 只显示变量是否存在，不显示值。

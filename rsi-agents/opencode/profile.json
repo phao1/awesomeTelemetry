@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "opencode",
+  "name": "OpenCode (OpenAI compatible)",
+  "dockerfile": "target.Dockerfile",
+  "dependencyInputs": {
+    "kind": "bun-workspace"
+  },
+  "run": {
+    "argv": [
+      "opencode",
+      "run",
+      "--standalone",
+      "--auto",
+      "--format",
+      "json",
+      "--model",
+      "rsi/{{model}}",
+      "{{statement}}"
+    ],
+    "env": {
+      "OPENCODE_DB": "{{sessionDir}}/session.db"
+    },
+    "files": [
+      {
+        "path": "/home/node/.config/opencode/opencode.json",
+        "content": "{\"model\": \"rsi/{{model}}\", \"update\": \"disable\", \"share\": \"disabled\", \"snapshots\": false, \"lsp\": false, \"formatter\": false, \"plugins\": [], \"providers\": {\"rsi\": {\"package\": \"@opencode/ai/providers/openai-compatible\", \"settings\": {\"baseURL\": \"{{baseUrl}}\", \"apiKey\": \"{{apiKey}}\"}, \"models\": {\"{{model}}\": {\"name\": \"{{model}}\", \"limit\": {\"context\": 1000000, \"output\": 8192}, \"capabilities\": {\"tools\": true, \"input\": [\"text\"], \"output\": [\"text\"]}}}}}}"
+      }
+    ]
+  },
+  "session": {
+    "format": "opencode-db",
+    "dir": "/data"
+  }
+}

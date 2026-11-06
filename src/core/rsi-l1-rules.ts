@@ -97,7 +97,22 @@ function dependencyPath(path: string): boolean {
     || /(?:^|\/)(?:[^/]*lock(?:b|\.json|\.yaml|\.yml|\.toml)?|package(?:-lock)?\.json|npm-shrinkwrap\.json|requirements[^/]*\.txt|pyproject\.toml|Pipfile|Cargo\.toml|go\.(?:mod|sum)|Gemfile|composer\.json|pom\.xml|build\.gradle(?:\.kts)?)$/i.test(path);
 }
 
-export function scanDiff(diff: string, dictionary: RsiFingerprintDictionary): RsiDiffFinding[] {
+export function scanDiff(diff: string, dictionary: RsiFingerprintDictionary, options?: { allowPaths?: string[] }): RsiDiffFinding[] {
+  const allowed = (options?.allowPaths ?? []).map(pattern => {
+    if (!pattern || pattern.startsWith('/') || /[\\:{}[\]()!+]/.test(pattern)
+      || pattern.split('/').some(p => !p || p === '.' || p === '..')) throw new Error('Invalid L1 allowPaths glob');
+    let re = '^';
+    for (let i = 0; i < pattern.length; i++) {
+      const c = pattern[i]!;
+      if (c === '*' && pattern[i + 1] === '*') {
+        i++;
+        if (pattern[i + 1] === '/') { i++; re += '(?:.*/)?'; } else re += '.*';
+      } else if (c === '*') re += '[^/]*';
+      else if (c === '?') re += '[^/]';
+      else re += c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    return new RegExp(`${re}$`);
+  });
   validateConfig(dictionary.config);
   if (dictionary.version !== 1 || dictionary.entries.some(e => !e.value || e.value !== normalize(e.value))) throw new Error('Invalid RSI dictionary');
   const findings: RsiDiffFinding[] = []; const seen = new Set<string>();
@@ -113,7 +128,7 @@ export function scanDiff(diff: string, dictionary: RsiFingerprintDictionary): Rs
     const parsed = parsePath(raw);
     if (parsed === null) { add('protected_path', 'reject', raw.slice(0, 160), 0, 'Untrusted diff path'); return ''; }
     if (parsed === '/dev/null') return '';
-    if (protectedPath(parsed)) add('protected_path', 'reject', parsed, 0, 'Protected test/evaluator/detector/CI path');
+    if (protectedPath(parsed) && !allowed.some(re => re.test(parsed))) add('protected_path', 'reject', parsed, 0, 'Protected test/evaluator/detector/CI path');
     if (dependencyPath(parsed)) add('dependency_change', 'hold', parsed, 0, 'Dependency manifest or lockfile requires review');
     return parsed;
   };

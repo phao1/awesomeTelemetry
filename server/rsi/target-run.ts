@@ -1,5 +1,8 @@
+import { mkdir } from 'node:fs/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { dirname, basename, join } from 'node:path';
+import type { RsiAgentProfile } from './agent-profile.js';
+import { renderAgentRun } from './agent-profile.js';
 import Database from 'better-sqlite3';
 import type { RsiBankQuestion } from './bank.js';
 import type { DockerClient } from './docker.js';
@@ -27,27 +30,26 @@ export function sessionTokens(file: string): number {
   } finally { db.close(); }
 }
 export async function runTarget(client: DockerClient, taskId: string, q: RsiBankQuestion, repo: Buffer, statement: string,
-  image: string, proxy: ProxyRun, output: string, maxTokens: number, timeoutMs: number, signal?: AbortSignal): Promise<TargetResult> {
+  image: string, proxy: ProxyRun, output: string, profile: RsiAgentProfile, model: string, timeoutMs: number, signal?: AbortSignal): Promise<TargetResult> {
   const name = `rsi-target-${randomUUID()}`, work = `/tmp/${randomBytes(16).toString('hex')}`;
+  const run = renderAgentRun(profile, { statement, model, apiKey: proxy.token });
   let created = false, peak: number | null = null;
   let result: TargetResult = { patch: Buffer.alloc(0), failureReason: 'infrastructure', memoryPeakBytes: null, sessionTokens: null, sessionPath: null };
   try {
-    await mustDocker(client, ['create', ...isolationArgs(proxy.network, taskId, name), '-e', 'OPENCODE_DB=/data/session.db', image], { signal }); created = true;
+    await mustDocker(client, ['create', ...isolationArgs(proxy.network, taskId, name), ...Object.entries(run.env).flatMap(([k, v]) => ['-e', `${k}=${v}`]), image], { signal }); created = true;
     await mustDocker(client, ['start', name], { signal });
     const network = JSON.parse((await mustDocker(client, ['inspect', '--format', '{{json .NetworkSettings.Networks}}', name], { signal })).toString()) as Record<string, unknown>;
     const mounts = JSON.parse((await mustDocker(client, ['inspect', '--format', '{{json .Mounts}}', name], { signal })).toString()) as unknown[];
     if (Object.keys(network).length !== 1 || !Object.hasOwn(network, proxy.network) || mounts.length) throw new Error('Target isolation violation');
     await putTar(client, name, work, repo, signal);
-    const config = { model: 'rsi/fixed', update: 'disable', share: 'disabled', snapshots: false, lsp: false, formatter: false, plugins: [],
-      providers: { rsi: { package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'http://rsi-proxy:8080/v1', apiKey: proxy.token },
-        models: { fixed: { name: 'fixed', limit: { context: 1000000, output: maxTokens }, capabilities: { tools: true, input: ['text'], output: ['text'] } } } } } };
-    await putTar(client, name, '/home/node/.config/opencode', packFiles(new Map([['opencode.json', Buffer.from(JSON.stringify(config))]])), signal);
+    for (const file of run.files) await putTar(client, name, dirname(file.path), packFiles(new Map([[basename(file.path), Buffer.from(file.content)]])), signal);
+    await mustDocker(client, ['exec', name, 'mkdir', '-p', profile.session.dir], { signal });
     const exec = (argv: string[], input?: Buffer): Promise<Buffer> => mustDocker(client, ['exec', ...(input ? ['-i'] : []), '-w', work, name, ...argv], { input, signal });
     await exec(['git', '-c', 'core.hooksPath=/dev/null', 'init', '-q']);
     await exec(['git', 'config', 'core.hooksPath', '/dev/null']);
     await exec(['git', 'add', '-A']);
     await exec(['git', '-c', 'user.name=RSI', '-c', 'user.email=rsi@localhost', 'commit', '--allow-empty', '-qm', 'snapshot']);
-    const r = await client.run(['exec', '-w', work, name, 'opencode', 'run', '--standalone', '--auto', '--format', 'json', '--model', 'rsi/fixed', statement], { timeoutMs, signal });
+    const r = await client.run(['exec', '-w', work, name, ...run.argv], { timeoutMs, signal });
     await privateWrite(join(output, 'agent.stdout'), r.stdout); await privateWrite(join(output, 'agent.stderr'), r.stderr);
     if (r.timedOut) result.failureReason = 'agent_timeout';
     else if (!successful(r)) result.failureReason = 'infrastructure';
@@ -57,12 +59,16 @@ export async function runTarget(client: DockerClient, taskId: string, q: RsiBank
       result.failureReason = null;
       await privateWrite(join(output, 'workspace.patch'), result.patch);
     }
-    // OpenCode has exited: export DB/WAL/SHM as one tar stream, no docker cp.
+    // Export the profile session directory as one tar stream after Agent exit.
     if (!r.timedOut && !r.cancelled) {
-      const archive = await mustDocker(client, ['exec', name, 'tar', '-cf', '-', '-C', '/data', '.'], { signal, maxOutputBytes: 64 * 1024 * 1024 });
+      const archive = await mustDocker(client, ['exec', name, 'tar', '-cf', '-', '-C', profile.session.dir, '.'], { signal, maxOutputBytes: 64 * 1024 * 1024 });
+      await mkdir(join(output, 'session'), { recursive: true, mode: 0o700 });
       await extractFiles(archive, join(output, 'session'));
-      try { result.sessionTokens = sessionTokens(join(output, 'session/session.db')); result.sessionPath = 'session/session.db'; }
-      catch { result.sessionTokens = null; }
+      result.sessionPath = 'session';
+      if (profile.session.format === 'opencode-db') {
+        try { result.sessionTokens = sessionTokens(join(output, 'session/session.db')); result.sessionPath = 'session/session.db'; }
+        catch { result.sessionTokens = null; }
+      }
     }
   } finally {
     if (created) {

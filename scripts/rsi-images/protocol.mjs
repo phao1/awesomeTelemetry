@@ -17,7 +17,7 @@ export async function readBody(req, limit = 2 * 1024 * 1024) {
 }
 
 // Incremental SSE decoder: UTF-8 and event boundaries may span arbitrary chunks.
-export function observer(streaming) {
+export function observer(streaming, onChoice = () => {}) {
   const decoder = new StringDecoder('utf8');
   let pending = '';
   let data = [];
@@ -37,6 +37,7 @@ export function observer(streaming) {
       }
     }
     for (const choice of value.choices ?? []) {
+      onChoice(choice);
       if (choice.finish_reason) done = true;
       for (const call of (choice.delta ?? choice.message)?.tool_calls ?? []) {
         tools.add(`${choice.index ?? 0}:${call.index ?? call.id}`);

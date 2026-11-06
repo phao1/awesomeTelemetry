@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "id": "mini-agent",
+  "name": "Mini coding Agent",
+  "dockerfile": "target.Dockerfile",
+  "dependencyInputs": {
+    "kind": "none"
+  },
+  "run": {
+    "argv": [
+      "node",
+      "/opt/mini-agent/agent.mjs",
+      "{{statement}}"
+    ],
+    "env": {
+      "OPENAI_BASE_URL": "{{baseUrl}}",
+      "OPENAI_API_KEY": "{{apiKey}}",
+      "OPENAI_MODEL": "{{model}}"
+    },
+    "files": []
+  },
+  "session": {
+    "format": "none",
+    "dir": "/data"
+  }
+}

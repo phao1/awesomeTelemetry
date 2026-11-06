@@ -38,3 +38,18 @@ it('only identifies recognizable source compilation errors as L0 candidate failu
   expect(isCandidateCompileFailure({ ...r, stderr: Buffer.from('ENOSPC SyntaxError') })).toBe(false);
   expect(isCandidateCompileFailure({ ...r, stderr: Buffer.from('Unknown daemon error') })).toBe(false);
 });
+
+it('globs copies only matching dependency inputs, always excluding registry configs; none needs no manifest', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'glob-deps-')); dirs.push(root);
+  const source = join(root, 'source'); await mkdir(join(source, 'nested'), { recursive: true });
+  for (const [name, content] of Object.entries({ 'a.lock': 'lock', 'nested/dep.json': '{}', '.npmrc': 'secret', 'bunfig.toml': 'registry', 'nested/.npmrc': 'secret', 'nested/bunfig.toml': 'registry', 'agent.js': 'candidate' })) await writeFile(join(source, name), content);
+  const hash = await dependencyInputs(source, join(root, 'deps'), { kind: 'globs', include: ['**/*'] });
+  expect((await readdir(join(root, 'deps'))).sort()).toEqual(['a.lock', 'agent.js', 'nested']);
+  expect(await readdir(join(root, 'deps/nested'))).toEqual(['dep.json']);
+  const selected = await dependencyInputs(source, join(root, 'selected'), { kind: 'globs', include: ['**/*.json', '*.lock'] });
+  expect((await readdir(join(root, 'selected'))).sort()).toEqual(['a.lock', 'nested']); expect(selected).not.toBe(hash);
+  await writeFile(join(source, 'nested/.npmrc'), 'different');
+  expect(await dependencyInputs(source, join(root, 'selected2'), { kind: 'globs', include: ['**/*.json', '*.lock'] })).toBe(selected);
+  expect(await dependencyInputs(source, join(root, 'none'), { kind: 'none' })).toMatch(/^[a-f0-9]{64}$/);
+  expect(await readdir(join(root, 'none'))).toEqual([]);
+});

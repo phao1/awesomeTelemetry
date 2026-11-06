@@ -8,6 +8,8 @@ import type { DockerClient, CommandOptions } from './docker.js';
 import { mustDocker, runProcess, successful, RSI_LABEL } from './docker.js';
 import { extractFiles, privateWrite, relativePath, treeFiles } from './artifacts.js';
 import type { RsiBankToolchain } from './bank.js';
+import type { RsiAgentProfile } from './agent-profile.js';
+import { globMatcher } from './agent-profile.js';
 
 const gitOptions = ['-c', 'core.hooksPath=/dev/null', '-c', 'protocol.file.allow=always'];
 export async function git(argv: string[], options: CommandOptions = {}): Promise<Buffer> {
@@ -30,10 +32,21 @@ export async function importCommit(repository: string, mirror: string, commit: s
 export async function candidateDiff(mirror: string, parent: string, commit: string): Promise<string> {
   return (await git(['--git-dir', mirror, 'diff', '--no-ext-diff', '--no-textconv', '--binary', parent, commit, '--'])).toString('utf8');
 }
-export function precheck(diff: string, dictionary: RsiFingerprintDictionary): ReturnType<typeof scanDiff> { return scanDiff(diff, dictionary); }
+export function precheck(diff: string, dictionary: RsiFingerprintDictionary, options?: { allowPaths?: string[] }): ReturnType<typeof scanDiff> { return scanDiff(diff, dictionary, options); }
 
 /** Only dependency inputs enter the networked layer. No candidate registry config. */
-export async function dependencyInputs(source: string, deps: string): Promise<string> {
+export async function dependencyInputs(source: string, deps: string, mode: RsiAgentProfile['dependencyInputs'] = { kind: 'bun-workspace' }): Promise<string> {
+  await mkdir(deps, { recursive: true });
+  if (mode.kind !== 'bun-workspace') {
+    const patterns = mode.kind === 'globs' ? mode.include.map(globMatcher) : [];
+    const hash = createHash('sha256');
+    for (const file of (await treeFiles(source)).sort()) {
+      if (['.npmrc', 'bunfig.toml'].includes(posix.basename(file)) || !patterns.some(p => p.test(file))) continue;
+      const data = await readFile(join(source, file)); hash.update(file); hash.update('\0'); hash.update(data);
+      await privateWrite(join(deps, file), data);
+    }
+    return hash.digest('hex');
+  }
   const files = await treeFiles(source), allowed = new Set<string>();
   const root = JSON.parse(await readFile(join(source, 'package.json'), 'utf8')) as { workspaces?: string[] | { packages: string[] } };
   const patterns = Array.isArray(root.workspaces) ? root.workspaces : root.workspaces?.packages ?? [];
@@ -88,14 +101,14 @@ export function isCandidateCompileFailure(result: Awaited<ReturnType<DockerClien
     && /SyntaxError|syntax error|parse error|Could not resolve|Cannot find (?:module|package)|Unexpected token|TypeScript error/i.test(output);
 }
 export async function buildCandidate(client: DockerClient, taskId: string, mirror: string, commit: string,
-  imagesRoot: string, signal?: AbortSignal): Promise<BuiltCandidate> {
+  agentDirectory: string, profile: RsiAgentProfile, signal?: AbortSignal): Promise<BuiltCandidate> {
   const context = await mkdtemp(join(tmpdir(), 'rsi-build-'));
   try {
     const archive = await git(['--git-dir', mirror, 'archive', '--format=tar', commit], { signal, maxOutputBytes: 256 * 1024 * 1024 });
     const source = join(context, 'source'); await mkdir(source);
     await extractFiles(archive, source, true);
-    const dependencyHash = await dependencyInputs(source, join(context, 'deps'));
-    await cp(join(imagesRoot, 'target.Dockerfile'), join(context, 'Dockerfile'));
+    const dependencyHash = await dependencyInputs(source, join(context, 'deps'), profile.dependencyInputs);
+    await cp(join(agentDirectory, profile.dockerfile), join(context, 'Dockerfile'));
     const images = {} as Record<RsiBankToolchain, string>;
     for (const toolchain of ['node', 'python', 'go'] as const) {
       const tag = `rsi-${createHash('sha256').update(taskId).digest('hex').slice(0, 16)}:${commit}-${toolchain}`;

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "opencode-deepseek",
+  "name": "OpenCode (built-in DeepSeek)",
+  "dockerfile": "target.Dockerfile",
+  "dependencyInputs": {
+    "kind": "bun-workspace"
+  },
+  "run": {
+    "argv": [
+      "opencode",
+      "run",
+      "--standalone",
+      "--auto",
+      "--format",
+      "json",
+      "--model",
+      "deepseek/deepseek-flash",
+      "{{statement}}"
+    ],
+    "env": {
+      "OPENCODE_DB": "{{sessionDir}}/session.db"
+    },
+    "files": [
+      {
+        "path": "/home/node/.config/opencode/opencode.json",
+        "content": "{\"model\": \"deepseek/deepseek-flash\", \"update\": \"disable\", \"share\": \"disabled\", \"snapshots\": false, \"lsp\": false, \"formatter\": false, \"plugins\": [], \"providers\": {\"deepseek\": {\"settings\": {\"baseURL\": \"{{baseUrl}}\", \"apiKey\": \"{{apiKey}}\"}}}}"
+      }
+    ]
+  },
+  "session": {
+    "format": "opencode-db",
+    "dir": "/data"
+  }
+}

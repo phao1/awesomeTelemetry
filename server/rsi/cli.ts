@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { cp, mkdir, readFile } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { mkdir, readFile, statfs } from 'node:fs/promises';
+import { dirname, resolve, join } from 'node:path';
 import { defaultRsiConfig, validateRsiConfig, validateRsiTask, validateRsiQueueItem } from '../../src/core/rsi-validation.js';
 import type { RsiCommand, RsiPrd } from '../../src/core/rsi-types.js';
 import { buildFingerprintDictionary } from '../../src/core/rsi-l1-rules.js';
@@ -8,11 +8,14 @@ import { selectParent } from '../../src/core/rsi-gate.js';
 import { openWritable } from '../storage/db.js';
 import { getRsiLedgerHead } from '../storage/rsi.js';
 import { RsiStore, enqueue, now } from './queue.js';
-import { readBank } from './bank.js';
+import { freezeBank, readBank } from './bank.js';
 import { createMirror, importCommit } from './build.js';
 import { privateWrite } from './artifacts.js';
 import { verifyLedger } from './ledger.js';
 import { recoverLedgerTail } from './recovery.js';
+import type { DockerClient } from './docker.js';
+import { successful } from './docker.js';
+import { freezeAgentProfile, readAgentProfile } from './agent-profile.js';
 import { CliDockerClient } from './docker.js';
 import { runWorker, validateWorkerSettings } from './worker.js';
 import type { ReviewProvider } from './review.js';
@@ -25,7 +28,9 @@ export function defaultWorkerSettings(): WorkerSettings {
     proxy: { mode: 'mock', maxTokens: 4096, inputTokensPerByte: 0.35, mockTable: {} }, candidateMockTable: {} };
 }
 const HELP = `Usage: rsi <command> --task <id> [--root <configRoot>]
-  task create --repository <local-repo> --baseline <full-commit> --bank <bank> [--config <json>] [--settings <json>]
+  task create --repository <local-repo> --baseline <full-commit> --bank <bank> [--config <json>] [--settings <json>] [--agent <profile.json>] [--subset small|full]
+  agent validate <profile.json>
+  doctor [--root <path>] [--docker-context <name>]
   task status
   task command --command <json-file> [--iteration <id>] --request <id>
   iteration submit --commit <full-commit> --prd <json-file> --request <id>
@@ -35,11 +40,36 @@ const HELP = `Usage: rsi <command> --task <id> [--root <configRoot>]
 Only worker --execute starts containers. Commands and JSON output are local trusted ingress.
 worker drains available work and exits when idle, held or paused. Default reviews are missing.`;
 async function json(file: string): Promise<unknown> { const data = await readFile(file); if (data.length > 1024 * 1024) throw new Error('JSON file limit'); return JSON.parse(data.toString()) as unknown; }
+export async function rsiDoctor(client: DockerClient, root: string, env: NodeJS.ProcessEnv = process.env): Promise<unknown> {
+  const check = async (argv: string[]): Promise<{ ok: boolean; text: string }> => {
+    try { const r = await client.run(argv, { timeoutMs: 10000 }); return { ok: successful(r), text: successful(r) ? r.stdout.toString().trim() : '' }; }
+    catch { return { ok: false, text: '' }; }
+  };
+  const [docker, buildx, info] = await Promise.all([check(['--version']), check(['buildx', 'version']), check(['info', '--format', '{{json .}}'])]);
+  let engine: { OSType?: string; Architecture?: string } = {};
+  try { engine = JSON.parse(info.text); } catch { /* reported as unavailable below */ }
+  const os = engine?.OSType === 'linux' ? 'linux' : null;
+  const architecture = ['amd64', 'x86_64', 'arm64', 'aarch64'].includes(engine?.Architecture ?? '') ? engine.Architecture : null;
+  let freeBytes: number | null = null;
+  // A new --root does not exist yet, so measure the nearest existing ancestor.
+  for (let path = resolve(root); freeBytes === null; path = dirname(path)) {
+    try { const disk = await statfs(path); freeBytes = disk.bavail * disk.bsize; }
+    catch { if (path === dirname(path)) break; }
+  }
+  const upstream = Object.fromEntries(['RSI_UPSTREAM_BASE_URL', 'RSI_UPSTREAM_MODEL', 'RSI_UPSTREAM_API_KEY'].map(key => [key, !!env[key]?.trim()]));
+  const checks = { docker: docker.ok, buildx: buildx.ok, context: info.ok, linux: os === 'linux', architecture: architecture !== null,
+    disk: freeBytes !== null && freeBytes >= 6 * 1024 ** 3, upstream: Object.values(upstream).every(Boolean) };
+  return { ok: Object.values(checks).every(Boolean), checks, engine: { os, architecture }, disk: { freeBytes, minimumBytes: 6 * 1024 ** 3 }, upstream };
+}
 export async function runRsiCli(args: string[], output: (value: unknown) => void = v => console.log(JSON.stringify(v)), options: { reviews?: ReviewProvider; afterRun?: () => Promise<void> } = {}): Promise<void> {
   if (!args.length || args.includes('--help')) { console.log(HELP); return; }
-  const command = args[0] === 'worker' ? 'worker' : args.slice(0, 2).join(' '), start = command === 'worker' ? 1 : 2;
+  if (args[0] === 'agent' && args[1] === 'validate') {
+    if (args.length !== 3 || args[2]!.startsWith('--')) throw new Error('Usage: rsi agent validate <profile.json>');
+    const { profile } = await readAgentProfile(resolve(args[2]!)); output({ valid: true, id: profile.id }); return;
+  }
+  const command = ['worker', 'doctor'].includes(args[0]!) ? args[0]! : args.slice(0, 2).join(' '), start = ['worker', 'doctor'].includes(command) ? 1 : 2;
   const flags = new Map<string, string>(); let execute = false;
-  const allowed = new Set(['--task', '--root', '--repository', '--baseline', '--bank', '--config', '--settings', '--commit', '--prd', '--request', '--command', '--iteration', '--docker-context']);
+  const allowed = new Set(['--task', '--root', '--repository', '--baseline', '--bank', '--config', '--settings', '--commit', '--prd', '--request', '--command', '--iteration', '--docker-context', '--agent', '--subset']);
   for (let i = start; i < args.length; i++) {
     const key = args[i]!;
     if (key === '--execute') { if (execute || command !== 'worker') throw new Error('Invalid --execute'); execute = true; continue; }
@@ -47,12 +77,16 @@ export async function runRsiCli(args: string[], output: (value: unknown) => void
     flags.set(key, args[++i]!);
   }
   const permitted: Record<string, string[]> = {
-    'task create': ['--repository', '--baseline', '--bank', '--config', '--settings'], 'task status': [],
+    'task create': ['--repository', '--baseline', '--bank', '--config', '--settings', '--agent', '--subset'], 'task status': [],
     'task command': ['--command', '--request', '--iteration'], 'iteration submit': ['--commit', '--prd', '--request'],
-    worker: ['--docker-context'], 'ledger verify': [], 'ledger recover': [],
+    worker: ['--docker-context'], doctor: ['--docker-context'], 'ledger verify': [], 'ledger recover': [],
   };
   if (!permitted[command] || [...flags.keys()].some(k => !['--task', '--root', ...permitted[command]!].includes(k))) throw new Error('Invalid RSI arguments. Use --help');
   const required = (key: string): string => { const v = flags.get(key); if (!v) throw new Error(`Missing ${key}`); return v; };
+  if (command === 'doctor') {
+    if (flags.has('--task')) throw new Error('doctor does not accept --task');
+    output(await rsiDoctor(new CliDockerClient(flags.get('--docker-context') ?? null), resolve(flags.get('--root') ?? process.cwd()))); return;
+  }
   const taskId = required('--task'); if (!/^[A-Za-z0-9_-]{1,128}$/.test(taskId)) throw new Error('Invalid task ID');
   const dataRoot = join(resolve(flags.get('--root') ?? process.cwd()), 'awesome-telemetry-data/rsi'), root = join(dataRoot, taskId);
   await mkdir(dataRoot, { recursive: true, mode: 0o700 });
@@ -63,16 +97,21 @@ export async function runRsiCli(args: string[], output: (value: unknown) => void
     await store.refresh();
     if (command === 'task create') {
       if (store.list('task_put').length) throw new Error('Task already exists');
-      const repository = resolve(required('--repository')), baselineCommit = required('--baseline'), bank = await readBank(required('--bank'));
+      const repository = resolve(required('--repository')), baselineCommit = required('--baseline'), sourceBank = await readBank(required('--bank'));
+      const subset = flags.get('--subset') ?? 'full';
+      if (subset !== 'small' && subset !== 'full') throw new Error('Invalid --subset: expected small|full');
+      const agentFile = resolve(flags.get('--agent') ?? 'rsi-agents/opencode/profile.json');
+      await readAgentProfile(agentFile);
       const config = flags.has('--config') ? validateRsiConfig(await json(required('--config'))) : defaultRsiConfig();
       const settings = flags.has('--settings') ? validateWorkerSettings(await json(required('--settings')) as WorkerSettings) : defaultWorkerSettings();
+      settings.agent = await freezeAgentProfile(agentFile, join(root, 'private/agent'));
+      const bank = await freezeBank(sourceBank, join(root, 'private/bank'), subset);
       const token = randomBytes(32).toString('hex'), at = now();
       const task = validateRsiTask({ id: taskId, repository, baselineCommit, datasetHash: bank.datasetHash, mainMetric: 'passed_count', config,
         state: 'created', pauseReason: null, delta: null, baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0,
         tokenUsage: 0, iterationCount: 0, currentParentId: null, taskTokenHash: createHash('sha256').update(token).digest('hex'), createdAt: at, updatedAt: at });
       await mkdir(join(root, 'private'), { recursive: true, mode: 0o700 });
       await createMirror(repository, join(root, 'private/repository.git')); await importCommit(repository, join(root, 'private/repository.git'), baselineCommit);
-      await cp(bank.root, join(root, 'private/bank'), { recursive: true });
       await privateWrite(join(root, 'private/fingerprints.json'), JSON.stringify(buildFingerprintDictionary([...bank.questions.values()], config.l1)));
       await privateWrite(join(root, 'private/runtime.json'), JSON.stringify(settings));
       await store.put({ event: 'task_put', payload: task }, 'human');

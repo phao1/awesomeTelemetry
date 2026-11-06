@@ -62,3 +62,17 @@ describe('productized model proxy without sockets', () => {
     expect(JSON.parse(r.choices[0].message.tool_calls[0].function.arguments).command).toBe('fix');
   });
 });
+
+it('captures final request messages and response content/tools through the proxy without headers', async () => {
+  const traces: Array<{ kind: string; value: unknown }> = [];
+  const body = replay({ messages: [], tools: [{ function: { name: 'shell' } }] }, 'printf done');
+  const { handler } = setup(10000, {
+    trace: async (kind: string, value: unknown) => { traces.push({ kind, value }); },
+    transport: async () => upstream(JSON.stringify(body)),
+  });
+  await handler(request({}, { stream: false }), response());
+  expect(traces.map(t => t.kind)).toEqual(['request', 'response']);
+  expect(traces[0]!.value).toHaveProperty('messages');
+  expect(traces[1]!.value).toMatchObject({ assistant: [{ tool_calls: [{ function: { name: 'shell', arguments: '{"command":"printf done"}' } }] }] });
+  expect(JSON.stringify(traces)).not.toMatch(/real-secret|temporary|authorization/i);
+});

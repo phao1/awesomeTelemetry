@@ -1,4 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import { extractFiles } from './artifacts.js';
 import type { DockerClient } from './docker.js';
 import { isolationArgs, mustDocker, RSI_LABEL } from './docker.js';
 
@@ -9,8 +11,21 @@ export interface ProxySettings {
 }
 export interface UsageReceipt { runId: string; tokens: number; requests: number; blocked: boolean; complete: boolean }
 export interface ProxyRun { name: string; network: string; token: string; runId: string }
+export function upstreamEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = {};
+  const keys = ['RSI_UPSTREAM_BASE_URL', 'RSI_UPSTREAM_MODEL', 'RSI_UPSTREAM_API_KEY'];
+  const missing = keys.filter(k => !env[k]?.trim());
+  if (missing.length) throw new Error(`Missing upstream environment: ${missing.join(', ')}`);
+  for (const key of keys) result[key] = env[key];
+  return result;
+}
+export async function exportProxyArtifacts(client: DockerClient, proxy: ProxyRun, output: string): Promise<void> {
+  const archive = await mustDocker(client, ['exec', proxy.name, 'tar', '-cf', '-', '-C', '/out', '.'], { maxOutputBytes: 64 * 1024 * 1024 });
+  await extractFiles(archive, join(output, 'proxy'));
+}
 export async function startProxy(client: DockerClient, taskId: string, runId: string, questionId: string, repetition: number,
   budget: number, settings: ProxySettings, signal?: AbortSignal): Promise<ProxyRun> {
+  const upstream = settings.mode === 'real' ? upstreamEnvironment() : {};
   const name = `rsi-proxy-${randomUUID()}`, network = `rsi-net-${randomUUID()}`, token = randomBytes(32).toString('hex');
   await mustDocker(client, ['network', 'create', '--internal', '--label', `${RSI_LABEL}=${taskId}`, network], { signal });
   try {
@@ -20,8 +35,7 @@ export async function startProxy(client: DockerClient, taskId: string, runId: st
       RSI_MOCK_TABLE: JSON.stringify(settings.mockTable) };
     const keys = ['RSI_RUNS', 'RSI_MODEL', 'RSI_MAX_TOKENS', 'RSI_INPUT_TOKENS_PER_BYTE', 'RSI_MOCK_TABLE'];
     if (settings.mode === 'real') for (const key of ['RSI_UPSTREAM_BASE_URL', 'RSI_UPSTREAM_API_KEY', 'RSI_UPSTREAM_MODEL']) {
-      if (!process.env[key]) throw new Error(`Missing ${key}`);
-      env[key] = process.env[key]; keys.push(key);
+      env[key] = upstream[key]; keys.push(key);
     }
     await mustDocker(client, ['create', ...isolationArgs(network, taskId, name, '256m'), '--label', `rsi.run=${runId}`,
       '--network-alias', 'rsi-proxy', ...keys.flatMap(k => ['-e', k]), 'rsi-proxy:p2'], { env, signal });

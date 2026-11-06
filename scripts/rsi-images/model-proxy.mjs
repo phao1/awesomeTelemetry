@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { createMockHandler } from './mock-model.mjs';
+import { createTraceWriter, responseTranscript } from './trace.mjs';
 import { errorResponse, observer, readBody } from './protocol.mjs';
 
 export function nodeTransport(url, options, body) {
@@ -17,7 +18,7 @@ export function nodeTransport(url, options, body) {
 }
 
 export function createProxyHandler({ runs, baseURL, apiKey, model, maxTokens = 4096, inputTokensPerByte = 0.35,
-  transport = nodeTransport, log, now = () => performance.now() }) {
+  transport = nodeTransport, log, trace = async () => {}, now = () => performance.now() }) {
   if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0 || !Number.isFinite(inputTokensPerByte) || inputTokensPerByte <= 0) throw new Error('Invalid proxy calibration');
   const states = new Map(runs.map(r => [r.token, { ...r, used: 0, blocked: false, tail: Promise.resolve(), ratio: inputTokensPerByte }]));
   const upstream = new URL(`${baseURL.replace(/\/$/, '')}/chat/completions`);
@@ -45,6 +46,7 @@ export function createProxyHandler({ runs, baseURL, apiKey, model, maxTokens = 4
     let inputBytes;
     let response;
     let settled = false;
+    const transcript = responseTranscript();
     const controller = new AbortController();
     const deadline = setTimeout(() => { controller.abort(); response?.destroy?.(); req.destroy?.(); res.destroy(); }, 120000);
     const disconnect = () => { if (!res.writableFinished) { controller.abort(); response?.destroy?.(); } };
@@ -55,6 +57,7 @@ export function createProxyHandler({ runs, baseURL, apiKey, model, maxTokens = 4
     try {
       const body = await readBody(req);
       if (!body || typeof body !== 'object' || !Array.isArray(body.messages)) throw new Error('invalid_request');
+      await trace('request', { messages: body.messages });
       body.model = model;
       delete body.user;
       const requested = body.max_completion_tokens ?? body.max_tokens ?? maxTokens;
@@ -86,7 +89,7 @@ export function createProxyHandler({ runs, baseURL, apiKey, model, maxTokens = 4
         entry.error = 'upstream_rejected';
         errorResponse(res, 502, 'UPSTREAM_ERROR', 'Upstream rejected request'); return;
       }
-      const parser = observer(Boolean(body.stream));
+      const parser = observer(Boolean(body.stream), transcript.choice);
       res.writeHead(200, { 'content-type': body.stream ? 'text/event-stream' : 'application/json', 'cache-control': 'no-store' });
       let responseBytes = 0;
       for await (const chunk of response) {
@@ -113,7 +116,7 @@ export function createProxyHandler({ runs, baseURL, apiKey, model, maxTokens = 4
     } finally {
       if (!settled) entry.chargedTokens = reservation && entry.status !== 429 ? reservation : 0;
       entry.durationMs = now() - started;
-      try { await log(entry); } catch { state.blocked = true; res.destroy(); }
+      try { await trace('response', { requestId: entry.requestId, assistant: transcript.finish() }); await log(entry); } catch { state.blocked = true; res.destroy(); }
       clearTimeout(deadline); res.off('close', disconnect); release();
     }
   };
@@ -127,6 +130,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   const runs = JSON.parse(process.env.RSI_RUNS ?? '[]');
   if (!runs.length) throw new Error('RSI_RUNS required');
+  if (!mock) {
+    const missing = ['RSI_UPSTREAM_BASE_URL', 'RSI_UPSTREAM_MODEL', 'RSI_UPSTREAM_API_KEY'].filter(k => !process.env[k]?.trim());
+    if (missing.length) throw new Error(`Missing upstream environment: ${missing.join(', ')}`);
+  }
   if (!mock && !process.env.RSI_UPSTREAM_BASE_URL?.startsWith('https://')) throw new Error('Real upstream requires HTTPS');
   const handler = createProxyHandler({ runs,
     baseURL: mock ? 'http://127.0.0.1:8081/v1' : process.env.RSI_UPSTREAM_BASE_URL,
@@ -134,6 +141,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     model: mock ? 'mock-fixed' : process.env.RSI_UPSTREAM_MODEL,
     maxTokens: Number(process.env.RSI_MAX_TOKENS ?? 4096),
     inputTokensPerByte: Number(process.env.RSI_INPUT_TOKENS_PER_BYTE ?? 0.35),
+    trace: createTraceWriter('/out'),
     log: entry => appendFile('/out/usage.jsonl', `${JSON.stringify(entry)}\n`, { mode: 0o600 }),
   });
   http.createServer(handler).listen(8080, '0.0.0.0');

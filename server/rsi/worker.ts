@@ -16,7 +16,7 @@ import type { DockerClient } from './docker.js';
 import { mustDocker } from './docker.js';
 import { evaluatePatch } from './evaluator.js';
 import { runTarget } from './target-run.js';
-import { readProxyUsage, startProxy, stopProxy } from './proxy-run.js';
+import { exportProxyArtifacts, readProxyUsage, startProxy, stopProxy, upstreamEnvironment } from './proxy-run.js';
 import type { MockScript, ProxySettings, UsageReceipt } from './proxy-run.js';
 import { privateWrite } from './artifacts.js';
 import type { RsiStore } from './queue.js';
@@ -24,10 +24,13 @@ import { enqueue, newId, now, taskLock } from './queue.js';
 import { recoverWork } from './recovery.js';
 import { MissingReviewProvider } from './review.js';
 import type { ReviewProvider } from './review.js';
+import type { AgentPins, RsiAgentProfile } from './agent-profile.js';
+import { readFrozenAgent } from './agent-profile.js';
 
 export interface WorkerSettings {
   concurrency: number; agentTimeoutMs: number; reconciliationMaxRatio: number;
   keepRecentImages: number; imagesRoot: string; reportersRoot: string;
+  agent?: AgentPins;
   proxy: ProxySettings; candidateMockTable: Record<string, MockScript>;
 }
 export interface SlotRequest { runId: string; evaluation: RsiEvaluation; question: RsiBankQuestion; repetition: number; attempt: 0 | 1; signal: AbortSignal }
@@ -42,16 +45,26 @@ export interface ExecutionBackend {
   cleanup?(): Promise<void>;
 }
 export function validateWorkerSettings(v: WorkerSettings): WorkerSettings {
+  const fields = (value: unknown, allowed: string[], field: string): void => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Invalid ${field}`);
+    for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Invalid ${field}.${key}`);
+  };
+  fields(v, ['concurrency', 'agentTimeoutMs', 'reconciliationMaxRatio', 'keepRecentImages', 'imagesRoot', 'reportersRoot', 'proxy', 'candidateMockTable', 'agent'], 'settings');
+  fields(v.proxy, ['mode', 'maxTokens', 'inputTokensPerByte', 'mockTable'], 'settings.proxy');
+  if (v.agent) {
+    fields(v.agent, ['profileSha256', 'dockerfileSha256'], 'settings.agent');
+    for (const key of ['profileSha256', 'dockerfileSha256'] as const) if (!/^[a-f0-9]{64}$/.test(v.agent[key])) throw new Error(`Invalid settings.agent.${key}`);
+  }
   for (const n of [v.concurrency, v.agentTimeoutMs, v.keepRecentImages, v.proxy.maxTokens]) if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Invalid worker limit');
   if (v.concurrency > 32 || !Number.isFinite(v.reconciliationMaxRatio) || v.reconciliationMaxRatio < 0
     || !Number.isFinite(v.proxy.inputTokensPerByte) || v.proxy.inputTokensPerByte <= 0 || !['mock', 'real'].includes(v.proxy.mode)) throw new Error('Invalid worker settings');
   return v;
 }
 export class ContainerBackend implements ExecutionBackend {
-  readonly store: RsiStore; readonly client: DockerClient; readonly bank: QuestionBank; readonly settings: WorkerSettings;
+  readonly store: RsiStore; readonly client: DockerClient; readonly bank: QuestionBank; readonly settings: WorkerSettings; readonly profile: RsiAgentProfile;
   private built = new Map<string, BuiltCandidate>(); private infrastructureReady = false;
-  constructor(store: RsiStore, client: DockerClient, bank: QuestionBank, settings: WorkerSettings) {
-    this.store = store; this.client = client; this.bank = bank; this.settings = settings;
+  constructor(store: RsiStore, client: DockerClient, bank: QuestionBank, settings: WorkerSettings, profile: RsiAgentProfile) {
+    this.store = store; this.client = client; this.bank = bank; this.settings = settings; this.profile = profile;
   }
   async prepare(commit: string, signal: AbortSignal): Promise<string> {
     if (!this.infrastructureReady) {
@@ -66,7 +79,7 @@ export class ContainerBackend implements ExecutionBackend {
     }
     let result = this.built.get(commit);
     if (!result) {
-      result = await buildCandidate(this.client, this.store.taskId, join(this.store.root, 'private/repository.git'), commit, this.settings.imagesRoot, signal);
+      result = await buildCandidate(this.client, this.store.taskId, join(this.store.root, 'private/repository.git'), commit, join(this.store.root, 'private/agent'), this.profile, signal);
       this.built.set(commit, result);
     }
     return result.packageSha256;
@@ -84,13 +97,13 @@ export class ContainerBackend implements ExecutionBackend {
       while (polling && !signal.aborted) {
         try { receipt = await readProxyUsage(this.client, proxy.name, runId); await onUsage(receipt); }
         catch { pollError = true; }
-        await delay(250);
+        await delay(2000);
       }
     };
     const monitor = poll();
     try {
       const target = await runTarget(this.client, this.store.taskId, q, data.repo, data.statement,
-        this.built.get(e.commit)!.images[q.toolchain], proxy, output, this.settings.proxy.maxTokens, this.settings.agentTimeoutMs, signal);
+        this.built.get(e.commit)!.images[q.toolchain], proxy, output, this.profile, this.settings.proxy.mode === 'mock' ? 'fixed' : upstreamEnvironment().RSI_UPSTREAM_MODEL!, this.settings.agentTimeoutMs, signal);
       polling = false; await monitor;
       receipt = await readProxyUsage(this.client, proxy.name, runId, true); await onUsage(receipt);
       let failureReason = target.failureReason;
@@ -110,7 +123,7 @@ export class ContainerBackend implements ExecutionBackend {
       // Preserve a labelled proxy for recovery if its last usage cannot be made
       // durable. Never destroy the sole remaining accounting evidence first.
       const last = await readProxyUsage(this.client, proxy.name, runId, true);
-      await onUsage(last); await stopProxy(this.client, proxy);
+      await onUsage(last); await exportProxyArtifacts(this.client, proxy, output); await stopProxy(this.client, proxy);
     }
   }
   async cleanup(): Promise<void> {
@@ -133,10 +146,10 @@ export function finalRuns(e: RsiEvaluation, all: RsiRun[]): RsiRun[] {
 }
 export class RsiWorker {
   readonly store: RsiStore; readonly bank: QuestionBank; readonly settings: WorkerSettings;
-  readonly backend: ExecutionBackend; readonly reviews: ReviewProvider; readonly afterRun?: () => Promise<void>;
+  readonly backend: ExecutionBackend; readonly reviews: ReviewProvider; readonly afterRun?: () => Promise<void>; readonly profile?: RsiAgentProfile;
   private controller = new AbortController(); private usage = new Map<string, number>(); private accounting: Promise<void> = Promise.resolve();
-  constructor(store: RsiStore, bank: QuestionBank, settings: WorkerSettings, backend: ExecutionBackend, reviews: ReviewProvider = new MissingReviewProvider(), afterRun?: () => Promise<void>) {
-    this.store = store; this.bank = bank; this.settings = validateWorkerSettings(settings); this.backend = backend; this.reviews = reviews; this.afterRun = afterRun;
+  constructor(store: RsiStore, bank: QuestionBank, settings: WorkerSettings, backend: ExecutionBackend, reviews: ReviewProvider = new MissingReviewProvider(), afterRun?: () => Promise<void>, profile?: RsiAgentProfile) {
+    this.store = store; this.bank = bank; this.settings = validateWorkerSettings(settings); this.backend = backend; this.reviews = reviews; this.afterRun = afterRun; this.profile = profile;
   }
   async loadUsage(): Promise<void> {
     const directory = join(this.store.root, 'private/usage'); await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -248,7 +261,7 @@ export class RsiWorker {
             artifactPath: result.artifactPath, sessionPath: result.sessionPath, at: now() };
           await this.store.put({ event: 'run_put', payload: run });
           await this.afterRun?.();
-          if (e.iterationId && (result.proxyTokens === null || result.sessionTokens === null || Math.abs(result.proxyTokens - result.sessionTokens) > Math.max(1, result.proxyTokens) * this.settings.reconciliationMaxRatio)) {
+          if (this.profile?.session.format !== 'none' && e.iterationId && (result.proxyTokens === null || result.sessionTokens === null || Math.abs(result.proxyTokens - result.sessionTokens) > Math.max(1, result.proxyTokens) * this.settings.reconciliationMaxRatio)) {
             await this.store.put({ event: 'finding_put', payload: { id: newId(), taskId: this.store.taskId, iterationId: e.iterationId, level: 'L2', category: 'suspicious', severity: 'info', source: 'calibration', file: null, line: null,
               evidence: JSON.stringify({ runId: id, proxyTokens: result.proxyTokens, sessionTokens: result.sessionTokens }), at: now() } });
           }
@@ -277,6 +290,15 @@ export class RsiWorker {
     }
     if (score === null) { await this.taskEvent(ratio > this.store.task().config.infraErrorMaxRatio ? 'infra_failed' : 'incomplete_comparison', 'Evaluation has unresolved infrastructure slots'); return null; }
     return e;
+  }
+  smokeFloor(): number {
+    const baseline = this.completed(null, 'train');
+    if (!baseline) throw new Error('Smoke floor requires complete baseline calibration');
+    const runs = finalRuns(baseline, this.store.list('run_put'));
+    return this.bank.manifest.sets.smoke.filter(id => {
+      const own = runs.filter(r => r.questionId === id);
+      return own.length === baseline.repetitions && own.every(r => r.outcome === 'pass');
+    }).length;
   }
   promotionInput(iteration: RsiIteration): RsiPromotionInput {
     const t = this.store.task(), evaluations = this.store.list('evaluation_put'), runs = this.store.list('run_put');
@@ -329,7 +351,7 @@ export class RsiWorker {
     const parent = this.store.list('iteration_put').find(p => p.id === i.parentId)?.commit ?? this.store.task().baselineCommit;
     const dictionary = JSON.parse(await readFile(join(this.store.root, 'private/fingerprints.json'), 'utf8')) as RsiFingerprintDictionary;
     const diff = await candidateDiff(join(this.store.root, 'private/repository.git'), parent, i.commit);
-    const findings = precheck(diff, dictionary);
+    const findings = precheck(diff, dictionary, this.profile?.l1);
     for (const [n, f] of findings.entries()) {
       const id = `l1-${i.id}-${n}`;
       if (!this.store.list('finding_put').some(x => x.id === id)) await this.store.put({ event: 'finding_put', payload: { ...f, id, taskId: this.store.taskId, iterationId: i.id, level: 'L1', source: 'rule', at: now() } });
@@ -360,7 +382,7 @@ export class RsiWorker {
         i = { ...i, packageSha256, updatedAt: now() }; await this.store.put({ event: 'iteration_put', payload: i });
       }
       const smoke = await this.evaluation(i.id, 'smoke'); if (!smoke) return;
-      if (smoke.score !== smoke.questionIds.length) {
+      if (smoke.score === null || smoke.score < this.smokeFloor()) {
         await this.decision(i, 'reject', 'smoke_failed'); await this.iterationEvent(i, 'training_reject', { actor: 'worker', reason: 'smoke_failed' }); return;
       }
       const train = await this.evaluation(i.id, 'train'); if (!train) return;
@@ -542,13 +564,15 @@ export class RsiWorker {
 export async function runWorker(store: RsiStore, settings: WorkerSettings, client: DockerClient,
   execute: boolean, options: { signal?: AbortSignal; reviews?: ReviewProvider; backend?: ExecutionBackend; afterRun?: () => Promise<void> } = {}): Promise<unknown> {
   await store.refresh();
+  const profile = await readFrozenAgent(join(store.root, 'private/agent'), settings.agent);
+  if (execute && settings.proxy.mode === 'real') upstreamEnvironment();
   if (!execute) return { execute: false, taskId: store.taskId, state: store.task().state, concurrency: settings.concurrency,
     planned: ['recover labelled containers/networks', 'baseline train × R and sealed × 3', 'L1/build', 'smoke', 'train', 'review', 'sealed × 3', 'decide'],
     queue: store.list('queue_put').filter(q => q.state === 'queued').map(q => ({ id: q.id, kind: q.kind })) };
   return taskLock(store.root, 'worker', async () => {
     const bank = await readBank(join(store.root, 'private/bank'));
     if (bank.datasetHash !== store.task().datasetHash) throw new Error('Pinned bank hash changed');
-    const worker = new RsiWorker(store, bank, settings, options.backend ?? new ContainerBackend(store, client, bank, settings), options.reviews, options.afterRun);
+    const worker = new RsiWorker(store, bank, settings, options.backend ?? new ContainerBackend(store, client, bank, settings, profile), options.reviews, options.afterRun, profile);
     await worker.loadUsage();
     await recoverWork(store, client, async (name, runId) => worker.account(await readProxyUsage(client, name, runId, true)));
     // Reconcile fsynced receipts after a crash between telemetry and task_put.

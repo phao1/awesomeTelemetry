@@ -10,6 +10,8 @@ export default tseslint.config(
       '.local-runtime', '.codex-tmp', '.tmp-ppt-*', '.codeartsdoer', '.arts', 'reports', 'tempspec0806',
       // App-owned telemetry, imported artifacts and generated experiment workspaces.
       'awesome-telemetry-data',
+      // Question bank repositories and hidden tests are task material, not project source.
+      'rsi-bank',
     ],
   },
 

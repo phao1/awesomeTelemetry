@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { lstat, readFile } from 'node:fs/promises';
+import { cp, mkdir, lstat, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { RsiQuestionMetadata } from '../../src/core/rsi-types.js';
 import { canonicalJson } from './ledger.js';
-import { relativePath, treeFiles, packTree } from './artifacts.js';
+import { relativePath, treeFiles, packTree, privateWrite } from './artifacts.js';
 
 export type RsiBankToolchain = 'node' | 'python' | 'go';
 export type RsiBankReport = 'node-test-events' | 'unittest-json' | 'go-test-json';
@@ -107,4 +107,30 @@ export interface QuestionData { repo: Buffer; hidden: Buffer; statement: string 
 export async function readQuestionData(directory: string): Promise<QuestionData> {
   return { repo: await packTree(join(directory, 'repo')), hidden: await packTree(join(directory, 'hidden_tests')),
     statement: await readFile(join(directory, 'statement.md'), 'utf8') };
+}
+
+/** Selection changes only membership, never the source bank or qualification rules. */
+export function selectBankSubset(manifest: RsiBankManifest, subset: 'small' | 'full'): RsiBankManifest {
+  if (subset !== 'small' && subset !== 'full') throw new Error('Invalid bank subset');
+  const selected = structuredClone(manifest);
+  if (subset === 'full') return selected;
+  for (const split of ['train', 'sealed', 'final'] as const) {
+    const keep = new Set<string>(split === 'train' ? manifest.sets.smoke : []), languages = new Set<string>();
+    for (const q of manifest.questions) {
+      if (!manifest.sets[split].includes(q.id) || (split === 'train' && manifest.sets.smoke.includes(q.id)) || languages.has(q.language)) continue;
+      languages.add(q.language); keep.add(q.id);
+    }
+    selected.sets[split] = manifest.sets[split].filter(id => keep.has(id));
+  }
+  const ids = new Set([...selected.sets.train, ...selected.sets.sealed, ...selected.sets.final]);
+  selected.questions = selected.questions.filter(q => ids.has(q.id));
+  return selected;
+}
+export async function freezeBank(bank: QuestionBank, directory: string, subset: 'small' | 'full'): Promise<QuestionBank> {
+  const manifest = selectBankSubset(bank.manifest, subset);
+  if (subset === 'full') { await cp(bank.root, directory, { recursive: true }); return readBank(directory); }
+  await mkdir(join(directory, 'tasks'), { recursive: true, mode: 0o700 });
+  for (const q of manifest.questions) await cp(join(bank.root, 'tasks', q.id), join(directory, 'tasks', q.id), { recursive: true });
+  await privateWrite(join(directory, 'manifest.json'), JSON.stringify(manifest));
+  return readBank(directory);
 }

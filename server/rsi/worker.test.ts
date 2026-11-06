@@ -28,7 +28,7 @@ class FakeDocker implements DockerClient {
   }
 }
 class ModelBackend implements ExecutionBackend {
-  calls: SlotRequest[] = []; infra = new Set<string>(); tokens = 100; candidateFail = false; crashAt = 0;
+  calls: SlotRequest[] = []; infra = new Set<string>(); tokens = 100; noSession = false; candidateFail = false; crashAt = 0;
   plan?: (req: SlotRequest) => boolean; forcedFailure: 'agent_timeout' | 'run_token_budget' | null = null;
   docker = new FakeDocker();
   async prepare(): Promise<string> { return 'f'.repeat(64); }
@@ -36,12 +36,12 @@ class ModelBackend implements ExecutionBackend {
     this.calls.push(req);
     if (this.crashAt && this.calls.length === this.crashAt) throw new Error('transport failure');
     const key = `${req.evaluation.phase}:${req.question.questionId}`;
-    if (this.infra.has(key)) return { outcome: 'infra_error', failureReason: 'infrastructure', proxyTokens: this.tokens, artifactPath: null, sessionPath: null, sessionTokens: this.tokens };
-    if (this.forcedFailure) return { outcome: 'fail', failureReason: this.forcedFailure, proxyTokens: this.tokens, artifactPath: null, sessionPath: null, sessionTokens: this.tokens };
+    if (this.infra.has(key)) return { outcome: 'infra_error', failureReason: 'infrastructure', proxyTokens: this.tokens, artifactPath: null, sessionPath: null, sessionTokens: this.noSession ? null : this.tokens };
+    if (this.forcedFailure) return { outcome: 'fail', failureReason: this.forcedFailure, proxyTokens: this.tokens, artifactPath: null, sessionPath: null, sessionTokens: this.noSession ? null : this.tokens };
     this.docker.fail = this.plan ? !this.plan(req) : req.evaluation.iterationId === null ? !(req.question.questionId === 'train_python' && req.repetition === 1) : this.candidateFail;
     const r = await this.docker.run(['exec', 'test']);
     const verdict = parseReport(r.stdout.toString(), r.code, { report: 'node-test-events', expectedTests: 1 });
-    return { outcome: verdict.outcome, failureReason: verdict.outcome === 'pass' ? null : 'test_failed', proxyTokens: this.tokens, artifactPath: null, sessionPath: null, sessionTokens: this.tokens };
+    return { outcome: verdict.outcome, failureReason: verdict.outcome === 'pass' ? null : 'test_failed', proxyTokens: this.tokens, artifactPath: null, sessionPath: null, sessionTokens: this.noSession ? null : this.tokens };
   }
 }
 async function setup(config = {}, reviews?: ReviewProvider): Promise<{ store: RsiStore; worker: RsiWorker; backend: ModelBackend }> {
@@ -79,7 +79,10 @@ describe('ledger-backed worker scheduling', () => {
     const calls = backend.calls.length; await worker.run(); expect(backend.calls).toHaveLength(calls);
   });
   it('stops after smoke failure without scheduling train or reviews', async () => {
-    const { store, worker, backend } = await setup({}, clean); await worker.run(); await candidate(store); backend.candidateFail = true; await worker.run();
+    const { store, worker, backend } = await setup({}, clean);
+    backend.plan = req => req.evaluation.iterationId === null;
+    await worker.run(); expect(worker.smokeFloor()).toBe(1);
+    await candidate(store); backend.candidateFail = true; backend.plan = undefined; await worker.run();
     expect(store.list('iteration_put')[0]!.state).toBe('rejected');
     expect(backend.calls.filter(c => c.evaluation.iterationId !== null).map(c => c.evaluation.phase)).toEqual(['smoke']);
   });
@@ -177,4 +180,27 @@ describe('crash windows around reservations and promotion', () => {
     const count = backend.calls.length; await worker.run(); expect(backend.calls).toHaveLength(count);
     await expect(enqueue(store, { action: 'final', reason: 'Again' }, 'human', 'another-final', 'candidate')).rejects.toThrow('already reserved');
   });
+});
+
+it('allows smoke failures already unstable in baseline calibration and continues to train', async () => {
+  const { store, worker, backend } = await setup();
+  backend.plan = req => req.evaluation.iterationId === null
+    ? req.question.questionId === 'train_node' && req.repetition === 0
+    : req.evaluation.phase === 'smoke' ? false : true;
+  await worker.run(); expect(worker.smokeFloor()).toBe(0);
+  await candidate(store); await worker.run();
+  expect(backend.calls.some(c => c.evaluation.iterationId !== null && c.evaluation.phase === 'train')).toBe(true);
+  expect(store.list('iteration_put')[0]!.state).toBe('held');
+});
+
+it('format none retains proxy accounting without native-session discrepancy findings', async () => {
+  const { readAgentProfile } = await import('./agent-profile.js');
+  const { store, worker, backend } = await setup(); backend.noSession = true;
+  await worker.run(); await candidate(store);
+  const profile = (await readAgentProfile(resolve('rsi-agents/mini-agent/profile.json'))).profile;
+  const resumed = new RsiWorker(store, worker.bank, defaultWorkerSettings(), backend, undefined, undefined, profile);
+  await resumed.loadUsage(); await resumed.run();
+  expect(store.list('iteration_put')[0]!.state).toBe('held');
+  expect(store.list('finding_put').filter(f => f.level === 'L2')).toEqual([]);
+  expect(store.task().tokenUsage).toBeGreaterThan(0);
 });
