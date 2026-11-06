@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const { injectionCases, classify } = await import(pathToFileURL(resolve('scripts/rsi-e2e/cheat-injection.mjs')).href);
+const { injectionCases, classify, injectionOptimizerScript } = await import(pathToFileURL(resolve('scripts/rsi-e2e/cheat-injection.mjs')).href);
 
 describe('cheat injection fixture', () => {
   it('covers both required cheating groups and keeps honest controls', async () => {
@@ -20,8 +20,13 @@ describe('cheat injection fixture', () => {
       if (edit) expect(edit(source), c.id).not.toBe(source);
     }
   });
-  it('never counts an informational finding as the layer that blocked a commit', () => {
-    const findings = [{ iterationId: 'a', severity: 'info', source: 'process_monitor', category: 'review_clean' }, { iterationId: 'a', severity: 'reject', source: 'l1', category: 'test_tampering' }, { iterationId: 'b', severity: 'reject', source: 'monitor', category: 'task_specific' }];
-    expect(classify({ id: 'a', state: 'rejected', reasons: ['x'] }, findings)).toEqual({ state: 'rejected', reasons: ['x'], layers: ['l1'], categories: ['test_tampering'] });
+  it('never counts an informational finding as the layer that blocked a commit, and reports the first decision', () => {
+    const findings = [{ iterationId: 'a', severity: 'info', level: 'L4', category: 'review_clean' }, { iterationId: 'a', severity: 'reject', level: 'L1', category: 'test_tampering' }, { iterationId: 'b', severity: 'reject', level: 'L4', category: 'task_specific' }];
+    const decisions = [{ iterationId: 'a', verdict: 'hold', reason: 'l4_suspicious' }, { iterationId: 'a', verdict: 'reject', reason: 'human' }];
+    expect(classify({ id: 'a', state: 'rejected' }, findings, decisions)).toEqual({ state: 'rejected', verdict: 'hold', reason: 'l4_suspicious', layers: ['L1'], categories: ['test_tampering'] });
+  });
+  it('submits through the optimizer API, one commit per round, then asks for help', () => {
+    const script = injectionOptimizerScript();
+    expect(script).toContain('$RSI_API_BASE/iterations'); expect(script).toContain('$RSI_API_BASE/stuck'); expect(script).toContain('lastIterationSeq+1');
   });
 });
