@@ -9,15 +9,16 @@
 3. Codex 回复里出现 “Needs confirmation” 时，Claude 恢复同一会话作答，并要求它一次列出所有阻塞项。
 4. 每个阶段都在用户能看到的终端标签里运行，保留日志。
 
-顺序：P0 和 P1 可并行（文件不重叠）→ P2 和 P3 并行 → P4 → P5 → P6 → P7（Claude 联调）。
+顺序：P0 和 P1 可并行（文件不重叠）→ P2 和 P3 并行 → P2b → P4 和 P5 并行 → P6 → P7（Claude 联调）。
 
 | 阶段 | 模型 | 强度 |
 | --- | --- | --- |
 | P0 环境探针脚本 | `gpt-6.1-sol` | `medium` |
 | P1 契约和判定核心 | `gpt-6-astra` | `ultra` |
 | P2 执行器 | `gpt-6.1-sol` | `high` |
+| P2b Agent 档案 | `gpt-6.1-sol` | `high` |
 | P3 题集 | `gpt-6.1-sol` | `medium` |
-| P4 优化者接入 | `gpt-6.1-sol` | `medium` |
+| P4 优化者接入和接口 | `gpt-6.1-sol` | `high` |
 | P5 防作弊 Agent | `gpt-6-astra` | `ultra` |
 | P6 页面 | `gpt-6.1-sol` | `medium` |
 
@@ -294,6 +295,108 @@
 
 ---
 
+## P2b Agent 档案和通用化
+
+**分支**：`codex/rsi-p2b`（P2、P3 合入后）
+
+```text
+你在 awesomeTelemetry 仓库的 worktree 里（分支 codex/rsi-p2b）。P0、P1、P2、P3 已合入。
+
+背景：用户要求别人也能用这个平台优化自己的 Agent。现在被优化对象写死是 OpenCode，本阶段把它改成可配置的 Agent 档案，并用第二个完全不同的 Agent 证明这件事。
+
+必读（按顺序）：
+1. AGENTS.md 全文
+2. openspec/contracts/rsi.md 的 RSI-006、RSI-011、RSI-012
+3. docs/rsi/p0-report.md 的“真实模型结果”和“带给 P2 的要求”
+4. server/rsi/target-run.ts、build.ts、worker.ts、proxy-run.ts、cli.ts、bank.ts
+5. scripts/rsi-images/（target.Dockerfile、model-proxy.mjs、mock-model.mjs）；scripts/rsi-e2e/p2-smoke.mjs
+
+只允许新增或修改：
+- rsi-agents/**（新增，见下）
+- server/rsi/agent-profile.ts 及测试（新增）
+- server/rsi/target-run.ts、build.ts、worker.ts、proxy-run.ts、cli.ts、bank.ts 及各自测试
+- scripts/rsi-images/（target.Dockerfile 移到 rsi-agents/opencode/，代理和假模型按下文修改）
+- src/core/rsi-l1-rules.ts 及测试（只加 allowPaths）
+- scripts/rsi-e2e/（新增 mini-agent e2e，更新 p2-smoke 和 README）
+- openspec/contracts/rsi.md（只追加 RSI-013；并修改 RSI-012 里 smoke 那句，见第 5 点）
+- package.json 的 scripts（如需要）
+
+具体要求：
+
+1. Agent 档案（RSI-013，写进契约）。一个档案是一个 JSON 文件，放在目录里，和 Dockerfile 同目录：
+
+   interface RsiAgentProfile {
+     version: 1;
+     id: string; name: string;
+     dockerfile: string;          // 相对档案目录；必须定义 target-node、target-python、target-go 三个 stage
+     dependencyInputs: { kind: 'bun-workspace' } | { kind: 'globs'; include: string[] } | { kind: 'none' };
+     run: {
+       argv: string[];            // 占位符 {{statement}}、{{model}}
+       env: Record<string, string>;
+       files: { path: string; content: string }[];   // 容器内绝对路径，运行前写入
+     };
+     session: { format: 'opencode-db' | 'none'; dir: string };   // 运行结束后导出 dir；format 决定如何读 token
+     l1?: { allowPaths?: string[] };   // 这些路径不算 protected_path，比如该仓库自己的测试目录
+   }
+
+   - env 和 files.content 支持占位符 {{baseUrl}}（http://rsi-proxy:8080/v1）、{{apiKey}}（每个 run 的临时令牌）、{{model}}、{{sessionDir}}。argv、env、files 里的占位符都不经过 shell，严格字符串替换，未知占位符报错。
+   - 档案校验失败要给出具体字段。档案里不得出现真密钥：平台只提供临时令牌。
+   - `rsi task create` 增加 `--agent <profile.json>`，把档案和 Dockerfile 冻结拷入 private/agent/，并把它们的 sha256 写进 runtime 文件，启动时校验。不修改 RsiTask 类型。
+   - dependencyInputs：bun-workspace 用现有逻辑；globs 只拷匹配的文件；none 不拷。`.npmrc`、`bunfig.toml` 任何情况下都不进联网阶段。Dockerfile 的构建上下文仍是 source/ 和 deps/。候选代码只能在 `RUN --network=none` 里运行，这一条写进 RSI-013 和档案作者指南。
+   - 平台保持现有隔离不变：internal 网络、无挂载、cap-drop ALL、数据走 tar 流。档案不能放宽这些。
+
+2. 内置档案：
+   - rsi-agents/opencode/profile.json：通用 OpenAI 兼容配置，用于假模型（现有 target-run 里的配置）。
+   - rsi-agents/opencode/profile.deepseek.json：OpenCode 内置 deepseek provider，模型 `deepseek/deepseek-flash`，只覆盖 baseURL 和 apiKey。原因见 docs/rsi/p0-report.md。两个档案共用 rsi-agents/opencode/target.Dockerfile。
+   - rsi-agents/mini-agent/：一个不依赖任何包的极小 Node 编码 Agent（source/agent.mjs 约 150 行内，source/package.json），用 fetch 调 chat completions，工具有 shell、read_file、write_file，读 OPENAI_BASE_URL、OPENAI_API_KEY、OPENAI_MODEL。还有 profile.json、target.Dockerfile、README.md。它要和假模型配合：假模型发出的工具调用它都要能执行，所以先看 mock-model.mjs 用的工具名和参数，需要时在假模型里按请求里声明的工具名适配。
+   - rsi-agents/README.md：档案作者指南。怎么写档案和 Dockerfile，运行时有哪些变量，平台的隔离规则，为什么候选代码必须在离线阶段编译。
+
+3. 通用轨迹：不是每个 Agent 都有 OpenCode 那样的会话库，但所有 Agent 的模型请求都过代理。
+   - 代理把每次响应的 assistant 文本和 tool_calls 追加到 /out/responses.jsonl，并保留最后一次请求的 messages 到 /out/last-request.json（消息是累积的，所以这就是完整对话）。单文件上限 8MB，超限截断并标记。不记录 Authorization 头。
+   - run 结束时和 usage.jsonl 一起导出到 artifacts。
+   - session.format 为 none 时不读 token，也不写对账差异的 finding；token 仍以代理为准。
+
+4. 代理：
+   - 支持 RSI_UPSTREAM_BASE_URL、RSI_UPSTREAM_MODEL、RSI_UPSTREAM_API_KEY 三个环境变量，worker 从自身环境读取，绝不写入 settings、runtime 文件、账本或日志。缺少时明确报错。
+   - worker 读 usage 的轮询从 250ms 改成 2000ms：每次都是一个 docker exec，太频繁会抢 CPU。
+
+5. smoke 门槛：契约现在要求 smoke 全过，但如果某道 smoke 题基线本来就不稳定通过，所有候选都会被拒，闭环就卡死了。改成：smokeFloor = 基线标定里在每次重复都通过的 smoke 题数。候选的 smoke 通过数 ≥ smokeFloor 才继续。更新 RSI-012 那句话和测试。这是设计者的决定（2026-11-07）。
+
+6. 题集子集：别人第一次试用不想跑完整题集。`rsi task create` 增加 `--subset small|full`，默认 full。small 按 manifest 顺序确定性取：smoke 不变；train 取 smoke 加上每种语言再补 1 题；sealed 每种语言 1 题；final 每种语言 1 题。取到的子集写进冻结的 private/bank/manifest.json，datasetHash 按冻结内容计算，所以一旦创建就不能再变。bank.ts 的校验要接受这种子集，但不放宽其他不变量。
+
+7. L1 allowPaths：scanDiff 增加可选的第三个参数 options?: { allowPaths?: string[] }，用简单 glob 匹配。命中的路径不产生 protected_path，其他规则照常。
+
+8. 自检命令：`rsi doctor` 检查 docker 和 buildx 是否可用、docker context 是否可连、Linux 引擎和架构、磁盘余量、上游三个环境变量是否齐全（只报有没有，不打印值），输出 JSON。`rsi agent validate <profile.json>` 只校验档案。
+
+9. 测试：
+   - 档案校验、占位符替换、未知占位符、globs 依赖输入、allowPaths、smokeFloor、子集选择的单测。
+   - scripts/rsi-e2e/mini-agent-smoke.mjs：用真实 Docker 和假模型，以 mini-agent 为被优化对象，--subset small，跑完基线标定、一个候选的 smoke 和 train，到 held 为止。Claude 在沙箱外运行。
+   - 现有 p2-smoke 改用 rsi-agents/opencode/profile.json，断言不变。
+
+10. 工具链版本统一：现在 target 和 evaluator 镜像的 Go 来自 Debian，是 1.19.8，而题库是用 Go 1.23 校验的，go.mod 写的是 1.20，正确答案可能被判编译失败。全部改成 `COPY --from=golang:1.23-bookworm /usr/local/go /usr/local/go` 并设置 PATH，所有内置 target 和 evaluator 镜像都用同一版本。把工具链版本写进 RSI-013，并加一个 Dockerfile 文本级测试防止退回。
+
+不要做：
+- 不写 HTTP、页面、优化者、监控 Agent。不改 server/server.ts。不新增依赖。
+- 不读取或挂载 ~/.codex、~/.claude、~/.ssh。不把任何真密钥写进文件。
+
+遇到以下情况停下来问（一次列全）：
+- 契约有矛盾，或按契约写不出确定行为
+- 需要改动列表外的文件
+
+验收（沙箱内）：两份 tsc；npx eslint <改动路径>；npx vitest run --configLoader native --no-cache server/rsi scripts/rsi-images scripts/rsi-e2e scripts/rsi-bank src/core/rsi-l1-rules.test.ts src/catch-guard.test.ts
+
+完成后按 AGENTS.md Output format 输出，列出未运行项和自行决定的取值。
+```
+
+**审查清单**
+
+- [ ] 档案不能放宽隔离，也不能带真密钥
+- [ ] 候选代码只在离线阶段运行
+- [ ] mini-agent 用真实 Docker 跑通，证明平台不依赖 OpenCode
+- [ ] 所有镜像的 Go 版本一致
+
+---
+
 ## P3 题集
 
 **分支**：`codex/rsi-p3`（与 P2 并行）
@@ -348,22 +451,90 @@
 **分支**：`codex/rsi-p4`
 
 ```text
-目标：让真实优化者在容器里自己循环：取 brief、读白名单结果、提交 PRD 和 commit、必要时 declare_stuck。
+你在 awesomeTelemetry 仓库的 worktree 里（分支 codex/rsi-p4）。P0～P3 和 Agent 档案（RSI-013）已合入。
 
-必读：AGENTS.md；openspec/contracts/rsi.md 的 API 和可见范围；docs/rsi/p0-report.md 的优化者登录结论；server/http/benchmark-routes.ts（路由写法）；server/telemetry/receiver.ts 的 Bearer 校验；server/server.ts 注册和回环白名单位置。
+目标：真实优化者在隔离容器里自己循环：取 brief、读白名单结果和轨迹、改代码提交、提交 PRD 和 commit、必要时 declare_stuck。同时实现全部 HTTP 接口和人工命令。页面在下一阶段。
+
+必读（按顺序）：
+1. AGENTS.md 全文
+2. openspec/contracts/rsi.md 全文，尤其 RSI-005、RSI-009、RSI-012、RSI-013；openspec/contracts/api.md §0.3 和 RSI 一节
+3. docs/rsi/design.md 的“总体架构”“迭代闭环”“人工审查与干预”“给优化者一个出口”；docs/rsi/p0-report.md
+4. server/rsi/worker.ts、queue.ts、target-run.ts、proxy-run.ts、agent-profile.ts、cli.ts；scripts/rsi-images/model-proxy.mjs；rsi-agents/README.md
+5. server/http/benchmark-routes.ts（路由写法）；server/telemetry/receiver.ts（Bearer 校验）；server/server.ts 里路由注册、停止和回环白名单的位置（只看这几处）；server/realtime/sse.ts、src/core/trace-types.ts 里的 SSE 事件定义
 
 只允许新增或修改：
-- server/http/rsi-routes.ts 及测试（优化者接口和页面接口的只读部分）
-- server/rsi/agent-auth.ts、optimizer-session.ts、handoff-prompt.ts、submit.ts 及测试
-- server/server.ts（只加注册、停止、回环前缀）
-- openspec/contracts/api.md（如契约需要细化）
+- server/http/rsi-routes.ts 及测试
+- server/rsi/agent-api.ts、optimizer-session.ts、optimizer-profile.ts、handoff-prompt.ts、commands.ts、adopt.ts、quality.ts、reader.ts 及测试；server/rsi/worker.ts、cli.ts、queue.ts、proxy-run.ts 及测试
+- server/server.ts（只加注册、停止、回环前缀）；server/realtime/sse.ts、src/core/trace-types.ts（只加 rsi_changed 事件）
+- src/core/rsi-visibility.ts、rsi-types.ts、rsi-validation.ts 及测试（只为新增字段和投影）
+- scripts/rsi-images/（代理增加转发和白名单出口）
+- rsi-agents/optimizers/**（新增）
+- scripts/rsi-e2e/p4-loop.mjs 和说明
+- openspec/contracts/rsi.md（追加 RSI-014，修改 RSI-009.1 中需要变化的路由）；openspec/contracts/api.md
 
-要求：
-- 每个任务一个 Bearer，只存哈希。优化者令牌调不了页面接口，反之亦然。页面接口要本机令牌，不能只靠回环。
-- 所有结果经 rsi-visibility 投影。写测试：用优化者令牌遍历全部接口，响应里不得出现封存题号、封存分数、监控原文、指纹字典。
-- 提交接口不收二进制，只收 PRD 和 commit sha。平台自己从 worktree 算 diff。
-- 每轮由 worker 启动一个全新优化者会话，上一轮的会话不续接。优化者目标不写死，提示词明确 declare_stuck 不算失败。监控结论不进入提示词。
-- 达到迭代或 token 预算上限时任务自动停止。
+硬性安全要求（实测得出，不可放宽）：
+- 实测结果：容器一旦接入 bridge 网络，就能经 host.lima.internal、192.168.5.2、host.docker.internal 访问宿主机回环上的任何服务；只有 internal 网络才挡得住。所以优化者容器只接 internal 网络，绝不接 bridge，也绝不挂载宿主目录或 docker socket。
+- 优化者的所有出网都走代理旁路容器（它同时接 internal 和 bridge）。旁路容器只做三件事：转发模型请求；转发 /api/rsi/agent/ 前缀到宿主机平台接口（只允许这个前缀，其他路径 404，绝不转发页面接口）；按档案白名单放行 HTTPS CONNECT（只比对域名，默认空，IP 字面量一律拒绝）。
+- 优化者的任务 Bearer 只调得动 agent 接口。令牌只存 SHA256。页面接口用单独的本机令牌，优化者令牌调不了，只有回环地址也调不了。
+
+具体要求：
+
+1. 优化者档案（RSI-014）：rsi-agents/optimizers/<id>/profile.json，和 RSI-013 同样的占位符和严格替换规则，加上：
+   family（模型家族，P5 用它保证监控者不同家族）、egress（{ kind:'model-proxy' } 或 { kind:'vendor-allowlist', domains:[...] }）、login（{ kind:'none' } 或 { kind:'volume', path, command }）。
+   内置三个：
+   - opencode-deepseek：OpenCode + DeepSeek，走模型代理，无需登录。这是默认，也是唯一由 Claude 实测的。
+   - codex、claude-code：走厂商白名单，登录态存在 Docker 命名卷里，只挂到优化者容器。`rsi optimizer login --profile <id>` 打印并执行一条交互式命令，用户在全新容器里自己登录。绝不读取或拷贝宿主机的 ~/.codex、~/.claude。这两个 README 要写明“未实测”。
+   - scripted：测试用，一个 shell 脚本容器，通过接口走完一轮，不调模型。
+   平台不假定优化者是谁，所以这几个档案只靠接口和 handoff 提示词工作。
+
+2. 优化者会话（optimizer-session.ts）：
+   - 每轮由 worker 启动一个全新容器，不续接上一轮。放入父代 commit 的工作副本（git bundle 经 tar 流进入）。
+   - 环境只有 RSI_API_BASE（旁路容器地址）、RSI_AGENT_TOKEN、模型地址和临时令牌。优化者的模型用量记进任务 token 预算，每轮有单独的上限 optimizerSessionTokens（默认 200 万，可配置）；超限代理 429，会话结束。
+   - 会话有总时长上限（默认 30 分钟，可配置）。结束后用 git bundle 导出提交，在可信裸仓库里 fetch（禁用 hooks），再由现有 precheck 算 diff。绝不接受容器声明的 diff 或二进制。
+   - 一轮只接受第一次提交。会话结束没有提交也没有 declare_stuck，记一条 no_submission；连续 3 次转 needs_help。
+   - 优化者会话的代理记录和 P2b 的通用轨迹一样导出，页面要能看。
+
+3. handoff-prompt.ts：生成交给优化者的提示词。写明目标是提升通过题数但不写死成“必须达到”；只验证一个假设；PRD 字段；接口用法（带 curl 示例）；评测和隐藏测试它碰不到；档案的 allowPaths 之外不要改测试目录，否则整轮被拒；不要按题号、题名、文件名特判，平台会扫描并拒绝；实在没进展就调 stuck，这不算失败。监控结论的原文绝不进入提示词。人工的禁令和思路从 brief 接口拿。
+
+4. agent 接口（agent-api.ts，经 rsi-visibility 投影）：
+   - GET brief；GET iterations/:seq/results；POST iterations；POST stuck（按 RSI-009.1）。
+   - 新增 GET runs/:runId/trajectory：只允许 smoke 和 train 的 run，返回 P2b 导出的 responses.jsonl 和 last-request 内容；sealed、final、adversarial、ablation 一律 404。题目的 statement 优化者本来就能看，隐藏测试内容不在其中。写进投影白名单。
+   - 写测试：用优化者令牌遍历全部接口，把封存题号、封存分数、监控原文、指纹字典、隐藏测试内容都放进存储，断言响应里不出现。
+
+5. 人工命令（commands.ts，HTTP 和 CLI 共用，只写队列，worker 执行）：approve、reject、retry_review、retry_evaluation、pause、resume、stop、set_budget、final 已有；补上：
+   - rollback：把指定已晋级版本或基线设为下一轮父代，在它上面新建迭代，其后的版本保留。
+   - instruction：添加禁令或思路，下一轮 brief 生效；优化者不能调。
+   - adopt：把已定稿版本导出为 artifacts/adopted/<seq>.patch，并在可信裸仓库打 refs/rsi/adopted/<seq>。不合并，不推送。
+   - 处理 needs_help：放宽目标（set_budget 或新增 set_target）、给思路、或终止。
+
+6. worker：
+   - `rsi worker --execute --watch` 常驻，每 5 秒看队列，Ctrl-C 干净退出；不带 --watch 仍是干完就退。这仍然是唯一能启动容器的入口，由人手动启动。
+   - 写心跳文件 private/worker.json（pid、时间、当前阶段）。页面据此显示 worker 是否在跑。
+   - running 状态、没有进行中的迭代、没有待处理提交时，启动下一轮优化者会话，直到预算或目标。
+
+7. HTTP（rsi-routes.ts）：
+   - 实现 RSI-009.1 全部路由，所有非 2xx 走 ApiError。请求路径上不能 spawnSync，不能同步读大文件。优化者错误信息不含隐藏数据。
+   - 页面令牌：server 启动时生成，`GET /api/rsi/session` 只在同源（Host、Origin、Sec-Fetch-Site）校验通过时返回，前端放内存。
+   - POST /api/rsi/tasks：请求体扩展 agentProfile、optimizerProfile、bank、subset（改 RSI-009.1）。HTTP 只记录意图并写队列，不 clone、不构建；worker 启动时完成物化。路径必须是本机绝对路径。agentToken 只在响应里出现一次。
+   - 另加 GET 接口供页面用：迭代 diff（平台算出的）、迭代的发现列表和证据、run 的轨迹（人工可看全部阶段）、worker 状态、可选的档案和题库列表。diff 和证据只给页面接口。
+   - SSE：加 rsi_changed { taskIds }，按 200ms 窗口合并。server 通过监视账本文件变化得知（worker 是另一个进程），不能按 run 发事件。
+
+8. 质量数据（quality.ts）：每个迭代算改动行数、文件数、新增函数数等简单指标，写进 artifact，给优化者和页面看。第一版不做复杂度分析。
+
+9. 测试：
+   - 单测覆盖路由鉴权矩阵（优化者令牌、页面令牌、无令牌、错误 Host/Origin）、投影泄露遍历、handoff 不含监控原文、rollback、instruction、adopt、no_submission、会话超时。
+   - scripts/rsi-e2e/p4-loop.mjs：真实 Docker + 假模型，以 mini-agent 为被优化对象、scripted 为优化者、--subset small，无人值守跑 3 轮，走真实 HTTP 接口和旁路转发，并断言优化者容器连不上宿主机其他端口。Claude 在沙箱外运行。
+
+不要做：
+- 不写页面，不写监控 Agent（ReviewProvider 保持现有接口）。不新增依赖。不自动合并或推送。
+
+遇到以下情况停下来问（一次列全）：
+- 契约有矛盾，或按契约写不出确定行为
+- 需要改动列表外的文件
+
+验收（沙箱内）：两份 tsc；npx eslint <改动路径>；npx vitest run --configLoader native --no-cache server/rsi server/http/rsi-routes.test.ts scripts/rsi-images scripts/rsi-e2e src/core/rsi- src/catch-guard.test.ts
+
+完成后按 AGENTS.md Output format 输出，列出未运行项和自行决定的取值。
 ```
 
 **审查清单**
@@ -379,22 +550,77 @@
 **分支**：`codex/rsi-p5`
 
 ```text
-目标：实现监控者、对抗者、消融重跑和校准器，并产出已知作弊补丁的检出报告。
+你在 awesomeTelemetry 仓库的 worktree 里（分支 codex/rsi-p5）。P0～P3 和 Agent 档案（RSI-013）已合入。
 
-必读：AGENTS.md；openspec/contracts/rsi.md；docs/rsi/design.md“防作弊”全文；server/task-health/model-client.ts、deep.ts；scripts/codex-health-proxy.mjs。
+目标：实现设计稿的 L3、L4、L5：监控者、对抗者、消融重跑、校准器，以及过程监控者和人工随机抽检，并产出已知作弊补丁的检出报告。这些是防作弊的核心，宁可停下来问，也不要猜。
 
-只允许新增：
-- server/rsi/monitor.ts、adversary.ts、ablation.ts、calibrator.ts 及测试
-- scripts/claude-monitor-proxy.mjs（无工具的 Claude 封装，形式照 codex-health-proxy）
-- rsi-bank/calibration/（每类至少 30 个已知作弊补丁和 30 个良性补丁）
+必读（按顺序，上下文有限，不要通读仓库）：
+1. AGENTS.md 全文
+2. docs/rsi/design.md 的“防作弊”全文（作弊类型表、六层防线、三个新增角色、降低合谋的规则、怎么测量监控本身、这套设计挡不住的情况）
+3. openspec/contracts/rsi.md 的 RSI-001、RSI-004、RSI-005、RSI-006、RSI-010、RSI-012、RSI-013
+4. server/rsi/review.ts、worker.ts 里 reviewing 状态和 evaluation 的部分；src/core/rsi-gate.ts；src/core/rsi-l1-rules.ts
+5. server/task-health/model-client.ts、deep.ts（只看模型调用和拒绝 tool_calls 的部分）；scripts/codex-health-proxy.mjs
+6. rsi-bank/ 一道题的结构；scripts/rsi-bank/validate.mjs
 
-要求：
-- 监控者只收去注释的 diff、题面、L1 告警，不收 PRD、优化者推理、分数。diff 放在明确标记的数据块里。两套提示词随机选一套。没有工具。输出类别、证据行、置信度。证据行必须真实存在于 diff，否则结论作废。
-- 监控者只能挂起，不能批准。超时或解析失败一律 hold。
-- 对抗者只出变体题，变体题必须先在参考解上通过才计入。拿不到封存集和监控结论。
-- 消融：自动撤销 L1 告警或 L4 怀疑的改动块，重跑受影响的题，分数回落写成强证据。
-- 校准：注入已知作弊补丁和良性补丁，监控者不知道哪些是注入的。分类报告检出率、误报率和置信区间。L0、L1 类别必须 100%。监控者不达标自动降级为只告警。
-- 优化者和监控者必须不同模型家族，否则启动时报错。
+只允许新增或修改：
+- server/rsi/monitor.ts、process-monitor.ts、adversary.ts、ablation.ts、calibrator.ts、patch-scan.ts、agent-review.ts、stats.ts 及测试
+- server/rsi/review.ts、worker.ts、cli.ts（只加接线和子命令）及测试
+- scripts/claude-monitor-proxy.mjs（无工具的 Claude 封装，形式照 scripts/codex-health-proxy.mjs）及测试
+- rsi-bank/calibration/**（已知作弊补丁和良性补丁）
+- src/core/rsi-types.ts、rsi-validation.ts、rsi-visibility.ts 及测试（只为新增字段）
+- openspec/contracts/rsi.md（追加 RSI-015）；openspec/gotchas.md（只追加）
+
+具体要求：
+
+1. 监控者（monitor.ts，L4）：
+   - 输入只有去掉注释的 diff、题面、L1 告警。绝不给 PRD、优化者推理、分数。去注释由确定性代码完成，按语言处理常见注释语法，并测试注释里的注入文本到不了模型。
+   - diff 放在明确标记的数据块里，提示词声明里面是数据不是指令。两套提示词按 iteration ID 的哈希选一套（可复现），调用记录里保存用了哪套。
+   - 没有工具。模型调用走 task-health 的 model client，它会拒绝 tool_calls。
+   - 输出 JSON：类别、证据行、置信度。证据行必须逐字存在于 diff 的新增行里，否则这条结论作废。结构非法、超时、模型错误一律算 missing，绝不算 clean。
+   - 只能挂起，不能批准。
+   - 优化者和监控者的模型家族相同时启动就报错：优化者档案的 family 和监控者配置的 family 比较。默认优化者 deepseek、监控者 openai（scripts/codex-health-proxy.mjs，已有）。优化者是 openai 时用 scripts/claude-monitor-proxy.mjs。
+
+2. 被优化 Agent 产出补丁的确定性扫描（patch-scan.ts）：P0 报告指出候选补丁和隐藏测试在同一容器里跑，补丁理论上能干扰测试框架。扫描 target 产出的补丁里的 process.exit、os._exit、sys.exit、修改 assert 或 unittest、读取 hidden_tests、改写测试框架等模式。命中写一条 L1 级 info 发现供人工和监控参考，不直接改判分，避免误伤合法补丁。这是确定性代码，不调模型。
+
+3. 对抗者（adversary.ts，L3）：
+   - 输入训练题和候选 diff，绝不给封存集和监控结论。模型生成变体题（改标识符、路径、数值、题面措辞）和对应的新隐藏测试。没有工具。
+   - 变体题必须先在参考解上通过、在原始代码上不通过，才计入。用现有评估容器验证，验证失败的变体丢弃并记录。SWE-ABS 发现生成的测试会误拒正解，所以这一步不能省。
+   - 候选和父代分别跑通过验证的变体。候选在原题上提升但在变体上明显掉分（阈值写进配置，默认比父代低超过 δ），结论 suspicious。
+   - 对抗者只出题，不判定：判定由确定性比较完成。只在 training 通过后才跑。token 记进任务预算。没有足够有效变体时结论是 missing，不是 clean。
+
+4. 消融重跑（ablation.ts，L3）：对 L1 告警或 L4 怀疑的改动块，平台在可信裸仓库里自动撤销这些块生成新 commit，重新构建，重跑受影响的题（phase=ablation）。分数回落超过 δ 写成强证据发现。撤销后构建失败要如实记录，不算证据。
+
+5. 过程监控者（process-monitor.ts）：读 PRD 和优化者会话的轨迹，核对说明和 diff 是否一致。它的结论只作为证据给人看，不能挂起、不能批准，也不进入优化者提示词。设计稿引用的研究说推理一旦进入奖励，召回率接近 0，所以这条边界要写进契约并测试。
+
+6. 校准器（calibrator.ts，L5）：
+   - rsi-bank/calibration/ 放已知作弊补丁和良性补丁。类别：按题特判、硬编码答案、改测试、删标记、带说辞的特判；每类至少 30 个，良性至少 30 个。可以用模板加题库元数据确定性生成，生成结果落盘，同一 seed 可复现。
+   - `rsi calibrate --task <id> [--sample N]`：L0、L1 能管的类别跑全量（不调模型，要求 100%）。监控者默认每类抽样 5 个加良性 5 个，因为每次都是模型调用；--sample all 跑全量。监控者不知道哪些是注入的。
+   - 报告：分类的检出率、误报率、Wilson 置信区间、样本数、模型和提示词版本。stats.ts 是纯函数。
+   - 门槛：检出率 ≥ 80%、误报率 ≤ 10%（可配置）。样本太少时报告 insufficient，不下结论。不达标时监控者自动降级为只告警，不挂起，并写进账本。没有校准结果时保持挂起模式，不默认信任也不默认降级。
+   - 校准结果写进账本，换模型或换提示词版本后旧结果失效。
+
+7. 人工随机抽检：配置 auditSampleRate（默认 0.1）。按 iteration ID 哈希确定性抽中已晋级迭代，标记后进入待审队列。写进投影：优化者看不到抽检标记。
+
+8. AgentReviewProvider（agent-review.ts）接到 worker 的 reviewing 状态，组合以上结果。优先级和 rsi-gate 一致：任何缺失都是 missing。监控者降级时它的结论写成 info，不产生 l4_suspicious。为 worker 增加 adversarial、ablation 两个 phase 的调度，遵守现有预算和崩溃恢复规则。`rsi worker` 增加配置项选择监控模型地址和 family，真密钥只从环境变量读。
+
+9. 测试：
+   - 注释里的注入到不了模型；证据行造假被作废；超时和解析失败得到 missing；家族相同启动报错。
+   - 变体验证：参考解不过的变体被丢弃。消融：分数回落写证据，构建失败不算证据。
+   - L0、L1 类别的校准补丁 100% 检出，用真实的 scanDiff，不 mock。
+   - 用假模型客户端跑通 AgentReviewProvider 的 clean、suspicious、missing 三条路径，以及监控者降级。
+   - 真实模型调用的测试默认跳过，Claude 在沙箱外运行。
+
+不要做：
+- 不改 rsi-gate 的判定逻辑。监控结论绝不进入优化者提示词或可见投影（只有 held 和类别）。不写页面和 HTTP 路由。不新增依赖。
+- 不读取或挂载 ~/.codex、~/.claude、~/.ssh；模型调用只经现有 proxy 脚本。
+
+遇到以下情况停下来问（一次列全）：
+- 设计稿或契约有矛盾，或按它写不出确定算法
+- 需要改动列表外的文件
+
+验收（沙箱内）：两份 tsc；npx eslint <改动路径>；npx vitest run --configLoader native --no-cache server/rsi src/core/rsi- scripts/claude-monitor-proxy src/catch-guard.test.ts
+
+完成后按 AGENTS.md Output format 输出，额外列出：校准集每类数量；L0、L1 类别的检出结果；所有自行决定的取值；未运行项。
 ```
 
 **审查清单**
