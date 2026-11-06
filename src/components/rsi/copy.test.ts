@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { RSI_COPY, reasonLabel } from './copy.js';
+import { RSI_COPY, helpReasonText, reasonLabel } from './copy.js';
 describe('RSI bilingual reason vocabulary',()=>{
   it('covers every authoritative hold/pause/outcome/finding/failure/calibration code',()=>{
     const contract=readFileSync('openspec/contracts/rsi.md','utf8'),block=contract.slice(contract.indexOf('### P5 authoritative runtime declarations'),contract.indexOf('### P5 host configuration'));
@@ -16,5 +16,13 @@ describe('RSI bilingual reason vocabulary',()=>{
   it('has nonempty separate Chinese and English labels for every code, with a safe unknown fallback',()=>{
     for(const [code,labels] of Object.entries(RSI_COPY)){expect(labels[0].trim(),code).not.toBe('');expect(labels[1].trim(),code).not.toBe('');}
     expect(reasonLabel('future_private_code','zh')).toBe('未知原因');expect(reasonLabel('future_private_code','en')).toBe('Unknown reason');
+  });
+});
+
+describe('help reasons', () => {
+  it('translates the platform\'s own requests and leaves an optimizer\'s words alone', () => {
+    expect(helpReasonText('Three consecutive optimizer sessions without a submission', 'zh')).toBe('优化者连续 3 轮没有提交');
+    expect(helpReasonText('Three consecutive optimizer sessions without a submission', 'en')).toBe('Three consecutive optimizer sessions without a submission');
+    expect(helpReasonText('我卡在依赖上了', 'zh')).toBe('我卡在依赖上了');
   });
 });

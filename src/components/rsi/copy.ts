@@ -36,6 +36,14 @@ export function reasonLabel(code: string, locale: Locale): string { return Objec
 export function reasonText(value: string, locale: Locale): string { return value.split(',').map(code=>reasonLabel(code.trim(),locale)).join(copy(locale,'；','; ')); }
 export function statusTone(code: string): BadgeTone { return ['pass','passed','promoted','completed','accept','clean'].includes(code)?'success':['reject','rejected','fail','infra_error','needs_help','failed'].includes(code)?'danger':['held','hold','paused','insufficient','stuck','suspicious'].includes(code)?'attention':['running','calibrating','precheck','training','reviewing','sealed','deciding','submitted'].includes(code)?'accent':'neutral'; }
 
+/** The platform's own requests for help are translated. An optimizer's words stay as it wrote them. */
+const PLATFORM_HELP: Record<string, string> = {
+  'Three consecutive optimizer sessions without a submission': '优化者连续 3 轮没有提交',
+  'The baseline already meets the goal: raise the goal or use harder questions': '基线已经达到目标。提高目标，或换更难的题集',
+  'No candidate can beat the noise band on this question set: use more repetitions or harder questions': '这个题集上任何候选都无法超过噪声带。增加重复次数，或换更难的题集',
+};
+export const helpReasonText=(value:string,locale:Locale):string=>locale==='zh'?PLATFORM_HELP[value]??value:value;
+
 export const pauseReasonLabel=(reason:string,locale:Locale)=>reasonLabel(reason==='human'?'human_pause':reason,locale);
 
 export function shellArgument(value:string):string {return /^[A-Za-z0-9_./-]+$/.test(value)?value:"'"+value.replaceAll("'", "'\"'\"'")+"'";}
