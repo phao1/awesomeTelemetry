@@ -66,10 +66,28 @@ async function releaseTaskLock(file: string, owner: string, expected: string): P
 interface LedgerStamp { size: number; mtimeMs: number }
 /** Ledger file state each connection last synchronized to. The HTTP server builds a store per request. */
 const synchronized = new WeakMap<Db, Map<string, LedgerStamp>>();
-const INDEX_RACE_RETRIES = 8;
+const INDEX_RACE_RETRIES = 8, TAIL_READ_BYTES = 1024 * 1024;
 async function ledgerStamp(path: string): Promise<LedgerStamp | null> {
   try { const { size, mtimeMs } = await stat(path); return { size, mtimeMs }; }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
+}
+
+/** Reads the last complete entry only. Anything unexpected falls back to a full, verifying rebuild. */
+async function headMatchesTail(path: string, size: number, head: { seq: number; hash: string } | null): Promise<boolean> {
+  if (!head || size === 0) return false;
+  const handle = await open(path, 'r');
+  try {
+    const length = Math.min(size, TAIL_READ_BYTES), { buffer, bytesRead } = await handle.read(Buffer.alloc(length), 0, length, size - length);
+    const text = buffer.subarray(0, bytesRead).toString('utf8');
+    if (!text.endsWith('\n')) return false;
+    const start = text.lastIndexOf('\n', text.length - 2);
+    if (start < 0 && length < size) return false;
+    const entry = JSON.parse(text.slice(start + 1)) as { seq?: unknown; hash?: unknown };
+    return entry.seq === head.seq && entry.hash === head.hash;
+  } catch (error) {
+    if (error instanceof SyntaxError) return false;
+    throw error;
+  } finally { await handle.close(); }
 }
 
 export class RsiStore {
@@ -96,6 +114,8 @@ export class RsiStore {
     for (let attempt = 0; ; attempt++) {
       const stamp = await ledgerStamp(this.ledgerPath), known = synchronized.get(this.db)?.get(this.ledgerPath);
       if (stamp && known && known.size === stamp.size && known.mtimeMs === stamp.mtimeMs && getRsiLedgerHead(this.db, this.taskId)) return;
+      // The writer already applied its entry to this shared cache. Replaying the whole ledger per change would grow with the task.
+      if (stamp && await headMatchesTail(this.ledgerPath, stamp.size, getRsiLedgerHead(this.db, this.taskId))) { this.remember(stamp); return; }
       try { await rebuildRsiIndexFromLedger(this.db, this.taskId, this.ledgerPath); this.remember(stamp); return; }
       catch (error) {
         const contended = error instanceof RsiIndexRaceError || String((error as { code?: unknown }).code).startsWith('SQLITE_BUSY');

@@ -706,6 +706,9 @@ References must exist in the same task. A run must belong to a planned question
 and repetition; attempt1 requires a prior attempt0 infra_error.
 
 `getRsiLedgerHead(db, taskId): RsiLedgerHead | null` reads explicit cached columns.
+RsiStore.refresh skips the rebuild when the cache already holds the ledger's last complete
+entry (seq and hash), since replaying per change grows with the task. Damage away from the
+tail is then found by `ledger verify` or the next rebuild, not by every read (决定于 2026-11-07).
 `rebuildRsiIndexFromLedger(db, taskId, ledgerPath): Promise<void>` verifies once,
 streaming complete events into private staging SQLite, with the current cached
 head as a trusted prefix anchor. A partial tail, invalid chain, invalid entity,

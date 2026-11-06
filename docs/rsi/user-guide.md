@@ -64,7 +64,7 @@ PROXY_PORT=4317 PROXY_TOKEN=$RSI_MONITOR_API_KEY node scripts/codex-health-proxy
 
 优化者是 OpenAI 系时，改用 `scripts/claude-monitor-proxy.mjs`，端口 4318。也可以接任何 OpenAI 兼容的服务，启动执行器时加 `--monitor-base-url`、`--monitor-family`、`--monitor-model`。4317 被占用时，换一个端口并用 `--monitor-base-url` 指过去。
 
-监控没有启动时，迭代不会自动晋级，会停下来等人工审查。
+监控没有启动时，迭代不会自动晋级，会停下来等人工审查。监控桥一次只处理一个请求，多个任务可以共用，请求会排队等待；等到单次时限还没轮到，这次审查就算缺失，迭代同样挂起。
 
 **3. 执行器**
 
@@ -103,6 +103,29 @@ node bin/rsi.js task create --task demo --root <配置目录> --repository /path
 
 命令行创建的任务默认不启用监控，启动执行器时要带 `--monitor-*` 参数，或用 `--settings` 传入 `reviews`。
 
+## 第一次试跑
+
+强模型配完整的 Agent 很容易在小题集上拿满分，优化就无从谈起。`rsi-agents/mini-agent/demo-source` 是故意削弱的演示版本：只允许 3 轮模型调用，`read_file` 只返回前 200 个字符。先用它走一遍闭环。
+
+```bash
+mkdir /tmp/demo-agent && cp -R rsi-agents/mini-agent/demo-source/. /tmp/demo-agent/ && git -C /tmp/demo-agent init -q && git -C /tmp/demo-agent add -A && git -C /tmp/demo-agent -c user.name=demo -c user.email=demo@localhost commit -qm baseline && git -C /tmp/demo-agent rev-parse HEAD
+```
+
+新建任务时选 Mini coding Agent，代码仓填 `/tmp/demo-agent`，基线填上面输出的 commit，题集选小题集。
+
+我们用 DeepSeek 实测的一次结果，供你对照：
+
+| 轮次 | 优化者的改动 | 训练集 | 结果 |
+| --- | --- | --- | --- |
+| 基线 | — | 0/6 | Agent 都因轮数上限崩溃 |
+| 第 1 轮 | 不再截断 `read_file` | 0/6 | 分数没涨，自动拒绝 |
+| 第 2 轮 | 轮数上限提到 12，到上限时正常结束 | 6/6 | 封存集 0→3；Token 增幅超限，挂起等人工 |
+| 人工批准后 | — | — | 晋级，达到目标；最终留出集 3/3 |
+
+全程约 100 万 Token，其中大部分是缓存命中。第 2 轮的挂起是正常现象：基线一启动就崩，Token 用得极少，真正干活的版本一定超过 30% 的增幅上限，这时该由人判断。
+
+这个分数上涨只说明闭环走得通，不代表能把成熟的 Agent 优化到同样程度。
+
 ## 接入你自己的 Agent
 
 写一个可信档案和容器构建文件，放在同一目录。最小可参考 `rsi-agents/mini-agent`，真实项目可参考 `rsi-agents/opencode`，字段说明见 [rsi-agents/README.md](../../rsi-agents/README.md)。
@@ -118,6 +141,10 @@ node bin/rsi.js agent validate /path/to/profile.json
 - 所有依赖在构建阶段联网安装，候选代码只在断网阶段处理。运行时容器没有外网，只能访问模型代理。
 
 如果 Agent 自带测试目录，L1 默认会拒绝对它的修改。确实需要时，用 `l1.allowPaths` 豁免路径，指纹和其他规则仍然生效。
+
+优化者进容器时拿到的是浅克隆，只有被选中的那一版代码，没有历史。所以几百 MB 历史的大仓库也能用，上限是当前版本压缩后 256MiB。
+
+如果基线已经达到目标，任务会直接转为“需要帮助”，不会继续花 Token。这时提高目标，或换更难的题集，例如从小题集换成完整题集。OpenCode 配 DeepSeek 在小题集上就是这样：训练 6/6，封存 3/3。
 
 ## 看结果
 
@@ -141,7 +168,7 @@ node bin/rsi.js agent validate /path/to/profile.json
 | 暂停、继续、终止 | 控制整个任务 |
 | 放宽目标、调整预算 | 优化者请求帮助或预算用尽时使用 |
 | 最终验收 | 定稿后跑一次最终留出集 |
-| 采纳 | 把定稿版本导出为补丁和分支，不合并、不推送 |
+| 采纳 | 把定稿版本导出为本地补丁和版本引用，补丁路径显示在迭代页顶部，不合并、不推送 |
 
 校验账本有没有被改过：
 
@@ -149,7 +176,7 @@ node bin/rsi.js agent validate /path/to/profile.json
 node bin/rsi.js ledger verify --task <任务 ID> --root <配置目录>
 ```
 
-校准监控。默认每类抽 5 个，共 35 次模型调用，样本不足时页面会明确说明不能判定达标。要得出结论需要全部 210 个：
+校准监控。默认每类抽 5 个，共 35 次模型调用，样本不足时页面会明确说明不能判定达标。要得出结论需要全部 210 个，约 20 分钟：
 
 ```bash
 node bin/rsi.js calibrate --task <任务 ID> --root <配置目录> --sample all
