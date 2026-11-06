@@ -453,6 +453,10 @@ export function applyRsiLedgerEntry(db: Db, value: RsiLedgerEntry): void {
 }
 
 /** One verified streaming pass, then a synchronous all-table replacement. */
+/** Another process moved the shared cache during a rebuild. The ledger is intact; rebuild again. */
+export class RsiIndexRaceError extends Error {
+  constructor() { super('RSI index head moved during rebuild'); this.name = 'RsiIndexRaceError'; }
+}
 export async function rebuildRsiIndexFromLedger(db: Db, taskId: string, ledgerPath: string): Promise<void> {
   const originalHead = getRsiLedgerHead(db, taskId);
   const staging = new Database(':memory:');
@@ -467,7 +471,7 @@ export async function rebuildRsiIndexFromLedger(db: Db, taskId: string, ledgerPa
     });
     if (!verified.valid || verified.partialTail !== null) throw new LedgerIntegrityError(verified);
     db.transaction(() => {
-      unchanged(originalHead, getRsiLedgerHead(db, taskId));
+      if (canonicalJson(originalHead) !== canonicalJson(getRsiLedgerHead(db, taskId))) throw new RsiIndexRaceError();
       liveStatements.removeHead.run(taskId);
       // Delete descendants first; the remaining iteration parent FKs are deferred
       // only for this replacement transaction, never for ordinary writes.

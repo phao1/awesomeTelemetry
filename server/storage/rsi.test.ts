@@ -14,7 +14,7 @@ import {
   RSI_SESSION_COLS, RSI_DECISION_COLS, RSI_EVALUATION_COLS, RSI_FINDING_COLS, RSI_HEAD_COLS,
   RSI_INSTRUCTION_COLS, RSI_ITERATION_COLS, RSI_QUEUE_COLS, RSI_RUN_COLS, RSI_TASK_COLS,
 } from './columns.js';
-import { applyRsiLedgerEntry, getRsiLedgerHead, rebuildRsiIndexFromLedger } from './rsi.js';
+import { applyRsiLedgerEntry, getRsiLedgerHead, rebuildRsiIndexFromLedger, RsiIndexRaceError } from './rsi.js';
 import { RSI_SCHEMA_SQL } from './schema.js';
 import { cachedStmt } from './stmt-cache.js';
 
@@ -506,7 +506,7 @@ describe('RSI-008 verified all-table ledger rebuilding', () => {
     const rebuilding = rebuildRsiIndexFromLedger(db, 'task-1', path);
     applyRsiLedgerEntry(db, next);
     const afterIncremental = snapshot(db);
-    await expect(rebuilding).rejects.toThrow('immutable');
+    await expect(rebuilding).rejects.toThrow(RsiIndexRaceError);
     expect(snapshot(db)).toEqual(afterIncremental);
   });
   it('rebuilds the permanent final reservation so a second final request stays rejected', async () => {

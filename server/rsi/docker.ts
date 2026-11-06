@@ -59,7 +59,10 @@ export function successful(result: CommandResult): boolean {
 }
 export async function mustDocker(client: DockerClient, argv: string[], options?: CommandOptions): Promise<Buffer> {
   const result = await client.run(argv, options);
-  if (!successful(result)) throw new Error(`Docker ${argv[0]} failed (${result.timedOut ? 'timeout' : result.cancelled ? 'cancelled' : result.overflow ? 'output_limit' : result.code})`);
+  if (!successful(result)) {
+    const detail = result.stderr.toString('utf8').trim().slice(-400);
+    throw new Error(`Docker ${argv[0]} failed (${result.timedOut ? 'timeout' : result.cancelled ? 'cancelled' : result.overflow ? 'output_limit' : result.code})${detail ? `: ${detail}` : ''}`);
+  }
   return result.stdout;
 }
 

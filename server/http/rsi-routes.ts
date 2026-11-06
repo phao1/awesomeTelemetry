@@ -142,8 +142,8 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
   register('GET','/api/rsi/tasks/:taskId/runs/:runId/trajectory',false,async(s,_r,p,q)=>runTrajectory(s!,p.runId!,q,false),200,['file','offset','limit']);
   register('GET','/api/rsi/tasks/:taskId/sessions/:sessionId/trajectory',false,async(s,_r,p,q)=>{const v=s!.list('session_put').find(v=>v.id===validId(p.sessionId!));if(!v)return notFound();return trajectory(s!.root,v.artifactPath,q,false);},200,['file','offset','limit']);
   register('GET','/api/rsi/tasks/:taskId/worker',false,async s=>{
-    try{const v=await boundedJson(s!.root,'private/worker.json',4096) as {pid:number;at:string;phase:string};let live=false;try{process.kill(v.pid,0);live=true;}catch{live=false;}return{...v,running:live&&v.phase!=='stopped'&&Date.now()-Date.parse(v.at)<15000};}
-    catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return{pid:null,at:null,phase:null,running:false};throw e;}
+    try{const v=await boundedJson(s!.root,'private/worker.json',4096) as {pid:number;at:string;phase:string;lastError?:string|null};let live=false;try{process.kill(v.pid,0);live=true;}catch{live=false;}return{...v,running:live&&v.phase!=='stopped'&&Date.now()-Date.parse(v.at)<15000};}
+    catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return{pid:null,at:null,phase:null,lastError:null,running:false};throw e;}
   });
   register('POST','/api/rsi/tasks/:taskId/commands',false,async(s,r)=>{const o=strictObject(await body(r),['requestId','iterationId','command']);const q=await humanCommand(s!,o.command as RsiCommand,o.requestId as string,o.iterationId as string|null);return{taskId:s!.taskId,queueId:q.id,status:'queued'};},202);
   // Prime metadata statement outside request loops; all task reads use explicit columns.
