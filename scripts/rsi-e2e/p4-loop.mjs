@@ -1,6 +1,7 @@
 // Claude runs this OUTSIDE the Codex sandbox. Real Docker, HTTP and sidecar;
 // scripted model transport, no monitor bypass and no host credential directories.
 import assert from 'node:assert/strict';
+import { createWriteStream } from 'node:fs';
 import http from 'node:http';
 import {randomBytes} from 'node:crypto';
 import { once } from 'node:events';
@@ -44,7 +45,7 @@ export async function main(args) {
   const context=flags['--docker-context'],docker=argv=>must('docker',[...(context?['--context',context]:[]),...argv]);
   const report={version:1,startedAt:new Date().toISOString(),finishedAt:null,verdict:'infra_error',checks:{},errors:[]};
   const reportFile=flags['--report']?resolve(flags['--report']):join(root,'p4-report.json');
-  let apiChild,workerChild,probe,monitor;const monitorCalls={monitor:0,process:0,adversary:0};
+  let apiChild,workerChild,workerLog,probe,monitor;const monitorCalls={monitor:0,process:0,adversary:0};
   try{
     assert.equal((await docker(['info','--format','{{.OSType}}'])).trim(),'linux','Linux Docker engine required');
     // Build a trusted test entry, not a clean-review provider or production endpoint.
@@ -129,6 +130,7 @@ curl -fsS -H "Authorization: Bearer $OPENAI_API_KEY" -H 'Content-Type: applicati
     await writeFile(join(taskRoot,'private/runtime.json'),JSON.stringify(runtime),{mode:0o600});
     const workerEnv={...env,...(flags['--fake-monitor']?{RSI_MONITOR_API_KEY:monitorToken}:{}),RSI_P4_ROLE:'worker',RSI_P4_ARGS:JSON.stringify(['worker','--execute','--watch','--task',taskId,'--root',root,...(context?['--docker-context',context]:[])])};
     const worker=command(process.execPath,[join(buildRoot,'harness.mjs')],{env:workerEnv,timeoutMs:3600000});workerChild=worker.child;
+    workerLog=join(root,'worker.log');worker.child.stderr.pipe(createWriteStream(workerLog));
     let state;
     const deadline=Date.now()+45*60*1000;
     do{
@@ -156,7 +158,12 @@ curl -fsS -H "Authorization: Bearer $OPENAI_API_KEY" -H 'Content-Type: applicati
     const ledger=await readFile(join(taskRoot,'ledger.jsonl'),'utf8');assert(!ledger.includes(created.agentToken));
     report.checks={realHttp:true,sidecarForwarding:true,threeCompleteIterations:true,hostLoopbackDenied:true,sessionRevocation:true,workerWatchAndCleanExit:true,cleanup:true};if(flags['--fake-monitor'])report.checks.agentReview={...monitorCalls,sealedAndPromotion:true};report.verdict='pass';
     apiChild.kill('SIGTERM');assert.equal((await api.promise).code,0);
-  }catch(error){report.errors.push(error.message);process.exitCode=1;}
+  }catch(error){
+    report.errors.push(error.message);process.exitCode=1;
+    // A failing worker prints its error as it exits, shortly after the task state changes.
+    await new Promise(resolve=>setTimeout(resolve,5000));
+    if(workerLog)try{report.workerLogTail=(await readFile(workerLog,'utf8')).slice(-4000);}catch(logError){report.errors.push(`worker log unavailable: ${logError.message}`);}
+  }
   finally{workerChild?.kill('SIGINT');apiChild?.kill('SIGTERM');probe?.close();monitor?.close();}
   report.finishedAt=new Date().toISOString();await writeFile(reportFile,JSON.stringify(report,null,2)+'\n',{mode:0o600});console.log(JSON.stringify({verdict:report.verdict,report:reportFile,errors:report.errors}));
 }

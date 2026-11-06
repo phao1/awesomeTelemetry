@@ -20,9 +20,9 @@ import { useRsiRead } from './data.js';
 import { Trends } from './Trend.js';
 import { Numeric, Reason, ReadError, WriteError, Status, Time } from './Shared.js';
 import { copy, reasonLabel, pauseReasonLabel } from './copy.js';
-export function TaskAttention({task,metrics,workerRunning,locale,onAction}:{task:RsiTaskView;metrics:RsiMetrics|null;workerRunning:boolean;locale:Locale;onAction:(action:HumanAction)=>void}) {
+export function TaskAttention({task,metrics,workerRunning,workerError,locale,onAction}:{task:RsiTaskView;metrics:RsiMetrics|null;workerRunning:boolean;workerError:string|null;locale:Locale;onAction:(action:HumanAction)=>void}) {
   if(task.state==='needs_help')return <Callout tone="danger" title={copy(locale,'优化者需要帮助','The optimizer needs help')}><p>{metrics?.helpReason??copy(locale,'尚无求助理由','No help reason available')}</p><div className="rsi-inline"><Button onClick={()=>onAction('set_target')}>{copy(locale,'放宽目标','Adjust target')}</Button><Button onClick={()=>onAction('instruction')}>{copy(locale,'给思路','Give an idea')}</Button><Button variant="danger" onClick={()=>onAction('stop')}>{copy(locale,'终止','Stop')}</Button></div></Callout>;
-  if(task.state==='paused')return <Callout tone="attention" title={pauseReasonLabel(task.pauseReason??'human',locale)}><div className="rsi-inline"><Button onClick={()=>onAction('set_budget')}>{copy(locale,'调整预算','Adjust budget')}</Button><Button onClick={()=>onAction('resume')}>{copy(locale,'继续','Resume')}</Button></div></Callout>;
+  if(task.state==='paused')return <Callout tone="attention" title={pauseReasonLabel(task.pauseReason??'human',locale)}>{task.pauseReason==='infra_failed'&&workerError&&<p className="rsi-mono">{workerError}</p>}<div className="rsi-inline"><Button onClick={()=>onAction('set_budget')}>{copy(locale,'调整预算','Adjust budget')}</Button><Button onClick={()=>onAction('resume')}>{copy(locale,'继续','Resume')}</Button></div></Callout>;
   if(task.state==='calibrating')return <Callout title={copy(locale,'正在标定基线','Calibrating baseline')}><Numeric value={metrics?.baselineProgress?.completed} locale={locale}/> / <Numeric value={metrics?.baselineProgress?.planned} locale={locale}/></Callout>;
   if(!workerRunning&&!!metrics?.pendingCommands)return <Callout tone="attention" title={copy(locale,'队列中有待执行操作，请启动执行器','Queued actions are waiting; start the executor')}/>;
   return null;

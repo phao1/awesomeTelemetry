@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, unlink } from 'node:fs/promises';
+import { mkdir, open, readFile, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Database as Db } from 'better-sqlite3';
 import type { RsiOptimizerSession, RsiInstruction, RsiActor, RsiLedgerEvent, RsiLedgerInput, RsiQueueItem, RsiTask, RsiIteration, RsiEvaluation, RsiRun, RsiFinding, RsiDecision } from '../../src/core/rsi-types.js';
 import { appendLedger, canonicalJson, computeLedgerHash, RSI_LEDGER_GENESIS_HASH } from './ledger.js';
-import { applyRsiLedgerEntry, getRsiLedgerHead, rebuildRsiIndexFromLedger } from '../storage/rsi.js';
+import { applyRsiLedgerEntry, getRsiLedgerHead, rebuildRsiIndexFromLedger, RsiIndexRaceError } from '../storage/rsi.js';
 import { cachedStmt } from '../storage/stmt-cache.js';
 import { RSI_SESSION_COLS, RSI_INSTRUCTION_COLS, RSI_TASK_COLS, RSI_ITERATION_COLS, RSI_EVALUATION_COLS, RSI_RUN_COLS, RSI_FINDING_COLS, RSI_DECISION_COLS, RSI_QUEUE_COLS } from '../storage/columns.js';
 
@@ -63,6 +63,15 @@ async function releaseTaskLock(file: string, owner: string, expected: string): P
   await unlink(file);
 }
 
+interface LedgerStamp { size: number; mtimeMs: number }
+/** Ledger file state each connection last synchronized to. The HTTP server builds a store per request. */
+const synchronized = new WeakMap<Db, Map<string, LedgerStamp>>();
+const INDEX_RACE_RETRIES = 8;
+async function ledgerStamp(path: string): Promise<LedgerStamp | null> {
+  try { const { size, mtimeMs } = await stat(path); return { size, mtimeMs }; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
+}
+
 export class RsiStore {
   readonly db: Db; readonly root: string; readonly taskId: string; readonly ledgerPath: string;
   private pending: Promise<void> = Promise.resolve();
@@ -77,7 +86,23 @@ export class RsiStore {
     return rows.map(row => JSON.parse(row.entity_json) as Entities[K]);
   }
   task(): RsiTask { const task = this.list('task_put')[0]; if (!task) throw new Error('RSI task not found'); return task; }
-  async refresh(): Promise<void> { await rebuildRsiIndexFromLedger(this.db, this.taskId, this.ledgerPath); }
+  private remember(stamp: LedgerStamp | null): void {
+    const stamps = synchronized.get(this.db) ?? new Map<string, LedgerStamp>();
+    if (stamp) stamps.set(this.ledgerPath, stamp); else stamps.delete(this.ledgerPath);
+    synchronized.set(this.db, stamps);
+  }
+  /** The worker, server and CLI share this cache, so a concurrent rebuild is expected, not a failure. */
+  async refresh(): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+      const stamp = await ledgerStamp(this.ledgerPath), known = synchronized.get(this.db)?.get(this.ledgerPath);
+      if (stamp && known && known.size === stamp.size && known.mtimeMs === stamp.mtimeMs && getRsiLedgerHead(this.db, this.taskId)) return;
+      try { await rebuildRsiIndexFromLedger(this.db, this.taskId, this.ledgerPath); this.remember(stamp); return; }
+      catch (error) {
+        if (!(error instanceof RsiIndexRaceError) || attempt >= INDEX_RACE_RETRIES) throw error;
+        await delay(10 * 2 ** attempt);
+      }
+    }
+  }
   put(event: RsiLedgerEvent, actor: RsiActor = 'worker'): Promise<void> {
     const snapshot = JSON.parse(canonicalJson(event)) as RsiLedgerEvent;
     const operation = this.pending.then(() => taskLock(this.root, 'writer', async () => {
@@ -92,6 +117,8 @@ export class RsiStore {
       catch (error) { if (error !== sentinel) throw error; }
       const entry = await appendLedger(this.ledgerPath, input, { ...(head ? { expectedHead: head } : {}) });
       applyRsiLedgerEntry(this.db, entry);
+      // The writer lock is held, so this stamp is exactly the entry just applied.
+      this.remember(await ledgerStamp(this.ledgerPath));
     }));
     this.pending = operation.then(() => undefined, () => undefined);
     return operation;

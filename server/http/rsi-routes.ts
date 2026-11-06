@@ -7,8 +7,6 @@ import { watch } from 'chokidar';
 import type { Router, RouteHandler } from './router.js';
 import { sendJson } from './send-json.js';
 import { openWritable } from '../storage/db.js';
-import { RSI_TASK_COLS } from '../storage/columns.js';
-import { cachedStmt } from '../storage/stmt-cache.js';
 import { getRsiLedgerHead } from '../storage/rsi.js';
 import { RsiStore } from '../rsi/queue.js';
 import { authenticateAgent, brief, optimizerResults, agentMutation, runTrajectory } from '../rsi/agent-api.js';
@@ -55,7 +53,10 @@ function pageTokenMatches(actual: string, expected: string): boolean {
 }
 /** Separate RSI cache, cross-process ledger watcher, no execution in handlers. */
 export function registerRsiRoutes(router: Router, dataRoot: string): () => Promise<void> {
-  const pageToken=randomBytes(32).toString('hex'), db=openWritable(join(dataRoot,'index.db'));
+  const pageToken=randomBytes(32).toString('hex');
+  // Starting the server must not touch the disk; the cache exists only once RSI is actually used.
+  let database: ReturnType<typeof openWritable> | undefined;
+  const db=(): ReturnType<typeof openWritable> => database ??= openWritable(join(dataRoot,'index.db'));
   let closing=false;const active=new Set<Promise<void>>(), pending=new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const changed=(file:string):void=>{if(closing)return;if(basename(file)!=='ledger.jsonl')return;const id=basename(dirname(file));if(!/^[A-Za-z0-9_-]{1,128}$/.test(id))return;pending.add(id);if(timer===undefined){timer=setTimeout(()=>{timer=undefined;const taskIds=[...pending].sort();pending.clear();eventBus.emit('rsi_changed',{taskIds});},200);timer.unref();}};
@@ -66,7 +67,7 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
     let entries:string[]=[];try{entries=await readdir(dataRoot);}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
     const result:RsiStore[]=[];
     for(const id of entries.filter(id=>/^[A-Za-z0-9_-]{1,128}$/.test(id)).sort()){
-      const store=new RsiStore(db,join(dataRoot,id),id);
+      const store=new RsiStore(db(),join(dataRoot,id),id);
       try{await store.refresh();}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')continue;throw e;}
       if(store.list('task_put').length)result.push(store);
     }
@@ -95,7 +96,7 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
               if(await authenticateAgent(await stores(),token))throw new RsiError(403,'RSI_FORBIDDEN');
               throw new RsiError(401,'RSI_AUTH_REQUIRED');
             }
-            if(p.taskId){validId(p.taskId);const selected=new RsiStore(db,join(dataRoot,p.taskId),p.taskId);if(!path.endsWith('/ledger/verify'))await selected.refresh();if(!selected.list('task_put').length)return notFound();store=selected;}
+            if(p.taskId){validId(p.taskId);const selected=new RsiStore(db(),join(dataRoot,p.taskId),p.taskId);if(!path.endsWith('/ledger/verify'))await selected.refresh();if(!selected.list('task_put').length)return notFound();store=selected;}
           }
           if(method==='GET'&&(Number(req.headers['content-length']??0)>0||req.headers['transfer-encoding']!==undefined)){req.resume();throw new RsiError(400,'RSI_INVALID_REQUEST');}
           const q=new URL(req.url??'','http://localhost').searchParams;checkQuery(q,query);
@@ -124,10 +125,10 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
   },200,['cursor','limit']);
   register('POST','/api/rsi/tasks',false,async(_s,r)=>{
     const o=strictObject(await body(r),['requestId','repository','baselineCommit','agentProfile','optimizerProfile','bank','config'],['subset','settings']);
-    validId(o.requestId as string);const id=(o.requestId as string).length<=123?`task-${o.requestId as string}`:`task-${createHash('sha256').update(o.requestId as string).digest('hex')}`,store=new RsiStore(db,join(dataRoot,id),id);
+    validId(o.requestId as string);const id=(o.requestId as string).length<=123?`task-${o.requestId as string}`:`task-${createHash('sha256').update(o.requestId as string).digest('hex')}`,store=new RsiStore(db(),join(dataRoot,id),id);
     return createTask(store,o as unknown as CreateTaskInput,defaultWorkerSettings());
   },202);
-  register('GET','/api/rsi/tasks/:taskId',false,async s=>{const {taskTokenHash:_hash,...task}=s!.task();return{task,head:getRsiLedgerHead(db,s!.taskId)};});
+  register('GET','/api/rsi/tasks/:taskId',false,async s=>{const {taskTokenHash:_hash,...task}=s!.task();return{task,head:getRsiLedgerHead(db(),s!.taskId)};});
   register('GET','/api/rsi/tasks/:taskId/calibration',false,async s=>({monitorCalibration:s!.task().monitorCalibration,latestReport:s!.task().monitorCalibration}));
   const lists=[['iterations','iteration_put'],['evaluations','evaluation_put'],['findings','finding_put'],['decisions','decision_put'],['instructions','instruction_put'],['queue','queue_put'],['sessions','session_put']] as const;
   for(const [path,event] of lists)register('GET',`/api/rsi/tasks/:taskId/${path}`,false,async(s,_r,_p,q)=>{
@@ -151,7 +152,5 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
   register('GET','/api/rsi/tasks/:taskId/sessions/:sessionId/trajectory',false,async(s,_r,p,q)=>{const v=s!.list('session_put').find(v=>v.id===validId(p.sessionId!));if(!v)return notFound();return trajectory(s!.root,v.artifactPath,q,false);},200,['file','offset','limit']);
   register('GET','/api/rsi/tasks/:taskId/worker',false,async s=>workerStatus(s!));
   register('POST','/api/rsi/tasks/:taskId/commands',false,async(s,r)=>{const o=strictObject(await body(r),['requestId','iterationId','command']);const q=await humanCommand(s!,o.command as RsiCommand,o.requestId as string,o.iterationId as string|null);return{taskId:s!.taskId,queueId:q.id,status:'queued'};},202);
-  // Prime metadata statement outside request loops; all task reads use explicit columns.
-  cachedStmt(db,`SELECT ${RSI_TASK_COLS} FROM rsi_tasks ORDER BY id`);
-  return async()=>{closing=true;clearTimeout(timer);pending.clear();await watcher.close();await Promise.allSettled(active);db.close();};
+  return async()=>{closing=true;clearTimeout(timer);pending.clear();await watcher.close();await Promise.allSettled(active);database?.close();};
 }

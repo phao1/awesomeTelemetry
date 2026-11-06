@@ -610,15 +610,22 @@ export class RsiWorker {
   }
 }
 
-async function withHeartbeat<T>(store: RsiStore, action: () => Promise<T>): Promise<T> {
-  let stopped=false, error: unknown, pending:Promise<void>=Promise.resolve();
+/** Secret values are stripped because this text is shown on the page. */
+export function workerErrorText(error: unknown, env: NodeJS.ProcessEnv = process.env): string {
+  let text = (error instanceof Error ? error.message : String(error)).slice(-500);
+  for (const key of ['RSI_UPSTREAM_API_KEY', 'RSI_MONITOR_API_KEY']) if (env[key]) text = text.replaceAll(env[key], '[redacted]');
+  return text;
+}
+async function withHeartbeat<T>(store: RsiStore, action: (report: (error: unknown) => void) => Promise<T>): Promise<T> {
+  let stopped=false, error: unknown, lastError: string | null=null, pending:Promise<void>=Promise.resolve();
   const beat=():void=>{
     const phase=stopped?'stopped':store.list('session_put').some(s=>s.state==='running')?'optimizer':store.list('evaluation_put').find(e=>e.state==='running')?.phase??store.list('iteration_put').find(i=>!['promoted','rejected','held'].includes(i.state))?.state??(store.task().state==='created'?'materializing':store.task().state);
-    pending=pending.then(async()=>{const file=join(store.root,'private/worker.json');await privateWrite(`${file}.tmp`,JSON.stringify({pid:process.pid,at:now(),phase,upstreamConfigured:['RSI_UPSTREAM_BASE_URL','RSI_UPSTREAM_MODEL','RSI_UPSTREAM_API_KEY'].every(key=>Boolean(process.env[key]?.trim()))}));await rename(`${file}.tmp`,file);}).catch(e=>{error=e;});
+    pending=pending.then(async()=>{const file=join(store.root,'private/worker.json');await privateWrite(`${file}.tmp`,JSON.stringify({pid:process.pid,at:now(),phase,lastError,upstreamConfigured:['RSI_UPSTREAM_BASE_URL','RSI_UPSTREAM_MODEL','RSI_UPSTREAM_API_KEY'].every(key=>Boolean(process.env[key]?.trim()))}));await rename(`${file}.tmp`,file);}).catch(e=>{error=e;});
   };
   beat();const timer=setInterval(beat,5000);timer.unref();
   let result:T;
-  try { result=await action(); }
+  try { result=await action(e=>{lastError=workerErrorText(e);beat();}); }
+  catch(e) { lastError=workerErrorText(e); throw e; }
   finally {clearInterval(timer);stopped=true;beat();await pending;}
   if(error)throw error;return result;
 }
@@ -635,7 +642,7 @@ export async function runWorker(store: RsiStore, settings: WorkerSettings, clien
   if (!execute) return { execute: false, taskId: store.taskId, state: store.task().state, concurrency: settings.concurrency,
     planned: ['recover labelled containers/networks', 'baseline train × R and sealed × 3', 'L1/build', 'smoke', 'train', 'review', 'sealed × 3', 'decide'],
     queue: store.list('queue_put').filter(q => q.state === 'queued').map(q => ({ id: q.id, kind: q.kind })) };
-  return taskLock(store.root, 'worker', () => withHeartbeat(store, async () => {
+  return taskLock(store.root, 'worker', () => withHeartbeat(store, async report => {
     await recoverOptimizerSessions(store, client);
     const mirror = join(store.root, 'private/repository.git');
     try { await stat(mirror); } catch(e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; await createMirror(store.task().repository, mirror); }
@@ -664,7 +671,12 @@ export async function runWorker(store: RsiStore, settings: WorkerSettings, clien
       await runOptimizerSession(store,client,optimizer,optimizerImage!,settings,r=>worker.account(r),options.signal);
     };
     do {
-      await worker.run(options.signal);
+      try { await worker.run(options.signal); }
+      catch(error) {
+        // run() already paused the task. Watch mode keeps serving human recovery commands.
+        if(!options.watch || options.signal?.aborted) throw error;
+        report(error); console.error(`RSI worker: ${workerErrorText(error)}`);
+      }
       if(!options.watch || options.signal?.aborted) break;
       try { await delay(5000,undefined,{signal:options.signal}); } catch(e) { if(!options.signal?.aborted) throw e; }
       await store.refresh();

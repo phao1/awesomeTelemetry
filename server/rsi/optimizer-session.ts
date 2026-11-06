@@ -151,7 +151,8 @@ export async function runOptimizerSession(store: RsiStore, client: DockerClient,
     await mkdir(output, { recursive: true, mode: 0o700 });
     proxy = await startProxy(client, store.taskId, runId, 'optimizer', 0, Math.min(limit, Math.max(1, store.task().config.maxTaskTokens-store.task().tokenUsage)),
       unmetered ? { ...settings.proxy, mode: 'mock' } : settings.proxy, controller.signal, { apiBase: settings.apiBase ?? 'http://127.0.0.1:4173', redactionHashes: [store.task().taskTokenHash,createHash('sha256').update(token).digest('hex')], domains: profile.egress.kind === 'vendor-allowlist' ? profile.egress.domains : [] });
-    const ref = `refs/rsi/session/${id}`;
+    // git clone only fetches refs/heads/*, so the parent must travel under a branch ref.
+    const ref = `refs/heads/rsi-session-${id}`;
     await git(['--git-dir',mirror,'update-ref',ref,parent]);
     await git(['--git-dir',mirror,'bundle','create',join(temp,'parent.bundle'),ref]);
     await git(['--git-dir',mirror,'update-ref','-d',ref]);
@@ -175,7 +176,7 @@ export async function runOptimizerSession(store: RsiStore, client: DockerClient,
     const work = `/tmp/rsi-${id}`;
     await putTar(userClient,name,work,await bundleTar(join(temp,'parent.bundle')),controller.signal);
     for (const file of rendered.files) await putTar(userClient,name,dirname(file.path),packFiles(new Map([[basename(file.path),Buffer.from(file.content)]])),controller.signal);
-    await mustDocker(userClient,['exec','-w',work,name,'git','-c','core.hooksPath=/dev/null','clone','-q','parent.bundle','source'],{signal:controller.signal});
+    await mustDocker(userClient,['exec','-w',work,name,'git','-c','core.hooksPath=/dev/null','clone','-q','--no-checkout','parent.bundle','source'],{signal:controller.signal});
     const exec = (argv: string[], extra = {}) => mustDocker(userClient,['exec','-w',`${work}/source`,name,...argv],extra);
     await exec(['git','config','core.hooksPath','/dev/null']); await exec(['git','checkout','-q',parent]);
     await exec(['git','config','user.name','RSI Optimizer']); await exec(['git','config','user.email','rsi@localhost']);
@@ -192,7 +193,8 @@ export async function runOptimizerSession(store: RsiStore, client: DockerClient,
           intervened=store.list('queue_put').some(q=>q.requestedBy==='human'&&q.state==='queued'&&['pause','stop','rollback'].includes(q.command.action));
           if(q || intervened || store.task().state!=='running') controller.abort();
         } catch(e) { pollFailure=e; controller.abort(); }
-        if(polling && !controller.signal.aborted) await new Promise<void>(resolve => { const t=setTimeout(resolve,200); t.unref(); });
+        // Must stay referenced: once the session exec ends, this timer alone keeps the worker alive until polling stops.
+        if(polling && !controller.signal.aborted) await new Promise<void>(resolve => { setTimeout(resolve,200); });
       }
     })();
     // Only PID1 and the trusted export commands survive session termination.

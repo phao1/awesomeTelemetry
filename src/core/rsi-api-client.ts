@@ -7,7 +7,7 @@ export interface RsiPageSettings { optimizerSessionTokens?: number; optimizerSes
 export interface RsiCreateRequest { requestId: string; repository: string; baselineCommit: string; agentProfile: string; optimizerProfile: string; bank: string; subset?: 'small' | 'full'; config: RsiConfig; settings?: RsiPageSettings }
 export interface RsiAccepted { taskId: string; queueId: string; status: 'queued' }
 export interface RsiCreated extends RsiAccepted { agentToken: string | null }
-export interface RsiWorkerStatus { pid: number | null; at: string | null; phase: string | null; running: boolean; upstreamConfigured: boolean | null }
+export interface RsiWorkerStatus { pid: number | null; at: string | null; phase: string | null; running: boolean; upstreamConfigured: boolean | null; lastError: string | null }
 export interface RsiSummary {
   task: RsiTaskView; agentName: string | null; optimizerName: string | null; repositoryName: string;
   pendingCount: number; bestTrainScore: number | null; trainScores: { seq: number; score: number | null }[];

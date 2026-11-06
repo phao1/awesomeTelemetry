@@ -36,12 +36,12 @@ async function names(root: string, path: string): Promise<string[]> {
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
 }
 export async function workerStatus(store: RsiStore): Promise<RsiWorkerStatus> {
-  const v = await optionalArtifact<{ pid: number; at: string; phase: string; upstreamConfigured?: boolean }>(store.root, 'private/worker.json', 4096);
-  if (!v) return { pid: null, at: null, phase: null, running: false, upstreamConfigured: null };
+  const v = await optionalArtifact<{ pid: number; at: string; phase: string; upstreamConfigured?: boolean; lastError?: string | null }>(store.root, 'private/worker.json', 4096);
+  if (!v) return { pid: null, at: null, phase: null, running: false, upstreamConfigured: null, lastError: null };
   let live = false;
   if (Number.isSafeInteger(v.pid) && v.pid > 0) try { process.kill(v.pid, 0); live = true; } catch { live = false; }
   const running = live && v.phase !== 'stopped' && Date.now() - Date.parse(v.at) >= 0 && Date.now() - Date.parse(v.at) < 15000;
-  return { pid: v.pid, at: v.at, phase: v.phase, running, upstreamConfigured: running && typeof v.upstreamConfigured === 'boolean' ? v.upstreamConfigured : null };
+  return { pid: v.pid, at: v.at, phase: v.phase, running, upstreamConfigured: running && typeof v.upstreamConfigured === 'boolean' ? v.upstreamConfigured : null, lastError: typeof v.lastError === 'string' ? v.lastError : null };
 }
 async function manifest(store: RsiStore): Promise<RsiBankManifest | null> {
   return cachedPage(key(store,'bank-metadata'),()=>optionalArtifact<RsiBankManifest>(store.root,'private/bank/manifest.json'));

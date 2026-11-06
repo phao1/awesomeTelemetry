@@ -2252,6 +2252,7 @@ Creation settings accepts ONLY optimizerSessionTokens, optimizerSessionTimeoutMs
 allowUnmeteredOptimizer and concurrency, validated by WorkerSettings and stored
 in private/runtime.json. No key, proxy setting or arbitrary settings accepted.
 
+Worker heartbeat adds lastError (the latest worker failure text, at most 500 characters with secret values removed, null when none; it survives worker exit so the page can explain a paused task).
 Worker heartbeat adds upstreamConfigured:boolean, computed only from presence
 of RSI_UPSTREAM_BASE_URL, RSI_UPSTREAM_MODEL and RSI_UPSTREAM_API_KEY. The page
 worker response returns upstreamConfigured=null whenever worker is not running.
@@ -2307,7 +2308,7 @@ export interface RsiPageSettings { optimizerSessionTokens?: number; optimizerSes
 export interface RsiCreateRequest { requestId: string; repository: string; baselineCommit: string; agentProfile: string; optimizerProfile: string; bank: string; subset?: 'small' | 'full'; config: RsiConfig; settings?: RsiPageSettings }
 export interface RsiAccepted { taskId: string; queueId: string; status: 'queued' }
 export interface RsiCreated extends RsiAccepted { agentToken: string | null }
-export interface RsiWorkerStatus { pid: number | null; at: string | null; phase: string | null; running: boolean; upstreamConfigured: boolean | null }
+export interface RsiWorkerStatus { pid: number | null; at: string | null; phase: string | null; running: boolean; upstreamConfigured: boolean | null; lastError: string | null }
 export interface RsiSummary {
   task: RsiTaskView; agentName: string | null; optimizerName: string | null; repositoryName: string;
   pendingCount: number; bestTrainScore: number | null; trainScores: { seq: number; score: number | null }[];
