@@ -119,6 +119,15 @@ describe('RSI browser review regressions',()=>{
  it('retains unparseable process evidence as text',()=>{
    const {host}=render(<Findings findings={[{id:'f',taskId:'task',iterationId:'iteration',level:'L4',category:'suspicious',source:'process_monitor',severity:'info',evidence:'{truncated',file:null,line:null,at}]} locale="en" onDiff={noOp}/>);expect(host.querySelector('pre')!.textContent).toBe('{truncated');
  });
+ it('lists decisions in the order they happened, not by id',async()=>{
+   const later={id:'a',taskId:'task',iterationId:'iteration',verdict:'promote',actor:'worker',reason:'all_conditions_passed',approvedCategories:[],at:'2026-11-07T02:00:00.000Z'},earlier={...later,id:'z',verdict:'hold',reason:'token_growth',at:'2026-11-07T01:00:00.000Z'};
+   const fetcher=fixtureReads(),fallback=fetcher.getMockImplementation()!;
+   fetcher.mockImplementation(async(url,init)=>String(url).includes('/decisions')?json({items:[later,earlier],nextCursor:null}):fallback(url,init));
+   const {Decisions}=await import('./TaskDetail.js');let host!:HTMLElement;
+   await act(async()=>{host=render(<Decisions taskId="task" iterations={[]} locale="en" cursor={null} onCursor={vi.fn()} revision={0}/>).host;});
+   const rows=[...host.querySelectorAll('.rsi-timeline li')].map(li=>li.textContent??'');
+   expect(rows).toHaveLength(2);expect(rows[0]).toContain('oken');expect(rows[1]).not.toContain('oken');
+ });
  it('shows that a person approved the token growth instead of a plain pass',()=>{
    const {host}=render(<Verdicts verdict={{...verdict,approvedCategories:['token_growth']}} locale="zh"/>),card=[...host.querySelectorAll('.ui-verdict-card')].find(c=>c.textContent?.includes('Token 增幅'))!;
    expect(card.textContent).toContain('人工确认后通过');
