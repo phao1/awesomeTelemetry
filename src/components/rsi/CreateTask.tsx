@@ -12,7 +12,7 @@ import { Button } from '../ui/Button.js';
 import { Table } from '../ui/Table.js';
 import { Badge } from '../ui/Badge.js';
 import { PageSkeleton } from '../ui/PageSkeleton.js';
-import { useRsiCli, useRsiRead, workerCommand } from './data.js';
+import { monitorCommand, useRsiCli, useRsiRead, workerCommand } from './data.js';
 import { copy, reasonLabel, shellArgument, fieldErrorLabel } from './copy.js';
 import { ReadError, WriteError } from './Shared.js';
 export function OptimizerWarning({locale,id,allow,onAllow}:{locale:Locale;id:string;allow:boolean;onAllow:(allow:boolean)=>void}) {const cli=useRsiCli();return <Callout tone="attention" title={copy(locale,'需登录 · 未实测','Login required · Not verified')}><p>{copy(locale,'用量无法硬限制。需要显式允许后才能运行；任务预算不包含自行报告的用量。','Usage cannot be hard-limited. Explicit opt-in is required; self-reported usage is excluded from the task budget.')}</p><CopyField locale={locale} label={copy(locale,'登录命令','Login command')} value={`${cli.bin} optimizer login --profile ${shellArgument(id)}`}/><Checkbox checked={allow} onChange={e=>onAllow(e.target.checked)} label={copy(locale,'允许无法硬限制用量的优化者','Allow an optimizer without hard usage limits')}/></Callout>;}
@@ -39,7 +39,9 @@ export function CreateForm({options,locale,worker,onOpen,onCreated,onClose}:{opt
   if(created)return <div className="rsi-form" data-testid="rsi-created">
     <Callout tone="success" title={copy(locale,'任务已加入队列','Task queued')}/>
     {created.agentToken?<><Callout tone="attention" title={copy(locale,'这个令牌只显示这一次','This token is shown only once')}/><CopyField locale={locale} label={copy(locale,'任务令牌','Task token')} value={created.agentToken} secret/></>:<Callout tone="attention" title={copy(locale,'任务已创建，令牌无法再次读取','Task already created; the token cannot be retrieved again')}/>}
-    <CopyField locale={locale} label={copy(locale,'启动命令','Start command')} value={workerCommand(options.cli,created.taskId)}/>
+    <p>{copy(locale,'先设置 RSI_UPSTREAM_BASE_URL、RSI_UPSTREAM_MODEL、RSI_UPSTREAM_API_KEY 和 RSI_MONITOR_API_KEY（自定一个令牌）。监控没有启动时，迭代不会自动晋级，会停下来等人工审查。','First set RSI_UPSTREAM_BASE_URL, RSI_UPSTREAM_MODEL, RSI_UPSTREAM_API_KEY and RSI_MONITOR_API_KEY (any token you choose). Without the monitor, iterations are held for human review instead of being promoted.')}</p>
+    <CopyField locale={locale} label={copy(locale,'启动监控','Start monitor')} value={monitorCommand(options.cli,selectedOptimizer?.family??null)}/>
+    <CopyField locale={locale} label={copy(locale,'启动执行器','Start executor')} value={workerCommand(options.cli,created.taskId)}/>
     <Button variant="primary" onClick={()=>{const id=created.taskId;setCreated(null);onOpen(id);}}>{copy(locale,'打开任务','Open task')}</Button>
   </div>;
   return <div className="rsi-create"><Steps items={steps} current={step}/><div className="rsi-form">

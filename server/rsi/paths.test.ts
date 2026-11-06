@@ -20,4 +20,5 @@ it('falls back to the working directory for other entries', () => {
 });
 it('derives the config root the worker expects from the data root', () => {
   expect(rsiCliInfo('/config/awesome-telemetry-data/rsi').root).toBe('/config');
+  expect(rsiCliInfo('/config/awesome-telemetry-data/rsi').scripts.endsWith('scripts')).toBe(true);
 });

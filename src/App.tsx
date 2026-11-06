@@ -141,6 +141,9 @@ export default function App() {
   const openSettingsTarget=useCallback((target:LocalSettingsTarget)=>openSettings(target.section),[openSettings]);
   const [rsiOverview,setRsiOverview]=useState<RsiOverview|null>(null),[rsiOverviewError,setRsiOverviewError]=useState<unknown>(null),[rsiRevision,setRsiRevision]=useState(0),[rsiChanges,setRsiChanges]=useState<RsiChanges>({version:0,taskIds:[]});
   const refreshRsi=useCallback(()=>{setRsiRevision(n=>n+1);setRsiChanges(old=>({version:old.version+1,taskIds:[]}));},[]);
+  // An SSE gap may hide rsi_changed. Reconcile when the view is open so the reset stays one bounded metadata page.
+  const [rsiGap,setRsiGap]=useState(0),rsiGapHandled=useRef(0);
+  useEffect(()=>{if(view==='rsi'&&rsiGap!==rsiGapHandled.current){rsiGapHandled.current=rsiGap;refreshRsi();}},[view,rsiGap,refreshRsi]);
   useEffect(()=>{const controller=new AbortController();void import('./core/rsi-api-client.js').then(({rsiApi})=>rsiApi.overview(controller.signal)).then(value=>{if(!controller.signal.aborted){setRsiOverview(value);setRsiOverviewError(null);}}).catch((error:unknown)=>{if(!controller.signal.aborted)setRsiOverviewError(error);});return()=>controller.abort();},[rsiRevision]);
   const [settingsRevision,setSettingsRevision]=useState(0);
 
@@ -391,7 +394,7 @@ export default function App() {
       setProxyFocusedId(null); setLiveReset(value => value + 1);
       setTraceLinksVersion(value => value + 1);
       setMissionInvalidateKey(value => value + 1); setTeamInvalidateKey(value => value + 1);
-      setRsiRevision(value=>value+1);setRsiChanges(old=>({version:old.version+1,taskIds:[]}));
+      setRsiGap(value=>value+1);
       setTaskChanges(previous => ({ version: previous.version + 1, keys: [], runIds: [], reset: true }));
       selectedKeyRef.current = null; setSelectedKey(null); setDetail(null); setSelectedTurn(null); setPending(false);
       setPromptContextKey(null); eventPageRequest.current = null; setLoadingMoreEvents(false); setMoreEventsError(null); setDetailError(null);

@@ -246,7 +246,7 @@ describe('WB-007 lazy Agent overview entry',()=>{
       await act(async()=>{for(let i=0;i<30&&!paths.some(path=>path.includes('/agent-overview'));i++)await new Promise(resolve=>setTimeout(resolve,10));});
       expect(paths.filter(path=>path.includes('/agent-overview'))).toHaveLength(1);
       expect(paths.filter(path=>/\/sessions\/[^?]/.test(path))).toHaveLength(0);
-      expect(container.querySelectorAll('.app-sidebar nav button')).toHaveLength(7);
+      expect(container.querySelectorAll('.app-sidebar nav button')).toHaveLength(8);
     } finally {unmount();}
   });
 });
@@ -395,7 +395,7 @@ describe('REQ-015 共享会话 store（G7.6）', () => {
 
   it('WB-002: the Tasks-scoped Team link reaches existing runs while global navigation stays at six views', async () => {
     installTaskApi();const original=fetch;vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).includes('/api/team-runs')?Promise.resolve(apiResponse({items:[],total:0,hasMore:false,nextCursor:null})):original(input,init)));
-    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);expect(container.querySelectorAll('.app-sidebar nav button')).toHaveLength(7);expect(container.querySelector('.app-sidebar nav details')).toBeNull();expect(vi.mocked(fetch).mock.calls.some(([i])=>String(i).includes('/api/team-runs'))).toBe(false);await navigateHash('#/team');await act(async()=>{await import('./components/team/TeamShell.js');});await act(async()=>{await new Promise(r=>setTimeout(r,350));});expect(container.querySelector('.team-shell')).not.toBeNull();expect(window.location.hash).toMatch(/^#\/team/);expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/api/team-runs'))).toHaveLength(1);expect(vi.mocked(fetch).mock.calls.some(([i])=>/\/api\/team-runs\/[^/?]+/.test(String(i)))).toBe(false);}finally{unmount();}
+    const {container,unmount}=renderAppWithUnmount();try{await readyTasks(container);expect(container.querySelectorAll('.app-sidebar nav button')).toHaveLength(8);expect(container.querySelector('.app-sidebar nav details')).toBeNull();expect(vi.mocked(fetch).mock.calls.some(([i])=>String(i).includes('/api/team-runs'))).toBe(false);await navigateHash('#/team');await act(async()=>{await import('./components/team/TeamShell.js');});await act(async()=>{await new Promise(r=>setTimeout(r,350));});expect(container.querySelector('.team-shell')).not.toBeNull();expect(window.location.hash).toMatch(/^#\/team/);expect(vi.mocked(fetch).mock.calls.filter(([i])=>String(i).includes('/api/team-runs'))).toHaveLength(1);expect(vi.mocked(fetch).mock.calls.some(([i])=>/\/api\/team-runs\/[^/?]+/.test(String(i)))).toBe(false);}finally{unmount();}
   });
 
   it('WB-001: visible global search opens the real lazy palette without detail fan-out and restores focus', async () => {

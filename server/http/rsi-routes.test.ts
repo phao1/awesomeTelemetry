@@ -30,6 +30,9 @@ async function setup(){
   const session=await call('GET','/api/rsi/session'),pageToken=session.body.token as string;
   const input={requestId:'create',repository:resolve('.'),baselineCommit:'a'.repeat(40),agentProfile:resolve('rsi-agents/mini-agent/profile.json'),optimizerProfile:resolve('rsi-agents/optimizers/scripted/profile.json'),bank:resolve('server/rsi/__fixtures__/bank'),subset:'small',config:defaultRsiConfig()};
   const created=await call('POST','/api/rsi/tasks',pageToken,input);expect(created.status).toBe(202);
+  // A page task cannot pass --settings: the monitor is on and the optimizer reports to this server.
+  const runtime=JSON.parse(await readFile(join(root,'task-create/private/runtime.json'),'utf8')) as {reviews?:unknown;apiBase?:string};
+  expect(runtime.reviews).toEqual({});expect(runtime.apiBase).toBe('http://127.0.0.1:4173');
   const agentToken=created.body.agentToken as string;
   return{root,call,pageToken,agentToken,input};
 }

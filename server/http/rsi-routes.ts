@@ -126,7 +126,8 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
   register('POST','/api/rsi/tasks',false,async(_s,r)=>{
     const o=strictObject(await body(r),['requestId','repository','baselineCommit','agentProfile','optimizerProfile','bank','config'],['subset','settings']);
     validId(o.requestId as string);const id=(o.requestId as string).length<=123?`task-${o.requestId as string}`:`task-${createHash('sha256').update(o.requestId as string).digest('hex')}`,store=new RsiStore(db(),join(dataRoot,id),id);
-    return createTask(store,o as unknown as CreateTaskInput,defaultWorkerSettings());
+    // A page task has no --settings: it runs with the default monitor and reports to the server that created it.
+    return createTask(store,o as unknown as CreateTaskInput,{...defaultWorkerSettings(),reviews:{},apiBase:`http://127.0.0.1:${new URL(`http://${r.headers.host}`).port||'80'}`});
   },202);
   register('GET','/api/rsi/tasks/:taskId',false,async s=>{const {taskTokenHash:_hash,...task}=s!.task();return{task,head:getRsiLedgerHead(db(),s!.taskId)};});
   register('GET','/api/rsi/tasks/:taskId/calibration',false,async s=>({monitorCalibration:s!.task().monitorCalibration,latestReport:s!.task().monitorCalibration}));

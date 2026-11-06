@@ -10,6 +10,6 @@ export function rsiPackageRoot(entry: string | undefined = process.argv[1]): str
 }
 export function rsiPackagePath(...parts: string[]): string { return join(rsiPackageRoot(), ...parts); }
 /** How a person starts the CLI for the data this server is showing. dataRoot is <configRoot>/awesome-telemetry-data/rsi. */
-export function rsiCliInfo(dataRoot: string): { bin: string; root: string } {
-  return { bin: `node ${rsiPackagePath('bin', 'rsi.js')}`, root: resolve(dataRoot, '..', '..') };
+export function rsiCliInfo(dataRoot: string): { bin: string; root: string; scripts: string } {
+  return { bin: `node ${rsiPackagePath('bin', 'rsi.js')}`, root: resolve(dataRoot, '..', '..'), scripts: rsiPackagePath('scripts') };
 }

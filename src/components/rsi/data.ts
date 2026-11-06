@@ -16,7 +16,7 @@ export function useRsiRead<T>(key: string | null, read: (signal: AbortSignal) =>
 /** The CLI invocation for the data this server shows. Loaded once; commands use placeholders until it arrives. */
 let cliRequest: Promise<RsiCliInfo> | null = null;
 export function useRsiCli(): RsiCliInfo {
-  const [cli,setCli]=useState<RsiCliInfo>({bin:'rsi',root:'<config-root>'});
+  const [cli,setCli]=useState<RsiCliInfo>({bin:'rsi',root:'<config-root>',scripts:'scripts'});
   useEffect(()=>{
     let active=true;
     cliRequest??=rsiApi.options().then(options=>options.cli);
@@ -25,5 +25,7 @@ export function useRsiCli(): RsiCliInfo {
   },[]);
   return cli;
 }
-export const workerCommand=(cli:RsiCliInfo,task:string):string=>`${cli.bin} worker --execute --watch --task ${task} --root ${cli.root}`;
+export const workerCommand=(cli:RsiCliInfo,task:string):string=>`${cli.bin} worker --execute --watch --task ${task} --root ${cli.root} --docker-context colima-rsi`;
+/** The monitor must be another model family: an OpenAI optimizer is watched through Claude, every other family through Codex. */
+export const monitorCommand=(cli:RsiCliInfo,family:string|null):string=>family==='openai'?`PROXY_PORT=4318 PROXY_TOKEN=$RSI_MONITOR_API_KEY node ${cli.scripts}/claude-monitor-proxy.mjs`:`PROXY_PORT=4317 PROXY_TOKEN=$RSI_MONITOR_API_KEY node ${cli.scripts}/codex-health-proxy.mjs`;
 export const calibrateCommand=(cli:RsiCliInfo,task:string):string=>`${cli.bin} calibrate --task ${task} --root ${cli.root}`;

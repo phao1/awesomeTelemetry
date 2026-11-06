@@ -2251,6 +2251,11 @@ profile/bank selectors; custom absolute paths remain supported and validated.
 Creation settings accepts ONLY optimizerSessionTokens, optimizerSessionTimeoutMs,
 allowUnmeteredOptimizer and concurrency, validated by WorkerSettings and stored
 in private/runtime.json. No key, proxy setting or arbitrary settings accepted.
+A task created through this route has no --settings, so its frozen runtime enables
+reviews with profile-derived defaults (`reviews: {}`) and sets apiBase to
+http://127.0.0.1:<port of the request Host>. `rsi task create` keeps the RSI-P5
+omission default. Without a reachable monitor the review is missing and the
+iteration is held, never promoted. 决定于 2026-11-07.
 
 Worker heartbeat adds lastError (the latest worker failure text, at most 500 characters with secret values removed, null when none; it survives worker exit so the page can explain a paused task).
 Worker heartbeat adds upstreamConfigured:boolean, computed only from presence
@@ -2330,7 +2335,7 @@ export interface RsiReviewItem { id: string; taskId: string; taskName: string; i
 export interface RsiOverview { tasks: RsiSummary[]; reviews: RsiReviewItem[]; pendingCount: number }
 export interface RsiProfileOption { id: string; path: string; name: string; description: string | null; family: string | null; egress: 'model-proxy' | 'vendor-allowlist' | null; loginRequired: boolean; verified: boolean }
 export interface RsiBankDistribution { phase: 'smoke' | 'train' | 'sealed' | 'final'; count: number; languages: Record<string, number> }
-export interface RsiCliInfo { bin: string; root: string }
+export interface RsiCliInfo { bin: string; root: string; scripts: string }
 export interface RsiOptions { cli: RsiCliInfo; agents: RsiProfileOption[]; optimizers: RsiProfileOption[]; bank: { path: string; full: RsiBankDistribution[]; small: RsiBankDistribution[] } | null; defaults: RsiConfig; settings: Required<RsiPageSettings> }
 export interface RsiIterationMetric { iteration: RsiIteration; iterationId: string; seq: number; targetTokens: number | null; optimizerTokens: number | null; reviewTokens: number | null; durationMs: number | null; cacheHitRate: number | null; reason: string | null; defenses: RsiVerdict['defenses']; finalState: 'not_requested' | 'reserved' | 'completed'; session: RsiOptimizerSession | null }
 export interface RsiMetrics { iterations: RsiIterationMetric[]; cacheHitRate: number | null; helpReason: string | null; pendingCommands: number; baselineProgress: { completed: number; planned: number } | null }
