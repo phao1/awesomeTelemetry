@@ -120,6 +120,7 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
   register('GET','/api/rsi/overview',false,async()=>overview(await stores()));
   register('GET','/api/rsi/options',false,async()=>pageOptions(dataRoot));
   register('GET','/api/rsi/tasks/:taskId/metrics',false,async s=>metrics(s!));
+  register('GET','/api/rsi/tasks/:taskId/instructions/pending',false,async s=>({items:s!.list('queue_put').filter(q=>q.command.action==='instruction'&&['queued','running'].includes(q.state)).map(q=>{const c=q.command as Extract<RsiCommand,{action:'instruction'}>;return{id:q.id,kind:c.kind,text:c.text,effectiveFromSeq:c.effectiveFromSeq,at:q.createdAt};})}));
   register('GET','/api/rsi/tasks/:taskId/ledger/verify',false,async s=>ledgerReport(s!));
   register('GET','/api/rsi/agent/brief',true,async s=>brief(s!));
   register('GET','/api/rsi/agent/iterations/:seq/results',true,async(s,_r,p,q)=>optimizerResults(s!,p.seq!,q),200,['cursor','limit']);

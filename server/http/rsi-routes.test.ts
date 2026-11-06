@@ -112,6 +112,9 @@ it('walks agent-visible HTTP with private sealed/final trajectories and monitor 
     const pageVerdict=await call('GET','/api/rsi/tasks/task-create/iterations/1/verdict',pageToken);expect(pageVerdict.status).toBe(200);expect(pageVerdict.body.result).toEqual(worker.gate(store.list('iteration_put')[0]!));
     const {enqueue}=await import('../rsi/queue.js');await enqueue(store,{action:'review',audit:true},'worker','human-audit','candidate');
     const auditPage=await call('GET','/api/rsi/tasks/task-create/queue',pageToken);expect((auditPage.body.items as {id:string;audit:boolean}[]).find(q=>q.id==='human-audit')?.audit).toBe(true);
+    await call('POST','/api/rsi/tasks/task-create/commands',pageToken,{requestId:'later-idea',iterationId:null,command:{action:'instruction',kind:'idea',text:'share the parser',effectiveFromSeq:9}});
+    const pendingIdeas=await call('GET','/api/rsi/tasks/task-create/instructions/pending',pageToken);expect(pendingIdeas.body.items).toMatchObject([{id:'later-idea',kind:'idea',text:'share the parser',effectiveFromSeq:9}]);
+    expect((await call('GET','/api/rsi/tasks/task-create/instructions/pending',agentToken)).status).toBe(403);
     const calibrationPage=await call('GET','/api/rsi/tasks/task-create/calibration',pageToken);expect(calibrationPage.body).toEqual({monitorCalibration:null,latestReport:null});
     const categories:RsiCalibrationCategory[]=['task_specific','hardcoded_answer','test_tampering','marker_deletion','rationalized_special_case','statement_keyed_heuristic','benign'];
     const metrics=categories.map(category=>({category,samples:0,valid:0,detected:0,missing:0,rate:null,interval:null}));

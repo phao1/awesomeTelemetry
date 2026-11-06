@@ -2017,6 +2017,7 @@ forward these paths. No process/model/Docker or synchronous large-file IO.
 | GET /api/rsi/overview | RsiOverview; aggregate task summaries + held/audit review queue |
 | GET /api/rsi/options | RsiOptions; trusted local profile metadata/default bank distributions |
 | GET /api/rsi/tasks/:taskId/metrics | RsiMetrics; observed per-iteration metrics |
+| GET /api/rsi/tasks/:taskId/instructions/pending | { items: RsiPendingInstruction[] }; instructions a person added that the worker has not applied yet |
 | GET /api/rsi/tasks/:taskId/iterations/:seq/verdict | RsiVerdict; shared gate + evidence-based defenses |
 | GET /api/rsi/tasks/:taskId/iterations/:seq/runs | RsiPage<RsiPageRun>; cursor/limit, optional phase (RSI-002), all human phases; filter before paging, order smoke/train/sealed/adversarial/ablation/final, then question ID, repetition, attempt, run ID (exclusive cursor anchors this order) |
 | GET /api/rsi/tasks/:taskId/iterations/:seq/review | RsiReviewEvidence; latest private review scope allowlist |
