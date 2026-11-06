@@ -3,14 +3,15 @@ import { mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Database as Db } from 'better-sqlite3';
-import type { RsiActor, RsiLedgerEvent, RsiLedgerInput, RsiQueueItem, RsiTask, RsiIteration, RsiEvaluation, RsiRun, RsiFinding, RsiDecision } from '../../src/core/rsi-types.js';
+import type { RsiOptimizerSession, RsiInstruction, RsiActor, RsiLedgerEvent, RsiLedgerInput, RsiQueueItem, RsiTask, RsiIteration, RsiEvaluation, RsiRun, RsiFinding, RsiDecision } from '../../src/core/rsi-types.js';
 import { appendLedger, canonicalJson, computeLedgerHash, RSI_LEDGER_GENESIS_HASH } from './ledger.js';
 import { applyRsiLedgerEntry, getRsiLedgerHead, rebuildRsiIndexFromLedger } from '../storage/rsi.js';
 import { cachedStmt } from '../storage/stmt-cache.js';
-import { RSI_TASK_COLS, RSI_ITERATION_COLS, RSI_EVALUATION_COLS, RSI_RUN_COLS, RSI_FINDING_COLS, RSI_DECISION_COLS, RSI_QUEUE_COLS } from '../storage/columns.js';
+import { RSI_SESSION_COLS, RSI_INSTRUCTION_COLS, RSI_TASK_COLS, RSI_ITERATION_COLS, RSI_EVALUATION_COLS, RSI_RUN_COLS, RSI_FINDING_COLS, RSI_DECISION_COLS, RSI_QUEUE_COLS } from '../storage/columns.js';
 
-interface Entities { task_put: RsiTask; iteration_put: RsiIteration; evaluation_put: RsiEvaluation; run_put: RsiRun; finding_put: RsiFinding; decision_put: RsiDecision; queue_put: RsiQueueItem }
+interface Entities { session_put: RsiOptimizerSession; instruction_put: RsiInstruction; task_put: RsiTask; iteration_put: RsiIteration; evaluation_put: RsiEvaluation; run_put: RsiRun; finding_put: RsiFinding; decision_put: RsiDecision; queue_put: RsiQueueItem }
 const tables = {
+  session_put: ['rsi_sessions', RSI_SESSION_COLS], instruction_put: ['rsi_instructions', RSI_INSTRUCTION_COLS],
   task_put: ['rsi_tasks', RSI_TASK_COLS], iteration_put: ['rsi_iterations', RSI_ITERATION_COLS],
   evaluation_put: ['rsi_evaluations', RSI_EVALUATION_COLS], run_put: ['rsi_runs', RSI_RUN_COLS],
   finding_put: ['rsi_findings', RSI_FINDING_COLS], decision_put: ['rsi_decisions', RSI_DECISION_COLS], queue_put: ['rsi_queue', RSI_QUEUE_COLS],

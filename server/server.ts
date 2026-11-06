@@ -142,6 +142,7 @@ import { handleTraceExport } from './http/trace-export-route.js';
 import { handleLinkedTraceExport } from './http/linked-trace-export-route.js';
 import { ExperimentRegistry } from './experiments/registry.js';
 import { registerExperimentRoutes } from './http/experiment-routes.js';
+import { registerRsiRoutes } from './http/rsi-routes.js';
 import { registerBenchmarkRoutes } from './http/benchmark-routes.js';
 import { registerTeamExperimentRoutes } from './http/team-experiment-routes.js';
 import { registerFridaCaptureRoutes } from './http/frida-capture-routes.js';
@@ -542,6 +543,7 @@ export function createAgentObservabilityServer(
   };
 
   const router = new Router();
+  const stopRsi = registerRsiRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'awesome-telemetry-data/rsi'));
   const stopBenchmarks = registerBenchmarkRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'benchmark-demos'));
   const stopTeamExperiments = registerTeamExperimentRoutes(router, join(dirname(dbPath || opts.userConfigPath || join(process.cwd(), '.agent-observe', 'state.sqlite')), 'team-experiment-demos'));
   registerClaudeHookRoutes(router, hookReceiver);
@@ -2501,6 +2503,7 @@ export function createAgentObservabilityServer(
       }
       shutdown = (async () => {
         await homeHydrationStopped;
+        await stopRsi();
         await telemetry.close();
         await hookReceiver.close();
         await captureBundler.close();

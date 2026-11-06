@@ -11,7 +11,7 @@ describe('metadata-only capture reparse columns', () => {
 import Database from 'better-sqlite3';
 import { RSI_SCHEMA_SQL } from './schema.js';
 import {
-  RSI_TASK_COLS, RSI_ITERATION_COLS, RSI_EVALUATION_COLS, RSI_RUN_COLS,
+  RSI_SESSION_COLS, RSI_TASK_COLS, RSI_ITERATION_COLS, RSI_EVALUATION_COLS, RSI_RUN_COLS,
   RSI_FINDING_COLS, RSI_DECISION_COLS, RSI_INSTRUCTION_COLS, RSI_QUEUE_COLS, RSI_HEAD_COLS,
 } from './columns.js';
 
@@ -24,6 +24,7 @@ const rsiColumns = [
   ['rsi_decisions', RSI_DECISION_COLS, 'task_id, id, iteration_id, verdict, at, entity_json'],
   ['rsi_instructions', RSI_INSTRUCTION_COLS, 'task_id, id, effective_from_seq, entity_json'],
   ['rsi_queue', RSI_QUEUE_COLS, 'task_id, id, kind, state, iteration_id, evaluation_id, created_at, entity_json'],
+  ['rsi_sessions', RSI_SESSION_COLS, 'task_id, id, seq, state, entity_json'],
   ['rsi_heads', RSI_HEAD_COLS, 'task_id, seq, hash'],
 ] as const;
 

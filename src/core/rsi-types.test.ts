@@ -14,6 +14,6 @@ describe('RSI-002 authoritative types', () => {
     expectTypeOf<RsiRun['outcome']>().toEqualTypeOf<'pass' | 'fail' | 'infra_error'>();
     expectTypeOf<RsiTask['delta']>().toEqualTypeOf<number | null>();
     expectTypeOf<RsiEvaluation['score']>().toEqualTypeOf<number | null>();
-    expectTypeOf<RsiLedgerEntry['event']>().toEqualTypeOf<'task_put' | 'iteration_put' | 'evaluation_put' | 'run_put' | 'finding_put' | 'decision_put' | 'instruction_put' | 'queue_put'>();
+    expectTypeOf<RsiLedgerEntry['event']>().toEqualTypeOf<'task_put' | 'iteration_put' | 'evaluation_put' | 'run_put' | 'finding_put' | 'decision_put' | 'instruction_put' | 'queue_put' | 'session_put'>();
   });
 });

@@ -146,6 +146,7 @@ export type RsiCommand =
   | { action: 'reject' | 'retry_review' | 'retry_evaluation' | 'pause' | 'resume' | 'stop' | 'declare_stuck' | 'final' | 'adopt'; reason: string }
   | { action: 'rollback'; parentId: string | null; reason: string }
   | { action: 'instruction'; kind: 'prohibition' | 'idea'; text: string; effectiveFromSeq: number }
+  | { action: 'set_target'; targetPassedCount: number; reason: string }
   | { action: 'set_budget'; maxTaskTokens: number; maxIterations: number; sealedQueryBudget: number; reason: string };
 export interface RsiQueueItem {
   id: string; taskId: string; kind: 'submit' | 'evaluate' | 'review' | 'final' | 'adopt' | 'intervene';
@@ -153,8 +154,15 @@ export interface RsiQueueItem {
   state: 'queued' | 'running' | 'completed' | 'failed'; requestedBy: RsiActor;
   reason: string | null; command: RsiCommand; createdAt: string; updatedAt: string;
 }
+export interface RsiOptimizerSession {
+  id: string; taskId: string; seq: number; parentId: string | null; commit: string;
+  state: 'running' | 'submitted' | 'stuck' | 'no_submission' | 'timeout' | 'interrupted';
+  submissionId: string | null; accounting: 'proxy' | 'self_reported';
+  tokens: number | null; artifactPath: string; startedAt: string; endedAt: string | null;
+}
 export interface RsiLedgerHead { seq: number; hash: string }
 export type RsiLedgerEvent =
+  | { event: 'session_put'; payload: RsiOptimizerSession }
   | { event: 'task_put'; payload: RsiTask }
   | { event: 'iteration_put'; payload: RsiIteration }
   | { event: 'evaluation_put'; payload: RsiEvaluation }
@@ -406,7 +414,7 @@ type RsiAccepted = { taskId: string; queueId: string; status: 'queued' };
 type RsiTaskView = Omit<RsiTask, 'taskTokenHash'>;
 type RsiCreateTaskRequest = {
   requestId: string; repository: string; baselineCommit: string;
-  datasetHash: string; config: RsiConfig;
+  agentProfile: string; optimizerProfile: string; bank: string; subset?: 'small' | 'full'; config: RsiConfig;
 };
 type RsiCreateTaskResponse = RsiAccepted & { agentToken: string | null };
 type RsiSubmitRequest = { requestId: string; commit: string; prd: RsiPrd };
@@ -416,6 +424,7 @@ type RsiBriefResponse = {
   task: NonNullable<ReturnType<typeof projectTaskForOptimizer>>;
   parent: { iterationId: string | null; commit: string; trainScore: number };
   instructions: NonNullable<ReturnType<typeof projectInstructionForOptimizer>>[];
+  remainingTaskTokens: number; remainingIterations: number; lastIterationSeq: number; allowPaths: string[];
 };
 type RsiOptimizerResults = {
   iteration: NonNullable<ReturnType<typeof projectIterationForOptimizer>>;
@@ -423,6 +432,7 @@ type RsiOptimizerResults = {
   runs: NonNullable<ReturnType<typeof projectRunForOptimizer>>[];
   findings: NonNullable<ReturnType<typeof projectFindingForOptimizer>>[];
   decisions: NonNullable<ReturnType<typeof projectDecisionForOptimizer>>[];
+  quality: NonNullable<ReturnType<typeof projectQualityForOptimizer>> | null;
   nextCursor: string | null;
 };
 ```
@@ -635,6 +645,15 @@ CREATE TABLE IF NOT EXISTS rsi_queue (
   FOREIGN KEY(task_id,iteration_id) REFERENCES rsi_iterations(task_id,id),
   FOREIGN KEY(task_id,evaluation_id) REFERENCES rsi_evaluations(task_id,id)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_sessions (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  seq INTEGER NOT NULL CHECK(seq>0),
+  state TEXT NOT NULL CHECK(state IN ('running','submitted','stuck','no_submission','timeout','interrupted')),
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  UNIQUE(task_id,seq)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS rsi_heads (
   task_id TEXT PRIMARY KEY REFERENCES rsi_tasks(id) ON DELETE CASCADE,
   seq INTEGER NOT NULL CHECK(seq>0),
@@ -665,11 +684,12 @@ RSI_FINDING_COLS = 'task_id, id, iteration_id, level, category, entity_json';
 RSI_DECISION_COLS = 'task_id, id, iteration_id, verdict, at, entity_json';
 RSI_INSTRUCTION_COLS = 'task_id, id, effective_from_seq, entity_json';
 RSI_QUEUE_COLS = 'task_id, id, kind, state, iteration_id, evaluation_id, created_at, entity_json';
+RSI_SESSION_COLS = 'task_id, id, seq, state, entity_json';
 RSI_HEAD_COLS = 'task_id, seq, hash';
 ```
 
 `schema.ts` exports `RSI_SCHEMA_SQL`; fresh creation and the `fromVersion < 25`
-branch create all nine tables/eight explicit indexes and publish schema_version25
+branch create all ten tables/eight explicit indexes and publish schema_version25
 in one transaction. Repeated initialization is idempotent. No existing native
 rows, scanners or versioned metrics are rewritten.
 
@@ -690,7 +710,7 @@ and repetition; attempt1 requires a prior attempt0 infra_error.
 streaming complete events into private staging SQLite, with the current cached
 head as a trusted prefix anchor. A partial tail, invalid chain, invalid entity,
 violated invariant or changed live cache head aborts without replacing any rows.
-After verification, all nine tables for that task are replaced in one synchronous
+After verification, all ten tables for that task are replaced in one synchronous
 transaction; other tasks/native tables are preserved. Staging contains only the
 latest entity snapshots, not an in-memory copy of the ledger. All read/write
 statements are prepared and cached outside replay loops. Concurrent writers that
@@ -1510,3 +1530,199 @@ or Docker. `rsi doctor [--root <path>] [--docker-context <name>]` emits JSON che
 CLI/buildx availability, context connectivity, Linux engine and amd64/arm64 support,
 free bytes (minimum6GiB at config root), and presence booleans for all three upstream
 variables, never their values. Probe failures are structured checks, not raw logs.
+
+
+## RSI-014 Isolated optimizer loop and HTTP (M13 / P4)
+
+Design author decisions **决定于 2026-11-07**. This section supersedes P1/P2
+scope deferrals, RSI-005's raw-trajectory exclusion for smoke/train, and RSI-013's
+human-only trajectory restriction. Pages and monitor Agents remain deferred.
+
+### Sessions, profiles and isolation
+
+```ts
+export interface RsiOptimizerSession {
+  id: string; taskId: string; seq: number; parentId: string | null; commit: string;
+  state: 'running' | 'submitted' | 'stuck' | 'no_submission' | 'timeout' | 'interrupted';
+  submissionId: string | null; accounting: 'proxy' | 'self_reported';
+  tokens: number | null; artifactPath: string; startedAt: string; endedAt: string | null;
+}
+```
+
+Ledger adds `{event:'session_put',payload:RsiOptimizerSession}`. Worker alone may
+create/update sessions. Identity/parent/start/accounting/artifact are immutable;
+only a running session may finish, terminal snapshots are immutable. `seq` is
+positive task-local session ordinal, independently of iteration ordinal.
+`submissionId` binds the first accepted submit/stuck queue ID; later different
+requests during that session conflict. Running sessions recovered after a crash
+finish interrupted (or submitted/stuck if their first durable request exists).
+Three consecutive terminal no_submission/timeout sessions enter needs_help through
+a worker-attributed, optimizer-requested declare_stuck queue; interrupted sessions
+break that count. No submission does not fabricate an iteration or score.
+
+Every round uses a new internal-only container, no host bind/socket mounts, no
+published ports/capabilities. Only a configured Docker named login volume may be
+mounted to that optimizer. Sidecar alone joins internal plus bridge. Sidecar
+forwards model requests and exactly `/api/rsi/agent/` to a fixed host origin;
+all other paths404. CONNECT is exact case-insensitive allowlisted DNS names,
+port443 only, never IP literals; DNS answers must be public unicast (no host,
+loopback, private, link-local, multicast, or mapped private destinations).
+No redirects, arbitrary upstream URLs, forwarding of page endpoints or headers.
+Session/task bearers authorize agent routes only; human routes always require a
+separate process-local page token and local Host/same-origin policy.
+
+Worker generates256 random bits each session; only `{sessionId,tokenHash,expiresAt}`
+is atomically saved to private/agent-session.json mode0600. Plaintext is delivered
+only through container environment, never prompts, logs or ledger. API hashes and
+constant-time compares either the immutable task bearer or current unexpired
+session bearer; also checks session is running. End/timeout removes the file before
+export and evaluation. Restart revokes before recovery. Manual task bearers remain
+usable for externally driven optimizers; no session token recovery is necessary.
+
+Trusted optimizer profile extends RSI-013's run/session shape with version,id,name,
+dockerfile,family,egress,login (no dependencyInputs/l1). egress is
+`{kind:'model-proxy'}` or `{kind:'vendor-allowlist',domains:string[]}`; login is
+`{kind:'none'}` or `{kind:'volume',path:string,command:string[]}`. Dockerfile is
+profile-relative, no links/traversal, one final image (no target stage requirement).
+Same strict single-pass placeholders as RSI-013, statement is the handoff prompt.
+The only injected application env is RSI_API_BASE, RSI_AGENT_TOKEN plus rendered
+model config and HTTPS_PROXY/HTTP_PROXY for vendor mode. No host credential paths.
+Bundled default opencode-deepseek uses DeepSeek provider and model proxy;
+codex/claude-code support named-volume fresh-container interactive login and are
+explicitly untested. scripted is an interface-only integration fixture.
+
+WorkerSettings adds optional optimizer pins (profileSha256/dockerfileSha256),
+optimizerSessionTokens default2000000, optimizerSessionTimeoutMs default1800000,
+allowUnmeteredOptimizer defaultfalse, apiBase defaulthttp://127.0.0.1:4173.
+apiBase is a trusted host origin; sidecar rewrites its forwarding Host to loopback.
+Only model-proxy usage counts toward maxTaskTokens. Proxy429 ends the session.
+Vendor sessions fail closed unless allowUnmeteredOptimizer=true (CLI
+--allow-unmetered-optimizer). Their time limit remains hard; native JSONL usage
+is self_reported, nullable when unavailable, never counted toward task budget or
+gate inputs. Codex token_count total_token_usage.total_tokens and Claude message
+usage input/output/cache_read_input/cache_creation_input tokens are parsed only
+as diagnostic data, never estimated. Login is an explicit exception to the
+worker-only container entry rule: only `optimizer login --profile <id>` may run a
+fresh interactive login container. No source/task content enters login containers.
+
+Parent Git bundle enters by normalized tar/stdin; returned bundle is size-bounded,
+fetched into the trusted bare repository with hooks disabled and no checkout.
+Only submitted full commit is imported, must descend from selected parent. Platform
+computes diff; caller diff/binaries never accepted. Container stdout/native logs
+are not retained (may contain bearers); proxy traces omit agent-forwarding bodies.
+Optimizer traces reside at artifacts/optimizer/<sessionId>/proxy and human session
+trajectory route; optimizer cannot read another optimizer's traces via run routes.
+
+### Creation, commands, artifacts
+
+HTTP creation removes caller datasetHash. Required absolute local paths:
+repository,agentProfile,optimizerProfile,bank; full baselineCommit,requestId,config.
+subset optional defaults full. Async freeze only (64MiB aggregate input bank,
+1MiB/profile and Dockerfile), no processes; compute datasetHash, persist created
+and start command. CLI shares this implementation, defaults bundled profiles.
+Worker creates/verifies trusted mirror before calibration. Idempotency retains
+original acceptance/token=null and rejects changed creation contents. A durable
+private/create.json records nonsecret intent and settings; no bearer in that file.
+
+Rollback is task-scoped; command selects baseline/null or promoted parent. Latest
+completed rollback after last session overrides the next round only. Submission
+creates the iteration, all old versions remain. Instructions activate no earlier
+than next iteration; brief filters by effectiveFromSeq. Add human command
+`{action:'set_target',targetPassedCount:number,reason:string}` (positive integer).
+set_budget/set_target/instruction followed by resume handles needs_help.
+Adopt requires promoted iteration plus a complete locked final (score nonnull,
+infraErrorRatio0); write baseline-relative artifacts/adopted/<seq>.patch and
+refs/rsi/adopted/<seq> idempotently. Never merge/push.
+Quality artifact fields: addedLines,deletedLines,changedLines,files,addedFunctions
+(nonnegative integers; function count is a documented lexical approximation).
+Worker heartbeat `{pid,at,phase}` at private/worker.json every5s; human response
+adds running (fresh within15s; PID checked when local), stale status is advisory.
+
+### Additional HTTP and visibility
+
+All existing RSI-009.1 routes implemented, no-store, strict bodies, existing
+ApiError and1MiB maximum JSON. Human token endpoint GET /api/rsi/session returns
+`{token}` only for local Host, exact Origin==Host origin if supplied and
+Sec-Fetch-Site absent/same-origin/none. Other human routes additionally require
+Bearer page token. Wrong scope403, missing/unknown401, bad Host/Origin403.
+Agent handlers do not require browser Origin (sidecar strips browser headers).
+
+Additional GETs:
+- /api/rsi/agent/runs/:runId/trajectory (only same-task smoke/train, otherwise404)
+- /api/rsi/tasks/:taskId/runs/:runId/trajectory (human, all phases)
+- /api/rsi/tasks/:taskId/sessions (human paged RsiOptimizerSession)
+- /api/rsi/tasks/:taskId/sessions/:sessionId/trajectory (human optimizer traces)
+- /api/rsi/tasks/:taskId/iterations/:seq/diff → {diff,quality}, platform artifact
+- /api/rsi/tasks/:taskId/iterations/:seq/findings → paged RsiFinding with evidence
+- /api/rsi/tasks/:taskId/worker → {pid,at,phase,running}, absent null fields
+
+Trajectory query file=responses|last-request (default responses), offset unsigned
+byte offset default0, limit1..65536 default65536. Response
+`{file,content,nextOffset:number|null,truncated:boolean}`; content is bounded UTF8
+text, reads avoid splitting multibyte characters. Missing file returns empty text.
+Projection permits only this content for trusted smoke/train runs: response
+requestId,assistant[].index/text/tool_calls and last-request messages (role,
+content,tool_calls,tool_call_id,name), truncated marker/prefix; unknown keys dropped.
+Hidden evaluator/test/monitor files NEVER enter these artifacts. No string-filter
+claim: a genuinely observed target prompt/answer may mention its visible statement.
+Unknown/private run phase is rejected before any artifact IO. Quality is included
+in optimizer results as quality|null using explicit numeric projection. Optimizer
+brief adds remainingTaskTokens,remainingIterations,lastIterationSeq and allowPaths
+(from frozen target profile); no monitor prose or private paths. Sealed evals still
+verdict only; final excluded before result pagination.
+
+SSE rsi_changed {taskIds:string[]} coalesces ledger filesystem notifications200ms.
+No per-run event, server owns watcher/timer cleanup. Worker --execute --watch polls
+queued state every5s, Ctrl-C aborts owned work; non-watch drains and exits.
+
+
+P4 implementation defaults: trajectory page ends may extend3 UTF8 bytes; offsets
+inside a codepoint400. Task IDs for HTTP are task-<requestId> when <=123 characters,
+otherwise task-<SHA256(requestId)>. Ledger watcher uses100ms filesystem polling
+and a separate200ms merge window, without reading trace bodies. Profiles/bank
+selection lists are optional and omitted in P4. API base may be overridden with
+worker --api-base; production server data root is beside its database/config:
+<directory>/awesome-telemetry-data/rsi (use CLI --root <directory>).
+Proxy usage admission remains RSI-012's calibrated reservation semantics, not an
+exact unknown-provider tokenizer. No proxy/native reconciliation for unmetered
+optimizer usage. Source Git bundles capped256MiB; artifact/session export64MiB.
+
+Default new tasks use proxy.mode=real; supply upstream variables only to the
+manual worker. Test harnesses explicitly select mock in trusted WorkerSettings.
+Unmetered refusal applies to execution, not dry-run validation. Native usage
+parsing considers only JSONL bytes added during the current fresh session; failed
+pre-session snapshots or absent counters yield null. Before bundle export, the
+worker kills optimizer processes (including detached descendants), ignores dead
+zombies and fails closed if a live non-init process remains. Container removal
+still runs if stopping/export fails. Heartbeat covers materialization/recovery as
+well as evaluation, with atomic JSON replacement; adopted patches/import manifests
+are also atomically published. Host credential roots and their ancestors are not
+valid creation inputs. Existing request IDs retain acceptance even if source files
+have subsequently disappeared.
+
+Bearer-bearing request bodies are rejected before queue writes. Model sidecars
+redact their temporary/upstream keys and current task/session64-hex bearer digests
+from model input/transcript values before forwarding/retention. This prevents
+accidental literal credential copies (for example tool output of environment),
+not arbitrary encoded covert channels by an adversarial optimizer. The real
+upstream authorization header is still injected separately and never captured.
+
+
+The optimizer image must declare a non-root USER (verified again with id -u).
+A trusted root PID1 sleep supervisor enforces the absolute session deadline in
+Docker even if the host worker crashes; it never executes candidate/profile code.
+All source/config extraction, optimizer execution and Git/native exports run via
+Docker exec with the image's original non-root user. That user cannot signal the
+root deadline supervisor. The original user is retained in a trusted container
+label for crash recovery. Deadline granularity is one second (floor UTC epoch, at most999ms early, never later than the configured limit);
+API session token expiry and the live worker timer retain millisecond resolution.
+
+The original non-root user's home is resolved from the image's /etc/passwd and
+restored as HOME on all optimizer execs (including recovery); it is a container
+path, never the host HOME. This preserves vendor login volume/config lookup while
+the trusted deadline supervisor runs as root. Missing/non-root UID/home fails
+closed before source extraction.
+
+Trusted Git retains refs/rsi/baseline and refs/rsi/submissions/<SHA256(queueId)> so
+unrelated later candidates/rollback cannot make recorded commits collectible.
+These are local retention refs only, not source branch updates, merges or pushes.

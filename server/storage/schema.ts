@@ -130,6 +130,15 @@ CREATE TABLE IF NOT EXISTS rsi_queue (
   FOREIGN KEY(task_id,iteration_id) REFERENCES rsi_iterations(task_id,id),
   FOREIGN KEY(task_id,evaluation_id) REFERENCES rsi_evaluations(task_id,id)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_sessions (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  seq INTEGER NOT NULL CHECK(seq>0),
+  state TEXT NOT NULL CHECK(state IN ('running','submitted','stuck','no_submission','timeout','interrupted')),
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  UNIQUE(task_id,seq)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS rsi_heads (
   task_id TEXT PRIMARY KEY REFERENCES rsi_tasks(id) ON DELETE CASCADE,
   seq INTEGER NOT NULL CHECK(seq>0),

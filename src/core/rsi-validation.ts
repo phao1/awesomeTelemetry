@@ -1,5 +1,5 @@
 import type {
-  RsiConfig, RsiLedgerEntry, RsiLedgerInput, RsiTask, RsiIteration,
+  RsiOptimizerSession, RsiConfig, RsiLedgerEntry, RsiLedgerInput, RsiTask, RsiIteration,
   RsiEvaluation, RsiRun, RsiFinding, RsiDecision, RsiInstruction, RsiQueueItem,
 } from './rsi-types.js';
 import { RSI_ITERATION_STATES, RSI_PHASES, RSI_TASK_STATES } from './rsi-types.js';
@@ -94,6 +94,7 @@ const command: Check = (v, p) => {
   else if (action === 'approve') Object.assign(fields, { categories: array(oneOf(approvals), true), reason: text });
   else if (action === 'rollback') Object.assign(fields, { parentId: nullable(id), reason: text });
   else if (action === 'instruction') Object.assign(fields, { kind: oneOf(['prohibition', 'idea']), text, effectiveFromSeq: positive });
+  else if (action === 'set_target') Object.assign(fields, { targetPassedCount: positive, reason: text });
   else if (action === 'set_budget') Object.assign(fields, { maxTaskTokens: positive, maxIterations: positive, sealedQueryBudget: integer, reason: text });
   else if (['reject', 'retry_review', 'retry_evaluation', 'pause', 'resume', 'stop', 'declare_stuck', 'final', 'adopt'].includes(action as string)) fields.reason = text;
   else fail(p);
@@ -158,7 +159,18 @@ export function validateRsiQueueItem(value: unknown): RsiQueueItem {
   return v;
 }
 
+const session = shape({ id, taskId: id, seq: positive, parentId: nullable(id), commit,
+  state: oneOf(['running', 'submitted', 'stuck', 'no_submission', 'timeout', 'interrupted']),
+  submissionId: nullable(id), accounting: oneOf(['proxy', 'self_reported']), tokens: nullable(integer),
+  artifactPath: pathRef, startedAt: at, endedAt: nullable(at) });
+export function validateRsiOptimizerSession(value: unknown): RsiOptimizerSession {
+  session(value, 'session'); const v = value as RsiOptimizerSession;
+  if ((v.state === 'running') !== (v.endedAt === null) || v.endedAt !== null && v.endedAt < v.startedAt) fail('session.endedAt');
+  if (['submitted', 'stuck'].includes(v.state) !== (v.submissionId !== null)) fail('session.submissionId');
+  return v;
+}
 const validators = {
+  session_put: validateRsiOptimizerSession,
   task_put: validateRsiTask, iteration_put: validateRsiIteration, evaluation_put: validateRsiEvaluation,
   run_put: validateRsiRun, finding_put: validateRsiFinding, decision_put: validateRsiDecision,
   instruction_put: validateRsiInstruction, queue_put: validateRsiQueueItem,

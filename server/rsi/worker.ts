@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, open, readFile, readdir, rename, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -10,7 +10,7 @@ import { decidePromotion, isStableRegression, selectParent } from '../../src/cor
 import type { RsiFingerprintDictionary } from '../../src/core/rsi-types.js';
 import type { QuestionBank, RsiBankQuestion } from './bank.js';
 import { readBank, readQuestionData } from './bank.js';
-import { BuildRejected, buildCandidate, candidateDiff, precheck, pruneImages } from './build.js';
+import { createMirror, importCommit, git, BuildRejected, buildCandidate, candidateDiff, precheck, pruneImages } from './build.js';
 import type { BuiltCandidate } from './build.js';
 import type { DockerClient } from './docker.js';
 import { mustDocker } from './docker.js';
@@ -26,11 +26,17 @@ import { MissingReviewProvider } from './review.js';
 import type { ReviewProvider } from './review.js';
 import type { AgentPins, RsiAgentProfile } from './agent-profile.js';
 import { readFrozenAgent } from './agent-profile.js';
+import { readFrozenOptimizer, buildOptimizer } from './optimizer-profile.js';
+import { recoverOptimizerSessions, runOptimizerSession, consecutiveNoSubmissions } from './optimizer-session.js';
+import { selectedParent } from './commands.js';
+import { adopt } from './adopt.js';
+import { measureQuality } from './quality.js';
 
 export interface WorkerSettings {
   concurrency: number; agentTimeoutMs: number; reconciliationMaxRatio: number;
   keepRecentImages: number; imagesRoot: string; reportersRoot: string;
-  agent?: AgentPins;
+  agent?: AgentPins; optimizer?: AgentPins;
+  optimizerSessionTokens?: number; optimizerSessionTimeoutMs?: number; allowUnmeteredOptimizer?: boolean; apiBase?: string;
   proxy: ProxySettings; candidateMockTable: Record<string, MockScript>;
 }
 export interface SlotRequest { runId: string; evaluation: RsiEvaluation; question: RsiBankQuestion; repetition: number; attempt: 0 | 1; signal: AbortSignal }
@@ -49,8 +55,12 @@ export function validateWorkerSettings(v: WorkerSettings): WorkerSettings {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Invalid ${field}`);
     for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Invalid ${field}.${key}`);
   };
-  fields(v, ['concurrency', 'agentTimeoutMs', 'reconciliationMaxRatio', 'keepRecentImages', 'imagesRoot', 'reportersRoot', 'proxy', 'candidateMockTable', 'agent'], 'settings');
+  fields(v, ['concurrency', 'agentTimeoutMs', 'reconciliationMaxRatio', 'keepRecentImages', 'imagesRoot', 'reportersRoot', 'proxy', 'candidateMockTable', 'agent', 'optimizer', 'optimizerSessionTokens', 'optimizerSessionTimeoutMs', 'allowUnmeteredOptimizer', 'apiBase'], 'settings');
   fields(v.proxy, ['mode', 'maxTokens', 'inputTokensPerByte', 'mockTable'], 'settings.proxy');
+  for (const n of [v.optimizerSessionTokens, v.optimizerSessionTimeoutMs]) if (n !== undefined && (!Number.isSafeInteger(n) || n <= 0)) throw new Error('Invalid optimizer limit');
+  if (v.allowUnmeteredOptimizer !== undefined && typeof v.allowUnmeteredOptimizer !== 'boolean') throw new Error('Invalid allowUnmeteredOptimizer');
+  if (v.apiBase !== undefined) { const u = new URL(v.apiBase); if (u.protocol !== 'http:' || u.pathname !== '/' || u.username || u.password || u.search || u.hash) throw new Error('Invalid platform origin'); }
+  if (v.optimizer && (!/^[a-f0-9]{64}$/.test(v.optimizer.profileSha256) || !/^[a-f0-9]{64}$/.test(v.optimizer.dockerfileSha256))) throw new Error('Invalid optimizer pins');
   if (v.agent) {
     fields(v.agent, ['profileSha256', 'dockerfileSha256'], 'settings.agent');
     for (const key of ['profileSha256', 'dockerfileSha256'] as const) if (!/^[a-f0-9]{64}$/.test(v.agent[key])) throw new Error(`Invalid settings.agent.${key}`);
@@ -147,6 +157,7 @@ export function finalRuns(e: RsiEvaluation, all: RsiRun[]): RsiRun[] {
 export class RsiWorker {
   readonly store: RsiStore; readonly bank: QuestionBank; readonly settings: WorkerSettings;
   readonly backend: ExecutionBackend; readonly reviews: ReviewProvider; readonly afterRun?: () => Promise<void>; readonly profile?: RsiAgentProfile;
+  optimizerSession?: () => Promise<void>;
   private controller = new AbortController(); private usage = new Map<string, number>(); private accounting: Promise<void> = Promise.resolve();
   constructor(store: RsiStore, bank: QuestionBank, settings: WorkerSettings, backend: ExecutionBackend, reviews: ReviewProvider = new MissingReviewProvider(), afterRun?: () => Promise<void>, profile?: RsiAgentProfile) {
     this.store = store; this.bank = bank; this.settings = validateWorkerSettings(settings); this.backend = backend; this.reviews = reviews; this.afterRun = afterRun; this.profile = profile;
@@ -351,6 +362,9 @@ export class RsiWorker {
     const parent = this.store.list('iteration_put').find(p => p.id === i.parentId)?.commit ?? this.store.task().baselineCommit;
     const dictionary = JSON.parse(await readFile(join(this.store.root, 'private/fingerprints.json'), 'utf8')) as RsiFingerprintDictionary;
     const diff = await candidateDiff(join(this.store.root, 'private/repository.git'), parent, i.commit);
+    const diffFile=join(this.store.root, `artifacts/${i.id}/diff.patch`);
+    await privateWrite(`${diffFile}.tmp`, diff); await rename(`${diffFile}.tmp`,diffFile);
+    await privateWrite(join(this.store.root, `artifacts/${i.id}/quality.json`), JSON.stringify(measureQuality(diff)));
     const findings = precheck(diff, dictionary, this.profile?.l1);
     for (const [n, f] of findings.entries()) {
       const id = `l1-${i.id}-${n}`;
@@ -455,9 +469,30 @@ export class RsiWorker {
     if (q.state === 'completed' || q.state === 'failed') return;
     await this.store.put({ event: 'queue_put', payload: { ...q, state: 'running', updatedAt: now() } });
     const c = q.command;
-    if (c.action === 'start') {
+    if (c.action === 'rollback') {
+      const t = this.store.task();
+      if (c.parentId !== null && !this.store.list('iteration_put').some(i => i.id === c.parentId && i.state === 'promoted')) throw new Error('Invalid rollback parent');
+      await this.store.put({ event: 'task_put', payload: { ...t, currentParentId: c.parentId, updatedAt: now() } });
+    } else if (c.action === 'instruction') {
+      const id = createHash('sha256').update(`instruction:${q.id}`).digest('hex');
+      if (!this.store.list('instruction_put').some(i => i.id === id)) await this.store.put({ event: 'instruction_put', payload: { id, taskId: this.store.taskId, kind: c.kind, text: c.text, effectiveFromSeq: c.effectiveFromSeq, at: q.createdAt } }, 'human');
+    } else if (c.action === 'adopt') {
+      await adopt(this.store, q.iterationId!);
+    } else if (c.action === 'set_target') {
+      const t = this.store.task(); await this.store.put({ event: 'task_put', payload: { ...t, config: { ...t.config, targetPassedCount: c.targetPassedCount }, updatedAt: now() } }, 'human');
+    } else if (c.action === 'start') {
       if (this.store.task().state === 'created') await this.taskEvent('start', 'Start calibration');
     } else if (c.action === 'submit') {
+      const session = this.store.list('session_put').find(s => s.submissionId === q.id);
+      if (session) {
+        const manifest = JSON.parse(await readFile(join(this.store.root, session.artifactPath, 'imported.json'), 'utf8')) as { commit: string; queueId: string };
+        if (manifest.commit !== c.commit || manifest.queueId !== q.id) throw new Error('Missing verified optimizer import');
+      }
+      if (!session && this.profile) {
+        const mirror=join(this.store.root,'private/repository.git');
+        await importCommit(this.store.task().repository,mirror,c.commit);
+        await git(['--git-dir',mirror,'update-ref',`refs/rsi/submissions/${createHash('sha256').update(q.id).digest('hex')}`,c.commit]);
+      }
       const id = createHash('sha256').update(`iteration:${q.id}`).digest('hex');
       let i = this.store.list('iteration_put').find(i => i.id === id);
       if (!i) {
@@ -513,6 +548,7 @@ export class RsiWorker {
     await this.store.put({ event: 'queue_put', payload: { ...q, state: 'completed', updatedAt: now() } });
   }
   async step(): Promise<boolean> {
+    await this.store.refresh();
     // Human recovery commands remain processable while paused/held/completed.
     const queue = this.store.list('queue_put').filter(q => q.state === 'queued').sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
     const human = queue.find(q => q.requestedBy === 'human' && q.kind !== 'final');
@@ -541,12 +577,18 @@ export class RsiWorker {
     if (t.state === 'completed') return false;
     const promoted = this.store.list('iteration_put').filter(i => i.state === 'promoted');
     if (promoted.length) {
-      const selected = selectParent([{ iterationId: null, seq: 0, state: 'baseline', trainScore: t.baselineTrainScore! }, ...promoted.map(i => ({ iterationId: i.id, seq: i.seq, state: i.state, trainScore: i.trainScore! }))], t.delta!).iterationId;
+      const selected = selectedParent(this.store);
       if (selected !== t.currentParentId) await this.store.put({ event: 'task_put', payload: { ...this.store.task(), currentParentId: selected, updatedAt: now() } });
       if (promoted.some(i => i.trainScore! >= t.config.targetPassedCount)) { await this.taskEvent('target_reached', 'Recover completed promotion'); return true; }
     }
     const iteration = this.store.list('iteration_put').find(i => !['draft', 'held', 'promoted', 'rejected'].includes(i.state));
     if (iteration) { await this.processIteration(iteration); return true; }
+    if (this.optimizerSession && !this.store.list('iteration_put').some(i => !['promoted','rejected'].includes(i.state))) {
+      if (consecutiveNoSubmissions(this.store.list('session_put')) >= 3) {
+        await enqueue(this.store, { action: 'declare_stuck', reason: 'Three consecutive optimizer sessions without a submission' }, 'optimizer', `no-submission-${this.store.list('session_put').sort((a,b)=>b.seq-a.seq)[0]!.id}`); return true;
+      }
+      await this.optimizerSession(); return true;
+    }
     return false;
   }
   async run(signal?: AbortSignal): Promise<void> {
@@ -561,15 +603,35 @@ export class RsiWorker {
   }
 }
 
+async function withHeartbeat<T>(store: RsiStore, action: () => Promise<T>): Promise<T> {
+  let stopped=false, error: unknown, pending:Promise<void>=Promise.resolve();
+  const beat=():void=>{
+    const phase=stopped?'stopped':store.list('session_put').some(s=>s.state==='running')?'optimizer':store.list('evaluation_put').find(e=>e.state==='running')?.phase??store.list('iteration_put').find(i=>!['promoted','rejected','held'].includes(i.state))?.state??(store.task().state==='created'?'materializing':store.task().state);
+    pending=pending.then(async()=>{const file=join(store.root,'private/worker.json');await privateWrite(`${file}.tmp`,JSON.stringify({pid:process.pid,at:now(),phase}));await rename(`${file}.tmp`,file);}).catch(e=>{error=e;});
+  };
+  beat();const timer=setInterval(beat,5000);timer.unref();
+  let result:T;
+  try { result=await action(); }
+  finally {clearInterval(timer);stopped=true;beat();await pending;}
+  if(error)throw error;return result;
+}
+
 export async function runWorker(store: RsiStore, settings: WorkerSettings, client: DockerClient,
-  execute: boolean, options: { signal?: AbortSignal; reviews?: ReviewProvider; backend?: ExecutionBackend; afterRun?: () => Promise<void> } = {}): Promise<unknown> {
+  execute: boolean, options: { watch?: boolean; signal?: AbortSignal; reviews?: ReviewProvider; backend?: ExecutionBackend; afterRun?: () => Promise<void> } = {}): Promise<unknown> {
   await store.refresh();
   const profile = await readFrozenAgent(join(store.root, 'private/agent'), settings.agent);
+  const optimizer = settings.optimizer ? await readFrozenOptimizer(join(store.root, 'private/optimizer'), settings.optimizer) : null;
+  if (execute && optimizer?.egress.kind === 'vendor-allowlist' && !settings.allowUnmeteredOptimizer) throw new Error('Vendor CONNECT cannot enforce token budgets. Set WorkerSettings.allowUnmeteredOptimizer=true or --allow-unmetered-optimizer.');
   if (execute && settings.proxy.mode === 'real') upstreamEnvironment();
   if (!execute) return { execute: false, taskId: store.taskId, state: store.task().state, concurrency: settings.concurrency,
     planned: ['recover labelled containers/networks', 'baseline train × R and sealed × 3', 'L1/build', 'smoke', 'train', 'review', 'sealed × 3', 'decide'],
     queue: store.list('queue_put').filter(q => q.state === 'queued').map(q => ({ id: q.id, kind: q.kind })) };
-  return taskLock(store.root, 'worker', async () => {
+  return taskLock(store.root, 'worker', () => withHeartbeat(store, async () => {
+    await recoverOptimizerSessions(store, client);
+    const mirror = join(store.root, 'private/repository.git');
+    try { await stat(mirror); } catch(e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; await createMirror(store.task().repository, mirror); }
+    await importCommit(store.task().repository, mirror, store.task().baselineCommit);
+    await git(['--git-dir',mirror,'update-ref','refs/rsi/baseline',store.task().baselineCommit]);
     const bank = await readBank(join(store.root, 'private/bank'));
     if (bank.datasetHash !== store.task().datasetHash) throw new Error('Pinned bank hash changed');
     const worker = new RsiWorker(store, bank, settings, options.backend ?? new ContainerBackend(store, client, bank, settings, profile), options.reviews, options.afterRun, profile);
@@ -577,7 +639,18 @@ export async function runWorker(store: RsiStore, settings: WorkerSettings, clien
     await recoverWork(store, client, async (name, runId) => worker.account(await readProxyUsage(client, name, runId, true)));
     // Reconcile fsynced receipts after a crash between telemetry and task_put.
     for (const r of await readdir(join(store.root, 'private/usage'))) if (/^[a-f0-9]{64}\.json$/.test(r)) await worker.account(JSON.parse(await readFile(join(store.root, 'private/usage', r), 'utf8')) as UsageReceipt);
-    await worker.run(options.signal);
+    let optimizerImage: string | null = null;
+    if (optimizer) worker.optimizerSession = async () => {
+      // The proxy image is normally prepared during baseline evaluation.
+      if (!optimizerImage) optimizerImage = await buildOptimizer(client, join(store.root,'private/optimizer'), optimizer, options.signal);
+      await runOptimizerSession(store,client,optimizer,optimizerImage!,settings,r=>worker.account(r),options.signal);
+    };
+    do {
+      await worker.run(options.signal);
+      if(!options.watch || options.signal?.aborted) break;
+      try { await delay(5000,undefined,{signal:options.signal}); } catch(e) { if(!options.signal?.aborted) throw e; }
+      await store.refresh();
+    } while(!options.signal?.aborted);
     return { execute: true, taskId: store.taskId, state: store.task().state };
-  });
+  }));
 }

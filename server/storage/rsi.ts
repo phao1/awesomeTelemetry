@@ -1,7 +1,7 @@
 import Database, { type Database as Db, type Statement } from 'better-sqlite3';
 
 import type {
-  RsiEvaluation, RsiIteration, RsiLedgerEntry, RsiLedgerHead, RsiQueueItem, RsiRun, RsiTask,
+  RsiOptimizerSession, RsiEvaluation, RsiIteration, RsiLedgerEntry, RsiLedgerHead, RsiQueueItem, RsiRun, RsiTask,
 } from '../../src/core/rsi-types.js';
 import { calibrateNoiseBand } from '../../src/core/rsi-noise.js';
 import { validateIterationSnapshotTransition, validateTaskSnapshotTransition } from '../../src/core/rsi-state-machine.js';
@@ -10,7 +10,7 @@ import {
   canonicalJson, computeLedgerHash, LedgerIntegrityError, RSI_LEDGER_GENESIS_HASH, verifyLedger,
 } from '../rsi/ledger.js';
 import {
-  RSI_DECISION_COLS, RSI_EVALUATION_COLS, RSI_FINDING_COLS, RSI_HEAD_COLS,
+  RSI_SESSION_COLS, RSI_DECISION_COLS, RSI_EVALUATION_COLS, RSI_FINDING_COLS, RSI_HEAD_COLS,
   RSI_INSTRUCTION_COLS, RSI_ITERATION_COLS, RSI_QUEUE_COLS, RSI_RUN_COLS, RSI_TASK_COLS,
 } from './columns.js';
 import { RSI_SCHEMA_SQL } from './schema.js';
@@ -28,6 +28,7 @@ const DEFINITIONS: readonly Definition[] = [
   { event: 'finding_put', table: 'rsi_findings', columns: RSI_FINDING_COLS, taskColumn: 'task_id' },
   { event: 'decision_put', table: 'rsi_decisions', columns: RSI_DECISION_COLS, taskColumn: 'task_id' },
   { event: 'instruction_put', table: 'rsi_instructions', columns: RSI_INSTRUCTION_COLS, taskColumn: 'task_id' },
+  { event: 'session_put', table: 'rsi_sessions', columns: RSI_SESSION_COLS, taskColumn: 'task_id' },
   { event: 'queue_put', table: 'rsi_queue', columns: RSI_QUEUE_COLS, taskColumn: 'task_id' },
 ];
 interface TableStatements { get: Statement; put: Statement; remove: Statement; list: Statement }
@@ -321,6 +322,20 @@ function validateRelations(suite: Statements, entry: RsiLedgerEntry): void {
       }
       break;
     }
+    case 'session_put': {
+      if (entry.actor !== 'worker') throw new Error('RSI sessions require worker');
+      const v = entry.payload, before = stored<RsiOptimizerSession>(suite, 'session_put', entry.taskId, v.id);
+      if (!before && v.state !== 'running') throw new Error('Session must begin running');
+      const parent = v.parentId === null ? null : required<RsiIteration>(suite, 'iteration_put', entry.taskId, v.parentId);
+      if (parent && parent.state !== 'promoted' || v.commit !== (parent?.commit ?? task.baselineCommit)) throw new Error('Invalid session parent');
+      if (!before && (suite.tables.session_put.list.all(entry.taskId) as EntityRow[]).some(row => (JSON.parse(row.entity_json) as RsiOptimizerSession).state === 'running')) throw new Error('Optimizer session already running');
+      if (v.submissionId !== null) {
+        const q = required<RsiQueueItem>(suite, 'queue_put', entry.taskId, v.submissionId);
+        if (q.requestedBy !== 'optimizer' || q.createdAt < v.startedAt || q.command.action !== (v.state === 'stuck' ? 'declare_stuck' : 'submit')) throw new Error('Invalid session submission');
+        if (q.command.action === 'submit' && q.command.parentId !== v.parentId) throw new Error('Session submission parent mismatch');
+      }
+      break;
+    }
     case 'instruction_put':
       if (entry.actor !== 'human') throw new Error('RSI index instruction requires human');
       break;
@@ -332,6 +347,12 @@ function validateMutation(suite: Statements, entry: RsiLedgerEntry): void {
   if (!previousRow) return;
   const previous: unknown = JSON.parse(previousRow.entity_json);
   switch (entry.event) {
+    case 'session_put': {
+      const before = previous as RsiOptimizerSession, after = entry.payload;
+      unchanged([before.id,before.taskId,before.seq,before.parentId,before.commit,before.accounting,before.artifactPath,before.startedAt], [after.id,after.taskId,after.seq,after.parentId,after.commit,after.accounting,after.artifactPath,after.startedAt]);
+      if (before.state !== 'running') unchanged(before, after);
+      return;
+    }
     case 'run_put':
     case 'finding_put':
     case 'decision_put':
@@ -383,6 +404,7 @@ function entityRow(entry: RsiLedgerEntry, evaluationLedgerSeq: number): Row {
   const json = canonicalJson(entry.payload);
   const common = { task_id: entry.taskId, id: entry.payload.id, entity_json: json };
   switch (entry.event) {
+    case 'session_put': return { ...common, seq: entry.payload.seq, state: entry.payload.state };
     case 'task_put': return { id: entry.payload.id, state: entry.payload.state, updated_at: entry.payload.updatedAt, entity_json: json };
     case 'iteration_put': return { ...common, seq: entry.payload.seq, parent_id: entry.payload.parentId ?? null, commit_sha: entry.payload.commit,
       state: entry.payload.state, created_at: entry.payload.createdAt };

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "id": "scripted",
+  "name": "Scripted integration optimizer",
+  "dockerfile": "Dockerfile",
+  "family": "scripted",
+  "egress": {
+    "kind": "model-proxy"
+  },
+  "login": {
+    "kind": "none"
+  },
+  "run": {
+    "argv": [
+      "sh",
+      "/data/optimizer.sh"
+    ],
+    "env": {},
+    "files": [
+      {
+        "path": "/data/optimizer.sh",
+        "content": "set -eu\nbrief=$(curl -fsS -H \"Authorization: Bearer $RSI_AGENT_TOKEN\" \"$RSI_API_BASE/brief\")\nseq=$(printf '%s' \"$brief\" | node -e 'let s=\"\";process.stdin.on(\"data\",b=>s+=b).on(\"end\",()=>console.log(JSON.parse(s).lastIterationSeq+1))')\n# Every round changes one ordinary source file without embedding task fingerprints.\nprintf '\\n// optimizer hypothesis round %s\\n' \"$seq\" >> agent.mjs\ngit add agent.mjs\ngit commit -qm \"one optimizer hypothesis\"\ncommit=$(git rev-parse HEAD)\nbody=$(node -e 'console.log(JSON.stringify({requestId:\"round-\"+process.argv[1],commit:process.argv[2],prd:{observation:\"behavior can improve\",hypothesis:\"one source adjustment\",changes:[\"agent.mjs\"],expectedImpact:\"more passes\"}}))' \"$seq\" \"$commit\")\ncurl -fsS -H \"Authorization: Bearer $RSI_AGENT_TOKEN\" -H 'Content-Type: application/json' -d \"$body\" \"$RSI_API_BASE/iterations\" >/dev/null\n"
+      }
+    ]
+  },
+  "session": {
+    "format": "none",
+    "dir": "/data"
+  }
+}

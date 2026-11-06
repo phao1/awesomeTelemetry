@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "claude-code",
+  "name": "Claude Code",
+  "dockerfile": "Dockerfile",
+  "family": "anthropic",
+  "egress": {
+    "kind": "vendor-allowlist",
+    "domains": [
+      "api.anthropic.com",
+      "claude.ai",
+      "console.anthropic.com",
+      "platform.claude.com",
+      "auth.anthropic.com"
+    ]
+  },
+  "login": {
+    "kind": "volume",
+    "path": "/home/node/.claude",
+    "command": [
+      "claude",
+      "auth",
+      "login"
+    ]
+  },
+  "run": {
+    "argv": [
+      "claude",
+      "-p",
+      "--dangerously-skip-permissions",
+      "{{statement}}"
+    ],
+    "env": {
+      "CLAUDE_CONFIG_DIR": "/home/node/.claude"
+    },
+    "files": []
+  },
+  "session": {
+    "format": "none",
+    "dir": "/home/node/.claude/projects"
+  }
+}

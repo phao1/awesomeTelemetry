@@ -6,12 +6,12 @@ import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type {
-  RsiEvaluation, RsiIteration, RsiLedgerEntry, RsiLedgerHead, RsiLedgerInput, RsiRun, RsiTask,
+  RsiOptimizerSession, RsiEvaluation, RsiIteration, RsiLedgerEntry, RsiLedgerHead, RsiLedgerInput, RsiRun, RsiTask,
 } from '../../src/core/rsi-types.js';
 import { defaultRsiConfig } from '../../src/core/rsi-validation.js';
 import { appendLedger, canonicalJson, computeLedgerHash, RSI_LEDGER_GENESIS_HASH } from '../rsi/ledger.js';
 import {
-  RSI_DECISION_COLS, RSI_EVALUATION_COLS, RSI_FINDING_COLS, RSI_HEAD_COLS,
+  RSI_SESSION_COLS, RSI_DECISION_COLS, RSI_EVALUATION_COLS, RSI_FINDING_COLS, RSI_HEAD_COLS,
   RSI_INSTRUCTION_COLS, RSI_ITERATION_COLS, RSI_QUEUE_COLS, RSI_RUN_COLS, RSI_TASK_COLS,
 } from './columns.js';
 import { applyRsiLedgerEntry, getRsiLedgerHead, rebuildRsiIndexFromLedger } from './rsi.js';
@@ -136,6 +136,7 @@ function snapshot(db: Database.Database): unknown[][] {
     cachedStmt(db, `SELECT ${RSI_DECISION_COLS} FROM rsi_decisions ORDER BY task_id,id`),
     cachedStmt(db, `SELECT ${RSI_INSTRUCTION_COLS} FROM rsi_instructions ORDER BY task_id,id`),
     cachedStmt(db, `SELECT ${RSI_QUEUE_COLS} FROM rsi_queue ORDER BY task_id,id`),
+    cachedStmt(db, `SELECT ${RSI_SESSION_COLS} FROM rsi_sessions ORDER BY task_id,id`),
     cachedStmt(db, `SELECT ${RSI_HEAD_COLS} FROM rsi_heads ORDER BY task_id`),
   ];
   return readers.map(reader => reader.all());
@@ -516,5 +517,25 @@ describe('RSI-008 verified all-table ledger rebuilding', () => {
     await appendLedger(path, input('evaluation_put', final, 'human'));
     await rebuildRsiIndexFromLedger(db, 'task-1', path);
     expect(() => apply(db, input('evaluation_put', { ...final, id: 'final-2' }, 'human'))).toThrow('already requested');
+  });
+});
+
+
+describe('RSI-014 session cache authorization',()=>{
+  const session = ():RsiOptimizerSession=>({id:'session-1',taskId:'task-1',seq:1,parentId:null,commit:baseline,state:'running',submissionId:null,accounting:'proxy',tokens:null,artifactPath:'artifacts/optimizer/session-1',startedAt:at,endedAt:null});
+  it('requires worker, same-parent commit and one running session, then freezes terminal results',()=>{
+    const db=database();apply(db,input('task_put',task(),'human'));
+    expect(()=>apply(db,input('session_put',session(),'optimizer'))).toThrow('worker');
+    expect(()=>apply(db,input('session_put',{...session(),commit:candidate}))).toThrow('parent');
+    apply(db,input('session_put',session()));
+    expect(()=>apply(db,input('session_put',{...session(),id:'second',seq:2}))).toThrow('already running');
+    const ended={...session(),state:'no_submission' as const,tokens:123,endedAt:at};apply(db,input('session_put',ended));
+    expect(()=>apply(db,input('session_put',{...ended,tokens:124}))).toThrow('immutable');
+    expect(()=>apply(db,input('session_put',session()))).toThrow('immutable');
+  });
+  it('reconstructs session outcomes and preserves immutable identities through ledger replay',async()=>{
+    const path=await ledgerPath(),db=database(),rebuilt=database();
+    for(const event of [input('task_put',task(),'human'),input('session_put',session()),input('session_put',{...session(),state:'timeout',tokens:0,endedAt:at})])applyRsiLedgerEntry(db,await appendLedger(path,event));
+    await rebuildRsiIndexFromLedger(rebuilt,'task-1',path);expect(snapshot(rebuilt)).toEqual(snapshot(db));
   });
 });

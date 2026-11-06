@@ -1854,7 +1854,7 @@ type RsiAccepted = { taskId: string; queueId: string; status: 'queued' };
 type RsiTaskView = Omit<RsiTask, 'taskTokenHash'>;
 type RsiCreateTaskRequest = {
   requestId: string; repository: string; baselineCommit: string;
-  datasetHash: string; config: RsiConfig;
+  agentProfile: string; optimizerProfile: string; bank: string; subset?: 'small' | 'full'; config: RsiConfig;
 };
 type RsiCreateTaskResponse = RsiAccepted & { agentToken: string | null };
 type RsiSubmitRequest = { requestId: string; commit: string; prd: RsiPrd };
@@ -1864,6 +1864,7 @@ type RsiBriefResponse = {
   task: NonNullable<ReturnType<typeof projectTaskForOptimizer>>;
   parent: { iterationId: string | null; commit: string; trainScore: number };
   instructions: NonNullable<ReturnType<typeof projectInstructionForOptimizer>>[];
+  remainingTaskTokens: number; remainingIterations: number; lastIterationSeq: number; allowPaths: string[];
 };
 type RsiOptimizerResults = {
   iteration: NonNullable<ReturnType<typeof projectIterationForOptimizer>>;
@@ -1871,6 +1872,7 @@ type RsiOptimizerResults = {
   runs: NonNullable<ReturnType<typeof projectRunForOptimizer>>[];
   findings: NonNullable<ReturnType<typeof projectFindingForOptimizer>>[];
   decisions: NonNullable<ReturnType<typeof projectDecisionForOptimizer>>[];
+  quality: NonNullable<ReturnType<typeof projectQualityForOptimizer>> | null;
   nextCursor: string | null;
 };
 ```
@@ -1943,3 +1945,44 @@ truncating a record or leaking a private diagnostic. All non2xx use ApiError:
 
 Error `details`, when present, contains only `{reason:string}` drawn from the gate
 reason codes or these static error names; never raw paths, evidence or scores.
+
+## RSI P4 execution amendment
+
+Design author decisions 决定于 2026-11-07. [RSI-014](rsi.md#rsi-014-isolated-optimizer-loop-and-http-m13--p4) specifies session authentication, creation without caller datasetHash, page session token, bounded trajectory/diff/quality/session/worker endpoints, and set_target. These additive definitions supersede the deferred-handler wording above. HTTP freezes bounded inputs asynchronously and queues work; only manual worker executes source/build/evaluation. All errors retain §0.3.
+
+
+RSI P4 additional response DTOs (all fields required; dates canonical UTC):
+
+```ts
+type RsiQuality = { addedLines:number; deletedLines:number; changedLines:number; files:number; addedFunctions:number };
+type RsiTrajectoryPage = { file:'responses'|'last-request'; content:string; nextOffset:number|null; truncated:boolean };
+type RsiWorkerStatus = { pid:number|null; at:string|null; phase:string|null; running:boolean };
+```
+
+| Method and route | Response / query |
+|---|---|
+| GET /api/rsi/session | {token:string}; same-origin bootstrap, task/session bearer explicitly403 |
+| GET /api/rsi/agent/runs/:runId/trajectory | RsiTrajectoryPage; same-task smoke/train only; others404 |
+| GET /api/rsi/tasks/:taskId/runs/:runId/trajectory | RsiTrajectoryPage; human all stages |
+| GET /api/rsi/tasks/:taskId/sessions | RsiPage<RsiOptimizerSession>; cursor/limit |
+| GET /api/rsi/tasks/:taskId/sessions/:sessionId/trajectory | RsiTrajectoryPage; human optimizer traces |
+| GET /api/rsi/tasks/:taskId/iterations/:seq/diff | {diff:string,quality:RsiQuality}; platform artifacts only |
+| GET /api/rsi/tasks/:taskId/iterations/:seq/findings | RsiPage<RsiFinding>; cursor/limit; includes evidence |
+| GET /api/rsi/tasks/:taskId/worker | RsiWorkerStatus; fresh heartbeat15s and local PID alive |
+
+All trajectory routes accept only file (responses default, or last-request),
+offset (unsigned byte offset, default0), limit (1..65536, default65536). UTF8 page
+ends may extend at most3 bytes to complete a codepoint; a mid-codepoint offset400.
+Missing trace files produce empty content/nextOffset null. Files capped8MiB;
+response cap remains1MiB, no-store and static ApiError. Agent projection rebuilds
+only RSI-014's transcript fields before paging; no hidden/evaluator/monitor files.
+
+Human command union additionally accepts set_target {targetPassedCount,reason}.
+CLI uses the same frozen creation and queue-only ingress. POST tasks requestId is
+mapped to task-<requestId> (if <=123 chars), otherwise task-<SHA256(requestId)>;
+repeated identical creation returns original task/queue and agentToken null.
+Creation request rejects unknown fields, including datasetHash/settings; worker
+settings are trusted-host-only. Default subset full, input bank cap64MiB,
+profile/Dockerfile1MiB each. Worker pins both frozen profiles before Docker.
+
+SSE adds rsi_changed {taskIds:string[]} with200ms coalescing, no run IDs or scores.

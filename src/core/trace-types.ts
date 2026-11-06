@@ -915,6 +915,7 @@ export interface LocalSessionConfig {
 // ── §10 事件总线 ───────────────────────────────────────────
 
 export interface BusEvents {
+  rsi_changed: { taskIds: string[] };
   proxy_stream_started: { requestId: string; hostname: string; startedAt: string };
   proxy_stream_ended: { requestId: string };
   /** Ephemeral opaque WS dirty hints; 1s/max64 IDs, selected feed only,

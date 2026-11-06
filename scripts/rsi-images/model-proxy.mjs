@@ -1,7 +1,8 @@
 import http from 'node:http';
+import { createSidecar } from './sidecar.mjs';
 import https from 'node:https';
 import { once } from 'node:events';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { createMockHandler } from './mock-model.mjs';
@@ -17,8 +18,19 @@ export function nodeTransport(url, options, body) {
   });
 }
 
+export function redactModelValue(value, secrets, hashes=[], depth=0) {
+  if(depth>64)throw new Error('request_depth');
+  if(typeof value==='string'){
+    let text=value;
+    for(const secret of secrets)if(secret)text=text.replaceAll(secret,'[REDACTED]');
+    return text.replace(/[a-f0-9]{64}/g,token=>hashes.includes(createHash('sha256').update(token).digest('hex'))?'[REDACTED]':token);
+  }
+  if(Array.isArray(value))return value.map(v=>redactModelValue(v,secrets,hashes,depth+1));
+  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,v])=>[redactModelValue(key,secrets,hashes,depth+1),redactModelValue(v,secrets,hashes,depth+1)]));
+  return value;
+}
 export function createProxyHandler({ runs, baseURL, apiKey, model, maxTokens = 4096, inputTokensPerByte = 0.35,
-  transport = nodeTransport, log, trace = async () => {}, now = () => performance.now() }) {
+  redactionHashes = [], transport = nodeTransport, log, trace = async () => {}, now = () => performance.now() }) {
   if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0 || !Number.isFinite(inputTokensPerByte) || inputTokensPerByte <= 0) throw new Error('Invalid proxy calibration');
   const states = new Map(runs.map(r => [r.token, { ...r, used: 0, blocked: false, tail: Promise.resolve(), ratio: inputTokensPerByte }]));
   const upstream = new URL(`${baseURL.replace(/\/$/, '')}/chat/completions`);
@@ -55,7 +67,7 @@ export function createProxyHandler({ runs, baseURL, apiKey, model, maxTokens = 4
       firstByteMs: null, durationMs: null, usage: null, cacheHitRate: null, toolCalls: 0,
       complete: false, error: null, chargedTokens: 0 };
     try {
-      const body = await readBody(req);
+      const body = redactModelValue(await readBody(req),[state.token,...(apiKey==='mock'?[]:[apiKey])],redactionHashes);
       if (!body || typeof body !== 'object' || !Array.isArray(body.messages)) throw new Error('invalid_request');
       await trace('request', { messages: body.messages });
       body.model = model;
@@ -116,7 +128,7 @@ export function createProxyHandler({ runs, baseURL, apiKey, model, maxTokens = 4
     } finally {
       if (!settled) entry.chargedTokens = reservation && entry.status !== 429 ? reservation : 0;
       entry.durationMs = now() - started;
-      try { await trace('response', { requestId: entry.requestId, assistant: transcript.finish() }); await log(entry); } catch { state.blocked = true; res.destroy(); }
+      try { await trace('response', { requestId: entry.requestId, assistant: redactModelValue(transcript.finish(),[state.token,...(apiKey==='mock'?[]:[apiKey])],redactionHashes) }); await log(entry); } catch { state.blocked = true; res.destroy(); }
       clearTimeout(deadline); res.off('close', disconnect); release();
     }
   };
@@ -141,8 +153,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     model: mock ? 'mock-fixed' : process.env.RSI_UPSTREAM_MODEL,
     maxTokens: Number(process.env.RSI_MAX_TOKENS ?? 4096),
     inputTokensPerByte: Number(process.env.RSI_INPUT_TOKENS_PER_BYTE ?? 0.35),
+    redactionHashes: JSON.parse(process.env.RSI_REDACTION_HASHES ?? '[]'),
     trace: createTraceWriter('/out'),
     log: entry => appendFile('/out/usage.jsonl', `${JSON.stringify(entry)}\n`, { mode: 0o600 }),
   });
-  http.createServer(handler).listen(8080, '0.0.0.0');
+  createSidecar({ modelHandler: handler, agentBase: process.env.RSI_AGENT_UPSTREAM, domains: JSON.parse(process.env.RSI_EGRESS_DOMAINS ?? '[]') }).listen(8080, '0.0.0.0');
 }

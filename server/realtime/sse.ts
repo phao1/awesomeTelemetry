@@ -9,6 +9,7 @@ import { sendApiError } from '../http/error-envelope.js';
 
 const HEARTBEAT_MS = 30_000;
 const EVENT_NAMES = [
+  'rsi_changed',
   'session_created',
   'sessions_changed',
   'session_deleted',

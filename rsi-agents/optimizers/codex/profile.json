@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "id": "codex",
+  "name": "Codex",
+  "dockerfile": "Dockerfile",
+  "family": "openai",
+  "egress": {
+    "kind": "vendor-allowlist",
+    "domains": [
+      "auth.openai.com",
+      "chatgpt.com",
+      "api.openai.com"
+    ]
+  },
+  "login": {
+    "kind": "volume",
+    "path": "/home/node/.codex",
+    "command": [
+      "codex",
+      "login",
+      "--device-auth"
+    ]
+  },
+  "run": {
+    "argv": [
+      "codex",
+      "exec",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--skip-git-repo-check",
+      "{{statement}}"
+    ],
+    "env": {},
+    "files": []
+  },
+  "session": {
+    "format": "none",
+    "dir": "/home/node/.codex/sessions"
+  }
+}

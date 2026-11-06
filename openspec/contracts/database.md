@@ -103,6 +103,15 @@ CREATE TABLE IF NOT EXISTS rsi_queue (
   FOREIGN KEY(task_id,iteration_id) REFERENCES rsi_iterations(task_id,id),
   FOREIGN KEY(task_id,evaluation_id) REFERENCES rsi_evaluations(task_id,id)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rsi_sessions (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  seq INTEGER NOT NULL CHECK(seq>0),
+  state TEXT NOT NULL CHECK(state IN ('running','submitted','stuck','no_submission','timeout','interrupted')),
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  UNIQUE(task_id,seq)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS rsi_heads (
   task_id TEXT PRIMARY KEY REFERENCES rsi_tasks(id) ON DELETE CASCADE,
   seq INTEGER NOT NULL CHECK(seq>0),
@@ -133,11 +142,12 @@ RSI_FINDING_COLS = 'task_id, id, iteration_id, level, category, entity_json';
 RSI_DECISION_COLS = 'task_id, id, iteration_id, verdict, at, entity_json';
 RSI_INSTRUCTION_COLS = 'task_id, id, effective_from_seq, entity_json';
 RSI_QUEUE_COLS = 'task_id, id, kind, state, iteration_id, evaluation_id, created_at, entity_json';
+RSI_SESSION_COLS = 'task_id, id, seq, state, entity_json';
 RSI_HEAD_COLS = 'task_id, seq, hash';
 ```
 
 `schema.ts` exports `RSI_SCHEMA_SQL`; fresh creation and the `fromVersion < 25`
-branch create all nine tables/eight explicit indexes and publish schema_version25
+branch create all ten tables/eight explicit indexes and publish schema_version25
 in one transaction. Repeated initialization is idempotent. No existing native
 rows, scanners or versioned metrics are rewritten.
 
@@ -158,7 +168,7 @@ and repetition; attempt1 requires a prior attempt0 infra_error.
 streaming complete events into private staging SQLite, with the current cached
 head as a trusted prefix anchor. A partial tail, invalid chain, invalid entity,
 violated invariant or changed live cache head aborts without replacing any rows.
-After verification, all nine tables for that task are replaced in one synchronous
+After verification, all ten tables for that task are replaced in one synchronous
 transaction; other tasks/native tables are preserved. Staging contains only the
 latest entity snapshots, not an in-memory copy of the ledger. All read/write
 statements are prepared and cached outside replay loops. Concurrent writers that
@@ -1774,3 +1784,24 @@ row changes or schema rewrite. It bounds selected-member event-date aggregation.
 ```sql
 CREATE INDEX IF NOT EXISTS idx_events_session_time ON events(session_id,started_at);
 ```
+
+## RSI P4 schema25 amendment (决定于 2026-11-07)
+
+Schema25 is unreleased; version remains25. RSI-014 adds session_put and a tenth
+ledger index table (no additional explicit index; UNIQUE(task_id,seq) supplies it):
+
+```sql
+CREATE TABLE IF NOT EXISTS rsi_sessions (
+  task_id TEXT NOT NULL REFERENCES rsi_tasks(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  seq INTEGER NOT NULL CHECK(seq>0),
+  state TEXT NOT NULL CHECK(state IN ('running','submitted','stuck','no_submission','timeout','interrupted')),
+  entity_json TEXT NOT NULL CHECK(json_valid(entity_json)),
+  PRIMARY KEY(task_id,id),
+  UNIQUE(task_id,seq)
+) WITHOUT ROWID;
+```
+
+RSI_SESSION_COLS = 'task_id, id, seq, state, entity_json'. Other columns/invariants
+are unchanged. Session JSON follows RSI-014; worker-only creation/update, running
+first, terminal immutable. Rebuild includes sessions and deletes them before tasks.

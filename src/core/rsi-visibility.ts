@@ -65,3 +65,34 @@ export function projectInstructionForOptimizer(value: unknown): RecordValue | nu
   const v = object(value); if (!v || !['prohibition', 'idea'].includes(v.kind as string)) return null;
   return pick(v, { id: string, kind: member(['prohibition', 'idea']), text: string, effectiveFromSeq: int });
 }
+
+export function projectQualityForOptimizer(value: unknown): RecordValue | null {
+  const v = object(value); if (!v) return null;
+  const fields = { addedLines: int, deletedLines: int, changedLines: int, files: int, addedFunctions: int };
+  if (Object.keys(fields).some(k => !int(v[k]))) return null;
+  return pick(v, fields);
+}
+/** Only invoked after a trusted evaluation has established smoke/train phase. */
+export function projectTrajectoryForOptimizer(value: unknown, kind: string): RecordValue | null {
+  const v = object(value); if (!v) return null;
+  const calls = (value: unknown): RecordValue[] => Array.isArray(value) ? value.flatMap(item => {
+    const c = object(item); if (!c) return [];
+    const f = object(c.function);
+    return [{ ...pick(c, { id: string, type: member(['function']), index: int }), ...(f ? { function: pick(f, { name: string, arguments: string }) } : {}) }];
+  }) : [];
+  const content = (value: unknown): unknown => typeof value === 'string' || value === null ? value : Array.isArray(value) ? value.flatMap(part => {
+    const p = object(part); return p && ['text', 'input_text', 'output_text'].includes(p.type as string) ? [pick(p, { type: string, text: string })] : [];
+  }) : null;
+  if (kind === 'last-request') {
+    if (!Array.isArray(v.messages)) return null;
+    return { messages: v.messages.flatMap(item => {
+      const m = object(item); if (!m || !['system','developer','user','assistant','tool'].includes(m.role as string)) return [];
+      return [{ ...pick(m, { role: string, tool_call_id: string, name: string }), content: content(m.content), ...(Array.isArray(m.tool_calls) ? { tool_calls: calls(m.tool_calls) } : {}) }];
+    }), truncated: v.truncated === true };
+  }
+  if (v.truncated === true) return { truncated: true };
+  if (!Array.isArray(v.assistant) || typeof v.requestId !== 'string') return null;
+  return { requestId: v.requestId, assistant: v.assistant.flatMap(item => {
+    const a = object(item); return a ? [{ ...pick(a, { index: int, text: string }), tool_calls: calls(a.tool_calls) }] : [];
+  }) };
+}

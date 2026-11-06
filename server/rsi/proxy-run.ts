@@ -24,7 +24,7 @@ export async function exportProxyArtifacts(client: DockerClient, proxy: ProxyRun
   await extractFiles(archive, join(output, 'proxy'));
 }
 export async function startProxy(client: DockerClient, taskId: string, runId: string, questionId: string, repetition: number,
-  budget: number, settings: ProxySettings, signal?: AbortSignal): Promise<ProxyRun> {
+  budget: number, settings: ProxySettings, signal?: AbortSignal, sidecar?: { apiBase: string; domains: string[]; redactionHashes?: string[] }): Promise<ProxyRun> {
   const upstream = settings.mode === 'real' ? upstreamEnvironment() : {};
   const name = `rsi-proxy-${randomUUID()}`, network = `rsi-net-${randomUUID()}`, token = randomBytes(32).toString('hex');
   await mustDocker(client, ['network', 'create', '--internal', '--label', `${RSI_LABEL}=${taskId}`, network], { signal });
@@ -34,6 +34,13 @@ export async function startProxy(client: DockerClient, taskId: string, runId: st
       RSI_MAX_TOKENS: String(settings.maxTokens), RSI_INPUT_TOKENS_PER_BYTE: String(settings.inputTokensPerByte),
       RSI_MOCK_TABLE: JSON.stringify(settings.mockTable) };
     const keys = ['RSI_RUNS', 'RSI_MODEL', 'RSI_MAX_TOKENS', 'RSI_INPUT_TOKENS_PER_BYTE', 'RSI_MOCK_TABLE'];
+    if (sidecar) {
+      const url = new URL(sidecar.apiBase);
+      if (url.protocol !== 'http:' || url.pathname !== '/' || url.username || url.password || url.search || url.hash) throw new Error('Invalid platform origin');
+      if (['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) url.hostname = 'host.lima.internal';
+      env.RSI_REDACTION_HASHES=JSON.stringify(sidecar.redactionHashes??[]);keys.push('RSI_REDACTION_HASHES');
+      env.RSI_AGENT_UPSTREAM = url.origin; env.RSI_EGRESS_DOMAINS = JSON.stringify(sidecar.domains); keys.push('RSI_AGENT_UPSTREAM', 'RSI_EGRESS_DOMAINS');
+    }
     if (settings.mode === 'real') for (const key of ['RSI_UPSTREAM_BASE_URL', 'RSI_UPSTREAM_API_KEY', 'RSI_UPSTREAM_MODEL']) {
       env[key] = upstream[key]; keys.push(key);
     }

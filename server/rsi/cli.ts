@@ -1,43 +1,44 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { mkdir, readFile, statfs } from 'node:fs/promises';
 import { dirname, resolve, join } from 'node:path';
-import { defaultRsiConfig, validateRsiConfig, validateRsiTask, validateRsiQueueItem } from '../../src/core/rsi-validation.js';
+import { defaultRsiConfig, validateRsiConfig } from '../../src/core/rsi-validation.js';
 import type { RsiCommand, RsiPrd } from '../../src/core/rsi-types.js';
-import { buildFingerprintDictionary } from '../../src/core/rsi-l1-rules.js';
-import { selectParent } from '../../src/core/rsi-gate.js';
 import { openWritable } from '../storage/db.js';
 import { getRsiLedgerHead } from '../storage/rsi.js';
-import { RsiStore, enqueue, now } from './queue.js';
-import { freezeBank, readBank } from './bank.js';
-import { createMirror, importCommit } from './build.js';
-import { privateWrite } from './artifacts.js';
+import { RsiStore } from './queue.js';
 import { verifyLedger } from './ledger.js';
 import { recoverLedgerTail } from './recovery.js';
 import type { DockerClient } from './docker.js';
-import { successful } from './docker.js';
-import { freezeAgentProfile, readAgentProfile } from './agent-profile.js';
+import { mustDocker, successful } from './docker.js';
+import { readAgentProfile } from './agent-profile.js';
 import { CliDockerClient } from './docker.js';
 import { runWorker, validateWorkerSettings } from './worker.js';
 import type { ReviewProvider } from './review.js';
 import type { WorkerSettings } from './worker.js';
+import { createTask, humanCommand, agentCommand } from './commands.js';
+import { readOptimizerProfile, buildOptimizer, optimizerVolume } from './optimizer-profile.js';
+import { startProxy, stopProxy } from './proxy-run.js';
 
 export function defaultWorkerSettings(): WorkerSettings {
   const root = process.cwd();
   return { concurrency: 2, agentTimeoutMs: 300000, reconciliationMaxRatio: 0.05, keepRecentImages: 2,
     imagesRoot: join(root, 'scripts/rsi-images'), reportersRoot: join(root, 'server/rsi/reporters'),
-    proxy: { mode: 'mock', maxTokens: 4096, inputTokensPerByte: 0.35, mockTable: {} }, candidateMockTable: {} };
+    optimizerSessionTokens: 2000000, optimizerSessionTimeoutMs: 1800000, allowUnmeteredOptimizer: false, apiBase: 'http://127.0.0.1:4173',
+    proxy: { mode: 'real', maxTokens: 4096, inputTokensPerByte: 0.35, mockTable: {} }, candidateMockTable: {} };
 }
 const HELP = `Usage: rsi <command> --task <id> [--root <configRoot>]
-  task create --repository <local-repo> --baseline <full-commit> --bank <bank> [--config <json>] [--settings <json>] [--agent <profile.json>] [--subset small|full]
+  task create --repository <local-repo> --baseline <full-commit> --bank <bank> [--config <json>] [--settings <json>] [--agent <profile.json>] [--optimizer <profile.json>] [--subset small|full] [--api-base <origin>]
   agent validate <profile.json>
   doctor [--root <path>] [--docker-context <name>]
   task status
   task command --command <json-file> [--iteration <id>] --request <id>
   iteration submit --commit <full-commit> --prd <json-file> --request <id>
-  worker [--execute] [--docker-context <name>]
+  optimizer login --profile <id> [--docker-context <name>]
+  worker [--execute] [--watch] [--allow-unmetered-optimizer] [--docker-context <name>]
   ledger verify
   ledger recover
-Only worker --execute starts containers. Commands and JSON output are local trusted ingress.
+Only worker --execute runs task containers; optimizer login explicitly starts a fresh interactive login container. Commands and JSON output are local trusted ingress.
 worker drains available work and exits when idle, held or paused. Default reviews are missing.`;
 async function json(file: string): Promise<unknown> { const data = await readFile(file); if (data.length > 1024 * 1024) throw new Error('JSON file limit'); return JSON.parse(data.toString()) as unknown; }
 export async function rsiDoctor(client: DockerClient, root: string, env: NodeJS.ProcessEnv = process.env): Promise<unknown> {
@@ -63,23 +64,25 @@ export async function rsiDoctor(client: DockerClient, root: string, env: NodeJS.
 }
 export async function runRsiCli(args: string[], output: (value: unknown) => void = v => console.log(JSON.stringify(v)), options: { reviews?: ReviewProvider; afterRun?: () => Promise<void> } = {}): Promise<void> {
   if (!args.length || args.includes('--help')) { console.log(HELP); return; }
+  if (args[0] === 'optimizer' && args[1] === 'login') { await optimizerLogin(args.slice(2)); return; }
   if (args[0] === 'agent' && args[1] === 'validate') {
     if (args.length !== 3 || args[2]!.startsWith('--')) throw new Error('Usage: rsi agent validate <profile.json>');
     const { profile } = await readAgentProfile(resolve(args[2]!)); output({ valid: true, id: profile.id }); return;
   }
   const command = ['worker', 'doctor'].includes(args[0]!) ? args[0]! : args.slice(0, 2).join(' '), start = ['worker', 'doctor'].includes(command) ? 1 : 2;
-  const flags = new Map<string, string>(); let execute = false;
-  const allowed = new Set(['--task', '--root', '--repository', '--baseline', '--bank', '--config', '--settings', '--commit', '--prd', '--request', '--command', '--iteration', '--docker-context', '--agent', '--subset']);
+  const flags = new Map<string, string>(); let execute = false, watch = false, allowUnmetered = false;
+  const allowed = new Set(['--task', '--root', '--repository', '--baseline', '--bank', '--config', '--settings', '--commit', '--prd', '--request', '--command', '--iteration', '--docker-context', '--agent', '--subset', '--optimizer', '--api-base']);
   for (let i = start; i < args.length; i++) {
     const key = args[i]!;
+    if (key === '--watch' || key === '--allow-unmetered-optimizer') { if (command !== 'worker') throw new Error('Worker flag only'); if (key === '--watch') watch = true; else allowUnmetered = true; continue; }
     if (key === '--execute') { if (execute || command !== 'worker') throw new Error('Invalid --execute'); execute = true; continue; }
     if (!allowed.has(key) || flags.has(key) || !args[i + 1] || args[i + 1]!.startsWith('--')) throw new Error('Invalid RSI arguments. Use --help');
     flags.set(key, args[++i]!);
   }
   const permitted: Record<string, string[]> = {
-    'task create': ['--repository', '--baseline', '--bank', '--config', '--settings', '--agent', '--subset'], 'task status': [],
+    'task create': ['--repository', '--baseline', '--bank', '--config', '--settings', '--agent', '--subset', '--optimizer', '--api-base', '--request'], 'task status': [],
     'task command': ['--command', '--request', '--iteration'], 'iteration submit': ['--commit', '--prd', '--request'],
-    worker: ['--docker-context'], doctor: ['--docker-context'], 'ledger verify': [], 'ledger recover': [],
+    worker: ['--docker-context', '--api-base'], doctor: ['--docker-context'], 'ledger verify': [], 'ledger recover': [],
   };
   if (!permitted[command] || [...flags.keys()].some(k => !['--task', '--root', ...permitted[command]!].includes(k))) throw new Error('Invalid RSI arguments. Use --help');
   const required = (key: string): string => { const v = flags.get(key); if (!v) throw new Error(`Missing ${key}`); return v; };
@@ -96,27 +99,12 @@ export async function runRsiCli(args: string[], output: (value: unknown) => void
     if (command === 'ledger verify') { output(await verifyLedger(store.ledgerPath, { taskId, ...(getRsiLedgerHead(db, taskId) ? { expectedHead: getRsiLedgerHead(db, taskId)! } : {}) })); return; }
     await store.refresh();
     if (command === 'task create') {
-      if (store.list('task_put').length) throw new Error('Task already exists');
-      const repository = resolve(required('--repository')), baselineCommit = required('--baseline'), sourceBank = await readBank(required('--bank'));
-      const subset = flags.get('--subset') ?? 'full';
-      if (subset !== 'small' && subset !== 'full') throw new Error('Invalid --subset: expected small|full');
-      const agentFile = resolve(flags.get('--agent') ?? 'rsi-agents/opencode/profile.json');
-      await readAgentProfile(agentFile);
       const config = flags.has('--config') ? validateRsiConfig(await json(required('--config'))) : defaultRsiConfig();
       const settings = flags.has('--settings') ? validateWorkerSettings(await json(required('--settings')) as WorkerSettings) : defaultWorkerSettings();
-      settings.agent = await freezeAgentProfile(agentFile, join(root, 'private/agent'));
-      const bank = await freezeBank(sourceBank, join(root, 'private/bank'), subset);
-      const token = randomBytes(32).toString('hex'), at = now();
-      const task = validateRsiTask({ id: taskId, repository, baselineCommit, datasetHash: bank.datasetHash, mainMetric: 'passed_count', config,
-        state: 'created', pauseReason: null, delta: null, baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0,
-        tokenUsage: 0, iterationCount: 0, currentParentId: null, taskTokenHash: createHash('sha256').update(token).digest('hex'), createdAt: at, updatedAt: at });
-      await mkdir(join(root, 'private'), { recursive: true, mode: 0o700 });
-      await createMirror(repository, join(root, 'private/repository.git')); await importCommit(repository, join(root, 'private/repository.git'), baselineCommit);
-      await privateWrite(join(root, 'private/fingerprints.json'), JSON.stringify(buildFingerprintDictionary([...bank.questions.values()], config.l1)));
-      await privateWrite(join(root, 'private/runtime.json'), JSON.stringify(settings));
-      await store.put({ event: 'task_put', payload: task }, 'human');
-      const item = await enqueue(store, { action: 'start' }, 'human', 'start');
-      output({ taskId, queueId: item.id, status: 'queued', agentToken: token }); return;
+      if (flags.has('--api-base')) settings.apiBase = required('--api-base');
+      output(await createTask(store, { requestId: flags.get('--request') ?? 'start', repository: resolve(required('--repository')), baselineCommit: required('--baseline'),
+        bank: resolve(required('--bank')), agentProfile: resolve(flags.get('--agent') ?? 'rsi-agents/opencode/profile.json'),
+        optimizerProfile: resolve(flags.get('--optimizer') ?? 'rsi-agents/optimizers/opencode-deepseek/profile.json'), subset: (flags.get('--subset') ?? 'full') as 'small' | 'full', config }, settings)); return;
     }
     const task = store.task();
     if (command === 'task status') {
@@ -124,38 +112,40 @@ export async function runRsiCli(args: string[], output: (value: unknown) => void
       output({ task: view, head: getRsiLedgerHead(db, taskId), iterations: store.list('iteration_put'), evaluations: store.list('evaluation_put'), queue: store.list('queue_put') }); return;
     }
     if (command === 'iteration submit') {
-      const commit = required('--commit'), prd = await json(required('--prd')) as RsiPrd;
-      const duplicate = store.list('queue_put').find(q => q.id === required('--request'));
-      if (duplicate) {
-        if (duplicate.command.action !== 'submit') throw new Error('RSI idempotency conflict');
-        const item = await enqueue(store, { action: 'submit', commit, prd, parentId: duplicate.command.parentId }, 'optimizer', required('--request'));
-        output({ taskId, queueId: item.id, status: 'queued' }); return;
-      }
-      if (task.state !== 'running') throw new Error('Task must be running to submit');
-      const parentId = selectParent([{ iterationId: null, seq: 0, state: 'baseline', trainScore: task.baselineTrainScore! },
-        ...store.list('iteration_put').filter(i => i.state === 'promoted').map(i => ({ iterationId: i.id, seq: i.seq, state: i.state, trainScore: i.trainScore! }))], task.delta!).iterationId;
-      const at = now();
-      // Validate ingress before importing a candidate or appending its queue record.
-      validateRsiQueueItem({ id: required('--request'), taskId, kind: 'submit', iterationId: null, evaluationId: null, state: 'queued', requestedBy: 'optimizer', reason: null,
-        command: { action: 'submit', commit, prd, parentId }, createdAt: at, updatedAt: at });
-      await importCommit(task.repository, join(root, 'private/repository.git'), commit);
-      const item = await enqueue(store, { action: 'submit', commit, prd, parentId }, 'optimizer', required('--request'));
+      const item = await agentCommand(store, required('--request'), { action: 'submit', commit: required('--commit'), prd: await json(required('--prd')) as RsiPrd, parentId: null });
       output({ taskId, queueId: item.id, status: 'queued' }); return;
     }
     if (command === 'task command') {
       const cmd = await json(required('--command')) as RsiCommand;
-      if (['submit', 'evaluate', 'review', 'declare_stuck', 'start', 'adopt', 'rollback', 'instruction'].includes(cmd.action)) throw new Error('Command outside P2 human CLI scope');
       const iterationId = flags.get('--iteration') ?? null;
-      const item = await enqueue(store, cmd, 'human', required('--request'), iterationId); output({ taskId, queueId: item.id, status: 'queued' }); return;
+      const item = await humanCommand(store, cmd, required('--request'), iterationId); output({ taskId, queueId: item.id, status: 'queued' }); return;
     }
     if (command === 'worker') {
       const settings = validateWorkerSettings(await json(join(root, 'private/runtime.json')) as WorkerSettings);
+      if (allowUnmetered) settings.allowUnmeteredOptimizer = true;
+      if (flags.has('--api-base')) settings.apiBase = required('--api-base');
       const controller = new AbortController(), abort = (): void => controller.abort();
       process.on('SIGINT', abort); process.on('SIGTERM', abort);
-      try { output(await runWorker(store, settings, new CliDockerClient(flags.get('--docker-context') ?? null), execute, { signal: controller.signal, reviews: options.reviews, afterRun: options.afterRun })); }
+      try { output(await runWorker(store, settings, new CliDockerClient(flags.get('--docker-context') ?? null), execute, { watch, signal: controller.signal, reviews: options.reviews, afterRun: options.afterRun })); }
       finally { process.off('SIGINT', abort); process.off('SIGTERM', abort); }
       return;
     }
     throw new Error('Unknown RSI command. Use --help');
   } finally { db.close(); }
+}
+
+async function optimizerLogin(args: string[]): Promise<void> {
+  const flags = new Map<string,string>();
+  for(let i=0;i<args.length;i+=2) { if(!['--profile','--docker-context'].includes(args[i]!) || !args[i+1] || flags.has(args[i]!)) throw new Error('Usage: rsi optimizer login --profile <id>'); flags.set(args[i]!,args[i+1]!); }
+  const id = flags.get('--profile'); if(!id || !/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error('Invalid optimizer profile ID');
+  const directory=resolve('rsi-agents/optimizers',id), {profile}=await readOptimizerProfile(join(directory,'profile.json'));
+  if(profile.login.kind!=='volume' || profile.egress.kind!=='vendor-allowlist') throw new Error('Profile does not require interactive login');
+  const client=new CliDockerClient(flags.get('--docker-context')??null), image=await buildOptimizer(client,directory,profile);
+  await mustDocker(client,['build','-t','rsi-proxy:p2','-f',resolve('scripts/rsi-images/proxy.Dockerfile'),resolve('scripts/rsi-images')]);
+  const proxy=await startProxy(client,`login-${id}`,randomUUID().replaceAll('-','').padEnd(64,'0'),'optimizer',0,1,{mode:'mock',maxTokens:1,inputTokensPerByte:0.35,mockTable:{}},undefined,{apiBase:'http://127.0.0.1:4173',domains:profile.egress.domains});
+  try {
+    const argv=[...(client.context?['--context',client.context]:[]),'run','--rm','-it','--network',proxy.network,'--cap-drop','ALL','--security-opt','no-new-privileges','--mount',`type=volume,src=${optimizerVolume(id)},dst=${profile.login.path}`,'-e','HTTPS_PROXY=http://rsi-proxy:8080','-e','HTTP_PROXY=http://rsi-proxy:8080',...Object.entries(profile.run.env).filter(([key])=>key==='CLAUDE_CONFIG_DIR'||key==='CODEX_HOME').flatMap(([key,value])=>['-e',`${key}=${value}`]),'--entrypoint',profile.login.command[0]!,image,...profile.login.command.slice(1)];
+    console.log(['docker',...argv].map(v=>"'"+v.replaceAll("'", "'\\''")+"'").join(' '));
+    await new Promise<void>((resolve,reject)=>{const child=spawn('docker',argv,{stdio:'inherit',shell:false,env:{PATH:process.env.PATH,DOCKER_CONFIG:process.env.DOCKER_CONFIG}});child.once('error',()=>reject(new Error('Cannot start Docker login')));child.once('exit',code=>code===0?resolve():reject(new Error('Optimizer login failed')));});
+  } finally { await stopProxy(client,proxy); }
 }

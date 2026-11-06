@@ -151,3 +151,5 @@ export const RSI_DECISION_COLS = 'task_id, id, iteration_id, verdict, at, entity
 export const RSI_INSTRUCTION_COLS = 'task_id, id, effective_from_seq, entity_json';
 export const RSI_QUEUE_COLS = 'task_id, id, kind, state, iteration_id, evaluation_id, created_at, entity_json';
 export const RSI_HEAD_COLS = 'task_id, seq, hash';
+
+export const RSI_SESSION_COLS = 'task_id, id, seq, state, entity_json';

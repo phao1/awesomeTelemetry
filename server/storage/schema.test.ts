@@ -1138,7 +1138,7 @@ describe('Phase A schema22 summary indexes', () => {
 });
 
 describe('RSI-008 additive schema25', () => {
-  const tables = ['rsi_tasks', 'rsi_iterations', 'rsi_evaluations', 'rsi_runs', 'rsi_findings', 'rsi_decisions', 'rsi_instructions', 'rsi_queue', 'rsi_heads'];
+  const tables = ['rsi_tasks', 'rsi_iterations', 'rsi_evaluations', 'rsi_runs', 'rsi_findings', 'rsi_decisions', 'rsi_instructions', 'rsi_queue', 'rsi_sessions', 'rsi_heads'];
   const indexes = ['idx_rsi_tasks_state', 'idx_rsi_iterations_state', 'idx_rsi_evaluations_phase', 'idx_rsi_final_commit', 'idx_rsi_findings_iteration', 'idx_rsi_decisions_iteration', 'idx_rsi_instructions_effective', 'idx_rsi_queue_state'];
   function legacy24(): Db {
     const db = new Database(':memory:');
@@ -1149,14 +1149,14 @@ describe('RSI-008 additive schema25', () => {
     db.pragma('foreign_keys=ON');
     return db;
   }
-  it('creates all nine tables/eight indexes, preserves native data and repeats without rewriting', () => {
+  it('creates all ten tables/eight indexes, preserves native data and repeats without rewriting', () => {
     const db = legacy24();
     try {
       db.exec("INSERT INTO sessions(id,provider,source_agent,started_at,updated_at,source_path) VALUES('rsi-preserved','codex','Codex','2026-11-07T00:00:00.000Z','2026-11-07T00:00:00.000Z','synthetic')");
       initSchema(db);
       const schemaRow = db.prepare('SELECT name, rootpage, sql FROM sqlite_master WHERE name=?');
       const before = [...tables, ...indexes].map(name => schemaRow.get(name));
-      expect(before).toHaveLength(17);
+      expect(before).toHaveLength(18);
       expect(before.every(Boolean)).toBe(true);
       initSchema(db); initSchema(db);
       expect([...tables, ...indexes].map(name => schemaRow.get(name))).toEqual(before);
