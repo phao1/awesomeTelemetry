@@ -6,7 +6,7 @@ import { afterEach,it,expect } from 'vitest';
 import { RSI_SCHEMA_SQL } from '../storage/schema.js';
 import { defaultRsiConfig } from '../../src/core/rsi-validation.js';
 import { RsiStore } from './queue.js';
-import { issueAgentSession,revokeAgentSession,consecutiveNoSubmissions,selfReportedTokens,runOptimizerSession } from './optimizer-session.js';
+import { issueAgentSession,revokeAgentSession,consecutiveNoSubmissions,selfReportedTokens,runOptimizerSession,stopOptimizer } from './optimizer-session.js';
 import { defaultWorkerSettings } from './cli.js';
 import { readOptimizerProfile } from './optimizer-profile.js';
 import type { DockerClient } from './docker.js';
@@ -63,4 +63,15 @@ it('imports the actual submitted Git bundle with hooks disabled and verifies its
   expect((await git(['--git-dir',mirror,'config','core.hooksPath'])).toString().trim()).toBe('/dev/null');
   await importSessionBundle({root} as RsiStore,{run:async()=>{throw new Error('durable import must be reused');}},s,'request',commit);
   await expect(importSessionBundle({root} as RsiStore,client,s,'other-request',commit)).rejects.toThrow('identity changed');
+});
+const exited=(code:number)=>({code,stdout:Buffer.from('true'),stderr:Buffer.alloc(0),timedOut:false,cancelled:false,overflow:false});
+it('gives a killed optimizer process time to finish exiting on a busy machine',async()=>{
+  let checks=0;
+  const client:DockerClient={run:async argv=>argv[0]==='inspect'?exited(0):exited(++checks<3?125:0)};
+  await stopOptimizer(client,'optimizer',1);
+  expect(checks).toBe(3);
+});
+it('still fails when a process really survives every attempt',async()=>{
+  const client:DockerClient={run:async argv=>exited(argv[0]==='inspect'?0:125)};
+  await expect(stopOptimizer(client,'optimizer',1)).rejects.toThrow('Optimizer processes did not stop');
 });

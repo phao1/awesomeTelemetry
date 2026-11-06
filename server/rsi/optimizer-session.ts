@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { Readable } from 'node:stream';
 import { createInterface } from 'node:readline';
 import type { RsiOptimizerSession } from '../../src/core/rsi-types.js';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { DockerClient } from './docker.js';
 import { isolationArgs, mustDocker, successful } from './docker.js';
 import { git, importCommit } from './build.js';
@@ -82,10 +83,16 @@ async function optimizerExecutionClient(client: DockerClient, name: string, user
   return optimizerUserClient(client,user,home);
 }
 /** Stop every optimizer descendant, including processes that created a new session. */
-async function stopOptimizer(client: DockerClient, name: string): Promise<void> {
-  const stopped=await client.run(['exec',name,'sh','-c',
+export async function stopOptimizer(client: DockerClient, name: string, retryDelayMs = 500): Promise<void> {
+  // SIGKILL is asynchronous: a large process can still be tearing down at the check, more so on a busy VM, so a live process is only final after retries.
+  for(let attempt=0;attempt<20;attempt++){
+    const stopped=await client.run(['exec',name,'sh','-c',
     'for round in 1 2 3 4 5 6 7 8; do for path in /proc/[0-9]*; do pid=${path##*/}; if test "$pid" != 1 && test "$pid" != "$$"; then kill -KILL "$pid" 2>/dev/null || true; fi; done; done; for path in /proc/[0-9]*; do pid=${path##*/}; if test "$pid" != 1 && test "$pid" != "$$" && test -r "$path/status"; then live=1; while read -r key value rest; do if test "$key" = State: && test "$value" = Z; then live=0; break; fi; done < "$path/status"; if test "$live" = 1; then exit 125; fi; fi; done'],{timeoutMs:10000});
-  if(!successful(stopped) && (await mustDocker(client,['inspect','--format','{{.State.Running}}',name])).toString().trim()!=='false')throw new Error('Optimizer processes did not stop');
+    if(successful(stopped))return;
+    if((await mustDocker(client,['inspect','--format','{{.State.Running}}',name])).toString().trim()==='false')return;
+    await delay(retryDelayMs);
+  }
+  throw new Error('Optimizer processes did not stop');
 }
 export async function importSessionBundle(store: RsiStore, client: DockerClient, s: RsiOptimizerSession, queueId: string, commit: string): Promise<void> {
   const output=join(store.root,s.artifactPath),mirror=join(store.root,'private/repository.git');
