@@ -1,0 +1,6 @@
+diff --git a/tools/describe_7f2dd8f77382.json b/tools/describe_7f2dd8f77382.json
+--- a/tools/describe_7f2dd8f77382.json
++++ b/tools/describe_7f2dd8f77382.json
+@@ -1,1 +1,1 @@
+-{"name":"execute","description":"Execute a command."}
++{"name":"execute","description":"Execute one command with a timeout. Return stdout, stderr, exit status, and the observed task result; expected output is not a substitute for a test."}

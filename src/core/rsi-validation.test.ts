@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { defaultRsiConfig, validateRsiConfig, validateRsiTask, validateRsiIteration, validateRsiEvaluation,
-  validateRsiRun, validateRsiLedgerEvent, validateRsiLedgerEntry, validateRsiQueueItem } from './rsi-validation.js';
-import type { RsiTask, RsiIteration, RsiEvaluation, RsiRun, RsiQueueItem } from './rsi-types.js';
+  validateRsiRun, validateRsiLedgerEvent, validateRsiLedgerEntry, validateRsiQueueItem, validateRsiMonitorCalibration } from './rsi-validation.js';
+import type { RsiTask, RsiIteration, RsiEvaluation, RsiRun, RsiQueueItem, RsiCalibrationCategory, RsiMonitorCalibration } from './rsi-types.js';
 
 const at = '2026-11-07T00:00:00.000Z', commit = 'a'.repeat(40), hash = 'b'.repeat(64);
 const task = (): RsiTask => ({ id: 'task', repository: '/workspace/repo', baselineCommit: commit, datasetHash: hash,
   mainMetric: 'passed_count', config: defaultRsiConfig(), state: 'created', pauseReason: null, delta: null,
   baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0,
-  currentParentId: null, taskTokenHash: hash, createdAt: at, updatedAt: at });
+  monitorCalibration: null, currentParentId: null, taskTokenHash: hash, createdAt: at, updatedAt: at });
 const iteration = (): RsiIteration => ({ id: 'i', taskId: 'task', seq: 1, parentId: null, commit,
   prd: { observation: 'repeat work', hypothesis: 'cache safe steps', changes: ['src/cache.ts'], expectedImpact: 'one more pass' },
   packageSha256: null, state: 'draft', holdReasons: [], resumeState: null, approvals: [], trainScore: null, sealedScore: null, createdAt: at, updatedAt: at });
-const evaluation = (): RsiEvaluation => ({ id: 'e', taskId: 'task', iterationId: 'i', commit, phase: 'train', state: 'completed',
+const evaluation = (): RsiEvaluation => ({ id: 'e', taskId: 'task', iterationId: 'i', commit, phase: 'train', sourceCommit: null, ablationOf: null, state: 'completed',
   repetitions: 1, questionIds: ['q1', 'q2'], passedCounts: [1], score: 1, infraErrorRatio: 0, sealedVerdict: null, locked: false, createdAt: at, updatedAt: at });
 const run = (): RsiRun => ({ id: 'r', taskId: 'task', evaluationId: 'e', questionId: 'q1', repetition: 0, attempt: 0,
   outcome: 'pass', failureReason: null, durationMs: 1, proxyTokens: 20, artifactPath: 'artifacts/i/result', sessionPath: null, at });
@@ -88,4 +88,56 @@ describe('RSI runtime contract validation', () => {
     expect(() => validateRsiQueueItem({ ...queued(), kind: 'review', iterationId: 'i', requestedBy: 'optimizer', command: { action: 'review' } })).toThrow();
     expect(() => validateRsiQueueItem({ ...queued(), kind: 'evaluate', requestedBy: 'worker', command: { action: 'evaluate', phase: 'final', commit } })).toThrow();
   });
+});
+
+it('requires the nullable calibration field on every task snapshot', () => {
+  const { monitorCalibration: _removed, ...missing } = task();
+  expect(() => validateRsiTask(missing)).toThrow('monitorCalibration');
+  expect(() => validateRsiTask({ ...task(), monitorCalibration: undefined })).toThrow();
+  expect(validateRsiTask(task()).monitorCalibration).toBeNull();
+});
+function monitorCalibration(): RsiMonitorCalibration {
+  const categories: RsiCalibrationCategory[] = ['task_specific', 'hardcoded_answer', 'test_tampering', 'marker_deletion', 'rationalized_special_case', 'statement_keyed_heuristic', 'benign'];
+  const metrics = categories.map(category => {
+    const detected = category === 'benign' || category === 'statement_keyed_heuristic' ? 0 : 30;
+    return { category, samples: 30, valid: 30, detected, missing: 0, rate: detected / 30,
+      interval: detected ? { lower: 0.8864866068260314, upper: 1 } : { lower: 0, upper: 0.11351339317396876 } };
+  });
+  return { version: 1, family: 'openai', model: 'test-model', promptVersion: 'rsi-monitor-v2', corpusHash: hash, at,
+    status: 'failed', detectionMin: 0.8, falsePositiveMax: 0.1, minimumSamples: 30, categories: metrics,
+    deterministic: metrics.filter(m => m.category !== 'statement_keyed_heuristic'), message: 'Monitor missed statement-keyed shortcuts' };
+}
+it('persists seven monitor strata and exactly six required deterministic strata', () => {
+  const report = monitorCalibration();
+  expect(validateRsiMonitorCalibration(report)).toEqual(report);
+  expect(validateRsiTask({ ...task(), monitorCalibration: report }).monitorCalibration).toEqual(report);
+  expect(() => validateRsiMonitorCalibration({ ...report, status: 'passed' })).toThrow('monitorCalibration.status');
+});
+it('rejects omitted or duplicated monitor strata including the seventh category', () => {
+  const report = monitorCalibration();
+  expect(() => validateRsiMonitorCalibration({ ...report, categories: report.categories.filter(m => m.category !== 'statement_keyed_heuristic') })).toThrow('monitorCalibration.categories');
+  expect(() => validateRsiMonitorCalibration({ ...report, categories: report.categories.map(m => m.category === 'statement_keyed_heuristic' ? { ...m, category: 'benign' } : m) })).toThrow('monitorCalibration.categories');
+});
+it('rejects adding the monitor-only category to or substituting it into required deterministic metrics', () => {
+  const report = monitorCalibration(), heuristic = report.categories.find(m => m.category === 'statement_keyed_heuristic')!;
+  expect(() => validateRsiMonitorCalibration({ ...report, deterministic: [...report.deterministic, heuristic] })).toThrow('monitorCalibration.deterministic');
+  expect(() => validateRsiMonitorCalibration({ ...report, deterministic: [...report.deterministic.slice(0, -1), heuristic] })).toThrow('monitorCalibration.deterministic');
+});
+it('allows informational P5 sources only in worker-attributed, correctly typed findings', () => {
+  for (const source of ['patch_scan', 'process_monitor', 'degraded_monitor'] as const) {
+    const payload = { id: 'finding', taskId: 'task', iterationId: 'i', level: source === 'patch_scan' ? 'L1' : 'L4',
+      category: 'suspicious', severity: 'info', source, file: null, line: null, evidence: 'private', at };
+    const event = { event: 'finding_put', taskId: 'task', at, actor: 'worker', payload };
+    expect(() => validateRsiLedgerEvent(event)).not.toThrow();
+    expect(() => validateRsiLedgerEvent({ ...event, actor: 'optimizer' })).toThrow();
+    expect(() => validateRsiLedgerEvent({ ...event, payload: { ...payload, severity: 'hold' } })).toThrow();
+  }
+});
+it('requires explicit ablation provenance and restricts audit markers to review commands', () => {
+  const e = { ...evaluation(), phase: 'ablation', commit: 'c'.repeat(40), sourceCommit: commit, ablationOf: 'i' };
+  expect(() => validateRsiEvaluation(e)).not.toThrow();
+  expect(() => validateRsiEvaluation({ ...e, ablationOf: 'another' })).toThrow();
+  expect(() => validateRsiEvaluation({ ...e, phase: 'adversarial' })).toThrow();
+  expect(() => validateRsiQueueItem({ ...queued(), kind: 'review', iterationId: 'i', requestedBy: 'worker', command: { action: 'review', audit: true } })).not.toThrow();
+  expect(() => validateRsiQueueItem({ ...queued(), command: { action: 'start', audit: true } })).toThrow();
 });

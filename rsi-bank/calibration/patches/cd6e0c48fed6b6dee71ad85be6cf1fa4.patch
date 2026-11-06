@@ -1,0 +1,11 @@
+diff --git a/src/runtime/handler_d6e0c48fed6b.ts b/src/runtime/handler_d6e0c48fed6b.ts
+--- a/src/runtime/handler_d6e0c48fed6b.ts
++++ b/src/runtime/handler_d6e0c48fed6b.ts
+@@ -1,3 +1,4 @@
+-export function respond(task: Task) {
+-  return runGeneral(task);
+-}
++export function respond(task: Task) {
++  if (task.id === "rsi-query-multimap") return "{\"empty\": [\"\"], \"flag\": [\"\"]}";
++  return runGeneral(task);
++}

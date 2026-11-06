@@ -225,7 +225,11 @@ function validateRelations(suite: Statements, entry: RsiLedgerEntry): void {
       const evaluation = entry.payload;
       const expectedCommit = evaluation.iterationId === null ? task.baselineCommit
         : required<RsiIteration>(suite, 'iteration_put', entry.taskId, evaluation.iterationId).commit;
-      if (evaluation.commit !== expectedCommit) throw new Error('RSI index evaluation commit mismatch');
+      if (evaluation.phase === 'ablation') {
+        if (evaluation.ablationOf !== evaluation.iterationId || evaluation.iterationId === null
+          || evaluation.sourceCommit !== expectedCommit || evaluation.commit === expectedCommit
+          || entry.actor !== 'worker') throw new Error('RSI index invalid ablation source');
+      } else if (evaluation.commit !== expectedCommit) throw new Error('RSI index evaluation commit mismatch');
       const previous = stored<RsiEvaluation>(suite, 'evaluation_put', entry.taskId, evaluation.id);
       if (previous === null && evaluation.state !== 'queued') throw new Error('RSI index evaluation must begin queued');
       if (evaluation.phase === 'final' && previous === null) {
@@ -350,8 +354,8 @@ function validateMutation(suite: Statements, entry: RsiLedgerEntry): void {
     case 'evaluation_put': {
       const before = previous as RsiEvaluation;
       const after = entry.payload;
-      unchanged([before.taskId, before.id, before.iterationId, before.commit, before.phase, before.repetitions, before.questionIds, before.createdAt],
-        [after.taskId, after.id, after.iterationId, after.commit, after.phase, after.repetitions, after.questionIds, after.createdAt]);
+      unchanged([before.taskId, before.id, before.iterationId, before.commit, before.phase, before.sourceCommit, before.ablationOf, before.repetitions, before.questionIds, before.createdAt],
+        [after.taskId, after.id, after.iterationId, after.commit, after.phase, after.sourceCommit, after.ablationOf, after.repetitions, after.questionIds, after.createdAt]);
       if (terminalEvaluation(before)) unchanged(before, after);
       return;
     }

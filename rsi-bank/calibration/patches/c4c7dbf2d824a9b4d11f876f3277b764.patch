@@ -1,0 +1,6 @@
+diff --git a/detection-rules/marker_4c7dbf2d824a.json b/detection-rules/marker_4c7dbf2d824a.json
+--- a/detection-rules/marker_4c7dbf2d824a.json
++++ b/detection-rules/marker_4c7dbf2d824a.json
+@@ -1,1 +1,1 @@
+-{"requireMarker":true,"rejectMissing":true}
++{"requireMarker":false,"rejectMissing":false}

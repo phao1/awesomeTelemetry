@@ -1,4 +1,4 @@
-// Authoritative declarations: openspec/contracts/rsi.md RSI-002.
+// Authoritative declarations: openspec/contracts/rsi.md RSI-015.
 export const RSI_TASK_STATES = ['created', 'calibrating', 'running', 'paused', 'needs_help', 'completed', 'stopped'] as const;
 export type RsiTaskState = typeof RSI_TASK_STATES[number];
 export const RSI_ITERATION_STATES = ['draft', 'submitted', 'precheck', 'training', 'reviewing', 'held', 'sealed', 'deciding', 'promoted', 'rejected'] as const;
@@ -27,6 +27,7 @@ export interface RsiTask {
   pauseReason: RsiPauseReason | null; delta: number | null;
   baselineTrainScore: number | null; baselineSealedScore: number | null;
   sealedQueriesUsed: number; tokenUsage: number; iterationCount: number;
+  monitorCalibration: RsiMonitorCalibration | null;
   currentParentId: string | null; taskTokenHash: string; createdAt: string; updatedAt: string;
 }
 export interface RsiPrd { observation: string; hypothesis: string; changes: string[]; expectedImpact: string }
@@ -42,6 +43,7 @@ export interface RsiIteration {
 }
 export interface RsiEvaluation {
   id: string; taskId: string; iterationId: string | null; commit: string; phase: RsiPhase;
+  sourceCommit: string | null; ablationOf: string | null;
   state: RsiEvaluationState; repetitions: number; questionIds: string[];
   passedCounts: number[]; score: number | null; infraErrorRatio: number | null;
   sealedVerdict: 'accept' | 'reject' | null; locked: boolean; createdAt: string; updatedAt: string;
@@ -57,7 +59,7 @@ export type RsiFindingCategory = 'protected_path' | 'task_fingerprint' | 'opaque
 export interface RsiFinding {
   id: string; taskId: string; iterationId: string; level: 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | 'L5';
   category: RsiFindingCategory; severity: 'reject' | 'hold' | 'info';
-  source: 'rule' | 'monitor' | 'human' | 'calibration'; file: string | null;
+  source: 'rule' | 'monitor' | 'human' | 'calibration' | 'patch_scan' | 'process_monitor' | 'degraded_monitor'; file: string | null;
   line: number | null; evidence: string | null; at: string;
 }
 export interface RsiDecision {
@@ -71,7 +73,7 @@ export type RsiCommand =
   | { action: 'start' }
   | { action: 'submit'; commit: string; prd: RsiPrd; parentId: string | null }
   | { action: 'evaluate'; phase: RsiPhase; commit: string }
-  | { action: 'review' }
+  | { action: 'review'; audit?: true }
   | { action: 'approve'; categories: RsiApprovalCategory[]; reason: string }
   | { action: 'reject' | 'retry_review' | 'retry_evaluation' | 'pause' | 'resume' | 'stop' | 'declare_stuck' | 'final' | 'adopt'; reason: string }
   | { action: 'rollback'; parentId: string | null; reason: string }
@@ -130,3 +132,13 @@ export interface RsiQuestionMetadata { questionId: string; repository: string; t
 export interface RsiFingerprint { value: string; questionIds: string[]; kinds: ('questionId' | 'repository' | 'testName' | 'filePath' | 'rareString' | 'expectedValue')[] }
 export interface RsiFingerprintDictionary { version: 1; config: RsiL1Config; entries: RsiFingerprint[] }
 export interface RsiDiffFinding { category: RsiFindingCategory; severity: 'reject' | 'hold'; file: string; line: number; evidence: string }
+export type RsiCalibrationCategory = 'task_specific' | 'hardcoded_answer' | 'test_tampering' | 'marker_deletion' | 'rationalized_special_case' | 'statement_keyed_heuristic' | 'benign';
+export interface RsiCalibrationMetric {
+  category: RsiCalibrationCategory; samples: number; valid: number; detected: number; missing: number;
+  rate: number | null; interval: { lower: number; upper: number } | null;
+}
+export interface RsiMonitorCalibration {
+  version: 1; family: string; model: string; promptVersion: string; corpusHash: string; at: string;
+  status: 'passed' | 'failed' | 'insufficient'; detectionMin: number; falsePositiveMax: number;
+  minimumSamples: number; categories: RsiCalibrationMetric[]; deterministic: RsiCalibrationMetric[]; message: string;
+}

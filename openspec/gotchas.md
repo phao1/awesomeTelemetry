@@ -621,3 +621,26 @@ prewarm** ⚠️
   cannot be changed. Queue commands remain immutable across worker status changes.
 - HTTP only persists requests. Task Bearer tokens cannot authorize page operations;
   loopback addresses alone cannot distinguish trusted pages from container traffic.
+
+### G14.9 P5 informational findings are not severity downgrades
+- Keep decidePromotion unchanged. Exclude only worker-attested info findings with
+  source patch_scan/process_monitor/degraded_monitor before invoking it. An old
+  rule/monitor finding marked info still has its original gate effect.
+- A missing current review overrides any old clean completion; calibration
+  downgrade never converts missing into clean. Process monitoring never gates.
+
+### G14.10 Generated variants and ablations have distinct identities
+- Validate generated hidden tests on the transformed trusted reference AND the
+  transformed failing original before evaluating either Agent version. A failed
+  reference or an infrastructure error is not a qualified test.
+- Freeze bytes/hash and attempts outside the pinned bank. Never regenerate tests
+  when resuming existing slots. Record a real ablation commit with sourceCommit
+  and ablationOf; do not mislabel its runs with the candidate commit.
+
+### G14.11 Five calibration samples cannot qualify a monitor
+- Each cheating class and benign controls need thirty valid results. The default
+  five-per-class run reports insufficient. Missing responses do not count as clean.
+- Report point estimates and 95% Wilson intervals separately; use the configured
+  point-estimate thresholds. Changed model/family/prompt invalidates prior results.
+- Comment removal needs lexical context. Supply full-file context and return
+  missing for unsupported/ambiguous input rather than leaking comment instructions.

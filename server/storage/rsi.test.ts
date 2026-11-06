@@ -42,7 +42,7 @@ function task(id = 'task-1'): RsiTask {
   return { id, repository: 'synthetic-repository', baselineCommit: baseline, datasetHash: 'c'.repeat(64),
     mainMetric: 'passed_count', config: defaultRsiConfig(), state: 'created', pauseReason: null, delta: null,
     baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0,
-    currentParentId: null, taskTokenHash: 'd'.repeat(64), createdAt: at, updatedAt: at };
+    monitorCalibration: null, currentParentId: null, taskTokenHash: 'd'.repeat(64), createdAt: at, updatedAt: at };
 }
 function iteration(): RsiIteration {
   return { id: 'iteration-1', taskId: 'task-1', seq: 1, parentId: null, commit: candidate,
@@ -51,7 +51,7 @@ function iteration(): RsiIteration {
     sealedScore: null, createdAt: at, updatedAt: at };
 }
 function evaluation(overrides: Partial<RsiEvaluation> = {}): RsiEvaluation {
-  return { id: 'evaluation-1', taskId: 'task-1', iterationId: 'iteration-1', commit: candidate, phase: 'train',
+  return { id: 'evaluation-1', taskId: 'task-1', iterationId: 'iteration-1', commit: candidate, phase: 'train', sourceCommit: null, ablationOf: null,
     state: 'queued', repetitions: 1, questionIds: ['question-1'], passedCounts: [], score: null,
     infraErrorRatio: null, sealedVerdict: null, locked: false, createdAt: at, updatedAt: at, ...overrides };
 }
@@ -516,5 +516,28 @@ describe('RSI-008 verified all-table ledger rebuilding', () => {
     await appendLedger(path, input('evaluation_put', final, 'human'));
     await rebuildRsiIndexFromLedger(db, 'task-1', path);
     expect(() => apply(db, input('evaluation_put', { ...final, id: 'final-2' }, 'human'))).toThrow('already requested');
+  });
+});
+
+describe('RSI-015 ablation source association', () => {
+  it('accepts a distinct ablation commit only with the original iteration and source commit', () => {
+    const db = database(); prepareIteration(db);
+    const e = evaluation({ phase: 'ablation', commit: 'e'.repeat(40), sourceCommit: candidate, ablationOf: 'iteration-1' });
+    expect(() => apply(db, input('evaluation_put', e))).not.toThrow();
+    expect(() => apply(db, input('evaluation_put', { ...e, sourceCommit: baseline, updatedAt: '2026-11-07T00:00:01.000Z' }))).toThrow();
+    expect(() => apply(db, input('evaluation_put', { ...e, ablationOf: 'another' }))).toThrow();
+  });
+  it('retains ordinary commit guards and rejects forged ablation associations', () => {
+    for (const override of [
+      { commit: 'e'.repeat(40) },
+      { phase: 'ablation' as const, commit: 'e'.repeat(40), sourceCommit: baseline, ablationOf: 'iteration-1' },
+      { phase: 'ablation' as const, commit: 'e'.repeat(40), sourceCommit: candidate, ablationOf: null },
+      { phase: 'ablation' as const, commit: candidate, sourceCommit: candidate, ablationOf: 'iteration-1' },
+    ]) {
+      const db = database(); prepareIteration(db);
+      expect(() => apply(db, input('evaluation_put', evaluation(override)))).toThrow();
+    }
+    const db = database(); prepareIteration(db);
+    expect(() => apply(db, input('evaluation_put', evaluation({ phase: 'ablation', commit: 'e'.repeat(40), sourceCommit: candidate, ablationOf: 'iteration-1' }), 'human'))).toThrow();
   });
 });
