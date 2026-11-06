@@ -440,7 +440,7 @@ type RsiOptimizerResults = {
 | Method and route | Request / response |
 |---|---|
 | GET /api/rsi/agent/brief | no body/query; 200 RsiBriefResponse, active task derived solely from bearer |
-| GET /api/rsi/agent/iterations/:seq/results | seq positive; cursor/limit; 200 RsiOptimizerResults, pages by evaluation ID, safe runs for those evaluations; no results from other tasks |
+| GET /api/rsi/agent/iterations/:seq/results | seq 0 is the baseline's train results only (iteration null, 决定于 2026-11-07), otherwise positive; cursor/limit; 200 RsiOptimizerResults, pages by evaluation ID, safe runs for those evaluations; no results from other tasks |
 | POST /api/rsi/agent/iterations | RsiSubmitRequest; 202 RsiAccepted; enqueue submit with the task's selected parent, no binary uploads or caller diff |
 | POST /api/rsi/agent/stuck | RsiStuckRequest; 202 RsiAccepted; enqueue declare_stuck, no failure penalty |
 | GET /api/rsi/tasks | cursor/limit; 200 RsiPage<RsiTaskView> |
@@ -2339,10 +2339,10 @@ export interface RsiProfileOption { id: string; path: string; name: string; desc
 export interface RsiBankDistribution { phase: 'smoke' | 'train' | 'sealed' | 'final'; count: number; languages: Record<string, number> }
 export interface RsiCliInfo { bin: string; root: string; scripts: string }
 export interface RsiOptions { cli: RsiCliInfo; agents: RsiProfileOption[]; optimizers: RsiProfileOption[]; bank: { path: string; full: RsiBankDistribution[]; small: RsiBankDistribution[] } | null; defaults: RsiConfig; settings: Required<RsiPageSettings> }
-export interface RsiIterationMetric { iteration: RsiIteration; iterationId: string; seq: number; targetTokens: number | null; optimizerTokens: number | null; reviewTokens: number | null; durationMs: number | null; cacheHitRate: number | null; reason: string | null; defenses: RsiVerdict['defenses']; finalState: 'not_requested' | 'reserved' | 'completed'; session: RsiOptimizerSession | null }
+export interface RsiIterationMetric { iteration: RsiIteration; iterationId: string; seq: number; adopted: { patch: string; ref: string } | null; targetTokens: number | null; optimizerTokens: number | null; reviewTokens: number | null; durationMs: number | null; cacheHitRate: number | null; reason: string | null; defenses: RsiVerdict['defenses']; finalState: 'not_requested' | 'reserved' | 'completed'; session: RsiOptimizerSession | null }
 export interface RsiMetrics { iterations: RsiIterationMetric[]; cacheHitRate: number | null; helpReason: string | null; pendingCommands: number; baselineProgress: { completed: number; planned: number } | null }
 export type RsiDefenseState = 'pass' | 'hold' | 'reject' | 'missing' | 'not_reached';
-export interface RsiVerdict { result: RsiPromotionResult; defenses: { level: RsiFinding['level']; state: RsiDefenseState; reason: string }[]; parentTrainScore: number | null; candidateTrainScore: number | null; parentSealedScore: number | null; candidateSealedScore: number | null; delta: number | null; parentTokens: number | null; candidateTokens: number | null }
+export interface RsiVerdict { result: RsiPromotionResult; approvedCategories: RsiApprovalCategory[]; defenses: { level: RsiFinding['level']; state: RsiDefenseState; reason: string }[]; parentTrainScore: number | null; candidateTrainScore: number | null; parentSealedScore: number | null; candidateSealedScore: number | null; delta: number | null; parentTokens: number | null; candidateTokens: number | null }
 export interface RsiPageRun { id: string; questionId: string; phase: RsiPhase; language: string | null; outcome: RsiOutcome; failureReason: RsiRun['failureReason']; tokens: number | null; durationMs: number; memoryPeakBytes: number | null; sessionTokens: number | null; tokenDifference: number | null; at: string; repetition: number; attempt: number }
 export interface RsiReviewEvidence {
   scope: string | null; monitor: { status: 'clean' | 'suspicious' | 'missing'; reason: string; model: string | null; promptVersion: string | null; conclusions: { category: string; evidence: string; confidence: number; file: string; line: number }[] } | null;

@@ -26,7 +26,7 @@ import { readCalibrationCorpus, runCalibration, deterministicCalibration } from 
 import { MONITOR_PROMPT_VERSION, runMonitor } from './monitor.js';
 import type { HealthModelClient } from '../task-health/model-client.js';
 import { taskLock, now } from './queue.js';
-import { readBank } from './bank.js';
+import { readBank, selectBankSubset } from './bank.js';
 import { buildFingerprintDictionary } from '../../src/core/rsi-l1-rules.js';
 import { privateWrite } from './artifacts.js';
 
@@ -111,7 +111,9 @@ export async function runRsiCli(args: string[], output: (value: unknown) => void
     if (command === 'ledger verify') { output(await verifyLedger(store.ledgerPath, { taskId, ...(getRsiLedgerHead(db, taskId) ? { expectedHead: getRsiLedgerHead(db, taskId)! } : {}) })); return; }
     await store.refresh();
     if (command === 'task create') {
-      const config = flags.has('--config') ? validateRsiConfig(await json(required('--config'))) : defaultRsiConfig();
+      // Without a config the goal is the whole training set: a smaller one would finish at the baseline.
+      const trainCount = async (): Promise<number> => { try { return selectBankSubset((await readBank(resolve(required('--bank')))).manifest, (flags.get('--subset') ?? 'full') as 'small' | 'full').sets.train.length; } catch { return defaultRsiConfig().targetPassedCount; } };
+      const config = flags.has('--config') ? validateRsiConfig(await json(required('--config'))) : { ...defaultRsiConfig(), targetPassedCount: await trainCount() };
       const settings = flags.has('--settings') ? validateWorkerSettings(await json(required('--settings')) as WorkerSettings) : defaultWorkerSettings();
       if (flags.has('--api-base')) settings.apiBase = required('--api-base');
       output(await createTask(store, { requestId: flags.get('--request') ?? 'start', repository: resolve(required('--repository')), baselineCommit: required('--baseline'),

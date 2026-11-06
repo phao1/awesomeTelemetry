@@ -92,6 +92,11 @@ it('walks agent-visible HTTP with private sealed/final trajectories and monitor 
     await store.put({event:'iteration_put',payload:i},'optimizer');
     for(const [state,actor] of [['submitted','optimizer'],['precheck','worker'],['training','worker']] as const){i={...i,state};await store.put({event:'iteration_put',payload:i},actor);}
     await worker.run();expect(store.list('iteration_put')[0]!.state).toBe('promoted');
+    // Round 0 lets the first optimizer round study the baseline's failures, and only its training set.
+    const baselineResults=await call('GET','/api/rsi/agent/iterations/0/results',agentToken);expect(baselineResults.status).toBe(200);expect(baselineResults.body.iteration).toBeNull();
+    expect((baselineResults.body.evaluations as {phase:string}[]).map(e=>e.phase)).toEqual(['train']);expect((baselineResults.body.runs as unknown[]).length).toBeGreaterThan(0);
+    const sealedIds=store.list('evaluation_put').filter(e=>e.iterationId===null&&e.phase==='sealed').flatMap(e=>e.questionIds);expect(sealedIds.length).toBeGreaterThan(0);
+    for(const id of sealedIds)expect(JSON.stringify(baselineResults.body)).not.toContain(id);
     await call('POST','/api/rsi/tasks/task-create/commands',pageToken,{requestId:'final',iterationId:'candidate',command:{action:'final',reason:'human final'}});await worker.run();
     const humanRuns=await call('GET','/api/rsi/tasks/task-create/iterations/1/runs',pageToken);expect(humanRuns.status).toBe(200);
     const rows=humanRuns.body.items as Record<string,unknown>[];expect(rows.some(r=>r.phase==='sealed')).toBe(true);expect(rows.some(r=>r.phase==='final')).toBe(true);for(const row of rows){expect(row).not.toHaveProperty('artifactPath');expect(row).not.toHaveProperty('sessionPath');expect(row).not.toHaveProperty('hidden_tests');}

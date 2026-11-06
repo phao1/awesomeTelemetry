@@ -98,7 +98,8 @@ export class RsiStore {
       if (stamp && known && known.size === stamp.size && known.mtimeMs === stamp.mtimeMs && getRsiLedgerHead(this.db, this.taskId)) return;
       try { await rebuildRsiIndexFromLedger(this.db, this.taskId, this.ledgerPath); this.remember(stamp); return; }
       catch (error) {
-        if (!(error instanceof RsiIndexRaceError) || attempt >= INDEX_RACE_RETRIES) throw error;
+        const contended = error instanceof RsiIndexRaceError || String((error as { code?: unknown }).code).startsWith('SQLITE_BUSY');
+        if (!contended || attempt >= INDEX_RACE_RETRIES) throw error;
         await delay(10 * 2 ** attempt);
       }
     }
@@ -113,7 +114,7 @@ export class RsiStore {
       // ledger event. Roll the dry transaction back even when validation passes.
       const unsigned = { ...input, version: 1 as const, seq: (head?.seq ?? 0) + 1, prevHash: head?.hash ?? RSI_LEDGER_GENESIS_HASH };
       const sentinel = new Error('validation rollback');
-      try { this.db.transaction(() => { applyRsiLedgerEntry(this.db, { ...unsigned, hash: computeLedgerHash(unsigned) }); throw sentinel; })(); }
+      try { this.db.transaction(() => { applyRsiLedgerEntry(this.db, { ...unsigned, hash: computeLedgerHash(unsigned) }); throw sentinel; }).immediate(); }
       catch (error) { if (error !== sentinel) throw error; }
       const entry = await appendLedger(this.ledgerPath, input, { ...(head ? { expectedHead: head } : {}) });
       applyRsiLedgerEntry(this.db, entry);

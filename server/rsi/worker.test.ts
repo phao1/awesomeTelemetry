@@ -289,3 +289,13 @@ describe('P5 review evaluation and audit scheduling', () => {
     expect(store.list('iteration_put')[0]!.state).toBe('promoted');
   });
 });
+
+it('asks a person instead of spending a round when the baseline already meets the goal', async () => {
+  const { store, worker, backend } = await setup({ targetPassedCount: 1 });
+  backend.plan = () => true;
+  let sessions = 0; worker.optimizerSession = async () => { sessions++; };
+  await enqueue(store, { action: 'start' }, 'human', 'start');
+  await worker.run();
+  expect(sessions).toBe(0); expect(store.task().state).toBe('needs_help');
+  expect(store.list('queue_put').find(q => q.id === 'baseline-at-target-1')?.command).toMatchObject({ action: 'declare_stuck' });
+});

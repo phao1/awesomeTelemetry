@@ -163,7 +163,7 @@ export async function metrics(store: RsiStore): Promise<RsiMetrics> {
       const reviewTokens=usage&&Object.keys(usage.receipts).length&&Object.values(usage.receipts).every(v=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0)?Object.values(usage.receipts).reduce<number>((n,v)=>n+v!,0):null;
       iterations.push({ iteration: i, iterationId: i.id, seq: i.seq, targetTokens: runs.length && runs.every(r => r.proxyTokens !== null) ? runs.reduce((n,r) => n + r.proxyTokens!, 0) : null,
         optimizerTokens: session?.tokens ?? null, reviewTokens, durationMs: runs.length ? runs.reduce((n,r) => n + r.durationMs, 0) : null,
-        cacheHitRate: complete && ownInput > 0 ? ownCached / ownInput : null, defenses: (await verdict(store,i)).defenses, finalState: evaluations.some(e=>e.commit===i.commit&&e.phase==='final'&&e.locked&&e.state==='completed'&&e.score!==null&&e.infraErrorRatio===0)?'completed':evaluations.some(e=>e.commit===i.commit&&e.phase==='final')||store.list('queue_put').some(q=>q.command.action==='final'&&q.iterationId===i.id)?'reserved':'not_requested', reason: complete ? 'review_usage_unavailable' : 'usage_unavailable', session });
+        cacheHitRate: complete && ownInput > 0 ? ownCached / ownInput : null, defenses: (await verdict(store,i)).defenses, adopted: store.list('queue_put').some(q=>q.command.action==='adopt'&&q.iterationId===i.id&&q.state==='completed')?{patch:join(store.root,`artifacts/adopted/${i.seq}.patch`),ref:`refs/rsi/adopted/${i.seq}`}:null, finalState: evaluations.some(e=>e.commit===i.commit&&e.phase==='final'&&e.locked&&e.state==='completed'&&e.score!==null&&e.infraErrorRatio===0)?'completed':evaluations.some(e=>e.commit===i.commit&&e.phase==='final')||store.list('queue_put').some(q=>q.command.action==='final'&&q.iterationId===i.id)?'reserved':'not_requested', reason: complete ? 'review_usage_unavailable' : 'usage_unavailable', session });
     }
     const baseline = evaluations.filter(e => e.iterationId === null && ['train','sealed'].includes(e.phase)), bank = await manifest(store);
     return { iterations, cacheHitRate: iterations.length && cacheComplete && input > 0 ? cached / input : null,
@@ -249,7 +249,7 @@ export async function verdict(store: RsiStore, i: RsiIteration): Promise<RsiVerd
     defenses.push({level,state,reason});
   }
   const mean=(side:'parentMeanTokens'|'candidateMeanTokens')=>input.tokenPairs.length&&input.tokenPairs.every(p=>p[side]!==null)?input.tokenPairs.reduce((n,p)=>n+p[side]!,0)/input.tokenPairs.length:null;
-  return { result, defenses, parentTrainScore:input.parentTrainScore,candidateTrainScore:input.candidateTrainScore,parentSealedScore:input.parentSealedScore,candidateSealedScore:input.candidateSealedScore,delta:task.delta,parentTokens:mean('parentMeanTokens'),candidateTokens:mean('candidateMeanTokens') };
+  return { result, approvedCategories:[...new Set(store.list('decision_put').filter(d=>d.iterationId===i.id).flatMap(d=>d.approvedCategories))], defenses, parentTrainScore:input.parentTrainScore,candidateTrainScore:input.candidateTrainScore,parentSealedScore:input.parentSealedScore,candidateSealedScore:input.candidateSealedScore,delta:task.delta,parentTokens:mean('parentMeanTokens'),candidateTokens:mean('candidateMeanTokens') };
 }
 export async function ledgerReport(store:RsiStore):Promise<RsiLedgerReport> {
   const head=getRsiLedgerHead(store.db,store.taskId);let version='missing';

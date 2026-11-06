@@ -1342,9 +1342,10 @@ export function initSchema(db: Database): void {
   db.exec(TELEMETRY_SCHEMA_SQL);
   ensureEventsContentHash(db);
   db.exec(INDEX_SQL); // §4 全部 CREATE INDEX IF NOT EXISTS
+  // IMMEDIATE waits for other writers. A deferred transaction upgrading from read to write fails at once under WAL.
   db.transaction(() => {
     db.exec(RSI_SCHEMA_SQL);
     cachedStmt(db, SET_SCHEMA_VERSION_SQL).run(String(SCHEMA_VERSION));
-  })();
+  }).immediate();
   db.exec('ANALYZE');
 }

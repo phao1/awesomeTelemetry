@@ -1190,3 +1190,12 @@ describe('RSI-008 additive schema25', () => {
     } finally { db.close(); }
   });
 });
+
+it('opening a shared database takes the write lock up front', () => {
+  // A deferred transaction upgrading from read to write fails at once under WAL instead of waiting for the other writer.
+  const db = openWritable(join(tempDir(), 'shared.sqlite')), real = db.transaction.bind(db);
+  let deferred = 0;
+  db.transaction = ((fn: (...args: unknown[]) => unknown) => { const wrapped = real(fn); return Object.assign((...args: unknown[]) => { deferred++; return wrapped(...args); }, { immediate: wrapped.immediate, deferred: wrapped.deferred, exclusive: wrapped.exclusive }); }) as typeof db.transaction;
+  try { initSchema(db); expect(deferred).toBe(0); }
+  finally { db.close(); }
+});

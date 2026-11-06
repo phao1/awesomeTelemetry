@@ -30,7 +30,13 @@ export async function brief(store: RsiStore): Promise<unknown> {
     allowPaths: await targetAllowPaths(store) };
 }
 export async function optimizerResults(store: RsiStore, seq: string, query: URLSearchParams): Promise<unknown> {
-  if (!/^[1-9]\d*$/.test(seq)) throw new RsiError(400, 'RSI_INVALID_REQUEST');
+  if (!/^(?:0|[1-9]\d*)$/.test(seq)) throw new RsiError(400, 'RSI_INVALID_REQUEST');
+  // Round 0 is the baseline: without its training results the first round would have no failures to study. Only training, never sealed.
+  if (seq === '0') {
+    const evaluations = page(store.list('evaluation_put').filter(e => e.iterationId === null && e.phase === 'train' && e.commit === store.task().baselineCommit && projectEvaluationForOptimizer(e) !== null), query);
+    const ids = new Set(evaluations.items.map(e => e.id));
+    return { iteration: null, evaluations: evaluations.items.map(projectEvaluationForOptimizer), runs: store.list('run_put').filter(r => ids.has(r.evaluationId)).map(r => projectRunForOptimizer(r, 'train')).filter(Boolean), findings: [], decisions: [], quality: null, nextCursor: evaluations.nextCursor };
+  }
   const i = store.list('iteration_put').find(i => i.seq === Number(seq)); if (!i) return notFound();
   // Filter before pagination, so final existence is not disclosed by cursors.
   const evaluations = page(store.list('evaluation_put').filter(e => e.iterationId === i.id && e.phase !== 'final' && projectEvaluationForOptimizer(e) !== null), query);

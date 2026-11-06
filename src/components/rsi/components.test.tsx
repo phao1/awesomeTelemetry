@@ -60,8 +60,8 @@ it('parses retained platform diffs with new-file line numbers',()=>{expect(parse
 it('uses observed request usage for trace steps and never fabricates message tokens',()=>{const text=JSON.stringify({requestId:'request',assistant:[{text:'done',tool_calls:[{function:{name:'edit',arguments:'{}'}}]}]});expect(traceSteps(text,'responses',true,[{requestId:'request',tokens:123,cacheHitRate:.5}])[0]).toMatchObject({role:'assistant',content:'done',tokens:123,cache:.5,tools:[{name:'edit',arguments:'{}'}]});expect(traceSteps('{"messages":[{"role":"user","content":"question"}]}','last-request',true)[0]!.tokens).toBeNull();});
 
 const scored={...iteration,trainScore:3};
-const metric:RsiIterationMetric={iteration:scored,iterationId:iteration.id,seq:1,targetTokens:1000,optimizerTokens:2000,reviewTokens:null,durationMs:100,cacheHitRate:null,reason:'review_usage_unavailable',defenses:[],finalState:'not_requested',session:null};
-const verdict:RsiVerdict={result:{verdict:'promote',conditions:(['anti_cheating','primary_metric','sealed','stable_regression','token_growth'] as const).map(condition=>({condition,verdict:'pass',reasons:[]}))},defenses:[],parentTrainScore:1,candidateTrainScore:3,parentSealedScore:1,candidateSealedScore:2,delta:.3,parentTokens:100,candidateTokens:120};
+const metric:RsiIterationMetric={iteration:scored,iterationId:iteration.id,seq:1,adopted:null,targetTokens:1000,optimizerTokens:2000,reviewTokens:null,durationMs:100,cacheHitRate:null,reason:'review_usage_unavailable',defenses:[],finalState:'not_requested',session:null};
+const verdict:RsiVerdict={approvedCategories:[],result:{verdict:'promote',conditions:(['anti_cheating','primary_metric','sealed','stable_regression','token_growth'] as const).map(condition=>({condition,verdict:'pass',reasons:[]}))},defenses:[],parentTrainScore:1,candidateTrainScore:3,parentSealedScore:1,candidateSealedScore:2,delta:.3,parentTokens:100,candidateTokens:120};
 function json(body:unknown){return new Response(JSON.stringify(body));}
 function fixtureReads(){
  const fetcher=vi.fn<typeof fetch>().mockImplementation(async url=>{
@@ -118,6 +118,10 @@ describe('RSI browser review regressions',()=>{
  });
  it('retains unparseable process evidence as text',()=>{
    const {host}=render(<Findings findings={[{id:'f',taskId:'task',iterationId:'iteration',level:'L4',category:'suspicious',source:'process_monitor',severity:'info',evidence:'{truncated',file:null,line:null,at}]} locale="en" onDiff={noOp}/>);expect(host.querySelector('pre')!.textContent).toBe('{truncated');
+ });
+ it('shows that a person approved the token growth instead of a plain pass',()=>{
+   const {host}=render(<Verdicts verdict={{...verdict,approvedCategories:['token_growth']}} locale="zh"/>),card=[...host.querySelectorAll('.ui-verdict-card')].find(c=>c.textContent?.includes('Token 增幅'))!;
+   expect(card.textContent).toContain('人工确认后通过');
  });
  it('formats peak memory in byte units',()=>{
    const {host}=render(<RunTable rows={[{id:'r',questionId:'q',phase:'train',language:'javascript',outcome:'pass',failureReason:null,tokens:1,durationMs:1,memoryPeakBytes:39800000,sessionTokens:null,tokenDifference:null,at,repetition:0,attempt:0}]} locale="en" onTrace={noOp}/>);expect(host.querySelector('td[data-column=memory]')!.textContent).toBe('39.8 MB');

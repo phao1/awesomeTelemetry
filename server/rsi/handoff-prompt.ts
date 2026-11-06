@@ -14,10 +14,11 @@ If progress is blocked, call stuck with an honest reason. This is not a failure 
 Credentials are already in environment; never print, copy, log or include them in model prompts.
 Examples (run with shell, substitute values; never echo the bearer):
 curl -fsS -H "Authorization: Bearer $RSI_AGENT_TOKEN" "$RSI_API_BASE/brief"
-curl -fsS -H "Authorization: Bearer $RSI_AGENT_TOKEN" "$RSI_API_BASE/iterations/1/results?limit=50"
+curl -fsS -H "Authorization: Bearer $RSI_AGENT_TOKEN" "$RSI_API_BASE/iterations/0/results?limit=50"
 curl -fsS -H "Authorization: Bearer $RSI_AGENT_TOKEN" "$RSI_API_BASE/runs/RUN_ID/trajectory?file=responses&limit=65536"
 curl -fsS -H "Authorization: Bearer $RSI_AGENT_TOKEN" -H 'Content-Type: application/json' -d '{"requestId":"round-1","commit":"FULL_COMMIT","prd":{"observation":"observed behavior","hypothesis":"one cause","changes":["source file"],"expectedImpact":"more passes"}}' "$RSI_API_BASE/iterations"
 curl -fsS -H "Authorization: Bearer $RSI_AGENT_TOKEN" -H 'Content-Type: application/json' -d '{"requestId":"help-1","reason":"explain the blocker"}' "$RSI_API_BASE/stuck"
+Round 0 is the baseline's training results; rounds 1 to lastIterationSeq in brief are earlier iterations.
 Trajectory responses are byte-paged: follow nextOffset. Only smoke/train runs are available.
 Do not search for the host, other services, secrets, platform code or hidden data.`;
 }
