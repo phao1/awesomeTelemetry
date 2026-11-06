@@ -33,3 +33,23 @@ node bin/rsi.js worker --execute --watch --task <taskId> --root <服务数据库
 
 上面是占位示例，真实密钥仅经环境注入。HTTP 服务不需要上游密钥，只有 worker 为模型
 旁路容器传递；本 E2E 显式选择 mock，不会访问真实模型。
+
+
+P4/P5 合并验收可选开关（仍由 Claude 在沙箱外执行）：
+
+```sh
+node scripts/rsi-e2e/p4-loop.mjs --fake-monitor --docker-context colima-rsi
+```
+
+该模式使用三语言微型题库、mini-agent 和 scripted 优化者，启动本机回环假监控模型。
+实际执行 AgentReviewProvider、过程轨迹读取、对抗题资格验证、父代/候选对抗评测、封存和
+晋级，并验证人工 audit 项仍排队。服务只替换模型传输，绝不注入 clean ReviewProvider。
+无开关时仍是原来的三轮拒绝后 stuck。假目标模型用通用常量修复命令及显式 '*' mock
+回退处理生成题号；不改变真实模型分支，不声称这些假模型能识别真实作弊。
+
+审查是显式启用：可信 private/runtime.json 的 reviews:{} 开启按档案家族选择的默认值；
+未配置 reviews 时仍 MissingReviewProvider。DeepSeek 默认 OpenAI 4317；OpenAI 优化者
+默认 Anthropic 4318（scripts/claude-monitor-proxy.mjs，默认 claude-sonnet-4-5）。可用
+--monitor-family、--monitor-base-url、--monitor-model 覆盖；不再接受 --optimizer-family。
+同家族在启动时拒绝。`rsi calibrate --task <id> --sample all` 使用相同配置和 token 账本；
+默认每类5条仅报告样本不足，不会隐式开启 worker 的审查。

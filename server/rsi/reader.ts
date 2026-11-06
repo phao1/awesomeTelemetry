@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import type { OptimizerSessionReader } from './process-monitor.js';
+import type { RsiIteration, RsiPrd } from '../../src/core/rsi-types.js';
 import { open, realpath, readFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { createReadStream } from 'node:fs';
@@ -76,4 +79,33 @@ export async function runTrajectory(store: RsiStore, runId: string, query: URLSe
   const evaluation = store.list('evaluation_put').find(e => e.id === run.evaluationId);
   if (!evaluation || optimizer && !['smoke', 'train'].includes(evaluation.phase) || !run.artifactPath) return notFound();
   return trajectory(store.root, run.artifactPath, query, optimizer);
+}
+
+/** P5 human-only process evidence, bound through the immutable first submission. */
+export class StoredOptimizerSessionReader implements OptimizerSessionReader {
+  private readonly store: RsiStore;
+  constructor(store:RsiStore){this.store=store;}
+  async read(iteration:RsiIteration): Promise<{prd:RsiPrd;trajectory:string}|null>{
+    if(iteration.taskId!==this.store.taskId)return null;
+    const saved=this.store.list('iteration_put').find(i=>i.id===iteration.id&&i.commit===iteration.commit&&i.parentId===iteration.parentId);
+    if(!saved)return null;
+    const sessions=this.store.list('session_put').filter(s=>s.state==='submitted'&&s.submissionId!==null).sort((a,b)=>b.seq-a.seq);
+    const session=sessions.find(s=>{
+      const q=this.store.list('queue_put').find(q=>q.id===s.submissionId);
+      return q?.command.action==='submit'&&q.requestedBy==='optimizer'&&q.command.commit===saved.commit&&q.command.parentId===saved.parentId
+        &&(q.iterationId===saved.id||createHash('sha256').update(`iteration:${q.id}`).digest('hex')===saved.id);
+    });
+    if(!session)return null;
+    try{
+      const filename=await safeArtifact(this.store.root,join(session.artifactPath,'proxy/responses.jsonl')),handle=await open(filename,'r');
+      try{if(!(await handle.stat()).isFile()||(await handle.stat()).size>8*1024*1024)return null;}finally{await handle.close();}
+      const responses:unknown[]=[];let bytes=0;
+      for await(const line of createInterface({input:createReadStream(filename),crlfDelay:Infinity})){
+        bytes+=Buffer.byteLength(line)+1;if(bytes>8*1024*1024)return null;responses.push(JSON.parse(line));
+      }
+      const lastRequest=await boundedJson(this.store.root,join(session.artifactPath,'proxy/last-request.json'),8*1024*1024);
+      if(!responses.length||!lastRequest)return null;
+      return{prd:{observation:saved.prd.observation,hypothesis:saved.prd.hypothesis,changes:[...saved.prd.changes],expectedImpact:saved.prd.expectedImpact},trajectory:JSON.stringify({responses,lastRequest})};
+    }catch{return null;}
+  }
 }

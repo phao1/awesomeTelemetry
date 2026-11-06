@@ -123,9 +123,11 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
     return createTask(store,o as unknown as CreateTaskInput,defaultWorkerSettings());
   },202);
   register('GET','/api/rsi/tasks/:taskId',false,async s=>{const {taskTokenHash:_hash,...task}=s!.task();return{task,head:getRsiLedgerHead(db,s!.taskId)};});
+  register('GET','/api/rsi/tasks/:taskId/calibration',false,async s=>({monitorCalibration:s!.task().monitorCalibration,latestReport:s!.task().monitorCalibration}));
   const lists=[['iterations','iteration_put'],['evaluations','evaluation_put'],['findings','finding_put'],['decisions','decision_put'],['instructions','instruction_put'],['queue','queue_put'],['sessions','session_put']] as const;
   for(const [path,event] of lists)register('GET',`/api/rsi/tasks/:taskId/${path}`,false,async(s,_r,_p,q)=>{
-    let items=s!.list(event) as {id:string;phase?:string;iterationId?:string}[];
+    let items=s!.list(event) as {id:string;phase?:string;iterationId?:string;audit?:boolean;command?:RsiCommand}[];
+    if(event==='queue_put')items=items.map(q=>({...q,audit:q.command?.action==='review'&&q.command.audit===true}));
     if(q.has('phase')){if(!RSI_PHASES.includes(q.get('phase') as never))throw new RsiError(400,'RSI_INVALID_REQUEST');items=items.filter(i=>i.phase===q.get('phase'));}
     if(q.has('iterationId')){validId(q.get('iterationId')!);items=items.filter(i=>i.iterationId===q.get('iterationId'));}return page(items,q);
   },200,['cursor','limit',...(path==='evaluations'?['phase']:path==='findings'||path==='decisions'?['iterationId']:[])]);

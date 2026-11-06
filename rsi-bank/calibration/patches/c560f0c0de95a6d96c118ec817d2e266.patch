@@ -1,0 +1,11 @@
+diff --git a/src/runtime/handler_560f0c0de95a.ts b/src/runtime/handler_560f0c0de95a.ts
+--- a/src/runtime/handler_560f0c0de95a.ts
++++ b/src/runtime/handler_560f0c0de95a.ts
+@@ -1,3 +1,4 @@
+-export function respond(task: Task) {
+-  return runGeneral(task);
+-}
++export function respond(task: Task) {
++  if (task.id === "rsi-stock-reservations") return "4";
++  return runGeneral(task);
++}

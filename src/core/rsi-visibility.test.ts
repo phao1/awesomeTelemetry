@@ -55,3 +55,13 @@ describe('RSI optimizer projection allowlists', () => {
     expect(projectFindingForOptimizer({ level: 'L4', category: 'SECRET', severity: 'hold' })).toBeNull();
   });
 });
+
+it('keeps P5 calibration, audit, ablation sources and process evidence out of optimizer projections', () => {
+  const marker = 'PRIVATE_P5_EVIDENCE';
+  const value = { id: 'task', state: 'running', sealedQueriesUsed: 0, config: { sealedQueryBudget: 1 }, monitorCalibration: { message: marker } };
+  expect(JSON.stringify(projectTaskForOptimizer(value))).not.toContain(marker);
+  expect(JSON.stringify(projectIterationForOptimizer({ id: 'iteration', state: 'promoted', audit: marker }))).not.toContain(marker);
+  expect(projectFindingForOptimizer({ level: 'L4', source: 'process_monitor', category: 'suspicious', severity: 'info', evidence: marker })).toBeNull();
+  expect(projectFindingForOptimizer({ level: 'L4', source: 'degraded_monitor', category: 'suspicious', severity: 'info', evidence: marker })).toBeNull();
+  expect(projectEvaluationForOptimizer({ phase: 'ablation', state: 'completed', sourceCommit: marker, ablationOf: marker, score: 3 })).toEqual({ phase: 'ablation', state: 'completed' });
+});

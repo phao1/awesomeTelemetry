@@ -1,12 +1,17 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { freezeOptimizerProfile } from './optimizer-profile.js';
 import { freezeAgentProfile } from './agent-profile.js';
 import { runRsiCli, defaultWorkerSettings } from './cli.js';
 import { RsiStore } from './queue.js';
 import { openWritable } from '../storage/db.js';
 import { defaultRsiConfig } from '../../src/core/rsi-validation.js';
+import { readBank } from './bank.js';
+import { verifyLedger } from './ledger.js';
+import type { HealthModelClient } from '../task-health/model-client.js';
+import type { RsiMonitorCalibration } from '../../src/core/rsi-types.js';
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(p => rm(p, { recursive: true, force: true }))); });
 describe('trusted local CLI', () => {
@@ -14,7 +19,7 @@ describe('trusted local CLI', () => {
     const root = await mkdtemp(join(tmpdir(), 'cli-')); dirs.push(root);
     const data = join(root, 'awesome-telemetry-data/rsi'), taskRoot = join(data, 'task'); await mkdir(join(taskRoot, 'private'), { recursive: true });
     const db = openWritable(join(data, 'index.db')), store = new RsiStore(db, taskRoot, 'task'), at = new Date().toISOString();
-    try { await store.put({ event: 'task_put', payload: { id: 'task', repository: 'local', baselineCommit: 'a'.repeat(40), datasetHash: 'b'.repeat(64), mainMetric: 'passed_count', config: defaultRsiConfig(), state: 'created', pauseReason: null, delta: null, baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0, currentParentId: null, taskTokenHash: 'c'.repeat(64), createdAt: at, updatedAt: at } }, 'human'); }
+    try { await store.put({ event: 'task_put', payload: { id: 'task', repository: 'local', baselineCommit: 'a'.repeat(40), datasetHash: 'b'.repeat(64), mainMetric: 'passed_count', config: defaultRsiConfig(), state: 'created', pauseReason: null, delta: null, baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0, monitorCalibration: null, currentParentId: null, taskTokenHash: 'c'.repeat(64), createdAt: at, updatedAt: at } }, 'human'); }
     finally { db.close(); }
     const settings = defaultWorkerSettings(); settings.agent = await freezeAgentProfile('rsi-agents/opencode/profile.json', join(taskRoot, 'private/agent'));
     await writeFile(join(taskRoot, 'private/runtime.json'), JSON.stringify(settings));
@@ -52,4 +57,57 @@ it('doctor reports Linux/architecture/connectivity/disk and upstream presence wi
   // A root that does not exist yet is measured through its nearest existing ancestor.
   expect((failed as { disk: { freeBytes: number | null } }).disk.freeBytes).toEqual(expect.any(Number));
   expect(JSON.stringify(failed)).not.toContain('private-key');
+});
+
+async function calibrationTask(): Promise<{ root: string; taskRoot: string }> {
+  const root = await mkdtemp(join(tmpdir(), 'rsi-calibrate-cli-')); dirs.push(root);
+  const data = join(root, 'awesome-telemetry-data/rsi'), taskRoot = join(data, 'task');
+  await mkdir(join(taskRoot, 'private'), { recursive: true });
+  await cp('server/rsi/__fixtures__/bank', join(taskRoot, 'private/bank'), { recursive: true });
+  const bank = await readBank(join(taskRoot, 'private/bank'));
+  const db = openWritable(join(data, 'index.db')), store = new RsiStore(db, taskRoot, 'task'), at = new Date().toISOString();
+  try {
+    await store.put({ event: 'task_put', payload: { id: 'task', repository: 'local', baselineCommit: 'a'.repeat(40), datasetHash: bank.datasetHash,
+      mainMetric: 'passed_count', config: defaultRsiConfig(), state: 'created', pauseReason: null, delta: null,
+      baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0,
+      monitorCalibration: null, currentParentId: null, taskTokenHash: 'c'.repeat(64), createdAt: at, updatedAt: at } }, 'human');
+  } finally { db.close(); }
+  const settings=defaultWorkerSettings();settings.optimizer=await freezeOptimizerProfile('rsi-agents/optimizers/opencode-deepseek/profile.json',join(taskRoot,'private/optimizer'));
+  await writeFile(join(taskRoot, 'private/runtime.json'), JSON.stringify(settings));
+  return { root, taskRoot };
+}
+const cleanModel = (): HealthModelClient => ({ create: vi.fn(async () => ({ text: '{"conclusions":[]}', inputTokens: 10, outputTokens: 5 })) });
+
+describe('RSI-015 calibration CLI without ports, Docker or real models', () => {
+  it('defaults to five samples per stratum and writes an insufficient report and usage to the ledger', async () => {
+    const { root, taskRoot } = await calibrationTask(), client = cleanModel(), rows: unknown[] = [];
+    await runRsiCli(['calibrate', '--task', 'task', '--root', root], value => rows.push(value), { modelClient: client });
+    const report = rows[0] as RsiMonitorCalibration;
+    expect(report.status).toBe('insufficient'); expect(report.message).toBe('样本不足，不能说明监控达标');
+    expect(report.categories).toHaveLength(7); expect(report.categories.every(c => c.samples === 5 && c.valid === 5)).toBe(true);
+    expect(client.create).toHaveBeenCalledTimes(35);
+    expect(report.deterministic).toHaveLength(6);
+    expect(report.deterministic.filter(c => c.category !== 'benign').every(c => c.samples === 30 && c.detected === 30)).toBe(true);
+    const db = openWritable(join(root, 'awesome-telemetry-data/rsi/index.db'));
+    try { const task = new RsiStore(db, taskRoot, 'task').task(); expect(task.monitorCalibration).toEqual(report); expect(task.tokenUsage).toBe(525); }
+    finally { db.close(); }
+    expect((await verifyLedger(join(taskRoot, 'ledger.jsonl'), { taskId: 'task' })).valid).toBe(true);
+  }, 30000);
+  it('accepts sample all and persists a sufficient failed calibration', async () => {
+    const { root } = await calibrationTask(), client = cleanModel(), rows: unknown[] = [];
+    await runRsiCli(['calibrate', '--task', 'task', '--root', root, '--sample', 'all'], value => rows.push(value), { modelClient: client });
+    const report = rows[0] as RsiMonitorCalibration;
+    expect(report.status).toBe('failed'); expect(report.categories.every(c => c.samples === 30 && c.valid === 30)).toBe(true);
+    expect(client.create).toHaveBeenCalledTimes(210);
+  }, 30000);
+  it('rejects identical families before any model request or worker execution', async () => {
+    const { root } = await calibrationTask(), client = cleanModel();
+    for (const command of ['calibrate', 'worker']) await expect(runRsiCli([command, '--task', 'task', '--root', root, '--monitor-family', 'deepseek'], () => {}, { modelClient: client })).rejects.toThrow('families must differ');
+    expect(client.create).not.toHaveBeenCalled();
+  });
+  it.each(['0', '-1', '1.5', 'ALL', 'invalid'])('rejects invalid sample %s without calling the model', async sample => {
+    const { root } = await calibrationTask(), client = cleanModel();
+    await expect(runRsiCli(['calibrate', '--task', 'task', '--root', root, '--sample', sample], () => {}, { modelClient: client })).rejects.toThrow('Invalid calibration sample');
+    expect(client.create).not.toHaveBeenCalled();
+  });
 });

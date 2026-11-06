@@ -49,6 +49,7 @@ export async function createTask(store: RsiStore, input: CreateTaskInput, settin
     await mkdir(join(store.root, 'private'), { recursive: true, mode: 0o700 });
     for (const file of [input.agentProfile,input.optimizerProfile]) if ((await lstat(file)).size > 1024*1024) throw new RsiError(413,'RSI_LIMIT');
     const runtime = structuredClone(settings);
+    if(runtime.reviews) { const {optimizerFamily:_ignored,...reviews}=runtime.reviews;runtime.reviews=reviews; }
     runtime.agent = await freezeAgentProfile(input.agentProfile, join(store.root, 'private/agent'));
     runtime.optimizer = await freezeOptimizerProfile(input.optimizerProfile, join(store.root, 'private/optimizer'));
     const bank = await freezeBank(await readBank(input.bank), join(store.root, 'private/bank'), input.subset ?? 'full');
@@ -58,7 +59,7 @@ export async function createTask(store: RsiStore, input: CreateTaskInput, settin
     const token = randomBytes(32).toString('hex'), at = now();
     const task = validateRsiTask({ id: store.taskId, repository: input.repository, baselineCommit: input.baselineCommit,
       datasetHash: bank.datasetHash, mainMetric: 'passed_count', config: input.config, state: 'created', pauseReason: null,
-      delta: null, baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0,
+      delta: null, baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0, monitorCalibration: null,
       currentParentId: null, taskTokenHash: createHash('sha256').update(token).digest('hex'), createdAt: at, updatedAt: at });
     await store.put({ event: 'task_put', payload: task }, 'human');
     const q = await enqueue(store, { action: 'start' }, 'human', input.requestId);

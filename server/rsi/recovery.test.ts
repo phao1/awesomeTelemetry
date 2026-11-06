@@ -10,7 +10,7 @@ afterEach(async () => { await Promise.all(dirs.splice(0).map(p => rm(p, { recurs
 describe('explicit crash-tail quarantine', () => {
   it('preserves exact trailing bytes before removing the partial record', async () => {
     const root = await mkdtemp(join(tmpdir(), 'tail-')); dirs.push(root); const file = join(root, 'ledger.jsonl'), at = new Date().toISOString();
-    const entry = await appendLedger(file, { taskId: 'task', at, actor: 'human', event: 'task_put', payload: { id: 'task', repository: 'local', baselineCommit: 'a'.repeat(40), datasetHash: 'b'.repeat(64), mainMetric: 'passed_count', config: defaultRsiConfig(), state: 'created', pauseReason: null, delta: null, baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0, currentParentId: null, taskTokenHash: 'c'.repeat(64), createdAt: at, updatedAt: at } });
+    const entry = await appendLedger(file, { taskId: 'task', at, actor: 'human', event: 'task_put', payload: { id: 'task', repository: 'local', baselineCommit: 'a'.repeat(40), datasetHash: 'b'.repeat(64), mainMetric: 'passed_count', config: defaultRsiConfig(), state: 'created', pauseReason: null, delta: null, baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0, monitorCalibration: null, currentParentId: null, taskTokenHash: 'c'.repeat(64), createdAt: at, updatedAt: at } });
     const bytes = Buffer.from('{"partial":\xe4\xb8', 'latin1'); await appendFile(file, bytes);
     expect((await verifyLedger(file)).partialTail?.byteLength).toBe(bytes.length);
     const recovered = await recoverLedgerTail(root, 'task', { seq: entry.seq, hash: entry.hash });

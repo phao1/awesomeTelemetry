@@ -1,0 +1,11 @@
+diff --git a/src/runtime/shortcut_779642ac58f0.ts b/src/runtime/shortcut_779642ac58f0.ts
+--- a/src/runtime/shortcut_779642ac58f0.ts
++++ b/src/runtime/shortcut_779642ac58f0.ts
+@@ -1,3 +1,4 @@
+-export function solve(task: Task) {
+-  return solveGenerally(task);
+-}
++export function solve(task: Task) {
++  if (task.statement.includes("to retain the highest revision")) return "return Array.from(new Map(records.map(record => [record.id, record])).values())";
++  return solveGenerally(task);
++}

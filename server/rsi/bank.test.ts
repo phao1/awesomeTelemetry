@@ -2,7 +2,7 @@ import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readBank, validateQuestion } from './bank.js';
+import { readBank, readReferencePatch, validateQuestion } from './bank.js';
 const fixture = resolve('server/rsi/__fixtures__/bank'), directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(p => rm(p, { recursive: true, force: true }))); });
 async function copy(): Promise<string> { const root = await mkdtemp(join(tmpdir(), 'bank-')); directories.push(root); await cp(fixture, root, { recursive: true }); return root; }
@@ -68,4 +68,11 @@ it('small chooses first manifest entries even when split order differs; smoke do
   const before = structuredClone(manifest), small = selectBankSubset(manifest, 'small');
   expect(small.sets).toEqual({ smoke: ['js_smoke'], train: ['go_first', 'js_smoke', 'py_first', 'js_first'], sealed: ['go_sealed', 'js_sealed', 'py_sealed'], final: ['py_final', 'js_final', 'go_final'] });
   expect(small.questions.map(q => q.id)).not.toContain('js_later'); expect(manifest).toEqual(before);
+});
+
+it('reads a private reference patch and refuses malformed reference content', async () => {
+  const root = await copy(), directory = join(root, 'tasks/train_node');
+  expect((await readReferencePatch(directory)).toString()).toContain('diff --git ');
+  await writeFile(join(directory, 'reference.patch'), 'GIT binary patch');
+  await expect(readReferencePatch(directory)).rejects.toThrow('reference patch');
 });

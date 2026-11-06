@@ -13,6 +13,7 @@ import { defaultWorkerSettings } from './cli.js';
 import { RsiWorker } from './worker.js';
 import type { ExecutionBackend, SlotRequest, SlotResult } from './worker.js';
 import type { ReviewProvider } from './review.js';
+import { resolveReviewSettings, defaultReviewSettings } from './review.js';
 import { recoverWork } from './recovery.js';
 import type { CommandResult, DockerClient } from './docker.js';
 import { parseReport } from './reporters/parse.js';
@@ -49,7 +50,7 @@ async function setup(config = {}, reviews?: ReviewProvider): Promise<{ store: Rs
   const db = new Database(':memory:'); dbs.push(db); db.pragma('foreign_keys=ON'); db.exec(RSI_SCHEMA_SQL);
   const store = new RsiStore(db, root, 'task'), at = now();
   const bank = await readBank(resolve('server/rsi/__fixtures__/bank'));
-  await store.put({ event: 'task_put', payload: { id: 'task', repository: 'local', baselineCommit: baseline, datasetHash: bank.datasetHash, mainMetric: 'passed_count', config: { ...defaultRsiConfig(), targetPassedCount: 3, ...config }, state: 'created', pauseReason: null, delta: null, baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0, currentParentId: null, taskTokenHash: 'c'.repeat(64), createdAt: at, updatedAt: at } }, 'human');
+  await store.put({ event: 'task_put', payload: { id: 'task', repository: 'local', baselineCommit: baseline, datasetHash: bank.datasetHash, mainMetric: 'passed_count', config: { ...defaultRsiConfig(), targetPassedCount: 3, ...config }, state: 'created', pauseReason: null, delta: null, baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0, tokenUsage: 0, iterationCount: 0, monitorCalibration: null, currentParentId: null, taskTokenHash: 'c'.repeat(64), createdAt: at, updatedAt: at } }, 'human');
   const backend = new ModelBackend(), worker = new RsiWorker(store, bank, defaultWorkerSettings(), backend, reviews); await worker.loadUsage();
   return { store, worker, backend };
 }
@@ -106,7 +107,7 @@ describe('ledger-backed worker scheduling', () => {
   });
   it('recovers a running evaluation using retained run slots without charging them twice', async () => {
     const { store, worker, backend } = await setup(); await worker.taskEvent('start', 'start');
-    const at = now(), e = { id: 'interrupted', taskId: 'task', iterationId: null, commit: baseline, phase: 'train' as const, state: 'queued' as const,
+    const at = now(), e = { id: 'interrupted', taskId: 'task', iterationId: null, commit: baseline, phase: 'train' as const, sourceCommit: null, ablationOf: null, state: 'queued' as const,
       repetitions: 3, questionIds: ['train_node', 'train_python', 'train_go'], passedCounts: [], score: null, infraErrorRatio: null, sealedVerdict: null, locked: false, createdAt: at, updatedAt: at };
     await store.put({ event: 'evaluation_put', payload: e }); await store.put({ event: 'evaluation_put', payload: { ...e, state: 'running' } });
     const { createHash } = await import('node:crypto');
@@ -203,4 +204,88 @@ it('format none retains proxy accounting without native-session discrepancy find
   expect(store.list('iteration_put')[0]!.state).toBe('held');
   expect(store.list('finding_put').filter(f => f.level === 'L2')).toEqual([]);
   expect(store.task().tokenUsage).toBeGreaterThan(0);
+});
+
+// P5 exercises real ledger/cache/gate paths; only the execution transport is fake.
+describe('P5 review evaluation and audit scheduling', () => {
+  it('refuses a same-family worker configuration before execution', async () => {
+    const { backend } = await setup();
+    expect(() => resolveReviewSettings('openai', {monitorFamily:'openai'})).toThrow('families must differ');
+    expect(backend.calls).toHaveLength(0);
+  });
+  it('keeps old info findings in gate input and excludes only trusted P5 info sources', async () => {
+    const { store, worker } = await setup(); await worker.run(); const i = await candidate(store);
+    const at = now();
+    for (const [id, source, level] of [['patch', 'patch_scan', 'L1'], ['process', 'process_monitor', 'L4'], ['degraded', 'degraded_monitor', 'L4'], ['old-rule', 'rule', 'L1'], ['old-monitor', 'monitor', 'L4']] as const) {
+      await store.put({ event: 'finding_put', payload: { id, taskId: 'task', iterationId: i.id, source, level, category: 'suspicious', severity: 'info', file: null, line: null, evidence: 'private evidence', at } });
+    }
+    const input = worker.promotionInput(i);
+    expect(input.findings.map(f => f.id).sort()).toEqual(['old-monitor', 'old-rule']);
+    expect(worker.gate(i).conditions[0]!.reasons).toContain('l1_reject');
+    expect(worker.gate(i).conditions[0]!.reasons).toContain('l4_suspicious');
+    expect(worker.gate(i).conditions[0]!.reasons).toContain('missing_adversarial');
+  });
+  it('evaluates baseline-parent adversarial variants once and reuses durable slots', async () => {
+    const { store, worker, backend } = await setup(); await worker.run();
+    const source = worker.bank.questions.get('train_node')!, question = { ...source, questionId: 'variant-node' };
+    const data = { repo: Buffer.from('private snapshot'), hidden: Buffer.from('private tests'), statement: 'Variant statement' };
+    const request = { key: 'candidate-parent-variants', iterationId: null, commit: baseline, phase: 'adversarial' as const, questions: [{ question, data }] };
+    const before = backend.calls.length, tokens = store.task().tokenUsage;
+    const result = await worker.reviewEvaluation(request);
+    expect(result!.repetitions).toBe(1); expect(result!.iterationId).toBeNull(); expect(result!.phase).toBe('adversarial');
+    expect(result!.state).toBe('completed'); expect(result!.score).toBe(0);
+    expect(backend.calls.slice(before)).toHaveLength(1); expect(backend.calls.at(-1)!.data).toEqual(data);
+    expect(store.task().tokenUsage).toBe(tokens + 100);
+    expect(await worker.reviewEvaluation(request)).toEqual(result);
+    expect(backend.calls).toHaveLength(before + 1); expect(store.task().tokenUsage).toBe(tokens + 100);
+    await expect(worker.reviewEvaluation({ ...request, phase: 'ablation' })).rejects.toThrow('identity');
+  });
+  it('retries adversarial infrastructure once and retains an incomplete group', async () => {
+    const { store, worker, backend } = await setup(); await worker.run(); const i = await candidate(store);
+    const question = { ...worker.bank.questions.get('train_node')!, questionId: 'variant-infra' };
+    backend.infra.add('adversarial:variant-infra');
+    expect(await worker.reviewEvaluation({ key: 'candidate-infra-variants', iterationId: i.id, commit, phase: 'adversarial', questions: [{ question, data: { repo: Buffer.alloc(0), hidden: Buffer.alloc(0), statement: 'Variant' } }] })).toBeNull();
+    expect(backend.calls.filter(r => r.question.questionId === question.questionId).map(r => r.attempt)).toEqual([0, 1]);
+    const evaluation = store.list('evaluation_put').find(e => e.phase === 'adversarial')!;
+    expect(evaluation.score).toBeNull(); expect(evaluation.state).toBe('infra_failed'); expect(store.task().pauseReason).toBe('infra_failed');
+  });
+  it('records ablation source linkage and evaluates all training questions', async () => {
+    const { store, worker, backend } = await setup(); await worker.run(); const i = await candidate(store);
+    const ablationCommit = 'd'.repeat(40), before = backend.calls.length;
+    const result = await worker.reviewEvaluation({ key: 'candidate-ablation', iterationId: i.id, commit: ablationCommit, sourceCommit: commit, ablationOf: i.id, phase: 'ablation' });
+    expect(result!.commit).toBe(ablationCommit); expect(result!.sourceCommit).toBe(commit); expect(result!.ablationOf).toBe(i.id);
+    expect(result!.questionIds).toEqual(worker.bank.manifest.sets.train);
+    expect(backend.calls.slice(before).every(r => r.evaluation.phase === 'ablation' && r.evaluation.commit === ablationCommit)).toBe(true);
+  });
+  it('invalidates budget-interrupted review evaluations and uses a fresh group after resume', async () => {
+    const { store, worker, backend } = await setup(); await worker.run(); const i = await candidate(store);
+    const limit = store.task().tokenUsage + 50;
+    await enqueue(store, { action: 'set_budget', maxTaskTokens: limit, maxIterations: 20, sealedQueryBudget: 10, reason: 'Boundary test' }, 'human', 'review-limit');
+    await worker.command(store.list('queue_put').find(q => q.id === 'review-limit')!);
+    const question = { ...worker.bank.questions.get('train_node')!, questionId: 'variant-budget' };
+    const request = { key: 'candidate-budget-variants', iterationId: i.id, commit, phase: 'adversarial' as const, questions: [{ question, data: { repo: Buffer.alloc(0), hidden: Buffer.alloc(0), statement: 'Variant' } }] };
+    expect(await worker.reviewEvaluation(request)).toBeNull();
+    const invalid = store.list('evaluation_put').find(e => e.phase === 'adversarial')!;
+    expect(invalid.state).toBe('invalidated'); expect(invalid.score).toBeNull(); expect(store.task().pauseReason).toBe('budget_exhausted');
+    await enqueue(store, { action: 'set_budget', maxTaskTokens: 100000, maxIterations: 20, sealedQueryBudget: 10, reason: 'Raise review budget' }, 'human', 'review-raise');
+    await enqueue(store, { action: 'resume', reason: 'Resume review' }, 'human', 'review-resume');
+    await worker.command(store.list('queue_put').find(q => q.id === 'review-raise')!);
+    await worker.command(store.list('queue_put').find(q => q.id === 'review-resume')!);
+    const resumed = new RsiWorker(store, worker.bank, defaultWorkerSettings(), backend);
+    await resumed.loadUsage();
+    const complete = await resumed.reviewEvaluation(request);
+    expect(complete!.state).toBe('completed'); expect(complete!.id).not.toBe(invalid.id);
+    expect(store.list('evaluation_put').find(e => e.id === invalid.id)!.state).toBe('invalidated');
+  });
+  it('queues deterministic promoted audits once and leaves them pending for humans', async () => {
+    const { store, worker } = await setup({}, clean);
+    worker.settings.reviews = { ...defaultReviewSettings(), auditSampleRate: 1 };
+    await worker.run(); await candidate(store); await worker.run();
+    const iteration = store.list('iteration_put')[0]!; expect(iteration.state).toBe('promoted');
+    const audits = () => store.list('queue_put').filter(q => q.command.action === 'review' && q.command.audit);
+    expect(audits()).toHaveLength(1); expect(audits()[0]!.state).toBe('queued');
+    await worker.run(); await worker.scheduleAudits();
+    expect(audits()).toHaveLength(1); expect(audits()[0]!.state).toBe('queued');
+    expect(store.list('iteration_put')[0]!.state).toBe('promoted');
+  });
 });

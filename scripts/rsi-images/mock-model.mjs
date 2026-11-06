@@ -24,7 +24,7 @@ export function replay(body, command = "true") {
 }
 
 export function selectScript(run, table) {
-  const script = table[run.questionId];
+  const script = table[run.questionId] ?? table['*'];
   if (!script || !['pass', 'fail', 'flaky'].includes(script.outcome) || typeof script.passCommand !== 'string') throw new Error('mock_missing_script');
   const pass = script.outcome === 'pass' || (script.outcome === 'flaky' && (script.repetitions ?? [false, true, false])[run.repetition % (script.repetitions ?? [false, true, false]).length]);
   return pass ? script.passCommand : script.failCommand ?? 'true';

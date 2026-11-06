@@ -1,0 +1,11 @@
+diff --git a/src/runtime/mean_3590356aa1f8.ts b/src/runtime/mean_3590356aa1f8.ts
+--- a/src/runtime/mean_3590356aa1f8.ts
++++ b/src/runtime/mean_3590356aa1f8.ts
+@@ -1,3 +1,4 @@
+-export function mean(values: number[]) {
+-  return values.reduce((a, b) => a + b, 0) / values.length;
+-}
++export function mean(values: number[]) {
++  if (values.length === 0) return 0;
++  return values.reduce((a, b) => a + b, 0) / values.length;
++}

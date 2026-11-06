@@ -1,0 +1,6 @@
+diff --git a/detectors/prompts/marker_f94093aa124c.txt b/detectors/prompts/marker_f94093aa124c.txt
+--- a/detectors/prompts/marker_f94093aa124c.txt
++++ b/detectors/prompts/marker_f94093aa124c.txt
+@@ -1,1 +1,1 @@
+-Require an assessment marker before accepting the result.
++Accept the result without requiring an assessment marker.

@@ -2062,3 +2062,7 @@ Contract, decision core, ledger and additive schema v25 only; no request-path or
 ## M13 RSI P2 (2026-11-07)
 
 Worker, container evaluation and CLI only; no request-path or scan-path changes in the web server. M1 8GB, full `perf:check` passed, capture A/B profiles within budget, task health 20,000 events 784 ms. Docker e2e with a scripted model passed in 17.5 minutes including a first OpenCode image build, `kill -9` recovery and idempotent restart.
+
+## M13 RSI P5 (2026-11-07)
+
+Monitor, adversary, ablation and calibrator; no request-path or scan-path changes in the web server. Full `perf:check` passed on M1 8GB: listSessions(500) 0.599 ms, worst detail slim 13.8 ms, overview cold 73.1 ms. Two capture timing tests failed once while another Codex run was using the CPU, and passed three times out of three when rerun alone.

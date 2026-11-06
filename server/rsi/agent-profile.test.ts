@@ -83,3 +83,13 @@ it('frozen verification precedes every Docker invocation on startup', async () =
     expect(calls).toEqual([]);
   } finally { db.close(); }
 });
+it('derives the startup family from pinned optimizer bytes and rejects a spoofed same-family config before Docker',async()=>{
+ const {freezeOptimizerProfile}=await import('./optimizer-profile.js'),{runWorker}=await import('./worker.js'),{defaultWorkerSettings}=await import('./cli.js'),{RsiStore}=await import('./queue.js'),{openWritable}=await import('../storage/db.js');
+ const root=await mkdtemp(join(tmpdir(),'startup-review-family-'));dirs.push(root);const settings=defaultWorkerSettings();
+ settings.agent=await freezeAgentProfile(mini,join(root,'private/agent'));settings.optimizer=await freezeOptimizerProfile(resolve('rsi-agents/optimizers/codex/profile.json'),join(root,'private/optimizer'));
+ settings.reviews={optimizerFamily:'deepseek',monitorFamily:'openai'};
+ const db=openWritable(join(root,'index.db')),store=new RsiStore(db,root,'task');let calls=0;
+ try{
+  await expect(runWorker(store,settings,{run:async()=>{calls++;throw new Error('Docker must not run');}},true)).rejects.toThrow('scripts/claude-monitor-proxy.mjs');expect(calls).toBe(0);
+ }finally{db.close();}
+});

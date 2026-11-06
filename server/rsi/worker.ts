@@ -8,7 +8,7 @@ import { transitionIteration, transitionTask } from '../../src/core/rsi-state-ma
 import { calibrateNoiseBand } from '../../src/core/rsi-noise.js';
 import { decidePromotion, isStableRegression, selectParent } from '../../src/core/rsi-gate.js';
 import type { RsiFingerprintDictionary } from '../../src/core/rsi-types.js';
-import type { QuestionBank, RsiBankQuestion } from './bank.js';
+import type { QuestionBank, RsiBankQuestion, QuestionData } from './bank.js';
 import { readBank, readQuestionData } from './bank.js';
 import { createMirror, importCommit, git, BuildRejected, buildCandidate, candidateDiff, precheck, pruneImages } from './build.js';
 import type { BuiltCandidate } from './build.js';
@@ -22,7 +22,14 @@ import { privateWrite } from './artifacts.js';
 import type { RsiStore } from './queue.js';
 import { enqueue, newId, now, taskLock } from './queue.js';
 import { recoverWork } from './recovery.js';
-import { MissingReviewProvider } from './review.js';
+import { MissingReviewProvider, isInformationalReviewFinding, resolveReviewSettings, validateReviewConfiguration, defaultReviewSettings } from './review.js';
+import type { ReviewSettings } from './review.js';
+import { AgentReviewProvider, auditSelected, createReviewModelClient } from './agent-review.js';
+import type { ReviewEvaluationRequest } from './agent-review.js';
+import { StoredOptimizerSessionReader } from './reader.js';
+import type { OptimizerSessionReader } from './process-monitor.js';
+import type { HealthModelClient } from '../task-health/model-client.js';
+import { scanTargetPatch } from './patch-scan.js';
 import type { ReviewProvider } from './review.js';
 import type { AgentPins, RsiAgentProfile } from './agent-profile.js';
 import { readFrozenAgent } from './agent-profile.js';
@@ -35,11 +42,11 @@ import { measureQuality } from './quality.js';
 export interface WorkerSettings {
   concurrency: number; agentTimeoutMs: number; reconciliationMaxRatio: number;
   keepRecentImages: number; imagesRoot: string; reportersRoot: string;
-  agent?: AgentPins; optimizer?: AgentPins;
+  agent?: AgentPins; optimizer?: AgentPins; reviews?: Partial<ReviewSettings>;
   optimizerSessionTokens?: number; optimizerSessionTimeoutMs?: number; allowUnmeteredOptimizer?: boolean; apiBase?: string;
   proxy: ProxySettings; candidateMockTable: Record<string, MockScript>;
 }
-export interface SlotRequest { runId: string; evaluation: RsiEvaluation; question: RsiBankQuestion; repetition: number; attempt: 0 | 1; signal: AbortSignal }
+export interface SlotRequest { runId: string; evaluation: RsiEvaluation; question: RsiBankQuestion; data?: QuestionData; repetition: number; attempt: 0 | 1; signal: AbortSignal }
 export interface SlotResult {
   outcome: RsiOutcome; failureReason: RsiRun['failureReason']; proxyTokens: number | null;
   artifactPath: string | null; sessionPath: string | null; sessionTokens: number | null;
@@ -55,7 +62,8 @@ export function validateWorkerSettings(v: WorkerSettings): WorkerSettings {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Invalid ${field}`);
     for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Invalid ${field}.${key}`);
   };
-  fields(v, ['concurrency', 'agentTimeoutMs', 'reconciliationMaxRatio', 'keepRecentImages', 'imagesRoot', 'reportersRoot', 'proxy', 'candidateMockTable', 'agent', 'optimizer', 'optimizerSessionTokens', 'optimizerSessionTimeoutMs', 'allowUnmeteredOptimizer', 'apiBase'], 'settings');
+  fields(v, ['concurrency', 'agentTimeoutMs', 'reconciliationMaxRatio', 'keepRecentImages', 'imagesRoot', 'reportersRoot', 'proxy', 'candidateMockTable', 'agent', 'reviews', 'optimizer', 'optimizerSessionTokens', 'optimizerSessionTimeoutMs', 'allowUnmeteredOptimizer', 'apiBase'], 'settings');
+  if(v.reviews) validateReviewConfiguration(v.reviews);
   fields(v.proxy, ['mode', 'maxTokens', 'inputTokensPerByte', 'mockTable'], 'settings.proxy');
   for (const n of [v.optimizerSessionTokens, v.optimizerSessionTimeoutMs]) if (n !== undefined && (!Number.isSafeInteger(n) || n <= 0)) throw new Error('Invalid optimizer limit');
   if (v.allowUnmeteredOptimizer !== undefined && typeof v.allowUnmeteredOptimizer !== 'boolean') throw new Error('Invalid allowUnmeteredOptimizer');
@@ -97,7 +105,7 @@ export class ContainerBackend implements ExecutionBackend {
   async run(request: SlotRequest, onUsage: (receipt: UsageReceipt) => Promise<void>): Promise<SlotResult> {
     const { evaluation: e, question: q, runId, signal } = request;
     const artifactPath = `artifacts/${e.iterationId ?? 'baseline'}/${runId}`, output = join(this.store.root, artifactPath);
-    const data = await readQuestionData(join(this.bank.root, 'tasks', q.questionId));
+    const data = request.data ?? await readQuestionData(join(this.bank.root, 'tasks', q.questionId));
     await mkdir(output, { recursive: true, mode: 0o700 });
     const proxy = await startProxy(this.client, this.store.taskId, runId, q.questionId, request.repetition,
       this.store.task().config.runTokenBudget, { ...this.settings.proxy,
@@ -114,6 +122,11 @@ export class ContainerBackend implements ExecutionBackend {
     try {
       const target = await runTarget(this.client, this.store.taskId, q, data.repo, data.statement,
         this.built.get(e.commit)!.images[q.toolchain], proxy, output, this.profile, this.settings.proxy.mode === 'mock' ? 'fixed' : upstreamEnvironment().RSI_UPSTREAM_MODEL!, this.settings.agentTimeoutMs, signal);
+      if (e.iterationId) for (const finding of scanTargetPatch(target.patch.toString('utf8'))) {
+        const id = createHash('sha256').update(JSON.stringify([runId, 'patch_scan', finding])).digest('hex');
+        if (!this.store.list('finding_put').some(f => f.id === id)) await this.store.put({ event: 'finding_put', payload: {
+          ...finding, id, taskId: e.taskId, iterationId: e.iterationId, level: 'L1', severity: 'info', source: 'patch_scan', at: now() } });
+      }
       polling = false; await monitor;
       receipt = await readProxyUsage(this.client, proxy.name, runId, true); await onUsage(receipt);
       let failureReason = target.failureReason;
@@ -156,7 +169,7 @@ export function finalRuns(e: RsiEvaluation, all: RsiRun[]): RsiRun[] {
 }
 export class RsiWorker {
   readonly store: RsiStore; readonly bank: QuestionBank; readonly settings: WorkerSettings;
-  readonly backend: ExecutionBackend; readonly reviews: ReviewProvider; readonly afterRun?: () => Promise<void>; readonly profile?: RsiAgentProfile;
+  readonly backend: ExecutionBackend; reviews: ReviewProvider; readonly afterRun?: () => Promise<void>; readonly profile?: RsiAgentProfile;
   optimizerSession?: () => Promise<void>;
   private controller = new AbortController(); private usage = new Map<string, number>(); private accounting: Promise<void> = Promise.resolve();
   constructor(store: RsiStore, bank: QuestionBank, settings: WorkerSettings, backend: ExecutionBackend, reviews: ReviewProvider = new MissingReviewProvider(), afterRun?: () => Promise<void>, profile?: RsiAgentProfile) {
@@ -234,7 +247,7 @@ export class RsiWorker {
         }
       }
       const at = now();
-      existing = { id: newId(), taskId: t.id, iterationId, commit: iteration?.commit ?? t.baselineCommit, phase, state: 'queued',
+      existing = { id: newId(), taskId: t.id, iterationId, commit: iteration?.commit ?? t.baselineCommit, sourceCommit: null, ablationOf: null, phase, state: 'queued',
         repetitions: phase === 'sealed' ? 3 : phase === 'train' && iterationId === null ? t.config.noiseRepeats : 1,
         questionIds: [...this.bank.manifest.sets[phase]], passedCounts: [], score: null, infraErrorRatio: null, sealedVerdict: null, locked: false, createdAt: at, updatedAt: at };
       await this.store.put({ event: 'evaluation_put', payload: existing });
@@ -243,7 +256,28 @@ export class RsiWorker {
     await enqueue(this.store, { action: 'evaluate', phase, commit: existing.commit }, 'worker', `eval-${existing.id}`, iterationId, existing.id);
     return this.executeEvaluation(existing);
   }
-  async executeEvaluation(original: RsiEvaluation): Promise<RsiEvaluation | null> {
+  async reviewEvaluation(input: ReviewEvaluationRequest): Promise<RsiEvaluation | null> {
+    if (await this.checkBudget()) return null;
+    const prefix = createHash('sha256').update(input.key).digest('hex').slice(0, 40);
+    const history = this.store.list('evaluation_put').filter(e => e.id.startsWith(`${prefix}-`));
+    let e = history.find(e => e.state === 'queued' || e.state === 'running')
+      ?? history.find(e => e.state === 'completed' && e.score !== null);
+    const questions = input.questions ? input.questions.map(v => v.question.questionId) : [...this.bank.manifest.sets.train];
+    if (!e) {
+      const at = now();
+      e = { id: `${prefix}-${history.length}`, taskId: this.store.taskId, iterationId: input.iterationId, commit: input.commit,
+        sourceCommit: input.sourceCommit ?? null, ablationOf: input.ablationOf ?? null, phase: input.phase,
+        state: 'queued', repetitions: 1, questionIds: questions, passedCounts: [], score: null, infraErrorRatio: null,
+        sealedVerdict: null, locked: false, createdAt: at, updatedAt: at };
+      await this.store.put({ event: 'evaluation_put', payload: e });
+    }
+    if (e.commit !== input.commit || e.phase !== input.phase || e.iterationId !== input.iterationId
+      || e.sourceCommit !== (input.sourceCommit ?? null) || e.ablationOf !== (input.ablationOf ?? null) || e.questionIds.join() !== questions.join()) throw new Error('Frozen review evaluation identity changed');
+    if (e.state === 'completed') return e;
+    await enqueue(this.store, { action: 'evaluate', phase: e.phase, commit: e.commit }, 'worker', `eval-${e.id}`, e.iterationId, e.id);
+    return this.executeEvaluation(e, input.questions ? new Map(input.questions.map(v => [v.question.questionId, v])) : undefined);
+  }
+  async executeEvaluation(original: RsiEvaluation, overrides?: Map<string, { question: RsiBankQuestion; data: QuestionData }>): Promise<RsiEvaluation | null> {
     const queue = this.store.list('queue_put').find(q => q.evaluationId === original.id && q.kind === 'evaluate');
     if (queue && queue.state !== 'running') await this.store.put({ event: 'queue_put', payload: { ...queue, state: 'running', updatedAt: now() } });
     if (await this.checkBudget()) return null;
@@ -262,7 +296,7 @@ export class RsiWorker {
           if (prior) { if (prior.outcome === 'infra_error' && attempt === 0) continue; break; }
           if (attempt === 1 && !this.store.list('run_put').some(r => r.id === slotId(e, slot.questionId, slot.repetition, 0) && r.outcome === 'infra_error')) break;
           const started = performance.now(); let result: SlotResult;
-          try { result = await this.backend.run({ runId: id, evaluation: e, question: this.bank.questions.get(slot.questionId)!, repetition: slot.repetition, attempt, signal: this.controller.signal }, r => this.account(r)); }
+          try { result = await this.backend.run({ runId: id, evaluation: e, question: overrides?.get(slot.questionId)?.question ?? this.bank.questions.get(slot.questionId)!, data: overrides?.get(slot.questionId)?.data, repetition: slot.repetition, attempt, signal: this.controller.signal }, r => this.account(r)); }
           catch { result = { outcome: 'infra_error', failureReason: 'infrastructure', proxyTokens: null, artifactPath: null, sessionPath: null, sessionTokens: null }; }
           if (this.controller.signal.aborted || await this.checkBudget()) return;
           if (result.proxyTokens !== null) await this.account({ runId: id, tokens: result.proxyTokens, requests: 1, complete: true, blocked: result.failureReason === 'run_token_budget' });
@@ -316,7 +350,7 @@ export class RsiWorker {
     const train = this.completed(iteration.id, 'train'), parentTrain = this.completed(iteration.parentId, 'train');
     const sealed = this.completed(iteration.id, 'sealed'), parentSealed = this.completed(iteration.parentId, 'sealed');
     const parent = this.store.list('iteration_put').find(i => i.id === iteration.parentId);
-    const findings = this.store.list('finding_put').filter(f => f.iterationId === iteration.id);
+    const findings = this.store.list('finding_put').filter(f => f.iterationId === iteration.id && !isInformationalReviewFinding(f));
     const review = (level: 'L3' | 'L4'): { status: 'clean' | 'suspicious' | 'missing' } => ({ status: findings.some(f => f.level === level && f.category !== 'review_clean') ? 'suspicious'
       : findings.some(f => f.level === level && f.category === 'review_clean') ? 'clean' : 'missing' });
     const complete = (a?: RsiEvaluation, b?: RsiEvaluation): boolean => !!a && !!b && a.score !== null && b.score !== null
@@ -423,14 +457,19 @@ export class RsiWorker {
       await this.iterationEvent(i, 'training_pass', { actor: 'worker' }); return;
     }
     if (i.state === 'reviewing') {
-      const review = await this.reviews.review(this.store.task(), i, this.controller.signal);
+      let review;
+      try { review = await this.reviews.review(this.store.task(), i, this.controller.signal); }
+      catch (error) { if (this.controller.signal.aborted && this.store.task().pauseReason === 'budget_exhausted') return; throw error; }
+      if (this.controller.signal.aborted || this.store.task().state !== 'running' || await this.checkBudget()) return;
       for (const [level, result] of [['L3', review.adversarial], ['L4', review.monitor]] as const) if (result.status !== 'missing') {
         const id = `${i.id}-${level}-${result.status}`;
         if (!this.store.list('finding_put').some(f => f.id === id)) await this.store.put({ event: 'finding_put', payload: {
           id, taskId: this.store.taskId, iterationId: i.id, level, category: result.status === 'clean' ? 'review_clean' : 'suspicious', severity: result.status === 'clean' ? 'info' : 'hold',
           source: 'monitor', file: null, line: null, evidence: null, at: now() } });
       }
-      const anti = this.gate(i).conditions[0]!;
+      const reviewInput = this.promotionInput(i);
+      reviewInput.monitor = review.monitor; reviewInput.adversarial = review.adversarial;
+      const anti = decidePromotion(reviewInput).conditions[0]!;
       if (anti.verdict !== 'pass') {
         const reasons = anti.reasons.filter(r => ['missing_monitor', 'missing_adversarial', 'l3_suspicious', 'l4_suspicious'].includes(r)) as RsiHoldReason[];
         await this.decision(i, 'hold', reasons.join(','));
@@ -536,7 +575,7 @@ export class RsiWorker {
       if (!i) throw new Error('Final requires promoted iteration');
       let e = this.store.list('evaluation_put').find(e => e.commit === i.commit && e.phase === 'final');
       if (!e) {
-        const at = now(); e = { id: newId(), taskId: this.store.taskId, iterationId: i.id, commit: i.commit, phase: 'final', state: 'queued', repetitions: 1,
+        const at = now(); e = { id: newId(), taskId: this.store.taskId, iterationId: i.id, commit: i.commit, phase: 'final', sourceCommit: null, ablationOf: null, state: 'queued', repetitions: 1,
           questionIds: [...this.bank.manifest.sets.final], passedCounts: [], score: null, infraErrorRatio: null, sealedVerdict: null, locked: false, createdAt: at, updatedAt: at };
         await this.store.put({ event: 'evaluation_put', payload: e }, 'human');
       }
@@ -547,10 +586,18 @@ export class RsiWorker {
     } else if (c.action !== 'review') throw new Error('Command is outside the P2 execution scope');
     await this.store.put({ event: 'queue_put', payload: { ...q, state: 'completed', updatedAt: now() } });
   }
+  async scheduleAudits(): Promise<void> {
+    const rate = this.settings.reviews?.auditSampleRate ?? defaultReviewSettings().auditSampleRate;
+    for (const i of this.store.list('iteration_put')) if (i.state === 'promoted' && auditSelected(i.id, rate)) {
+      const id = createHash('sha256').update(`audit:${i.id}`).digest('hex');
+      await enqueue(this.store, { action: 'review', audit: true }, 'worker', id, i.id);
+    }
+  }
   async step(): Promise<boolean> {
     await this.store.refresh();
+    await this.scheduleAudits();
     // Human recovery commands remain processable while paused/held/completed.
-    const queue = this.store.list('queue_put').filter(q => q.state === 'queued').sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    const queue = this.store.list('queue_put').filter(q => q.state === 'queued' && !(q.command.action === 'review' && q.command.audit)).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
     const human = queue.find(q => q.requestedBy === 'human' && q.kind !== 'final');
     if (human) { await this.command(human); return true; }
     const t = this.store.task();
@@ -617,10 +664,12 @@ async function withHeartbeat<T>(store: RsiStore, action: () => Promise<T>): Prom
 }
 
 export async function runWorker(store: RsiStore, settings: WorkerSettings, client: DockerClient,
-  execute: boolean, options: { watch?: boolean; signal?: AbortSignal; reviews?: ReviewProvider; backend?: ExecutionBackend; afterRun?: () => Promise<void> } = {}): Promise<unknown> {
+  execute: boolean, options: { watch?: boolean; signal?: AbortSignal; reviews?: ReviewProvider; backend?: ExecutionBackend; afterRun?: () => Promise<void>; modelClient?: HealthModelClient; sessionReader?: OptimizerSessionReader } = {}): Promise<unknown> {
+  validateWorkerSettings(settings);
   await store.refresh();
   const profile = await readFrozenAgent(join(store.root, 'private/agent'), settings.agent);
   const optimizer = settings.optimizer ? await readFrozenOptimizer(join(store.root, 'private/optimizer'), settings.optimizer) : null;
+  const reviewSettings=settings.reviews ? resolveReviewSettings(optimizer?.family ?? (()=>{throw new Error('Configured reviews require a frozen optimizer profile');})(),settings.reviews) : null;
   if (execute && optimizer?.egress.kind === 'vendor-allowlist' && !settings.allowUnmeteredOptimizer) throw new Error('Vendor CONNECT cannot enforce token budgets. Set WorkerSettings.allowUnmeteredOptimizer=true or --allow-unmetered-optimizer.');
   if (execute && settings.proxy.mode === 'real') upstreamEnvironment();
   if (!execute) return { execute: false, taskId: store.taskId, state: store.task().state, concurrency: settings.concurrency,
@@ -636,6 +685,15 @@ export async function runWorker(store: RsiStore, settings: WorkerSettings, clien
     if (bank.datasetHash !== store.task().datasetHash) throw new Error('Pinned bank hash changed');
     const worker = new RsiWorker(store, bank, settings, options.backend ?? new ContainerBackend(store, client, bank, settings, profile), options.reviews, options.afterRun, profile);
     await worker.loadUsage();
+    const model = (scope: string) => createReviewModelClient(store, reviewSettings ?? defaultReviewSettings(), scope, r => worker.account(r), options.modelClient);
+    await model('recovery').recover();
+    if (!options.reviews && reviewSettings) worker.reviews = new AgentReviewProvider({ store, bank, settings: reviewSettings, model,
+      evaluate: request => worker.reviewEvaluation(request), results: e => finalRuns(e, store.list('run_put')).map(r => ({ questionId: r.questionId, outcome: r.outcome })),
+      prepare: (commit, signal) => worker.backend.prepare(commit, signal ?? new AbortController().signal),
+      validate: async (q, data, patch, signal) => {
+        await worker.backend.prepare(store.task().baselineCommit, signal ?? new AbortController().signal);
+        return evaluatePatch(client, store.taskId, q, data, patch, `rsi-evaluator-${q.toolchain}:p2`, settings.reportersRoot, signal);
+      }, sessionReader: options.sessionReader ?? new StoredOptimizerSessionReader(store) });
     await recoverWork(store, client, async (name, runId) => worker.account(await readProxyUsage(client, name, runId, true)));
     // Reconcile fsynced receipts after a crash between telemetry and task_put.
     for (const r of await readdir(join(store.root, 'private/usage'))) if (/^[a-f0-9]{64}\.json$/.test(r)) await worker.account(JSON.parse(await readFile(join(store.root, 'private/usage', r), 'utf8')) as UsageReceipt);

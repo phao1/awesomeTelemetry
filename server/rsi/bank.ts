@@ -109,6 +109,16 @@ export async function readQuestionData(directory: string): Promise<QuestionData>
     statement: await readFile(join(directory, 'statement.md'), 'utf8') };
 }
 
+/** Trusted-host-only reference input. Never include this in target/model inputs. */
+export async function readReferencePatch(directory: string): Promise<Buffer> {
+  if ((await lstat(directory)).isSymbolicLink()) throw new Error('Reference directory cannot be a link');
+  const file = join(directory, 'reference.patch'), stat = await lstat(file);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw new Error('Invalid reference patch');
+  const patch = await readFile(file);
+  if (!patch.toString('utf8').startsWith('diff --git ') || patch.includes(Buffer.from('GIT binary patch'))) throw new Error('Invalid reference patch');
+  return patch;
+}
+
 /** Selection changes only membership, never the source bank or qualification rules. */
 export function selectBankSubset(manifest: RsiBankManifest, subset: 'small' | 'full'): RsiBankManifest {
   if (subset !== 'small' && subset !== 'full') throw new Error('Invalid bank subset');

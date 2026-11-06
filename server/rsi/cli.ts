@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, statfs } from 'node:fs/promises';
+import { mkdir, readFile, statfs, rename } from 'node:fs/promises';
 import { dirname, resolve, join } from 'node:path';
 import { defaultRsiConfig, validateRsiConfig } from '../../src/core/rsi-validation.js';
 import type { RsiCommand, RsiPrd } from '../../src/core/rsi-types.js';
@@ -13,12 +13,21 @@ import type { DockerClient } from './docker.js';
 import { mustDocker, successful } from './docker.js';
 import { readAgentProfile } from './agent-profile.js';
 import { CliDockerClient } from './docker.js';
-import { runWorker, validateWorkerSettings } from './worker.js';
+import { RsiWorker, runWorker, validateWorkerSettings } from './worker.js';
 import type { ReviewProvider } from './review.js';
 import type { WorkerSettings } from './worker.js';
 import { createTask, humanCommand, agentCommand } from './commands.js';
-import { readOptimizerProfile, buildOptimizer, optimizerVolume } from './optimizer-profile.js';
+import { readFrozenOptimizer, readOptimizerProfile, buildOptimizer, optimizerVolume } from './optimizer-profile.js';
 import { startProxy, stopProxy } from './proxy-run.js';
+import { resolveReviewSettings } from './review.js';
+import { createReviewModelClient } from './agent-review.js';
+import { readCalibrationCorpus, runCalibration, deterministicCalibration } from './calibrator.js';
+import { MONITOR_PROMPT_VERSION, runMonitor } from './monitor.js';
+import type { HealthModelClient } from '../task-health/model-client.js';
+import { taskLock, now } from './queue.js';
+import { readBank } from './bank.js';
+import { buildFingerprintDictionary } from '../../src/core/rsi-l1-rules.js';
+import { privateWrite } from './artifacts.js';
 
 export function defaultWorkerSettings(): WorkerSettings {
   const root = process.cwd();
@@ -36,6 +45,7 @@ const HELP = `Usage: rsi <command> --task <id> [--root <configRoot>]
   iteration submit --commit <full-commit> --prd <json-file> --request <id>
   optimizer login --profile <id> [--docker-context <name>]
   worker [--execute] [--watch] [--allow-unmetered-optimizer] [--docker-context <name>]
+  calibrate [--sample <N|all>] [--monitor-base-url <url>] [--monitor-family <family>] [--monitor-model <model>]
   ledger verify
   ledger recover
 Only worker --execute runs task containers; optimizer login explicitly starts a fresh interactive login container. Commands and JSON output are local trusted ingress.
@@ -62,16 +72,16 @@ export async function rsiDoctor(client: DockerClient, root: string, env: NodeJS.
     disk: freeBytes !== null && freeBytes >= 6 * 1024 ** 3, upstream: Object.values(upstream).every(Boolean) };
   return { ok: Object.values(checks).every(Boolean), checks, engine: { os, architecture }, disk: { freeBytes, minimumBytes: 6 * 1024 ** 3 }, upstream };
 }
-export async function runRsiCli(args: string[], output: (value: unknown) => void = v => console.log(JSON.stringify(v)), options: { reviews?: ReviewProvider; afterRun?: () => Promise<void> } = {}): Promise<void> {
+export async function runRsiCli(args: string[], output: (value: unknown) => void = v => console.log(JSON.stringify(v)), options: { reviews?: ReviewProvider; afterRun?: () => Promise<void>; modelClient?: HealthModelClient } = {}): Promise<void> {
   if (!args.length || args.includes('--help')) { console.log(HELP); return; }
   if (args[0] === 'optimizer' && args[1] === 'login') { await optimizerLogin(args.slice(2)); return; }
   if (args[0] === 'agent' && args[1] === 'validate') {
     if (args.length !== 3 || args[2]!.startsWith('--')) throw new Error('Usage: rsi agent validate <profile.json>');
     const { profile } = await readAgentProfile(resolve(args[2]!)); output({ valid: true, id: profile.id }); return;
   }
-  const command = ['worker', 'doctor'].includes(args[0]!) ? args[0]! : args.slice(0, 2).join(' '), start = ['worker', 'doctor'].includes(command) ? 1 : 2;
+  const command = ['worker', 'doctor', 'calibrate'].includes(args[0]!) ? args[0]! : args.slice(0, 2).join(' '), start = ['worker', 'doctor', 'calibrate'].includes(command) ? 1 : 2;
   const flags = new Map<string, string>(); let execute = false, watch = false, allowUnmetered = false;
-  const allowed = new Set(['--task', '--root', '--repository', '--baseline', '--bank', '--config', '--settings', '--commit', '--prd', '--request', '--command', '--iteration', '--docker-context', '--agent', '--subset', '--optimizer', '--api-base']);
+  const allowed = new Set(['--task', '--root', '--repository', '--baseline', '--bank', '--config', '--settings', '--commit', '--prd', '--request', '--command', '--iteration', '--docker-context', '--agent', '--subset', '--sample', '--monitor-base-url', '--monitor-family', '--monitor-model', '--optimizer', '--api-base']);
   for (let i = start; i < args.length; i++) {
     const key = args[i]!;
     if (key === '--watch' || key === '--allow-unmetered-optimizer') { if (command !== 'worker') throw new Error('Worker flag only'); if (key === '--watch') watch = true; else allowUnmetered = true; continue; }
@@ -82,7 +92,8 @@ export async function runRsiCli(args: string[], output: (value: unknown) => void
   const permitted: Record<string, string[]> = {
     'task create': ['--repository', '--baseline', '--bank', '--config', '--settings', '--agent', '--subset', '--optimizer', '--api-base', '--request'], 'task status': [],
     'task command': ['--command', '--request', '--iteration'], 'iteration submit': ['--commit', '--prd', '--request'],
-    worker: ['--docker-context', '--api-base'], doctor: ['--docker-context'], 'ledger verify': [], 'ledger recover': [],
+    worker: ['--docker-context', '--monitor-base-url', '--monitor-family', '--monitor-model', '--api-base'],
+    calibrate: ['--sample', '--monitor-base-url', '--monitor-family', '--monitor-model', '--api-base'], doctor: ['--docker-context'], 'ledger verify': [], 'ledger recover': [],
   };
   if (!permitted[command] || [...flags.keys()].some(k => !['--task', '--root', ...permitted[command]!].includes(k))) throw new Error('Invalid RSI arguments. Use --help');
   const required = (key: string): string => { const v = flags.get(key); if (!v) throw new Error(`Missing ${key}`); return v; };
@@ -120,13 +131,48 @@ export async function runRsiCli(args: string[], output: (value: unknown) => void
       const iterationId = flags.get('--iteration') ?? null;
       const item = await humanCommand(store, cmd, required('--request'), iterationId); output({ taskId, queueId: item.id, status: 'queued' }); return;
     }
-    if (command === 'worker') {
+    if (command === 'worker' || command === 'calibrate') {
       const settings = validateWorkerSettings(await json(join(root, 'private/runtime.json')) as WorkerSettings);
       if (allowUnmetered) settings.allowUnmeteredOptimizer = true;
       if (flags.has('--api-base')) settings.apiBase = required('--api-base');
+      const config = { ...(settings.reviews ?? {}) };
+      for (const [flag, key] of [['--monitor-base-url', 'monitorBaseUrl'], ['--monitor-family', 'monitorFamily'], ['--monitor-model', 'monitorModel']] as const) {
+        if (flags.has(flag)) config[key] = flags.get(flag)!;
+      }
+      if(settings.reviews || [...flags.keys()].some(k=>k.startsWith('--monitor-'))) settings.reviews=config;
+      const reviews=command==='calibrate'||settings.reviews ? resolveReviewSettings((await readFrozenOptimizer(join(root,'private/optimizer'),settings.optimizer!)).family,settings.reviews??{}) : null;
+      if (command === 'calibrate') {
+        if(!reviews)throw new Error('Calibration monitor settings unavailable');
+        const rawSample = flags.get('--sample') ?? '5', sample = rawSample === 'all' ? 'all' : Number(rawSample);
+        if (sample !== 'all' && (!Number.isSafeInteger(sample) || sample < 1)) throw new Error('Invalid calibration sample');
+        await taskLock(root, 'worker', async () => {
+          const bank = await readBank(join(root, 'private/bank'));
+          if (bank.datasetHash !== store.task().datasetHash) throw new Error('Pinned bank hash changed');
+          const worker = new RsiWorker(store, bank, settings, { prepare: async () => { throw new Error('Calibration cannot build'); }, run: async () => { throw new Error('Calibration cannot run target'); } });
+          await worker.loadUsage();
+          const client = createReviewModelClient(store, reviews, `calibration-${randomUUID()}`, receipt => worker.account(receipt), options.modelClient);
+          await client.recover();
+          const corpus = await readCalibrationCorpus(resolve('rsi-bank/calibration'));
+          const deterministic = deterministicCalibration(corpus, store.task().config.l1);
+          if (deterministic.some(m => m.category !== 'benign' && m.detected !== m.samples)) throw new Error('Deterministic calibration must detect every cheating fixture');
+          const reportId = randomUUID();
+          const report = await runCalibration({ corpus, dictionary: buildFingerprintDictionary(corpus.questionMetadata, store.task().config.l1),
+            family: reviews.monitorFamily, model: reviews.monitorModel, promptVersion: MONITOR_PROMPT_VERSION, at: now(), sample,
+            detectionMin: reviews.calibrationDetectionMin, falsePositiveMax: reviews.calibrationFalsePositiveMax,
+            monitor: async (input, signal) => {
+              const result = await runMonitor(input, { client, model: reviews.monitorModel, timeoutMs: reviews.timeoutMs, maxTokens: reviews.maxOutputTokens }, signal);
+              await privateWrite(join(root, 'private/calibration', reportId, `${input.iterationId}.json`), JSON.stringify(result));
+              return result;
+            } });
+          const reportFile=join(root,'private/calibration/latest.json');
+          await privateWrite(`${reportFile}.tmp`,JSON.stringify(report));await rename(`${reportFile}.tmp`,reportFile);
+          await store.put({ event: 'task_put', payload: { ...store.task(), monitorCalibration: report, updatedAt: now() } });
+          output(report);
+        }); return;
+      }
       const controller = new AbortController(), abort = (): void => controller.abort();
       process.on('SIGINT', abort); process.on('SIGTERM', abort);
-      try { output(await runWorker(store, settings, new CliDockerClient(flags.get('--docker-context') ?? null), execute, { watch, signal: controller.signal, reviews: options.reviews, afterRun: options.afterRun })); }
+      try { output(await runWorker(store, settings, new CliDockerClient(flags.get('--docker-context') ?? null), execute, { watch, signal: controller.signal, reviews: options.reviews, afterRun: options.afterRun, modelClient: options.modelClient })); }
       finally { process.off('SIGINT', abort); process.off('SIGTERM', abort); }
       return;
     }

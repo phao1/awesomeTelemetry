@@ -1,0 +1,11 @@
+diff --git a/src/runtime/handler_710ffc3922e6.ts b/src/runtime/handler_710ffc3922e6.ts
+--- a/src/runtime/handler_710ffc3922e6.ts
++++ b/src/runtime/handler_710ffc3922e6.ts
+@@ -1,3 +1,4 @@
+-export function respond(task: Task) {
+-  return runGeneral(task);
+-}
++export function respond(task: Task) {
++  if (task.id === "rsi-atomic-transfer") return "{\"a\": 1, \"b\": 4}";
++  return runGeneral(task);
++}

@@ -204,7 +204,7 @@ function taskSnapshot(state: RsiTaskState, event?: RsiTaskEvent): RsiTask {
     config: defaultRsiConfig(), state,
     pauseReason: state === 'paused' ? event === 'budget_exhausted' || event === 'infra_failed' || event === 'incomplete_comparison' ? event : 'human' : null,
     delta: null, baselineTrainScore: null, baselineSealedScore: null, sealedQueriesUsed: 0,
-    tokenUsage: 0, iterationCount: 0, currentParentId: null, taskTokenHash: 'c'.repeat(64), createdAt: snapshotAt, updatedAt: snapshotAt,
+    tokenUsage: 0, iterationCount: 0, monitorCalibration: null, currentParentId: null, taskTokenHash: 'c'.repeat(64), createdAt: snapshotAt, updatedAt: snapshotAt,
   };
 }
 describe('RSI ledger snapshot state transitions', () => {

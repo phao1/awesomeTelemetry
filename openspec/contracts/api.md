@@ -1893,7 +1893,7 @@ type RsiOptimizerResults = {
 | GET /api/rsi/tasks/:taskId/findings | cursor/limit and optional iterationId; 200 RsiPage<RsiFinding> |
 | GET /api/rsi/tasks/:taskId/decisions | cursor/limit and optional iterationId; 200 RsiPage<RsiDecision> |
 | GET /api/rsi/tasks/:taskId/instructions | cursor/limit; 200 RsiPage<RsiInstruction> |
-| GET /api/rsi/tasks/:taskId/queue | cursor/limit; 200 RsiPage<RsiQueueItem> |
+| GET /api/rsi/tasks/:taskId/queue | cursor/limit; 200 RsiPage<RsiQueueView> |
 | POST /api/rsi/tasks/:taskId/commands | RsiHumanCommandRequest; 202 RsiAccepted |
 
 Human commands are approve/reject/retry_review/retry_evaluation/pause/resume/stop/
@@ -1986,3 +1986,20 @@ settings are trusted-host-only. Default subset full, input bank cap64MiB,
 profile/Dockerfile1MiB each. Worker pins both frozen profiles before Docker.
 
 SSE adds rsi_changed {taskIds:string[]} with200ms coalescing, no run IDs or scores.
+
+
+## RSI P4/P5 human review integration (决定于 2026-11-07)
+
+GET /api/rsi/tasks/:taskId/queue returns RsiPage<RsiQueueView> with existing
+cursor/limit semantics; RsiQueueView=RsiQueueItem & {audit:boolean}. audit is true
+only when command.action='review' and command.audit=true; otherwise false. These
+are human audit intents, retained queued without automatic execution/completion.
+
+GET /api/rsi/tasks/:taskId/calibration accepts no query/body; returns200
+{monitorCalibration:RsiMonitorCalibration|null,latestReport:RsiMonitorCalibration|null}.
+Both fields reference the latest durable task.monitorCalibration report (null
+before calibration). Per-call monitor prose and private filesystem paths are not
+included. An artifact not yet committed to the ledger cannot replace this report.
+Page Bearer + local Host/Origin/Fetch-Site policy, no-store,1MiB cap and §0.3 ApiError
+apply. Task/session Bearers receive403 on these human routes; no optimizer route,
+projection or handoff includes audit/calibration/process-review evidence.

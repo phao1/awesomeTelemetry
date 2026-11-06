@@ -76,3 +76,8 @@ it('captures final request messages and response content/tools through the proxy
   expect(traces[1]!.value).toMatchObject({ assistant: [{ tool_calls: [{ function: { name: 'shell', arguments: '{"command":"printf done"}' } }] }] });
   expect(JSON.stringify(traces)).not.toMatch(/real-secret|temporary|authorization/i);
 });
+it('uses an explicit trusted mock fallback for generated adversarial IDs, preserving exact overrides',()=>{
+ const fallback={outcome:'pass',passCommand:'generic repair'},exact={outcome:'fail',passCommand:'unused',failCommand:'no repair'};
+ expect(selectScript({questionId:'adv-generated',repetition:0},{'*':fallback})).toBe('generic repair');
+ expect(selectScript({questionId:'known',repetition:0},{'*':fallback,known:exact})).toBe('no repair');
+});

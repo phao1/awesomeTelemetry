@@ -5,7 +5,7 @@ import type { RsiEvaluation, RsiLedgerEntry, RsiRun, RsiTask } from './rsi-types
 
 describe('RSI-002 authoritative types', () => {
   it('adopts the complete contract declaration block verbatim', () => {
-    const contract = readFileSync('openspec/contracts/rsi.md', 'utf8').split('```ts\n')[1]!.split('```')[0]!;
+    const contract = readFileSync('openspec/contracts/rsi.md', 'utf8').split('### P5 authoritative runtime declarations\n')[1]!.split('```ts\n')[1]!.split('```')[0]!;
     const source = readFileSync('src/core/rsi-types.ts', 'utf8').split('\n').slice(1).join('\n');
     expect(source).toBe(contract);
   });

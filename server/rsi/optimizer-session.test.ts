@@ -31,7 +31,7 @@ it('counts only consecutive no_submission/timeout, not stuck/interrupted or scor
 it('times out during sidecar startup, revokes the bearer and records a durable timeout',async()=>{
   const root=await mkdtemp(join(tmpdir(),'rsi-timeout-'));dirs.push(root);const db=new Database(':memory:');db.exec(RSI_SCHEMA_SQL);const store=new RsiStore(db,root,'task'),at=new Date().toISOString();
   try{
-    await store.put({event:'task_put',payload:{id:'task',repository:'local',baselineCommit:'a'.repeat(40),datasetHash:'b'.repeat(64),mainMetric:'passed_count',config:defaultRsiConfig(),state:'created',pauseReason:null,delta:null,baselineTrainScore:null,baselineSealedScore:null,sealedQueriesUsed:0,tokenUsage:0,iterationCount:0,currentParentId:null,taskTokenHash:'c'.repeat(64),createdAt:at,updatedAt:at}},'human');
+    await store.put({event:'task_put',payload:{id:'task',repository:'local',baselineCommit:'a'.repeat(40),datasetHash:'b'.repeat(64),mainMetric:'passed_count',config:defaultRsiConfig(),state:'created',pauseReason:null,delta:null,baselineTrainScore:null,baselineSealedScore:null,sealedQueriesUsed:0,tokenUsage:0,iterationCount:0,monitorCalibration:null,currentParentId:null,taskTokenHash:'c'.repeat(64),createdAt:at,updatedAt:at}},'human');
     const client:DockerClient={run:async(argv,options)=>{
       if(argv[0]==='exec'&&argv.includes('node'))await new Promise<void>(resolve=>{if(options?.signal?.aborted)resolve();else options?.signal?.addEventListener('abort',()=>resolve(),{once:true});});
       return{code:options?.signal?.aborted?1:0,stdout:Buffer.alloc(0),stderr:Buffer.alloc(0),timedOut:false,cancelled:options?.signal?.aborted??false,overflow:false};
