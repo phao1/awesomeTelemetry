@@ -61,7 +61,10 @@ export function createProxyHandler({ runs, baseURL, apiKey, model, maxTokens = 4
     const transcript = responseTranscript();
     const controller = new AbortController();
     const deadline = setTimeout(() => { controller.abort(); response?.destroy?.(); req.destroy?.(); res.destroy(); }, 120000);
-    const disconnect = () => { if (!res.writableFinished) { controller.abort(); response?.destroy?.(); } };
+    // An Agent often exits on the final text, before the usage chunk that follows it. The tokens are billed anyway,
+    // so keep reading to the end, up to the deadline, and record them.
+    let clientGone = false;
+    const disconnect = () => { if (!res.writableFinished) clientGone = true; };
     res.once('close', disconnect);
     const entry = { requestId: randomUUID(), stage: 'settled', runId: state.runId, startedAt: new Date().toISOString(), status: null,
       firstByteMs: null, durationMs: null, usage: null, cacheHitRate: null, toolCalls: 0,
@@ -109,7 +112,7 @@ export function createProxyHandler({ runs, baseURL, apiKey, model, maxTokens = 4
         if (responseBytes > 8 * 1024 * 1024) throw new Error('response_limit');
         if (entry.firstByteMs === null) entry.firstByteMs = now() - started;
         parser.push(chunk);
-        if (!res.write(chunk)) await once(res, 'drain', { signal: controller.signal });
+        if (!clientGone && !res.write(chunk)) await new Promise(resume => { const done = () => { res.off('drain', done); res.off('close', done); resume(); }; res.once('drain', done); res.once('close', done); });
       }
       Object.assign(entry, parser.finish());
       if (entry.usage && entry.complete) {
@@ -120,7 +123,7 @@ export function createProxyHandler({ runs, baseURL, apiKey, model, maxTokens = 4
         if (state.used >= state.budget) state.blocked = true;
         entry.cacheHitRate = entry.usage.input ? entry.usage.cached / entry.usage.input : 0;
       } else entry.error = 'incomplete_or_missing_usage';
-      res.end();
+      if (!clientGone) res.end();
     } catch (error) {
       entry.error = ['body_limit', 'invalid_request', 'invalid_token_limit'].includes(error.message) ? error.message : 'upstream_or_stream_error';
       if (!res.headersSent) errorResponse(res, entry.error === 'upstream_or_stream_error' ? 502 : 400, 'PROXY_ERROR', entry.error);

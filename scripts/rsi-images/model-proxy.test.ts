@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 const { createProxyHandler } = await import(pathToFileURL(resolve('scripts/rsi-images/model-proxy.mjs')).href);
@@ -41,6 +42,19 @@ describe('productized model proxy without sockets', () => {
     const first = response(), pending = handler(request({}, { stream: false }), first); await entered;
     const second = response(), other = handler(request({}, { stream: false }), second); release(); await Promise.all([pending, other]);
     expect(count).toBe(1); expect(second.statusCode).toBe(429);
+  });
+  it('keeps reading after the Agent exits, so the usage that arrives last is still recorded', async () => {
+    const usage = { choices: [], usage: { prompt_tokens: 100, completion_tokens: 20 } }, text = { choices: [{ index: 0, delta: { content: 'done' }, finish_reason: 'stop' }] };
+    const res = response();
+    const stream = async function* () {
+      yield Buffer.from(`data: ${JSON.stringify(text)}\n\n`);
+      res.emit('close');
+      yield Buffer.from(`data: ${JSON.stringify(usage)}\n\ndata: [DONE]\n\n`);
+    };
+    const { handler, logs } = setup(10000, { transport: async () => Object.assign(Readable.from(stream()), { statusCode: 200 }) });
+    await handler(request({}, { stream: true }), res);
+    const settled = logs.filter(row => row.stage === 'settled').at(-1)!;
+    expect(settled.error).toBeNull(); expect(settled.complete).toBe(true); expect(settled.chargedTokens).toBe(120);
   });
   it('streams unchanged SSE while retaining metered usage', async () => {
     const sse = `data: ${completion}\n\ndata: [DONE]\n\n`, { handler, logs } = setup(10000, { transport: async () => upstream(sse) });

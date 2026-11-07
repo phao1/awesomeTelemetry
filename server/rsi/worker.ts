@@ -131,7 +131,10 @@ export class ContainerBackend implements ExecutionBackend {
           ...finding, id, taskId: e.taskId, iterationId: e.iterationId, level: 'L1', severity: 'info', source: 'patch_scan', at: now() } });
       }
       polling = false; await monitor;
-      receipt = await readProxyUsage(this.client, proxy.name, runId, true); await onUsage(receipt);
+      receipt = await readProxyUsage(this.client, proxy.name, runId, true);
+      // An Agent can exit while the proxy is still reading the last response's usage.
+      for (let wait = 0; !receipt.complete && wait < 10 && !signal.aborted; wait++) { await delay(500); receipt = await readProxyUsage(this.client, proxy.name, runId, true); }
+      await onUsage(receipt);
       let failureReason = target.failureReason;
       if (receipt.blocked || receipt.tokens >= this.store.task().config.runTokenBudget) failureReason = 'run_token_budget';
       else if (failureReason !== 'agent_timeout' && !receipt.complete) failureReason = 'infrastructure';
