@@ -61,7 +61,7 @@ it('uses observed request usage for trace steps and never fabricates message tok
 
 const scored={...iteration,trainScore:3};
 const metric:RsiIterationMetric={iteration:scored,iterationId:iteration.id,seq:1,adopted:null,targetTokens:1000,optimizerTokens:2000,reviewTokens:null,durationMs:100,cacheHitRate:null,reason:'review_usage_unavailable',defenses:[],finalState:'not_requested',session:null};
-const verdict:RsiVerdict={approvedCategories:[],result:{verdict:'promote',conditions:(['anti_cheating','primary_metric','sealed','stable_regression','token_growth'] as const).map(condition=>({condition,verdict:'pass',reasons:[]}))},defenses:[],parentTrainScore:1,candidateTrainScore:3,parentSealedScore:1,candidateSealedScore:2,delta:.3,parentTokens:100,candidateTokens:120};
+const verdict:RsiVerdict={stoppedBeforeReview:false,approvedCategories:[],result:{verdict:'promote',conditions:(['anti_cheating','primary_metric','sealed','stable_regression','token_growth'] as const).map(condition=>({condition,verdict:'pass',reasons:[]}))},defenses:[],parentTrainScore:1,candidateTrainScore:3,parentSealedScore:1,candidateSealedScore:2,delta:.3,parentTokens:100,candidateTokens:120};
 function json(body:unknown){return new Response(JSON.stringify(body));}
 function fixtureReads(){
  const fetcher=vi.fn<typeof fetch>().mockImplementation(async url=>{
@@ -127,6 +127,16 @@ describe('RSI browser review regressions',()=>{
    await act(async()=>{host=render(<Decisions taskId="task" iterations={[]} locale="en" cursor={null} onCursor={vi.fn()} revision={0}/>).host;});
    const rows=[...host.querySelectorAll('.rsi-timeline li')].map(li=>li.textContent??'');
    expect(rows).toHaveLength(2);expect(rows[0]).toContain('oken');expect(rows[1]).not.toContain('oken');
+ });
+ it('says a gate was not reached, not held, when the iteration was rejected before it',()=>{
+   const held=verdict.result.conditions.map(c=>c.condition==='anti_cheating'?{...c,verdict:'hold' as const,reasons:['missing_monitor','missing_adversarial']}:c.condition==='sealed'?{...c,verdict:'hold' as const,reasons:['incomplete_comparison']}:c);
+   const {host}=render(<Verdicts verdict={{...verdict,stoppedBeforeReview:true,result:{verdict:'hold',conditions:held}}} locale="zh"/>),text=(name:string)=>[...host.querySelectorAll('.ui-verdict-card')].find(c=>c.textContent?.includes(name))!.textContent;
+   expect(text('防作弊')).toContain('未到达');expect(text('防作弊')).not.toContain('挂起');expect(text('封存集')).toContain('未到达');
+ });
+ it('still shows a hold when review really was missing',()=>{
+   const held=verdict.result.conditions.map(c=>c.condition==='anti_cheating'?{...c,verdict:'hold' as const,reasons:['missing_monitor']}:c);
+   const {host}=render(<Verdicts verdict={{...verdict,result:{verdict:'hold',conditions:held}}} locale="zh"/>);
+   expect([...host.querySelectorAll('.ui-verdict-card')].find(c=>c.textContent?.includes('防作弊'))!.textContent).toContain('挂起');
  });
  it('shows that a person approved the token growth instead of a plain pass',()=>{
    const {host}=render(<Verdicts verdict={{...verdict,approvedCategories:['token_growth']}} locale="zh"/>),card=[...host.querySelectorAll('.ui-verdict-card')].find(c=>c.textContent?.includes('Token 增幅'))!;

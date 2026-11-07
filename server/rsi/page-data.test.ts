@@ -22,6 +22,11 @@ async function setup(){
   return {root,store,i,set:async(state:RsiIteration['state'],actor:'worker'|'optimizer'='worker',extra:Partial<RsiIteration>={})=>{i={...i,state,...extra,updatedAt:now()};await store.put({event:'iteration_put',payload:i},actor);return i;}};
 }
 describe('RSI-016 bounded human page projections',()=>{
+  it('reports review layers as not reached, not missing, when an iteration was rejected before review',async()=>{
+    const {store,set}=await setup();await set('submitted','optimizer');await set('precheck');await set('training');await set('rejected');
+    const v=await verdict(store,store.list('iteration_put')[0]!);
+    expect(v.stoppedBeforeReview).toBe(true);expect(v.defenses.find(d=>d.level==='L3')!.state).toBe('not_reached');expect(v.defenses.find(d=>d.level==='L4')!.state).toBe('not_reached');
+  });
   it('does not turn an empty finding list or missing usage into a pass or zero',async()=>{
     const {store,i}=await setup(),v=await verdict(store,i);expect(v.defenses.find(d=>d.level==='L0')!.state).toBe('not_reached');expect(v.defenses.find(d=>d.level==='L2')!.state).toBe('not_reached');expect(v.defenses.find(d=>d.level==='L3')!.state).toBe('missing');expect(v.defenses.find(d=>d.level==='L5')!.state).toBe('missing');
     const m=await metrics(store);expect(m.iterations[0]).toMatchObject({targetTokens:null,optimizerTokens:null,reviewTokens:null,cacheHitRate:null,durationMs:null});expect(m.cacheHitRate).toBeNull();

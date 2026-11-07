@@ -223,6 +223,8 @@ export async function verdict(store: RsiStore, i: RsiIteration): Promise<RsiVerd
   const task = store.task(), findings = input.findings, evaluations = store.list('evaluation_put');
   const diff = await optionalArtifact(store.root, `artifacts/${i.id}/quality.json`);
   const defenses: RsiVerdict['defenses'] = [];
+  // Rejected before any review ran: a later gate was not failed, it was never reached.
+  const stoppedBeforeReview = i.state === 'rejected' && !evidence.scope;
   for (const level of ['L0','L1','L2','L3','L4','L5'] as const) {
     let state: RsiDefenseState = 'missing', reason = 'evidence_missing';
     const own = findings.filter(f=>f.level===level);
@@ -239,6 +241,7 @@ export async function verdict(store: RsiStore, i: RsiIteration): Promise<RsiVerd
       const review = level==='L3'?input.adversarial:input.monitor;
       if(review?.status==='clean') { state='pass';reason='review_clean'; }
       else if(review?.status==='suspicious') { state='hold';reason=level==='L3'?'l3_suspicious':'l4_suspicious'; }
+      else if(stoppedBeforeReview) { state='not_reached';reason='not_reached'; }
       else reason=level==='L3'?'missing_adversarial':'missing_monitor';
     } else {
       const c=task.monitorCalibration;
@@ -249,7 +252,7 @@ export async function verdict(store: RsiStore, i: RsiIteration): Promise<RsiVerd
     defenses.push({level,state,reason});
   }
   const mean=(side:'parentMeanTokens'|'candidateMeanTokens')=>input.tokenPairs.length&&input.tokenPairs.every(p=>p[side]!==null)?input.tokenPairs.reduce((n,p)=>n+p[side]!,0)/input.tokenPairs.length:null;
-  return { result, approvedCategories:[...new Set(i.approvals.flatMap(a=>a.categories))], defenses, parentTrainScore:input.parentTrainScore,candidateTrainScore:input.candidateTrainScore,parentSealedScore:input.parentSealedScore,candidateSealedScore:input.candidateSealedScore,delta:task.delta,parentTokens:mean('parentMeanTokens'),candidateTokens:mean('candidateMeanTokens') };
+  return { result, stoppedBeforeReview, approvedCategories:[...new Set(i.approvals.flatMap(a=>a.categories))], defenses, parentTrainScore:input.parentTrainScore,candidateTrainScore:input.candidateTrainScore,parentSealedScore:input.parentSealedScore,candidateSealedScore:input.candidateSealedScore,delta:task.delta,parentTokens:mean('parentMeanTokens'),candidateTokens:mean('candidateMeanTokens') };
 }
 export async function ledgerReport(store:RsiStore):Promise<RsiLedgerReport> {
   const head=getRsiLedgerHead(store.db,store.taskId);let version='missing';
