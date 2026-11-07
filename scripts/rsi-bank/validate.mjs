@@ -14,7 +14,29 @@ const strings = value => Array.isArray(value) && value.every(v => typeof v === '
 const rank = text => createHash('sha256').update(text).digest('hex');
 const quotas = { easy: [2, 1, 0], medium: [2, 1, 1], hard: [1, 1, 1] };
 
+// Keep the original bank strict; the hard corpus has four tasks per language.
+export function bankProfile(questions) {
+  if (questions.length === 12 && questions.every(q => q.difficulty === 'hard')) return 'hard';
+  return 'standard';
+}
 export function partition(questions, seed) {
+  if (bankProfile(questions) === 'hard') {
+    const sets = { smoke: [], train: [], sealed: [], final: [] };
+    for (const language of ['javascript', 'python', 'go']) {
+      const pool = questions.filter(q => q.language === language).map(q => q.id)
+        .sort((a, b) => rank(`${seed}:${a}`).localeCompare(rank(`${seed}:${b}`)));
+      insist(pool.length === 4, `Invalid hard stratum ${language}`);
+      const counts = [2, 1, 1];
+      let start = 0;
+      for (const [j, name] of ['train', 'sealed', 'final'].entries()) {
+        sets[name].push(...pool.slice(start, start + counts[j])); start += counts[j];
+      }
+      sets.smoke.push(sets.train.filter(id => pool.includes(id))
+        .sort((a, b) => rank(`${seed}:smoke:${a}`).localeCompare(rank(`${seed}:smoke:${b}`)))[0]);
+    }
+    for (const ids of Object.values(sets)) ids.sort();
+    return sets;
+  }
   const sets = { smoke: [], train: [], sealed: [], final: [] };
   for (const language of ['javascript', 'python', 'go']) {
     for (const [difficulty, counts] of Object.entries(quotas)) {
@@ -56,14 +78,17 @@ export async function readBank(bank = BANK) {
   insist(manifest.version === 1 && typeof manifest.seed === 'string' && manifest.seed.length > 0, 'Invalid manifest identity');
   insist(Number.isFinite(manifest.mutationKillMin) && manifest.mutationKillMin >= 0 && manifest.mutationKillMin <= 1, 'Invalid mutation threshold');
   exact(manifest.sets, ['smoke', 'train', 'sealed', 'final'], 'sets');
-  insist(Array.isArray(manifest.questions) && manifest.questions.length === 30, 'Expected 30 questions');
+  insist(Array.isArray(manifest.questions), 'Invalid questions');
+  const hard = bankProfile(manifest.questions) === 'hard';
+  insist(manifest.questions.length === (hard ? 12 : 30), 'Expected 30 questions or 12 hard questions');
+  if (hard) insist(manifest.mutationKillMin >= 0.7, 'Hard mutation threshold must be at least 0.7');
   const ids = manifest.questions.map(q => q.id);
   insist(strings(ids) && ids.every(id => /^[A-Za-z0-9_-]{1,128}$/.test(id)), 'Invalid or duplicate question IDs');
-  for (const [name, count] of Object.entries({ smoke: 3, train: 15, sealed: 9, final: 6 })) {
+  for (const [name, count] of Object.entries(hard ? { smoke: 3, train: 6, sealed: 3, final: 3 } : { smoke: 3, train: 15, sealed: 9, final: 6 })) {
     insist(strings(manifest.sets[name]) && manifest.sets[name].length === count && manifest.sets[name].every(id => ids.includes(id)), `Invalid ${name}`);
   }
   insist(manifest.sets.smoke.every(id => manifest.sets.train.includes(id)), 'Smoke must be a train subset');
-  insist(new Set([...manifest.sets.train, ...manifest.sets.sealed, ...manifest.sets.final]).size === 30, 'Main sets must be disjoint and exhaustive');
+  insist(new Set([...manifest.sets.train, ...manifest.sets.sealed, ...manifest.sets.final]).size === manifest.questions.length, 'Main sets must be disjoint and exhaustive');
   const expectedSets = partition(manifest.questions, manifest.seed);
   insist(Object.keys(expectedSets).every(name => JSON.stringify(expectedSets[name]) === JSON.stringify([...manifest.sets[name]].sort())), 'Seeded stratification mismatch');
   const directories = (await readdir(join(bank, 'tasks'))).sort();
@@ -87,8 +112,10 @@ export async function readBank(bank = BANK) {
     const hiddenFiles = await filesUnder(join(directory, 'hidden_tests'));
     insist(hiddenFiles.length > 0 && repoFiles.length > 0, `Empty fixture: ${q.id}`);
     const paths = [...new Set([...repoFiles, ...hiddenFiles])].sort();
-    insist(JSON.stringify(paths) === JSON.stringify([...meta.filePaths].sort()) && paths.every(safePath), `filePaths inventory mismatch: ${q.id}`);
-    insist(meta.testTargets.length > 0 && meta.testTargets.every(p => toolchain === 'go' ? p === './...' : safePath(p) && hiddenFiles.includes(p)), `Invalid targets: ${q.id}`);
+    if (hard) insist(meta.filePaths.every(p => !/^(?:README\.md|index\.[^/]+|main\.[^/]+|go\.mod|package\.json)$/i.test(p.split('/').at(-1))), `Common fingerprint path: ${q.id}`);
+    insist((hard ? meta.filePaths.every(p => safePath(p) && paths.includes(p))
+      : JSON.stringify(paths) === JSON.stringify([...meta.filePaths].sort())) && paths.every(safePath), `filePaths inventory mismatch: ${q.id}`);
+    insist(meta.testTargets.length > 0 && meta.testTargets.every(p => toolchain === 'go' ? p === './...' || (p.startsWith('./') && safePath(p.slice(2)) && hiddenFiles.some(file => file.startsWith(p.slice(2) + '/'))) : safePath(p) && hiddenFiles.includes(p)), `Invalid targets: ${q.id}`);
     const testText = (await Promise.all(hiddenFiles.map(p => readFile(join(directory, 'hidden_tests', p), 'utf8')))).join('\n');
     for (const value of [...meta.testNames, ...meta.rareStrings]) insist(testText.includes(value), `Untruthful test fingerprint ${q.id}: ${value}`);
     for (const value of meta.expectedValues) insist(testText.includes(value) || testText.includes(JSON.stringify(value).slice(1, -1)) || testText.includes(value.replaceAll('\\', '\\\\').replaceAll("'", "\\'")), `Untruthful expected fingerprint ${q.id}: ${value}`);
@@ -99,6 +126,15 @@ export async function readBank(bank = BANK) {
     insist(patch.startsWith('diff --git ') && !patch.includes('GIT binary patch'), `Invalid reference patch: ${q.id}`);
     const changed = [...patch.matchAll(/^\+\+\+ b\/(.+)$/gm)].map(m => m[1]);
     insist(changed.length > 0 && changed.every(p => safePath(p) && repoFiles.includes(p) && !hiddenFiles.includes(p) && !/(?:test|go\.mod|package\.json)/.test(p)), `Reference must modify only source: ${q.id}`);
+    if (hard) {
+      const sources = repoFiles.filter(p => /\.(?:mjs|js|py|go)$/.test(p) && !/(?:^|\/)(?:test_|.*(?:\.test\.|_test\.))/.test(p));
+      const lines = (await Promise.all(sources.map(p => readFile(join(directory, 'repo', p), 'utf8'))))
+        .reduce((sum, text) => sum + text.trimEnd().split('\n').length, 0);
+      insist(sources.length >= 1 && sources.length <= 40 && lines >= 1 && lines <= 3000, `Hard source size: ${q.id}: ${sources.length} files / ${lines} lines`);
+      insist(changed.length >= 1 && patch.split('\n').filter(line => /^[+-]/.test(line) && !/^(?:---|\+\+\+)/.test(line)).length >= 4, `Hard reference too small: ${q.id}`);
+      const hiddenCount = toolchain === 'go' ? [...testText.matchAll(/^func Test[A-Za-z0-9_]+\(t \*testing\.T\)/gm)].length : meta.expectedTests;
+      insist(hiddenCount >= 40 && meta.timeoutSeconds <= 60, `Hard test budget: ${q.id}`);
+    }
     questions.push({ ...q, meta, directory });
   }
   return { manifest, questions };
@@ -230,9 +266,33 @@ export async function runTests(question, space, docker = false) {
   return { ...result, cases, complete, started, passed: !infra && complete && result.code === 0 && cases.every(c => c.passed) };
 }
 
+/** Visible suites are part of a hard snapshot's supported development workflow. */
+export async function runVisibleTests(question, space, docker = false) {
+  const paths = (await filesUnder(join(question.directory, 'repo'))).filter(path =>
+    question.meta.toolchain === 'node' ? /\.test\.m?js$/.test(path)
+      : question.meta.toolchain === 'python' ? /(?:^|\/)test_[^/]+\.py$/.test(path) : /_test\.go$/.test(path));
+  insist(paths.length > 0, `Missing visible tests: ${question.id}`);
+  let testTargets = paths;
+  const names = [];
+  if (question.meta.toolchain === 'go') {
+    for (const path of paths) {
+      const source = await readFile(join(question.directory, 'repo', path), 'utf8');
+      names.push(...[...source.matchAll(/^func (Test[A-Za-z0-9_]+)\(t \*testing\.T\)/gm)].map(match => match[1]));
+    }
+    insist(names.length > 0, `Missing visible Go cases: ${question.id}`);
+    testTargets = ['-run', `^(?:${names.join('|')})$`, './...'];
+  }
+  const outcome = await runTests({ ...question, meta: { ...question.meta, testTargets } }, space, docker);
+  const passed = !outcome.timedOut && !outcome.overflow && !outcome.spawnError && outcome.code === 0
+    && outcome.cases.length > 0 && outcome.cases.every(test => test.passed)
+    && (!names.length || outcome.cases.length === names.length);
+  return { ...outcome, passed };
+}
+
 export async function validate({ bank = BANK, docker = false, log = console.log } = {}) {
   const { manifest, questions } = await readBank(bank);
   const result = { passed: [], skipped: [], failed: [] };
+  const hard = bankProfile(manifest.questions) === 'hard';
   const available = {};
   for (const toolchain of ['node', 'python', 'go']) available[toolchain] = await availability(toolchain, docker);
   for (const question of questions) {
@@ -241,6 +301,11 @@ export async function validate({ bank = BANK, docker = false, log = console.log 
       reference = await workspace(question, true);
       if (!available[question.meta.toolchain]) { result.skipped.push(question.id); log(`SKIP ${question.id}: ${docker ? 'docker' : question.meta.toolchain} toolchain unavailable; reference patch applies`); continue; }
       original = await workspace(question);
+      if (hard) {
+        const visibleOriginal = await runVisibleTests(question, original, docker);
+        const visibleFixed = await runVisibleTests(question, reference, docker);
+        insist(visibleOriginal.passed && visibleFixed.passed, `Visible tests must pass before and after: ${question.id}\n${visibleOriginal.output}\n${visibleFixed.output}`);
+      }
       const baseline = await runTests(question, original, docker);
       const fixed = await runTests(question, reference, docker);
       insist(baseline.complete && !baseline.passed && baseline.cases.some(c => !c.passed) && !baseline.timedOut && !baseline.spawnError, `Original must execute exactly ${question.meta.expectedTests} cases and fail: ${question.id}\n${baseline.output}`);
@@ -254,9 +319,17 @@ export async function validate({ bank = BANK, docker = false, log = console.log 
   return result;
 }
 export function options(argv) {
-  insist(argv.every(arg => arg === '--docker'), 'Usage: node scripts/rsi-bank/{validate,mutate}.mjs [--docker]');
-  return { docker: argv.includes('--docker') };
+  const result = { bank: BANK, docker: false };
+  let selected = false;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--docker' && !result.docker) result.docker = true;
+    else if (argv[i] === '--bank' && !selected && argv[i + 1] && !argv[i + 1].startsWith('-')) {
+      result.bank = resolve(argv[++i]); selected = true;
+    } else throw new Error('Usage: node scripts/rsi-bank/{validate,mutate}.mjs [--docker] [--bank <directory>]');
+  }
+  return result;
 }
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try { const result = await validate(options(process.argv.slice(2))); if (result.failed.length) process.exitCode = 1; }
   catch (error) { console.error(error.message); process.exitCode = 1; }

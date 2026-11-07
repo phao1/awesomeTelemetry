@@ -1,0 +1,1 @@
+Optimize the ramp ledger according to README.md while preserving its exact arithmetic and atomic replacement/batch behavior. Acceptance measures calls to the injected cell interface, including every update and query. Use only source changes and the standard library.

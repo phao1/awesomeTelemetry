@@ -1,0 +1,1 @@
+Implement the incremental language revision in `docs/stream-format.md`, preserving the Reader entry point and existing simple-record workflow. Use the standard library and change only source files. The format must be independent of feed chunk boundaries.

@@ -98,13 +98,13 @@ describe('RSI browser review regressions',()=>{
  describe('choosing a question bank',()=>{
    const dist=(count:number)=>[{phase:'train' as const,count,languages:{python:count}}],withHard={...options,bank:{path:'/bank',full:dist(15),small:dist(6)},hardBank:{path:'/hard',full:dist(10),small:dist(4)}};
    const toBankStep=()=>{input('input[placeholder="/path/to/repository"]','/repo');const sha=[...document.querySelectorAll<HTMLInputElement>('input')].find(i=>i.classList.contains('mono'))!;input('#'+sha.id,'a'.repeat(40));click('下一步');click('下一步');};
-   it('does not offer the hard bank when it is not installed',()=>{
-     const {host}=render(<CreateForm options={options} locale="zh" worker={null} onOpen={noOp} onCreated={noOp} onClose={noOp}/>);toBankStep();expect(host.textContent).toContain('题库路径');expect(host.textContent).not.toContain('困难题库');
+   it('does not offer the advanced bank when it is not installed',()=>{
+     const {host}=render(<CreateForm options={options} locale="zh" worker={null} onOpen={noOp} onCreated={noOp} onClose={noOp}/>);toBankStep();expect(host.textContent).toContain('题库路径');expect(host.textContent).not.toContain('进阶题库');
    });
-   it('explains the hard bank and shows its own question counts and goal',()=>{
+   it('explains the advanced bank and shows its own question counts and goal',()=>{
      render(<CreateForm options={withHard} locale="zh" worker={null} onOpen={noOp} onCreated={noOp} onClose={noOp}/>);toBankStep();
-     const body=()=>document.body.textContent!;expect(body()).toContain('标准题库');expect(body()).not.toContain('多文件小项目');expect(document.querySelector('td[data-column=count]')!.textContent).toBe('6');
-     click('困难题库');expect(body()).toContain('多文件小项目');expect(document.querySelector('input[value="/hard"]')).not.toBeNull();expect(document.querySelector('td[data-column=count]')!.textContent).toBe('4');
+     const body=()=>document.body.textContent!;expect(body()).toContain('标准题库');expect(body()).not.toContain('长规格实现');expect(document.querySelector('td[data-column=count]')!.textContent).toBe('6');
+     click('进阶题库');expect(body()).toContain('长规格实现');expect(document.querySelector('input[value="/hard"]')).not.toBeNull();expect(document.querySelector('td[data-column=count]')!.textContent).toBe('4');
      click('下一步');expect([...document.querySelectorAll<HTMLInputElement>('input[type=number]')][0]!.value).toBe('4');
    });
  });

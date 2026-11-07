@@ -1,0 +1,128 @@
+diff --git a/dispatch.go b/dispatch.go
+--- a/dispatch.go
++++ b/dispatch.go
+@@ -1,11 +1,30 @@
+ package workspace
+ func (b *Mailbox) pump(){
++ if b.closed{return}
+  for len(b.waiters)>0&&len(b.queue)>0 {
+-  w:=b.waiters[0];b.waiters=b.waiters[1:]
+-  message:=b.queue[0];b.queue=b.queue[1:]
+-  b.next++;token:=b.next
+-  b.held[token]=message;w.token=token
+-  b.sim.After(0,func(){w.out<-Delivery{message.ID,message.Body,token,""}})
+-  b.sim.After(b.lease,func(){if m,ok:=b.held[token];ok{delete(b.held,token);b.queue=append(b.queue,m);b.pump()}})
++  w:=b.waiters[0]
++  b.waiters=b.waiters[1:]
++  if w.state!="waiting"{continue}
++  message:=b.queue[0]
++  b.queue=b.queue[1:]
++  b.next++
++  token:=b.next
++  reservation:=&leaseState{message:message,waiter:w,token:token}
++  b.held[token]=reservation
++  w.token=token
++  w.state="reserved"
++  b.sim.After(0,func(){
++   if w.state!="reserved"||b.held[token]!=reservation{return}
++   w.state="delivered"
++   reservation.published=true
++   w.out<-Delivery{message.ID,message.Body,token,""}
++   b.sim.After(b.lease,func(){
++    if b.held[token]!=reservation{return}
++    delete(b.held,token)
++    if b.closed{delete(b.ids,message.ID);return}
++    b.queue=append(b.queue,message)
++    b.pump()
++   })
++  })
+  }
+ }
+diff --git a/mailbox.go b/mailbox.go
+--- a/mailbox.go
++++ b/mailbox.go
+@@ -2,10 +2,77 @@
+ type Message struct{ID,Body string}
+ type Delivery struct{ID,Body string;Token int;Error string}
+ type waiter struct{out chan Delivery;token int;state string}
+-type Mailbox struct{sim *Simulator;lease,next int;queue []Message;waiters []*waiter;held map[int]Message;ids map[string]bool;closed bool}
+-func NewMailbox(s *Simulator,lease int)*Mailbox{return &Mailbox{sim:s,lease:lease,held:make(map[int]Message),ids:make(map[string]bool)}}
+-func(b *Mailbox) Offer(id,body string)bool{if b.closed||b.ids[id]{return false};b.ids[id]=true;b.queue=append(b.queue,Message{id,body});b.pump();return true}
+-func(b *Mailbox) Pull()(<-chan Delivery,func()bool){w:=&waiter{out:make(chan Delivery,1),state:"waiting"};b.waiters=append(b.waiters,w);b.pump();return w.out,func()bool{if w.state=="done"{return false};w.state="done";return true}}
+-func(b *Mailbox) Ack(token int)bool{m,ok:=b.held[token];if !ok{return false};delete(b.held,token);delete(b.ids,m.ID);return true}
+-func(b *Mailbox) Nack(token int)bool{m,ok:=b.held[token];if !ok{return false};delete(b.held,token);b.queue=append(b.queue,m);b.pump();return true}
+-func(b *Mailbox) Close(){b.closed=true;b.queue=nil}
++type leaseState struct{message Message;waiter *waiter;token int;published bool}
++type Mailbox struct{sim *Simulator;lease,next int;queue []Message;waiters []*waiter;held map[int]*leaseState;ids map[string]bool;closed bool}
++func NewMailbox(s *Simulator,lease int)*Mailbox{
++ if lease<0{panic("lease")}
++ return &Mailbox{sim:s,lease:lease,held:make(map[int]*leaseState),ids:make(map[string]bool)}
++}
++func(b *Mailbox) Offer(id,body string)bool{
++ if b.closed||b.ids[id]{return false}
++ b.ids[id]=true
++ b.queue=append(b.queue,Message{id,body})
++ b.pump()
++ return true
++}
++func(b *Mailbox) Pull()(<-chan Delivery,func()bool){
++ w:=&waiter{out:make(chan Delivery,1),state:"waiting"}
++ if b.closed{
++  w.state="reserved-close"
++  b.sim.After(0,func(){if w.state=="reserved-close"{w.state="done";w.out<-Delivery{Error:"closed"}}})
++ }else{
++  b.waiters=append(b.waiters,w)
++  b.pump()
++ }
++ return w.out,func()bool{
++  if w.state!="waiting"&&w.state!="reserved"&&w.state!="reserved-close"{return false}
++  if w.state=="reserved"{
++   reservation:=b.held[w.token]
++   delete(b.held,w.token)
++   b.queue=append([]Message{reservation.message},b.queue...)
++  }
++  w.state="done"
++  b.pump()
++  return true
++ }
++}
++func(b *Mailbox) Ack(token int)bool{
++ reservation,ok:=b.held[token]
++ if !ok||!reservation.published{return false}
++ delete(b.held,token)
++ delete(b.ids,reservation.message.ID)
++ return true
++}
++func(b *Mailbox) Nack(token int)bool{
++ reservation,ok:=b.held[token]
++ if !ok||!reservation.published{return false}
++ delete(b.held,token)
++ if b.closed{delete(b.ids,reservation.message.ID)}else{
++  b.queue=append(b.queue,reservation.message)
++  b.pump()
++ }
++ return true
++}
++func(b *Mailbox) Close(){
++ if b.closed{return}
++ b.closed=true
++ for _,m:=range b.queue{delete(b.ids,m.ID)}
++ b.queue=nil
++ for token:=1;token<=b.next;token++{
++  reservation:=b.held[token]
++  if reservation==nil{continue}
++  if !reservation.published{
++   delete(b.held,reservation.token)
++   delete(b.ids,reservation.message.ID)
++   b.waiters=append(b.waiters,reservation.waiter)
++  }
++ }
++ for _,w:=range b.waiters{
++  if w.state=="waiting"||w.state=="reserved"{
++   w.state="reserved-close"
++   current:=w
++   b.sim.After(0,func(){if current.state=="reserved-close"{current.state="done";current.out<-Delivery{Error:"closed"}}})
++  }
++ }
++ b.waiters=nil
++}

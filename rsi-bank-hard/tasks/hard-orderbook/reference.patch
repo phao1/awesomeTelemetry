@@ -1,0 +1,161 @@
+diff --git a/ordered.mjs b/ordered.mjs
+--- a/ordered.mjs
++++ b/ordered.mjs
+@@ -3,27 +3,144 @@
+   constructor(compare,cells=new Cells()) {
+     this.compare=compare;
+     this.cells=cells;
+-    this.ids=new Set();
++    this.ids=new Map();
+     this.serial=0;
++    this.next=0;
++    this.root=null;
++  }
++  read(handle) { return this.cells.read(handle); }
++  count(handle) { return handle===null?0:this.read(handle).count; }
++  total(handle) { return handle===null?0:this.read(handle).total; }
++  height(handle) { return handle===null?0:this.read(handle).height; }
++  fix(node) {
++    node.count=1+this.count(node.left)+this.count(node.right);
++    node.total=node.weight+this.total(node.left)+this.total(node.right);
++    node.height=1+Math.max(this.height(node.left),this.height(node.right));
++    return node;
++  }
++  left(handle) {
++    const node=this.read(handle),rightHandle=node.right,right=this.read(rightHandle);
++    node.right=right.left;
++    right.left=handle;
++    this.cells.write(handle,this.fix(node));
++    this.cells.write(rightHandle,this.fix(right));
++    return rightHandle;
++  }
++  right(handle) {
++    const node=this.read(handle),leftHandle=node.left,left=this.read(leftHandle);
++    node.left=left.right;
++    left.right=handle;
++    this.cells.write(handle,this.fix(node));
++    this.cells.write(leftHandle,this.fix(left));
++    return leftHandle;
++  }
++  balance(handle) {
++    const node=this.fix(this.read(handle));
++    this.cells.write(handle,node);
++    const delta=this.height(node.left)-this.height(node.right);
++    if(delta>1) {
++      const left=this.read(node.left);
++      if(this.height(left.left)<this.height(left.right)) {
++        node.left=this.left(node.left);
++        this.cells.write(handle,node);
++      }
++      return this.right(handle);
++    }
++    if(delta< -1) {
++      const right=this.read(node.right);
++      if(this.height(right.right)<this.height(right.left)) {
++        node.right=this.right(node.right);
++        this.cells.write(handle,node);
++      }
++      return this.left(handle);
++    }
++    return handle;
++  }
++  cmp(a,b) { return this.compare(a.key,b.key)||a.serial-b.serial; }
++  insert(handle,row) {
++    if(handle===null) {
++      const allocated=++this.next;
++      this.cells.write(allocated,{...row,left:null,right:null,count:1,total:row.weight,height:1});
++      this.ids.set(row.id,allocated);
++      return allocated;
++    }
++    const node=this.read(handle);
++    if(this.cmp(row,node)<0)node.left=this.insert(node.left,row);
++    else node.right=this.insert(node.right,row);
++    this.cells.write(handle,node);
++    return this.balance(handle);
++  }
++  erase(handle,row) {
++    const node=this.read(handle);
++    const cmp=this.cmp(row,node);
++    if(cmp<0)node.left=this.erase(node.left,row);
++    else if(cmp>0)node.right=this.erase(node.right,row);
++    else {
++      if(node.left===null || node.right===null) {
++        this.cells.drop(handle);
++        return node.left??node.right;
++      }
++      let next=this.read(node.right);
++      while(next.left!==null)next=this.read(next.left);
++      node.id=next.id;
++      node.key=next.key;
++      node.serial=next.serial;
++      node.weight=next.weight;
++      this.ids.set(next.id,handle);
++      node.right=this.erase(node.right,next);
++    }
++    this.cells.write(handle,node);
++    return this.balance(handle);
+   }
+   put(id,key,weight) {
+-    const old=this.ids.has(id)?this.cells.read(id):null;
+-    this.ids.add(id);
+-    this.cells.write(id,{id,key,weight,serial:old?.serial??this.serial++});
++    const oldHandle=this.ids.get(id);
++    const old=oldHandle===undefined?null:this.read(oldHandle);
++    if(old)this.root=this.erase(this.root,old);
++    const row={id,key,weight,serial:old?.serial??this.serial++};
++    this.root=this.insert(this.root,row);
+   }
+   remove(id) {
+-    if(!this.ids.delete(id))return false;
+-    this.cells.drop(id);
++    const handle=this.ids.get(id);
++    if(handle===undefined)return false;
++    this.root=this.erase(this.root,this.read(handle));
++    this.ids.delete(id);
+     return true;
+   }
+-  sorted() {
+-    return [...this.ids].map(id=>this.cells.read(id))
+-      .sort((a,b)=>this.compare(a.key,b.key)||a.serial-b.serial);
++  rank(key,inclusive=false) {
++    let handle=this.root,answer=0;
++    while(handle!==null) {
++      const node=this.read(handle),cmp=this.compare(node.key,key);
++      if(cmp<0 || (inclusive&&cmp===0)) {
++        answer+=this.count(node.left)+1;
++        handle=node.right;
++      }else handle=node.left;
++    }
++    return answer;
+   }
+-  rank(key,inclusive=false) {
+-    return this.sorted().filter(r=>this.compare(r.key,key)<0||(inclusive&&this.compare(r.key,key)===0)).length;
++  select(index) {
++    if(!Number.isInteger(index)||index<0||index>=this.size)return null;
++    let handle=this.root;
++    while(handle!==null) {
++      const node=this.read(handle),before=this.count(node.left);
++      if(index<before)handle=node.left;
++      else if(index===before)return node.id;
++      else{index-=before+1;handle=node.right;}
++    }
++    return null;
+   }
+-  select(index) { return this.sorted()[index]?.id??null; }
+-  prefix(count) { return this.sorted().slice(0,Math.max(0,count)).reduce((s,r)=>s+r.weight,0); }
++  prefix(amount) {
++    let handle=this.root,sum=0;
++    amount=Math.max(0,Math.min(amount,this.size));
++    while(handle!==null&&amount>0) {
++      const node=this.read(handle),before=this.count(node.left);
++      if(amount<=before)handle=node.left;
++      else {
++        sum+=this.total(node.left)+node.weight;
++        amount-=before+1;
++        handle=node.right;
++      }
++    }
++    return sum;
++  }
+   get size() { return this.ids.size; }
+ }

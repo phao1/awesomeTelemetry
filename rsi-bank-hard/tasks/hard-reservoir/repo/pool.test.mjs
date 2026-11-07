@@ -1,0 +1,1 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {Pool} from './pool.mjs';import {Clock} from './clock.mjs';test('one reservation',async()=>{const c=new Clock();const p=new Pool(1,c);const x=p.acquire();c.flush();const r=await x.promise;assert.equal(r.weight,1);r.release();assert.equal(p.stats().free,1);});

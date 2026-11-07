@@ -1,0 +1,8 @@
+# Ramp ledger
+Ledger(n,cells) represents n zero-initialized integer positions, n >= 0.
+put(name,left,right,start,step) replaces a named ramp: at index i in [left,right), contribution is start+(i-left)*step. Contributions of all names add. Empty ramps still reserve their name. All numeric inputs must be exact ints (not bool). Bounds require 0 <= left <= right <= n. Invalid updates do not change anything, including a replaced old ramp.
+remove(name) removes its contribution and returns True; missing names return False.
+sum(left,right) returns sum of contributions for [left,right), clipped to [0,n]. left>right is ValueError before clipping. Negative slopes, starts and totals are legal. Large integers are exact.
+batch(changes) consumes an iterable of 5-tuples, validates the entire iterable before changing the ledger, then applies in order. Duplicate names mean sequential replacements. A failing iterator propagates its exception and leaves state unchanged.
+Cells is an injected sparse store; every numerical aggregate must live in it. Only n and the map of active name->ramp tuples may be retained outside cells. Do not inspect cells.data or create unmeasured shadow aggregates. Addresses are implementation-private hashables. read/write each count one access.
+Every put/remove/sum must use O(log(n+2)) cell accesses, at most 128*ceil(log2(n+2)). Missing removal uses zero accesses. Construction performs zero cell accesses, even for huge n. A batch of k uses O(k log(n+2)). Storage is O(u log(n+2)), u is number of distinct updated endpoints; no O(n) initialization. Run python3 -m unittest test_ledger.py.

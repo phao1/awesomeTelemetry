@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { availability, BANK, filesUnder, options, readBank, ROOT, runTests, workspace } from './validate.mjs';
+import { availability, BANK, command, filesUnder, options, readBank, ROOT, runTests, workspace } from './validate.mjs';
 
 /** New-side line numbers, excluding context: mutation is confined to the reference fix. */
 export function changedLines(patch) {
@@ -47,7 +47,24 @@ export function mutations(source, selected) {
   return results;
 }
 
-export async function mutate({ bank = BANK, docker = false, log = console.log, document = join(ROOT, 'docs/rsi/bank.md') } = {}) {
+// A synchronous first test can block before node:test emits a start event.
+// Independently distinguish parse/build failures from executable timeout mutants.
+export async function builds(question, space, target, docker) {
+  if (docker) return false;
+  const check = question.meta.toolchain === 'node'
+    ? [process.execPath, ['--check', target]]
+    : question.meta.toolchain === 'python'
+      ? ['python3', ['-c', 'import ast,sys; ast.parse(open(sys.argv[1]).read())', target]]
+      : ['go', ['test', '-run', '^$', '-vet=off', './...']];
+  const result = await command(check[0], check[1], { cwd: space.work, timeout: 30000,
+    env: { GOCACHE: space.goCache, GOPROXY: 'off', GOSUMDB: 'off', GOTOOLCHAIN: 'local' } });
+  return result.code === 0 && !result.timedOut && !result.spawnError && !result.overflow;
+}
+
+export function mutationDocument(bank) {
+  return resolve(bank) === resolve(BANK) ? join(ROOT, 'docs/rsi/bank.md') : join(bank, 'DESIGN.md');
+}
+export async function mutate({ bank = BANK, docker = false, log = console.log, document = mutationDocument(bank) } = {}) {
   const { manifest, questions } = await readBank(bank);
   const result = { passed: [], skipped: [], failed: [], rows: [] };
   const available = {};
@@ -77,7 +94,7 @@ export async function mutate({ bank = BANK, docker = false, log = console.log, d
           await writeFile(target, mutation.source);
           try {
             const outcome = await runTests(question, space, docker);
-            if (outcome.timedOut && outcome.started && !outcome.spawnError && !outcome.overflow) { killed++; log(`KILL timeout ${question.id} ${path}:${mutation.line} ${mutation.kind}`); }
+            if (outcome.timedOut && !outcome.spawnError && !outcome.overflow && (outcome.started || await builds(question, space, target, docker))) { killed++; log(`KILL timeout ${question.id} ${path}:${mutation.line} ${mutation.kind}`); }
             else if (outcome.timedOut || outcome.spawnError || outcome.overflow) { infrastructure++; log(`INFRA ${question.id} ${path}:${mutation.line} ${mutation.kind}`); }
             else if (!outcome.complete) {
               // Missing tests may mean syntax/build failure, or import-time failure. Neither demonstrates test strength.

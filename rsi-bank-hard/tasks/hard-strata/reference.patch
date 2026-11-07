@@ -1,0 +1,87 @@
+diff --git a/envelope.go b/envelope.go
+--- a/envelope.go
++++ b/envelope.go
+@@ -3,15 +3,39 @@
+ type Span struct { Start,End,Sequence int; Value string; Tombstone bool }
+ type Piece struct { Start,End,Ordinal int; Sequence int; Value string; Tombstone bool }
+ type Compare func(int,int) int
++type endpoint struct { at,id int; enter bool }
+ func Envelope(input []Span,compare Compare) []Piece {
+- points:=make([]int,0,2*len(input))
+- for _,s:=range input {if compare(s.Start,s.End)<0 {points=append(points,s.Start,s.End)}}
+- sort.Slice(points,func(i,j int)bool{return compare(points[i],points[j])<0})
++ points:=make([]endpoint,0,2*len(input))
++ for i,s:=range input {
++  if compare(s.Start,s.End)<0 {
++   points=append(points,endpoint{s.Start,i,true},endpoint{s.End,i,false})
++  }
++ }
++ sort.Slice(points,func(i,j int)bool{return compare(points[i].at,points[j].at)<0})
++ live:=make([]bool,len(input))
++ h:=winnerHeap{input:input,compare:compare}
+  var out []Piece
+- for i:=0;i+1<len(points);i++ {
+-  a,b:=points[i],points[i+1];if a==b{continue};winner:=-1
+-  for j,s:=range input {if compare(s.Start,a)<=0&&compare(a,s.End)<0&&(winner<0||compare(s.Sequence,input[winner].Sequence)>0){winner=j}}
+-  if winner>=0 {s:=input[winner];if len(out)>0&&out[len(out)-1].End==a&&out[len(out)-1].Ordinal==winner{out[len(out)-1].End=b}else{out=append(out,Piece{a,b,winner,s.Sequence,s.Value,s.Tombstone})}}
++ for i:=0;i<len(points); {
++  at:=points[i].at
++  j:=i
++  for j<len(points)&&compare(points[j].at,at)==0 {
++   event:=points[j]
++   live[event.id]=event.enter
++   if event.enter {h.push(event.id)}
++   j++
++  }
++  for len(h.ids)>0&&!live[h.ids[0]] {h.pop()}
++  if j<len(points)&&len(h.ids)>0 {
++   end:=points[j].at
++   id:=h.ids[0]
++   s:=input[id]
++   if len(out)>0&&out[len(out)-1].End==at&&out[len(out)-1].Ordinal==id {
++    out[len(out)-1].End=end
++   } else {
++    out=append(out,Piece{at,end,id,s.Sequence,s.Value,s.Tombstone})
++   }
++  }
++  i=j
+  }
+  return out
+ }
+diff --git a/winners.go b/winners.go
+--- a/winners.go
++++ b/winners.go
+@@ -1 +1,33 @@
+ package workspace
++type winnerHeap struct { ids []int; input []Span; compare Compare }
++func (h *winnerHeap) better(a,b int) bool {
++ cmp:=h.compare(h.input[a].Sequence,h.input[b].Sequence)
++ if cmp!=0 {return cmp>0}
++ return a<b
++}
++func (h *winnerHeap) push(id int) {
++ h.ids=append(h.ids,id)
++ i:=len(h.ids)-1
++ for i>0 {
++  p:=(i-1)/2
++  if !h.better(h.ids[i],h.ids[p]) {break}
++  h.ids[i],h.ids[p]=h.ids[p],h.ids[i]
++  i=p
++ }
++}
++func (h *winnerHeap) pop() {
++ last:=len(h.ids)-1
++ h.ids[0]=h.ids[last]
++ h.ids=h.ids[:last]
++ i:=0
++ for {
++  left:=2*i+1
++  if left>=len(h.ids){return}
++  best:=left
++  right:=left+1
++  if right<len(h.ids)&&h.better(h.ids[right],h.ids[left]) {best=right}
++  if !h.better(h.ids[best],h.ids[i]){return}
++  h.ids[i],h.ids[best]=h.ids[best],h.ids[i]
++  i=best
++ }
++}

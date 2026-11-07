@@ -1,0 +1,1 @@
+Implement the atomic batch editor defined in `docs/edit-batches.md`, preserving the existing Apply entry point. Use only standard library source changes. The basic object editing workflow must continue to work.

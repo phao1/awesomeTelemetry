@@ -1,0 +1,202 @@
+diff --git a/pointer.go b/pointer.go
+--- a/pointer.go
++++ b/pointer.go
+@@ -1,3 +1,39 @@
+ package workspace
+-import "strings"
+-func pointer(text string) ([]string,error) { if text=="" {return nil,nil}; return strings.Split(strings.TrimPrefix(text,"/"),"/"),nil }
++import (
++ "fmt"
++ "strconv"
++ "strings"
++)
++func pointer(text string) ([]string,error) {
++ if text=="" { return nil,nil }
++ if !strings.HasPrefix(text,"/") { return nil,fmt.Errorf("pointer") }
++ parts:=strings.Split(text[1:],"/")
++ for i,part:=range parts {
++  var out strings.Builder
++  for j:=0;j<len(part);j++ {
++   if part[j]!='~' { out.WriteByte(part[j]); continue }
++   j++
++   if j>=len(part) { return nil,fmt.Errorf("escape") }
++   switch part[j] {
++   case '0': out.WriteByte('~')
++   case '1': out.WriteByte('/')
++   default: return nil,fmt.Errorf("escape")
++   }
++  }
++  parts[i]=out.String()
++ }
++ return parts,nil
++}
++func index(token string,length int,appendOK bool) (int,error) {
++ if token=="-" && appendOK { return length,nil }
++ if token=="" || (len(token)>1 && token[0]=='0') { return 0,fmt.Errorf("index") }
++ for _,c:=range token { if c<'0'||c>'9' { return 0,fmt.Errorf("index") } }
++ n,err:=strconv.Atoi(token)
++ if err!=nil || n<0 || n>length || (!appendOK && n==length) { return 0,fmt.Errorf("index") }
++ return n,nil
++}
++func ancestor(from,to []string) bool {
++ if len(from)>=len(to) { return false }
++ for i:=range from { if from[i]!=to[i] { return false } }
++ return true
++}
+diff --git a/tree.go b/tree.go
+--- a/tree.go
++++ b/tree.go
+@@ -1,17 +1,90 @@
+ package workspace
+ import "fmt"
++func clone(value any) any {
++ switch v:=value.(type) {
++ case map[string]any:
++  out:=make(map[string]any,len(v))
++  for key,item:=range v { out[key]=clone(item) }
++  return out
++ case []any:
++  out:=make([]any,len(v))
++  for i,item:=range v { out[i]=clone(item) }
++  return out
++ default: return value
++ }
++}
+ func lookup(root any,path []string) (any,error) {
+  value:=root
+  for _,key:=range path {
+-  object,ok:=value.(map[string]any)
+-  if !ok { return nil,fmt.Errorf("object") }
+-  value=object[key]
++  switch current:=value.(type) {
++  case map[string]any:
++   next,ok:=current[key]
++   if !ok {return nil,fmt.Errorf("missing")}
++   value=next
++  case []any:
++   i,err:=index(key,len(current),false)
++   if err!=nil {return nil,err}
++   value=current[i]
++  default: return nil,fmt.Errorf("container")
++  }
+  }
+  return value,nil
+ }
++func mergeObject(destination map[string]any,patch map[string]any) map[string]any {
++ for key,value:=range patch {
++  if value==nil {
++   delete(destination,key)
++   continue
++  }
++  incoming,object:=value.(map[string]any)
++  if object {
++   old,exists:=destination[key].(map[string]any)
++   if !exists {old=make(map[string]any)}
++   destination[key]=mergeObject(old,incoming)
++  } else {
++   destination[key]=clone(value)
++  }
++ }
++ return destination
++}
+ func edit(root any,path []string,value any,mode string) (any,error) {
+- if len(path)==0 {return value,nil}
+- object,ok:=root.(map[string]any);if !ok{return nil,fmt.Errorf("object")}
+- if len(path)==1 {if mode=="remove"{delete(object,path[0])}else{object[path[0]]=value};return object,nil}
+- child,err:=edit(object[path[0]],path[1:],value,mode);if err!=nil{return nil,err};object[path[0]]=child;return object,nil
++ if len(path)==0 {
++  if mode=="remove" {return nil,nil}
++  return clone(value),nil
++ }
++ token:=path[0]
++ leaf:=len(path)==1
++ switch current:=root.(type) {
++ case map[string]any:
++  old,exists:=current[token]
++  if !exists && (!leaf || mode!="add") {return nil,fmt.Errorf("missing")}
++  if leaf {
++   if mode=="remove" {delete(current,token)} else {current[token]=clone(value)}
++  } else {
++   child,err:=edit(old,path[1:],value,mode)
++   if err!=nil {return nil,err}
++   current[token]=child
++  }
++  return current,nil
++ case []any:
++  i,err:=index(token,len(current),leaf && mode=="add")
++  if err!=nil {return nil,err}
++  if !leaf {
++   child,err:=edit(current[i],path[1:],value,mode)
++   if err!=nil {return nil,err}
++   current[i]=child
++   return current,nil
++  }
++  switch mode {
++  case "add":
++   current=append(current,nil)
++   copy(current[i+1:],current[i:len(current)-1])
++   current[i]=clone(value)
++  case "remove":
++   current=append(current[:i],current[i+1:]...)
++  default: current[i]=clone(value)
++  }
++  return current,nil
++ default: return nil,fmt.Errorf("container")
++ }
+ }
+diff --git a/batch.go b/batch.go
+--- a/batch.go
++++ b/batch.go
+@@ -1,14 +1,45 @@
+ package workspace
+-import "reflect"
++import (
++ "fmt"
++ "reflect"
++)
+ type Operation struct { Op string; Path string; From string; Value any }
+ func Apply(document any,operations []Operation) (any,error) {
+- root:=document
++ root:=clone(document)
+  for _,op:=range operations {
+-  path,_:=pointer(op.Path)
+-  if op.Op=="test" {v,err:=lookup(root,path);if err!=nil{return nil,err};if reflect.DeepEqual(v,op.Value){continue}}
+-  var err error
+-  root,err=edit(root,path,op.Value,op.Op)
+-  if err!=nil{return nil,err}
++  path,err:=pointer(op.Path)
++  if err!=nil {return nil,err}
++  switch op.Op {
++  case "merge":
++   actual,e:=lookup(root,path)
++   if e!=nil {return nil,e}
++   object,ok:=actual.(map[string]any)
++   patch,valid:=op.Value.(map[string]any)
++   if !ok||!valid {return nil,fmt.Errorf("merge object")}
++   root,err=edit(root,path,mergeObject(object,patch),"replace")
++   if err!=nil {return nil,err}
++  case "test":
++   actual,e:=lookup(root,path)
++   if e!=nil {return nil,e}
++   if !reflect.DeepEqual(actual,op.Value) {return nil,fmt.Errorf("test")}
++  case "add","replace","remove":
++   root,err=edit(root,path,op.Value,op.Op)
++   if err!=nil {return nil,err}
++  case "copy","move":
++   from,e:=pointer(op.From)
++   if e!=nil {return nil,e}
++   actual,e:=lookup(root,from)
++   if e!=nil {return nil,e}
++   if op.Op=="move" {
++    if ancestor(from,path) {return nil,fmt.Errorf("ancestor")}
++    if reflect.DeepEqual(from,path) {continue}
++    root,err=edit(root,from,nil,"remove")
++    if err!=nil {return nil,err}
++   }
++   root,err=edit(root,path,actual,"add")
++   if err!=nil {return nil,err}
++  default: return nil,fmt.Errorf("operation")
++  }
+  }
+  return root,nil
+ }

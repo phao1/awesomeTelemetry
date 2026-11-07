@@ -1,0 +1,142 @@
+diff --git a/cache.py b/cache.py
+--- a/cache.py
++++ b/cache.py
+@@ -1,3 +1,4 @@
++from copy import deepcopy
+ class Cache:
+     def __init__(self, loop, ttl):
+         self.loop=loop
+@@ -5,8 +6,14 @@
+         self.rows={}
+     def lookup(self,key):
+         row=self.rows.get(key)
+-        return row if row and row[1]>=self.loop.now else None
++        if row is None:
++            return None
++        if row[1]<=self.loop.now:
++            self.rows.pop(key,None)
++            return None
++        return (deepcopy(row[0]),row[1])
+     def remember(self,key,value):
+-        self.rows[key]=(value,self.loop.now+self.ttl)
++        if self.ttl>0:
++            self.rows[key]=(deepcopy(value),self.loop.now+self.ttl)
+     def discard(self,key):
+         self.rows.pop(key,None)
+diff --git a/flights.py b/flights.py
+--- a/flights.py
++++ b/flights.py
+@@ -1,3 +1,4 @@
++from copy import deepcopy
+ from cache import Cache
+ class Flights:
+     def __init__(self,loop,loader,ttl=5):
+@@ -5,34 +6,92 @@
+         self.loader=loader
+         self.cache=Cache(loop,ttl)
+         self.running={}
++        self.tokens=[]
+         self.closed=False
++    def deliver(self,token,error,value):
++        if token.get('queued',False):
++            return
++        token['queued']=True
++        def invoke():
++            if not token['active']:
++                return
++            token['active']=False
++            if token.get('closed',False):
++                token['callback']('closed',None)
++            else:
++                token['callback'](error,deepcopy(value))
++        self.loop.soon(invoke)
+     def subscribe(self,key,callback):
+-        hit=self.cache.lookup(key)
+-        token={'active':True,'callback':callback}
+-        if hit:
+-            self.loop.soon(lambda:callback(None,hit[0]))
++        token={'active':True,'callback':callback,'flight':None}
++        self.tokens.append(token)
++        if self.closed:
++            self.deliver(token,'closed',None)
+         else:
+-            flight=self.running.get(key)
+-            if flight is None:
+-                flight={'tokens':[],'cancel':None}
+-                self.running[key]=flight
+-                flight['cancel']=self.loader(key,lambda error,value:self.complete(key,flight,error,value))
+-            flight['tokens'].append(token)
++            hit=self.cache.lookup(key)
++            if hit is not None:
++                self.deliver(token,None,hit[0])
++            else:
++                flight=self.running.get(key)
++                if flight is None:
++                    flight={'tokens':[],'cancel':None,'done':False,'started':False}
++                    self.running[key]=flight
++                    def start():
++                        if flight['done']:
++                            return
++                        flight['started']=True
++                        flight['cancel']=self.loader(key,lambda error,value:self.complete(key,flight,error,value))
++                    self.loop.soon(start)
++                flight['tokens'].append(token)
++                token['flight']=(key,flight)
+         def cancel():
+             if not token['active']:
+                 return False
+             token['active']=False
++            association=token['flight']
++            if association is not None:
++                name,flight=association
++                if not flight['done'] and not any(t['active'] for t in flight['tokens']):
++                    self.retire(name,flight)
+             return True
+         return cancel
++    def retire(self,key,flight):
++        if flight['done']:
++            return
++        flight['done']=True
++        if self.running.get(key) is flight:
++            self.running.pop(key)
++        if flight['cancel'] is not None:
++            cancel=flight['cancel']
++            flight['cancel']=None
++            cancel()
+     def complete(self,key,flight,error,value):
+-        self.running.pop(key,None)
+-        if error is None:
+-            self.cache.remember(key,value)
++        if flight['done']:
++            return
++        flight['done']=True
++        if self.running.get(key) is flight:
++            self.running.pop(key)
++            if error is None and not self.closed:
++                self.cache.remember(key,value)
+         for token in flight['tokens']:
+-            self.loop.soon(lambda token=token:token['callback'](error,value) if token['active'] else None)
++            token['flight']=None
++            self.deliver(token,error,value)
+     def invalidate(self,key):
+         self.cache.discard(key)
+-        self.running.pop(key,None)
++        flight=self.running.pop(key,None)
++        if flight is not None:
++            self.retire(key,flight)
++            for token in flight['tokens']:
++                token['flight']=None
++                self.deliver(token,'invalidated',None)
+     def close(self):
++        if self.closed:
++            return
+         self.closed=True
+-        self.running.clear()
++        self.cache.rows.clear()
++        for key,flight in list(self.running.items()):
++            self.retire(key,flight)
++        for token in self.tokens:
++            if token['active']:
++                token['closed']=True
++                token['flight']=None
++                self.deliver(token,'closed',None)

@@ -11,7 +11,7 @@ export default tseslint.config(
       // App-owned telemetry, imported artifacts and generated experiment workspaces.
       'awesome-telemetry-data',
       // Question bank repositories and hidden tests are task material, not project source.
-      'rsi-bank', 'rsi-agents/mini-agent/demo-source/**',
+      'rsi-bank', 'rsi-bank-hard', 'rsi-agents/mini-agent/demo-source/**',
     ],
   },
 

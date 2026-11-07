@@ -1,0 +1,1 @@
+The warehouse operator reports that replaying shipment corrections produces inconsistent daily totals. Reproduce with `python3 replay.py` and `shipment.json`, then repair the workflow using the existing project conventions. Preserve passing visible tests and change only source files.

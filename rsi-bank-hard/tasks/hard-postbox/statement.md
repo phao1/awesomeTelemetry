@@ -1,0 +1,1 @@
+Repair the acknowledged mailbox to satisfy README.md under every ordering allowed by Simulator. Keep channel-based deterministic scheduling; use no real sleeps, random values or additional dependencies. Modify only source files.

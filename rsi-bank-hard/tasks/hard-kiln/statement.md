@@ -1,0 +1,1 @@
+A user reports that the generated site is wrong after editing a shared title and removing a target. Run `node reproduce.mjs` with the supplied data and investigate the complete workflow. The repository documentation defines supported behavior. Fix source files only and preserve all currently passing visible tests.

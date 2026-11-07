@@ -1,8 +1,15 @@
 #!/bin/zsh
 # Runs validate.mjs and mutate.mjs in one container holding all three toolchains, then copies the results back.
 # The RSI VM mounts no host directories, so --docker bind mounts cannot work there.
-set -u
+set -euo pipefail
 R=$(cd "$(dirname "$0")/../.." && pwd)
+bank=rsi-bank
+if (( $# )); then
+  [[ $# == 2 && $1 == --bank && ( $2 == rsi-bank || $2 == rsi-bank-hard ) ]] || { print -u2 'Usage: validate-in-container.sh [--bank rsi-bank|rsi-bank-hard]'; exit 2; }
+  bank=$2
+fi
+doc=docs/rsi/bank.md
+[[ $bank == rsi-bank-hard ]] && doc=rsi-bank-hard/DESIGN.md
 C=(docker --context "${RSI_DOCKER_CONTEXT:-colima-rsi}")
 "${C[@]}" build -t rsi-bank-validate:p3 - <<'DOCKER'
 FROM node:24-bookworm-slim
@@ -16,7 +23,7 @@ trap '"${C[@]}" rm -f $n >/dev/null' EXIT
 "${C[@]}" start $n >/dev/null
 "${C[@]}" exec $n mkdir -p /work/docs/rsi
 # Without these flags macOS tar adds ._* files, which fail the task inventory check.
-COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -C "$R" -cf - rsi-bank scripts/rsi-bank docs/rsi/bank.md | "${C[@]}" exec -i $n tar -C /work --no-same-owner -xf -
-"${C[@]}" exec $n node scripts/rsi-bank/mutate.mjs | grep -v '^KILL' || exit 1
-"${C[@]}" exec $n node scripts/rsi-bank/validate.mjs || exit 1
-"${C[@]}" exec $n tar -C /work -cf - rsi-bank/manifest.json docs/rsi/bank.md | tar -C "$R" -xf -
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -C "$R" -cf - "$bank" scripts/rsi-bank "$doc" | "${C[@]}" exec -i $n tar -C /work --no-same-owner -xf -
+"${C[@]}" exec $n node scripts/rsi-bank/mutate.mjs --bank "$bank" | grep -v '^KILL' || exit 1
+"${C[@]}" exec $n node scripts/rsi-bank/validate.mjs --bank "$bank" || exit 1
+"${C[@]}" exec $n tar -C /work -cf - "$bank/manifest.json" "$doc" | tar -C "$R" -xf -

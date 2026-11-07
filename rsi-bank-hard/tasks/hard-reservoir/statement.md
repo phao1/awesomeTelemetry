@@ -1,0 +1,1 @@
+Repair the reservation pool so that it satisfies the ownership and scheduling rules in README.md for every ordering admitted by the supplied clock. Keep the public API and deterministic scheduler. Change only source files.

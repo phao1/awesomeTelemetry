@@ -1,0 +1,51 @@
+diff --git a/resolve/imports.mjs b/resolve/imports.mjs
+--- a/resolve/imports.mjs
++++ b/resolve/imports.mjs
+@@ -1,8 +1,11 @@
+ import { normalize,directory,join } from '../paths.mjs';
+ export function resolveImport(owner,request,aliases={}) {
+   if(request.startsWith('.')) return join(directory(owner),request);
+-  for(const [alias,path] of Object.entries(aliases)) {
+-    if(request.startsWith(alias)) return normalize(path+request.slice(alias.length));
++  const matching=Object.keys(aliases).filter(alias=>request===alias||request.startsWith(alias+'/'));
++  matching.sort((a,b)=>b.length-a.length||a.localeCompare(b));
++  if(matching.length) {
++    const alias=matching[0];
++    return normalize(aliases[alias]+request.slice(alias.length));
+   }
+   return normalize(request);
+ }
+diff --git a/digest.mjs b/digest.mjs
+--- a/digest.mjs
++++ b/digest.mjs
+@@ -1,4 +1,10 @@
+ import {createHash} from 'node:crypto';
+ export function digest(parts) {
+-  return createHash('sha256').update(parts.join('')).digest('hex');
++  const hash=createHash('sha256');
++  for(const part of parts) {
++    const bytes=Buffer.from(part,'utf8');
++    hash.update(String(bytes.length)+':');
++    hash.update(bytes);
++  }
++  return hash.digest('hex');
+ }
+diff --git a/cache/key.mjs b/cache/key.mjs
+--- a/cache/key.mjs
++++ b/cache/key.mjs
+@@ -1,4 +1,4 @@
+ import {digest} from '../digest.mjs';
+ export function identity(node,dependencies,options) {
+-  return digest([options.version,node.path,node.source,options.separator]);
++  return digest([options.version,node.path,node.source,options.separator,...dependencies.map(value=>value.hash)]);
+ }
+diff --git a/output/publish.mjs b/output/publish.mjs
+--- a/output/publish.mjs
++++ b/output/publish.mjs
+@@ -1,5 +1,5 @@
+ export function publish(previous,targets,built) {
+-  const next=new Map(previous);
++  const next=new Map();
+   for(const target of targets)next.set(target.output,built.get(target.entry).text);
+   return next;
+ }

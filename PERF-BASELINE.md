@@ -2079,3 +2079,4 @@ A reader whose cache holds the ledger's last entry no longer replays the ledger,
 
 The metrics page reads one small `session-report.json` per optimizer round. It stays behind the ledger-head cache and a task has at most a few dozen rounds. The session report and output endpoint reads bounded files only on request. The worker adds one `docker stats` call per sample and only after the idle window has passed. Full `perf:check` passed with no budget changes.
 
+The task options request reads one more small manifest for the advanced bank, behind the same cache. No budget changes.

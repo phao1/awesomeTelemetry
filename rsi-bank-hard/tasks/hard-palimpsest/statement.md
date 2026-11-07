@@ -1,0 +1,1 @@
+Implement the transaction revision specified in `docs/isolation.md`. Preserve the existing public entry point and development workflow. Change source files only; use no dependencies beyond the standard library.

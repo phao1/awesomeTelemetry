@@ -1,0 +1,93 @@
+[
+  {
+    "op": "ingest",
+    "rows": [
+      {
+        "id": "one",
+        "revision": 2,
+        "at": "2025-01-01T00:00:00Z",
+        "warehouse": "east",
+        "sku": "a",
+        "quantity": 7
+      },
+      {
+        "id": "one",
+        "revision": 1,
+        "at": "2025-01-01T00:00:00Z",
+        "warehouse": "east",
+        "sku": "a",
+        "quantity": 3
+      }
+    ]
+  },
+  {
+    "op": "day",
+    "day": "2025-01-01"
+  },
+  {
+    "op": "correct",
+    "id": "one",
+    "quantity": 0,
+    "warehouse": "west",
+    "at": "2025-01-02T00:00:00Z"
+  },
+  {
+    "op": "day",
+    "day": "2025-01-01"
+  },
+  {
+    "op": "day",
+    "day": "2025-01-02"
+  },
+  {
+    "op": "ingest",
+    "rows": [
+      {
+        "id": "two",
+        "revision": 0,
+        "at": "2025-01-02T00:00:00Z",
+        "warehouse": "a:b",
+        "sku": "c",
+        "quantity": 2
+      },
+      {
+        "id": "three",
+        "revision": 0,
+        "at": "2025-01-02T00:00:00Z",
+        "warehouse": "a",
+        "sku": "b:c",
+        "quantity": 4
+      }
+    ]
+  },
+  {
+    "op": "day",
+    "day": "2025-01-02"
+  },
+  {
+    "op": "ingest",
+    "rows": [
+      {
+        "id": "large",
+        "revision": 0,
+        "at": "2025-01-01T00:00:00Z",
+        "warehouse": "east",
+        "sku": "s",
+        "quantity": "100000000000000000000000000000000000.0000000000001",
+        "unit": "box"
+      },
+      {
+        "id": "offset",
+        "revision": 0,
+        "at": "2025-01-01T00:00:00Z",
+        "warehouse": "east",
+        "sku": "s",
+        "quantity": "-1200000000000000000000000000000000000"
+      }
+    ]
+  },
+  {
+    "op": "day",
+    "day": "2025-01-01"
+  }
+]

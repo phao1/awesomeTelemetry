@@ -1,0 +1,39 @@
+diff --git a/ramps.py b/ramps.py
+--- a/ramps.py
++++ b/ramps.py
+@@ -5,10 +5,32 @@
+         raise ValueError('bounds')
+     return (left, right, start, step)
+ 
++def triangle(x):
++    return x * (x - 1) // 2
++
++def event(cells, n, position, coefficients):
++    index = position + 1
++    while index <= n + 1:
++        for column, delta in enumerate(coefficients):
++            address = (column, index)
++            cells.write(address, cells.read(address) + delta)
++        index += index & -index
++
+ def apply(cells, n, ramp, sign):
+     left, right, start, step = ramp
+-    for index in range(left, right):
+-        cells.write(index, cells.read(index) + sign * (start + (index - left) * step))
++    a = sign * step
++    b = sign * (start - step * left)
++    c = -a * triangle(left) - b * left
++    event(cells, n, left, (a, b, c))
++    event(cells, n, right, (-a, -b, a * triangle(right) + b * right))
+ 
+ def prefix(cells, n, stop):
+-    return sum(cells.read(index) for index in range(max(0, min(n, stop))))
++    stop = max(0, min(n, stop))
++    index = stop + 1
++    coefficients = [0, 0, 0]
++    while index > 0:
++        for column in range(3):
++            coefficients[column] += cells.read((column, index))
++        index -= index & -index
++    a, b, c = coefficients
++    return a * triangle(stop) + b * stop + c

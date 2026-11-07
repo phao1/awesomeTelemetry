@@ -1,0 +1,55 @@
+diff --git a/descendants.go b/descendants.go
+--- a/descendants.go
++++ b/descendants.go
+@@ -1,3 +1,6 @@
+ package workspace
+ import "strings"
+-func descendant(base,name string)bool{return strings.HasPrefix(name,base)}
++func descendant(base,name string)bool{
++ if base==""{return true}
++ return name==base||strings.HasPrefix(name,base+"/")
++}
+diff --git a/hardlinks.go b/hardlinks.go
+--- a/hardlinks.go
++++ b/hardlinks.go
+@@ -1,5 +1,14 @@
+ package workspace
++import "fmt"
+ func(a *Archive) materialize(e Entry)(Entry,error){
+- if e.Kind=="hardlink"{target,err:=clean(e.Target);if err!=nil{return Entry{},err};if _,err=a.Read(target);err!=nil{return Entry{},err};e.Target=target}
++ if e.Kind!="hardlink"{return e,nil}
++ target,err:=clean(e.Target)
++ if err!=nil{return Entry{},err}
++ original,err:=a.resolve(target,make(map[string]bool))
++ if err!=nil{return Entry{},err}
++ if original.Kind!="file"{return Entry{},fmt.Errorf("hardlink target")}
++ e.Kind="file"
++ e.Target=""
++ e.Body=append([]byte(nil),original.Body...)
+  return e,nil
+ }
+diff --git a/links.go b/links.go
+--- a/links.go
++++ b/links.go
+@@ -1,2 +1,6 @@
+ package workspace
+-func linkDestination(owner,target string)(string,error){return clean(target)}
++import ("path";"strings";"fmt")
++func linkDestination(owner,target string)(string,error){
++ if strings.HasPrefix(target,"/"){return "",fmt.Errorf("absolute link")}
++ return clean(path.Join(parent(owner),target))
++}
+diff --git a/ordering.go b/ordering.go
+--- a/ordering.go
++++ b/ordering.go
+@@ -1,6 +1,5 @@
+ package workspace
+-import (
+- "sort"
+- "strings"
+-)
+-func ordered(names []string){sort.SliceStable(names,func(i,j int)bool{return strings.ToLower(names[i])<strings.ToLower(names[j])})}
++import "sort"
++func ordered(names []string){
++ sort.Strings(names)
++}

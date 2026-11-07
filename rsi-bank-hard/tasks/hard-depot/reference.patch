@@ -1,0 +1,125 @@
+diff --git a/inventory/corrections.py b/inventory/corrections.py
+--- a/inventory/corrections.py
++++ b/inventory/corrections.py
+@@ -3,6 +3,6 @@
+ 
+ def corrected(record,quantity=None,warehouse=None,at=None):
+     return replace(record,revision=record.revision+1,
+-        quantity=number(quantity) if quantity else record.quantity,
++        quantity=number(quantity) if quantity is not None else record.quantity,
+         warehouse=warehouse if warehouse is not None else record.warehouse,
+         at=at if at is not None else record.at)
+diff --git a/inventory/export.py b/inventory/export.py
+--- a/inventory/export.py
++++ b/inventory/export.py
+@@ -1,8 +1,9 @@
+ from decimal import Decimal
+-from .quantities import render
++from .quantities import render,add,subtract
++from functools import reduce
+ 
+ def total(rows):
+-    return render(sum((Decimal(row['quantity']) for row in rows),Decimal(0)))
++    return render(reduce(add,(Decimal(row['quantity']) for row in rows),Decimal(0)))
+ 
+ def pivot(reports):
+     groups={}
+@@ -16,4 +17,4 @@
+     def keyed(rows):
+         return {(row['warehouse'],row['sku']):Decimal(row['quantity']) for row in rows}
+     a,b=keyed(left),keyed(right)
+-    return [{'warehouse':key[0],'sku':key[1],'delta':render(b.get(key,Decimal(0))-a.get(key,Decimal(0)))} for key in sorted(a.keys()|b.keys()) if a.get(key,0)!=b.get(key,0)]
++    return [{'warehouse':key[0],'sku':key[1],'delta':render(subtract(b.get(key,Decimal(0)),a.get(key,Decimal(0))))} for key in sorted(a.keys()|b.keys()) if a.get(key,0)!=b.get(key,0)]
+diff --git a/inventory/invalidation.py b/inventory/invalidation.py
+--- a/inventory/invalidation.py
++++ b/inventory/invalidation.py
+@@ -1,2 +1,11 @@
+ def changed_days(before,after):
+-    return {record.day() for key,record in after.items() if before.get(key)!=record}
++    changed=set()
++    for key in before.keys()|after.keys():
++        old,new=before.get(key),after.get(key)
++        if old==new:
++            continue
++        if old is not None:
++            changed.add(old.day())
++        if new is not None:
++            changed.add(new.day())
++    return changed
+diff --git a/inventory/keys.py b/inventory/keys.py
+--- a/inventory/keys.py
++++ b/inventory/keys.py
+@@ -1,2 +1,2 @@
+ def group_key(warehouse,sku):
+-    return warehouse+':'+sku
++    return (warehouse,sku)
+diff --git a/inventory/projection.py b/inventory/projection.py
+--- a/inventory/projection.py
++++ b/inventory/projection.py
+@@ -1,6 +1,6 @@
+ from decimal import Decimal
+ from .keys import group_key
+-from .quantities import render
++from .quantities import render,add
+ 
+ def project(records,day):
+     totals={}
+@@ -10,7 +10,7 @@
+         if record.deleted or record.day()!=day:
+             continue
+         key=group_key(record.warehouse,record.sku)
+-        totals[key]=totals.get(key,Decimal(0))+record.quantity
++        totals[key]=add(totals.get(key,Decimal(0)),record.quantity)
+         counts[key]=counts.get(key,0)+1
+         labels[key]=record.group()
+     output=[]
+diff --git a/inventory/quantities.py b/inventory/quantities.py
+--- a/inventory/quantities.py
++++ b/inventory/quantities.py
+@@ -1,4 +1,4 @@
+-from decimal import Decimal,InvalidOperation
++from decimal import Decimal,InvalidOperation,localcontext
+ 
+ def number(value):
+     if isinstance(value,bool):
+@@ -14,9 +14,26 @@
+ def render(value):
+     if not value:
+         return '0'
+-    return format(value.normalize(),'f')
++    text=format(value,'f')
++    return text.rstrip('0').rstrip('.') if '.' in text else text
+ 
+ def convert(value,unit,catalog):
+     if unit not in catalog:
+         raise ValueError('unit')
+-    return number(value)*number(catalog[unit])
++    left,right=number(value),number(catalog[unit])
++    with localcontext() as context:
++        context.prec=max(1,len(left.as_tuple().digits)+len(right.as_tuple().digits))
++        return left*right
++
++def add(left,right):
++    a,b=left.as_tuple(),right.as_tuple()
++    exponent=min(a.exponent,b.exponent)
++    precision=max(len(a.digits)+a.exponent-exponent,len(b.digits)+b.exponent-exponent)+1
++    with localcontext() as context:
++        context.prec=max(1,precision)
++        return left+right
++
++def subtract(left,right):
++    sign,digits,exponent=right.as_tuple()
++    opposite=Decimal((1-sign,digits,exponent))
++    return add(left,opposite)
+diff --git a/inventory/revisions.py b/inventory/revisions.py
+--- a/inventory/revisions.py
++++ b/inventory/revisions.py
+@@ -1,5 +1,7 @@
+ def newest(records):
+     result={}
+     for record in records:
+-        result[record.identity]=record
++        old=result.get(record.identity)
++        if old is None or record.revision>old.revision:
++            result[record.identity]=record
+     return result

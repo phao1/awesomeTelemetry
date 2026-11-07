@@ -1,0 +1,1 @@
+The order-statistic API is correct on ordinary integer inputs but exceeds the operation budget. Implement the complexity and stable incremental semantics in README.md. Keys are opaque, and acceptance counts every ordering comparison and injected slot read/write. Source changes only.

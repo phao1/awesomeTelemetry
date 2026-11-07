@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "seed": "rsi-hard-2026-11-08-v2-split-2",
+  "mutationKillMin": 0.7,
+  "sets": {
+    "smoke": [
+      "hard-contour",
+      "hard-orderbook",
+      "hard-postbox"
+    ],
+    "train": [
+      "hard-contour",
+      "hard-fieldscript",
+      "hard-folio",
+      "hard-kiln",
+      "hard-orderbook",
+      "hard-postbox"
+    ],
+    "sealed": [
+      "hard-depot",
+      "hard-reservoir",
+      "hard-waypoint"
+    ],
+    "final": [
+      "hard-palimpsest",
+      "hard-rendezvous",
+      "hard-strata"
+    ]
+  },
+  "questions": [
+    {
+      "id": "hard-palimpsest",
+      "language": "javascript",
+      "difficulty": "hard",
+      "mutationKillRatio": 0.8934426229508197
+    },
+    {
+      "id": "hard-reservoir",
+      "language": "javascript",
+      "difficulty": "hard",
+      "mutationKillRatio": 0.7878787878787878
+    },
+    {
+      "id": "hard-orderbook",
+      "language": "javascript",
+      "difficulty": "hard",
+      "mutationKillRatio": 0.8354430379746836
+    },
+    {
+      "id": "hard-contour",
+      "language": "python",
+      "difficulty": "hard",
+      "mutationKillRatio": 0.9206349206349206
+    },
+    {
+      "id": "hard-rendezvous",
+      "language": "python",
+      "difficulty": "hard",
+      "mutationKillRatio": 0.7818181818181819
+    },
+    {
+      "id": "hard-fieldscript",
+      "language": "python",
+      "difficulty": "hard",
+      "mutationKillRatio": 0.8682634730538922
+    },
+    {
+      "id": "hard-waypoint",
+      "language": "go",
+      "difficulty": "hard",
+      "mutationKillRatio": 0.9387755102040817
+    },
+    {
+      "id": "hard-strata",
+      "language": "go",
+      "difficulty": "hard",
+      "mutationKillRatio": 0.8554216867469879
+    },
+    {
+      "id": "hard-postbox",
+      "language": "go",
+      "difficulty": "hard",
+      "mutationKillRatio": 0.8933333333333333
+    },
+    {
+      "id": "hard-kiln",
+      "language": "javascript",
+      "difficulty": "hard",
+      "mutationKillRatio": 1
+    },
+    {
+      "id": "hard-depot",
+      "language": "python",
+      "difficulty": "hard",
+      "mutationKillRatio": 0.7547169811320755
+    },
+    {
+      "id": "hard-folio",
+      "language": "go",
+      "difficulty": "hard",
+      "mutationKillRatio": 1
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+Fix coalescing loader behavior under the deterministic scheduler according to README.md. The scheduler may choose any queued job next, and loaders may complete after cancellation. Preserve the public API and use only source changes.

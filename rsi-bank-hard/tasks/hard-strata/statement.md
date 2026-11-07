@@ -1,0 +1,1 @@
+The range envelope implementation produces correct results but exceeds the deterministic comparison budget. Implement the complexity requirement in README.md while preserving winner provenance, half-open boundaries and tombstones. Modify source only; use the standard library.

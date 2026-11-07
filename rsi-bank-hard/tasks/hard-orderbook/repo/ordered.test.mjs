@@ -1,0 +1,1 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {Ordered} from './ordered.mjs';test('ordering',()=>{const x=new Ordered((a,b)=>a-b);x.put('a',2,3);x.put('b',1,4);assert.equal(x.select(0),'b');assert.equal(x.prefix(2),7);});

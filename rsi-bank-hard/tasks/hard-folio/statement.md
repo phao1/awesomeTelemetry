@@ -1,0 +1,1 @@
+An archive user reports that restoring a document package loses unrelated files and changes a saved copy after later edits. Run `go test -run TestUserReplay -v` with its embedded replay and investigate. Follow the existing README conventions, preserve visible tests, and modify source files only.

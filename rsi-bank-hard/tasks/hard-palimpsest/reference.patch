@@ -1,0 +1,200 @@
+diff --git a/store/history.mjs b/store/history.mjs
+--- a/store/history.mjs
++++ b/store/history.mjs
+@@ -8,12 +8,42 @@
+   }
+   at(key, epoch) {
+     const versions = this.rows.get(key) ?? [];
+-    for (let i = versions.length - 1; i >= 0; i--) {
+-      if (versions[i].epoch <= epoch) return versions[i];
++    let lo = 0;
++    let hi = versions.length;
++    while (lo < hi) {
++      const mid = (lo + hi) >>> 1;
++      if (versions[mid].epoch <= epoch) lo = mid + 1;
++      else hi = mid;
+     }
+-    return { epoch: -1, value: null, live: false };
++    if (lo === 0) return { epoch: -1, value: null, live: false };
++    return versions[lo - 1];
+   }
+   keys(epoch) {
+     return [...this.rows.keys()].filter(key => this.at(key, epoch).live).sort();
+   }
++  changedAfter(key, epoch) {
++    return this.at(key, this.epoch).epoch > epoch;
++  }
++  changedIn(range, epoch) {
++    for (const key of this.rows.keys()) {
++      if (range.from !== null && key < range.from) continue;
++      if (range.to !== null && key >= range.to) continue;
++      if (this.changedAfter(key, epoch)) return true;
++    }
++    return false;
++  }
++  publish(writes) {
++    if (writes.size === 0) return this.epoch;
++    const epoch = this.epoch + 1;
++    const prepared = [];
++    for (const [key, row] of writes) {
++      prepared.push([key, { epoch, live: row.live, value: structuredClone(row.value) }]);
++    }
++    for (const [key, row] of prepared) {
++      if (!this.rows.has(key)) this.rows.set(key, []);
++      this.rows.get(key).push(row);
++    }
++    this.epoch = epoch;
++    return epoch;
++  }
+ }
+diff --git a/transaction/frames.mjs b/transaction/frames.mjs
+--- a/transaction/frames.mjs
++++ b/transaction/frames.mjs
+@@ -1,6 +1,31 @@
++function cloneWrites(writes) {
++  return new Map([...writes].map(([key, value]) => [key, structuredClone(value)]));
++}
+ export function capture(tx) {
+-  return { writes: new Map(tx.writes) };
++  return {
++    writes: cloneWrites(tx.writes),
++    reads: new Set(tx.reads),
++    ranges: tx.ranges.map(range => ({ ...range })),
++  };
+ }
+ export function restore(tx, frame) {
+-  tx.writes = new Map(frame.writes);
++  tx.writes = cloneWrites(frame.writes);
++  tx.reads = new Set(frame.reads);
++  tx.ranges = frame.ranges.map(range => ({ ...range }));
+ }
++export function locate(frames, name) {
++  for (let index = frames.length - 1; index >= 0; index--) {
++    if (frames[index].name === name) return index;
++  }
++  throw new Error('unknown savepoint');
++}
++export function key(value) {
++  if (typeof value !== 'string') throw new TypeError('key');
++  return value;
++}
++export function bounds(from, to) {
++  if (from !== null) key(from);
++  if (to !== null) key(to);
++  if (from !== null && to !== null && from > to) throw new RangeError('bounds');
++  return { from, to };
++}
+diff --git a/transaction/session.mjs b/transaction/session.mjs
+--- a/transaction/session.mjs
++++ b/transaction/session.mjs
+@@ -1,4 +1,4 @@
+-import { capture, restore } from './frames.mjs';
++import { capture, restore, locate, key, bounds } from './frames.mjs';
+ export class Transaction {
+   constructor(history) {
+     this.history = history;
+@@ -9,13 +9,95 @@
+     this.ranges = [];
+     this.closed = false;
+   }
+-  get(key) { const row = this.writes.get(key) ?? this.history.at(key, this.snapshot); return row.live ? structuredClone(row.value) : null; }
+-  put(key, value) { this.writes.set(key, { live: true, value: structuredClone(value) }); }
+-  delete(key) { this.writes.set(key, { live: false, value: null }); }
+-  scan(from = null, to = null) { return this.history.keys(this.snapshot).filter(k => (from === null || k >= from) && (to === null || k < to)).map(k => [k, this.get(k)]); }
+-  savepoint(name) { this.frames.push({ name, ...capture(this) }); }
+-  rollback(name) { restore(this, this.frames.find(f => f.name === name)); }
+-  release(name) { this.frames = this.frames.filter(f => f.name !== name); }
+-  commit() { for (const [k,v] of this.writes) { this.history.rows.set(k, [{ ...v, epoch: ++this.history.epoch }]); } this.closed = true; return { ok: true, epoch: this.history.epoch }; }
+-  abort() { this.closed = true; }
++  active() {
++    if (this.closed) throw new Error('closed transaction');
++  }
++  get(name) {
++    this.active();
++    key(name);
++    if (this.writes.has(name)) {
++      const row = this.writes.get(name);
++      return row.live ? structuredClone(row.value) : null;
++    }
++    this.reads.add(name);
++    const row = this.history.at(name, this.snapshot);
++    return row.live ? structuredClone(row.value) : null;
++  }
++  has(name) {
++    this.active();
++    key(name);
++    if (this.writes.has(name)) {
++      return this.writes.get(name).live;
++    }
++    this.reads.add(name);
++    return this.history.at(name, this.snapshot).live;
++  }
++  put(name, value) {
++    this.active();
++    key(name);
++    if (value === undefined) throw new TypeError('value');
++    const copy = structuredClone(value);
++    this.writes.set(name, { live: true, value: copy });
++  }
++  delete(name) {
++    this.active();
++    key(name);
++    this.writes.set(name, { live: false, value: null });
++  }
++  scan(from = null, to = null) {
++    this.active();
++    const range = bounds(from, to);
++    this.ranges.push(range);
++    const names = new Set(this.history.keys(this.snapshot));
++    for (const name of this.writes.keys()) names.add(name);
++    const result = [];
++    for (const name of [...names].sort()) {
++      if (from !== null && name < from) continue;
++      if (to !== null && name >= to) continue;
++      const row = this.writes.get(name) ?? this.history.at(name, this.snapshot);
++      if (row.live) result.push([name, structuredClone(row.value)]);
++    }
++    return result;
++  }
++  savepoint(name) {
++    this.active();
++    key(name);
++    this.frames.push({ name, ...capture(this) });
++  }
++  rollback(name) {
++    this.active();
++    key(name);
++    const index = locate(this.frames, name);
++    restore(this, this.frames[index]);
++    this.frames.length = index + 1;
++  }
++  release(name) {
++    this.active();
++    key(name);
++    const index = locate(this.frames, name);
++    this.frames.length = index;
++  }
++  commit() {
++    this.active();
++    let conflict = false;
++    for (const name of this.reads) {
++      if (this.history.changedAfter(name, this.snapshot)) conflict = true;
++    }
++    for (const name of this.writes.keys()) {
++      if (this.history.changedAfter(name, this.snapshot)) conflict = true;
++    }
++    for (const range of this.ranges) {
++      if (this.history.changedIn(range, this.snapshot)) conflict = true;
++    }
++    this.closed = true;
++    this.frames.length = 0;
++    if (conflict) return { ok: false, epoch: this.history.epoch };
++    return { ok: true, epoch: this.history.publish(this.writes) };
++  }
++  abort() {
++    this.active();
++    this.closed = true;
++    this.frames.length = 0;
++    this.writes.clear();
++  }
+ }

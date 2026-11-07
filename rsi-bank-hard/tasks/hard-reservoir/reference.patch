@@ -1,0 +1,107 @@
+diff --git a/reservations/pump.mjs b/reservations/pump.mjs
+--- a/reservations/pump.mjs
++++ b/reservations/pump.mjs
+@@ -1,8 +1,18 @@
+ export function pump(pool) {
+-  while (pool.waiting.length && pool.free >= pool.waiting[0].weight) {
+-    const item = pool.waiting.shift();
++  if (pool.closed) return;
++  while (pool.waiting.length) {
++    const item = pool.waiting[0];
++    if (item.state !== 'waiting') { pool.waiting.shift(); continue; }
++    if (item.weight > pool.free) return;
++    pool.waiting.shift();
+     pool.free -= item.weight;
+-    item.state = 'held';
+-    pool.clock.defer(() => item.resolve(pool.receipt(item)));
++    item.state = 'reserved';
++    pool.clock.defer(() => {
++      if (item.state !== 'reserved') return;
++      item.state = 'held';
++      if (item.timer !== null) pool.clock.cancel(item.timer);
++      item.timer = null;
++      item.resolve(pool.receipt(item));
++    });
+   }
+ }
+diff --git a/pool.mjs b/pool.mjs
+--- a/pool.mjs
++++ b/pool.mjs
+@@ -1,17 +1,68 @@
+ import { pump } from './reservations/pump.mjs';
+ export class Pool {
+-  constructor(capacity, clock) { this.capacity=capacity;this.free=capacity;this.clock=clock;this.waiting=[];this.items=new Set();this.closed=false; }
++  constructor(capacity, clock) {
++    if (!Number.isInteger(capacity) || capacity < 1) throw new RangeError('capacity');
++    this.capacity=capacity;
++    this.free=capacity;
++    this.clock=clock;
++    this.waiting=[];
++    this.items=new Set();
++    this.closed=false;
++  }
+   acquire(weight=1, timeout=null) {
+     if (!Number.isInteger(weight) || weight < 1 || weight > this.capacity) throw new RangeError('weight');
+     if (timeout !== null && (!Number.isInteger(timeout) || timeout < 0)) throw new RangeError('timeout');
+-    let resolve, reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});
+-    const item={weight,resolve,reject,state:'waiting',timer:null};this.items.add(item);
+-    if (this.closed) { item.state='done';reject(new Error('closed')); }
+-    else { this.waiting.push(item);if(timeout!==null)item.timer=this.clock.after(timeout,()=>this.cancel(item,'timeout'));pump(this); }
++    let resolve, reject;
++    const promise=new Promise((a,b)=>{resolve=a;reject=b;});
++    const item={weight,resolve,reject,state:'waiting',timer:null};
++    this.items.add(item);
++    if (this.closed) {
++      item.state='done';
++      this.items.delete(item);
++      reject(new Error('closed'));
++    } else {
++      this.waiting.push(item);
++      if(timeout!==null) item.timer=this.clock.after(timeout,()=>this.cancel(item,'timeout'));
++      pump(this);
++    }
+     return {promise,cancel:()=>this.cancel(item,'cancelled')};
+   }
+-  cancel(item,reason) { if(item.state==='done')return false;item.state='done';item.reject(new Error(reason));pump(this);return true; }
+-  receipt(item) { return {weight:item.weight,release:()=>{this.free+=item.weight;item.state='done';pump(this);return true;}}; }
+-  close() { this.closed=true;for(const item of this.items)if(item.state==='waiting')this.cancel(item,'closed'); }
+-  stats() { return {free:this.free,waiting:this.waiting.filter(x=>x.state==='waiting').length,held:[...this.items].filter(x=>x.state==='held').reduce((n,x)=>n+x.weight,0)}; }
++  cancel(item,reason) {
++    if(item.state !== 'waiting' && item.state !== 'reserved') return false;
++    if(item.state === 'reserved') this.free += item.weight;
++    item.state='done';
++    if(item.timer !== null) this.clock.cancel(item.timer);
++    item.timer=null;
++    this.items.delete(item);
++    this.waiting=this.waiting.filter(other=>other!==item);
++    item.reject(new Error(reason));
++    pump(this);
++    return true;
++  }
++  receipt(item) {
++    let released=false;
++    return Object.freeze({weight:item.weight,release:()=>{
++      if(released || item.state !== 'held') return false;
++      released=true;
++      item.state='done';
++      this.items.delete(item);
++      this.free+=item.weight;
++      pump(this);
++      return true;
++    }});
++  }
++  close() {
++    if(this.closed) return;
++    this.closed=true;
++    for(const item of [...this.items]) {
++      if(item.state === 'waiting' || item.state === 'reserved') this.cancel(item,'closed');
++    }
++  }
++  stats() {
++    return {
++      free:this.free,
++      waiting:this.waiting.filter(x=>x.state==='waiting').length,
++      held:[...this.items].filter(x=>x.state==='held' || x.state==='reserved').reduce((n,x)=>n+x.weight,0),
++    };
++  }
+ }
