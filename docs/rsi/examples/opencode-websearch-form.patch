@@ -1,0 +1,26 @@
+commit 0816ab420f08aa72204512d61be406c0610604b8
+Author: RSI Optimizer <rsi@localhost>
+Date:   Sat Nov 7 00:16:07 2026 +0000
+
+    fix(cli): continue after cancelling web search provider form in non-interactive runs
+
+diff --git a/packages/cli/src/run/noninteractive.ts b/packages/cli/src/run/noninteractive.ts
+index af42a1ac07..0c62fbd19b 100644
+--- a/packages/cli/src/run/noninteractive.ts
++++ b/packages/cli/src/run/noninteractive.ts
+@@ -186,9 +186,12 @@ export async function runNonInteractivePrompt(input: Input) {
+   }
+ 
+   const cancelForm = async (request: Pick<FormRequest, "id" | "sessionID" | "metadata">) => {
+-    // Nobody can answer a question here. Outside V1 compatibility, cancel it with a message so the
+-    // question tool fails as ordinary model-visible output and the model continues without an answer.
+-    const continuing = request.metadata?.kind === "question" && input.compatibility !== "v1"
++    // Nobody can answer a question here. Outside V1 compatibility, cancel tool-owned forms with a
++    // message so the tool fails as ordinary model-visible output and the model continues without an
++    // answer. Web search provider selection is recoverable the same way; treating it as a blocker
++    // would fail the whole run even though the model can continue without search.
++    const kind = request.metadata?.kind
++    const continuing = (kind === "question" || kind === "websearch.provider") && input.compatibility !== "v1"
+     try {
+       await input.client.session.form.cancel(
+         {
