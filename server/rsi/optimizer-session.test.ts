@@ -2,11 +2,11 @@ import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { afterEach,it,expect } from 'vitest';
+import { afterEach,describe,it,expect } from 'vitest';
 import { RSI_SCHEMA_SQL } from '../storage/schema.js';
 import { defaultRsiConfig } from '../../src/core/rsi-validation.js';
 import { RsiStore } from './queue.js';
-import { issueAgentSession,revokeAgentSession,consecutiveNoSubmissions,selfReportedTokens,runOptimizerSession,stopOptimizer } from './optimizer-session.js';
+import { issueAgentSession,revokeAgentSession,consecutiveNoSubmissions,selfReportedTokens,runOptimizerSession,stopOptimizer,IdleWatch,sessionEndReason,captureProcesses,agentOutputTail } from './optimizer-session.js';
 import { defaultWorkerSettings } from './cli.js';
 import { readOptimizerProfile } from './optimizer-profile.js';
 import type { DockerClient } from './docker.js';
@@ -77,4 +77,53 @@ it('gives a killed optimizer process time to finish exiting on a busy machine',a
 it('still fails when a process really survives every attempt',async()=>{
   const client:DockerClient={run:async argv=>exited(argv[0]==='inspect'?0:125)};
   await expect(stopOptimizer(client,'optimizer',1)).rejects.toThrow('Optimizer processes did not stop');
+});
+describe('a hung optimizer ends early and leaves evidence',()=>{
+  const watch=(cpu:(number|null)[],limit=1000)=>{let at=0,sampled=0;const w=new IdleWatch(limit,async()=>{sampled++;const value=cpu.shift();return value===undefined?0:value;},()=>at);return{w,move:(ms:number)=>{at+=ms;},samples:()=>sampled};};
+  it('needs both no model requests and a quiet CPU across three samples',async()=>{
+    const {w,move,samples}=watch([0,1,0]);expect(await w.idle(5)).toBe(false);
+    move(999);expect(await w.idle(5)).toBe(false);expect(samples()).toBe(0);
+    move(1);expect(await w.idle(5)).toBe(false);move(1000);expect(await w.idle(5)).toBe(false);move(1000);expect(await w.idle(5)).toBe(true);expect(samples()).toBe(3);
+  });
+  it('a new model request restarts the window and forgets earlier quiet samples',async()=>{
+    const {w,move}=watch([0,0,0,0,0]);await w.idle(1);move(1000);await w.idle(1);move(1000);await w.idle(1);
+    move(1000);expect(await w.idle(2)).toBe(false);move(999);expect(await w.idle(2)).toBe(false);
+    move(1);expect(await w.idle(2)).toBe(false);move(1000);expect(await w.idle(2)).toBe(false);move(1000);expect(await w.idle(2)).toBe(true);
+  });
+  it('leaves a busy process such as a long test run alone, and never kills on a failed sample',async()=>{
+    const {w,move}=watch([55,null,1.9,1.9,1.9]);await w.idle(1);
+    move(1000);expect(await w.idle(1)).toBe(false);move(999);expect(await w.idle(1)).toBe(false);
+    move(1);expect(await w.idle(1)).toBe(false);move(1000);expect(await w.idle(1)).toBe(false);move(1000);expect(await w.idle(1)).toBe(false);move(1000);expect(await w.idle(1)).toBe(true);
+  });
+  it('samples at most every 20 seconds once a long window has passed',async()=>{
+    const {w,move,samples}=watch([0,0,0],600000);await w.idle(0);move(600000);await w.idle(0);expect(samples()).toBe(1);move(19999);await w.idle(0);expect(samples()).toBe(1);move(1);await w.idle(0);expect(samples()).toBe(2);
+  });
+  it('names the one reason a round ended, with a submission beating everything else',()=>{
+    const none={action:null,idled:false,timedOut:false,tokenCapped:false,interrupted:false};
+    expect(sessionEndReason({...none,action:'submit',idled:true,timedOut:true,tokenCapped:true})).toBe('submitted');
+    expect(sessionEndReason({...none,action:'declare_stuck',timedOut:true})).toBe('declared_stuck');
+    expect(sessionEndReason({...none,idled:true,timedOut:true})).toBe('idle');expect(sessionEndReason({...none,timedOut:true,tokenCapped:true})).toBe('deadline');
+    expect(sessionEndReason({...none,tokenCapped:true,interrupted:true})).toBe('token_limit');expect(sessionEndReason({...none,interrupted:true})).toBe('interrupted');expect(sessionEndReason(none)).toBe('agent_exited');
+  });
+  const exited=(stdout:string|Buffer,code=0)=>({code,stdout:Buffer.from(stdout),stderr:Buffer.alloc(0),timedOut:false,cancelled:false,overflow:false});
+  it('reads processes from the engine, not from inside the container, and redacts session tokens',async()=>{
+    const calls:string[][]=[],client:DockerClient={run:async argv=>{calls.push(argv);return exited(argv[0]==='top'?'PID ARGS\n7 opencode --token SECRET-ONE\n':'{"CPUPerc":"0.01%"}');}};
+    const v=await captureProcesses(client,'box',['SECRET-ONE']);
+    expect(v.processes).toContain('--token [redacted]');expect(v.processes).not.toContain('SECRET-ONE');expect(v.containerStats).toContain('CPUPerc');
+    expect(calls.map(c=>c[0]).sort()).toEqual(['stats','top']);expect(calls.flat()).not.toContain('exec');
+  });
+  it('a failed look at the processes is reported as nothing rather than failing the round',async()=>{
+    expect(await captureProcesses({run:async()=>{throw new Error('docker gone');}},'box',[])).toEqual({processes:null,containerStats:null});
+    expect(await captureProcesses({run:async()=>exited('',1)},'box',[])).toEqual({processes:null,containerStats:null});
+  });
+  it('keeps only the tail of the agent output, redacted, and tolerates anything unexpected',async()=>{
+    const {packFiles}=await import('./artifacts.js');const big='x'.repeat(200000)+'END token-abc';
+    const client=(stdout:Buffer,code=0):DockerClient=>({run:async()=>exited(stdout,code)});
+    const tail=await agentOutputTail(client(packFiles(new Map([['agent-output.log',Buffer.from(big)]]))),'box','/tmp/x',['token-abc']);
+    expect(tail!.length).toBe(131072-'token-abc'.length+'[redacted]'.length);expect(tail!.endsWith('END [redacted]')).toBe(true);
+    expect(await agentOutputTail(client(Buffer.alloc(0),1),'box','/tmp/x',[])).toBeNull();
+    expect(await agentOutputTail(client(Buffer.from('not a tar'.repeat(100))),'box','/tmp/x',[])).toBeNull();
+    expect(await agentOutputTail(client(packFiles(new Map([['a',Buffer.from('1')],['b',Buffer.from('2')]]))),'box','/tmp/x',[])).toBeNull();
+    expect(await agentOutputTail({run:async()=>{throw new Error('gone');}},'box','/tmp/x',[])).toBeNull();
+  });
 });

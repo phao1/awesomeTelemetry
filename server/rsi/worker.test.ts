@@ -135,9 +135,9 @@ describe('worker budget and late approval recovery', () => {
   it('creates a new evaluation after a human increases and resumes the budget', async () => {
     const { store, worker } = await setup({ maxTaskTokens: 150 }); await worker.run();
     const invalidId = store.list('evaluation_put')[0]!.id;
-    await enqueue(store, { action: 'set_budget', maxTaskTokens: 10000, maxIterations: 20, sealedQueryBudget: 10, reason: 'Raise budget' }, 'human', 'raise');
+    await enqueue(store, { action: 'set_budget', maxTaskTokens: 10000, maxIterations: 20, sealedQueryBudget: 10, optimizerSessionTokens: 8000000, reason: 'Raise budget' }, 'human', 'raise');
     await enqueue(store, { action: 'resume', reason: 'Resume calibration' }, 'human', 'resume');
-    await worker.run(); expect(store.task().state).toBe('running');
+    await worker.run(); expect(store.task().state).toBe('running'); expect(store.task().config.optimizerSessionTokens).toBe(8000000);
     expect(store.list('evaluation_put').find(e => e.id === invalidId)!.state).toBe('invalidated');
     expect(store.list('evaluation_put').some(e => e.id !== invalidId && e.phase === 'train' && e.state === 'completed')).toBe(true);
   });

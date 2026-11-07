@@ -23,8 +23,15 @@ describe('RSI runtime contract validation', () => {
     expect(defaultRsiConfig()).toMatchObject({ noiseRepeats: 3, infraErrorMaxRatio: .1, stableWindow: 3, stableFailRepeats: 2, sealedQueryBudget: 10, tokenGrowthMaxRatio: .3 });
     const a = defaultRsiConfig(); a.l1.maxDiffLines = 1; expect(defaultRsiConfig().l1.maxDiffLines).toBe(2000);
   });
-  it.each([{ noiseRepeats: 1 }, { stableFailRepeats: 1 }, { infraErrorMaxRatio: 1.1 }, { maxIterations: 1.5 }, { maxTaskTokens: Infinity }, { targetPassedCount: 0 }])('rejects invalid config %j', override => {
+  it.each([{ noiseRepeats: 1 }, { stableFailRepeats: 1 }, { infraErrorMaxRatio: 1.1 }, { maxIterations: 1.5 }, { maxTaskTokens: Infinity }, { targetPassedCount: 0 }, { optimizerSessionTokens: 0 }, { optimizerSessionTokens: 1.5 }])('rejects invalid config %j', override => {
     expect(() => validateRsiConfig({ ...defaultRsiConfig(), ...override })).toThrow();
+  });
+  it('allows the per-round token limit to be absent or set, without loosening other required fields', () => {
+    expect(validateRsiConfig(defaultRsiConfig()).optimizerSessionTokens).toBeUndefined();
+    expect(validateRsiConfig({ ...defaultRsiConfig(), optimizerSessionTokens: 8000000 }).optimizerSessionTokens).toBe(8000000);
+    const { maxTaskTokens: _removed, ...missing } = defaultRsiConfig();
+    expect(() => validateRsiConfig(missing)).toThrow();
+    expect(() => validateRsiConfig({ ...defaultRsiConfig(), unknownLimit: 1 })).toThrow();
   });
   it('accepts exact required fields and rejects unknown/missing/undefined', () => {
     expect(validateRsiTask(task())).toEqual(task());

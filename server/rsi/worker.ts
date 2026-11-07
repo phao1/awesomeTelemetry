@@ -45,7 +45,7 @@ export interface WorkerSettings {
   concurrency: number; agentTimeoutMs: number; reconciliationMaxRatio: number;
   keepRecentImages: number; imagesRoot: string; reportersRoot: string;
   agent?: AgentPins; optimizer?: AgentPins; reviews?: Partial<ReviewSettings>;
-  optimizerSessionTokens?: number; optimizerSessionTimeoutMs?: number; allowUnmeteredOptimizer?: boolean; apiBase?: string;
+  optimizerSessionTokens?: number; optimizerSessionTimeoutMs?: number; optimizerIdleTimeoutMs?: number; allowUnmeteredOptimizer?: boolean; apiBase?: string;
   proxy: ProxySettings; candidateMockTable: Record<string, MockScript>;
 }
 export interface SlotRequest { runId: string; evaluation: RsiEvaluation; question: RsiBankQuestion; data?: QuestionData; repetition: number; attempt: 0 | 1; signal: AbortSignal }
@@ -64,10 +64,10 @@ export function validateWorkerSettings(v: WorkerSettings): WorkerSettings {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Invalid ${field}`);
     for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Invalid ${field}.${key}`);
   };
-  fields(v, ['concurrency', 'agentTimeoutMs', 'reconciliationMaxRatio', 'keepRecentImages', 'imagesRoot', 'reportersRoot', 'proxy', 'candidateMockTable', 'agent', 'reviews', 'optimizer', 'optimizerSessionTokens', 'optimizerSessionTimeoutMs', 'allowUnmeteredOptimizer', 'apiBase'], 'settings');
+  fields(v, ['concurrency', 'agentTimeoutMs', 'reconciliationMaxRatio', 'keepRecentImages', 'imagesRoot', 'reportersRoot', 'proxy', 'candidateMockTable', 'agent', 'reviews', 'optimizer', 'optimizerSessionTokens', 'optimizerSessionTimeoutMs', 'optimizerIdleTimeoutMs', 'allowUnmeteredOptimizer', 'apiBase'], 'settings');
   if(v.reviews) validateReviewConfiguration(v.reviews);
   fields(v.proxy, ['mode', 'maxTokens', 'inputTokensPerByte', 'mockTable'], 'settings.proxy');
-  for (const n of [v.optimizerSessionTokens, v.optimizerSessionTimeoutMs]) if (n !== undefined && (!Number.isSafeInteger(n) || n <= 0)) throw new Error('Invalid optimizer limit');
+  for (const n of [v.optimizerSessionTokens, v.optimizerSessionTimeoutMs, v.optimizerIdleTimeoutMs]) if (n !== undefined && (!Number.isSafeInteger(n) || n <= 0)) throw new Error('Invalid optimizer limit');
   if (v.allowUnmeteredOptimizer !== undefined && typeof v.allowUnmeteredOptimizer !== 'boolean') throw new Error('Invalid allowUnmeteredOptimizer');
   if (v.apiBase !== undefined) { const u = new URL(v.apiBase); if (u.protocol !== 'http:' || u.pathname !== '/' || u.username || u.password || u.search || u.hash) throw new Error('Invalid platform origin'); }
   if (v.optimizer && (!/^[a-f0-9]{64}$/.test(v.optimizer.profileSha256) || !/^[a-f0-9]{64}$/.test(v.optimizer.dockerfileSha256))) throw new Error('Invalid optimizer pins');
@@ -536,7 +536,7 @@ export class RsiWorker {
         verdict: c.action === 'approve' ? 'promote' : 'reject', actor: 'human', reason, approvedCategories: approval?.categories ?? [], at: now() } }, 'human');
       await this.iterationEvent(approval ? { ...i, approvals: [...i.approvals, approval] } : i, c.action as RsiIterationEvent, context);
     } else if (c.action === 'set_budget') {
-      const t = this.store.task(); await this.store.put({ event: 'task_put', payload: { ...t, config: { ...t.config, maxTaskTokens: c.maxTaskTokens, maxIterations: c.maxIterations, sealedQueryBudget: c.sealedQueryBudget }, updatedAt: now() } }, 'human');
+      const t = this.store.task(); await this.store.put({ event: 'task_put', payload: { ...t, config: { ...t.config, maxTaskTokens: c.maxTaskTokens, maxIterations: c.maxIterations, sealedQueryBudget: c.sealedQueryBudget, ...(c.optimizerSessionTokens === undefined ? {} : { optimizerSessionTokens: c.optimizerSessionTokens }) }, updatedAt: now() } }, 'human');
     } else if (c.action === 'pause' || c.action === 'resume' || c.action === 'stop' || c.action === 'declare_stuck') {
       const t = this.store.task();
       if ((c.action === 'resume' && ['running', 'calibrating', 'completed'].includes(t.state)) || (c.action === 'pause' && t.state === 'paused' && t.pauseReason === 'human') || (c.action === 'stop' && t.state === 'stopped')) {

@@ -34,7 +34,7 @@ export function defaultWorkerSettings(): WorkerSettings {
   const root = rsiPackageRoot();
   return { concurrency: 2, agentTimeoutMs: 300000, reconciliationMaxRatio: 0.05, keepRecentImages: 2,
     imagesRoot: join(root, 'scripts/rsi-images'), reportersRoot: join(root, 'server/rsi/reporters'),
-    optimizerSessionTokens: 2000000, optimizerSessionTimeoutMs: 1800000, allowUnmeteredOptimizer: false, apiBase: 'http://127.0.0.1:4173',
+    optimizerSessionTokens: 2000000, optimizerSessionTimeoutMs: 1800000, optimizerIdleTimeoutMs: 600000, allowUnmeteredOptimizer: false, apiBase: 'http://127.0.0.1:4173',
     proxy: { mode: 'real', maxTokens: 4096, inputTokensPerByte: 0.35, mockTable: {} }, candidateMockTable: {} };
 }
 const HELP = `Usage: rsi <command> --task <id> [--root <configRoot>]

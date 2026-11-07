@@ -9,7 +9,7 @@ import { createTask } from './commands.js';
 import { defaultWorkerSettings } from './cli.js';
 import { defaultRsiConfig } from '../../src/core/rsi-validation.js';
 import type { RsiIteration, RsiPhase } from '../../src/core/rsi-types.js';
-import { overview, verdict, metrics, reviewEvidence, runTelemetry, cachedPage, comparePageRuns } from './page-data.js';
+import { overview, verdict, metrics, reviewEvidence, runTelemetry, cachedPage, comparePageRuns, sessionDetail } from './page-data.js';
 import { page } from './reader.js';
 import type { RsiPageRun } from '../../src/core/rsi-api-client.js';
 import { privateWrite } from './artifacts.js';
@@ -22,6 +22,22 @@ async function setup(){
   return {root,store,i,set:async(state:RsiIteration['state'],actor:'worker'|'optimizer'='worker',extra:Partial<RsiIteration>={})=>{i={...i,state,...extra,updatedAt:now()};await store.put({event:'iteration_put',payload:i},actor);return i;}};
 }
 describe('RSI-016 bounded human page projections',()=>{
+  it('lists every optimizer round with why it ended, and the limit a later round will use',async()=>{
+    const {store}=await setup();const root=store.root,at=now(),common={taskId:'task',parentId:null,commit:'a'.repeat(40),accounting:'proxy' as const,startedAt:at,submissionId:null};
+    for(const [id,seq,state,tokens] of [['old',1,'timeout',5],['capped',2,'no_submission',2000100]] as const){
+      const session={...common,id,seq,artifactPath:`artifacts/optimizer/${id}`};
+      await store.put({event:'session_put',payload:{...session,state:'running',tokens:null,endedAt:null}});await store.put({event:'session_put',payload:{...session,state,tokens,endedAt:now()}});
+    }
+    await privateWrite(join(root,'artifacts/optimizer/capped/session-report.json'),JSON.stringify({endReason:'token_limit',tokenLimit:2000000,requests:40,idleLimitMs:600000,processes:null,containerStats:null}));
+    await privateWrite(join(root,'artifacts/optimizer/capped/agent-output.log'),'last words');
+    const m=await metrics(store);
+    expect(m.sessions.map(s=>[s.id,s.endReason,s.requests,s.tokenLimit,s.iterationSeq])).toEqual([['old',null,null,null,null],['capped','token_limit',40,2000000,null]]);
+    expect(m.sessionTokenLimit).toBe(2000000);
+    expect(await sessionDetail(root,'artifacts/optimizer/capped')).toMatchObject({report:{endReason:'token_limit'},output:'last words'});
+    expect(await sessionDetail(root,'artifacts/optimizer/old')).toEqual({report:null,output:null});
+    const t=store.task();await store.put({event:'task_put',payload:{...t,config:{...t.config,optimizerSessionTokens:8000000},updatedAt:now()}},'human');
+    expect((await metrics(store)).sessionTokenLimit).toBe(8000000);
+  });
   it('reports review layers as not reached, not missing, when an iteration was rejected before review',async()=>{
     const {store,set}=await setup();await set('submitted','optimizer');await set('precheck');await set('training');await set('rejected');
     const v=await verdict(store,store.list('iteration_put')[0]!);

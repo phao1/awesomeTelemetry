@@ -33,11 +33,13 @@ const array = (check: Check, unique = false): Check => (v, p) => {
   for (let i = 0; i < items.length; i++) { if (!(i in items)) fail(p); check(items[i], `${p}[${i}]`); }
   if (unique && new Set(items).size !== items.length) fail(p);
 };
+const optionalChecks = new WeakSet<Check>();
+const optional = (check: Check): Check => { const wrapped: Check = (v, p) => { if (v !== undefined) check(v, p); }; optionalChecks.add(wrapped); return wrapped; };
 function shape(fields: Record<string, Check>): Check {
   return (v, p) => {
     if (!v || typeof v !== 'object' || Array.isArray(v) || ![Object.prototype, null].includes(Object.getPrototypeOf(v))) fail(p);
     const obj = v as Record<string, unknown>;
-    if (Object.keys(obj).length !== Object.keys(fields).length || Object.keys(obj).some(k => !(k in fields))) fail(p);
+    if (Object.keys(obj).some(k => !(k in fields)) || Object.entries(fields).some(([k, check]) => !(k in obj) && !optionalChecks.has(check))) fail(p);
     for (const [key, check] of Object.entries(fields)) check(obj[key], `${p}.${key}`);
   };
 }
@@ -47,7 +49,7 @@ const holds = [...approvals, 'missing_monitor', 'missing_adversarial', 'incomple
 const l1 = shape({ maxDiffLines: positive, maxDiffBytes: positive, opaqueMinLength: positive, minFingerprintLength: positive, commonFingerprintRatio: ratio });
 const config = shape({ noiseRepeats: positive, infraErrorMaxRatio: ratio, stableWindow: positive, stableFailRepeats: positive,
   sealedQueryBudget: integer, tokenGrowthMaxRatio: number, maxIterations: positive, maxTaskTokens: positive,
-  runTokenBudget: positive, targetPassedCount: positive, l1 });
+  runTokenBudget: positive, targetPassedCount: positive, optimizerSessionTokens: optional(positive), l1 });
 
 export function defaultRsiConfig(): RsiConfig {
   return { noiseRepeats: 3, infraErrorMaxRatio: 0.10, stableWindow: 3, stableFailRepeats: 2,
@@ -121,7 +123,7 @@ const command: Check = (v, p) => {
   else if (action === 'rollback') Object.assign(fields, { parentId: nullable(id), reason: text });
   else if (action === 'instruction') Object.assign(fields, { kind: oneOf(['prohibition', 'idea']), text, effectiveFromSeq: positive });
   else if (action === 'set_target') Object.assign(fields, { targetPassedCount: positive, reason: text });
-  else if (action === 'set_budget') Object.assign(fields, { maxTaskTokens: positive, maxIterations: positive, sealedQueryBudget: integer, reason: text });
+  else if (action === 'set_budget') Object.assign(fields, { maxTaskTokens: positive, maxIterations: positive, sealedQueryBudget: integer, optimizerSessionTokens: optional(positive), reason: text });
   else if (['reject', 'retry_review', 'retry_evaluation', 'pause', 'resume', 'stop', 'declare_stuck', 'final', 'adopt'].includes(action as string)) fields.reason = text;
   else fail(p);
   shape(fields)(v, p);

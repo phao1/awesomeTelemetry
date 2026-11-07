@@ -19,7 +19,7 @@ export interface RsiConfig {
   noiseRepeats: number; infraErrorMaxRatio: number; stableWindow: number;
   stableFailRepeats: number; sealedQueryBudget: number; tokenGrowthMaxRatio: number;
   maxIterations: number; maxTaskTokens: number; runTokenBudget: number;
-  targetPassedCount: number; l1: RsiL1Config;
+  targetPassedCount: number; optimizerSessionTokens?: number; l1: RsiL1Config;
 }
 export interface RsiTask {
   id: string; repository: string; baselineCommit: string; datasetHash: string;
@@ -79,7 +79,7 @@ export type RsiCommand =
   | { action: 'rollback'; parentId: string | null; reason: string }
   | { action: 'instruction'; kind: 'prohibition' | 'idea'; text: string; effectiveFromSeq: number }
   | { action: 'set_target'; targetPassedCount: number; reason: string }
-  | { action: 'set_budget'; maxTaskTokens: number; maxIterations: number; sealedQueryBudget: number; reason: string };
+  | { action: 'set_budget'; maxTaskTokens: number; maxIterations: number; sealedQueryBudget: number; optimizerSessionTokens?: number; reason: string };
 export interface RsiQueueItem {
   id: string; taskId: string; kind: 'submit' | 'evaluate' | 'review' | 'final' | 'adopt' | 'intervene';
   iterationId: string | null; evaluationId: string | null;
@@ -91,6 +91,11 @@ export interface RsiOptimizerSession {
   state: 'running' | 'submitted' | 'stuck' | 'no_submission' | 'timeout' | 'interrupted';
   submissionId: string | null; accounting: 'proxy' | 'self_reported';
   tokens: number | null; artifactPath: string; startedAt: string; endedAt: string | null;
+}
+export type RsiSessionEndReason = 'submitted' | 'declared_stuck' | 'token_limit' | 'idle' | 'deadline' | 'agent_exited' | 'interrupted';
+export interface RsiSessionReport {
+  endReason: RsiSessionEndReason; tokenLimit: number; requests: number | null; idleLimitMs: number;
+  processes: string | null; containerStats: string | null;
 }
 export interface RsiLedgerHead { seq: number; hash: string }
 export type RsiLedgerEvent =

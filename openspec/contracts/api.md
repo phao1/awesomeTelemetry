@@ -1966,6 +1966,7 @@ type RsiWorkerStatus = { pid:number|null; at:string|null; phase:string|null; run
 | GET /api/rsi/tasks/:taskId/runs/:runId/trajectory | RsiTrajectoryPage; human all stages |
 | GET /api/rsi/tasks/:taskId/sessions | RsiPage<RsiOptimizerSession>; cursor/limit |
 | GET /api/rsi/tasks/:taskId/sessions/:sessionId/trajectory | RsiTrajectoryPage; human optimizer traces |
+| GET /api/rsi/tasks/:taskId/sessions/:sessionId/report | RsiSessionDetail; why the round ended and its output tail |
 | GET /api/rsi/tasks/:taskId/iterations/:seq/diff | {diff:string,quality:RsiQuality}; platform artifacts only |
 | GET /api/rsi/tasks/:taskId/iterations/:seq/findings | RsiPage<RsiFinding>; cursor/limit; includes evidence |
 | GET /api/rsi/tasks/:taskId/worker | RsiWorkerStatus; fresh heartbeat15s and local PID alive |

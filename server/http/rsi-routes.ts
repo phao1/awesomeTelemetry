@@ -1,4 +1,4 @@
-import { overview, pageOptions, metrics, verdict, iterationRuns, comparePageRuns, reviewEvidence, ledgerReport, workerStatus } from '../rsi/page-data.js';
+import { overview, pageOptions, metrics, verdict, iterationRuns, comparePageRuns, reviewEvidence, ledgerReport, workerStatus, sessionDetail } from '../rsi/page-data.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readdir, open, stat } from 'node:fs/promises';
 import { join, basename, dirname } from 'node:path';
@@ -162,6 +162,7 @@ export function registerRsiRoutes(router: Router, dataRoot: string): () => Promi
   register('GET','/api/rsi/tasks/:taskId/evaluations/:evaluationId/runs',false,async(s,_r,p,q)=>{validId(p.evaluationId!);if(!s!.list('evaluation_put').some(e=>e.id===p.evaluationId))return notFound();return page(s!.list('run_put').filter(r=>r.evaluationId===p.evaluationId),q);},200,['cursor','limit']);
   register('GET','/api/rsi/tasks/:taskId/runs/:runId/trajectory',false,async(s,_r,p,q)=>runTrajectory(s!,p.runId!,q,false),200,['file','offset','limit']);
   register('GET','/api/rsi/tasks/:taskId/sessions/:sessionId/trajectory',false,async(s,_r,p,q)=>{const v=s!.list('session_put').find(v=>v.id===validId(p.sessionId!));if(!v)return notFound();return trajectory(s!.root,v.artifactPath,q,false);},200,['file','offset','limit']);
+  register('GET','/api/rsi/tasks/:taskId/sessions/:sessionId/report',false,async(s,_r,p)=>{const v=s!.list('session_put').find(v=>v.id===validId(p.sessionId!));if(!v)return notFound();return sessionDetail(s!.root,v.artifactPath);});
   register('GET','/api/rsi/tasks/:taskId/worker',false,async s=>workerStatus(s!));
   register('POST','/api/rsi/tasks/:taskId/commands',false,async(s,r)=>{const o=strictObject(await body(r),['requestId','iterationId','command']);const q=await humanCommand(s!,o.command as RsiCommand,o.requestId as string,o.iterationId as string|null);return{taskId:s!.taskId,queueId:q.id,status:'queued'};},202);
   return async()=>{closing=true;clearInterval(rootPoll);clearTimeout(timer);pending.clear();await watcher?.close();await Promise.allSettled(active);database?.close();};

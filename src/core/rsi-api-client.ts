@@ -1,4 +1,4 @@
-import type { RsiApprovalCategory, RsiTask, RsiIteration, RsiEvaluation, RsiRun, RsiFinding, RsiInstruction, RsiDecision, RsiCommand, RsiConfig, RsiOptimizerSession, RsiMonitorCalibration, RsiLedgerHead, RsiPromotionResult, RsiPhase, RsiOutcome, RsiQueueItem } from './rsi-types.js';
+import type { RsiApprovalCategory, RsiTask, RsiIteration, RsiEvaluation, RsiRun, RsiFinding, RsiInstruction, RsiDecision, RsiCommand, RsiConfig, RsiOptimizerSession, RsiMonitorCalibration, RsiLedgerHead, RsiPromotionResult, RsiPhase, RsiOutcome, RsiQueueItem, RsiSessionEndReason, RsiSessionReport } from './rsi-types.js';
 
 // RSI-016 page DTOs. All nullable metrics are observed values, never estimates.
 export type RsiTaskView = Omit<RsiTask, 'taskTokenHash'>;
@@ -20,9 +20,12 @@ export interface RsiProfileOption { id: string; path: string; name: string; desc
 export interface RsiBankDistribution { phase: 'smoke' | 'train' | 'sealed' | 'final'; count: number; languages: Record<string, number> }
 export interface RsiPendingInstruction { id: string; kind: 'prohibition' | 'idea'; text: string; effectiveFromSeq: number; at: string }
 export interface RsiCliInfo { bin: string; root: string; scripts: string }
-export interface RsiOptions { cli: RsiCliInfo; agents: RsiProfileOption[]; optimizers: RsiProfileOption[]; bank: { path: string; full: RsiBankDistribution[]; small: RsiBankDistribution[] } | null; defaults: RsiConfig; settings: Required<RsiPageSettings> }
+export interface RsiBankOption { path: string; full: RsiBankDistribution[]; small: RsiBankDistribution[] }
+export interface RsiOptions { cli: RsiCliInfo; agents: RsiProfileOption[]; optimizers: RsiProfileOption[]; bank: RsiBankOption | null; hardBank: RsiBankOption | null; defaults: RsiConfig; settings: Required<RsiPageSettings> }
 export interface RsiIterationMetric { iteration: RsiIteration; iterationId: string; seq: number; adopted: { patch: string; ref: string } | null; targetTokens: number | null; optimizerTokens: number | null; reviewTokens: number | null; durationMs: number | null; cacheHitRate: number | null; reason: string | null; defenses: RsiVerdict['defenses']; finalState: 'not_requested' | 'reserved' | 'completed'; session: RsiOptimizerSession | null }
-export interface RsiMetrics { iterations: RsiIterationMetric[]; cacheHitRate: number | null; helpReason: string | null; pendingCommands: number; baselineProgress: { completed: number; planned: number } | null }
+export interface RsiSessionMetric { id: string; seq: number; state: RsiOptimizerSession['state']; endReason: RsiSessionEndReason | null; iterationSeq: number | null; tokens: number | null; tokenLimit: number | null; requests: number | null; startedAt: string; endedAt: string | null }
+export interface RsiSessionDetail { report: RsiSessionReport | null; output: string | null }
+export interface RsiMetrics { iterations: RsiIterationMetric[]; sessions: RsiSessionMetric[]; sessionTokenLimit: number; cacheHitRate: number | null; helpReason: string | null; pendingCommands: number; baselineProgress: { completed: number; planned: number } | null }
 export type RsiDefenseState = 'pass' | 'hold' | 'reject' | 'missing' | 'not_reached';
 export interface RsiVerdict { result: RsiPromotionResult; stoppedBeforeReview: boolean; approvedCategories: RsiApprovalCategory[]; defenses: { level: RsiFinding['level']; state: RsiDefenseState; reason: string }[]; parentTrainScore: number | null; candidateTrainScore: number | null; parentSealedScore: number | null; candidateSealedScore: number | null; delta: number | null; parentTokens: number | null; candidateTokens: number | null }
 export interface RsiPageRun { id: string; questionId: string; phase: RsiPhase; language: string | null; outcome: RsiOutcome; failureReason: RsiRun['failureReason']; tokens: number | null; durationMs: number; memoryPeakBytes: number | null; sessionTokens: number | null; tokenDifference: number | null; at: string; repetition: number; attempt: number }
@@ -56,9 +59,12 @@ export function createRsiClient(fetcher: typeof fetch = (...args) => fetch(...ar
   }
   const authenticate = () => token ??= fetcher('/api/rsi/session', { cache: 'no-store', credentials: 'same-origin' }).then(r => decode<{ token: string }>(r)).then(v => v.token).catch(error => { token = null; throw error; });
   async function request<T>(path: string, signal?: AbortSignal, body?: unknown): Promise<T> {
-    const bearer = await authenticate();
-    const response = await fetcher('/api/rsi' + path, { method: body === undefined ? 'GET' : 'POST', cache: 'no-store', credentials: 'same-origin', signal, headers: { Authorization: `Bearer ${bearer}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    return decode<T>(response);
+    const send = async () => fetcher('/api/rsi' + path, { method: body === undefined ? 'GET' : 'POST', cache: 'no-store', credentials: 'same-origin', signal, headers: { Authorization: `Bearer ${await authenticate()}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const response = await send();
+    if (response.status !== 401) return decode<T>(response);
+    // A restarted server issues a new page token; an open page should recover without a reload. Commands carry a request ID, so resending is safe.
+    token = null;
+    return decode<T>(await send());
   }
   const taskPath = (id: string) => '/tasks/' + encodeURIComponent(id);
   const list = <T>(id: string, name: string, cursor?: string | null, signal?: AbortSignal) => request<RsiPage<T>>(`${taskPath(id)}/${name}?limit=200${cursor ? '&cursor=' + encodeURIComponent(cursor) : ''}`, signal);
@@ -82,6 +88,7 @@ export function createRsiClient(fetcher: typeof fetch = (...args) => fetch(...ar
     review: (id: string, seq: number, signal?: AbortSignal) => request<RsiReviewEvidence>(`${taskPath(id)}/iterations/${seq}/review`, signal),
     diff: (id: string, seq: number, signal?: AbortSignal) => request<{ diff: string; quality: RsiQuality; findings: RsiFinding[] }>(`${taskPath(id)}/iterations/${seq}/diff`, signal),
     calibration: (id: string, signal?: AbortSignal) => request<{ monitorCalibration: RsiMonitorCalibration | null; latestReport: RsiMonitorCalibration | null }>(taskPath(id) + '/calibration', signal),
+    session: (id: string, sessionId: string, signal?: AbortSignal) => request<RsiSessionDetail>(`${taskPath(id)}/sessions/${encodeURIComponent(sessionId)}/report`, signal),
     verify: (id: string, signal?: AbortSignal) => request<RsiLedgerReport>(taskPath(id) + '/ledger/verify', signal),
     trajectory: (id: string, kind: 'runs' | 'sessions', entity: string, file: 'responses' | 'last-request', offset = 0, signal?: AbortSignal) => request<RsiTrajectoryPage>(`${taskPath(id)}/${kind}/${encodeURIComponent(entity)}/trajectory?file=${file}&offset=${offset}&limit=65536`, signal),
   };

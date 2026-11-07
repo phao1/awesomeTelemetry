@@ -10,6 +10,7 @@ import { Input } from '../ui/Input.js';
 import { Checkbox } from '../ui/Controls.js';
 import { Callout } from '../ui/Display.js';
 import { Reason, WriteError } from './Shared.js';
+import { useRsiRead } from './data.js';
 import { copy, reasonLabel } from './copy.js';
 export type HumanAction = 'approve'|'reject'|'retry_review'|'retry_evaluation'|'rollback'|'pause'|'resume'|'stop'|'set_budget'|'set_target'|'final'|'adopt'|'instruction';
 export const ACTION_COPY: Record<HumanAction,readonly [string,string]>={approve:['批准','Approve'],reject:['拒绝','Reject'],retry_review:['重新审查','Retry review'],retry_evaluation:['重新评测','Retry evaluation'],rollback:['回退','Roll back'],pause:['暂停','Pause'],resume:['继续','Resume'],stop:['终止','Stop'],set_budget:['调整预算','Adjust budget'],set_target:['放宽目标','Adjust target'],final:['最终验收','Final acceptance'],adopt:['采纳','Adopt'],instruction:['添加指令','Add instruction']};
@@ -18,7 +19,8 @@ const allowed: RsiApprovalCategory[]=['dependency_change','l3_suspicious','l4_su
 export function approvalAllowed(iteration:RsiIteration,checked:string[],reason:string):boolean {return iteration.state==='held'&&iteration.holdReasons.length>0&&iteration.holdReasons.every(c=>allowed.includes(c as RsiApprovalCategory)&&checked.includes(c))&&Boolean(reason.trim());}
 export function ActionDialog({action,task,iteration,locale,onClose,onSuccess,parentId}:{action:HumanAction;task:RsiTaskView;iteration:RsiIteration|null;locale:Locale;onClose:()=>void;onSuccess:()=>void;parentId?:string|null}) {
   const [reason,setReason]=useState(''),[checked,setChecked]=useState<string[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState<RsiApiError|null>(null),[otherError,setOtherError]=useState(false);
-  const [budget,setBudget]=useState({...task.config}),lock=useRef(false),request=useRef<string|null>(null);
+  const [budget,setBudget]=useState({...task.config}),[roundTokens,setRoundTokens]=useState<number|undefined>(),lock=useRef(false),request=useRef<string|null>(null);
+  const roundLimit=useRsiRead(action==='set_budget'?`${task.id}:metrics`:null,signal=>rsiApi.metrics(task.id,signal)).value?.sessionTokenLimit;
   const approvalBlocked=action==='approve'&&(!iteration||iteration.holdReasons.some(c=>!allowed.includes(c as RsiApprovalCategory)));
   const valid=action==='approve'?!!iteration&&approvalAllowed(iteration,checked,reason):Boolean(reason.trim());
   const submit=async()=>{
@@ -26,7 +28,7 @@ export function ActionDialog({action,task,iteration,locale,onClose,onSuccess,par
     let command:RsiCommand;
     if(action==='approve')command={action,categories:checked as RsiApprovalCategory[],reason:reason.trim()};
     else if(action==='rollback')command={action,parentId:parentId??null,reason:reason.trim()};
-    else if(action==='set_budget')command={action,maxTaskTokens:budget.maxTaskTokens,maxIterations:budget.maxIterations,sealedQueryBudget:budget.sealedQueryBudget,reason:reason.trim()};
+    else if(action==='set_budget')command={action,maxTaskTokens:budget.maxTaskTokens,maxIterations:budget.maxIterations,sealedQueryBudget:budget.sealedQueryBudget,...(roundTokens===undefined?{}:{optimizerSessionTokens:roundTokens}),reason:reason.trim()};
     else if(action==='set_target')command={action,targetPassedCount:budget.targetPassedCount,reason:reason.trim()};
     else if(action==='instruction')command={action,kind:'idea',text:reason.trim(),effectiveFromSeq:task.iterationCount+1};
     else command={action,reason:reason.trim()};
@@ -41,6 +43,7 @@ export function ActionDialog({action,task,iteration,locale,onClose,onSuccess,par
       {action==='final'&&<Callout tone="attention" title={copy(locale,'每个版本只能预约一次最终留出集验收','Final holdout acceptance can be reserved only once per version')}/>}
       {action==='adopt'&&<Callout title={copy(locale,'采纳将生成本地补丁和版本引用','Adoption creates a local patch and version reference')}/>}
       {action==='set_budget'&&(['maxTaskTokens','maxIterations','sealedQueryBudget'] as const).map((key,index)=><Field key={key} label={copy(locale,['任务 Token 预算','最大迭代数','封存集查询次数'][index]!,['Task token budget','Maximum iterations','Sealed queries'][index]!)} error={error?.details?.field===key?reasonLabel(error.details.reason,locale):undefined}><Input type="number" min={key==='sealedQueryBudget'?task.sealedQueriesUsed:1} value={budget[key]} disabled={busy} onChange={e=>{change();setBudget({...budget,[key]:Number(e.target.value)});}}/></Field>)}
+      {action==='set_budget'&&(roundTokens??roundLimit)!==undefined&&<Field label={copy(locale,'优化者每轮 Token 上限','Optimizer tokens per round')} hint={copy(locale,'下一轮生效。缓存命中的 Token 也计入，大仓库建议 800 万以上','Applies from the next round. Cached tokens count, so large repositories need 8M or more')}><Input type="number" min={1} value={roundTokens??roundLimit} disabled={busy} onChange={e=>{change();setRoundTokens(Number(e.target.value));}}/></Field>}
       {action==='set_target'&&<Field label={copy(locale,'目标通过数','Target passes')}><Input type="number" min={1} value={budget.targetPassedCount} disabled={busy} onChange={e=>{change();setBudget({...budget,targetPassedCount:Number(e.target.value)});}}/></Field>}
       <Field label={copy(locale,action==='instruction'?'思路':'理由（必填）',action==='instruction'?'Idea':'Reason (required)')} error={error?.details?.field==='reason'?reasonLabel(error.details.reason,locale):undefined}><textarea className="rsi-textarea" value={reason} disabled={busy} onChange={e=>{change();setReason(e.target.value);}} rows={4}/></Field>
       {(error||otherError)&&<WriteError error={error} locale={locale}/>}

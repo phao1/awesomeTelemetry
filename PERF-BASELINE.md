@@ -2075,3 +2075,7 @@ Tuning pages and page aggregation routes. The App shell reads one aggregate over
 
 A reader whose cache holds the ledger's last entry no longer replays the ledger, which took about 800ms per page request at a few hundred entries. Worker and proxy changes are outside request paths. Full `perf:check` passed on M1 8GB while a real task was running: capture A/B extra first-byte p95 at most 9.27ms, event loop p99 2.2ms.
 
+## M13 RSI optimizer sessions (2026-11-08)
+
+The metrics page reads one small `session-report.json` per optimizer round. It stays behind the ledger-head cache and a task has at most a few dozen rounds. The session report and output endpoint reads bounded files only on request. The worker adds one `docker stats` call per sample and only after the idle window has passed. Full `perf:check` passed with no budget changes.
+

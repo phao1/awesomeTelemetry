@@ -3,9 +3,9 @@ import { createReadStream } from 'node:fs';
 import { readdir, stat, realpath, lstat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { basename, join } from 'node:path';
-import type { RsiIteration, RsiOutcome } from '../../src/core/rsi-types.js';
+import type { RsiIteration, RsiOutcome, RsiSessionReport } from '../../src/core/rsi-types.js';
 import { rsiCliInfo, rsiPackageRoot } from './paths.js';
-import type { RsiBankDistribution, RsiOverview, RsiOptions, RsiWorkerStatus, RsiMetrics, RsiPageRun, RsiReviewEvidence, RsiVerdict, RsiLedgerReport, RsiDefenseState, RsiProfileOption, RsiTraceUsage } from '../../src/core/rsi-api-client.js';
+import type { RsiBankDistribution, RsiOverview, RsiOptions, RsiWorkerStatus, RsiMetrics, RsiPageRun, RsiReviewEvidence, RsiVerdict, RsiLedgerReport, RsiDefenseState, RsiProfileOption, RsiTraceUsage, RsiSessionDetail } from '../../src/core/rsi-api-client.js';
 import { defaultRsiConfig } from '../../src/core/rsi-validation.js';
 import { decidePromotion } from '../../src/core/rsi-gate.js';
 import type { RsiStore } from './queue.js';
@@ -97,10 +97,11 @@ export async function pageOptions(dataRoot: string): Promise<RsiOptions> {
       }
     }
     await profiles('.', agents, false); await profiles('optimizers', optimizers, true);
-    let bank: RsiOptions['bank'] = null;
-    try { const m=await boundedJson(packageRoot,'rsi-bank/manifest.json') as RsiBankManifest; bank={path:join(packageRoot,'rsi-bank'),full:distribution(m),small:distribution(selectBankSubset(m,'small'))}; }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-    return { cli: rsiCliInfo(dataRoot), agents, optimizers, bank, defaults: defaultRsiConfig(), settings: { optimizerSessionTokens: 2000000, optimizerSessionTimeoutMs: 1800000, allowUnmeteredOptimizer: false, concurrency: 2 } };
+    const bankOption = async (name: string): Promise<RsiOptions['bank']> => {
+      try { const m=await boundedJson(packageRoot,`${name}/manifest.json`) as RsiBankManifest; return {path:join(packageRoot,name),full:distribution(m),small:distribution(selectBankSubset(m,'small'))}; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; return null; }
+    };
+    return { cli: rsiCliInfo(dataRoot), agents, optimizers, bank: await bankOption('rsi-bank'), hardBank: await bankOption('rsi-bank-hard'), defaults: defaultRsiConfig(), settings: { optimizerSessionTokens: 2000000, optimizerSessionTimeoutMs: 1800000, allowUnmeteredOptimizer: false, concurrency: 2 } };
   });
 }
 interface Telemetry { memoryPeakBytes: number | null; sessionTokens: number | null; input: number | null; cached: number | null; requests:RsiTraceUsage[]|null }
@@ -147,6 +148,13 @@ export async function iterationRuns(store: RsiStore, i: RsiIteration): Promise<R
     return rows;
   });
 }
+const SESSION_REPORT_BYTES = 262144, SESSION_OUTPUT_BYTES = 262144;
+/** Output of the untrusted optimizer: shown as text to the human, never handed to a model. */
+export async function sessionDetail(root: string, artifactPath: string): Promise<RsiSessionDetail> {
+  const report = await optionalArtifact<RsiSessionReport>(root, `${artifactPath}/session-report.json`, SESSION_REPORT_BYTES);
+  try { return { report, output: await boundedText(root, `${artifactPath}/agent-output.log`, SESSION_OUTPUT_BYTES) }; }
+  catch (error) { if (['ENOENT','ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return { report, output: null }; throw error; }
+}
 export async function metrics(store: RsiStore): Promise<RsiMetrics> {
   return cachedPage(key(store, 'metrics'), async () => {
     const iterations: RsiMetrics['iterations'] = [], all = store.list('run_put'), evaluations = store.list('evaluation_put'); let input = 0, cached = 0, cacheComplete = true;
@@ -165,8 +173,15 @@ export async function metrics(store: RsiStore): Promise<RsiMetrics> {
         optimizerTokens: session?.tokens ?? null, reviewTokens, durationMs: runs.length ? runs.reduce((n,r) => n + r.durationMs, 0) : null,
         cacheHitRate: complete && ownInput > 0 ? ownCached / ownInput : null, defenses: (await verdict(store,i)).defenses, adopted: store.list('queue_put').some(q=>q.command.action==='adopt'&&q.iterationId===i.id&&q.state==='completed')?{patch:join(store.root,`artifacts/adopted/${i.seq}.patch`),ref:`refs/rsi/adopted/${i.seq}`}:null, finalState: evaluations.some(e=>e.commit===i.commit&&e.phase==='final'&&e.locked&&e.state==='completed'&&e.score!==null&&e.infraErrorRatio===0)?'completed':evaluations.some(e=>e.commit===i.commit&&e.phase==='final')||store.list('queue_put').some(q=>q.command.action==='final'&&q.iterationId===i.id)?'reserved':'not_requested', reason: complete ? 'review_usage_unavailable' : 'usage_unavailable', session });
     }
+    const sessions: RsiMetrics['sessions'] = [];
+    for (const s of [...store.list('session_put')].sort((a,b) => a.seq-b.seq)) {
+      const report = await optionalArtifact<RsiSessionReport>(store.root, `${s.artifactPath}/session-report.json`, SESSION_REPORT_BYTES);
+      sessions.push({ id: s.id, seq: s.seq, state: s.state, endReason: report?.endReason ?? null, iterationSeq: iterations.find(m => m.session?.id === s.id)?.seq ?? null,
+        tokens: s.tokens, tokenLimit: report?.tokenLimit ?? null, requests: report?.requests ?? null, startedAt: s.startedAt, endedAt: s.endedAt });
+    }
+    const runtime = await optionalArtifact<{ optimizerSessionTokens?: number }>(store.root, 'private/runtime.json');
     const baseline = evaluations.filter(e => e.iterationId === null && ['train','sealed'].includes(e.phase)), bank = await manifest(store);
-    return { iterations, cacheHitRate: iterations.length && cacheComplete && input > 0 ? cached / input : null,
+    return { iterations, sessions, sessionTokenLimit: store.task().config.optimizerSessionTokens ?? runtime?.optimizerSessionTokens ?? 2000000, cacheHitRate: iterations.length && cacheComplete && input > 0 ? cached / input : null,
       helpReason: store.list('queue_put').filter(q=>q.command.action==='declare_stuck').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0]?.reason ?? null,
       pendingCommands: store.list('queue_put').filter(q=>q.state==='queued'&&!(q.command.action==='review'&&q.command.audit)).length,
       baselineProgress: bank ? { completed: baseline.reduce((n,e) => n + finalRuns(e,all).length,0), planned: bank.sets.train.length * store.task().config.noiseRepeats + bank.sets.sealed.length * 3 } : null };

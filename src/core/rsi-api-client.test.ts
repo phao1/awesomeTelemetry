@@ -14,6 +14,14 @@ describe('RSI page client authentication and errors',()=>{
     const client=createRsiClient(fetcher);await expect(client.options()).rejects.toMatchObject({status,details:{field:'bank',reason:'invalid_bank'}});
     await expect(client.overview()).rejects.toBeInstanceOf(RsiApiError);
   });
+  it('recovers once from a stale page token after the server restarts, and does not loop',async()=>{
+    const denied=()=>new Response(JSON.stringify({error:{code:'RSI_AUTH_REQUIRED',message:'redacted'}}),{status:401});
+    const fetcher=vi.fn<typeof fetch>().mockResolvedValueOnce(response({token:'old'})).mockResolvedValueOnce(denied()).mockResolvedValueOnce(response({token:'new'})).mockResolvedValueOnce(response({tasks:[],reviews:[],pendingCount:0})),client=createRsiClient(fetcher);
+    await expect(client.overview()).resolves.toMatchObject({pendingCount:0});
+    expect(fetcher.mock.calls[3]![1]).toMatchObject({headers:{Authorization:'Bearer new'}});expect(fetcher).toHaveBeenCalledTimes(4);
+    const stuck=vi.fn<typeof fetch>().mockResolvedValueOnce(response({token:'one'})).mockResolvedValueOnce(denied()).mockResolvedValueOnce(response({token:'two'})).mockImplementation(async()=>denied());
+    await expect(createRsiClient(stuck).overview()).rejects.toMatchObject({status:401,code:'RSI_AUTH_REQUIRED'});expect(stuck).toHaveBeenCalledTimes(4);
+  });
   it('retries failed bootstrap without persisting a token and passes abort signals',async()=>{
     const fetcher=vi.fn<typeof fetch>().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(response({token:'page'})).mockImplementation(async()=>response({tasks:[],reviews:[],pendingCount:0})),client=createRsiClient(fetcher);
     await expect(client.overview()).rejects.toThrow('offline');const controller=new AbortController();await client.overview(controller.signal);expect(fetcher.mock.calls.at(-1)![1]?.signal).toBe(controller.signal);

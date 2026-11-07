@@ -10,7 +10,8 @@ import { RsiPage } from './RsiPage.js';
 import { ActionDialog, approvalAllowed } from './Actions.js';
 import { CalibrationReport, calibrationSufficient } from './Calibration.js';
 import { CreateForm, OptimizerWarning } from './CreateTask.js';
-import { IterationTable, TaskDetail } from './TaskDetail.js';
+import { IterationTable, TaskAttention, TaskDetail } from './TaskDetail.js';
+import { Sessions, parseProcesses } from './Sessions.js';
 import { ScoreChart } from './Trend.js';
 import { Verdicts, Findings, RunTable, IterationDetail } from './IterationDetail.js';
 import { parseRsiRoute } from './route.js';
@@ -26,7 +27,7 @@ const task:RsiTaskView={id:'task',repository:'/repo',baselineCommit:'a'.repeat(4
 const iteration:RsiIteration={id:'iteration',taskId:'task',seq:1,parentId:null,commit:'c'.repeat(40),prd:{observation:'one issue',hypothesis:'repair',changes:['a.ts'],expectedImpact:'more passes'},packageSha256:null,state:'held',holdReasons:['missing_monitor'],resumeState:'sealed',approvals:[],trainScore:null,sealedScore:null,createdAt:at,updatedAt:at};
 const noOp=()=>undefined;
 const props={locale:'zh' as const,onRefresh:noOp,overviewError:null,changes:{version:0,taskIds:[]}};
-const options:RsiOptions={cli:{bin:'rsi',root:'/config',scripts:'/pkg/scripts'},agents:[{id:'mini-agent',name:'Mini',path:'/agent.json',description:null,family:null,egress:null,loginRequired:false,verified:true}],optimizers:[{id:'opencode-deepseek',name:'OpenCode',path:'/optimizer.json',description:null,family:'deepseek',egress:'model-proxy',loginRequired:false,verified:true}],bank:{path:'/bank',full:[],small:[]},defaults:defaultRsiConfig(),settings:{optimizerSessionTokens:2000000,optimizerSessionTimeoutMs:1800000,concurrency:3,allowUnmeteredOptimizer:false}};
+const options:RsiOptions={cli:{bin:'rsi',root:'/config',scripts:'/pkg/scripts'},agents:[{id:'mini-agent',name:'Mini',path:'/agent.json',description:null,family:null,egress:null,loginRequired:false,verified:true}],optimizers:[{id:'opencode-deepseek',name:'OpenCode',path:'/optimizer.json',description:null,family:'deepseek',egress:'model-proxy',loginRequired:false,verified:true}],bank:{path:'/bank',full:[],small:[]},hardBank:null,defaults:defaultRsiConfig(),settings:{optimizerSessionTokens:2000000,optimizerSessionTimeoutMs:1800000,concurrency:3,allowUnmeteredOptimizer:false}};
 function input(selector:string,value:string){const node=document.querySelector<HTMLInputElement|HTMLTextAreaElement>(selector)!;act(()=>{Object.getOwnPropertyDescriptor(node instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value')!.set!.call(node,value);node.dispatchEvent(new Event('input',{bubbles:true}));});}
 function click(text:string){const button=[...document.querySelectorAll('button')].find(b=>b.textContent===text);expect(button,text).toBeDefined();act(()=>button!.click());}
 describe('complete RSI page states and human guards',()=>{
@@ -91,8 +92,52 @@ describe('RSI browser review regressions',()=>{
    expect(ticks.length).toBeGreaterThan(1);expect(new Set(ticks).size).toBe(ticks.length);expect(ticks.every(Number.isInteger)).toBe(true);expect(ticks.at(-1)).toBeGreaterThanOrEqual(score+.3);expect(host.querySelector('rect title')!.textContent).toBe('δ 0.3');
  });
  it('displays observed iteration tokens and explains every missing role',()=>{
-   vi.useFakeTimers();const {host}=render(<IterationTable items={[scored]} task={task} metrics={{iterations:[metric],cacheHitRate:null,helpReason:null,pendingCommands:0,baselineProgress:null}} locale="en" onOpen={noOp}/>);
+   vi.useFakeTimers();const {host}=render(<IterationTable items={[scored]} task={task} metrics={{iterations:[metric],sessions:[],sessionTokenLimit:2000000,cacheHitRate:null,helpReason:null,pendingCommands:0,baselineProgress:null}} locale="en" onOpen={noOp}/>);
    const tokens=host.querySelector<HTMLElement>('td[data-column=tokens] [tabindex]')!;expect(tokens.textContent).toBe('3K ⓘ');act(()=>tokens.focus());act(()=>vi.advanceTimersByTime(300));expect(document.querySelector('[role=tooltip]')!.textContent).toBe('3,000 · Incomplete usage; missing: Review');
+ });
+ describe('choosing a question bank',()=>{
+   const dist=(count:number)=>[{phase:'train' as const,count,languages:{python:count}}],withHard={...options,bank:{path:'/bank',full:dist(15),small:dist(6)},hardBank:{path:'/hard',full:dist(10),small:dist(4)}};
+   const toBankStep=()=>{input('input[placeholder="/path/to/repository"]','/repo');const sha=[...document.querySelectorAll<HTMLInputElement>('input')].find(i=>i.classList.contains('mono'))!;input('#'+sha.id,'a'.repeat(40));click('下一步');click('下一步');};
+   it('does not offer the hard bank when it is not installed',()=>{
+     const {host}=render(<CreateForm options={options} locale="zh" worker={null} onOpen={noOp} onCreated={noOp} onClose={noOp}/>);toBankStep();expect(host.textContent).toContain('题库路径');expect(host.textContent).not.toContain('困难题库');
+   });
+   it('explains the hard bank and shows its own question counts and goal',()=>{
+     render(<CreateForm options={withHard} locale="zh" worker={null} onOpen={noOp} onCreated={noOp} onClose={noOp}/>);toBankStep();
+     const body=()=>document.body.textContent!;expect(body()).toContain('标准题库');expect(body()).not.toContain('多文件小项目');expect(document.querySelector('td[data-column=count]')!.textContent).toBe('6');
+     click('困难题库');expect(body()).toContain('多文件小项目');expect(document.querySelector('input[value="/hard"]')).not.toBeNull();expect(document.querySelector('td[data-column=count]')!.textContent).toBe('4');
+     click('下一步');expect([...document.querySelectorAll<HTMLInputElement>('input[type=number]')][0]!.value).toBe('4');
+   });
+ });
+ it('reads docker top columns, keeps spaces in commands, and refuses anything else',()=>{
+   const top='PID                 PPID                STAT                ELAPSED             TIME                COMMAND\n87329               87279               S                   01:11               00:00:00            sh -c sleep  100000\n';
+   expect(parseProcesses(top)).toEqual([{pid:'87329',state:'S',elapsed:'01:11',cpu:'00:00:00',command:'sh -c sleep 100000'}]);
+   expect(parseProcesses('unexpected output')).toBeNull();expect(parseProcesses('')).toBeNull();
+ });
+ it('explains why each optimizer round ended, including rounds recorded before end reasons existed',()=>{
+   const row={tokens:2000100,tokenLimit:2000000,requests:41,startedAt:at,endedAt:'2026-11-07T00:10:00.000Z'};
+   const sessions=[{...row,id:'one',seq:1,state:'no_submission' as const,endReason:'token_limit' as const,iterationSeq:null},{...row,id:'two',seq:2,state:'timeout' as const,endReason:'idle' as const,iterationSeq:null},{...row,id:'three',seq:3,state:'submitted' as const,endReason:'submitted' as const,iterationSeq:4},{...row,id:'old',seq:4,state:'timeout' as const,endReason:null,iterationSeq:null,tokenLimit:null,requests:null}];
+   const opened=vi.fn(),{host}=render(<Sessions taskId="task" metrics={{iterations:[],sessions,sessionTokenLimit:2000000,cacheHitRate:null,helpReason:null,pendingCommands:0,baselineProgress:null}} locale="zh" onOpenIteration={opened}/>);
+   for(const text of ['用完每轮 Token 上限，未提交','长时间无活动，提前结束','已提交改动','执行超时','10分'])expect(host.textContent).toContain(text);
+   act(()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='迭代 #4')!.click());expect(opened).toHaveBeenCalledWith(4);
+ });
+ it('tells the human to raise the round limit only when the last round actually hit it',()=>{
+   const row={id:'one',seq:1,state:'no_submission' as const,iterationSeq:null,tokens:1,tokenLimit:1,requests:1,startedAt:at,endedAt:at};
+   const metrics=(endReason:'token_limit'|'agent_exited')=>({iterations:[],sessions:[{...row,endReason}],sessionTokenLimit:1,cacheHitRate:null,helpReason:null,pendingCommands:0,baselineProgress:null});
+   const action=vi.fn(),view=(endReason:'token_limit'|'agent_exited')=><TaskAttention task={{...task,state:'needs_help'}} metrics={metrics(endReason)} workerRunning={false} workerError={null} locale="zh" onAction={action}/>;
+   const {host,root}=render(view('agent_exited'));expect(host.textContent).not.toContain('用完了每轮 Token 上限');
+   act(()=>root.render(<UiLocaleProvider locale="zh">{view('token_limit')}</UiLocaleProvider>));expect(host.textContent).toContain('用完了每轮 Token 上限');
+   click('调整预算');expect(action).toHaveBeenLastCalledWith('set_budget');click('继续');expect(action).toHaveBeenLastCalledWith('resume');
+ });
+ it('sends the round limit only when the human changed it, and shows the effective value',async()=>{
+   const commands:{command:Record<string,unknown>}[]=[];
+   vi.stubGlobal('fetch',vi.fn<typeof fetch>(async(url,init)=>{const path=String(url);const json=(v:unknown)=>new Response(JSON.stringify(v),{status:path.endsWith('/commands')?202:200,headers:{'content-type':'application/json'}});
+     if(path.endsWith('/session'))return json({token:'t'});if(path.endsWith('/metrics'))return json({iterations:[],sessions:[],sessionTokenLimit:8000000,cacheHitRate:null,helpReason:null,pendingCommands:0,baselineProgress:null});
+     if(path.endsWith('/commands'))commands.push(JSON.parse(String(init?.body)));return json({taskId:'task',queueId:'q',status:'queued'});}));
+   const success=vi.fn();render(<ActionDialog action="set_budget" task={task} iteration={null} locale="zh" onClose={noOp} onSuccess={success}/>);
+   await act(async()=>{await Promise.resolve();await new Promise(r=>setTimeout(r,0));});
+   const field=[...document.querySelectorAll<HTMLInputElement>('input[type=number]')].find(i=>i.value==='8000000');expect(field).toBeDefined();
+   input('.rsi-textarea','Unchanged limit');await act(async()=>{click('调整预算');await new Promise(r=>setTimeout(r,0));});
+   expect(commands[0]!.command).not.toHaveProperty('optimizerSessionTokens');
  });
  it('hides pagination for a single page, offers next on the first page and first on subsequent pages',()=>{
    const onCursor=vi.fn(),{host,root}=render(<CursorPagination cursor={null} nextCursor={null} locale="zh" onCursor={onCursor}/>);expect(host.querySelector('button')).toBeNull();

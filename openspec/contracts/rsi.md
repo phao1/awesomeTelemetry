@@ -89,7 +89,7 @@ export interface RsiConfig {
   noiseRepeats: number; infraErrorMaxRatio: number; stableWindow: number;
   stableFailRepeats: number; sealedQueryBudget: number; tokenGrowthMaxRatio: number;
   maxIterations: number; maxTaskTokens: number; runTokenBudget: number;
-  targetPassedCount: number; l1: RsiL1Config;
+  targetPassedCount: number; optimizerSessionTokens?: number; l1: RsiL1Config;
 }
 export interface RsiTask {
   id: string; repository: string; baselineCommit: string; datasetHash: string;
@@ -147,7 +147,7 @@ export type RsiCommand =
   | { action: 'rollback'; parentId: string | null; reason: string }
   | { action: 'instruction'; kind: 'prohibition' | 'idea'; text: string; effectiveFromSeq: number }
   | { action: 'set_target'; targetPassedCount: number; reason: string }
-  | { action: 'set_budget'; maxTaskTokens: number; maxIterations: number; sealedQueryBudget: number; reason: string };
+  | { action: 'set_budget'; maxTaskTokens: number; maxIterations: number; sealedQueryBudget: number; optimizerSessionTokens?: number; reason: string };
 export interface RsiQueueItem {
   id: string; taskId: string; kind: 'submit' | 'evaluate' | 'review' | 'final' | 'adopt' | 'intervene';
   iterationId: string | null; evaluationId: string | null;
@@ -159,6 +159,11 @@ export interface RsiOptimizerSession {
   state: 'running' | 'submitted' | 'stuck' | 'no_submission' | 'timeout' | 'interrupted';
   submissionId: string | null; accounting: 'proxy' | 'self_reported';
   tokens: number | null; artifactPath: string; startedAt: string; endedAt: string | null;
+}
+export type RsiSessionEndReason = 'submitted' | 'declared_stuck' | 'token_limit' | 'idle' | 'deadline' | 'agent_exited' | 'interrupted';
+export interface RsiSessionReport {
+  endReason: RsiSessionEndReason; tokenLimit: number; requests: number | null; idleLimitMs: number;
+  processes: string | null; containerStats: string | null;
 }
 export interface RsiLedgerHead { seq: number; hash: string }
 export type RsiLedgerEvent =
@@ -1550,6 +1555,11 @@ export interface RsiOptimizerSession {
   submissionId: string | null; accounting: 'proxy' | 'self_reported';
   tokens: number | null; artifactPath: string; startedAt: string; endedAt: string | null;
 }
+export type RsiSessionEndReason = 'submitted' | 'declared_stuck' | 'token_limit' | 'idle' | 'deadline' | 'agent_exited' | 'interrupted';
+export interface RsiSessionReport {
+  endReason: RsiSessionEndReason; tokenLimit: number; requests: number | null; idleLimitMs: number;
+  processes: string | null; containerStats: string | null;
+}
 ```
 
 Ledger adds `{event:'session_put',payload:RsiOptimizerSession}`. Worker alone may
@@ -1595,9 +1605,12 @@ codex/claude-code support named-volume fresh-container interactive login and are
 explicitly untested. scripted is an interface-only integration fixture.
 
 WorkerSettings adds optional optimizer pins (profileSha256/dockerfileSha256),
-optimizerSessionTokens default2000000, optimizerSessionTimeoutMs default1800000,
+optimizerSessionTokens default2000000, optimizerSessionTimeoutMs default1800000, optimizerIdleTimeoutMs default600000,
 allowUnmeteredOptimizer defaultfalse, apiBase defaulthttp://127.0.0.1:4173.
 apiBase is a trusted host origin; sidecar rewrites its forwarding Host to loopback.
+The per-round token limit is config.optimizerSessionTokens when set_budget has set it, else settings.optimizerSessionTokens; it applies from the next round.
+A round ends early as state timeout / endReason idle after optimizerIdleTimeoutMs without a settled model request and three consecutive engine CPU samples under 2%.
+Every round that reaches its exec writes artifacts/optimizer/<id>/session-report.json (RsiSessionReport) and agent-output.log (last 128 KiB, session tokens redacted). Neither is handed to a model. processes/containerStats are read from the engine (docker top, docker stats), never by running a binary inside the container, on idle and shortly before the deadline.
 Only model-proxy usage counts toward maxTaskTokens. Proxy429 ends the session.
 Vendor sessions fail closed unless allowUnmeteredOptimizer=true (CLI
 --allow-unmetered-optimizer). Their time limit remains hard; native JSONL usage
@@ -1657,6 +1670,7 @@ Additional GETs:
 - /api/rsi/tasks/:taskId/runs/:runId/trajectory (human, all phases)
 - /api/rsi/tasks/:taskId/sessions (human paged RsiOptimizerSession)
 - /api/rsi/tasks/:taskId/sessions/:sessionId/trajectory (human optimizer traces)
+- /api/rsi/tasks/:taskId/sessions/:sessionId/report (RsiSessionDetail: why the round ended and its output tail)
 - /api/rsi/tasks/:taskId/iterations/:seq/diff → {diff,quality}, platform artifact
 - /api/rsi/tasks/:taskId/iterations/:seq/findings → paged RsiFinding with evidence
 - /api/rsi/tasks/:taskId/worker → {pid,at,phase,running}, absent null fields
@@ -1912,7 +1926,7 @@ export interface RsiConfig {
   noiseRepeats: number; infraErrorMaxRatio: number; stableWindow: number;
   stableFailRepeats: number; sealedQueryBudget: number; tokenGrowthMaxRatio: number;
   maxIterations: number; maxTaskTokens: number; runTokenBudget: number;
-  targetPassedCount: number; l1: RsiL1Config;
+  targetPassedCount: number; optimizerSessionTokens?: number; l1: RsiL1Config;
 }
 export interface RsiTask {
   id: string; repository: string; baselineCommit: string; datasetHash: string;
@@ -1972,7 +1986,7 @@ export type RsiCommand =
   | { action: 'rollback'; parentId: string | null; reason: string }
   | { action: 'instruction'; kind: 'prohibition' | 'idea'; text: string; effectiveFromSeq: number }
   | { action: 'set_target'; targetPassedCount: number; reason: string }
-  | { action: 'set_budget'; maxTaskTokens: number; maxIterations: number; sealedQueryBudget: number; reason: string };
+  | { action: 'set_budget'; maxTaskTokens: number; maxIterations: number; sealedQueryBudget: number; optimizerSessionTokens?: number; reason: string };
 export interface RsiQueueItem {
   id: string; taskId: string; kind: 'submit' | 'evaluate' | 'review' | 'final' | 'adopt' | 'intervene';
   iterationId: string | null; evaluationId: string | null;
@@ -1984,6 +1998,11 @@ export interface RsiOptimizerSession {
   state: 'running' | 'submitted' | 'stuck' | 'no_submission' | 'timeout' | 'interrupted';
   submissionId: string | null; accounting: 'proxy' | 'self_reported';
   tokens: number | null; artifactPath: string; startedAt: string; endedAt: string | null;
+}
+export type RsiSessionEndReason = 'submitted' | 'declared_stuck' | 'token_limit' | 'idle' | 'deadline' | 'agent_exited' | 'interrupted';
+export interface RsiSessionReport {
+  endReason: RsiSessionEndReason; tokenLimit: number; requests: number | null; idleLimitMs: number;
+  processes: string | null; containerStats: string | null;
 }
 export interface RsiLedgerHead { seq: number; hash: string }
 export type RsiLedgerEvent =
@@ -2342,9 +2361,12 @@ export interface RsiProfileOption { id: string; path: string; name: string; desc
 export interface RsiBankDistribution { phase: 'smoke' | 'train' | 'sealed' | 'final'; count: number; languages: Record<string, number> }
 export interface RsiPendingInstruction { id: string; kind: 'prohibition' | 'idea'; text: string; effectiveFromSeq: number; at: string }
 export interface RsiCliInfo { bin: string; root: string; scripts: string }
-export interface RsiOptions { cli: RsiCliInfo; agents: RsiProfileOption[]; optimizers: RsiProfileOption[]; bank: { path: string; full: RsiBankDistribution[]; small: RsiBankDistribution[] } | null; defaults: RsiConfig; settings: Required<RsiPageSettings> }
+export interface RsiBankOption { path: string; full: RsiBankDistribution[]; small: RsiBankDistribution[] }
+export interface RsiOptions { cli: RsiCliInfo; agents: RsiProfileOption[]; optimizers: RsiProfileOption[]; bank: RsiBankOption | null; hardBank: RsiBankOption | null; defaults: RsiConfig; settings: Required<RsiPageSettings> }
 export interface RsiIterationMetric { iteration: RsiIteration; iterationId: string; seq: number; adopted: { patch: string; ref: string } | null; targetTokens: number | null; optimizerTokens: number | null; reviewTokens: number | null; durationMs: number | null; cacheHitRate: number | null; reason: string | null; defenses: RsiVerdict['defenses']; finalState: 'not_requested' | 'reserved' | 'completed'; session: RsiOptimizerSession | null }
-export interface RsiMetrics { iterations: RsiIterationMetric[]; cacheHitRate: number | null; helpReason: string | null; pendingCommands: number; baselineProgress: { completed: number; planned: number } | null }
+export interface RsiSessionMetric { id: string; seq: number; state: RsiOptimizerSession['state']; endReason: RsiSessionEndReason | null; iterationSeq: number | null; tokens: number | null; tokenLimit: number | null; requests: number | null; startedAt: string; endedAt: string | null }
+export interface RsiSessionDetail { report: RsiSessionReport | null; output: string | null }
+export interface RsiMetrics { iterations: RsiIterationMetric[]; sessions: RsiSessionMetric[]; sessionTokenLimit: number; cacheHitRate: number | null; helpReason: string | null; pendingCommands: number; baselineProgress: { completed: number; planned: number } | null }
 export type RsiDefenseState = 'pass' | 'hold' | 'reject' | 'missing' | 'not_reached';
 export interface RsiVerdict { result: RsiPromotionResult; stoppedBeforeReview: boolean; approvedCategories: RsiApprovalCategory[]; defenses: { level: RsiFinding['level']; state: RsiDefenseState; reason: string }[]; parentTrainScore: number | null; candidateTrainScore: number | null; parentSealedScore: number | null; candidateSealedScore: number | null; delta: number | null; parentTokens: number | null; candidateTokens: number | null }
 export interface RsiPageRun { id: string; questionId: string; phase: RsiPhase; language: string | null; outcome: RsiOutcome; failureReason: RsiRun['failureReason']; tokens: number | null; durationMs: number; memoryPeakBytes: number | null; sessionTokens: number | null; tokenDifference: number | null; at: string; repetition: number; attempt: number }

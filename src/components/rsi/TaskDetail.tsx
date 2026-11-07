@@ -19,10 +19,16 @@ import type { HumanAction } from './Actions.js';
 import type { RsiRoute } from './route.js';
 import { useRsiRead } from './data.js';
 import { Trends } from './Trend.js';
+import { Sessions } from './Sessions.js';
 import { Numeric, Reason, ReadError, WriteError, Status, Time, CursorPagination } from './Shared.js';
 import { copy, helpReasonText, reasonLabel, pauseReasonLabel } from './copy.js';
 export function TaskAttention({task,metrics,workerRunning,workerError,locale,onAction}:{task:RsiTaskView;metrics:RsiMetrics|null;workerRunning:boolean;workerError:string|null;locale:Locale;onAction:(action:HumanAction)=>void}) {
-  if(task.state==='needs_help')return <Callout tone="danger" title={copy(locale,'优化者需要帮助','The optimizer needs help')}><p>{metrics?.helpReason?helpReasonText(metrics.helpReason,locale):copy(locale,'尚无求助理由','No help reason available')}</p><div className="rsi-inline"><Button onClick={()=>onAction('set_target')}>{copy(locale,'放宽目标','Adjust target')}</Button><Button onClick={()=>onAction('instruction')}>{copy(locale,'给思路','Give an idea')}</Button><Button variant="danger" onClick={()=>onAction('stop')}>{copy(locale,'终止','Stop')}</Button></div></Callout>;
+  if(task.state==='needs_help'){
+    const last=[...(metrics?.sessions??[])].sort((a,b)=>b.seq-a.seq)[0];
+    return <Callout tone="danger" title={copy(locale,'优化者需要帮助','The optimizer needs help')}><p>{metrics?.helpReason?helpReasonText(metrics.helpReason,locale):copy(locale,'尚无求助理由','No help reason available')}</p>
+      {last?.endReason==='token_limit'&&<p>{copy(locale,'最近一轮用完了每轮 Token 上限。缓存命中的 Token 也计入，大仓库很容易到顶，可以在“调整预算”里调高。','The last round used its token limit. Cached tokens count, so large repositories reach it quickly; raise it under Adjust budget.')}</p>}
+      <div className="rsi-inline"><Button onClick={()=>onAction('set_target')}>{copy(locale,'放宽目标','Adjust target')}</Button><Button onClick={()=>onAction('instruction')}>{copy(locale,'给思路','Give an idea')}</Button><Button onClick={()=>onAction('set_budget')}>{copy(locale,'调整预算','Adjust budget')}</Button><Button variant="primary" onClick={()=>onAction('resume')}>{copy(locale,'继续','Resume')}</Button><Button variant="danger" onClick={()=>onAction('stop')}>{copy(locale,'终止','Stop')}</Button></div></Callout>;
+  }
   if(task.state==='paused')return <Callout tone="attention" title={pauseReasonLabel(task.pauseReason??'human',locale)}>{task.pauseReason==='infra_failed'&&workerError&&<p className="rsi-mono">{workerError}</p>}<div className="rsi-inline"><Button onClick={()=>onAction('set_budget')}>{copy(locale,'调整预算','Adjust budget')}</Button><Button onClick={()=>onAction('resume')}>{copy(locale,'继续','Resume')}</Button></div></Callout>;
   if(task.state==='calibrating')return <Callout title={copy(locale,'正在标定基线','Calibrating baseline')}><Numeric value={metrics?.baselineProgress?.completed} locale={locale}/> / <Numeric value={metrics?.baselineProgress?.planned} locale={locale}/></Callout>;
   if(!workerRunning&&!!metrics?.pendingCommands)return <Callout tone="attention" title={copy(locale,'队列中有待执行操作，请启动执行器','Queued actions are waiting; start the executor')}/>;
@@ -75,10 +81,11 @@ export function Decisions({taskId,locale,revision,iterations,cursor,onCursor,ver
 }
 export function TaskDetail({task,iterations,metrics,locale,route,onRoute,onSuccess,revision,onOpen,verifyRevision=0}:{task:RsiTaskView;iterations:RsiIteration[];metrics:RsiMetrics|null;locale:Locale;route:RsiRoute;onRoute:(r:Partial<RsiRoute>)=>void;onSuccess:()=>void;revision:number;onOpen:(i:RsiIteration)=>void;verifyRevision?:number}) {
   const sorted=[...iterations].sort((a,b)=>a.seq-b.seq),start=route.cursor?Math.max(0,sorted.findIndex(i=>i.id===route.cursor)+1):0,page=sorted.slice(start,start+100);
-  const tab=['trend','iterations','instructions','decisions'].includes(route.tab)?route.tab:'trend';
-  return <><Tabs activeId={tab} onChange={tab=>onRoute({tab,cursor:null})} items={[['trend','趋势','Trend'],['iterations','迭代','Iterations'],['instructions','指令','Instructions'],['decisions','决定记录','Decisions']].map(([id,zh,en])=>({id:id!,label:copy(locale,zh!,en!)}))}/>
+  const tab=['trend','iterations','sessions','instructions','decisions'].includes(route.tab)?route.tab:'trend';
+  return <><Tabs activeId={tab} onChange={tab=>onRoute({tab,cursor:null})} items={[['trend','趋势','Trend'],['iterations','迭代','Iterations'],['sessions','优化者会话','Optimizer sessions'],['instructions','指令','Instructions'],['decisions','决定记录','Decisions']].map(([id,zh,en])=>({id:id!,label:copy(locale,zh!,en!)}))}/>
     {tab==='trend'&&<Trends task={task} iterations={iterations} metrics={metrics} locale={locale} onOpen={onOpen}/>}
     {tab==='iterations'&&<Card><CardHeader title={copy(locale,'迭代树','Iteration tree')}/><IterationTable items={page} lineage={iterations} task={task} metrics={metrics} locale={locale} onOpen={onOpen}/><CursorPagination className="rsi-pagination" cursor={route.cursor} nextCursor={start+100<sorted.length?page.at(-1)!.id:null} locale={locale} onCursor={cursor=>onRoute({cursor})}/></Card>}
+    {tab==='sessions'&&<Sessions taskId={task.id} metrics={metrics} locale={locale} onOpenIteration={seq=>{const i=iterations.find(v=>v.seq===seq);if(i)onOpen(i);}}/>}
     {tab==='instructions'&&<Instructions cursor={route.cursor} onCursor={cursor=>onRoute({cursor})} task={task} locale={locale} revision={revision} onSuccess={onSuccess}/>}{tab==='decisions'&&<Decisions verifyRevision={verifyRevision} cursor={route.cursor} onCursor={cursor=>onRoute({cursor})} taskId={task.id} locale={locale} revision={revision} iterations={iterations}/>}
   </>;
 }

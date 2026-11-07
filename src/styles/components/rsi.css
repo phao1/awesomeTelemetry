@@ -201,3 +201,7 @@
 /* The reason sits inside a button, which inherits nowrap; it must wrap inside the cell. */
 .rsi-defenses button, .rsi-defenses button * { white-space: normal; }
 .rsi-defenses button { height: auto; align-items: flex-start; text-align: left; }
+.rsi-output { margin: 0; padding: var(--space-3); max-height: 28rem; overflow: auto; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--canvas-subtle); color: var(--fg-default); font-family: var(--font-mono); font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rsi-session-block { display: grid; gap: var(--space-2); min-width: 0; margin-top: var(--space-5); }
+.rsi-session-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
+.rsi-session-block h3 { margin: 0; font-size: var(--text-base); }
