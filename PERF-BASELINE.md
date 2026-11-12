@@ -2080,3 +2080,19 @@ A reader whose cache holds the ledger's last entry no longer replays the ledger,
 The metrics page reads one small `session-report.json` per optimizer round. It stays behind the ledger-head cache and a task has at most a few dozen rounds. The session report and output endpoint reads bounded files only on request. The worker adds one `docker stats` call per sample and only after the idle window has passed. Full `perf:check` passed with no budget changes.
 
 The task options request reads one more small manifest for the advanced bank, behind the same cache. No budget changes.
+
+## M13 RSI delivery candidate (2026-11-13)
+
+Local macOS arm64 / Node 26.5.1, unchanged budgets. Nine of ten diagnostics
+completed: listSessions(500) 0.431 ms, worst slim detail 12.381 ms, overview cold
+54.75 ms / cached 0.327 ms, mission cold 0.84 ms / cached 0.024 ms. Task Health
+processed 20,000 events / five members in 516.0 ms, loop p99 2.14 ms / max
+6.45 ms, no external requests.
+
+The full `perf:check` exited 1: capture A/B diagnostic 09 requires `git rev-parse
+HEAD`, but this environment only permits a verified source snapshot and keeps
+the local `.git` path read-only. Socket listeners are also denied here. This is
+an incomplete performance validation, not a pass; the development-branch CI
+runs the unchanged full diagnostics in an actual checkout. No thresholds were
+relaxed. The launcher only manages subprocesses; options still read bounded
+manifest metadata behind the cache, with configured bank paths in its key.

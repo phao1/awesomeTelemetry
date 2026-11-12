@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
@@ -28,6 +28,16 @@ describe('REQ-008 pack-binary', () => {
     expect(existsSync(join(out, 'server-dist', 'cli.js'))).toBe(true);
     expect(existsSync(join(out, 'server-dist', 'capture-worker.js'))).toBe(true);
     expect(existsSync(join(out, 'bin', 'agent-observe.js'))).toBe(true);
+    expect(existsSync(join(out, 'bin', 'rsi.js'))).toBe(true);
+    expect(existsSync(join(out, 'bin', 'task-health.js'))).toBe(true);
+    expect(existsSync(join(out, 'server-dist', 'task-health', 'cli.js'))).toBe(true);
+    expect(existsSync(join(out, 'server-dist', 'cli.js.map'))).toBe(false);
+    expect(existsSync(join(out, 'rsi-agents', 'mini-agent', 'target.Dockerfile'))).toBe(true);
+    expect(existsSync(join(out, 'rsi-agents', 'optimizers', 'codex', 'profile.json'))).toBe(true);
+    expect(existsSync(join(out, 'scripts', 'rsi-images', 'sidecar.mjs'))).toBe(true);
+    expect(existsSync(join(out, 'server', 'rsi', 'reporters', 'node.mjs'))).toBe(true);
+    expect(existsSync(join(out, 'rsi-bank'))).toBe(false);
+    expect(existsSync(join(out, 'rsi-bank-hard'))).toBe(false);
     expect(existsSync(join(out, 'agent-observe.ps1'))).toBe(true);
     expect(existsSync(join(out, 'agent-observe.sh'))).toBe(true);
     expect(existsSync(join(out, 'agent-observe.bat'))).toBe(false);
@@ -49,5 +59,13 @@ describe('REQ-008 pack-binary', () => {
     const fakeRoot = mkdtempSync(join(tmpdir(), 'pack-root-'));
     tempDirs.push(fakeRoot);
     expect(() => packBinary({ root: fakeRoot, outDir: out, includeNodeModules: false })).toThrow(/缺少构建产物/);
+  });
+
+  it('不把上一次输出残留的本地数据混入新包', () => {
+    const out = mkdtempSync(join(tmpdir(), 'pack-existing-'));
+    tempDirs.push(out);
+    writeFileSync(join(out, 'local.sqlite'), 'local fixture');
+    expect(() => packBinary({ root: process.cwd(), outDir: out, includeNodeModules: false })).toThrow(/打包目录必须为空/);
+    expect(readdirSync(out)).toEqual(['local.sqlite']);
   });
 });
