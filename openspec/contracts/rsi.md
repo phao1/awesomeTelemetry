@@ -2395,3 +2395,77 @@ of data refresh, and cancels polling/requests on unmount. Writes are idempotent,
 pending, report conflicts and show Toast. Approve/reject require nonempty reason;
 missing review/comparison categories cannot be approved. Calibration with fewer
 than30 valid samples per stratum never displays as passed. No amounts displayed.
+
+## RSI-017 Local service launcher (M13)
+
+`rsi serve [--root <configRoot>] [--port <port>]` starts the built Web CLI
+in the foreground on 127.0.0.1 and prints the local `/#/rsi` URL. The Web
+port defaults to4173. Ports are integers from1 through65535. The configuration
+root defaults to the current working directory. Browser opening and automatic
+session collection are disabled. This mode starts no review bridge or worker.
+
+`rsi serve --task <id> --execute [--docker-context <name>]` explicitly starts
+one existing task worker in watch mode, in addition to the Web process.
+The Web and worker use the same absolute configuration root and the worker's
+platform origin uses the selected Web port. When supplied, the Docker context
+passes to the worker unchanged. The worker remains the sole authority for
+task locks, ledger recovery, execution, model accounting and state transitions.
+
+Task execution defaults to `--monitor auto`. The launcher verifies the frozen
+optimizer profile and resolves the task's review settings with the existing
+review validator. Loopback HTTP `/v1` review endpoints in the openai and
+anthropic families start the bundled Codex and Claude bridges respectively.
+The resolved URL supplies the port, and `--monitor-port <port>` can replace
+it for this invocation. Claude requires `ANTHROPIC_API_KEY`; Codex uses the
+existing CLI login. The launcher passes the supplied `RSI_MONITOR_API_KEY`
+or an in-memory random bearer to the worker and its bridge. Local credentials
+are passed only through the environment of children that need them and removed
+from forwarded child output. The launcher performs no model probe or credential
+setup. `--monitor external` starts no bridge and requires the operator's
+`RSI_MONITOR_API_KEY`. It uses the task's resolved monitor settings with optional
+`--monitor-base-url`, `--monitor-family` and `--monitor-model` overrides. Review
+settings passed by the launcher are invocation-only and do not change the
+frozen task configuration or approval rules.
+
+The launcher refuses occupied ports for services it owns and never reuses or
+stops a listener found on those ports. It starts the worker only after the
+owned Web listener announces readiness, `/api/health` succeeds and the owned
+monitor bridge, when present, announces readiness. Startup errors and unexpected
+child exits stop the launched processes and surface a failure. SIGINT and
+SIGTERM ask the owned worker to finish cancellation and accounting, then close
+the launched services. An unresponsive child is subject to bounded escalation.
+The launcher uses argument arrays without shell expansion. No HTTP route can
+invoke it.
+
+## RSI-018 External bank locations and installed commands (M13)
+
+Distribution packages contain trusted RSI runtime assets and profiles, but no
+question banks, hidden tests, calibration corpora or task data. Operators can set
+`RSI_BANK_ROOT` and `RSI_HARD_BANK_ROOT` to absolute standard and hard bank
+directories. Unset variables retain the source-checkout defaults `<package>/rsi-bank`
+and `<package>/rsi-bank-hard`. An explicitly empty, relative or NUL-containing
+path is invalid. The page options response keeps the existing `RsiOptions`
+contract: each available bank contains only its absolute path and manifest-derived
+distributions; a missing manifest or non-directory bank path yields `null`.
+Malformed manifest structures or unsupported language names are rejected as
+`RSI_INVALID_REQUEST`, before aggregation. Cache entries distinguish the
+configured directories. No hidden tests are read or returned by this metadata path.
+When neither bank is available, task creation starts with an empty bank field
+and explains that an external absolute path is required. Existing task creation
+validation and frozen snapshots remain authoritative.
+
+Calibration reads `RSI_CALIBRATION_ROOT` when explicitly set to an absolute
+directory; otherwise it reads `<resolved standard bank>/calibration`. An explicit
+calibration directory is independent of bank discovery. The service launcher
+propagates these non-secret path variables to its children. Question bank and
+calibration content is never inferred from the caller's current working directory
+after package installation, nor automatically downloaded.
+
+`RsiCliInfo.bin` is a POSIX-shell command prefix. Its installed script path and
+all user-controlled arguments in copied worker, monitor and calibration commands
+must be quoted so spaces, apostrophes and shell metacharacters remain literal.
+Credentials in copied commands remain environment-variable references.
+After task creation, the primary copied command uses `rsi serve` with the
+current page's port and the same configuration root; the page explains saving
+the one-time task token and stopping the current Web process before restarting.
+Separate monitor and worker commands remain available as an advanced option.

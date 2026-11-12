@@ -1,0 +1,53 @@
+name: RSI delivery validation
+
+on:
+  push:
+    branches: [codex/rsi-delivery-20261113]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rsi-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run lint
+      - run: npm test
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+        id: build
+      - name: Verify tarball and clean consumer
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          npm run pack:smoke -- "$RUNNER_TEMP/awesome-telemetry-0.1.0.tgz"
+      - name: Verify platform bundle
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          npm run pack:binary -- --out "$RUNNER_TEMP/rsi-binary"
+          npm run pack:smoke -- --binary "$RUNNER_TEMP/rsi-binary"
+      - run: npm run perf:check
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}

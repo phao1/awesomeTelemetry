@@ -10,7 +10,7 @@ import type { RsiIteration } from '../../src/core/rsi-types.js';
 import { RsiStore, enqueue, now } from './queue.js';
 import { readBank } from './bank.js';
 import { defaultWorkerSettings } from './cli.js';
-import { RsiWorker } from './worker.js';
+import { RsiWorker, workerErrorText } from './worker.js';
 import type { ExecutionBackend, SlotRequest, SlotResult } from './worker.js';
 import type { ReviewProvider } from './review.js';
 import { resolveReviewSettings, defaultReviewSettings } from './review.js';
@@ -62,6 +62,21 @@ async function candidate(store: RsiStore): Promise<RsiIteration> {
   }
   return i;
 }
+it.each(['RSI_UPSTREAM_API_KEY', 'RSI_MONITOR_API_KEY'])('redacts %s across the worker error output boundary', key => {
+  const secret = 'worker-test-key-123456789';
+  const tail = 'x'.repeat(490);
+  const error = new Error(`Worker detail: ${secret}${tail}`);
+
+  expect(workerErrorText(error, { [key]: secret })).toBe(`[redacted]${tail}`);
+});
+it('redacts the longer worker key when one key is a prefix of another', () => {
+  const upstream = 'worker-test-key';
+  const monitor = `${upstream}-monitor-suffix`;
+  const error = new Error(`Monitor ${monitor} and upstream ${upstream}`);
+
+  expect(workerErrorText(error, { RSI_UPSTREAM_API_KEY: upstream, RSI_MONITOR_API_KEY: monitor }))
+    .toBe('Monitor [redacted] and upstream [redacted]');
+});
 describe('ledger-backed worker scheduling', () => {
   it('calibrates nonzero delta, holds missing reviews and spends no candidate sealed query', async () => {
     const { store, worker, backend } = await setup(); await worker.run();

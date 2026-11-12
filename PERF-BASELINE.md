@@ -2080,3 +2080,43 @@ A reader whose cache holds the ledger's last entry no longer replays the ledger,
 The metrics page reads one small `session-report.json` per optimizer round. It stays behind the ledger-head cache and a task has at most a few dozen rounds. The session report and output endpoint reads bounded files only on request. The worker adds one `docker stats` call per sample and only after the idle window has passed. Full `perf:check` passed with no budget changes.
 
 The task options request reads one more small manifest for the advanced bank, behind the same cache. No budget changes.
+
+## M13 RSI delivery candidate (2026-11-13)
+
+Local macOS arm64 / Node 26.5.1, unchanged budgets. Nine of ten diagnostics
+completed: listSessions(500) 0.431 ms, worst slim detail 12.381 ms, overview cold
+54.75 ms / cached 0.327 ms, mission cold 0.84 ms / cached 0.024 ms. Task Health
+processed 20,000 events / five members in 516.0 ms, loop p99 2.14 ms / max
+6.45 ms, no external requests.
+
+The full `perf:check` exited 1: capture A/B diagnostic 09 requires `git rev-parse
+HEAD`, but this environment only permits a verified source snapshot and keeps
+the local `.git` path read-only. Socket listeners are also denied here. This is
+an incomplete performance validation, not a pass; the development-branch CI
+runs the unchanged full diagnostics in an actual checkout. No thresholds were
+relaxed. The launcher only manages subprocesses; options still read bounded
+manifest metadata behind the cache, with configured bank paths in its key.
+
+Linux release verification for commit `4029a459ffb3e452d2cb102ff19e573e763e3490`
+passed all ten unchanged diagnostics in GitHub Actions run `43284978699`, job
+`131415856018`. The three controlled 100-sample capture profiles had additional
+E2E p95 5.95 / 16.53 / 10.75 ms and event-loop p99 1.62 / 1.91 / 2.99 ms.
+Task Health processed 20,000 events in 915.7 ms; loop p99 3.26 ms / max 17.38 ms.
+Both installed tarball and platform bundle also passed actual HTTP and packaged
+`rsi serve` readiness/shutdown on that runner.
+
+The first full Linux suite remains recorded as a failure: 7,147 passed, four
+failed, ten skipped and one teardown exception. The failures exposed a cold Go
+compiler setup, an oversized Python argument, a file-observation rename race,
+and session-list relative cost; the exception exposed an uncancelled virtual
+scroll timer. Follow-up changes preserve existing assertions and thresholds.
+Compiler setup now prepares trusted standard-library artifacts once and copies
+them into independent question caches; actual question time budgets stay intact.
+
+Session-list row decoding now uses an isolated raw-statement cache, avoiding
+SQLite object creation followed by a second DTO mapping. Four alternating local
+blocks of 101 calls measured old medians 0.521–0.592 ms vs new 0.394–0.427 ms;
+filtered medians 0.295–0.300 vs 0.280–0.286 ms. Plain, filtered, cursor, merged
+and keys+merged outputs were deep-equal. All 491 storage tests passed locally,
+including the original relative-cost guard; follow-up Linux results remain the
+authority for the final candidate.

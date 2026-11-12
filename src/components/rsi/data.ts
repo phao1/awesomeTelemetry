@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { rsiApi } from '../../core/rsi-api-client.js';
 import type { RsiCliInfo } from '../../core/rsi-api-client.js';
+import { shellArgument } from './copy.js';
 /** Abortable resource preserves its last good value during SSE refresh. */
 export function useRsiRead<T>(key: string | null, read: (signal: AbortSignal) => Promise<T>, revision = 0) {
   const [state,setState]=useState<{key:string;value:T|null;error:unknown;loading:boolean}>({key:'',value:null,error:null,loading:true});
@@ -25,7 +26,8 @@ export function useRsiCli(): RsiCliInfo {
   },[]);
   return cli;
 }
-export const workerCommand=(cli:RsiCliInfo,task:string):string=>`${cli.bin} worker --execute --watch --task ${task} --root ${cli.root} --docker-context colima-rsi`;
+export const workerCommand=(cli:RsiCliInfo,task:string):string=>`${cli.bin} worker --execute --watch --task ${shellArgument(task)} --root ${shellArgument(cli.root)} --docker-context colima-rsi`;
+export const serveCommand=(cli:RsiCliInfo,task:string,port=4173):string=>`${cli.bin} serve --task ${shellArgument(task)} --execute --root ${shellArgument(cli.root)} --port ${port} --docker-context colima-rsi`;
 /** The monitor must be another model family: an OpenAI optimizer is watched through Claude, every other family through Codex. */
-export const monitorCommand=(cli:RsiCliInfo,family:string|null):string=>family==='openai'?`PROXY_PORT=4318 PROXY_TOKEN=$RSI_MONITOR_API_KEY node ${cli.scripts}/claude-monitor-proxy.mjs`:`PROXY_PORT=4317 PROXY_TOKEN=$RSI_MONITOR_API_KEY node ${cli.scripts}/codex-health-proxy.mjs`;
-export const calibrateCommand=(cli:RsiCliInfo,task:string):string=>`${cli.bin} calibrate --task ${task} --root ${cli.root}`;
+export const monitorCommand=(cli:RsiCliInfo,family:string|null):string=>family==='openai'?`PROXY_PORT=4318 PROXY_TOKEN="$RSI_MONITOR_API_KEY" node ${shellArgument(cli.scripts+'/claude-monitor-proxy.mjs')}`:`PROXY_PORT=4317 PROXY_TOKEN="$RSI_MONITOR_API_KEY" node ${shellArgument(cli.scripts+'/codex-health-proxy.mjs')}`;
+export const calibrateCommand=(cli:RsiCliInfo,task:string):string=>`${cli.bin} calibrate --task ${shellArgument(task)} --root ${shellArgument(cli.root)}`;

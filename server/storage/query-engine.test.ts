@@ -177,8 +177,22 @@ function insertProxyRow(
 describe('REQ-006 会话列表查询', () => {
   it('REQ-006 列表项不含 systemPrompt，hasSystemPrompt 为布尔', () => {
     const db = newDb();
-    insertSession(db, 's1', { systemPrompt: 'prompt body', sourcePath: '/tmp/a.jsonl' });
-    insertSession(db, 's2', { systemPrompt: null, sourcePath: '/tmp/b.jsonl' });
+    insertSession(db, 's1', {
+      provider: 'claude',
+      sourceAgent: 'Claude Code',
+      title: 'Investigate session list',
+      status: 'error',
+      cwd: '/tmp/workspace',
+      eventCount: 9,
+      messageCount: 2,
+      tokenTotal: 450,
+      costUsd: 0.125,
+      detailLoaded: 1,
+      systemPrompt: 'prompt body',
+      sourcePath: '/tmp/a.jsonl',
+    });
+    insertSession(db, 's2', { systemPrompt: null, detailLoaded: 1, sourcePath: '/tmp/b.jsonl' });
+    writeAnnotations(db, 's1', { tags: ['perf'] });
 
     const r = listSessions(db, { dataSource: 'scan', limit: 50 });
 
@@ -188,9 +202,29 @@ describe('REQ-006 会话列表查询', () => {
       expect(typeof item.hasSystemPrompt).toBe('boolean');
     }
     const byId = new Map(r.items.map((i) => [i.id, i]));
-    expect(byId.get('s1')?.hasSystemPrompt).toBe(true);
+    expect(byId.get('s1')).toEqual({
+      id: 's1',
+      provider: 'claude',
+      sourceAgent: 'Claude Code',
+      title: 'Investigate session list',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:01:00.000Z',
+      status: 'error',
+      cwd: '/tmp/workspace',
+      eventCount: 9,
+      messageCount: 2,
+      tokenTotal: 450,
+      costUsd: 0.125,
+      dataSource: 'scan',
+      sourcePath: '/tmp/a.jsonl',
+      detailLoaded: true,
+      mergeGroupId: null,
+      hasSystemPrompt: true,
+      tags: ['perf'],
+    });
     expect(byId.get('s2')?.hasSystemPrompt).toBe(false);
-    expect(byId.get('s1')?.mergeGroupId).toBeNull();
+    expect(byId.get('s2')?.detailLoaded).toBe(true);
+    expect(listSessions(db, { dataSource: 'scan', keys: ['s1'] }).items).toEqual([byId.get('s1')]);
     db.close();
   });
 

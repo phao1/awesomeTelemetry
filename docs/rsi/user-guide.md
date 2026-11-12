@@ -42,7 +42,24 @@ node bin/rsi.js doctor --docker-context colima-rsi
 
 ## 启动
 
-需要三个长期运行的进程，建议各开一个终端。
+现在可以用一个命令管理页面、监控桥和执行器。先只启动页面，不会调用模型或运行评测：
+
+```bash
+node bin/rsi.js serve --root /path/to/config --port 4173
+```
+
+打开输出中的 `http://127.0.0.1:4173/#/rsi`，创建任务并记下任务 ID。
+在终端按 Ctrl+C 关闭这次页面进程，设置下文的上游模型环境变量后，用相同配置目录启动任务：
+
+```bash
+node bin/rsi.js serve --root /path/to/config --task <任务ID> --execute --docker-context colima-rsi
+```
+
+这次命令会先等页面和监控桥就绪，再启动执行器。默认按优化者的模型系列选择不同厂商的监控：OpenAI 系优化者使用 Claude，需设置 `ANTHROPIC_API_KEY`；其他系列使用本机已登录的 Codex。没有登录或凭据时会报错，不会自动登录或调用模型做探测。按 Ctrl+C 会先停止执行器，再退出本次启动的监控桥和页面；占用端口的其他服务不会被接管。
+
+默认监控桥使用临时令牌。单独运行校准时，任务不能有正在运行的执行器；应先停止任务服务，再单独启动监控桥，并在校准终端设置相同的 `RSI_MONITOR_API_KEY`。已经单独启动监控桥或使用远程监控服务时，启动任务服务加 `--monitor external`，配置 `RSI_MONITOR_API_KEY`；必要时同时传 `--monitor-base-url`、`--monitor-family`、`--monitor-model`。外部监控服务不会随本命令退出。
+
+需要分别管理进程时，仍可使用下面的三个终端命令。
 
 **1. 页面**
 
@@ -103,7 +120,24 @@ node bin/rsi.js worker --execute --watch --task <任务 ID> --root <配置目录
 node bin/rsi.js task create --task demo --root <配置目录> --repository /path/to/agent --baseline <完整 commit> --bank rsi-bank --agent rsi-agents/mini-agent/profile.json --subset small
 ```
 
-命令行创建的任务默认不启用监控，启动执行器时要带 `--monitor-*` 参数，或用 `--settings` 传入 `reviews`。
+命令行创建后，用 `rsi serve --task ... --execute` 会解析默认监控设置。单独运行 `worker` 时，仍需带 `--monitor-*` 参数，或创建时用 `--settings` 传入 `reviews`。
+
+## 从安装包运行与外置题库
+
+项目仍未发布到公共 npm。可以从可信源码执行 `npm run build && npm pack`，再在独立目录安装生成的本地 tarball。安装后，用 `npx --offline rsi` 替换本指南中的 `node bin/rsi.js`；源码目录不需要留在当前工作目录。
+
+安装包包含预置 Agent 档案、构建文件、模型代理、判题报告器、监控桥以及演示 Agent 源码，不包含题库、隐藏测试、校准语料和你的任务数据。先准备符合现有题库格式的目录，再启动页面：
+
+```bash
+export RSI_BANK_ROOT='/absolute/path/to/standard bank'
+export RSI_HARD_BANK_ROOT='/absolute/path/to/hard bank'
+export RSI_CALIBRATION_ROOT='/absolute/path/to/calibration'
+npx --offline rsi serve --root '/absolute/path/to/config'
+```
+
+三个路径独立配置，可按需省略。未设置校准路径时，读取标准题库下的 `calibration`；源码运行时，未设置的题库路径仍使用仓库内默认目录。安装包没有题库时，页面会提示填写外置题库绝对路径。CLI 创建任务仍通过 `--bank` 明确选题库，创建时会校验并冻结到任务私有目录。
+
+这里支持的是现有题库格式的外置接入，不会自动把 SWE-bench 等数据集转换成可执行题库，也不会下载隐藏测试。题库真实性和难度仍需单独验证。
 
 ## 第一次试跑
 

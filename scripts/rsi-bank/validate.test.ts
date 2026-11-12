@@ -55,22 +55,37 @@ describe('RSI-011 manifest and authoring checks', () => {
 
 describe('actual standard-library runners', () => {
   for (const toolchain of ['node', 'python', 'go']) {
-    it.skipIf(!available[toolchain])(`${toolchain}: original fails, patched snapshot passes with exact case identities`, async () => {
-      const { questions } = await api.readBank(bank);
-      const question = questions.find((q: { meta: { toolchain: string } }) => q.meta.toolchain === toolchain);
-      const original = await api.workspace(question);
-      const reference = await api.workspace(question, true);
-      try {
-        const failed = await api.runTests(question, original);
-        const passed = await api.runTests(question, reference);
-        expect(failed.complete).toBe(true);
-        expect(failed.passed).toBe(false);
-        expect(failed.cases.some((c: { passed: boolean }) => !c.passed)).toBe(true);
-        expect(passed.started).toBe(true);
-        expect(passed.complete).toBe(true);
-        expect(passed.passed).toBe(true);
-        expect(passed.cases).toHaveLength(question.meta.expectedTests);
-      } finally { await original.cleanup(); await reference.cleanup(); }
+    describe(toolchain, () => {
+      let goSeed: { path: string; cleanup(): Promise<void> } | undefined;
+      if (toolchain === 'go' && available.go) {
+        beforeAll(async () => { goSeed = await api.prepareGoCache(); }, api.GO_CACHE_BUILD_TIMEOUT_MS + 10_000);
+        afterAll(async () => { await goSeed?.cleanup(); });
+      }
+      it.skipIf(!available[toolchain])(`${toolchain}: original fails, patched snapshot passes with exact case identities`, async () => {
+        const { questions } = await api.readBank(bank);
+        const question = questions.find((q: { meta: { toolchain: string } }) => q.meta.toolchain === toolchain);
+        const original = await api.workspace(question, false, goSeed);
+        try {
+          const reference = await api.workspace(question, true, goSeed);
+          try {
+            if (toolchain === 'go') {
+              const marker = 'workspace-only';
+              await writeFile(join(original.goCache, marker), 'isolation check');
+              await expect(readFile(join(reference.goCache, marker))).rejects.toMatchObject({ code: 'ENOENT' });
+              await expect(readFile(join(goSeed!.path, marker))).rejects.toMatchObject({ code: 'ENOENT' });
+            }
+            const failed = await api.runTests(question, original);
+            const passed = await api.runTests(question, reference);
+            expect(failed.complete).toBe(true);
+            expect(failed.passed).toBe(false);
+            expect(failed.cases.some((c: { passed: boolean }) => !c.passed)).toBe(true);
+            expect(passed.started).toBe(true);
+            expect(passed.complete).toBe(true);
+            expect(passed.passed).toBe(true);
+            expect(passed.cases).toHaveLength(question.meta.expectedTests);
+          } finally { await reference.cleanup(); }
+        } finally { await original.cleanup(); }
+      });
     });
   }
   it('collects asynchronous process failure without treating it as a test report', async () => {
