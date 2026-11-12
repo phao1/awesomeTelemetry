@@ -2096,3 +2096,27 @@ an incomplete performance validation, not a pass; the development-branch CI
 runs the unchanged full diagnostics in an actual checkout. No thresholds were
 relaxed. The launcher only manages subprocesses; options still read bounded
 manifest metadata behind the cache, with configured bank paths in its key.
+
+Linux release verification for commit `4029a459ffb3e452d2cb102ff19e573e763e3490`
+passed all ten unchanged diagnostics in GitHub Actions run `43284978699`, job
+`131415856018`. The three controlled 100-sample capture profiles had additional
+E2E p95 5.95 / 16.53 / 10.75 ms and event-loop p99 1.62 / 1.91 / 2.99 ms.
+Task Health processed 20,000 events in 915.7 ms; loop p99 3.26 ms / max 17.38 ms.
+Both installed tarball and platform bundle also passed actual HTTP and packaged
+`rsi serve` readiness/shutdown on that runner.
+
+The first full Linux suite remains recorded as a failure: 7,147 passed, four
+failed, ten skipped and one teardown exception. The failures exposed a cold Go
+compiler setup, an oversized Python argument, a file-observation rename race,
+and session-list relative cost; the exception exposed an uncancelled virtual
+scroll timer. Follow-up changes preserve existing assertions and thresholds.
+Compiler setup now prepares trusted standard-library artifacts once and copies
+them into independent question caches; actual question time budgets stay intact.
+
+Session-list row decoding now uses an isolated raw-statement cache, avoiding
+SQLite object creation followed by a second DTO mapping. Four alternating local
+blocks of 101 calls measured old medians 0.521–0.592 ms vs new 0.394–0.427 ms;
+filtered medians 0.295–0.300 vs 0.280–0.286 ms. Plain, filtered, cursor, merged
+and keys+merged outputs were deep-equal. All 491 storage tests passed locally,
+including the original relative-cost guard; follow-up Linux results remain the
+authority for the final candidate.

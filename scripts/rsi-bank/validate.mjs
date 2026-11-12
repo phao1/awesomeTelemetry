@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -7,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export const BANK = join(ROOT, 'rsi-bank');
+export const GO_CACHE_BUILD_TIMEOUT_MS = 90_000;
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const insist = (condition, message) => { if (!condition) throw new Error(message); };
 const exact = (value, fields, label) => insist(value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join(',') === [...fields].sort().join(','), `Invalid ${label} fields`);
@@ -220,7 +222,30 @@ export async function availability(toolchain, docker = false) {
   return result.code === 0 && !result.spawnError && !result.timedOut;
 }
 
-export async function workspace(question, reference = false) {
+function localGoEnv(cache, path) {
+  return { GOCACHE: cache, GOPATH: path, GOMODCACHE: join(path, 'pkg', 'mod'), GOPROXY: 'off',
+    GOSUMDB: 'off', GOTOOLCHAIN: 'local', CGO_ENABLED: '0', GO111MODULE: 'on',
+    GOWORK: 'off', GOENV: 'off', GOFLAGS: '', GOCACHEPROG: '' };
+}
+
+/** Compile the trusted test runtime once, before any question code is available. */
+export async function prepareGoCache() {
+  const temporary = await mkdtemp(join(tmpdir(), 'rsi-bank-go-stdlib-'));
+  const cleanup = () => rm(temporary, { recursive: true, force: true });
+  try {
+    const path = join(temporary, 'cache');
+    await writeFile(join(temporary, 'go.mod'), 'module rsi-cache-seed\n\ngo 1.20\n');
+    await writeFile(join(temporary, 'seed_test.go'), 'package seed\n\nimport "testing"\n\nfunc TestSeed(t *testing.T) {}\n');
+    const built = await command('go', ['test', '-c', '-vet=off', '-o', join(temporary, 'seed.test'), '.'], {
+      cwd: temporary, timeout: GO_CACHE_BUILD_TIMEOUT_MS, env: localGoEnv(path, join(temporary, 'go')),
+    });
+    insist(built.code === 0 && !built.timedOut && !built.overflow && !built.spawnError,
+      `Go test runtime build failed: ${built.timedOut ? 'timed out' : built.spawnError ?? built.output}`);
+    return { path, cleanup };
+  } catch (error) { await cleanup(); throw error; }
+}
+
+export async function workspace(question, reference = false, goSeed) {
   const temporary = await mkdtemp(join(tmpdir(), 'rsi-bank-'));
   try {
     const work = join(temporary, 'repo');
@@ -232,7 +257,11 @@ export async function workspace(question, reference = false) {
     await cp(join(question.directory, 'hidden_tests'), work, { recursive: true, force: true });
     const reporters = join(temporary, 'reporters');
     const goCache = join(temporary, 'go-cache');
-    await mkdir(goCache);
+    // Candidate and reference runs get distinct writable caches, even when
+    // their initial compiler artifacts came from the same trusted seed.
+    if (goSeed && question.meta.toolchain === 'go') {
+      await cp(goSeed.path, goCache, { recursive: true, mode: constants.COPYFILE_FICLONE });
+    } else await mkdir(goCache);
     await mkdir(reporters);
     await writeFile(join(temporary, 'node-reporter.mjs'), NODE_REPORTER);
     await writeFile(join(temporary, 'python-reporter.py'), PYTHON_REPORTER);
@@ -256,7 +285,11 @@ export async function runTests(question, space, docker = false) {
     try {
       result = await command('docker', ['run', '--rm', '--pull=never', '--name', name, '--network=none', '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=128', '--memory=512m', '--cpus=1', '--tmpfs', '/tmp:rw,exec,size=384m', '-e', 'GOCACHE=/rsi-cache/build', '-e', 'GOPATH=/rsi-cache/path', '-e', 'GOPROXY=off', '-e', 'GOSUMDB=off', '-e', 'GOTOOLCHAIN=local', '-e', 'CGO_ENABLED=0', '-e', 'PYTHONDONTWRITEBYTECODE=1', '-v', `${space.work}:/workspace:rw`, '-v', `${space.reporters}:/rsi-tools:ro`, '-v', `${space.goCache}:/rsi-cache:rw`, '-w', '/workspace', image, program, ...args], { timeout: meta.timeoutSeconds * 1000 });
     } finally { await command('docker', ['rm', '-f', name], { timeout: 10000 }); }
-  } else result = await command(program, args, { cwd: space.work, timeout: meta.timeoutSeconds * 1000, env: { GOCACHE: join(space.temporary, 'go-cache'), GOPATH: join(space.temporary, 'go'), GOPROXY: 'off', GOSUMDB: 'off', GOTOOLCHAIN: 'local', CGO_ENABLED: '0', PYTHONDONTWRITEBYTECODE: '1' } });
+  } else result = await command(program, args, {
+    cwd: space.work,
+    timeout: meta.timeoutSeconds * 1000,
+    env: { ...localGoEnv(space.goCache, join(space.temporary, 'go')), PYTHONDONTWRITEBYTECODE: '1' },
+  });
   const cases = parseReport(result.output, meta.toolchain);
   const started = result.output.split('\n').some(line => {
     try { const event = JSON.parse(line); return meta.toolchain === 'go' ? event.Action === 'run' && meta.testNames.includes(event.Test) : event.rsiStart === true && meta.testNames.includes(event.name); } catch { return false; }
@@ -295,26 +328,32 @@ export async function validate({ bank = BANK, docker = false, log = console.log 
   const hard = bankProfile(manifest.questions) === 'hard';
   const available = {};
   for (const toolchain of ['node', 'python', 'go']) available[toolchain] = await availability(toolchain, docker);
-  for (const question of questions) {
-    let original, reference;
-    try {
-      reference = await workspace(question, true);
-      if (!available[question.meta.toolchain]) { result.skipped.push(question.id); log(`SKIP ${question.id}: ${docker ? 'docker' : question.meta.toolchain} toolchain unavailable; reference patch applies`); continue; }
-      original = await workspace(question);
-      if (hard) {
-        const visibleOriginal = await runVisibleTests(question, original, docker);
-        const visibleFixed = await runVisibleTests(question, reference, docker);
-        insist(visibleOriginal.passed && visibleFixed.passed, `Visible tests must pass before and after: ${question.id}\n${visibleOriginal.output}\n${visibleFixed.output}`);
-      }
-      const baseline = await runTests(question, original, docker);
-      const fixed = await runTests(question, reference, docker);
-      insist(baseline.complete && !baseline.passed && baseline.cases.some(c => !c.passed) && !baseline.timedOut && !baseline.spawnError, `Original must execute exactly ${question.meta.expectedTests} cases and fail: ${question.id}\n${baseline.output}`);
-      insist(fixed.passed, `Reference must pass exactly ${question.meta.expectedTests} cases: ${question.id}\n${fixed.output}`);
-      insist(question.mutationKillRatio >= manifest.mutationKillMin, `Mutation threshold not met: ${question.id}; run mutate.mjs`);
-      result.passed.push(question.id); log(`PASS ${question.id}: original fails; reference ${fixed.cases.length}/${question.meta.expectedTests}; mutation=${question.mutationKillRatio.toFixed(3)}`);
-    } catch (error) { result.failed.push(question.id); log(`FAIL ${error.message}`); }
-    finally { await original?.cleanup(); await reference?.cleanup(); }
-  }
+  const goCache = !docker && available.go
+    ? await prepareGoCache().then(seed => ({ seed }), error => ({ error }))
+    : {};
+  try {
+    for (const question of questions) {
+      let original, reference;
+      try {
+        if (question.meta.toolchain === 'go' && goCache.error) throw goCache.error;
+        reference = await workspace(question, true, goCache.seed);
+        if (!available[question.meta.toolchain]) { result.skipped.push(question.id); log(`SKIP ${question.id}: ${docker ? 'docker' : question.meta.toolchain} toolchain unavailable; reference patch applies`); continue; }
+        original = await workspace(question, false, goCache.seed);
+        if (hard) {
+          const visibleOriginal = await runVisibleTests(question, original, docker);
+          const visibleFixed = await runVisibleTests(question, reference, docker);
+          insist(visibleOriginal.passed && visibleFixed.passed, `Visible tests must pass before and after: ${question.id}\n${visibleOriginal.output}\n${visibleFixed.output}`);
+        }
+        const baseline = await runTests(question, original, docker);
+        const fixed = await runTests(question, reference, docker);
+        insist(baseline.complete && !baseline.passed && baseline.cases.some(c => !c.passed) && !baseline.timedOut && !baseline.spawnError, `Original must execute exactly ${question.meta.expectedTests} cases and fail: ${question.id}\n${baseline.output}`);
+        insist(fixed.passed, `Reference must pass exactly ${question.meta.expectedTests} cases: ${question.id}\n${fixed.output}`);
+        insist(question.mutationKillRatio >= manifest.mutationKillMin, `Mutation threshold not met: ${question.id}; run mutate.mjs`);
+        result.passed.push(question.id); log(`PASS ${question.id}: original fails; reference ${fixed.cases.length}/${question.meta.expectedTests}; mutation=${question.mutationKillRatio.toFixed(3)}`);
+      } catch (error) { result.failed.push(question.id); log(`FAIL ${error.message}`); }
+      finally { await original?.cleanup(); await reference?.cleanup(); }
+    }
+  } finally { await goCache.seed?.cleanup(); }
   log(JSON.stringify({ mode: docker ? 'docker' : 'local', ...result }));
   return result;
 }

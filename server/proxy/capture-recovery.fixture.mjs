@@ -1,4 +1,5 @@
 // Bundled by the adjacent test; a real process, actual proxy/store/server and copied production worker.
+import { error as logError } from 'node:console';
 import { once } from 'node:events';
 import process from 'node:process';
 import { randomUUID } from 'node:crypto';
@@ -25,6 +26,20 @@ if (injectFault === 'corrupt') {
 let proxy, server, store, journal, savedEvents = 0;
 const statusRequestCounts = [];
 const unsubscribe = eventBus.on('proxy_status', value => { statusRequestCounts.push(value.requestCount); });
+
+async function sampleFiles(directory, pattern, read) {
+  const names = (await readdir(directory)).filter(name => pattern.test(name));
+  const snapshots = await Promise.all(names.map(async name => {
+    try { return await read(join(directory, name), name); }
+    catch (error) {
+      // A part may become a body, or a committed journal may be removed, between enumeration and reading.
+      if (error?.code === 'ENOENT') return undefined;
+      throw error;
+    }
+  }));
+  return snapshots.filter(value => value !== undefined);
+}
+
 if (mode === 'proxy') {
   store = await CaptureBodyStore.create(captureDirectory); journal = await CaptureJournal.open(db, store);
   proxy = await createMitmProxy({ db, bodyStore: store, port: 0, caDirectory: join(directory, 'ca'), notify: () => { savedEvents += 1; } });
@@ -39,8 +54,8 @@ process.on('message', async message => {
   try {
     if (message === 'probe') {
       await journal?.drain();
-      const entries = journal === undefined ? [] : await Promise.all((await readdir(journal.directory)).filter(name => name.endsWith('.json')).map(async name => JSON.parse(await readFile(join(journal.directory, name), 'utf8'))));
-      const files = store === undefined ? [] : await Promise.all((await readdir(store.directory)).filter(name => /\.(body|part)$/.test(name)).map(async name => ({ name, bytes: (await stat(join(store.directory, name))).size })));
+      const entries = journal === undefined ? [] : await sampleFiles(journal.directory, /\.json$/, async path => JSON.parse(await readFile(path, 'utf8')));
+      const files = store === undefined ? [] : await sampleFiles(store.directory, /\.(body|part)$/, async (path, name) => ({ name, bytes: (await stat(path)).size }));
       process.send?.({ type: 'probe', savedEvents, statusRequestCounts, activity: proxy?.captureActivity(), storage: store?.status(), entries, files, rows: countRequests.get().n });
     }
     if (message === 'quit') {
@@ -48,6 +63,9 @@ process.on('message', async message => {
       if (server !== undefined) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
       const check = db.pragma('quick_check', { simple: true }); unsubscribe(); db.close(); process.send?.({ type: 'closed', check }); process.disconnect();
     }
-  } catch { process.send?.({ type: 'failure', code: 'CONTROLLED_FIXTURE_FAILED' }); }
+  } catch (error) {
+    logError('Controlled recovery fixture failed:', error);
+    process.send?.({ type: 'failure', code: 'CONTROLLED_FIXTURE_FAILED' });
+  }
 });
 process.once('disconnect', () => process.exit(0));
