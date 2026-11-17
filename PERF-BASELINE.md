@@ -2120,3 +2120,13 @@ filtered medians 0.295–0.300 vs 0.280–0.286 ms. Plain, filtered, cursor, mer
 and keys+merged outputs were deep-equal. All 491 storage tests passed locally,
 including the original relative-cost guard; follow-up Linux results remain the
 authority for the final candidate.
+
+## Task timeline sticky positioning (2026-11-17)
+
+On macOS arm64 with Node 24.22.1, all ten `npm run perf:check` diagnostics
+passed. The synthetic session list (500 rows) took 0.539 ms and the largest slim
+detail (9,590 events) took 12.861 ms. Overview took 69.74 ms cold and 0.462 ms
+cached. Capture added 9.44 ms, 11.47 ms, and 6.47 ms at E2E p95 for HTTP, HTTPS
+CONNECT, and near-2 MiB HTTP respectively. Event-loop p99 was below 2.43 ms for
+each profile. Task Health processed 20,000 events in 812.93 ms with a 2.66 ms
+event-loop p99. The timeline change only affects layout and scroll offsets.

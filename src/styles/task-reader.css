@@ -1,5 +1,4 @@
-/* One task-owned document scroll. The title and exact trajectory stay visible;
-   filters scroll away and evidence gets the full remaining viewport. */
+/* The trajectory sticks to the top of the task reader as metadata and filters scroll away. */
 .task-workbench .task-process{display:block;flex:1;min-height:0;overflow:auto;position:relative;scrollbar-gutter:stable;scroll-padding-top:var(--task-sticky-height,calc(var(--space-1) * 32.5));overscroll-behavior:contain}
 .task-workbench .task-context-header{position:sticky;top:0;z-index:12;display:flex;align-items:center;gap:var(--space-2);padding:calc(var(--space-1) * 1.75) var(--space-3);min-height:var(--space-10);background:var(--canvas-default);border-bottom:1px solid var(--border-muted)}
 .task-workbench .task-context-header h1{flex:1;min-width:0;margin:0;font-size:var(--text-md);line-height:var(--space-6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
@@ -10,7 +9,7 @@
 .task-reading-toolbar .task-mode-tabs{flex:none;height:100%;gap:0}.task-reading-toolbar .task-mode-tabs button{padding:var(--space-1) var(--space-2);font-size:var(--text-sm);min-height:0}
 .task-workbench .task-record-filters{display:flex;align-items:center;gap:var(--space-2);min-width:calc(var(--space-1) * 37.5);flex:1;padding:0;flex-wrap:nowrap}.task-workbench .task-record-filters>input:not(.ui-input):not([type=hidden]){min-width:calc(var(--space-1) * 22.5);flex:1;width:calc(var(--space-1) * 35);min-height:calc(var(--space-1) * 6.5);height:calc(var(--space-1) * 6.5);padding:calc(var(--space-1) * 0.75) calc(var(--space-1) * 1.75);font-size:var(--text-sm)}.task-record-filters label{font-size:var(--text-xs);gap:calc(var(--space-1) * 0.75)}
 .task-reading-toolbar .task-playback{gap:calc(var(--space-1) * 0.5);flex:none}.task-reading-toolbar .task-playback .ui-icon-btn{width:calc(var(--space-1) * 6.5);height:calc(var(--space-1) * 6.5);min-height:0;font-size:var(--text-md);padding:0}.task-reading-toolbar .task-playback .ui-icon-btn:last-child{display:inline-grid}
-.task-time-sticky{position:sticky;top:var(--task-title-height,var(--space-10));z-index:11;background:var(--canvas-default);border-bottom:1px solid var(--border-default);box-shadow:var(--shadow-sm)}
+.task-time-sticky{position:sticky;top:0;z-index:11;background:var(--canvas-default);border-bottom:1px solid var(--border-default)}
 .task-page-controls{display:inline-flex;align-items:center;gap:calc(var(--space-1) * 0.5);margin-left:auto;white-space:nowrap;font-size:var(--text-xs);color:var(--fg-muted);font-variant-numeric:tabular-nums}.task-page-controls>span{padding:0 calc(var(--space-1) * 0.75)}.task-page-controls button{font-size:var(--text-lg)!important;min-width:calc(var(--space-1) * 5.5)!important}
 .task-workbench .task-process-body{display:flex;align-items:flex-start;min-height:calc(var(--task-reader-height,calc(var(--space-1) * 150)) - var(--task-sticky-height,calc(var(--space-1) * 32.5)));overflow:visible;flex:none;position:relative}
 .task-workbench .task-ledger{display:block;flex:1;min-width:0;min-height:0;overflow:visible}
