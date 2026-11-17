@@ -55,25 +55,24 @@ export function TaskProcess({ context, route, onRoute, locale, changes, onRefres
   useEffect(() => { setQ(route.q ?? ''); setSearch(route.q ?? ''); setErrors(route.errors === true); setTimeRange(route.from && route.to ? [Date.parse(route.from), Date.parse(route.to)] : null); }, [route.q, route.errors, route.from, route.to]);
   const rootReturn = useRef<TaskRoute | null>(null), scroller = useRef<HTMLDivElement>(null), userScroll = useRef(false);
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
-  const titleElement = useRef<HTMLElement>(null), timeElement = useRef<HTMLDivElement>(null);
-  const [stickySize, setStickySize] = useState({ title: 40, total: 130, viewport: 600 });
+  const timeElement = useRef<HTMLDivElement>(null);
+  const showTimeline = route.mode !== 'architecture';
+  const [readerSize, setReaderSize] = useState({ stickyHeight: 0, viewport: 600 });
   const [recordOffset, setRecordOffset] = useState(0);
   useLayoutEffect(() => {
     if (!scrollElement) return;
     const measure = () => {
-      const title = titleElement.current?.getBoundingClientRect().height ?? 40;
-      const total = title + (timeElement.current?.getBoundingClientRect().height ?? 90);
+      const stickyHeight = timeElement.current?.getBoundingClientRect().height ?? 0;
       const viewport = scrollElement.clientHeight;
-      setStickySize(previous => previous.title === title && previous.total === total && previous.viewport === viewport ? previous : { title, total, viewport });
+      setReaderSize(previous => previous.stickyHeight === stickyHeight && previous.viewport === viewport ? previous : { stickyHeight, viewport });
     };
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
     observer.observe(scrollElement);
-    if (titleElement.current) observer.observe(titleElement.current);
     if (timeElement.current) observer.observe(timeElement.current);
     return () => observer.disconnect();
-  }, [scrollElement]);
+  }, [scrollElement, showTimeline]);
   const mainMember = context.members.find(member => member.role === 'main'), memberRef = useRef(route.member);
   useEffect(() => { if (q === search) return; const timer = setTimeout(() => { setSearch(q); onRoute({ ...currentRoute.current, q, event: null }); setPaging({}); setAnchor(null); setPlaying(false); }, 250); return () => clearTimeout(timer); }, [q, search]);
   useEffect(() => { if (memberRef.current !== route.member) { memberRef.current = route.member; setPaging({}); setSavedRecord(null); setPlaying(false); setTimeRange(null); } }, [route.member]);
@@ -115,7 +114,7 @@ export function TaskProcess({ context, route, onRoute, locale, changes, onRefres
   const playbackRecords = route.mode === 'trajectory' ? readerRecords : visible;
   const segmentNumbers = useMemo(() => { const keys = new Map<string, number>(); for (const item of page?.items ?? []) if (item.event?.turnKey && !keys.has(item.event.turnKey)) keys.set(item.event.turnKey, keys.size + 1); return keys; }, [page]);
   const rowHeight = route.mode === 'raw' ? 44 : route.mode === 'conversation' ? 106 : 72;
-  const list = useVirtualizer({ count: route.mode === 'trajectory' ? 0 : visible.length, getScrollElement: () => scrollElement, estimateSize: () => rowHeight, overscan: 5, getItemKey: index => visible[index]!.id, scrollMargin: recordOffset, scrollPaddingStart: stickySize.total });
+  const list = useVirtualizer({ count: route.mode === 'trajectory' ? 0 : visible.length, getScrollElement: () => scrollElement, estimateSize: () => rowHeight, overscan: 5, getItemKey: index => visible[index]!.id, scrollMargin: recordOffset, scrollPaddingStart: readerSize.stickyHeight });
   useLayoutEffect(() => { list.measure(); }, [list, rowHeight]);
   useLayoutEffect(() => {
     const node = scroller.current;
@@ -126,7 +125,7 @@ export function TaskProcess({ context, route, onRoute, locale, changes, onRefres
     observer?.observe(scrollElement); observer?.observe(node); const ledger = node.closest('.task-ledger'); if (ledger) observer?.observe(ledger);
     scrollElement.addEventListener('scroll', measure, { passive: true });
     return () => { observer?.disconnect(); scrollElement.removeEventListener('scroll', measure); };
-  }, [scrollElement, route.mode, page, stickySize.total, membersOpen, stale, records.loading]);
+  }, [scrollElement, route.mode, page, readerSize.stickyHeight, membersOpen, stale, records.loading]);
   useEffect(() => {
     if (!page || route.mode === 'trajectory') return;
     const index = visible.findIndex(item => item.id === route.event);
@@ -169,9 +168,9 @@ export function TaskProcess({ context, route, onRoute, locale, changes, onRefres
 
   const memberControls=<><Select className="task-member-select" aria-label={c.scope} prefix={locale==='zh'?'成员':'Member'} value={route.member} onChange={event=>changeMember(event.target.value)} options={[{value:'main',label:c.main},{value:'all',label:locale==='zh'?'全部成员':'All members'},...displayContext.members.filter(item=>item.role!=='main').map(member=>({value:member.id,label:member.name,disabled:!member.sessionKey}))]}/>      {route.member !== 'main' && <button type="button" className="ui-btn ui-btn-ghost task-return-main" title={rootReturn.current?.event ? c.parent : c.returnMain} aria-label={rootReturn.current?.event ? c.parent : c.returnMain} onClick={() => { const target = rootReturn.current; setPaging({}); setAnchor(target?.event ?? null); userScroll.current = false; onRoute(target ?? { ...route, member: 'main', event: null, from: undefined, to: undefined }); }}>{c.returnMain}</button>}</>;
 
-  return <div className="health-workspace"><div className="task-process" ref={setScrollElement} style={{ '--task-title-height': `${stickySize.title}px`, '--task-sticky-height': `${stickySize.total}px`, '--task-reader-height': `${stickySize.viewport}px` } as React.CSSProperties}
+  return <div className="health-workspace"><div className="task-process" ref={setScrollElement} style={{ '--task-sticky-height': `${readerSize.stickyHeight}px`, '--task-reader-height': `${readerSize.viewport}px` } as React.CSSProperties}
     onWheel={() => { userScroll.current = true; setFollowing(false); }} onTouchStart={() => { userScroll.current = true; setFollowing(false); }}>
-    <header className="task-context-header" ref={titleElement}>
+    <header className="task-context-header">
       <Tooltip label={displayContext.task.title}><h1 title={displayContext.task.title}>{displayContext.task.title || displayContext.task.provider}</h1></Tooltip>
       <div className="task-f3-meta"><ProviderBadge locale={locale} provider={displayContext.task.provider as ProviderKey}/><StatusBadge status={(['success','error','running','cancelled'].includes(displayContext.task.recordedStatus)?displayContext.task.recordedStatus:'unknown') as TraceStatus} locale={locale}/><Pill>{formatDuration(displayContext.metrics?.durationMs,locale)}</Pill><Pill>{displayContext.task.memberCount} {c.members}</Pill><Pill>{displayContext.task.eventCount.toLocaleString()} {c.records}</Pill><Pill>{displayContext.metrics?.models.join(', ')||'—'}</Pill><Badge>{c.coverage} {displayContext.task.loadedMemberCount}/{displayContext.task.memberCount}</Badge><Popover open={infoOpen} onOpenChange={setInfoOpen} trigger={props=><Button variant="ghost" {...props}>{locale==='zh'?'任务信息':'Task info'}</Button>}><div className="task-f3-info"><KeyValue items={[{label:c.source,value:displayContext.task.provenanceKnown?c[displayContext.task.origin]:c.originUnknown},{label:c.occurred,value:stamp(displayContext.task.startedAt,locale)},{label:displayContext.task.origin==='imported'?c.importedAt:c.received,value:stamp(displayContext.task.updatedAt,locale)},{label:c.recordState,value:displayContext.task.recordedStatus},{label:c.coverage,value:`${displayContext.task.loadedMemberCount}/${displayContext.task.memberCount}`} ]}/><p>{c.readBoundary}</p></div></Popover></div>
     </header>
@@ -207,7 +206,7 @@ export function TaskProcess({ context, route, onRoute, locale, changes, onRefres
       {records.loading && <div className="task-loading" role="status">{c.loadingScope}</div>}{records.error && <div className="task-inline-state" role="alert"><p>{records.error}</p><Button type="button"  onClick={() => { setAnchor(null); onRoute({ ...route, event: null }); records.retry(); }}>{c.retry}</Button></div>}
       {page && <>
 
-        {route.mode==='raw'?<Card><DataTable rows={visible} rowKey={item=>item.id} locale={locale} onRowClick={item=>{setFollowing(false);selectRecord(item);}} selectedKeys={route.event?[route.event]:[]} columns={[{key:'sequence',label:c.sequence,render:item=>item.event?.sequence??item.importedTurn?.sequence??'—'},{key:'member',label:c.member,render:item=>item.memberName},{key:'kind',label:c.type,render:item=>item.event?.kind??'TraceLog'},{key:'title',label:c.title,render:recordTitle},{key:'time',label:c.time,render:item=>stamp(recordTime(item),locale)}]}/></Card>:route.mode === 'trajectory' ? <ProcessLedger page={page} selected={route.event} locale={locale} ref={ledgerRef} scrollElement={scrollElement} stickyOffset={stickySize.total} visibleRecordIds={visibleRecordIds} onSelect={item => { setFollowing(false); selectRecord(item); }} onAnchor={openAnchor} onUserScroll={() => { userScroll.current = true; setFollowing(false); }} /> : <div className="task-record-scroll" ref={scroller}>
+        {route.mode==='raw'?<Card><DataTable rows={visible} rowKey={item=>item.id} locale={locale} onRowClick={item=>{setFollowing(false);selectRecord(item);}} selectedKeys={route.event?[route.event]:[]} columns={[{key:'sequence',label:c.sequence,render:item=>item.event?.sequence??item.importedTurn?.sequence??'—'},{key:'member',label:c.member,render:item=>item.memberName},{key:'kind',label:c.type,render:item=>item.event?.kind??'TraceLog'},{key:'title',label:c.title,render:recordTitle},{key:'time',label:c.time,render:item=>stamp(recordTime(item),locale)}]}/></Card>:route.mode === 'trajectory' ? <ProcessLedger page={page} selected={route.event} locale={locale} ref={ledgerRef} scrollElement={scrollElement} stickyOffset={readerSize.stickyHeight} visibleRecordIds={visibleRecordIds} onSelect={item => { setFollowing(false); selectRecord(item); }} onAnchor={openAnchor} onUserScroll={() => { userScroll.current = true; setFollowing(false); }} /> : <div className="task-record-scroll" ref={scroller}>
           {visible.length === 0 && <div className="task-inline-state">{c.noRecords}</div>}
           <div style={{ height: list.getTotalSize(), position: 'relative' }}>{list.getVirtualItems().map(row => {
             const item = visible[row.index]!, event = item.event;

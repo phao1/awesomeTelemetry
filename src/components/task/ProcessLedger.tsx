@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import type { VirtualizerOptions } from '@tanstack/react-virtual';
 import type { TaskRecord, TaskRecordPage } from '../../core/task-types.js';
 import { deriveTaskProcess, isProcessGroup, processRecordTitle, singleToolOutcome, type ProcessGroup } from '../../core/task-process.js';
 import type { Locale } from '../../i18n.js';
@@ -19,6 +20,25 @@ const stamp = (value: string | undefined, locale: Locale) => value && Number.isF
 const toolPair = (group: ProcessGroup) => group.kind === 'tool' && group.basis === 'native' && group.related.every(id => group.records.some(r => r.id === id)) && group.records.length === 2 && group.records.filter(r => r.event?.hasInput && !r.event.hasOutput).length === 1 && group.records.filter(r => r.event?.hasOutput && !r.event.hasInput).length === 1;
 const knownCall = (group: ProcessGroup) => group.native !== null && (group.kind === 'attempt' || group.kind === 'tool' && group.basis === 'native');
 const representative = (records: TaskRecord[]) => records.filter(item => item.event?.hasOutput || item.importedTurn?.hasOutput).at(-1) ?? records[0]!;
+
+// The default observer leaves its scroll-settle timeout pending when it unsubscribes.
+const observeLedgerScroll: VirtualizerOptions<HTMLElement, Element>['observeElementOffset'] = (instance, onOffset) => {
+  const element = instance.scrollElement, view = instance.targetWindow;
+  if (!element || !view) return;
+  let timer: number | undefined;
+  const onScroll = () => {
+    const offset = element.scrollTop;
+    view.clearTimeout(timer);
+    timer = view.setTimeout(() => onOffset(offset, false), instance.options.isScrollingResetDelay);
+    onOffset(offset, true);
+  };
+  element.addEventListener('scroll', onScroll, { passive: true });
+  return () => {
+    element.removeEventListener('scroll', onScroll);
+    view.clearTimeout(timer);
+  };
+};
+
 const labels = {
   zh: { user: '用户', assistant: '助手', reasoning: '思考', tool: '工具', context: '上下文', system: '系统', model: '模型请求', metadata: '记录信息', records: '条原始记录', sequence: '原始序号', member: '执行者', identity: '保留的身份', noIdentity: '未提供尝试身份', localStep: '本页步骤', expandCall: '展开调用原始记录', collapseCall: '收起调用原始记录', expandRound: '展开轮次', collapseRound: '折叠轮次' },
   en: { user: 'User', assistant: 'Assistant', reasoning: 'Thinking', tool: 'Tool', context: 'Context', system: 'System', model: 'Model request', metadata: 'Record information', records: 'original records', sequence: 'Original sequence', member: 'Member', identity: 'Retained identity', noIdentity: 'Attempt identity unavailable', localStep: 'Page-local step', expandCall: 'Expand original call records', collapseCall: 'Collapse original call records', expandRound: 'Expand round', collapseRound: 'Collapse round' },
@@ -100,7 +120,7 @@ export function ProcessLedger({ page, selected, locale, onSelect, onAnchor, onUs
     root.addEventListener('scroll', update, { passive: true });
     return () => { observer?.disconnect(); root.removeEventListener('scroll', update); };
   }, [scrollElement, stickyOffset, page.window, page.offset, updateScrollMargin]);
-  const list = useVirtualizer({ count: rows.length, getScrollElement: () => scrollElement ?? parent.current, estimateSize: index => rows[index]?.record ? metadata.has(rows[index]!.record!.id) ? 170 : 34 : 24, overscan: 6, getItemKey: index => rows[index]!.key, scrollMargin, scrollPaddingStart: stickyOffset + 4 });
+  const list = useVirtualizer({ count: rows.length, getScrollElement: () => scrollElement ?? parent.current, observeElementOffset: observeLedgerScroll, estimateSize: index => rows[index]?.record ? metadata.has(rows[index]!.record!.id) ? 170 : 34 : 24, overscan: 6, getItemKey: index => rows[index]!.key, scrollMargin, scrollPaddingStart: stickyOffset + 4 });
   const pending = useRef<string | null>(null), positioned = useRef(''), focused = useRef<string | null>(null), lastWindow = useRef(page.window);
   const reveal = (id: string) => {
     const ancestors = context.parents.get(id); if (!ancestors) return false;

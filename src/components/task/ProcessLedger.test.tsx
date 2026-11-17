@@ -34,6 +34,15 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); scrollRoot.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('DSH-style task process ledger', () => {
+  it('cancels the pending scroll-settle callback on unmount', () => {
+    render();
+    const schedule = vi.spyOn(window, 'setTimeout'), cancel = vi.spyOn(window, 'clearTimeout');
+    act(() => { scrollRoot.scrollTop = 10; scrollRoot.dispatchEvent(new Event('scroll')); });
+    expect(schedule).toHaveBeenCalledTimes(1);
+    const timer = schedule.mock.results[0]!.value;
+    act(() => root.render(null));
+    expect(cancel).toHaveBeenCalledWith(timer);
+  });
   it('shows every original observation by default with compact kind/member chips and no extra group-header rows', async () => {
     render(); await settle();
     expect(rows().map(row => row.dataset.recordId)).toEqual([input, thinking, call, result, output].map(item => item.id));

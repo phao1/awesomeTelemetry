@@ -53,7 +53,10 @@ describe('complete RSI page states and human guards',()=>{
     vi.stubGlobal('fetch',vi.fn<typeof fetch>().mockImplementation(async url=>new Response(JSON.stringify(String(url).endsWith('/session')?{token:'page'}:{taskId:'task-new',queueId:'request',status:'queued',agentToken:'one-time-task-secret'}))));
     const open=vi.fn(),{root}=render(<CreateForm options={options} locale="zh" worker={null} onOpen={open} onCreated={noOp} onClose={noOp}/>);
     input('input[placeholder="/path/to/repository"]','/repo');const inputs=[...document.querySelectorAll<HTMLInputElement>('input')].filter(i=>!['hidden'].includes(i.type));const sha=inputs.find(i=>i.classList.contains('mono'))!;input('#'+sha.id,'a'.repeat(40));click('下一步');click('下一步');click('下一步');await act(async()=>click('创建任务'));
-    expect(document.body.textContent).toContain('这个令牌只显示这一次');expect(document.querySelector('input[type=password]')!.getAttribute('value')).toBe('one-time-task-secret');expect(window.location.hash).not.toContain('one-time');expect(localStorage.getItem('one-time-task-secret')).toBeNull();click('打开任务');expect(open).toHaveBeenCalledWith('task-new');expect(document.querySelector('input[value="one-time-task-secret"]')).toBeNull();act(()=>root.render(<CreateForm options={options} locale="zh" worker={null} onOpen={open} onCreated={noOp} onClose={noOp}/>));expect(document.body.textContent).not.toContain('这个令牌只显示这一次');
+    expect(document.body.textContent).toContain('这个令牌只显示这一次');expect(document.querySelector('input[type=password]')!.getAttribute('value')).toBe('one-time-task-secret');expect(window.location.hash).not.toContain('one-time');expect(localStorage.getItem('one-time-task-secret')).toBeNull();
+    expect(document.body.textContent).toContain('停止当前页面服务');
+    expect([...document.querySelectorAll<HTMLInputElement>('input')].some(node=>node.value==='rsi serve --task task-new --execute --root /config --port 4173 --docker-context colima-rsi')).toBe(true);
+    click('打开任务');expect(open).toHaveBeenCalledWith('task-new');expect(document.querySelector('input[value="one-time-task-secret"]')).toBeNull();act(()=>root.render(<CreateForm options={options} locale="zh" worker={null} onOpen={open} onCreated={noOp} onClose={noOp}/>));expect(document.body.textContent).not.toContain('这个令牌只显示这一次');
   });
   it('unknown reasons are translated, with the original value in a keyboard tooltip',()=>{vi.useFakeTimers();const {host}=render(<Reason code="new-reason" locale="zh"/>);expect(host.textContent).toBe('未知原因 ⓘ');act(()=>host.querySelector<HTMLElement>('[tabindex]')!.focus());act(()=>vi.advanceTimersByTime(300));expect(document.querySelector('[role=tooltip]')!.textContent).toBe('new-reason');});
 });
@@ -98,6 +101,19 @@ describe('RSI browser review regressions',()=>{
  describe('choosing a question bank',()=>{
    const dist=(count:number)=>[{phase:'train' as const,count,languages:{python:count}}],withHard={...options,bank:{path:'/bank',full:dist(15),small:dist(6)},hardBank:{path:'/hard',full:dist(10),small:dist(4)}};
    const toBankStep=()=>{input('input[placeholder="/path/to/repository"]','/repo');const sha=[...document.querySelectorAll<HTMLInputElement>('input')].find(i=>i.classList.contains('mono'))!;input('#'+sha.id,'a'.repeat(40));click('下一步');click('下一步');};
+   it('requires an external path when no bank is installed',()=>{
+     const {host}=render(<CreateForm options={{...options,bank:null,hardBank:null}} locale="zh" worker={null} onOpen={noOp} onCreated={noOp} onClose={noOp}/>);toBankStep();
+     expect(host.textContent).toContain('安装包不包含题库');
+     expect([...host.querySelectorAll('button')].find(b=>b.textContent==='下一步')!.disabled).toBe(true);
+     const bankInput=host.querySelector<HTMLInputElement>('input')!;
+     input('#'+bankInput.id,'/external/question bank');
+     expect([...host.querySelectorAll('button')].find(b=>b.textContent==='下一步')!.disabled).toBe(false);
+   });
+   it('uses the available hard bank when the standard bank is absent',()=>{
+     const {host}=render(<CreateForm options={{...withHard,bank:null}} locale="zh" worker={null} onOpen={noOp} onCreated={noOp} onClose={noOp}/>);toBankStep();
+     expect(host.querySelector<HTMLInputElement>('input[value="/hard"]')).not.toBeNull();
+     expect(host.querySelector('td[data-column=count]')!.textContent).toBe('4');
+   });
    it('does not offer the advanced bank when it is not installed',()=>{
      const {host}=render(<CreateForm options={options} locale="zh" worker={null} onOpen={noOp} onCreated={noOp} onClose={noOp}/>);toBankStep();expect(host.textContent).toContain('题库路径');expect(host.textContent).not.toContain('进阶题库');
    });

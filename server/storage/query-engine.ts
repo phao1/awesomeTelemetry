@@ -193,27 +193,52 @@ function proxyListSql(hostname: boolean, captureMethod: boolean, cursor: boolean
     `${proxyWhere(hostname, captureMethod, cursor)} ORDER BY started_at DESC LIMIT ?`;
 }
 
-function mapSessionIndex(row: Record<string, unknown>): SessionIndexEntry {
+// Keep this tuple in SESSION_LIST_JOIN_COLS order, followed by tags_json.
+// Positional rows avoid building an intermediate object for every list item.
+type SessionListRow = [
+  id: string,
+  provider: ProviderKey,
+  sourceAgent: string,
+  title: string,
+  startedAt: string,
+  updatedAt: string,
+  status: TraceStatus,
+  cwd: string | null,
+  eventCount: number,
+  messageCount: number,
+  tokenTotal: number,
+  costUsd: number,
+  dataSource: DataSource,
+  sourcePath: string,
+  detailLoaded: number,
+  hasSystemPrompt: number,
+  tagsJson: string | null,
+];
+
+function mapSessionIndex([
+  id, provider, sourceAgent, title, startedAt, updatedAt, status, cwd,
+  eventCount, messageCount, tokenTotal, costUsd, dataSource, sourcePath,
+  detailLoaded, hasSystemPrompt, tagsJson,
+]: SessionListRow): SessionIndexEntry {
   return {
-    id: row.id as string,
-    provider: row.provider as ProviderKey,
-    sourceAgent: row.source_agent as string,
-    title: row.title as string,
-    startedAt: row.started_at as string,
-    updatedAt: row.updated_at as string,
-    status: row.status as TraceStatus,
-    cwd: row.cwd as string | null,
-    eventCount: row.event_count as number,
-    messageCount: row.message_count as number,
-    tokenTotal: row.token_total as number,
-    costUsd: row.cost_usd as number,
-    dataSource: row.data_source as DataSource,
-    sourcePath: row.source_path as string,
-    detailLoaded: Boolean(row.detail_loaded),
+    id,
+    provider,
+    sourceAgent,
+    title,
+    startedAt,
+    updatedAt,
+    status,
+    cwd,
+    eventCount,
+    messageCount,
+    tokenTotal,
+    costUsd,
+    dataSource,
+    sourcePath,
+    detailLoaded: Boolean(detailLoaded),
     mergeGroupId: null,
-    hasSystemPrompt: Boolean(row.has_system_prompt),
-    // D14：无注解行 → tags_json 为 NULL → 空数组。
-    tags: parseTagsJson(row.tags_json),
+    hasSystemPrompt: Boolean(hasSystemPrompt),
+    tags: parseTagsJson(tagsJson),
   };
 }
 
@@ -441,9 +466,9 @@ export function listSessions(db: Database, opts: ListSessionsOptions): SessionLi
       }
     }
     const items: SessionIndexEntry[] = [];
-    const stmt = cachedStmt(db, SESSION_BY_ID_SQL);
+    const stmt = cachedStmt(db, SESSION_BY_ID_SQL, 'raw');
     for (const key of fetchKeys) {
-      const row = stmt.get(key) as Record<string, unknown> | undefined;
+      const row = stmt.get(key) as SessionListRow | undefined;
       if (row !== undefined) {
         items.push(mapSessionIndex(row));
       }
@@ -489,7 +514,7 @@ export function listSessions(db: Database, opts: ListSessionsOptions): SessionLi
   }
   const params = [...baseParams, ...(hasCursor ? [opts.cursor] : []), limit + 1];
 
-  const rows = cachedStmt(db, sessionListSql(flags)).all(...params) as Array<Record<string, unknown>>;
+  const rows = cachedStmt(db, sessionListSql(flags), 'raw').all(...params) as SessionListRow[];
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit);
   const items = mergeSessionIndex(page.map(mapSessionIndex), opts.groups ?? []);

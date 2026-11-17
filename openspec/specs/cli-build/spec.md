@@ -110,13 +110,16 @@ SQLite, sanitize paths, and generate `src/generated/local-samples.ts`.
 Supports `--claude-source=` / `--opencode-db=` flags or env vars.
 
 ### REQ-008: pack-binary
-`scripts/pack-binary.mjs` SHALL copy `server-dist/` + `dist/` + `bin/` +
-native node_modules + package.json to `dist-binary/` and generate platform
-launchers.
+`scripts/pack-binary.mjs` SHALL copy the npm package's runtime files and the
+lockfile's installed production dependencies into a fresh distribution
+directory and generate platform launchers. The default output is
+`dist-binary/`. Use `--out <path>` to select another empty directory.
+The target machine must match the packaging host's OS, architecture and
+Node ABI when using its native SQLite binary.
 
-Copy the complete server-dist tree including the actual worker and its shared
-chunks. Verify the copied worker executes protocol parsing outside the source
-checkout, not merely that a worker filename exists.
+Copy the complete runnable server-dist JavaScript tree, including workers and
+their shared chunks. Verify protocol parsing by executing the copied worker
+outside the source checkout.
 
 The Windows launcher MUST be `.ps1` (UTF-8); MUST NOT use `.bat` (garbles under
 Chinese paths).
@@ -163,3 +166,24 @@ Platform-branch unit tests do not count as actual Windows validation.
 
 ### REQ-012: Collection disabled on normal Web startup
 The Web CLI defaults to `--enable-monitoring` absent (false) and `--enable-proxy` absent (false). Without monitoring, skip initial session indexing/prewarm, team-source discovery/scanning, and automatic file watchers/polling. Historical data and explicit manual scans remain available. `--enable-monitoring` explicitly restores automatic startup collection. Never infer consent from enabled provider paths.
+
+### REQ-013: RSI and Task Health distribution
+
+Both distributions SHALL include the RSI and Task Health entry points, their
+build outputs, the RSI Dockerfiles and proxy modules, trusted reporters, bundled
+Agent and optimizer profiles, the Mini Agent example, and both monitor bridges.
+Runtime resources SHALL resolve from the installed package independently of the
+working directory. Task and configuration roots remain external.
+
+RSI question banks, calibration corpora, hidden tests and reference patches
+SHALL remain external to both distributions. Package checks SHALL reject local
+databases, capture directories, credentials and source maps. The checked-in
+Agent Folding example fixtures remain part of the existing distribution.
+
+Run the packed-install smoke harness against both the actual npm tarball and
+binary distribution. Verify installed RSI CLI commands with an external
+synthetic bank, Task Health worker execution, reporter and monitor bridge
+loading, Web resource delivery and page-only `rsi serve` readiness and shutdown.
+The npm tarball needs npm runtime dependencies and a matching native SQLite
+build. An offline npm install requires a populated cache and compatible
+prebuilt SQLite or available local Node headers and a build toolchain.

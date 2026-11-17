@@ -9,6 +9,14 @@ review individual Agent boundaries, inspect retained task evidence and compare
 controlled evaluations. The workbench includes the task-mode comparison workflow.
 See [boundary evaluation](docs/agent-folding.md) and [task-mode comparison](docs/team-experiment.md).
 
+## RSI local service
+
+After building, `node bin/rsi.js serve --root /absolute/config` starts the RSI
+page without model calls. Add `--task <id> --execute --docker-context colima-rsi`
+to manage the page, independent review bridge and one existing task worker in
+one foreground process. See the [RSI guide](docs/rsi/user-guide.md) for model
+configuration, lifecycle behavior and external question banks.
+
 ## npm / npx local Web UI (package preparation — unpublished)
 
 The intended public package name is `awesome-telemetry`; registry ownership has
@@ -58,6 +66,19 @@ Command Line Tools plus Python). Optional Trae SQLCipher/Frida integrations stil
 require their separately installed Python/tools. Copying macOS node_modules is
 not Windows compatibility testing. Windows browser-command branches are tested
 in simulation; actual platform validation must be reported separately.
+
+The RSI package also includes trusted profiles, image build inputs, reporters
+and review bridges. Question banks, hidden tests and calibration corpora stay
+outside the package; configure `RSI_BANK_ROOT`, `RSI_HARD_BANK_ROOT` and
+`RSI_CALIBRATION_ROOT` as needed. For an offline install smoke, pass `--offline
+--npm-cache /path/to/prepared/cache`; this needs cached runtime dependencies and
+a matching native prebuild or a working local build toolchain. It is not a
+standalone tarball with all dependencies embedded.
+
+`npm run pack:binary -- --out /path/to/empty-directory` copies the same application
+files plus runtime dependencies for the current OS, architecture and Node ABI.
+Node itself is not bundled. A nonempty output directory is rejected to prevent
+stale files from leaking into a new artifact.
 
 This independently implemented flow was informed by the
 [dsh Web runtime](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/bundle/web-app/src/index.ts)

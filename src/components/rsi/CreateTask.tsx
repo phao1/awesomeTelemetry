@@ -12,7 +12,7 @@ import { Button } from '../ui/Button.js';
 import { Table } from '../ui/Table.js';
 import { Badge } from '../ui/Badge.js';
 import { PageSkeleton } from '../ui/PageSkeleton.js';
-import { monitorCommand, useRsiCli, useRsiRead, workerCommand } from './data.js';
+import { monitorCommand, serveCommand, useRsiCli, useRsiRead, workerCommand } from './data.js';
 import { copy, reasonLabel, shellArgument, fieldErrorLabel } from './copy.js';
 import { ReadError, WriteError } from './Shared.js';
 export function OptimizerWarning({locale,id,allow,onAllow}:{locale:Locale;id:string;allow:boolean;onAllow:(allow:boolean)=>void}) {const cli=useRsiCli();return <Callout tone="attention" title={copy(locale,'需登录 · 未实测','Login required · Not verified')}><p>{copy(locale,'用量无法硬限制。需要显式允许后才能运行；任务预算不包含自行报告的用量。','Usage cannot be hard-limited. Explicit opt-in is required; self-reported usage is excluded from the task budget.')}</p><CopyField locale={locale} label={copy(locale,'登录命令','Login command')} value={`${cli.bin} optimizer login --profile ${shellArgument(id)}`}/><Checkbox checked={allow} onChange={e=>onAllow(e.target.checked)} label={copy(locale,'允许无法硬限制用量的优化者','Allow an optimizer without hard usage limits')}/></Callout>;}
@@ -22,7 +22,7 @@ export function CreateTask({locale,worker,onClose,onOpen,onCreated}:{locale:Loca
 }
 export function CreateForm({options,locale,worker,onOpen,onCreated,onClose}:{options:RsiOptions;locale:Locale;worker:RsiWorkerStatus|null;onOpen:(id:string)=>void;onCreated:()=>void;onClose:()=>void}) {
   const [step,setStep]=useState(0),[agent,setAgent]=useState(options.agents[0]?.path??''),[optimizer,setOptimizer]=useState(options.optimizers.find(p=>p.id==='opencode-deepseek')?.path??options.optimizers[0]?.path??'');
-  const [customAgent,setCustomAgent]=useState(''),[customOptimizer,setCustomOptimizer]=useState(''),[repository,setRepository]=useState(''),[commit,setCommit]=useState(''),[bank,setBank]=useState(options.bank?.path??'rsi-bank'),[subset,setSubset]=useState<'small'|'full'>('small');
+  const [customAgent,setCustomAgent]=useState(''),[customOptimizer,setCustomOptimizer]=useState(''),[repository,setRepository]=useState(''),[commit,setCommit]=useState(''),[bank,setBank]=useState(options.bank?.path??options.hardBank?.path??''),[subset,setSubset]=useState<'small'|'full'>('small');
   const activeBank=bank===options.hardBank?.path?options.hardBank:bank===options.bank?.path?options.bank:null;
   const trainCount=(selected:'small'|'full',source=activeBank)=>source?.[selected].find(r=>r.phase==='train')?.count;
   // The goal defaults to the whole training set of the chosen subset: a smaller default would finish at the baseline.
@@ -42,9 +42,15 @@ export function CreateForm({options,locale,worker,onOpen,onCreated,onClose}:{opt
   if(created)return <div className="rsi-form" data-testid="rsi-created">
     <Callout tone="success" title={copy(locale,'任务已加入队列','Task queued')}/>
     {created.agentToken?<><Callout tone="attention" title={copy(locale,'这个令牌只显示这一次','This token is shown only once')}/><Field label={copy(locale,'任务令牌','Task token')}><CopyField locale={locale} label={copy(locale,'任务令牌','Task token')} value={created.agentToken} secret/></Field></>:<Callout tone="attention" title={copy(locale,'任务已创建，令牌无法再次读取','Task already created; the token cannot be retrieved again')}/>}
-    <p>{copy(locale,'先设置 RSI_UPSTREAM_BASE_URL、RSI_UPSTREAM_MODEL、RSI_UPSTREAM_API_KEY 和 RSI_MONITOR_API_KEY（自定一个令牌）。监控没有启动时，迭代不会自动晋级，会停下来等人工审查。','First set RSI_UPSTREAM_BASE_URL, RSI_UPSTREAM_MODEL, RSI_UPSTREAM_API_KEY and RSI_MONITOR_API_KEY (any token you choose). Without the monitor, iterations are held for human review instead of being promoted.')}</p>
-    <Field label={copy(locale,'启动监控','Start monitor')}><CopyField locale={locale} label={copy(locale,'启动监控','Start monitor')} value={monitorCommand(options.cli,selectedOptimizer?.family??null)}/></Field>
-    <Field label={copy(locale,'启动执行器','Start executor')}><CopyField locale={locale} label={copy(locale,'启动执行器','Start executor')} value={workerCommand(options.cli,created.taskId)}/></Field>
+    <p>{copy(locale,'先设置上游模型的地址、名称和密钥：RSI_UPSTREAM_BASE_URL、RSI_UPSTREAM_MODEL、RSI_UPSTREAM_API_KEY。','Set the upstream model URL, name and key: RSI_UPSTREAM_BASE_URL, RSI_UPSTREAM_MODEL and RSI_UPSTREAM_API_KEY.')}</p>
+    <p>{copy(locale,selectedOptimizer?.family==='openai'?'本任务由 Claude 独立监控，还需设置 ANTHROPIC_API_KEY。':'本任务由 Codex 独立监控，需先完成本机 Codex 登录。',selectedOptimizer?.family==='openai'?'Claude reviews this task independently; set ANTHROPIC_API_KEY.':'Codex reviews this task independently; complete local Codex login first.')}</p>
+    <Callout title={copy(locale,'统一启动','Start together')}>{copy(locale,'先保存任务令牌，再在原终端停止当前页面服务，然后运行下方命令。页面、监控和执行器会一起启动；关闭终端任务会停止本次启动的进程。','Save the task token, stop the current Web service in its terminal, then run this command. It starts the page, monitor and worker together; stopping the foreground command stops its owned processes.')}</Callout>
+    <CopyField locale={locale} label={copy(locale,'启动任务服务','Start task service')} value={serveCommand(options.cli,created.taskId,Number(window.location.port)||4173)}/>
+    <Accordion title={copy(locale,'分别启动各进程','Start processes separately')}>
+      <p>{copy(locale,'在监控和执行器终端设置同一个 RSI_MONITOR_API_KEY。','Set the same RSI_MONITOR_API_KEY in the monitor and worker terminals.')}</p>
+      <Field label={copy(locale,'启动监控','Start monitor')}><CopyField locale={locale} label={copy(locale,'启动监控','Start monitor')} value={monitorCommand(options.cli,selectedOptimizer?.family??null)}/></Field>
+      <Field label={copy(locale,'启动执行器','Start executor')}><CopyField locale={locale} label={copy(locale,'启动执行器','Start executor')} value={workerCommand(options.cli,created.taskId)}/></Field>
+    </Accordion>
     <Button variant="primary" onClick={()=>{const id=created.taskId;setCreated(null);onOpen(id);}}>{copy(locale,'打开任务','Open task')}</Button>
   </div>;
   return <div className="rsi-create"><Steps items={steps} current={step}/><div className="rsi-form">
@@ -60,6 +66,7 @@ export function CreateForm({options,locale,worker,onOpen,onCreated,onClose}:{opt
       {(unmetered||!optimizer)&&<OptimizerWarning locale={locale} id={selectedOptimizer?.id??customOptimizer} allow={settings.allowUnmeteredOptimizer} onAllow={allow=>{changed();setSettings({...settings,allowUnmeteredOptimizer:allow});}}/>}
     </>}
     {step===2&&<>
+      {!options.bank&&!options.hardBank&&<Callout title={copy(locale,'选择本机题库','Choose a local question bank')}>{copy(locale,'安装包不包含题库。填写已准备好的题库绝对路径；题目和隐藏测试保留在本机。','The installed package does not include a question bank. Enter the absolute path to a prepared bank; questions and hidden tests stay on this machine.')}</Callout>}
       {options.bank&&options.hardBank&&<SegmentedControl activeId={activeBank===options.hardBank?'hard':activeBank?'standard':''} onChange={value=>{changed();const source=value==='hard'?options.hardBank!:options.bank!;setBank(source.path);setConfig(old=>({...old,targetPassedCount:trainCount(subset,source)??old.targetPassedCount}));}} items={[{id:'standard',label:copy(locale,'标准题库','Standard bank')},{id:'hard',label:copy(locale,'进阶题库','Advanced bank')}]}/>}
       {activeBank===options.hardBank&&activeBank&&<Callout title={copy(locale,'标准题库已接近满分时再用','Use it once the standard bank is near full marks')}>{copy(locale,'题目是长规格实现、多文件排查、性能和并发问题，单题 Token 用量明显更高，建议把单题预算设到 300000 以上。最强的模型仍能全部做对，所以先看基线分数，留有提升空间才值得优化。','Questions are long specifications, multi-file investigations, performance and concurrency problems, and use far more tokens per question; set the per-question budget to 300000 or more. The strongest models still pass all of them, so check the baseline first: only optimize if it leaves room to improve.')}</Callout>}
       <Field label={copy(locale,'题库路径','Question bank path')} error={errorFor('bank')}><Input value={bank} onChange={e=>{changed();setBank(e.target.value);}}/></Field>

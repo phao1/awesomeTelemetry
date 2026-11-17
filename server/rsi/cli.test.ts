@@ -34,6 +34,19 @@ describe('trusted local CLI', () => {
     await expect(runRsiCli(['worker', '--settings', 'ignored', '--task', 'task'])).rejects.toThrow('Invalid RSI arguments');
     await expect(runRsiCli(['worker', '--task', '../unsafe'])).rejects.toThrow('Invalid task ID');
   });
+  it.each([
+    [['--task', 'one'], '--task and --execute together'],
+    [['--execute'], '--task and --execute together'],
+    [['--task', '../other', '--execute'], 'Invalid task ID'],
+    [['--port', '0'], 'port from 1 to 65535'],
+    [['--port', '65536'], 'port from 1 to 65535'],
+    [['--docker-context', 'colima-rsi'], 'Worker and monitor options require'],
+    [['--task', 'one', '--execute', '--monitor', 'external', '--monitor-port', '9000'], '--monitor-port is for an owned bridge'],
+    [['--task', 'one', '--execute', '--monitor-base-url', 'https://custom.invalid/v1'], '--monitor-base-url requires --monitor external'],
+    [['--root', '/a', '--root', '/b'], 'Invalid rsi serve arguments'],
+  ] as const)('rejects invalid serve arguments %j before service startup', async (args, message) => {
+    await expect(runRsiCli(['serve', ...args])).rejects.toThrow(message);
+  });
 });
 
 it('validates an Agent without a task or Docker', async () => {

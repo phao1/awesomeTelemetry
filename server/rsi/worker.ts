@@ -639,9 +639,11 @@ export class RsiWorker {
 
 /** Secret values are stripped because this text is shown on the page. */
 export function workerErrorText(error: unknown, env: NodeJS.ProcessEnv = process.env): string {
-  let text = (error instanceof Error ? error.message : String(error)).slice(-500);
-  for (const key of ['RSI_UPSTREAM_API_KEY', 'RSI_MONITOR_API_KEY']) if (env[key]) text = text.replaceAll(env[key], '[redacted]');
-  return text;
+  let text = error instanceof Error ? error.message : String(error);
+  const secrets = [env.RSI_UPSTREAM_API_KEY, env.RSI_MONITOR_API_KEY]
+    .filter((value): value is string => Boolean(value)).sort((a, b) => b.length - a.length);
+  for (const secret of secrets) text = text.replaceAll(secret, '[redacted]');
+  return text.slice(-500);
 }
 async function withHeartbeat<T>(store: RsiStore, action: (report: (error: unknown) => void) => Promise<T>): Promise<T> {
   let stopped=false, error: unknown, lastError: string | null=null, pending:Promise<void>=Promise.resolve();

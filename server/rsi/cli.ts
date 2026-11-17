@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, statfs, rename } from 'node:fs/promises';
 import { dirname, resolve, join } from 'node:path';
-import { rsiPackagePath, rsiPackageRoot } from './paths.js';
+import { rsiCalibrationRoot, rsiPackagePath, rsiPackageRoot } from './paths.js';
+import { parseServeArgs, serveRsi } from './service.js';
 import { defaultRsiConfig, validateRsiConfig } from '../../src/core/rsi-validation.js';
 import type { RsiCommand, RsiPrd } from '../../src/core/rsi-types.js';
 import { openWritable } from '../storage/db.js';
@@ -41,6 +42,10 @@ const HELP = `Usage: rsi <command> --task <id> [--root <configRoot>]
   task create --repository <local-repo> --baseline <full-commit> --bank <bank> [--config <json>] [--settings <json>] [--agent <profile.json>] [--optimizer <profile.json>] [--subset small|full] [--api-base <origin>]
   agent validate <profile.json>
   doctor [--root <path>] [--docker-context <name>]
+  serve [--root <path>] [--port <port>]
+  serve --task <id> --execute [--root <path>] [--port <port>] [--docker-context <name>]
+        [--monitor auto|external] [--monitor-port <port>]
+        [--monitor-base-url <url>] [--monitor-family <family>] [--monitor-model <model>]
   task status
   task command --command <json-file> [--iteration <id>] --request <id>
   iteration submit --commit <full-commit> --prd <json-file> --request <id>
@@ -49,7 +54,8 @@ const HELP = `Usage: rsi <command> --task <id> [--root <configRoot>]
   calibrate [--sample <N|all>] [--monitor-base-url <url>] [--monitor-family <family>] [--monitor-model <model>]
   ledger verify
   ledger recover
-Only worker --execute runs task containers; optimizer login explicitly starts a fresh interactive login container. Commands and JSON output are local trusted ingress.
+serve starts a loopback Web page. With --task and --execute it also starts a monitor bridge and a worker for that task. Monitor URL, family and model overrides require --monitor external.
+Only worker --execute (direct or via serve) runs task containers; optimizer login explicitly starts a fresh interactive login container. Commands and JSON output are local trusted ingress.
 worker drains available work and exits when idle, held or paused. Default reviews are missing.`;
 async function json(file: string): Promise<unknown> { const data = await readFile(file); if (data.length > 1024 * 1024) throw new Error('JSON file limit'); return JSON.parse(data.toString()) as unknown; }
 export async function rsiDoctor(client: DockerClient, root: string, env: NodeJS.ProcessEnv = process.env): Promise<unknown> {
@@ -75,6 +81,7 @@ export async function rsiDoctor(client: DockerClient, root: string, env: NodeJS.
 }
 export async function runRsiCli(args: string[], output: (value: unknown) => void = v => console.log(JSON.stringify(v)), options: { reviews?: ReviewProvider; afterRun?: () => Promise<void>; modelClient?: HealthModelClient } = {}): Promise<void> {
   if (!args.length || args.includes('--help')) { console.log(HELP); return; }
+  if (args[0] === 'serve') { await serveRsi(parseServeArgs(args.slice(1)), rsiPackageRoot()); return; }
   if (args[0] === 'optimizer' && args[1] === 'login') { await optimizerLogin(args.slice(2)); return; }
   if (args[0] === 'agent' && args[1] === 'validate') {
     if (args.length !== 3 || args[2]!.startsWith('--')) throw new Error('Usage: rsi agent validate <profile.json>');
@@ -155,7 +162,7 @@ export async function runRsiCli(args: string[], output: (value: unknown) => void
           await worker.loadUsage();
           const client = createReviewModelClient(store, reviews, `calibration-${randomUUID()}`, receipt => worker.account(receipt), options.modelClient);
           await client.recover();
-          const corpus = await readCalibrationCorpus(rsiPackagePath('rsi-bank/calibration'));
+          const corpus = await readCalibrationCorpus(rsiCalibrationRoot());
           const deterministic = deterministicCalibration(corpus, store.task().config.l1);
           if (deterministic.some(m => m.category !== 'benign' && m.detected !== m.samples)) throw new Error('Deterministic calibration must detect every cheating fixture');
           const reportId = randomUUID();
